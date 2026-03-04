@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Development Jobs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="jobs-container">
+    <div class="jobs-header">
+      <h1>Game Development Jobs</h1>
+      <button id="back-btn" class="btn back-btn">← Back</button>
+    </div>
+
+    <div class="filters">
+      <div class="filter-group">
+        <label for="work-type-filter">Work Type:</label>
+        <select id="work-type-filter">
+          <option value="">All Types</option>
+          <option value="remote">Remote</option>
+          <option value="onsite">On-Site</option>
+          <option value="hybrid">Hybrid</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="country-filter">Country:</label>
+        <select id="country-filter">
+          <option value="">All Countries</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="profession-filter">Profession:</label>
+        <select id="profession-filter">
+          <option value="">All Roles</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="search-filter">Search:</label>
+        <input 
+          type="text" 
+          id="search-filter" 
+          placeholder="Search by title or company..."
+        >
+      </div>
+    </div>
+
+    <div id="jobs-list" class="jobs-list">
+      <div class="loading">Loading jobs...</div>
+    </div>
+
+    <div class="jobs-sources">
+      <h2>Job Listing Sources</h2>
+      <p>This page aggregates game development job listings from the following sources and industry partnerships:</p>
+      <ul class="sources-list">
+        <li><a href="https://docs.google.com/spreadsheets/d/1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE/edit?gid=1560329579" target="_blank" rel="noopener noreferrer">Community Curated Google Sheet</a> - Crowdsourced game dev job listings from the community</li>
+        <li><a href="https://linkedin.com" target="_blank" rel="noopener noreferrer">LinkedIn</a> - Global professional networking platform with extensive job listings</li>
+        <li><a href="https://indeed.com" target="_blank" rel="noopener noreferrer">Indeed</a> - Leading job search engine with thousands of game dev positions</li>
+        <li><a href="https://gamedev.jobs" target="_blank" rel="noopener noreferrer">GameDev.Jobs</a> - Specialized job board for game development professionals</li>
+        <li><a href="https://remoteok.com" target="_blank" rel="noopener noreferrer">RemoteOk</a> - Remote work opportunities, including game development roles</li>
+        <li><a href="https://weworkremotely.com" target="_blank" rel="noopener noreferrer">We Work Remotely</a> - Remote job board featuring game development positions</li>
+        <li><a href="https://angellist.com" target="_blank" rel="noopener noreferrer">AngelList</a> - Startup and tech jobs, includes indie game studios</li>
+        <li><a href="https://glassdoor.com" target="_blank" rel="noopener noreferrer">Glassdoor</a> - Company reviews and job listings with salary insights</li>
+        <li><a href="https://twitter.com/search?q=%23gamedev%20%23hiringnow" target="_blank" rel="noopener noreferrer">Twitter/X</a> - Game development studios posting job opportunities</li>
+        <li><a href="https://www.reddit.com/r/gamedev" target="_blank" rel="noopener noreferrer">Reddit r/gamedev</a> - Community-driven game development job postings</li>
+        <li><a href="https://gamasutra.com" target="_blank" rel="noopener noreferrer">GDC (Game Developers Conference)</a> - Industry professionals and job listings</li>
+      </ul>
+    </div>
+
+    <div class="jobs-footer">
+      <p><strong>Data Source:</strong> Curated game development job listings from multiple job boards and industry sources</p>
+    </div>
+  </div>
+
+  <script src="jobs.js"></script>
+</body>
+</html>

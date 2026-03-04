@@ -35,3 +35,8 @@ popupOverlay.addEventListener("click", (e) => {
     popupOverlay.classList.add("hidden");
   }
 });
+
+const gameDevJobsBtn = document.getElementById("game-dev-jobs-btn");
+gameDevJobsBtn.addEventListener("click", () => {
+  window.location.href = "jobs.html";
+});
