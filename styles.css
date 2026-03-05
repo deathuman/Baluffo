@@ -166,6 +166,42 @@ h1 {
   overflow: hidden;
 }
 
+/* pagination controls */
+.pagination {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+.page-btn {
+  background-color: #444;
+  color: #eee;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.2s ease;
+}
+
+.page-btn:hover {
+  background-color: #666;
+}
+
+.page-btn.active {
+  background-color: #bb86fc;
+  color: #121212;
+}
+
+.page-ellipsis {
+  display: inline-block;
+  padding: 0.5rem 0.75rem;
+  color: #bbb;
+  font-size: 0.9rem;
+}
+
 .jobs-table-header {
   background-color: #0d0d0d;
   border-bottom: 2px solid #bb86fc;
@@ -176,7 +212,8 @@ h1 {
 
 .job-row-header {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 1.5fr 1fr;
+  /* five columns: title, company, city, country, type */
+  grid-template-columns: 2fr 1.5fr 1.3fr 1.3fr 1fr;
   gap: 0;
   padding: 0.8rem 1rem;
   font-weight: 600;
@@ -195,7 +232,8 @@ h1 {
 
 .job-row {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 1.5fr 1fr;
+  /* match header columns */
+  grid-template-columns: 2fr 1.5fr 1.3fr 1.3fr 1fr;
   gap: 0;
   padding: 0.8rem 1rem;
   border-bottom: 1px solid #333;
@@ -203,8 +241,17 @@ h1 {
   transition: background-color 0.2s ease;
 }
 
+.job-row[onclick] {
+  cursor: pointer;
+}
+
 .job-row:hover {
   background-color: #242424;
+}
+
+.job-row[onclick]:hover {
+  background-color: #2a2a2a;
+  box-shadow: inset 0 0 10px rgba(187, 134, 252, 0.1);
 }
 
 .job-row:last-child {
@@ -237,6 +284,11 @@ h1 {
 }
 
 .col-location {
+  overflow: hidden;
+}
+
+/* new columns distinct names but same behaviour */
+.col-city, .col-country {
   overflow: hidden;
 }
 
@@ -304,6 +356,38 @@ h1 {
   color: #bbb;
   font-size: 1.1rem;
   grid-column: 1 / -1;
+}
+
+.fetch-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(to right, #bb86fc, #9f6dfd, #bb86fc);
+  box-shadow: 0 0 10px rgba(187, 134, 252, 0.8);
+  border-radius: 2px;
+  animation: progressPulse 2s ease-in-out infinite;
+  width: 100%;
+  z-index: 1000;
+}
+
+.fetch-progress.hidden {
+  display: none;
+}
+
+@keyframes progressPulse {
+  0% {
+    width: 10%;
+    opacity: 0.8;
+  }
+  50% {
+    width: 60%;
+    opacity: 1;
+  }
+  100% {
+    width: 90%;
+    opacity: 0.8;
+  }
 }
 
 .loading {

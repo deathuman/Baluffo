@@ -13,14 +13,16 @@
       <button id="back-btn" class="btn back-btn">← Back</button>
     </div>
 
+    <div id="fetch-progress" class="fetch-progress hidden"></div>
+
     <div class="filters">
       <div class="filter-group">
         <label for="work-type-filter">Work Type:</label>
         <select id="work-type-filter">
           <option value="">All Types</option>
-          <option value="remote">Remote</option>
-          <option value="onsite">On-Site</option>
-          <option value="hybrid">Hybrid</option>
+          <option value="Remote">Remote</option>
+          <option value="Onsite">On-Site</option>
+          <option value="Hybrid">Hybrid</option>
         </select>
       </div>
 
@@ -28,6 +30,13 @@
         <label for="country-filter">Country:</label>
         <select id="country-filter">
           <option value="">All Countries</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="city-filter">City:</label>
+        <select id="city-filter">
+          <option value="">All Cities</option>
         </select>
       </div>
 
@@ -51,6 +60,9 @@
     <div id="jobs-list" class="jobs-list">
       <div class="loading">Loading jobs...</div>
     </div>
+
+    <!-- Pagination controls will be injected here or updated via JavaScript -->
+    <div id="pagination" class="pagination"></div>
 
     <div class="jobs-sources">
       <h2>Job Listing Sources</h2>

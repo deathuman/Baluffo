@@ -1,207 +1,52 @@
 // Game Dev Jobs listing with fetching from Google Sheets
 let allJobs = [];
 
-// Curated fallback jobs (minimal - we have 30k+ from sheet)
-const realJobs = [
-  {
-    id: 1,
-    title: "Senior Gameplay Programmer",
-    company: "Ubisoft San Francisco",
-    country: "US",
-    workType: "Onsite",
-    profession: "gameplay",
-    description: "We're looking for experienced gameplay programmers to develop engaging game mechanics using Unreal Engine 5. Join our AAA game development team."
-  },
-  {
-    id: 2,
-    title: "Graphics Programmer",
-    company: "NVIDIA",
-    country: "US",
-    workType: "Hybrid",
-    profession: "graphics",
-    description: "Optimize rendering pipelines and implement cutting-edge graphics techniques for next-generation games. Work with NVIDIA's graphics technology."
-  },
-  {
-    id: 3,
-    title: "Game Designer",
-    company: "Supercell",
-    country: "FI",
-    workType: "Remote",
-    profession: "designer",
-    description: "Design engaging gameplay experiences and systems for multiplayer games. Work with a team that develops games played by millions."
-  },
-  {
-    id: 4,
-    title: "3D Character Artist",
-    company: "Artstation Learning",
-    country: "US",
-    workType: "Remote",
-    profession: "artist",
-    description: "Create high-quality 3D models and characters for AAA game projects. Use industry-standard tools like Maya and Substance."
-  },
-  {
-    id: 5,
-    title: "Engine Programmer",
-    company: "Epic Games",
-    country: "US",
-    workType: "Onsite",
-    profession: "engine",
-    description: "Develop and maintain Unreal Engine systems. Deep C++ experience required. Work on systems used by millions worldwide."
-  },
-  {
-    id: 6,
-    title: "AI/Behavior Programmer",
-    company: "Rockstar Games",
-    country: "US",
-    workType: "Onsite",
-    profession: "ai",
-    description: "Create sophisticated AI systems and behaviors for NPCs and enemies in large-scale open worlds."
-  },
-  {
-    id: 7,
-    title: "Tools Programmer",
-    company: "Unity Technologies",
-    country: "CA",
-    workType: "Remote",
-    profession: "tools",
-    description: "Build and maintain internal developer tools and pipeline infrastructure. Improve game development workflows for thousands of developers."
-  },
-  {
-    id: 8,
-    title: "Animation Programmer",
-    company: "Bungie Studio",
-    country: "US",
-    workType: "Hybrid",
-    profession: "animator",
-    description: "Develop animation systems and rigging tools. Work with animators to bring characters and creatures to life."
-  },
-  {
-    id: 9,
-    title: "Junior Gameplay Programmer",
-    company: "Deck Nine Games",
-    country: "GB",
-    workType: "Remote",
-    profession: "gameplay",
-    description: "Start your game development career with an experienced indie studio. Work on narrative-driven games."
-  },
-  {
-    id: 10,
-    title: "Graphics Engineer",
-    company: "Activision Blizzard",
-    country: "US",
-    workType: "Onsite",
-    profession: "graphics",
-    description: "Optimize graphics for cross-platform game delivery. Work on engines powering world-famous game franchises."
-  },
-  {
-    id: 11,
-    title: "Level Designer",
-    company: "Remedy Entertainment",
-    country: "FI",
-    workType: "Hybrid",
-    profession: "designer",
-    description: "Design and balance game systems for action-oriented AAA titles. Shape player experiences and progression."
-  },
-  {
-    id: 12,
-    title: "Environment Artist",
-    company: "FromSoftware",
-    country: "JP",
-    workType: "Onsite",
-    profession: "artist",
-    description: "Model stunning environments and props for immersive game worlds. Experience with next-gen console development."
-  },
-  {
-    id: 13,
-    title: "Physics Programmer",
-    company: "Insomniac Games",
-    country: "US",
-    workType: "Onsite",
-    profession: "engine",
-    description: "Develop physics systems for dynamic game environments. Work on acclaimed PlayStation game franchises."
-  },
-  {
-    id: 14,
-    title: "Senior Game Designer",
-    company: "Valve",
-    country: "US",
-    workType: "Onsite",
-    profession: "designer",
-    description: "Lead game design on groundbreaking projects. Influence the direction of iconic game franchises."
-  },
-  {
-    id: 15,
-    title: "VFX Artist",
-    company: "Splash Damage",
-    country: "GB",
-    workType: "Remote",
-    profession: "artist",
-    description: "Create stunning visual effects for competitive multiplayer games. Use Unreal Engine and modern tools."
-  },
-  {
-    id: 16,
-    title: "Network Programmer",
-    company: "Electronic Arts",
-    country: "US",
-    workType: "Hybrid",
-    profession: "gameplay",
-    description: "Develop robust networking systems for multiplayer games. Handle millions of concurrent players."
-  },
-  {
-    id: 17,
-    title: "Gameplay Programmer",
-    company: "Mighty Games",
-    country: "CA",
-    workType: "Remote",
-    profession: "gameplay",
-    description: "Join a fast-growing indie studio creating innovative mobile games. Flexible work environment."
-  },
-  {
-    id: 18,
-    title: "3D Artist",
-    company: "Weta Digital",
-    country: "AU",
-    workType: "Onsite",
-    profession: "artist",
-    description: "Work on cutting-edge visual effects and 3D assets for blockbuster productions and games."
-  },
-  {
-    id: 19,
-    title: "Game Audio Designer",
-    company: "Bandcamp Games",
-    country: "US",
-    workType: "Remote",
-    profession: "designer",
-    description: "Create immersive audio experiences and sound design for indie and indie-inspired games."
-  },
-  {
-    id: 20,
-    title: "Engine Optimization Specialist",
-    company: "GrainWorks",
-    country: "SG",
-    workType: "Remote",
-    profession: "engine",
-    description: "Optimize game engines for performance across multiple platforms. Work with cutting-edge technology."
-  },
-  {
-    id: 21,
-    title: "UI/UX Designer",
-    company: "Motion Twin",
-    country: "FR",
-    workType: "Remote",
-    profession: "designer",
-    description: "Design engaging user interfaces and experiences for indie game titles played worldwide."
-  },
-  {
-    id: 22,
-    title: "Character Rigger",
-    company: "Axis Animation",
-    country: "GB",
-    workType: "Onsite",
-    profession: "animator",
-    description: "Create character rigs and skeletal systems for animation teams. Work on AAA game projects."
+// pagination state
+let currentPage = 1;
+const itemsPerPage = 20; // show 20 jobs per page
+
+// read initial page from URL query string if present
+function readPageFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const p = parseInt(params.get('page'), 10);
+  if (!isNaN(p) && p > 0) {
+    currentPage = p;
   }
-];
+}
+
+// update URL without reloading
+function updateUrlPage() {
+  const params = new URLSearchParams(window.location.search);
+  if (currentPage > 1) {
+    params.set('page', currentPage);
+  } else {
+    params.delete('page');
+  }
+  const newUrl = window.location.pathname + '?' + params.toString();
+  window.history.replaceState({}, '', newUrl);
+}
+
+// attach keyboard navigation once DOM is ready
+function enableKeyboardNav() {
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.isContentEditable) {
+      // ignore when typing in filters
+      return;
+    }
+    if (e.key === 'ArrowLeft' && currentPage > 1) {
+      currentPage--;
+      updateUrlPage();
+      filterAndDisplay();
+    }
+    if (e.key === 'ArrowRight') {
+      // we'll compute if there is a next page inside displayJobs itself
+      // by simply incrementing and re-displaying
+      currentPage++;
+      updateUrlPage();
+      filterAndDisplay();
+    }
+  });
+}
 
 // Fetch jobs from Google Sheets CSV export - optimized for large datasets
 async function fetchFromGoogleSheets() {
@@ -297,6 +142,7 @@ function parseCSVLarge(csv) {
     const cityIdx = findColumnIndex(headers, ['city']);
     const countryIdx = findColumnIndex(headers, ['country']);
     const locationTypeIdx = findColumnIndex(headers, ['location type']);
+    const jobLinkIdx = findColumnIndex(headers, ['job link']);
     
     if (titleIdx === -1 || companyIdx === -1) {
       return [];
@@ -319,6 +165,7 @@ function parseCSVLarge(csv) {
         const city = fields[cityIdx]?.trim() || "";
         const country = fields[countryIdx]?.trim() || "Unknown";
         const locationType = fields[locationTypeIdx]?.trim() || "On-site";
+        const jobLink = jobLinkIdx !== -1 ? fields[jobLinkIdx]?.trim() : "";
         
         if (!title || !company) continue;
         
@@ -327,14 +174,17 @@ function parseCSVLarge(csv) {
         if (locationType.toLowerCase().includes('remote')) workType = "Remote";
         else if (locationType.toLowerCase().includes('hybrid')) workType = "Hybrid";
         
+        // Store country separately and keep city for additional information
         jobs.push({
           id: 1000 + i,
           title: escapeHtml(title),
           company: escapeHtml(company),
-          country: city && city !== company ? `${city}, ${country}` : country,
+          city: city,             // raw city text
+          country: country,       // raw country text only
           workType: workType,
           profession: mapProfession(title),
-          description: `${title} at ${company}`
+          description: `${title} at ${company}`,
+          jobLink: jobLink        // job listing URL
         });
         
         // Log progress every 10000 rows
@@ -404,14 +254,19 @@ function detectWorkType(text) {
 function mapProfession(title) {
   const lower = title.toLowerCase();
   
+  // unique technical artist category
+  if (lower.includes('technical artist')) return 'technical-artist';
+  
+  // other mappings
   if (lower.includes('gameplay') || lower.includes('game mechanics')) return 'gameplay';
   if (lower.includes('graphics') || lower.includes('rendering') || lower.includes('shader')) return 'graphics';
   if (lower.includes('engine') || lower.includes('architecture') || lower.includes('systems')) return 'engine';
   if (lower.includes('ai') || lower.includes('artificial intelligence') || lower.includes('behavior')) return 'ai';
-  if (lower.includes('tool') || lower.includes('pipeline') || lower.includes('editor')) return 'tools';
+  if (lower.includes('animator') || lower.includes('motion')) return 'animator';
+  // technical alone should map to tools
+  if (lower.includes('tool') || lower.includes('pipeline') || lower.includes('editor') || (lower.includes('technical') && !lower.includes('artist'))) return 'tools';
   if (lower.includes('designer') || lower.includes('level') || lower.includes('game design')) return 'designer';
   if (lower.includes('artist') || lower.includes('animation') || lower.includes('visual')) return 'artist';
-  if (lower.includes('animator') || lower.includes('motion')) return 'animator';
   
   return 'other';
 }
@@ -436,7 +291,7 @@ function capitalizeFirst(str) {
 }
 
 // DOM Elements
-let jobsList, backBtn, workTypeFilter, countryFilter, professionFilter, searchFilter;
+let jobsList, backBtn, workTypeFilter, countryFilter, cityFilter, professionFilter, searchFilter;
 
 // Wait for DOM to load, then initialize
 document.addEventListener("DOMContentLoaded", function() {
@@ -444,6 +299,7 @@ document.addEventListener("DOMContentLoaded", function() {
   backBtn = document.getElementById("back-btn");
   workTypeFilter = document.getElementById("work-type-filter");
   countryFilter = document.getElementById("country-filter");
+  cityFilter = document.getElementById("city-filter");
   professionFilter = document.getElementById("profession-filter");
   searchFilter = document.getElementById("search-filter");
   
@@ -457,6 +313,7 @@ document.addEventListener("DOMContentLoaded", function() {
   // Set up filter listeners
   if (workTypeFilter) workTypeFilter.addEventListener("change", filterAndDisplay);
   if (countryFilter) countryFilter.addEventListener("change", filterAndDisplay);
+  if (cityFilter) cityFilter.addEventListener("change", filterAndDisplay);
   if (professionFilter) professionFilter.addEventListener("change", filterAndDisplay);
   if (searchFilter) searchFilter.addEventListener("input", filterAndDisplay);
   
@@ -469,20 +326,46 @@ async function init() {
   if (jobsList) {
     jobsList.innerHTML = '<div class="loading">Loading game development jobs...</div>';
     
+    // Show progress bar
+    const progressBar = document.getElementById('fetch-progress');
+    if (progressBar) {
+      progressBar.classList.remove('hidden');
+    }
+    
+    // read initial page before fetching data
+    readPageFromUrl();
+    
     // Try fetching from Google Sheets first
     const sheetJobs = await fetchFromGoogleSheets();
+    
+    // Hide progress bar
+    if (progressBar) {
+      progressBar.classList.add('hidden');
+    }
     
     if (sheetJobs && sheetJobs.length > 0) {
       allJobs = sheetJobs;
       jobsList.innerHTML = '';
+      updateFilterOptions();
+      filterAndDisplay();
+      // enable arrow navigation after display
+      enableKeyboardNav();
     } else {
-      allJobs = realJobs;
-      jobsList.innerHTML = '';
+      jobsList.innerHTML = '<div class="error">Unable to load job listings at this time. Please try again later.</div>';
     }
-    
-    updateFilterOptions();
-    filterAndDisplay();
   }
+}
+
+// Validate country entry - filter out malformed data
+function isValidCountry(country) {
+  if (!country || typeof country !== 'string') return false;
+  const trimmed = country.trim();
+  if (!trimmed) return false;
+  // Skip entries with commas or double commas (malformed)
+  if (trimmed.includes(',')) return false;
+  // Skip very short entries that are likely errors
+  if (trimmed.length < 2) return false;
+  return true;
 }
 
 // Return full country name for code
@@ -504,14 +387,17 @@ function fullCountryName(code) {
 
 // Build dynamic filter option lists based on jobs
 function updateFilterOptions() {
-  if (!workTypeFilter || !countryFilter || !professionFilter) return;
+  if (!workTypeFilter || !countryFilter || !professionFilter || !cityFilter) return;
 
   const countries = new Set();
   const professions = new Set();
+  const cities = new Set();
 
   allJobs.forEach(job => {
-    if (job.country) countries.add(job.country);
+    // country now contains only country codes/names, not city prefixes
+    if (isValidCountry(job.country)) countries.add(job.country);
     if (job.profession) professions.add(job.profession);
+    if (job.city) cities.add(job.city);
   });
 
   // clear existing except default
@@ -525,6 +411,18 @@ function updateFilterOptions() {
       countryFilter.appendChild(opt);
     });
 
+  // populate city filter
+  cityFilter.innerHTML = '<option value="">All Cities</option>';
+  Array.from(cities)
+    .sort()
+    .forEach(city => {
+      const opt = document.createElement('option');
+      opt.value = city;
+      opt.textContent = city;
+      cityFilter.appendChild(opt);
+    });
+
+
 
   professionFilter.innerHTML = '<option value="">All Roles</option>';
   Array.from(professions)
@@ -532,7 +430,21 @@ function updateFilterOptions() {
     .forEach(p => {
       const opt = document.createElement('option');
       opt.value = p;
-      opt.textContent = capitalizeFirst(p) + (p === 'gameplay' ? ' Programmer' : (p === 'graphics' ? ' Programmer' : (p === 'engine' ? ' Programmer' : (p === 'ai' ? ' Programmer' : (p === 'tools' ? ' Programmer' : (p === 'designer' ? ' Designer' : (p === 'artist' ? ' Artist' : (p === 'animator' ? ' Animator' : ''))))))));
+      
+      // explicit labels avoid duplicate suffixes
+      const labels = {
+        gameplay: 'Gameplay Programmer',
+        graphics: 'Graphics Programmer',
+        engine: 'Engine Programmer',
+        ai: 'AI Programmer',
+        tools: 'Tools Programmer',
+        'technical-artist': 'Technical Artist',
+        designer: 'Game Designer',
+        artist: 'Artist',
+        animator: 'Animator',
+        other: 'Other'
+      };
+      opt.textContent = labels[p] || capitalizeFirst(p);
       professionFilter.appendChild(opt);
     });
 }
@@ -540,22 +452,29 @@ function updateFilterOptions() {
 // Filter and display jobs
 function filterAndDisplay() {
   if (!jobsList) return;
-  
+
+  // whenever the filter changes we start on page 1
+  currentPage = 1;
+  updateUrlPage();
+
   const workType = workTypeFilter ? workTypeFilter.value : "";
   const country = countryFilter ? countryFilter.value : "";
+  const city = cityFilter ? cityFilter.value : "";
   const profession = professionFilter ? professionFilter.value : "";
   const searchTerm = searchFilter ? searchFilter.value.toLowerCase() : "";
 
   const filtered = allJobs.filter(job => {
     const matchesWorkType = !workType || job.workType === workType;
     const matchesCountry = !country || job.country === country;
+    const matchesCity = !city || job.city === city;
     const matchesProfession = !profession || job.profession === profession;
     const matchesSearch =
       !searchTerm ||
       job.title.toLowerCase().includes(searchTerm) ||
-      job.company.toLowerCase().includes(searchTerm);
+      job.company.toLowerCase().includes(searchTerm) ||
+      job.city?.toLowerCase().includes(searchTerm);
 
-    return matchesWorkType && matchesCountry && matchesProfession && matchesSearch;
+    return matchesWorkType && matchesCountry && matchesCity && matchesProfession && matchesSearch;
   });
 
   displayJobs(filtered);
@@ -564,32 +483,46 @@ function filterAndDisplay() {
 // Display jobs as compact rows
 function displayJobs(jobs) {
   if (!jobsList) return;
-  
+
   if (jobs.length === 0) {
     jobsList.innerHTML = '<div class="no-results">No jobs found matching your filters.</div>';
+    document.getElementById('pagination').innerHTML = '';
     return;
   }
 
+  const totalPages = Math.ceil(jobs.length / itemsPerPage);
+  if (currentPage > totalPages) currentPage = totalPages;
+  // we may have clamped page, push back to url
+  updateUrlPage();
+
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const pageJobs = jobs.slice(startIndex, startIndex + itemsPerPage);
+
+  // build table for just the slice
   jobsList.innerHTML = `
     <div class="jobs-table-header">
       <div class="job-row-header">
         <div class="col-title">Position</div>
         <div class="col-company">Company</div>
-        <div class="col-location">Location</div>
+        <div class="col-city">City</div>
+        <div class="col-country">Country</div>
         <div class="col-type">Type</div>
       </div>
     </div>
     <div class="jobs-table-body">
-      ${jobs.map(job => `
-        <div class="job-row">
+      ${pageJobs.map(job => `
+        <div class="job-row" ${job.jobLink ? `onclick="window.open('${escapeHtml(job.jobLink)}', '_blank')" style="cursor: pointer;"` : ''}>
           <div class="col-title">
             <div class="job-title-compact">${escapeHtml(job.title)}</div>
           </div>
           <div class="col-company">
             <span class="job-company-compact">${escapeHtml(job.company)}</span>
           </div>
-          <div class="col-location">
-            <span class="job-location">${escapeHtml(job.country)}</span>
+          <div class="col-city">
+            <span class="job-location">${escapeHtml(job.city || '')}</span>
+          </div>
+          <div class="col-country">
+            <span class="job-location">${escapeHtml(fullCountryName(job.country))}</span>
           </div>
           <div class="col-type">
             <span class="job-tag ${job.workType.toLowerCase()}">${capitalizeFirst(job.workType)}</span>
@@ -598,22 +531,65 @@ function displayJobs(jobs) {
       `).join('')}
     </div>
   `;
+
+  // render pagination buttons
+  const pagContainer = document.getElementById('pagination');
+  if (pagContainer) {
+    let html = '';
+    if (totalPages > 1) {
+      if (currentPage > 1) {
+        html += `<button class="page-btn" data-page="${currentPage - 1}">Prev</button>`;
+      }
+
+      // compute which page numbers to show (with ellipsis when needed)
+      const visible = [];
+      if (totalPages <= 9) {
+        // show all pages
+        for (let p = 1; p <= totalPages; p++) visible.push(p);
+      } else {
+        visible.push(1);
+        let left = currentPage - 2;
+        let right = currentPage + 2;
+        if (left <= 2) {
+          left = 2;
+          right = 5;
+        }
+        if (right >= totalPages - 1) {
+          right = totalPages - 1;
+          left = totalPages - 4;
+        }
+        if (left > 2) visible.push('...');
+        for (let p = left; p <= right; p++) visible.push(p);
+        if (right < totalPages - 1) visible.push('...');
+        visible.push(totalPages);
+      }
+
+      visible.forEach(item => {
+        if (item === '...') {
+          html += `<span class="page-ellipsis">…</span>`;
+        } else {
+          const p = item;
+          html += `<button class="page-btn ${p === currentPage ? 'active' : ''}" data-page="${p}">${p}</button>`;
+        }
+      });
+
+      if (currentPage < totalPages) {
+        html += `<button class="page-btn" data-page="${currentPage + 1}">Next</button>`;
+      }
+    }
+    pagContainer.innerHTML = html;
+
+    // attach listeners
+    pagContainer.querySelectorAll('.page-btn').forEach(btn => {
+      btn.addEventListener('click', function () {
+        const page = parseInt(this.dataset.page, 10);
+        if (!isNaN(page) && page !== currentPage) {
+          currentPage = page;
+          displayJobs(jobs);
+        }
+      });
+    });
+  }
 }
 
-// Utility functions
-function capitalizeFirst(str) {
-  if (!str) return "";
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
 
-function escapeHtml(text) {
-  if (!text) return "";
-  const map = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  };
-  return text.replace(/[&<>"']/g, m => map[m]);
-}
