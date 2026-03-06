@@ -84,7 +84,11 @@
 
     <div class="jobs-toolbar">
       <p id="results-summary" class="results-summary" aria-live="polite"></p>
-      <button id="clear-filters-btn" class="btn clear-filters-btn">Reset Filters</button>
+      <div class="toolbar-actions">
+        <button id="refresh-jobs-btn" class="btn clear-filters-btn">Refresh Jobs</button>
+        <span id="jobs-last-updated" class="jobs-last-updated" aria-live="polite"></span>
+        <button id="clear-filters-btn" class="btn clear-filters-btn">Reset Filters</button>
+      </div>
     </div>
 
     <div id="jobs-list" class="jobs-list">

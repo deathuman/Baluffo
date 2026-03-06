@@ -10,6 +10,17 @@ let importBackupInputEl;
 
 let currentUser = null;
 let unsubscribeSavedJobs = () => {};
+const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
+
+const PHASE_OPTIONS = ["bookmark", "applied", "interview_1", "interview_2", "offer", "rejected"];
+const PHASE_LABELS = {
+  bookmark: "Bookmark",
+  applied: "Applied",
+  interview_1: "Interview 1",
+  interview_2: "Interview 2",
+  offer: "Offer",
+  rejected: "Rejected"
+};
 
 document.addEventListener("DOMContentLoaded", () => {
   cacheDom();
@@ -32,7 +43,8 @@ function cacheDom() {
 function bindEvents() {
   if (jobsPageBtnEl) {
     jobsPageBtnEl.addEventListener("click", () => {
-      window.location.href = "jobs.html";
+      const target = getLastJobsUrl();
+      window.location.href = target;
     });
   }
 
@@ -140,11 +152,10 @@ function renderSavedJobs(jobs) {
         <div class="col-type">Type</div>
         <div class="col-link">Link</div>
         <div class="col-saved-date">Saved</div>
-        <div class="col-remove">Remove</div>
       </div>
     </div>
     <div class="jobs-table-body">
-      ${jobs.map(renderSavedJobRow).join("")}
+      ${jobs.map(renderSavedJobBlock).join("")}
     </div>
   `;
 
@@ -153,9 +164,17 @@ function renderSavedJobs(jobs) {
       await removeSavedJob(btn.dataset.jobKey || "");
     });
   });
+
+  savedJobsListEl.querySelectorAll(".phase-step-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const jobKey = btn.dataset.jobKey || "";
+      const phase = btn.dataset.phase || "";
+      await updatePhase(jobKey, phase);
+    });
+  });
 }
 
-function renderSavedJobRow(job) {
+function renderSavedJobBlock(job) {
   const safeTitle = escapeHtml(job.title || "");
   const safeCompanyType = escapeHtml(job.companyType || "Tech");
   const safeCity = escapeHtml(job.city || "");
@@ -165,28 +184,69 @@ function renderSavedJobRow(job) {
   const safeLink = sanitizeUrl(job.jobLink || "");
   const savedDate = formatDate(job.savedAt);
   const contractClass = toContractClass(job.contractType || "Unknown");
+  const jobKey = escapeHtml(job.jobKey || job.id || "");
+  const normalizedPhase = normalizePhase(job.applicationStatus);
 
   return `
-    <div class="saved-job-row">
-      <div class="col-title job-cell" data-label="Position">${safeTitle}</div>
-      <div class="col-company job-cell" data-label="Company">${safeCompanyType}</div>
-      <div class="col-city job-cell" data-label="City">${safeCity}</div>
-      <div class="col-country job-cell" data-label="Country">${safeCountry}</div>
-      <div class="col-contract job-cell" data-label="Contract">
-        <span class="job-contract ${contractClass}">${safeContract}</span>
+    <div class="saved-job-block" data-job-key="${jobKey}">
+      <div class="saved-job-row">
+        <button class="remove-saved-btn remove-inline-btn" data-job-key="${jobKey}" aria-label="Remove saved job">X</button>
+        <div class="col-title job-cell" data-label="Position">${safeTitle}</div>
+        <div class="col-company job-cell" data-label="Company">${safeCompanyType}</div>
+        <div class="col-city job-cell" data-label="City">${safeCity}</div>
+        <div class="col-country job-cell" data-label="Country">${safeCountry}</div>
+        <div class="col-contract job-cell" data-label="Contract">
+          <span class="job-contract ${contractClass}">${safeContract}</span>
+        </div>
+        <div class="col-type job-cell" data-label="Type">
+          <span class="job-tag ${safeWorkType.toLowerCase()}">${safeWorkType}</span>
+        </div>
+        <div class="col-link job-cell" data-label="Link">
+          ${safeLink ? `<a class="saved-open-link" href="${safeLink}" target="_blank" rel="noopener noreferrer">Open</a>` : '<span class="muted">N/A</span>'}
+        </div>
+        <div class="col-saved-date job-cell" data-label="Saved">${escapeHtml(savedDate)}</div>
       </div>
-      <div class="col-type job-cell" data-label="Type">
-        <span class="job-tag ${safeWorkType.toLowerCase()}">${safeWorkType}</span>
-      </div>
-      <div class="col-link job-cell" data-label="Link">
-        ${safeLink ? `<a class="saved-open-link" href="${safeLink}" target="_blank" rel="noopener noreferrer">Open</a>` : '<span class="muted">N/A</span>'}
-      </div>
-      <div class="col-saved-date job-cell" data-label="Saved">${escapeHtml(savedDate)}</div>
-      <div class="col-remove job-cell" data-label="Remove">
-        <button class="save-job-btn remove-saved-btn" data-job-key="${escapeHtml(job.jobKey || job.id || "")}">Remove</button>
+      <div class="saved-phase-row">
+        <div class="phase-label">Application Phase</div>
+        <div class="phase-value">
+          ${renderPhaseBar(jobKey, normalizedPhase)}
+        </div>
       </div>
     </div>
   `;
+}
+
+function renderPhaseBar(jobKey, activePhase) {
+  const activeIndex = PHASE_OPTIONS.indexOf(activePhase);
+  const segments = PHASE_OPTIONS.map((phase, idx) => {
+    const isActive = idx === activeIndex;
+    const isComplete = idx <= activeIndex;
+    const classes = [
+      "phase-step-btn",
+      isActive ? "active" : "",
+      isComplete ? "complete" : ""
+    ].filter(Boolean).join(" ");
+
+    return `
+      <button
+        class="${classes}"
+        data-job-key="${jobKey}"
+        data-phase="${phase}"
+        ${!currentUser ? "disabled" : ""}
+        aria-label="Set phase to ${escapeHtml(PHASE_LABELS[phase] || phase)}"
+      >
+        <span class="phase-step-text">${escapeHtml(PHASE_LABELS[phase] || phase)}</span>
+      </button>
+    `;
+  }).join("");
+
+  return `<div class="phase-bar" role="group" aria-label="Application phases">${segments}</div>`;
+}
+
+function normalizePhase(phase) {
+  const raw = String(phase || "").toLowerCase().trim();
+  if (raw === "bookmarked") return "bookmark";
+  return PHASE_OPTIONS.includes(raw) ? raw : "bookmark";
 }
 
 async function removeSavedJob(jobKey) {
@@ -201,6 +261,23 @@ async function removeSavedJob(jobKey) {
   } catch (err) {
     console.error("Could not remove saved job:", err);
     showToast("Could not remove job.", "error");
+  }
+}
+
+async function updatePhase(jobKey, phase) {
+  const api = window.JobAppLocalData;
+  if (!currentUser) {
+    showToast("Sign in required.", "error");
+    return;
+  }
+
+  const normalized = normalizePhase(phase);
+  try {
+    await api.updateApplicationStatus(currentUser.uid, jobKey, normalized);
+    showToast(`Phase updated to ${PHASE_LABELS[normalized] || normalized}.`, "success");
+  } catch (err) {
+    console.error("Could not update phase:", err);
+    showToast("Could not update phase.", "error");
   }
 }
 
@@ -222,6 +299,17 @@ function toggleAuthButtons(isSignedIn) {
 function setBackupButtonsEnabled(enabled) {
   if (exportBackupBtnEl) exportBackupBtnEl.disabled = !enabled;
   if (importBackupBtnEl) importBackupBtnEl.disabled = !enabled;
+}
+
+function getLastJobsUrl() {
+  try {
+    const url = sessionStorage.getItem(JOBS_LAST_URL_KEY);
+    if (!url) return "jobs.html";
+    if (!url.startsWith("/") && !url.startsWith("jobs.html")) return "jobs.html";
+    return url;
+  } catch {
+    return "jobs.html";
+  }
 }
 
 async function signInUser() {

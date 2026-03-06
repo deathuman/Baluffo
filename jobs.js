@@ -40,6 +40,8 @@ let sourceStatus;
 let fetchProgress;
 let pagination;
 let clearFiltersBtn;
+let refreshJobsBtn;
+let jobsLastUpdatedEl;
 let authStatus;
 let authSignInBtn;
 let authSignOutBtn;
@@ -47,6 +49,14 @@ let savedJobsBtn;
 
 let currentUser = null;
 let savedJobKeys = new Set();
+
+const JOBS_CACHE_DB = "baluffo_jobs_cache";
+const JOBS_CACHE_STORE = "jobs_feed";
+const JOBS_CACHE_KEY = "latest";
+const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
+const JOBS_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+
+let refreshInFlight = false;
 
 document.addEventListener("DOMContentLoaded", () => {
   cacheDom();
@@ -70,6 +80,8 @@ function cacheDom() {
   fetchProgress = document.getElementById("fetch-progress");
   pagination = document.getElementById("pagination");
   clearFiltersBtn = document.getElementById("clear-filters-btn");
+  refreshJobsBtn = document.getElementById("refresh-jobs-btn");
+  jobsLastUpdatedEl = document.getElementById("jobs-last-updated");
   authStatus = document.getElementById("auth-status");
   authSignInBtn = document.getElementById("auth-sign-in-btn");
   authSignOutBtn = document.getElementById("auth-sign-out-btn");
@@ -85,6 +97,7 @@ function bindEvents() {
 
   if (savedJobsBtn) {
     savedJobsBtn.addEventListener("click", () => {
+      rememberCurrentJobsUrl();
       window.location.href = "saved.html";
     });
   }
@@ -128,6 +141,12 @@ function bindEvents() {
     });
   }
 
+  if (refreshJobsBtn) {
+    refreshJobsBtn.addEventListener("click", async () => {
+      await refreshJobsNow({ manual: true });
+    });
+  }
+
   document.querySelectorAll(".quick-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const quick = btn.dataset.quick;
@@ -157,25 +176,30 @@ async function init() {
 
   initAuth();
 
-  showLoading("Loading game development jobs...");
-  setProgress(true);
-  setSourceStatus("Fetching latest jobs from Google Sheets...");
+  const cached = await readCachedJobs();
+  if (cached?.jobs && cached.jobs.length > 0) {
+    allJobs = cached.jobs;
+    recalculateItemsPerPage();
+    updateFilterOptions();
+    applyStateToFilters();
+    applyFiltersAndRender({ resetPage: false });
 
-  const result = await fetchFromGoogleSheets();
-
-  setProgress(false);
-
-  if (!result.jobs || result.jobs.length === 0) {
-    showError(result.error || "Unable to load job listings right now.");
+    if (isCacheStale(cached.savedAt)) {
+      setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs from cache. Updating stale cache...`);
+      refreshJobsNow({ manual: false }).catch(() => {
+        // Silent background refresh failure; cache remains usable.
+      });
+    } else {
+      setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs from local cache.`);
+    }
+    updateLastUpdatedText(cached.savedAt);
     return;
   }
 
-  allJobs = result.jobs;
-  recalculateItemsPerPage();
-  updateFilterOptions();
-  applyStateToFilters();
-  applyFiltersAndRender({ resetPage: false });
-  setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs.`);
+  const ok = await refreshJobsNow({ manual: false, firstLoad: true });
+  if (!ok) {
+    showError("Unable to load job listings right now.");
+  }
 }
 
 function initAuth() {
@@ -278,6 +302,151 @@ function writeStateToUrl() {
   const query = params.toString();
   const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
   window.history.replaceState({}, "", url);
+  rememberCurrentJobsUrl();
+}
+
+function rememberCurrentJobsUrl() {
+  try {
+    const url = `${window.location.pathname}${window.location.search}`;
+    sessionStorage.setItem(JOBS_LAST_URL_KEY, url);
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+function openJobsCacheDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      resolve(null);
+      return;
+    }
+
+    const request = indexedDB.open(JOBS_CACHE_DB, 1);
+
+    request.onupgradeneeded = event => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(JOBS_CACHE_STORE)) {
+        db.createObjectStore(JOBS_CACHE_STORE, { keyPath: "id" });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Could not open jobs cache database."));
+  });
+}
+
+async function readCachedJobs() {
+  try {
+    const db = await openJobsCacheDb();
+    if (!db) return null;
+
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(JOBS_CACHE_STORE, "readonly");
+      const store = tx.objectStore(JOBS_CACHE_STORE);
+      const request = store.get(JOBS_CACHE_KEY);
+
+      request.onsuccess = () => {
+        const row = request.result;
+        resolve({
+          jobs: Array.isArray(row?.jobs) ? row.jobs : null,
+          savedAt: Number(row?.savedAt) || 0
+        });
+      };
+      request.onerror = () => reject(request.error || new Error("Could not read jobs cache."));
+    });
+  } catch {
+    return null;
+  }
+}
+
+function isCacheStale(savedAt) {
+  if (!savedAt) return true;
+  return (Date.now() - savedAt) > JOBS_CACHE_TTL_MS;
+}
+
+function updateLastUpdatedText(timestamp) {
+  if (!jobsLastUpdatedEl) return;
+  if (!timestamp || !Number.isFinite(Number(timestamp))) {
+    jobsLastUpdatedEl.textContent = "";
+    return;
+  }
+
+  const dt = new Date(Number(timestamp));
+  if (Number.isNaN(dt.getTime())) {
+    jobsLastUpdatedEl.textContent = "";
+    return;
+  }
+
+  const mins = Math.max(0, Math.floor((Date.now() - dt.getTime()) / 60000));
+  const relative = mins < 1 ? "just now" : mins === 1 ? "1 min ago" : `${mins} mins ago`;
+  jobsLastUpdatedEl.textContent = `Last updated: ${relative}`;
+}
+
+async function refreshJobsNow({ manual, firstLoad = false }) {
+  if (refreshInFlight) return false;
+  refreshInFlight = true;
+
+  if (refreshJobsBtn) refreshJobsBtn.disabled = true;
+  if (manual || firstLoad) setProgress(true);
+  if (manual) setSourceStatus("Refreshing jobs from Google Sheets...");
+
+  try {
+    const result = await fetchFromGoogleSheets();
+    if (!result.jobs || result.jobs.length === 0) {
+      if (manual) showToast(result.error || "Could not refresh jobs.", "error");
+      return false;
+    }
+
+    const previousLength = allJobs.length;
+    allJobs = result.jobs;
+    await writeCachedJobs(allJobs);
+    updateLastUpdatedText(Date.now());
+    recalculateItemsPerPage();
+    updateFilterOptions();
+    applyStateToFilters();
+    applyFiltersAndRender({ resetPage: false });
+
+    if (manual) {
+      showToast("Jobs refreshed.", "success");
+    } else if (previousLength > 0) {
+      showToast("Job cache auto-updated.", "info");
+    }
+
+    setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs.`);
+    return true;
+  } catch (err) {
+    console.error("Refresh failed:", err);
+    if (manual) showToast("Could not refresh jobs.", "error");
+    return false;
+  } finally {
+    refreshInFlight = false;
+    if (refreshJobsBtn) refreshJobsBtn.disabled = false;
+    setProgress(false);
+  }
+}
+
+async function writeCachedJobs(jobs) {
+  if (!Array.isArray(jobs) || jobs.length === 0) return;
+
+  try {
+    const db = await openJobsCacheDb();
+    if (!db) return;
+
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(JOBS_CACHE_STORE, "readwrite");
+      const store = tx.objectStore(JOBS_CACHE_STORE);
+      const request = store.put({
+        id: JOBS_CACHE_KEY,
+        savedAt: Date.now(),
+        jobs
+      });
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error || new Error("Could not write jobs cache."));
+    });
+  } catch {
+    // Ignore cache write failures.
+  }
 }
 
 function applyStateToStaticFilters() {
@@ -415,7 +584,6 @@ function displayJobs(jobs) {
         <div class="col-country">Country</div>
         <div class="col-contract">Contract</div>
         <div class="col-type">Type</div>
-        <div class="col-save">Save</div>
       </div>
     </div>
     <div class="jobs-table-body">
@@ -439,6 +607,15 @@ function renderJobRow(job) {
   const isSaved = savedJobKeys.has(jobKey);
 
   const content = `
+    <button
+      class="save-job-btn job-inline-save-btn ${isSaved ? "saved" : ""}"
+      data-job-id="${job.id}"
+      data-job-key="${jobKey}"
+      ${!window.JobAppLocalData?.isReady() ? "disabled" : ""}
+      aria-label="${isSaved ? "Remove saved job" : "Save job"}"
+    >
+      ${isSaved ? "x" : "+"}
+    </button>
     <div class="col-title job-cell" data-label="Position">
       <div class="job-title-wrap">
         <div class="job-title-compact">${safeTitle}</div>
@@ -458,11 +635,6 @@ function renderJobRow(job) {
     </div>
     <div class="col-type job-cell" data-label="Type">
       <span class="job-tag ${job.workType.toLowerCase()}">${capitalizeFirst(job.workType)}</span>
-    </div>
-    <div class="col-save job-cell" data-label="Save">
-      <button class="save-job-btn ${isSaved ? "saved" : ""}" data-job-id="${job.id}" data-job-key="${jobKey}" ${!window.JobAppLocalData?.isReady() ? "disabled" : ""}>
-        ${isSaved ? "Saved" : "Save"}
-      </button>
     </div>
   `;
 

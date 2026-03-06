@@ -206,6 +206,20 @@ h1 {
   margin-bottom: 0.75rem;
 }
 
+.toolbar-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.jobs-last-updated {
+  display: inline-flex;
+  align-items: center;
+  color: #aeb7c9;
+  font-size: 0.82rem;
+  padding: 0 0.2rem;
+}
+
 .saved-actions {
   display: flex;
   gap: 0.5rem;
@@ -284,9 +298,9 @@ h1 {
 
 .job-row-header {
   display: grid;
-  grid-template-columns: 3fr 0.9fr 1.2fr 1.2fr 1fr 1fr 0.9fr;
+  grid-template-columns: 3fr 0.9fr 1.2fr 1.2fr 1fr 1fr;
   gap: 0;
-  padding: 0.8rem 1rem;
+  padding: 0.8rem 1rem 0.8rem 3rem;
   font-weight: 600;
   color: #bb86fc;
   font-size: 0.9rem;
@@ -302,9 +316,9 @@ h1 {
 .job-row,
 .job-row-link {
   display: grid;
-  grid-template-columns: 3fr 0.9fr 1.2fr 1.2fr 1fr 1fr 0.9fr;
+  grid-template-columns: 3fr 0.9fr 1.2fr 1.2fr 1fr 1fr;
   gap: 0;
-  padding: 0.8rem 1rem;
+  padding: 0.8rem 1rem 0.8rem 3rem;
   border-bottom: 1px solid #333;
   align-items: center;
   transition: background-color 0.2s ease;
@@ -334,6 +348,11 @@ h1 {
 .job-row-link:focus-visible {
   outline: 2px solid #bb86fc;
   outline-offset: -2px;
+}
+
+.job-row,
+.job-row-link {
+  position: relative;
 }
 
 .job-cell {
@@ -377,11 +396,6 @@ h1 {
 }
 
 .col-contract {
-  display: flex;
-  justify-content: center;
-}
-
-.col-save {
   display: flex;
   justify-content: center;
 }
@@ -470,6 +484,29 @@ h1 {
 .save-job-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.job-inline-save-btn {
+  position: absolute;
+  left: calc((3rem - 1.55rem) / 2);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 999px;
+  border: 1px solid #48674f;
+  background-color: #243326;
+  color: #9df2ae;
+}
+
+.job-inline-save-btn.saved {
+  border-color: #5a3d3d;
+  background-color: #2f1f1f;
+  color: #f0b4b4;
 }
 
 .no-results,
@@ -611,9 +648,9 @@ h1 {
 .saved-row-header,
 .saved-job-row {
   display: grid;
-  grid-template-columns: 2.3fr 0.8fr 1fr 1fr 1fr 0.9fr 0.7fr 0.9fr 0.8fr;
+  grid-template-columns: 2.4fr 0.8fr 1fr 1fr 1fr 0.9fr 0.7fr 0.9fr;
   gap: 0;
-  padding: 0.8rem 1rem;
+  padding: 0.8rem 1rem 0.8rem 3rem;
   align-items: center;
 }
 
@@ -625,12 +662,111 @@ h1 {
   letter-spacing: 0.5px;
 }
 
-.saved-job-row {
+.saved-job-block {
   border-bottom: 1px solid #333;
+  background-color: #1b1b1b;
 }
 
-.saved-job-row:last-child {
+.saved-job-block:last-child {
   border-bottom: none;
+}
+
+.saved-job-row {
+  position: relative;
+}
+
+.remove-inline-btn {
+  position: absolute;
+  left: calc((3rem - 1.55rem) / 2);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  border: 1px solid #5a3d3d;
+  background-color: #2f1f1f;
+  color: #f0b4b4;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.remove-inline-btn:hover {
+  background-color: #472a2a;
+  border-color: #7d5050;
+}
+
+.saved-phase-row {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.65rem 1rem 0.8rem;
+  background-color: #222;
+  border-top: 1px solid #2f2f2f;
+}
+
+.phase-label {
+  color: #bb86fc;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.phase-value {
+  width: 100%;
+}
+
+.phase-bar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(96px, 1fr));
+  gap: 0.45rem;
+}
+
+.phase-step-btn {
+  margin: 0;
+  border: 1px solid #505050;
+  border-radius: 7px;
+  background-color: #2a2a2a;
+  color: #d5d5d5;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.45rem 0.35rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.phase-step-btn.complete {
+  background-color: #28342b;
+  border-color: #4d6d55;
+  color: #b8efc4;
+}
+
+.phase-step-btn.active {
+  background-color: #3a2f45;
+  border-color: #bb86fc;
+  color: #e6d2ff;
+}
+
+.phase-step-btn:hover {
+  border-color: #bb86fc;
+}
+
+.phase-step-btn:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.phase-step-text {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .saved-open-link {
@@ -696,7 +832,7 @@ h1 {
   .job-row-link {
     grid-template-columns: 1fr;
     gap: 0.45rem;
-    padding: 0.8rem;
+    padding: 0.8rem 0.8rem 0.8rem 2.5rem;
   }
 
   .job-cell {
@@ -738,8 +874,9 @@ h1 {
     justify-content: flex-start;
   }
 
-  .col-save {
-    justify-content: flex-start;
+  .job-inline-save-btn {
+    left: calc((2.5rem - 1.55rem) / 2);
+    top: 50%;
   }
 
   .saved-row-header {
@@ -749,6 +886,25 @@ h1 {
   .saved-job-row {
     grid-template-columns: 1fr;
     gap: 0.45rem;
-    padding: 0.8rem;
+    padding: 0.8rem 0.8rem 0.8rem 2.5rem;
+  }
+
+  .remove-inline-btn {
+    left: calc((2.5rem - 1.55rem) / 2);
+    top: 50%;
+  }
+
+  .saved-phase-row {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+    padding: 0.65rem 0.8rem 0.8rem;
+  }
+
+  .phase-bar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .phase-step-btn {
+    width: 100%;
   }
 }

@@ -5,13 +5,20 @@
   const PROFILE_KEY = "baluffo_profiles";
 
   const APPLICATION_STATUSES = [
-    "bookmarked",
+    "bookmark",
     "applied",
     "interview_1",
     "interview_2",
     "offer",
     "rejected"
   ];
+
+  function normalizeApplicationStatus(status) {
+    const raw = String(status || "").toLowerCase().trim();
+    if (raw === "bookmarked") return "bookmark";
+    if (APPLICATION_STATUSES.includes(raw)) return raw;
+    return "bookmark";
+  }
 
   const listeners = new Set();
   let currentUser = null;
@@ -267,7 +274,7 @@
           workType: job.workType || "Onsite",
           contractType: job.contractType || "Unknown",
           jobLink: sanitizeJobUrl(job.jobLink || ""),
-          applicationStatus: existing?.applicationStatus || "bookmarked",
+          applicationStatus: normalizeApplicationStatus(existing?.applicationStatus),
           notes: existing?.notes || "",
           attachmentsCount: Number.isFinite(existing?.attachmentsCount) ? existing.attachmentsCount : 0,
           savedAt: existing?.savedAt || currentIso,
@@ -317,9 +324,7 @@
   }
 
   async function updateApplicationStatus(uid, jobKey, status) {
-    if (!APPLICATION_STATUSES.includes(status)) {
-      throw new Error(`Unsupported application status: ${status}`);
-    }
+    const nextStatus = normalizeApplicationStatus(status);
     const pk = `${uid}::${jobKey}`;
 
     await withStore("saved_jobs", "readwrite", (store, done, fail) => {
@@ -332,7 +337,7 @@
         }
         const next = {
           ...current,
-          applicationStatus: status,
+          applicationStatus: nextStatus,
           updatedAt: nowIso()
         };
         const putReq = store.put(next);
@@ -416,7 +421,7 @@
             workType: row.workType || "Onsite",
             contractType: row.contractType || "Unknown",
             jobLink: sanitizeJobUrl(row.jobLink || ""),
-            applicationStatus: APPLICATION_STATUSES.includes(row.applicationStatus) ? row.applicationStatus : "bookmarked",
+            applicationStatus: normalizeApplicationStatus(row.applicationStatus),
             notes: row.notes || "",
             attachmentsCount: Math.max(0, Number(row.attachmentsCount) || 0),
             savedAt: row.savedAt || nowIso(),

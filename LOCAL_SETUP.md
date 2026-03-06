@@ -21,7 +21,7 @@ This app runs in local-first mode (no backend required).
 Saved job record fields:
 - `jobKey`, `title`, `company`, `companyType`, `city`, `country`, `workType`, `contractType`, `jobLink`
 - `savedAt`, `updatedAt`
-- `applicationStatus` (default `bookmarked`)
+- `applicationStatus` (default `bookmark`)
 - `notes` (default empty string)
 - `attachmentsCount` (default `0`)
 
