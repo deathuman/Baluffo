@@ -57,7 +57,6 @@ let countrySelectionBadge;
 let sourceStatus;
 let fetchProgress;
 let pagination;
-let clearFiltersBtn;
 let refreshJobsBtn;
 let jobsLastUpdatedEl;
 let authStatus;
@@ -146,7 +145,6 @@ function cacheDom() {
   sourceStatus = document.getElementById("source-status");
   fetchProgress = document.getElementById("fetch-progress");
   pagination = document.getElementById("pagination");
-  clearFiltersBtn = document.getElementById("clear-filters-btn");
   refreshJobsBtn = document.getElementById("refresh-jobs-btn");
   jobsLastUpdatedEl = document.getElementById("jobs-last-updated");
   authStatus = document.getElementById("auth-status");
@@ -254,13 +252,6 @@ function bindEvents() {
       applyFiltersAndRender({ resetPage: false });
     }
   }, 150));
-
-  if (clearFiltersBtn) {
-    clearFiltersBtn.addEventListener("click", () => {
-      resetFilters();
-      applyFiltersAndRender({ resetPage: true });
-    });
-  }
 
   if (refreshJobsBtn) {
     refreshJobsBtn.addEventListener("click", async () => {
