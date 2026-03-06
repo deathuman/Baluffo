@@ -227,6 +227,14 @@ h1 {
   margin: 0 0 0.9rem;
 }
 
+.backup-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #c3c3c3;
+  font-size: 0.86rem;
+}
+
 .results-summary {
   color: #bbb;
   font-size: 0.9rem;
@@ -709,6 +717,219 @@ h1 {
   border-top: 1px solid #2f2f2f;
 }
 
+.saved-details-toggle-row {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.45rem 1rem 0.65rem;
+  background-color: #1f1f1f;
+  border-top: 1px solid #2d2d2d;
+}
+
+.details-toggle-spacer {
+  min-height: 1px;
+}
+
+.details-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: fit-content;
+  margin: 0;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #3d3d3d;
+  border-radius: 6px;
+  background-color: #262626;
+  color: #d9d9d9;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.saved-details-toggle-row > .details-toggle-btn {
+  justify-self: center;
+}
+
+.details-toggle-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.details-has-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #9fd8ab;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.details-has-icon {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background-color: #70c384;
+  box-shadow: 0 0 0 1px rgba(112, 195, 132, 0.3);
+}
+
+.details-attachments-count {
+  color: #b8efc4;
+}
+
+.details-toggle-btn:hover {
+  border-color: #bb86fc;
+  color: #e6d2ff;
+}
+
+.details-toggle-arrow {
+  color: #bb86fc;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.saved-details-section.collapsed {
+  display: none;
+}
+
+.saved-notes-row,
+.saved-attachments-row {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.65rem 1rem 0.85rem;
+  background-color: #202020;
+  border-top: 1px solid #2d2d2d;
+}
+
+.notes-label,
+.attachments-label {
+  color: #bb86fc;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding-top: 0.25rem;
+}
+
+.notes-value,
+.attachments-value {
+  width: 100%;
+}
+
+.job-notes-input {
+  width: 100%;
+  min-height: 88px;
+  border-radius: 6px;
+  border: 1px solid #4f4f4f;
+  background-color: #2b2b2b;
+  color: #f0f0f0;
+  font-size: 0.9rem;
+  padding: 0.55rem 0.65rem;
+  resize: vertical;
+}
+
+.job-notes-input:focus {
+  outline: none;
+  border-color: #bb86fc;
+  box-shadow: 0 0 0 2px rgba(187, 134, 252, 0.2);
+}
+
+.job-notes-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.note-save-state {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: #8dcf9a;
+}
+
+.note-save-state.saving {
+  color: #d5c180;
+}
+
+.note-save-state.error {
+  color: #e59d9d;
+}
+
+.attachments-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.45rem;
+}
+
+.attachments-hint {
+  color: #9fa8b9;
+  font-size: 0.78rem;
+}
+
+.attachments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #383838;
+  border-radius: 6px;
+  background-color: #262626;
+}
+
+.attachment-meta {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.attachment-preview {
+  width: 34px;
+  height: 34px;
+  border-radius: 5px;
+  object-fit: cover;
+  border: 1px solid #3e3e3e;
+  background-color: #1f1f1f;
+  flex: 0 0 auto;
+}
+
+.attachment-name {
+  color: #d9d9d9;
+  font-size: 0.84rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 340px;
+}
+
+.attachment-size {
+  color: #9fa8b9;
+  font-size: 0.76rem;
+}
+
+.attachment-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.attachment-actions .btn {
+  margin: 0;
+  padding: 0.28rem 0.5rem;
+  font-size: 0.75rem;
+}
+
 .phase-label {
   color: #bb86fc;
   text-transform: uppercase;
@@ -898,6 +1119,32 @@ h1 {
     grid-template-columns: 1fr;
     gap: 0.4rem;
     padding: 0.65rem 0.8rem 0.8rem;
+  }
+
+  .saved-details-toggle-row {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+    padding: 0.45rem 0.8rem 0.65rem;
+  }
+
+  .details-toggle-spacer {
+    display: none;
+  }
+
+  .saved-notes-row,
+  .saved-attachments-row {
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
+    padding: 0.65rem 0.8rem 0.85rem;
+  }
+
+  .attachment-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .attachment-name {
+    max-width: 100%;
   }
 
   .phase-bar {

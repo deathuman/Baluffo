@@ -16,6 +16,9 @@ This app runs in local-first mode (no backend required).
 - `Saved Jobs` page includes `Export Backup` and `Import Backup`.
 - Backup file format is JSON and profile-scoped.
 - Import merges jobs by deterministic `jobKey`.
+- Export supports `Include files` toggle:
+  - off: notes + attachment metadata only
+  - on: includes attachment file contents
 
 ## Data contract
 Saved job record fields:

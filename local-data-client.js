@@ -203,6 +203,18 @@
     return copy;
   }
 
+  function stripAttachmentPk(row) {
+    if (!row) return row;
+    const copy = { ...row };
+    delete copy.pk;
+    return copy;
+  }
+
+  function toAttachmentId(fileName) {
+    const base = `${fileName || "file"}|${Date.now()}|${Math.random().toString(36).slice(2)}`;
+    return `att_${hashFNV1a(base)}`;
+  }
+
   function chooseProfile(existingProfiles, input) {
     const trimmed = (input || "").trim();
     if (!trimmed) return null;
@@ -377,21 +389,137 @@
     await notifySavedJobsChanged(uid);
   }
 
-  async function exportProfileData(uid) {
+  async function updateJobNotes(uid, jobKey, notes) {
+    const user = ensureCurrentUser();
+    if (uid !== user.uid) throw new Error("User mismatch.");
+    const pk = `${uid}::${jobKey}`;
+
+    await withStore("saved_jobs", "readwrite", (store, done, fail) => {
+      const getReq = store.get(pk);
+      getReq.onsuccess = () => {
+        const current = getReq.result;
+        if (!current) {
+          fail(new Error("Saved job not found."));
+          return;
+        }
+        const next = {
+          ...current,
+          notes: String(notes || ""),
+          updatedAt: nowIso()
+        };
+        const putReq = store.put(next);
+        putReq.onsuccess = () => done();
+        putReq.onerror = () => fail(putReq.error || new Error("Could not update notes."));
+      };
+      getReq.onerror = () => fail(getReq.error || new Error("Could not load saved job."));
+    });
+
+    await notifySavedJobsChanged(uid);
+  }
+
+  async function listAttachmentsForJob(uid, jobKey) {
+    const user = ensureCurrentUser();
+    if (uid !== user.uid) throw new Error("User mismatch.");
+
+    return withStore("attachments", "readonly", (store, done, fail) => {
+      const index = store.index("by_profile_job");
+      const request = index.getAll(IDBKeyRange.only([uid, jobKey]));
+      request.onsuccess = () => {
+        const rows = (request.result || [])
+          .map(stripAttachmentPk)
+          .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+        done(rows);
+      };
+      request.onerror = () => fail(request.error || new Error("Could not list attachments."));
+    });
+  }
+
+  async function addAttachmentForJob(uid, jobKey, fileMeta, blob) {
+    const user = ensureCurrentUser();
+    if (uid !== user.uid) throw new Error("User mismatch.");
+    const attachmentId = toAttachmentId(fileMeta?.name);
+
+    await withStore("attachments", "readwrite", (store, done, fail) => {
+      const putReq = store.put({
+        id: attachmentId,
+        profileId: uid,
+        jobKey,
+        name: String(fileMeta?.name || "file"),
+        type: String(fileMeta?.type || "application/octet-stream"),
+        size: Number(fileMeta?.size) || 0,
+        createdAt: nowIso(),
+        blob
+      });
+      putReq.onsuccess = () => done();
+      putReq.onerror = () => fail(putReq.error || new Error("Could not save attachment."));
+    });
+
+    const attachments = await listAttachmentsForJob(uid, jobKey);
+    await updateAttachmentMetadata(uid, jobKey, attachments.length);
+    return attachmentId;
+  }
+
+  async function deleteAttachmentForJob(uid, jobKey, attachmentId) {
+    const user = ensureCurrentUser();
+    if (uid !== user.uid) throw new Error("User mismatch.");
+
+    await withStore("attachments", "readwrite", (store, done, fail) => {
+      const getReq = store.get(attachmentId);
+      getReq.onsuccess = () => {
+        const row = getReq.result;
+        if (!row || row.profileId !== uid || row.jobKey !== jobKey) {
+          fail(new Error("Attachment not found."));
+          return;
+        }
+        const delReq = store.delete(attachmentId);
+        delReq.onsuccess = () => done();
+        delReq.onerror = () => fail(delReq.error || new Error("Could not delete attachment."));
+      };
+      getReq.onerror = () => fail(getReq.error || new Error("Could not load attachment."));
+    });
+
+    const attachments = await listAttachmentsForJob(uid, jobKey);
+    await updateAttachmentMetadata(uid, jobKey, attachments.length);
+  }
+
+  async function getAttachmentBlob(uid, jobKey, attachmentId) {
+    const user = ensureCurrentUser();
+    if (uid !== user.uid) throw new Error("User mismatch.");
+
+    return withStore("attachments", "readonly", (store, done, fail) => {
+      const req = store.get(attachmentId);
+      req.onsuccess = () => {
+        const row = req.result;
+        if (!row || row.profileId !== uid || row.jobKey !== jobKey) {
+          fail(new Error("Attachment not found."));
+          return;
+        }
+        done(row.blob || null);
+      };
+      req.onerror = () => fail(req.error || new Error("Could not read attachment."));
+    });
+  }
+
+  async function exportProfileData(uid, options = {}) {
     const user = ensureCurrentUser();
     if (uid !== user.uid) throw new Error("User mismatch.");
 
     const profiles = readProfiles();
     const profile = profiles.find(p => p.id === uid);
     const savedJobs = await listSavedJobs(uid);
+    const includeFiles = Boolean(options.includeFiles);
     const attachments = await listAttachmentMetadata(uid);
+    const serializedAttachments = includeFiles
+      ? await Promise.all(attachments.map(serializeAttachmentWithBlob))
+      : attachments.map(stripAttachmentBlob);
 
     return {
-      version: 1,
+      version: 2,
       exportedAt: nowIso(),
+      includesFiles: includeFiles,
       profile: profile || { id: uid, name: user.displayName || uid, email: user.email || "" },
       savedJobs,
-      attachments
+      attachments: serializedAttachments
     };
   }
 
@@ -403,6 +531,7 @@
     }
 
     const savedJobs = Array.isArray(payload.savedJobs) ? payload.savedJobs : [];
+    const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
 
     await withStore("saved_jobs", "readwrite", (store, done, fail) => {
       try {
@@ -434,7 +563,84 @@
       }
     });
 
+    await withStore("attachments", "readwrite", (store, done, fail) => {
+      try {
+        for (const row of attachments) {
+          if (!row || !row.jobKey) continue;
+          const attachmentId = row.id || toAttachmentId(row.name);
+          const pk = `${uid}::${row.jobKey}::${attachmentId}`;
+          store.put({
+            pk,
+            id: attachmentId,
+            profileId: uid,
+            jobKey: row.jobKey,
+            name: String(row.name || "file"),
+            type: String(row.type || "application/octet-stream"),
+            size: Number(row.size) || 0,
+            createdAt: row.createdAt || nowIso(),
+            blob: deserializeAttachmentBlob(row)
+          });
+        }
+        done();
+      } catch (err) {
+        fail(err);
+      }
+    });
+
+    const attachmentsByJob = new Map();
+    const importedAttachments = await listAttachmentMetadata(uid);
+    importedAttachments.forEach(att => {
+      const count = attachmentsByJob.get(att.jobKey) || 0;
+      attachmentsByJob.set(att.jobKey, count + 1);
+    });
+
+    for (const row of savedJobs) {
+      const jobKey = row.jobKey || generateJobKey(row);
+      const count = attachmentsByJob.get(jobKey) || 0;
+      await updateAttachmentMetadata(uid, jobKey, count);
+    }
+
     await notifySavedJobsChanged(uid);
+  }
+
+  function stripAttachmentBlob(row) {
+    const copy = stripAttachmentPk(row);
+    delete copy.blob;
+    return copy;
+  }
+
+  async function serializeAttachmentWithBlob(row) {
+    const base = stripAttachmentBlob(row);
+    if (!row.blob) return base;
+    const dataUrl = await blobToDataUrl(row.blob);
+    return { ...base, blobDataUrl: dataUrl };
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("Could not serialize blob."));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function deserializeAttachmentBlob(row) {
+    if (!row?.blobDataUrl) return null;
+    return dataUrlToBlob(row.blobDataUrl);
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    const parts = String(dataUrl).split(",");
+    if (parts.length !== 2) return null;
+    const header = parts[0];
+    const body = parts[1];
+    const mimeMatch = header.match(/data:(.*?);base64/);
+    const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+    const bytes = atob(body);
+    const arr = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+    return new Blob([arr], { type: mime });
   }
 
   window.addEventListener("storage", event => {
@@ -461,6 +667,11 @@
     buildAttachmentPath,
     updateApplicationStatus,
     updateAttachmentMetadata,
+    updateJobNotes,
+    listAttachmentsForJob,
+    addAttachmentForJob,
+    deleteAttachmentForJob,
+    getAttachmentBlob,
     exportProfileData,
     importProfileData
   };
