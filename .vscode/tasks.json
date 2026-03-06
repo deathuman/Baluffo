@@ -1,0 +1,33 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Serve static site (8080)",
+      "type": "shell",
+      "command": "py -3 -m http.server 8080",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "custom",
+        "fileLocation": "absolute",
+        "pattern": {
+          "regexp": "."
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Serving HTTP on"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Stop static site",
+      "type": "shell",
+      "command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'python(\\.exe)?' -and $_.CommandLine -match 'http\\.server 8080' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+      "problemMatcher": []
+    }
+  ]
+}
