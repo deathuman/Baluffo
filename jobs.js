@@ -1,300 +1,55 @@
-// Game Dev Jobs listing with fetching from Google Sheets
 let allJobs = [];
+let filteredJobs = [];
 
-// pagination state
-let currentPage = 1;
-const itemsPerPage = 20; // show 20 jobs per page
-
-// read initial page from URL query string if present
-function readPageFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  const p = parseInt(params.get('page'), 10);
-  if (!isNaN(p) && p > 0) {
-    currentPage = p;
+const state = {
+  currentPage: 1,
+  itemsPerPage: 10,
+  filters: {
+    workType: "",
+    country: "",
+    city: "",
+    profession: "",
+    search: "",
+    sort: "relevance"
   }
-}
+};
 
-// update URL without reloading
-function updateUrlPage() {
-  const params = new URLSearchParams(window.location.search);
-  if (currentPage > 1) {
-    params.set('page', currentPage);
-  } else {
-    params.delete('page');
-  }
-  const newUrl = window.location.pathname + '?' + params.toString();
-  window.history.replaceState({}, '', newUrl);
-}
+const PROFESSION_LABELS = {
+  gameplay: "Gameplay Programmer",
+  graphics: "Graphics Programmer",
+  engine: "Engine Programmer",
+  ai: "AI Programmer",
+  tools: "Tools Programmer",
+  "technical-artist": "Technical Artist",
+  designer: "Game Designer",
+  artist: "Artist",
+  animator: "Animator",
+  other: "Other"
+};
 
-// attach keyboard navigation once DOM is ready
-function enableKeyboardNav() {
-  document.addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.isContentEditable) {
-      // ignore when typing in filters
-      return;
-    }
-    if (e.key === 'ArrowLeft' && currentPage > 1) {
-      currentPage--;
-      updateUrlPage();
-      filterAndDisplay();
-    }
-    if (e.key === 'ArrowRight') {
-      // we'll compute if there is a next page inside displayJobs itself
-      // by simply incrementing and re-displaying
-      currentPage++;
-      updateUrlPage();
-      filterAndDisplay();
-    }
-  });
-}
+let jobsList;
+let backBtn;
+let workTypeFilter;
+let countryFilter;
+let cityFilter;
+let professionFilter;
+let searchFilter;
+let sortFilter;
+let resultsSummary;
+let sourceStatus;
+let fetchProgress;
+let pagination;
+let clearFiltersBtn;
 
-// Fetch jobs from Google Sheets CSV export - optimized for large datasets
-async function fetchFromGoogleSheets() {
-  try {
-    const sheetId = "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE";
-    const gid = "1560329579";
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
-    
-    let csv = null;
-    
-    // Approach 1: Try direct CSV export (most reliable for Google Sheets)
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
-      
-      const response = await fetch(csvUrl, {
-        signal: controller.signal,
-        mode: 'cors',
-        credentials: 'omit'
-      });
-      clearTimeout(timeoutId);
-      
-      if (response.ok) {
-        csv = await response.text();
-      }
-    } catch (err) {
-      // Direct fetch failed, try proxy
-    }
-    
-    // Approach 2: Try alternative CORS proxy if direct failed
-    if (!csv) {
-      try {
-        const corsUrl = `https://cors-anywhere.herokuapp.com/${csvUrl}`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000);
-        
-        const response = await fetch(corsUrl, {
-          signal: controller.signal,
-          credentials: 'omit'
-        });
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-          csv = await response.text();
-        }
-      } catch (err) {
-        // CORS proxy also failed
-      }
-    }
-    
-    if (!csv || csv.length < 100) {
-      return null;
-    }
-    
-    const jobs = parseCSVLarge(csv);
-    return jobs.length > 0 ? jobs : null;
-  } catch (error) {
-    console.error("Error fetching Google Sheets:", error.message);
-    return null;
-  }
-}
+document.addEventListener("DOMContentLoaded", () => {
+  cacheDom();
+  bindEvents();
+  readStateFromUrl();
+  applyStateToStaticFilters();
+  init().catch(err => console.error("Error initializing jobs:", err));
+});
 
-// Parse CSV with optimization for large datasets and metadata handling
-function parseCSVLarge(csv) {
-  try {
-    const startTime = performance.now();
-    
-    // Split by newline
-    const lines = csv.split('\n');
-    
-    // Find the actual header row
-    let headerLineIdx = 0;
-    for (let i = 0; i < Math.min(30, lines.length); i++) {
-      const line = lines[i].toLowerCase();
-      if ((line.includes('title') || line.includes('job category')) && 
-          (line.includes('city') || line.includes('company name'))) {
-        headerLineIdx = i;
-        break;
-      }
-    }
-    
-    if (headerLineIdx >= lines.length - 1) {
-      return [];
-    }
-    
-    // Parse header
-    const headerLine = lines[headerLineIdx];
-    const headers = parseCSVLine(headerLine).map(h => h.toLowerCase().trim());
-    
-    // Find column indices
-    const companyIdx = findColumnIndex(headers, ['company name']);
-    const titleIdx = findColumnIndex(headers, ['title']);
-    const cityIdx = findColumnIndex(headers, ['city']);
-    const countryIdx = findColumnIndex(headers, ['country']);
-    const locationTypeIdx = findColumnIndex(headers, ['location type']);
-    const jobLinkIdx = findColumnIndex(headers, ['job link']);
-    
-    if (titleIdx === -1 || companyIdx === -1) {
-      return [];
-    }
-    
-    // Parse data rows
-    const jobs = [];
-    const startRow = headerLineIdx + 1;
-    const totalLines = lines.length;
-    
-    for (let i = startRow; i < totalLines; i++) {
-      try {
-        const line = lines[i].trim();
-        if (line.length === 0) continue;
-        
-        const fields = parseCSVLine(lines[i]);
-        
-        const title = fields[titleIdx]?.trim() || "";
-        const company = fields[companyIdx]?.trim() || "";
-        const city = fields[cityIdx]?.trim() || "";
-        const country = fields[countryIdx]?.trim() || "Unknown";
-        const locationType = fields[locationTypeIdx]?.trim() || "On-site";
-        const jobLink = jobLinkIdx !== -1 ? fields[jobLinkIdx]?.trim() : "";
-        
-        if (!title || !company) continue;
-        
-        // Work type: map location type to our format
-        let workType = "Onsite";
-        if (locationType.toLowerCase().includes('remote')) workType = "Remote";
-        else if (locationType.toLowerCase().includes('hybrid')) workType = "Hybrid";
-        
-        // Store country separately and keep city for additional information
-        jobs.push({
-          id: 1000 + i,
-          title: escapeHtml(title),
-          company: escapeHtml(company),
-          city: city,             // raw city text
-          country: country,       // raw country text only
-          workType: workType,
-          profession: mapProfession(title),
-          description: `${title} at ${company}`,
-          jobLink: jobLink        // job listing URL
-        });
-        
-        // Log progress every 10000 rows
-        if (jobs.length % 10000 === 0) {
-          console.log(`Loaded ${jobs.length} jobs...`);
-        }
-      } catch (err) {
-        // Skip malformed rows silently
-      }
-    }
-    
-    const endTime = performance.now();
-    console.log(`Successfully loaded ${jobs.length} jobs in ${((endTime - startTime) / 1000).toFixed(2)}s`);
-    
-    return jobs;
-  } catch (err) {
-    console.error("Error parsing CSV:", err.message);
-    return [];
-  }
-}
-
-// Helper: Parse a single CSV line handling quotes and escaped commas
-function parseCSVLine(line) {
-  const result = [];
-  let current = '';
-  let insideQuotes = false;
-  
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    
-    if (char === '"') {
-      insideQuotes = !insideQuotes;
-    } else if (char === ',' && !insideQuotes) {
-      result.push(current.trim().replace(/^"|"$/g, ''));
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  
-  result.push(current.trim().replace(/^"|"$/g, ''));
-  return result;
-}
-
-// Helper: Find column index by matching multiple possible names
-function findColumnIndex(headers, possibleNames) {
-  for (let i = 0; i < headers.length; i++) {
-    for (const name of possibleNames) {
-      if (headers[i].includes(name)) {
-        return i;
-      }
-    }
-  }
-  return -1;
-}
-
-// Detect work type from text
-function detectWorkType(text) {
-  if (!text) return "Onsite";
-  const lower = text.toLowerCase();
-  if (lower.includes("remote")) return "Remote";
-  if (lower.includes("hybrid") || lower.includes("mixed")) return "Hybrid";
-  return "Onsite";
-}
-
-// Map job title to profession category
-function mapProfession(title) {
-  const lower = title.toLowerCase();
-  
-  // unique technical artist category
-  if (lower.includes('technical artist')) return 'technical-artist';
-  
-  // other mappings
-  if (lower.includes('gameplay') || lower.includes('game mechanics')) return 'gameplay';
-  if (lower.includes('graphics') || lower.includes('rendering') || lower.includes('shader')) return 'graphics';
-  if (lower.includes('engine') || lower.includes('architecture') || lower.includes('systems')) return 'engine';
-  if (lower.includes('ai') || lower.includes('artificial intelligence') || lower.includes('behavior')) return 'ai';
-  if (lower.includes('animator') || lower.includes('motion')) return 'animator';
-  // technical alone should map to tools
-  if (lower.includes('tool') || lower.includes('pipeline') || lower.includes('editor') || (lower.includes('technical') && !lower.includes('artist'))) return 'tools';
-  if (lower.includes('designer') || lower.includes('level') || lower.includes('game design')) return 'designer';
-  if (lower.includes('artist') || lower.includes('animation') || lower.includes('visual')) return 'artist';
-  
-  return 'other';
-}
-
-// Escape HTML to prevent XSS
-function escapeHtml(text) {
-  if (!text) return "";
-  const map = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  };
-  return text.replace(/[&<>"']/g, m => map[m]);
-}
-
-// Capitalize first letter
-function capitalizeFirst(str) {
-  if (!str) return "";
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-// DOM Elements
-let jobsList, backBtn, workTypeFilter, countryFilter, cityFilter, professionFilter, searchFilter;
-
-// Wait for DOM to load, then initialize
-document.addEventListener("DOMContentLoaded", function() {
+function cacheDom() {
   jobsList = document.getElementById("jobs-list");
   backBtn = document.getElementById("back-btn");
   workTypeFilter = document.getElementById("work-type-filter");
@@ -302,203 +57,248 @@ document.addEventListener("DOMContentLoaded", function() {
   cityFilter = document.getElementById("city-filter");
   professionFilter = document.getElementById("profession-filter");
   searchFilter = document.getElementById("search-filter");
-  
-  // Set up back button
+  sortFilter = document.getElementById("sort-filter");
+  resultsSummary = document.getElementById("results-summary");
+  sourceStatus = document.getElementById("source-status");
+  fetchProgress = document.getElementById("fetch-progress");
+  pagination = document.getElementById("pagination");
+  clearFiltersBtn = document.getElementById("clear-filters-btn");
+}
+
+function bindEvents() {
   if (backBtn) {
-    backBtn.addEventListener("click", function() {
+    backBtn.addEventListener("click", () => {
       window.location.href = "index.html";
     });
   }
-  
-  // Set up filter listeners
-  if (workTypeFilter) workTypeFilter.addEventListener("change", filterAndDisplay);
-  if (countryFilter) countryFilter.addEventListener("change", filterAndDisplay);
-  if (cityFilter) cityFilter.addEventListener("change", filterAndDisplay);
-  if (professionFilter) professionFilter.addEventListener("change", filterAndDisplay);
-  if (searchFilter) searchFilter.addEventListener("input", filterAndDisplay);
-  
-  // Load jobs (async)
-  init().catch(err => console.error("Error initializing jobs:", err));
-});
 
-// Initialize
+  if (workTypeFilter) workTypeFilter.addEventListener("change", () => onFilterChange());
+  if (countryFilter) countryFilter.addEventListener("change", () => onFilterChange());
+  if (cityFilter) cityFilter.addEventListener("change", () => onFilterChange());
+  if (professionFilter) professionFilter.addEventListener("change", () => onFilterChange());
+  if (sortFilter) sortFilter.addEventListener("change", () => onFilterChange());
+
+  if (searchFilter) {
+    searchFilter.addEventListener("input", debounce(() => {
+      onFilterChange();
+    }, 180));
+  }
+
+  window.addEventListener("resize", debounce(() => {
+    if (!allJobs.length) return;
+    const changed = recalculateItemsPerPage();
+    if (changed) {
+      applyFiltersAndRender({ resetPage: false });
+    }
+  }, 150));
+
+  if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener("click", () => {
+      resetFilters();
+      applyFiltersAndRender({ resetPage: true });
+    });
+  }
+
+  document.querySelectorAll(".quick-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const quick = btn.dataset.quick;
+      if (quick === "remote") {
+        state.filters.workType = "Remote";
+      } else if (quick === "technical-artist") {
+        state.filters.profession = "technical-artist";
+      } else {
+        resetFilters();
+      }
+      applyStateToFilters();
+      applyFiltersAndRender({ resetPage: true });
+    });
+  });
+
+  enableKeyboardNav();
+}
+
 async function init() {
-  if (jobsList) {
-    jobsList.innerHTML = '<div class="loading">Loading game development jobs...</div>';
-    
-    // Show progress bar
-    const progressBar = document.getElementById('fetch-progress');
-    if (progressBar) {
-      progressBar.classList.remove('hidden');
-    }
-    
-    // read initial page before fetching data
-    readPageFromUrl();
-    
-    // Try fetching from Google Sheets first
-    const sheetJobs = await fetchFromGoogleSheets();
-    
-    // Hide progress bar
-    if (progressBar) {
-      progressBar.classList.add('hidden');
-    }
-    
-    if (sheetJobs && sheetJobs.length > 0) {
-      allJobs = sheetJobs;
-      jobsList.innerHTML = '';
-      updateFilterOptions();
-      filterAndDisplay();
-      // enable arrow navigation after display
-      enableKeyboardNav();
-    } else {
-      jobsList.innerHTML = '<div class="error">Unable to load job listings at this time. Please try again later.</div>';
-    }
+  if (!jobsList) return;
+
+  showLoading("Loading game development jobs...");
+  setProgress(true);
+  setSourceStatus("Fetching latest jobs from Google Sheets...");
+
+  const result = await fetchFromGoogleSheets();
+
+  setProgress(false);
+
+  if (!result.jobs || result.jobs.length === 0) {
+    showError(result.error || "Unable to load job listings right now.");
+    return;
+  }
+
+  allJobs = result.jobs;
+  recalculateItemsPerPage();
+  updateFilterOptions();
+  applyStateToFilters();
+  applyFiltersAndRender({ resetPage: false });
+  setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs.`);
+}
+
+function readStateFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+
+  const page = parseInt(params.get("page"), 10);
+  if (!isNaN(page) && page > 0) {
+    state.currentPage = page;
+  }
+
+  state.filters.workType = params.get("workType") || "";
+  state.filters.country = params.get("country") || "";
+  state.filters.city = params.get("city") || "";
+  state.filters.profession = params.get("profession") || "";
+  state.filters.search = params.get("search") || "";
+  state.filters.sort = params.get("sort") || "relevance";
+}
+
+function writeStateToUrl() {
+  const params = new URLSearchParams();
+
+  if (state.currentPage > 1) params.set("page", String(state.currentPage));
+  if (state.filters.workType) params.set("workType", state.filters.workType);
+  if (state.filters.country) params.set("country", state.filters.country);
+  if (state.filters.city) params.set("city", state.filters.city);
+  if (state.filters.profession) params.set("profession", state.filters.profession);
+  if (state.filters.search) params.set("search", state.filters.search);
+  if (state.filters.sort && state.filters.sort !== "relevance") params.set("sort", state.filters.sort);
+
+  const query = params.toString();
+  const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+  window.history.replaceState({}, "", url);
+}
+
+function applyStateToStaticFilters() {
+  if (workTypeFilter) workTypeFilter.value = state.filters.workType;
+  if (searchFilter) searchFilter.value = state.filters.search;
+  if (sortFilter) sortFilter.value = state.filters.sort;
+}
+
+function applyStateToFilters() {
+  applyStateToStaticFilters();
+
+  if (countryFilter && optionExists(countryFilter, state.filters.country)) {
+    countryFilter.value = state.filters.country;
+  } else {
+    state.filters.country = "";
+  }
+
+  if (cityFilter && optionExists(cityFilter, state.filters.city)) {
+    cityFilter.value = state.filters.city;
+  } else {
+    state.filters.city = "";
+  }
+
+  if (professionFilter && optionExists(professionFilter, state.filters.profession)) {
+    professionFilter.value = state.filters.profession;
+  } else if (state.filters.profession && state.filters.profession !== "") {
+    state.filters.profession = "";
   }
 }
 
-// Validate country entry - filter out malformed data
-function isValidCountry(country) {
-  if (!country || typeof country !== 'string') return false;
-  const trimmed = country.trim();
-  if (!trimmed) return false;
-  // Skip entries with commas or double commas (malformed)
-  if (trimmed.includes(',')) return false;
-  // Skip very short entries that are likely errors
-  if (trimmed.length < 2) return false;
-  return true;
+function optionExists(select, value) {
+  if (!value) return true;
+  return Array.from(select.options).some(option => option.value === value);
 }
 
-// Return full country name for code
-function fullCountryName(code) {
-  const map = {
-    US: "United States",
-    CA: "Canada",
-    GB: "United Kingdom",
-    DE: "Germany",
-    FI: "Finland",
-    JP: "Japan",
-    AU: "Australia",
-    SG: "Singapore",
-    FR: "France",
-    Remote: "Remote"
+function onFilterChange() {
+  syncStateFromFilters();
+  applyFiltersAndRender({ resetPage: true });
+}
+
+function syncStateFromFilters() {
+  state.filters.workType = workTypeFilter ? workTypeFilter.value : "";
+  state.filters.country = countryFilter ? countryFilter.value : "";
+  state.filters.city = cityFilter ? cityFilter.value : "";
+  state.filters.profession = professionFilter ? professionFilter.value : "";
+  state.filters.search = searchFilter ? searchFilter.value.trim() : "";
+  state.filters.sort = sortFilter ? sortFilter.value : "relevance";
+}
+
+function resetFilters() {
+  state.filters = {
+    workType: "",
+    country: "",
+    city: "",
+    profession: "",
+    search: "",
+    sort: "relevance"
   };
-  return map[code] || code;
+  applyStateToFilters();
 }
 
-// Build dynamic filter option lists based on jobs
-function updateFilterOptions() {
-  if (!workTypeFilter || !countryFilter || !professionFilter || !cityFilter) return;
+function applyFiltersAndRender({ resetPage }) {
+  if (resetPage) {
+    state.currentPage = 1;
+  }
 
-  const countries = new Set();
-  const professions = new Set();
-  const cities = new Set();
+  syncStateFromFilters();
 
-  allJobs.forEach(job => {
-    // country now contains only country codes/names, not city prefixes
-    if (isValidCountry(job.country)) countries.add(job.country);
-    if (job.profession) professions.add(job.profession);
-    if (job.city) cities.add(job.city);
-  });
+  const searchTerm = state.filters.search.toLowerCase();
 
-  // clear existing except default
-  countryFilter.innerHTML = '<option value="">All Countries</option>';
-  Array.from(countries)
-    .sort()
-    .forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c;
-      opt.textContent = fullCountryName(c);
-      countryFilter.appendChild(opt);
-    });
-
-  // populate city filter
-  cityFilter.innerHTML = '<option value="">All Cities</option>';
-  Array.from(cities)
-    .sort()
-    .forEach(city => {
-      const opt = document.createElement('option');
-      opt.value = city;
-      opt.textContent = city;
-      cityFilter.appendChild(opt);
-    });
-
-
-
-  professionFilter.innerHTML = '<option value="">All Roles</option>';
-  Array.from(professions)
-    .sort()
-    .forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p;
-      
-      // explicit labels avoid duplicate suffixes
-      const labels = {
-        gameplay: 'Gameplay Programmer',
-        graphics: 'Graphics Programmer',
-        engine: 'Engine Programmer',
-        ai: 'AI Programmer',
-        tools: 'Tools Programmer',
-        'technical-artist': 'Technical Artist',
-        designer: 'Game Designer',
-        artist: 'Artist',
-        animator: 'Animator',
-        other: 'Other'
-      };
-      opt.textContent = labels[p] || capitalizeFirst(p);
-      professionFilter.appendChild(opt);
-    });
-}
-
-// Filter and display jobs
-function filterAndDisplay() {
-  if (!jobsList) return;
-
-  // whenever the filter changes we start on page 1
-  currentPage = 1;
-  updateUrlPage();
-
-  const workType = workTypeFilter ? workTypeFilter.value : "";
-  const country = countryFilter ? countryFilter.value : "";
-  const city = cityFilter ? cityFilter.value : "";
-  const profession = professionFilter ? professionFilter.value : "";
-  const searchTerm = searchFilter ? searchFilter.value.toLowerCase() : "";
-
-  const filtered = allJobs.filter(job => {
-    const matchesWorkType = !workType || job.workType === workType;
-    const matchesCountry = !country || job.country === country;
-    const matchesCity = !city || job.city === city;
-    const matchesProfession = !profession || job.profession === profession;
+  filteredJobs = allJobs.filter(job => {
+    const matchesWorkType = !state.filters.workType || job.workType === state.filters.workType;
+    const matchesCountry = !state.filters.country || job.country === state.filters.country;
+    const matchesCity = !state.filters.city || job.city === state.filters.city;
+    const matchesProfession = !state.filters.profession || job.profession === state.filters.profession;
     const matchesSearch =
       !searchTerm ||
       job.title.toLowerCase().includes(searchTerm) ||
       job.company.toLowerCase().includes(searchTerm) ||
-      job.city?.toLowerCase().includes(searchTerm);
+      (job.city || "").toLowerCase().includes(searchTerm);
 
     return matchesWorkType && matchesCountry && matchesCity && matchesProfession && matchesSearch;
   });
 
-  displayJobs(filtered);
+  sortJobs(filteredJobs, state.filters.sort);
+  displayJobs(filteredJobs);
+  writeStateToUrl();
 }
 
-// Display jobs as compact rows
+function sortJobs(jobs, sortMode) {
+  if (sortMode === "title-asc") {
+    jobs.sort((a, b) => a.title.localeCompare(b.title));
+    return;
+  }
+  if (sortMode === "company-asc") {
+    jobs.sort((a, b) => a.company.localeCompare(b.company));
+    return;
+  }
+  if (sortMode === "country-asc") {
+    jobs.sort((a, b) => fullCountryName(a.country).localeCompare(fullCountryName(b.country)));
+    return;
+  }
+  if (sortMode === "remote-first") {
+    const order = { Remote: 0, Hybrid: 1, Onsite: 2 };
+    jobs.sort((a, b) => {
+      const diff = (order[a.workType] ?? 99) - (order[b.workType] ?? 99);
+      if (diff !== 0) return diff;
+      return a.title.localeCompare(b.title);
+    });
+  }
+}
+
 function displayJobs(jobs) {
-  if (!jobsList) return;
+  if (!jobsList || !pagination) return;
 
   if (jobs.length === 0) {
     jobsList.innerHTML = '<div class="no-results">No jobs found matching your filters.</div>';
-    document.getElementById('pagination').innerHTML = '';
+    pagination.innerHTML = "";
+    updateResultsSummary(0, 0, 0);
     return;
   }
 
-  const totalPages = Math.ceil(jobs.length / itemsPerPage);
-  if (currentPage > totalPages) currentPage = totalPages;
-  // we may have clamped page, push back to url
-  updateUrlPage();
+  const totalPages = Math.ceil(jobs.length / state.itemsPerPage);
+  if (state.currentPage > totalPages) state.currentPage = totalPages;
 
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const pageJobs = jobs.slice(startIndex, startIndex + itemsPerPage);
+  const startIndex = (state.currentPage - 1) * state.itemsPerPage;
+  const pageJobs = jobs.slice(startIndex, startIndex + state.itemsPerPage);
 
-  // build table for just the slice
   jobsList.innerHTML = `
     <div class="jobs-table-header">
       <div class="job-row-header">
@@ -510,86 +310,513 @@ function displayJobs(jobs) {
       </div>
     </div>
     <div class="jobs-table-body">
-      ${pageJobs.map(job => `
-        <div class="job-row" ${job.jobLink ? `onclick="window.open('${escapeHtml(job.jobLink)}', '_blank')" style="cursor: pointer;"` : ''}>
-          <div class="col-title">
-            <div class="job-title-compact">${escapeHtml(job.title)}</div>
-          </div>
-          <div class="col-company">
-            <span class="job-company-compact">${escapeHtml(job.company)}</span>
-          </div>
-          <div class="col-city">
-            <span class="job-location">${escapeHtml(job.city || '')}</span>
-          </div>
-          <div class="col-country">
-            <span class="job-location">${escapeHtml(fullCountryName(job.country))}</span>
-          </div>
-          <div class="col-type">
-            <span class="job-tag ${job.workType.toLowerCase()}">${capitalizeFirst(job.workType)}</span>
-          </div>
-        </div>
-      `).join('')}
+      ${pageJobs.map(renderJobRow).join("")}
     </div>
   `;
 
-  // render pagination buttons
-  const pagContainer = document.getElementById('pagination');
-  if (pagContainer) {
-    let html = '';
-    if (totalPages > 1) {
-      if (currentPage > 1) {
-        html += `<button class="page-btn" data-page="${currentPage - 1}">Prev</button>`;
-      }
+  renderPagination(totalPages);
+  updateResultsSummary(jobs.length, startIndex + 1, startIndex + pageJobs.length);
+}
 
-      // compute which page numbers to show (with ellipsis when needed)
-      const visible = [];
-      if (totalPages <= 9) {
-        // show all pages
-        for (let p = 1; p <= totalPages; p++) visible.push(p);
-      } else {
-        visible.push(1);
-        let left = currentPage - 2;
-        let right = currentPage + 2;
-        if (left <= 2) {
-          left = 2;
-          right = 5;
-        }
-        if (right >= totalPages - 1) {
-          right = totalPages - 1;
-          left = totalPages - 4;
-        }
-        if (left > 2) visible.push('...');
-        for (let p = left; p <= right; p++) visible.push(p);
-        if (right < totalPages - 1) visible.push('...');
-        visible.push(totalPages);
-      }
+function renderJobRow(job) {
+  const safeTitle = escapeHtml(job.title);
+  const safeCompany = escapeHtml(job.company);
+  const safeCity = escapeHtml(job.city || "");
+  const safeCountry = escapeHtml(fullCountryName(job.country));
+  const safeJobLink = sanitizeUrl(job.jobLink);
 
-      visible.forEach(item => {
-        if (item === '...') {
-          html += `<span class="page-ellipsis">…</span>`;
-        } else {
-          const p = item;
-          html += `<button class="page-btn ${p === currentPage ? 'active' : ''}" data-page="${p}">${p}</button>`;
-        }
-      });
+  const content = `
+    <div class="col-title job-cell" data-label="Position">
+      <div class="job-title-wrap">
+        <div class="job-title-compact">${safeTitle}</div>
+      </div>
+    </div>
+    <div class="col-company job-cell" data-label="Company">
+      <span class="job-company-compact">${safeCompany}</span>
+    </div>
+    <div class="col-city job-cell" data-label="City">
+      <span class="job-location">${safeCity}</span>
+    </div>
+    <div class="col-country job-cell" data-label="Country">
+      <span class="job-location">${safeCountry}</span>
+    </div>
+    <div class="col-type job-cell" data-label="Type">
+      <span class="job-tag ${job.workType.toLowerCase()}">${capitalizeFirst(job.workType)}</span>
+    </div>
+  `;
 
-      if (currentPage < totalPages) {
-        html += `<button class="page-btn" data-page="${currentPage + 1}">Next</button>`;
-      }
-    }
-    pagContainer.innerHTML = html;
-
-    // attach listeners
-    pagContainer.querySelectorAll('.page-btn').forEach(btn => {
-      btn.addEventListener('click', function () {
-        const page = parseInt(this.dataset.page, 10);
-        if (!isNaN(page) && page !== currentPage) {
-          currentPage = page;
-          displayJobs(jobs);
-        }
-      });
-    });
+  if (safeJobLink) {
+    return `
+      <a class="job-row job-row-link" href="${safeJobLink}" target="_blank" rel="noopener noreferrer" aria-label="Open ${safeTitle} at ${safeCompany}">
+        ${content}
+      </a>
+    `;
   }
+
+  return `<div class="job-row">${content}</div>`;
+}
+
+function renderPagination(totalPages) {
+  let html = "";
+
+  if (totalPages > 1) {
+    if (state.currentPage > 1) {
+      html += `<button class="page-btn" data-page="${state.currentPage - 1}" aria-label="Previous page">Prev</button>`;
+    }
+
+    const visiblePages = getVisiblePages(totalPages, state.currentPage);
+    visiblePages.forEach(item => {
+      if (item === "...") {
+        html += '<span class="page-ellipsis">...</span>';
+      } else {
+        html += `<button class="page-btn ${item === state.currentPage ? "active" : ""}" data-page="${item}">${item}</button>`;
+      }
+    });
+
+    if (state.currentPage < totalPages) {
+      html += `<button class="page-btn" data-page="${state.currentPage + 1}" aria-label="Next page">Next</button>`;
+    }
+  }
+
+  pagination.innerHTML = html;
+
+  pagination.querySelectorAll(".page-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const page = parseInt(btn.dataset.page, 10);
+      if (!isNaN(page)) {
+        goToPage(page);
+      }
+    });
+  });
+}
+
+function getVisiblePages(totalPages, currentPage) {
+  if (totalPages <= 9) {
+    return Array.from({ length: totalPages }, (_, idx) => idx + 1);
+  }
+
+  const pages = [1];
+  let left = currentPage - 2;
+  let right = currentPage + 2;
+
+  if (left <= 2) {
+    left = 2;
+    right = 5;
+  }
+
+  if (right >= totalPages - 1) {
+    right = totalPages - 1;
+    left = totalPages - 4;
+  }
+
+  if (left > 2) pages.push("...");
+  for (let p = left; p <= right; p++) pages.push(p);
+  if (right < totalPages - 1) pages.push("...");
+  pages.push(totalPages);
+
+  return pages;
+}
+
+function goToPage(page) {
+  const totalPages = Math.max(1, Math.ceil(filteredJobs.length / state.itemsPerPage));
+  const nextPage = Math.min(Math.max(page, 1), totalPages);
+  if (nextPage === state.currentPage) return;
+
+  state.currentPage = nextPage;
+  displayJobs(filteredJobs);
+  writeStateToUrl();
 }
 
 
+function recalculateItemsPerPage() {
+  if (!jobsList) return false;
+
+  const top = jobsList.getBoundingClientRect().top;
+  const viewportHeight = window.innerHeight;
+  const reservedSpace = 140;
+  const availableHeight = Math.max(260, viewportHeight - top - reservedSpace);
+  const rowHeight = window.innerWidth <= 900 ? 136 : 52;
+  const next = Math.max(4, Math.min(25, Math.floor(availableHeight / rowHeight)));
+
+  if (next !== state.itemsPerPage) {
+    state.itemsPerPage = next;
+    return true;
+  }
+  return false;
+}
+function enableKeyboardNav() {
+  document.addEventListener("keydown", e => {
+    const isField = ["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) || e.target.isContentEditable;
+    if (isField) return;
+
+    if (e.key === "ArrowLeft" && state.currentPage > 1) {
+      goToPage(state.currentPage - 1);
+    } else if (e.key === "ArrowRight") {
+      const totalPages = Math.ceil(filteredJobs.length / state.itemsPerPage);
+      if (state.currentPage < totalPages) {
+        goToPage(state.currentPage + 1);
+      }
+    }
+  });
+}
+
+function updateResultsSummary(total, from, to) {
+  if (!resultsSummary) return;
+  if (total === 0) {
+    resultsSummary.textContent = "0 jobs";
+    return;
+  }
+  const pageText = `Showing ${from}-${to} of ${total.toLocaleString()} jobs`;
+  const active = [];
+  if (state.filters.workType) active.push(state.filters.workType);
+  if (state.filters.country) active.push(fullCountryName(state.filters.country));
+  if (state.filters.city) active.push(state.filters.city);
+  if (state.filters.profession) active.push(PROFESSION_LABELS[state.filters.profession] || state.filters.profession);
+  if (state.filters.search) active.push(`"${state.filters.search}"`);
+
+  resultsSummary.textContent = active.length > 0 ? `${pageText} | Filters: ${active.join(", ")}` : pageText;
+}
+
+function updateFilterOptions() {
+  if (!workTypeFilter || !countryFilter || !professionFilter || !cityFilter) return;
+
+  const countries = new Set();
+  const professions = new Set();
+  const cities = new Set();
+
+  allJobs.forEach(job => {
+    if (isValidCountry(job.country)) countries.add(job.country);
+    if (job.profession) professions.add(job.profession);
+    if (job.city) cities.add(job.city);
+  });
+
+  countryFilter.innerHTML = '<option value="">All Countries</option>';
+  Array.from(countries).sort().forEach(country => {
+    const opt = document.createElement("option");
+    opt.value = country;
+    opt.textContent = fullCountryName(country);
+    countryFilter.appendChild(opt);
+  });
+
+  cityFilter.innerHTML = '<option value="">All Cities</option>';
+  Array.from(cities).sort().forEach(city => {
+    const opt = document.createElement("option");
+    opt.value = city;
+    opt.textContent = city;
+    cityFilter.appendChild(opt);
+  });
+
+  professionFilter.innerHTML = '<option value="">All Roles</option>';
+  Array.from(professions).sort().forEach(profession => {
+    const opt = document.createElement("option");
+    opt.value = profession;
+    opt.textContent = PROFESSION_LABELS[profession] || capitalizeFirst(profession);
+    professionFilter.appendChild(opt);
+  });
+}
+
+async function fetchFromGoogleSheets() {
+  const sheetId = "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE";
+  const gid = "1560329579";
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+
+  const sources = [
+    { name: "Google Sheets", url: csvUrl },
+    { name: "AllOrigins mirror", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(csvUrl)}` }
+  ];
+
+  for (const source of sources) {
+    try {
+      setSourceStatus(`Fetching from ${source.name}...`);
+      const response = await fetchWithTimeout(source.url, 20000);
+      if (!response.ok) continue;
+
+      const csv = await response.text();
+      if (!csv || csv.length < 100) continue;
+
+      const jobs = parseCSVLarge(csv);
+      if (jobs.length > 0) {
+        return { jobs, error: "" };
+      }
+    } catch (_) {
+      // Try next source.
+    }
+  }
+
+  return {
+    jobs: null,
+    error: "Could not fetch listings from the source feed. Check your connection and retry."
+  };
+}
+
+async function fetchWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      signal: controller.signal,
+      mode: "cors",
+      credentials: "omit"
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function parseCSVLarge(csv) {
+  try {
+    const startTime = performance.now();
+    const rows = parseCSVRecords(csv);
+    if (rows.length < 2) return [];
+
+    let headerIdx = -1;
+    for (let i = 0; i < Math.min(250, rows.length); i++) {
+      const normalizedRow = rows[i]
+        .map(cell => cell.toLowerCase().trim())
+        .filter(Boolean);
+
+      // Require actual header cells to avoid matching intro/instruction text rows.
+      const hasTitleHeader = normalizedRow.includes("title");
+      const hasCompanyHeader = normalizedRow.includes("company name") || normalizedRow.includes("company");
+      const hasLocationHeader = normalizedRow.includes("city") || normalizedRow.includes("country");
+
+      if (hasTitleHeader && hasCompanyHeader && hasLocationHeader) {
+        headerIdx = i;
+        break;
+      }
+    }
+
+    if (headerIdx === -1) return [];
+
+    const headers = rows[headerIdx].map(h => h.toLowerCase().trim());
+
+    const companyIdx = findColumnIndex(headers, ["company name", "company"]);
+    const titleIdx = findColumnIndex(headers, ["title", "role"]);
+    const cityIdx = findColumnIndex(headers, ["city"]);
+    const countryIdx = findColumnIndex(headers, ["country"]);
+    const locationTypeIdx = findColumnIndex(headers, ["location type", "work type"]);
+    const jobLinkIdx = findColumnIndex(headers, ["job link", "url", "apply"]);
+
+    if (titleIdx === -1 || companyIdx === -1) return [];
+
+    const jobs = [];
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+      const fields = rows[i];
+      if (!fields || fields.length === 0) continue;
+
+      const title = (fields[titleIdx] || "").trim();
+      const company = (fields[companyIdx] || "").trim();
+      const city = (fields[cityIdx] || "").trim();
+      const country = (fields[countryIdx] || "Unknown").trim();
+      const locationType = (fields[locationTypeIdx] || "On-site").trim();
+      const jobLink = jobLinkIdx !== -1 ? (fields[jobLinkIdx] || "").trim() : "";
+
+      if (!title || !company) continue;
+
+      jobs.push({
+        id: 1000 + i,
+        title,
+        company,
+        city,
+        country,
+        workType: detectWorkType(locationType),
+        profession: mapProfession(title),
+        description: `${title} at ${company}`,
+        jobLink
+      });
+    }
+
+    const endTime = performance.now();
+    console.log(`Loaded ${jobs.length} jobs in ${((endTime - startTime) / 1000).toFixed(2)}s`);
+    return jobs;
+  } catch (err) {
+    console.error("Error parsing CSV:", err.message);
+    return [];
+  }
+}
+
+function parseCSVRecords(csv) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < csv.length; i++) {
+    const ch = csv[i];
+
+    if (ch === '"') {
+      if (inQuotes && csv[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (ch === "," && !inQuotes) {
+      row.push(field);
+      field = "";
+      continue;
+    }
+
+    if ((ch === "\n" || ch === "\r") && !inQuotes) {
+      if (ch === "\r" && csv[i + 1] === "\n") i++;
+      row.push(field);
+      field = "";
+      if (row.some(cell => cell.trim() !== "")) {
+        rows.push(row);
+      }
+      row = [];
+      continue;
+    }
+
+    field += ch;
+  }
+
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    if (row.some(cell => cell.trim() !== "")) {
+      rows.push(row);
+    }
+  }
+
+  return rows;
+}
+
+function findColumnIndex(headers, possibleNames) {
+  for (let i = 0; i < headers.length; i++) {
+    for (const name of possibleNames) {
+      if (headers[i].includes(name)) return i;
+    }
+  }
+  return -1;
+}
+
+function detectWorkType(text) {
+  if (!text) return "Onsite";
+  const lower = text.toLowerCase();
+  if (lower.includes("remote")) return "Remote";
+  if (lower.includes("hybrid") || lower.includes("mixed")) return "Hybrid";
+  return "Onsite";
+}
+
+function mapProfession(title) {
+  const lower = title.toLowerCase();
+
+  if (lower.includes("technical artist")) return "technical-artist";
+  if (lower.includes("gameplay") || lower.includes("game mechanics")) return "gameplay";
+  if (lower.includes("graphics") || lower.includes("rendering") || lower.includes("shader")) return "graphics";
+  if (lower.includes("engine") || lower.includes("architecture") || lower.includes("systems")) return "engine";
+  if (lower.includes("ai") || lower.includes("artificial intelligence") || lower.includes("behavior")) return "ai";
+  if (lower.includes("animator") || lower.includes("motion")) return "animator";
+  if (lower.includes("tool") || lower.includes("pipeline") || lower.includes("editor") || (lower.includes("technical") && !lower.includes("artist"))) return "tools";
+  if (lower.includes("designer") || lower.includes("level") || lower.includes("game design")) return "designer";
+  if (lower.includes("artist") || lower.includes("animation") || lower.includes("visual")) return "artist";
+
+  return "other";
+}
+
+
+
+function fullCountryName(code) {
+  const map = {
+    US: "United States",
+    CA: "Canada",
+    GB: "United Kingdom",
+    DE: "Germany",
+    FI: "Finland",
+    JP: "Japan",
+    AU: "Australia",
+    SG: "Singapore",
+    FR: "France",
+    NL: "Netherlands",
+    SE: "Sweden",
+    NO: "Norway",
+    DK: "Denmark",
+    ES: "Spain",
+    IT: "Italy",
+    BR: "Brazil",
+    IN: "India",
+    Remote: "Remote"
+  };
+  return map[code] || code;
+}
+
+function isValidCountry(country) {
+  if (!country || typeof country !== "string") return false;
+  const trimmed = country.trim();
+  if (!trimmed || trimmed.length < 2) return false;
+  if (trimmed.includes(",")) return false;
+  return true;
+}
+
+function sanitizeUrl(url) {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.href;
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+function escapeHtml(text) {
+  if (!text) return "";
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function capitalizeFirst(str) {
+  if (!str) return "";
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function debounce(fn, waitMs) {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => fn(...args), waitMs);
+  };
+}
+
+function setProgress(visible) {
+  if (!fetchProgress) return;
+  fetchProgress.classList.toggle("hidden", !visible);
+}
+
+function setSourceStatus(text) {
+  if (!sourceStatus) return;
+  sourceStatus.textContent = text;
+}
+
+function showLoading(text) {
+  if (!jobsList) return;
+  jobsList.innerHTML = `<div class="loading">${escapeHtml(text)}</div>`;
+}
+
+function showError(message) {
+  if (!jobsList) return;
+  jobsList.innerHTML = `
+    <div class="error">
+      <p>${escapeHtml(message)}</p>
+      <button id="retry-fetch-btn" class="btn retry-btn">Retry</button>
+    </div>
+  `;
+  if (pagination) pagination.innerHTML = "";
+  updateResultsSummary(0, 0, 0);
+
+  const retryBtn = document.getElementById("retry-fetch-btn");
+  if (retryBtn) {
+    retryBtn.addEventListener("click", () => {
+      init().catch(err => console.error("Retry failed:", err));
+    });
+  }
+}

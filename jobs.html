@@ -10,12 +10,13 @@
   <div class="jobs-container">
     <div class="jobs-header">
       <h1>Game Development Jobs</h1>
-      <button id="back-btn" class="btn back-btn">← Back</button>
+      <button id="back-btn" class="btn back-btn" aria-label="Go back to home page">&larr; Back</button>
     </div>
 
     <div id="fetch-progress" class="fetch-progress hidden"></div>
+    <p id="source-status" class="source-status" aria-live="polite"></p>
 
-    <div class="filters">
+    <div class="filters" aria-label="Job filters">
       <div class="filter-group">
         <label for="work-type-filter">Work Type:</label>
         <select id="work-type-filter">
@@ -48,24 +49,45 @@
       </div>
 
       <div class="filter-group">
+        <label for="sort-filter">Sort By:</label>
+        <select id="sort-filter">
+          <option value="relevance">Best Match</option>
+          <option value="remote-first">Remote First</option>
+          <option value="title-asc">Title A-Z</option>
+          <option value="company-asc">Company A-Z</option>
+          <option value="country-asc">Country A-Z</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
         <label for="search-filter">Search:</label>
-        <input 
-          type="text" 
-          id="search-filter" 
-          placeholder="Search by title or company..."
+        <input
+          type="text"
+          id="search-filter"
+          placeholder="Search by title, company, city..."
         >
       </div>
+    </div>
+
+    <div class="quick-actions" aria-label="Quick filter actions">
+      <button class="btn quick-btn" data-quick="remote">Remote Only</button>
+      <button class="btn quick-btn" data-quick="technical-artist">Technical Artist</button>
+      <button class="btn quick-btn" data-quick="clear">Clear Filters</button>
+    </div>
+
+    <div class="jobs-toolbar">
+      <p id="results-summary" class="results-summary" aria-live="polite"></p>
+      <button id="clear-filters-btn" class="btn clear-filters-btn">Reset Filters</button>
     </div>
 
     <div id="jobs-list" class="jobs-list">
       <div class="loading">Loading jobs...</div>
     </div>
 
-    <!-- Pagination controls will be injected here or updated via JavaScript -->
     <div id="pagination" class="pagination"></div>
 
-    <div class="jobs-sources">
-      <h2>Job Listing Sources</h2>
+    <details class="jobs-sources">
+      <summary>Data sources</summary>
       <p>This page aggregates game development job listings from the following sources and industry partnerships:</p>
       <ul class="sources-list">
         <li><a href="https://docs.google.com/spreadsheets/d/1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE/edit?gid=1560329579" target="_blank" rel="noopener noreferrer">Community Curated Google Sheet</a> - Crowdsourced game dev job listings from the community</li>
@@ -74,13 +96,13 @@
         <li><a href="https://gamedev.jobs" target="_blank" rel="noopener noreferrer">GameDev.Jobs</a> - Specialized job board for game development professionals</li>
         <li><a href="https://remoteok.com" target="_blank" rel="noopener noreferrer">RemoteOk</a> - Remote work opportunities, including game development roles</li>
         <li><a href="https://weworkremotely.com" target="_blank" rel="noopener noreferrer">We Work Remotely</a> - Remote job board featuring game development positions</li>
-        <li><a href="https://angellist.com" target="_blank" rel="noopener noreferrer">AngelList</a> - Startup and tech jobs, includes indie game studios</li>
+        <li><a href="https://wellfound.com" target="_blank" rel="noopener noreferrer">Wellfound</a> - Startup and tech jobs, including indie game studios</li>
         <li><a href="https://glassdoor.com" target="_blank" rel="noopener noreferrer">Glassdoor</a> - Company reviews and job listings with salary insights</li>
-        <li><a href="https://twitter.com/search?q=%23gamedev%20%23hiringnow" target="_blank" rel="noopener noreferrer">Twitter/X</a> - Game development studios posting job opportunities</li>
+        <li><a href="https://twitter.com/search?q=%23gamedev%20%23hiringnow" target="_blank" rel="noopener noreferrer">X / Twitter</a> - Game development studios posting job opportunities</li>
         <li><a href="https://www.reddit.com/r/gamedev" target="_blank" rel="noopener noreferrer">Reddit r/gamedev</a> - Community-driven game development job postings</li>
-        <li><a href="https://gamasutra.com" target="_blank" rel="noopener noreferrer">GDC (Game Developers Conference)</a> - Industry professionals and job listings</li>
+        <li><a href="https://gdconf.com" target="_blank" rel="noopener noreferrer">GDC</a> - Industry professionals and job listings</li>
       </ul>
-    </div>
+    </details>
 
     <div class="jobs-footer">
       <p><strong>Data Source:</strong> Curated game development job listings from multiple job boards and industry sources</p>
