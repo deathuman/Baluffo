@@ -5,19 +5,29 @@ let signInBtnEl;
 let signOutBtnEl;
 let jobsPageBtnEl;
 let adminPageBtnEl;
+let historyPanelToggleBtnEl;
 let exportBackupBtnEl;
 let exportIncludeFilesEl;
 let importBackupBtnEl;
 let importBackupInputEl;
+let globalPhaseOverrideBtnEl;
+let activityPanelEl;
+let activityPanelBodyEl;
+let activityPanelStatusEl;
+let activityRefreshBtnEl;
+let activityCollapseBtnEl;
 
 let currentUser = null;
 let unsubscribeSavedJobs = () => {};
 let expandedJobKey = null;
+let phaseOverrideArmedGlobal = false;
+let activityPanelOpen = false;
+let lastSavedJobsByKey = new Map();
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 
 const PHASE_OPTIONS = ["bookmark", "applied", "interview_1", "interview_2", "offer", "rejected"];
 const PHASE_LABELS = {
-  bookmark: "Bookmark",
+  bookmark: "Saved",
   applied: "Applied",
   interview_1: "Interview 1",
   interview_2: "Interview 2",
@@ -49,10 +59,17 @@ function cacheDom() {
   signOutBtnEl = document.getElementById("saved-auth-sign-out-btn");
   jobsPageBtnEl = document.getElementById("jobs-page-btn");
   adminPageBtnEl = document.getElementById("admin-page-btn");
+  historyPanelToggleBtnEl = document.getElementById("history-panel-toggle-btn");
   exportBackupBtnEl = document.getElementById("export-backup-btn");
   exportIncludeFilesEl = document.getElementById("export-include-files");
   importBackupBtnEl = document.getElementById("import-backup-btn");
   importBackupInputEl = document.getElementById("import-backup-input");
+  globalPhaseOverrideBtnEl = document.getElementById("global-phase-override-btn");
+  activityPanelEl = document.getElementById("activity-panel");
+  activityPanelBodyEl = document.getElementById("activity-panel-body");
+  activityPanelStatusEl = document.getElementById("activity-panel-status");
+  activityRefreshBtnEl = document.getElementById("activity-refresh-btn");
+  activityCollapseBtnEl = document.getElementById("activity-collapse-btn");
 }
 
 function bindEvents() {
@@ -66,6 +83,24 @@ function bindEvents() {
   if (adminPageBtnEl) {
     adminPageBtnEl.addEventListener("click", () => {
       window.location.href = "admin.html";
+    });
+  }
+
+  if (historyPanelToggleBtnEl) {
+    historyPanelToggleBtnEl.addEventListener("click", () => {
+      setActivityPanelOpen(!activityPanelOpen);
+    });
+  }
+
+  if (activityCollapseBtnEl) {
+    activityCollapseBtnEl.addEventListener("click", () => {
+      setActivityPanelOpen(false);
+    });
+  }
+
+  if (activityRefreshBtnEl) {
+    activityRefreshBtnEl.addEventListener("click", async () => {
+      await refreshActivityLog();
     });
   }
 
@@ -98,15 +133,33 @@ function bindEvents() {
       importBackupInputEl.value = "";
     });
   }
+
+  if (globalPhaseOverrideBtnEl) {
+    globalPhaseOverrideBtnEl.addEventListener("click", () => {
+      if (!currentUser) return;
+      phaseOverrideArmedGlobal = !phaseOverrideArmedGlobal;
+      updateGlobalOverrideButton();
+      showToast(
+        phaseOverrideArmedGlobal
+          ? "Global override armed for one locked phase change."
+          : "Global override cancelled.",
+        "info"
+      );
+      renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
+    });
+  }
 }
 
 function initSavedJobsPage() {
+  setActivityPanelOpen(false);
   const api = window.JobAppLocalData;
   if (!api || !api.isReady()) {
     setAuthStatus("Browsing as guest");
     setSourceStatus("Local storage provider unavailable.");
+    setActivityStatus("Local provider unavailable.");
     toggleAuthButtons(false);
     renderAuthRequired("Local auth provider is unavailable.");
+    renderActivityEntries([]);
     return;
   }
 
@@ -116,21 +169,30 @@ function initSavedJobsPage() {
     unsubscribeSavedJobs = () => {};
     clearNoteSaveQueues();
     expandedJobKey = null;
+    phaseOverrideArmedGlobal = false;
+    lastSavedJobsByKey = new Map();
 
     if (!currentUser) {
       setAuthStatus("Browsing as guest");
       setSourceStatus("Sign in to view your saved jobs.");
+      setActivityStatus("Sign in to view history.");
       toggleAuthButtons(false);
       setBackupButtonsEnabled(false);
       renderAuthRequired("Sign in to access your personal saved jobs table.");
+      renderActivityEntries([]);
       return;
     }
 
     setAuthStatus(`Signed in as ${currentUser.displayName || currentUser.email || "user"}`);
     setSourceStatus("Loading your saved jobs...");
+    setActivityStatus("Loading activity...");
     toggleAuthButtons(true);
     setBackupButtonsEnabled(true);
     subscribeToSavedJobs(currentUser.uid);
+    refreshActivityLog().catch(err => {
+      console.error("Failed to load activity:", err);
+      setActivityStatus("Could not load activity.");
+    });
   });
 }
 
@@ -140,7 +202,13 @@ function subscribeToSavedJobs(uid) {
     uid,
     jobs => {
       setSourceStatus(`Loaded ${jobs.length} saved jobs.`);
+      lastSavedJobsByKey = new Map(
+        (jobs || []).map(job => [String(job.jobKey || job.id || ""), job])
+      );
       renderSavedJobs(jobs);
+      refreshActivityLog().catch(() => {
+        // Best-effort refresh.
+      });
     },
     err => {
       console.error("Saved jobs subscription failed:", err);
@@ -173,12 +241,12 @@ function renderSavedJobs(jobs) {
       <div class="saved-row-header">
         <div class="col-title">Position</div>
         <div class="col-company">Company</div>
+        <div class="col-sector">Sector</div>
         <div class="col-city">City</div>
         <div class="col-country">Country</div>
         <div class="col-contract">Contract</div>
         <div class="col-type">Type</div>
         <div class="col-link">Link</div>
-        <div class="col-saved-date">Saved</div>
       </div>
     </div>
     <div class="jobs-table-body">
@@ -243,13 +311,13 @@ function renderSavedJobs(jobs) {
 
 function renderSavedJobBlock(job) {
   const safeTitle = escapeHtml(job.title || "");
-  const safeCompanyType = escapeHtml(job.companyType || "Tech");
+  const safeCompany = escapeHtml(job.company || "");
+  const safeSector = escapeHtml(normalizeSavedSector(job));
   const safeCity = escapeHtml(job.city || "");
   const safeCountry = escapeHtml(fullCountryName(job.country || ""));
   const safeContract = escapeHtml(job.contractType || "Unknown");
   const safeWorkType = escapeHtml(job.workType || "Onsite");
   const safeLink = sanitizeUrl(job.jobLink || "");
-  const savedDate = formatDate(job.savedAt);
   const contractClass = toContractClass(job.contractType || "Unknown");
   const rawJobKey = String(job.jobKey || job.id || "");
   const jobKey = escapeHtml(rawJobKey);
@@ -262,7 +330,8 @@ function renderSavedJobBlock(job) {
       <div class="saved-job-row">
         <button class="remove-saved-btn remove-inline-btn" data-job-key="${jobKey}" aria-label="Remove saved job">X</button>
         <div class="col-title job-cell" data-label="Position">${safeTitle}</div>
-        <div class="col-company job-cell" data-label="Company">${safeCompanyType}</div>
+        <div class="col-company job-cell" data-label="Company">${safeCompany}</div>
+        <div class="col-sector job-cell" data-label="Sector">${safeSector}</div>
         <div class="col-city job-cell" data-label="City">${safeCity}</div>
         <div class="col-country job-cell" data-label="Country">${safeCountry}</div>
         <div class="col-contract job-cell" data-label="Contract">
@@ -272,14 +341,13 @@ function renderSavedJobBlock(job) {
           <span class="job-tag ${safeWorkType.toLowerCase()}">${safeWorkType}</span>
         </div>
         <div class="col-link job-cell" data-label="Link">
-          ${safeLink ? `<a class="saved-open-link" href="${safeLink}" target="_blank" rel="noopener noreferrer">Open</a>` : '<span class="muted">N/A</span>'}
+          ${safeLink ? `<a class="saved-open-link-icon" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="Open job link" title="Open job link">${renderWebIcon()}</a>` : '<span class="muted">N/A</span>'}
         </div>
-        <div class="col-saved-date job-cell" data-label="Saved">${escapeHtml(savedDate)}</div>
       </div>
       <div class="saved-phase-row">
         <div class="phase-label">Application Phase</div>
         <div class="phase-value">
-          ${renderPhaseBar(jobKey, normalizedPhase)}
+          ${renderPhaseBar(jobKey, normalizedPhase, job.phaseTimestamps, job.savedAt)}
         </div>
       </div>
       <div class="saved-details-toggle-row">
@@ -320,15 +388,34 @@ function renderSavedJobBlock(job) {
   `;
 }
 
-function renderPhaseBar(jobKey, activePhase) {
+function normalizeSavedSector(job) {
+  const raw = String(job?.sector || "").trim();
+  const lower = raw.toLowerCase();
+  if (lower === "game" || lower === "game company" || lower === "gaming") return "Game";
+  if (lower === "tech" || lower === "tech company" || lower === "technology") return "Tech";
+
+  const ct = String(job?.companyType || "").trim().toLowerCase();
+  if (ct === "game" || ct === "game company") return "Game";
+  if (ct === "tech" || ct === "tech company") return "Tech";
+  return raw || "Tech";
+}
+
+function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt) {
   const activeIndex = PHASE_OPTIONS.indexOf(activePhase);
+  const timestamps = phaseTimestamps && typeof phaseTimestamps === "object" ? phaseTimestamps : {};
   const segments = PHASE_OPTIONS.map((phase, idx) => {
     const isActive = idx === activeIndex;
     const isComplete = idx <= activeIndex;
+    const canChangeNormally = canTransition(activePhase, phase);
+    const canClick = currentUser && (canChangeNormally || phaseOverrideArmedGlobal);
+    const fallback = phase === "bookmark" ? savedAt : "";
+    const selectedAt = formatPhaseTimestamp(timestamps[phase] || fallback);
     const classes = [
       "phase-step-btn",
       isActive ? "active" : "",
-      isComplete ? "complete" : ""
+      isComplete ? "complete" : "",
+      !canChangeNormally ? "locked" : "",
+      phaseOverrideArmedGlobal && !canChangeNormally ? "override-enabled" : ""
     ].filter(Boolean).join(" ");
 
     return `
@@ -336,15 +423,33 @@ function renderPhaseBar(jobKey, activePhase) {
         class="${classes}"
         data-job-key="${jobKey}"
         data-phase="${phase}"
-        ${!currentUser ? "disabled" : ""}
+        data-current-phase="${escapeHtml(activePhase)}"
+        ${canClick ? "" : "disabled"}
         aria-label="Set phase to ${escapeHtml(PHASE_LABELS[phase] || phase)}"
       >
         <span class="phase-step-text">${escapeHtml(PHASE_LABELS[phase] || phase)}</span>
+        ${selectedAt ? `<span class="phase-step-time">${escapeHtml(selectedAt)}</span>` : ""}
       </button>
     `;
   }).join("");
 
   return `<div class="phase-bar" role="group" aria-label="Application phases">${segments}</div>`;
+}
+
+function renderWebIcon() {
+  return `
+    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M14 3h7v7h-2V6.41l-8.29 8.3-1.42-1.42 8.3-8.29H14V3z"/>
+      <path fill="currentColor" d="M5 5h6v2H7v10h10v-4h2v6H5V5z"/>
+    </svg>
+  `;
+}
+
+function formatPhaseTimestamp(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleString();
 }
 
 function renderDetailsSummary(job) {
@@ -363,6 +468,21 @@ function normalizePhase(phase) {
   const raw = String(phase || "").toLowerCase().trim();
   if (raw === "bookmarked") return "bookmark";
   return PHASE_OPTIONS.includes(raw) ? raw : "bookmark";
+}
+
+function canTransition(currentPhase, nextPhase) {
+  const api = window.JobAppLocalData;
+  if (api && typeof api.canTransitionPhase === "function") {
+    return Boolean(api.canTransitionPhase(currentPhase, nextPhase));
+  }
+  const current = normalizePhase(currentPhase);
+  const next = normalizePhase(nextPhase);
+  if (current === next) return true;
+  if (current === "rejected") return false;
+  if (next === "rejected") return true;
+  const currentIdx = PHASE_OPTIONS.indexOf(current);
+  const nextIdx = PHASE_OPTIONS.indexOf(next);
+  return currentIdx >= 0 && nextIdx >= 0 && nextIdx === currentIdx + 1;
 }
 
 async function removeSavedJob(jobKey) {
@@ -387,13 +507,38 @@ async function updatePhase(jobKey, phase) {
     return;
   }
 
+  const row = lastSavedJobsByKey.get(String(jobKey || ""));
+  const currentPhase = normalizePhase(row?.applicationStatus);
   const normalized = normalizePhase(phase);
+  const regularAllowed = canTransition(currentPhase, normalized);
+  const overrideArmed = phaseOverrideArmedGlobal;
+  if (!regularAllowed && !overrideArmed) {
+    showToast("Locked transition. Use Override Phase Lock for exceptional changes.", "info");
+    return;
+  }
+
+  if (!regularAllowed && overrideArmed) {
+    const from = PHASE_LABELS[currentPhase] || currentPhase;
+    const to = PHASE_LABELS[normalized] || normalized;
+    const ok = window.confirm(`Override phase lock?\n\n${from} -> ${to}`);
+    if (!ok) return;
+  }
+
   try {
-    await api.updateApplicationStatus(currentUser.uid, jobKey, normalized);
+    await api.updateApplicationStatus(currentUser.uid, jobKey, normalized, {
+      override: !regularAllowed && overrideArmed
+    });
+    if (overrideArmed) {
+      phaseOverrideArmedGlobal = false;
+      updateGlobalOverrideButton();
+    }
     showToast(`Phase updated to ${PHASE_LABELS[normalized] || normalized}.`, "success");
+    await refreshActivityLog();
   } catch (err) {
     console.error("Could not update phase:", err);
-    showToast("Could not update phase.", "error");
+    showToast(err?.message || "Could not update phase.", "error");
+  } finally {
+    renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
   }
 }
 
@@ -774,6 +919,22 @@ function setSourceStatus(text) {
   savedSourceStatusEl.textContent = text;
 }
 
+function setActivityStatus(text) {
+  if (!activityPanelStatusEl) return;
+  activityPanelStatusEl.textContent = text;
+}
+
+function setActivityPanelOpen(open) {
+  activityPanelOpen = Boolean(open);
+  if (!activityPanelEl) return;
+  activityPanelEl.classList.toggle("collapsed", !activityPanelOpen);
+  activityPanelEl.setAttribute("aria-hidden", activityPanelOpen ? "false" : "true");
+  if (historyPanelToggleBtnEl) {
+    historyPanelToggleBtnEl.classList.toggle("hidden", activityPanelOpen);
+    historyPanelToggleBtnEl.classList.toggle("active", activityPanelOpen);
+  }
+}
+
 function toggleAuthButtons(isSignedIn) {
   if (signInBtnEl) signInBtnEl.classList.toggle("hidden", isSignedIn);
   if (signOutBtnEl) signOutBtnEl.classList.toggle("hidden", !isSignedIn);
@@ -783,6 +944,110 @@ function setBackupButtonsEnabled(enabled) {
   if (exportBackupBtnEl) exportBackupBtnEl.disabled = !enabled;
   if (exportIncludeFilesEl) exportIncludeFilesEl.disabled = !enabled;
   if (importBackupBtnEl) importBackupBtnEl.disabled = !enabled;
+  if (globalPhaseOverrideBtnEl) globalPhaseOverrideBtnEl.disabled = !enabled;
+  updateGlobalOverrideButton();
+}
+
+function updateGlobalOverrideButton() {
+  if (!globalPhaseOverrideBtnEl) return;
+  globalPhaseOverrideBtnEl.classList.toggle("active", phaseOverrideArmedGlobal);
+  globalPhaseOverrideBtnEl.textContent = phaseOverrideArmedGlobal
+    ? "Override Armed (One Use)"
+    : "Override Phase Lock";
+}
+
+async function refreshActivityLog() {
+  const api = window.JobAppLocalData;
+  if (!activityPanelBodyEl) return;
+  if (!currentUser || !api) {
+    setActivityStatus("Sign in to view history.");
+    renderActivityEntries([]);
+    return;
+  }
+
+  setActivityStatus("Loading activity...");
+  try {
+    const entries = await api.listActivityForUser(currentUser.uid, 400);
+    renderActivityEntries(entries);
+    setActivityStatus(`Showing ${entries.length} recent events.`);
+  } catch (err) {
+    console.error("Could not load activity log:", err);
+    setActivityStatus("Could not load history.");
+    renderActivityEntries([]);
+  }
+}
+
+function renderActivityEntries(entries) {
+  if (!activityPanelBodyEl) return;
+  if (!Array.isArray(entries) || entries.length === 0) {
+    activityPanelBodyEl.innerHTML = '<div class="muted">No activity yet.</div>';
+    return;
+  }
+
+  activityPanelBodyEl.innerHTML = entries.map(renderActivityEntry).join("");
+}
+
+function renderActivityEntry(entry) {
+  const type = String(entry?.type || "event");
+  const createdAt = formatPhaseTimestamp(entry?.createdAt) || "Unknown time";
+  const key = String(entry?.jobKey || "");
+  const snapshot = key ? lastSavedJobsByKey.get(key) : null;
+  const title = escapeHtml(entry?.title || snapshot?.title || "(Untitled job)");
+  const company = escapeHtml(entry?.company || snapshot?.company || "");
+  const detailText = escapeHtml(formatActivityDetail(entry));
+  const typeLabel = escapeHtml(activityTypeLabel(type));
+
+  return `
+    <div class="activity-entry">
+      <div class="activity-entry-top">
+        <span class="activity-type">${typeLabel}</span>
+        <span class="activity-time">${escapeHtml(createdAt)}</span>
+      </div>
+      <div class="activity-entry-title">${title}</div>
+      ${company ? `<div class="activity-entry-company">${company}</div>` : ""}
+      <div class="activity-entry-detail">${detailText}</div>
+    </div>
+  `;
+}
+
+function activityTypeLabel(type) {
+  switch (type) {
+    case "job_saved":
+      return "Saved";
+    case "job_removed":
+      return "Removed";
+    case "phase_changed":
+      return "Phase Changed";
+    case "attachment_added":
+      return "Attachment Added";
+    case "attachment_deleted":
+      return "Attachment Deleted";
+    default:
+      return "Event";
+  }
+}
+
+function formatActivityDetail(entry) {
+  const type = String(entry?.type || "event");
+  const details = entry?.details && typeof entry.details === "object" ? entry.details : {};
+  if (type === "phase_changed") {
+    const from = PHASE_LABELS[normalizePhase(details.previousStatus)] || "Unknown";
+    const to = PHASE_LABELS[normalizePhase(details.nextStatus)] || "Unknown";
+    const override = details.overrideUsed ? " (override)" : "";
+    return `${from} -> ${to}${override}`;
+  }
+  if (type === "job_removed") {
+    const from = PHASE_LABELS[normalizePhase(details.fromStatus)] || "Saved";
+    return `Removed from ${from}`;
+  }
+  if (type === "attachment_added") {
+    const name = String(details.fileName || "file");
+    return `Uploaded ${name}`;
+  }
+  if (type === "attachment_deleted") {
+    return "Deleted an attachment";
+  }
+  return "Job table updated";
 }
 
 function getLastJobsUrl() {
@@ -879,6 +1144,7 @@ function sanitizeUrl(url) {
 function toContractClass(contractType) {
   const normalized = (contractType || "").toLowerCase();
   if (normalized === "full-time") return "full-time";
+  if (normalized === "internship") return "internship";
   if (normalized === "temporary") return "temporary";
   return "unknown";
 }
@@ -905,16 +1171,6 @@ function fullCountryName(code) {
     Remote: "Remote"
   };
   return map[code] || code;
-}
-
-function formatDate(value) {
-  if (!value) return "Unknown";
-  if (value.toDate) {
-    return value.toDate().toLocaleDateString();
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Unknown";
-  return parsed.toLocaleDateString();
 }
 
 function escapeHtml(text) {

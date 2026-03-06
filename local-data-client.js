@@ -1,6 +1,6 @@
 (function () {
   const DB_NAME = "baluffo_jobs_local";
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const SESSION_KEY = "baluffo_current_profile_id";
   const PROFILE_KEY = "baluffo_profiles";
   const ADMIN_PIN = "1234";
@@ -19,6 +19,19 @@
     if (raw === "bookmarked") return "bookmark";
     if (APPLICATION_STATUSES.includes(raw)) return raw;
     return "bookmark";
+  }
+
+  function canTransitionPhase(currentStatus, nextStatus) {
+    const current = normalizeApplicationStatus(currentStatus);
+    const next = normalizeApplicationStatus(nextStatus);
+    if (current === next) return true;
+    if (current === "rejected") return false;
+    if (next === "rejected") return true;
+
+    const currentIdx = APPLICATION_STATUSES.indexOf(current);
+    const nextIdx = APPLICATION_STATUSES.indexOf(next);
+    if (currentIdx < 0 || nextIdx < 0) return false;
+    return nextIdx === currentIdx + 1;
   }
 
   const listeners = new Set();
@@ -46,6 +59,11 @@
         if (!db.objectStoreNames.contains("attachments")) {
           const store = db.createObjectStore("attachments", { keyPath: "id" });
           store.createIndex("by_profile_job", ["profileId", "jobKey"], { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains("activity_log")) {
+          const store = db.createObjectStore("activity_log", { keyPath: "id" });
+          store.createIndex("by_profile", "profileId", { unique: false });
         }
       };
 
@@ -148,6 +166,17 @@
     return new Date().toISOString();
   }
 
+  function normalizeSectorValue(sector, companyType = "") {
+    const raw = String(sector || "").trim();
+    const lower = raw.toLowerCase();
+    if (lower === "game" || lower === "game company" || lower === "gaming") return "Game";
+    if (lower === "tech" || lower === "tech company" || lower === "technology") return "Tech";
+    const ct = String(companyType || "").trim().toLowerCase();
+    if (ct === "game" || ct === "game company") return "Game";
+    if (ct === "tech" || ct === "tech company") return "Tech";
+    return raw || "Tech";
+  }
+
   function ensureCurrentUser() {
     if (!currentUser) throw new Error("Not signed in.");
     return currentUser;
@@ -240,6 +269,31 @@
     return `att_${hashFNV1a(base)}`;
   }
 
+  function toActivityId(uid, type, jobKey = "") {
+    const seed = `${uid}|${type}|${jobKey}|${Date.now()}|${Math.random().toString(36).slice(2)}`;
+    return `log_${hashFNV1a(seed)}`;
+  }
+
+  async function addActivityLog(uid, type, job, details = {}) {
+    const jobKey = String(job?.jobKey || details.jobKey || "");
+    const safeDetails = details && typeof details === "object" ? details : {};
+    const entry = {
+      id: toActivityId(uid, type, jobKey),
+      profileId: uid,
+      type: String(type || "event"),
+      jobKey,
+      title: String(job?.title || safeDetails.title || ""),
+      company: String(job?.company || safeDetails.company || ""),
+      createdAt: nowIso(),
+      details: safeDetails
+    };
+    await withStore("activity_log", "readwrite", (store, done, fail) => {
+      const req = store.put(entry);
+      req.onsuccess = () => done();
+      req.onerror = () => fail(req.error || new Error("Could not write activity log."));
+    });
+  }
+
   function chooseProfile(existingProfiles, input) {
     const trimmed = (input || "").trim();
     if (!trimmed) return null;
@@ -295,16 +349,25 @@
     const pk = `${uid}::${jobKey}`;
     const currentIso = nowIso();
 
+    let savedSnapshot = null;
     await withStore("saved_jobs", "readwrite", (store, done, fail) => {
       const getReq = store.get(pk);
       getReq.onsuccess = () => {
         const existing = getReq.result || null;
+        const savedAt = existing?.savedAt || currentIso;
+        const phaseTimestamps = existing?.phaseTimestamps && typeof existing.phaseTimestamps === "object"
+          ? existing.phaseTimestamps
+          : {};
+        if (!phaseTimestamps.bookmark) {
+          phaseTimestamps.bookmark = savedAt;
+        }
         const payload = {
           pk,
           profileId: uid,
           jobKey,
           title: job.title || "",
           company: job.company || "",
+          sector: normalizeSectorValue(job.sector, job.companyType),
           companyType: job.companyType || "Tech",
           city: job.city || "",
           country: job.country || "",
@@ -312,11 +375,13 @@
           contractType: job.contractType || "Unknown",
           jobLink: sanitizeJobUrl(job.jobLink || ""),
           applicationStatus: normalizeApplicationStatus(existing?.applicationStatus),
+          phaseTimestamps,
           notes: existing?.notes || "",
           attachmentsCount: Number.isFinite(existing?.attachmentsCount) ? existing.attachmentsCount : 0,
-          savedAt: existing?.savedAt || currentIso,
+          savedAt,
           updatedAt: currentIso
         };
+        savedSnapshot = { ...payload };
         const putReq = store.put(payload);
         putReq.onsuccess = () => done(jobKey);
         putReq.onerror = () => fail(putReq.error || new Error("Could not save job."));
@@ -324,6 +389,7 @@
       getReq.onerror = () => fail(getReq.error || new Error("Could not read existing saved job."));
     });
 
+    await addActivityLog(uid, "job_saved", savedSnapshot || { jobKey, title: job.title, company: job.company });
     await notifySavedJobsChanged(uid);
     return jobKey;
   }
@@ -333,12 +399,25 @@
     if (uid !== user.uid) throw new Error("User mismatch.");
     const pk = `${uid}::${jobKey}`;
 
+    let removedSnapshot = null;
+    await withStore("saved_jobs", "readonly", (store, done, fail) => {
+      const req = store.get(pk);
+      req.onsuccess = () => {
+        removedSnapshot = req.result || null;
+        done();
+      };
+      req.onerror = () => fail(req.error || new Error("Could not load saved job before remove."));
+    });
+
     await withStore("saved_jobs", "readwrite", (store, done, fail) => {
       const req = store.delete(pk);
       req.onsuccess = () => done();
       req.onerror = () => fail(req.error || new Error("Could not remove saved job."));
     });
 
+    if (removedSnapshot) {
+      await addActivityLog(uid, "job_removed", removedSnapshot, { fromStatus: removedSnapshot.applicationStatus || "bookmark" });
+    }
     await notifySavedJobsChanged(uid);
   }
 
@@ -360,10 +439,14 @@
     return () => listeners.delete(entry);
   }
 
-  async function updateApplicationStatus(uid, jobKey, status) {
+  async function updateApplicationStatus(uid, jobKey, status, options = {}) {
+    const user = ensureCurrentUser();
+    if (uid !== user.uid) throw new Error("User mismatch.");
     const nextStatus = normalizeApplicationStatus(status);
+    const allowOverride = Boolean(options && options.override);
     const pk = `${uid}::${jobKey}`;
 
+    let logPayload = null;
     await withStore("saved_jobs", "readwrite", (store, done, fail) => {
       const getReq = store.get(pk);
       getReq.onsuccess = () => {
@@ -372,10 +455,28 @@
           fail(new Error("Saved job not found."));
           return;
         }
+        const previousStatus = normalizeApplicationStatus(current.applicationStatus);
+        if (!allowOverride && !canTransitionPhase(previousStatus, nextStatus)) {
+          fail(new Error("Invalid phase transition. Use override for backward or skipped transitions."));
+          return;
+        }
         const next = {
           ...current,
           applicationStatus: nextStatus,
+          phaseTimestamps: {
+            ...(current.phaseTimestamps && typeof current.phaseTimestamps === "object" ? current.phaseTimestamps : {}),
+            [nextStatus]: nowIso()
+          },
           updatedAt: nowIso()
+        };
+        logPayload = {
+          profileId: uid,
+          jobKey: current.jobKey || jobKey,
+          title: current.title || "",
+          company: current.company || "",
+          previousStatus,
+          nextStatus,
+          overrideUsed: allowOverride
         };
         const putReq = store.put(next);
         putReq.onsuccess = () => done();
@@ -384,6 +485,13 @@
       getReq.onerror = () => fail(getReq.error || new Error("Could not load saved job."));
     });
 
+    if (logPayload) {
+      await addActivityLog(uid, "phase_changed", logPayload, {
+        previousStatus: logPayload.previousStatus,
+        nextStatus: logPayload.nextStatus,
+        overrideUsed: logPayload.overrideUsed
+      });
+    }
     await notifySavedJobsChanged(uid);
   }
 
@@ -481,6 +589,10 @@
 
     const attachments = await listAttachmentsForJob(uid, jobKey);
     await updateAttachmentMetadata(uid, jobKey, attachments.length);
+    await addActivityLog(uid, "attachment_added", { jobKey }, {
+      fileName: String(fileMeta?.name || "file"),
+      size: Number(fileMeta?.size) || 0
+    });
     return attachmentId;
   }
 
@@ -505,6 +617,7 @@
 
     const attachments = await listAttachmentsForJob(uid, jobKey);
     await updateAttachmentMetadata(uid, jobKey, attachments.length);
+    await addActivityLog(uid, "attachment_deleted", { jobKey }, { attachmentId });
   }
 
   async function getAttachmentBlob(uid, jobKey, attachmentId) {
@@ -522,6 +635,24 @@
         done(row.blob || null);
       };
       req.onerror = () => fail(req.error || new Error("Could not read attachment."));
+    });
+  }
+
+  async function listActivityForUser(uid, limit = 300) {
+    const user = ensureCurrentUser();
+    if (uid !== user.uid) throw new Error("User mismatch.");
+    const safeLimit = Math.max(1, Math.min(2000, Number(limit) || 300));
+    return withStore("activity_log", "readonly", (store, done, fail) => {
+      const index = store.index("by_profile");
+      const request = index.getAll(IDBKeyRange.only(uid));
+      request.onsuccess = () => {
+        const rows = (request.result || [])
+          .map(stripAttachmentPk)
+          .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+          .slice(0, safeLimit);
+        done(rows);
+      };
+      request.onerror = () => fail(request.error || new Error("Could not list activity log."));
     });
   }
 
@@ -563,12 +694,20 @@
         for (const row of savedJobs) {
           const jobKey = row.jobKey || generateJobKey(row);
           const pk = `${uid}::${jobKey}`;
+          const savedAt = row.savedAt || nowIso();
+          const phaseTimestamps = row.phaseTimestamps && typeof row.phaseTimestamps === "object"
+            ? row.phaseTimestamps
+            : {};
+          if (!phaseTimestamps.bookmark) {
+            phaseTimestamps.bookmark = savedAt;
+          }
           store.put({
             pk,
             profileId: uid,
             jobKey,
             title: row.title || "",
             company: row.company || "",
+            sector: normalizeSectorValue(row.sector, row.companyType),
             companyType: row.companyType || "Tech",
             city: row.city || "",
             country: row.country || "",
@@ -576,9 +715,10 @@
             contractType: row.contractType || "Unknown",
             jobLink: sanitizeJobUrl(row.jobLink || ""),
             applicationStatus: normalizeApplicationStatus(row.applicationStatus),
+            phaseTimestamps,
             notes: row.notes || "",
             attachmentsCount: Math.max(0, Number(row.attachmentsCount) || 0),
-            savedAt: row.savedAt || nowIso(),
+            savedAt,
             updatedAt: nowIso()
           });
         }
@@ -768,6 +908,21 @@
 
     await deleteSavedJobsForProfile(targetUid);
     await deleteAttachmentsForProfile(targetUid);
+    await withStore("activity_log", "readwrite", (store, done, fail) => {
+      const index = store.index("by_profile");
+      const cursorReq = index.openCursor(IDBKeyRange.only(targetUid));
+      cursorReq.onsuccess = event => {
+        const cursor = event.target.result;
+        if (!cursor) {
+          done();
+          return;
+        }
+        const delReq = cursor.delete();
+        delReq.onsuccess = () => cursor.continue();
+        delReq.onerror = () => fail(delReq.error || new Error("Could not delete activity log row."));
+      };
+      cursorReq.onerror = () => fail(cursorReq.error || new Error("Could not iterate activity log."));
+    });
 
     if (currentUser?.uid === targetUid) {
       localStorage.removeItem(SESSION_KEY);
@@ -843,12 +998,14 @@
     generateJobKey,
     buildAttachmentPath,
     updateApplicationStatus,
+    canTransitionPhase,
     updateAttachmentMetadata,
     updateJobNotes,
     listAttachmentsForJob,
     addAttachmentForJob,
     deleteAttachmentForJob,
     getAttachmentBlob,
+    listActivityForUser,
     exportProfileData,
     importProfileData,
     verifyAdminPin,

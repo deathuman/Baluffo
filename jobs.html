@@ -12,7 +12,6 @@
       <h1>Game Development Jobs</h1>
       <div class="header-actions">
         <button id="saved-jobs-btn" class="btn back-btn hidden" aria-label="Go to saved jobs page">Saved Jobs</button>
-        <button id="admin-page-btn" class="btn back-btn" aria-label="Go to administration page">Admin</button>
         <button id="auth-sign-in-btn" class="btn back-btn" aria-label="Sign in">Sign in</button>
         <button id="auth-sign-out-btn" class="btn back-btn hidden" aria-label="Sign out">Sign out</button>
         <button id="back-btn" class="btn back-btn" aria-label="Go back to home page">&larr; Back</button>
@@ -35,10 +34,15 @@
       </div>
 
       <div class="filter-group">
-        <label for="country-filter">Country:</label>
-        <select id="country-filter">
-          <option value="">All Countries</option>
-        </select>
+        <label for="country-picker-btn">Country:</label>
+        <button id="country-picker-btn" type="button" class="country-picker-btn" aria-haspopup="dialog" aria-expanded="false">Country: All</button>
+        <div id="country-picker-panel" class="country-picker-panel hidden" role="dialog" aria-label="Country filter options">
+          <input id="country-picker-search" type="text" class="country-picker-search" placeholder="Search countries...">
+          <div id="country-picker-options" class="country-picker-options"></div>
+          <button id="country-picker-clear-btn" type="button" class="country-picker-clear-btn">Clear</button>
+        </div>
+        <select id="country-filter" multiple size="5" class="country-filter-multi hidden" aria-hidden="true"></select>
+        <span id="country-selection-badge" class="country-selection-badge">All countries</span>
       </div>
 
       <div class="filter-group">
@@ -49,7 +53,19 @@
       </div>
 
       <div class="filter-group">
+        <label for="sector-filter">Sector:</label>
+        <select id="sector-filter">
+          <option value="">All Sectors</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
         <label for="profession-filter">Profession:</label>
+        <input
+          type="text"
+          id="profession-search-filter"
+          placeholder="Type to narrow roles..."
+        >
         <select id="profession-filter">
           <option value="">All Roles</option>
         </select>
@@ -77,11 +93,13 @@
     </div>
 
     <div class="quick-actions" aria-label="Quick filter actions">
-      <button class="btn quick-btn" data-quick="remote">Remote Only</button>
-      <button class="btn quick-btn" data-quick="technical-artist">Technical Artist</button>
-      <button class="btn quick-btn" data-quick="netherlands">Netherlands</button>
-      <button class="btn quick-btn" data-quick="clear">Clear Filters</button>
+      <button class="btn quick-btn quick-chip" data-quick="remote" aria-pressed="false">Remote Only</button>
+      <button class="btn quick-btn quick-chip" data-quick="technical-artist" aria-pressed="false">Technical Artist</button>
+      <button class="btn quick-btn quick-chip" data-quick="exclude-internship" aria-pressed="false">Exclude Internship</button>
+      <button class="btn quick-btn quick-chip" data-quick="netherlands" aria-pressed="false">Netherlands</button>
+      <button class="btn quick-btn quick-clear" data-quick="clear">Clear Filters</button>
     </div>
+    <div id="active-filters-summary" class="active-filters-summary">No active filters</div>
 
     <div class="jobs-toolbar">
       <p id="results-summary" class="results-summary" aria-live="polite"></p>
@@ -120,6 +138,7 @@
 
     <div class="jobs-footer">
       <p><strong>Data Source:</strong> Curated game development job listings from multiple job boards and industry sources</p>
+      <p><a href="admin.html">Admin</a></p>
     </div>
   </div>
 

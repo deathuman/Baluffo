@@ -6,9 +6,11 @@ const state = {
   itemsPerPage: 10,
   filters: {
     workType: "",
-    country: "",
+    countries: [],
     city: "",
+    sector: "",
     profession: "",
+    excludeInternship: false,
     search: "",
     sort: "relevance"
   }
@@ -21,8 +23,16 @@ const PROFESSION_LABELS = {
   ai: "AI Programmer",
   tools: "Tools Programmer",
   "technical-artist": "Technical Artist",
+  "technical-animator": "Technical Animator",
+  "environment-artist": "Environment Artist",
+  "character-artist": "Character Artist",
+  rigging: "Rigging",
+  "vfx-artist": "VFX Artist",
+  "ui-ux-artist": "UI/UX Artist",
+  "concept-artist": "Concept Artist",
+  "3d-artist": "3D Artist",
+  "art-director": "Art Director",
   designer: "Game Designer",
-  artist: "Artist",
   animator: "Animator",
   other: "Other"
 };
@@ -31,11 +41,19 @@ let jobsList;
 let backBtn;
 let workTypeFilter;
 let countryFilter;
+let countryPickerBtn;
+let countryPickerPanel;
+let countryPickerSearch;
+let countryPickerOptions;
+let countryPickerClearBtn;
 let cityFilter;
+let sectorFilter;
 let professionFilter;
+let professionSearchFilter;
 let searchFilter;
 let sortFilter;
 let resultsSummary;
+let countrySelectionBadge;
 let sourceStatus;
 let fetchProgress;
 let pagination;
@@ -46,7 +64,7 @@ let authStatus;
 let authSignInBtn;
 let authSignOutBtn;
 let savedJobsBtn;
-let adminPageBtn;
+let activeFiltersSummaryEl;
 
 let currentUser = null;
 let savedJobKeys = new Set();
@@ -58,6 +76,8 @@ const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const JOBS_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
 
 let refreshInFlight = false;
+let availableProfessions = [];
+let availableCountries = [];
 
 document.addEventListener("DOMContentLoaded", () => {
   cacheDom();
@@ -72,11 +92,19 @@ function cacheDom() {
   backBtn = document.getElementById("back-btn");
   workTypeFilter = document.getElementById("work-type-filter");
   countryFilter = document.getElementById("country-filter");
+  countryPickerBtn = document.getElementById("country-picker-btn");
+  countryPickerPanel = document.getElementById("country-picker-panel");
+  countryPickerSearch = document.getElementById("country-picker-search");
+  countryPickerOptions = document.getElementById("country-picker-options");
+  countryPickerClearBtn = document.getElementById("country-picker-clear-btn");
   cityFilter = document.getElementById("city-filter");
+  sectorFilter = document.getElementById("sector-filter");
   professionFilter = document.getElementById("profession-filter");
+  professionSearchFilter = document.getElementById("profession-search-filter");
   searchFilter = document.getElementById("search-filter");
   sortFilter = document.getElementById("sort-filter");
   resultsSummary = document.getElementById("results-summary");
+  countrySelectionBadge = document.getElementById("country-selection-badge");
   sourceStatus = document.getElementById("source-status");
   fetchProgress = document.getElementById("fetch-progress");
   pagination = document.getElementById("pagination");
@@ -87,7 +115,7 @@ function cacheDom() {
   authSignInBtn = document.getElementById("auth-sign-in-btn");
   authSignOutBtn = document.getElementById("auth-sign-out-btn");
   savedJobsBtn = document.getElementById("saved-jobs-btn");
-  adminPageBtn = document.getElementById("admin-page-btn");
+  activeFiltersSummaryEl = document.getElementById("active-filters-summary");
 }
 
 function bindEvents() {
@@ -101,13 +129,6 @@ function bindEvents() {
     savedJobsBtn.addEventListener("click", () => {
       rememberCurrentJobsUrl();
       window.location.href = "saved.html";
-    });
-  }
-
-  if (adminPageBtn) {
-    adminPageBtn.addEventListener("click", () => {
-      rememberCurrentJobsUrl();
-      window.location.href = "admin.html";
     });
   }
 
@@ -126,8 +147,46 @@ function bindEvents() {
   if (workTypeFilter) workTypeFilter.addEventListener("change", () => onFilterChange());
   if (countryFilter) countryFilter.addEventListener("change", () => onFilterChange());
   if (cityFilter) cityFilter.addEventListener("change", () => onFilterChange());
+  if (sectorFilter) sectorFilter.addEventListener("change", () => onFilterChange());
   if (professionFilter) professionFilter.addEventListener("change", () => onFilterChange());
   if (sortFilter) sortFilter.addEventListener("change", () => onFilterChange());
+  if (professionSearchFilter) {
+    professionSearchFilter.addEventListener("input", () => {
+      renderProfessionOptions(professionSearchFilter.value);
+    });
+  }
+
+  if (countryPickerBtn) {
+    countryPickerBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      toggleCountryPickerPanel();
+    });
+  }
+  if (countryPickerSearch) {
+    countryPickerSearch.addEventListener("input", () => {
+      renderCountryPickerOptions(countryPickerSearch.value);
+    });
+  }
+  if (countryPickerClearBtn) {
+    countryPickerClearBtn.addEventListener("click", () => {
+      state.filters.countries = [];
+      applyStateToFilters();
+      applyFiltersAndRender({ resetPage: true });
+    });
+  }
+  document.addEventListener("click", event => {
+    if (!countryPickerPanel || countryPickerPanel.classList.contains("hidden")) return;
+    const clickedInsidePanel = countryPickerPanel.contains(event.target);
+    const clickedTrigger = countryPickerBtn && countryPickerBtn.contains(event.target);
+    if (!clickedInsidePanel && !clickedTrigger) {
+      closeCountryPickerPanel();
+    }
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      closeCountryPickerPanel();
+    }
+  });
 
   if (searchFilter) {
     searchFilter.addEventListener("input", debounce(() => {
@@ -160,15 +219,13 @@ function bindEvents() {
     btn.addEventListener("click", () => {
       const quick = btn.dataset.quick;
       if (quick === "remote") {
-        state.filters.workType = "Remote";
+        state.filters.workType = state.filters.workType === "Remote" ? "" : "Remote";
       } else if (quick === "technical-artist") {
-        state.filters.profession = "technical-artist";
+        state.filters.profession = state.filters.profession === "technical-artist" ? "" : "technical-artist";
+      } else if (quick === "exclude-internship") {
+        state.filters.excludeInternship = !state.filters.excludeInternship;
       } else if (quick === "netherlands") {
-        if (countryFilter && optionExists(countryFilter, "NL")) {
-          state.filters.country = "NL";
-        } else {
-          state.filters.country = "Netherlands";
-        }
+        toggleCountrySelection("NL");
       } else {
         resetFilters();
       }
@@ -187,7 +244,7 @@ async function init() {
 
   const cached = await readCachedJobs();
   if (cached?.jobs && cached.jobs.length > 0) {
-    allJobs = cached.jobs;
+    allJobs = normalizeJobs(cached.jobs);
     recalculateItemsPerPage();
     updateFilterOptions();
     applyStateToFilters();
@@ -290,9 +347,11 @@ function readStateFromUrl() {
   }
 
   state.filters.workType = params.get("workType") || "";
-  state.filters.country = params.get("country") || "";
+  state.filters.countries = Array.from(new Set(params.getAll("country").filter(Boolean)));
   state.filters.city = params.get("city") || "";
+  state.filters.sector = params.get("sector") || "";
   state.filters.profession = params.get("profession") || "";
+  state.filters.excludeInternship = params.get("excludeInternship") === "1";
   state.filters.search = params.get("search") || "";
   state.filters.sort = params.get("sort") || "relevance";
 }
@@ -302,9 +361,11 @@ function writeStateToUrl() {
 
   if (state.currentPage > 1) params.set("page", String(state.currentPage));
   if (state.filters.workType) params.set("workType", state.filters.workType);
-  if (state.filters.country) params.set("country", state.filters.country);
+  state.filters.countries.forEach(country => params.append("country", country));
   if (state.filters.city) params.set("city", state.filters.city);
+  if (state.filters.sector) params.set("sector", state.filters.sector);
   if (state.filters.profession) params.set("profession", state.filters.profession);
+  if (state.filters.excludeInternship) params.set("excludeInternship", "1");
   if (state.filters.search) params.set("search", state.filters.search);
   if (state.filters.sort && state.filters.sort !== "relevance") params.set("sort", state.filters.sort);
 
@@ -407,7 +468,7 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
     }
 
     const previousLength = allJobs.length;
-    allJobs = result.jobs;
+    allJobs = normalizeJobs(result.jobs);
     await writeCachedJobs(allJobs);
     updateLastUpdatedText(Date.now());
     recalculateItemsPerPage();
@@ -466,12 +527,15 @@ function applyStateToStaticFilters() {
 
 function applyStateToFilters() {
   applyStateToStaticFilters();
+  state.filters.countries = (state.filters.countries || []).filter(code => availableCountries.includes(code));
 
-  if (countryFilter && optionExists(countryFilter, state.filters.country)) {
-    countryFilter.value = state.filters.country;
-  } else {
-    state.filters.country = "";
+  if (countryFilter) {
+    const selected = new Set(state.filters.countries || []);
+    Array.from(countryFilter.options).forEach(option => {
+      option.selected = selected.has(option.value);
+    });
   }
+  syncCountryPickerChecks();
 
   if (cityFilter && optionExists(cityFilter, state.filters.city)) {
     cityFilter.value = state.filters.city;
@@ -479,11 +543,22 @@ function applyStateToFilters() {
     state.filters.city = "";
   }
 
+  if (sectorFilter && optionExists(sectorFilter, state.filters.sector)) {
+    sectorFilter.value = state.filters.sector;
+  } else {
+    state.filters.sector = "";
+  }
+
   if (professionFilter && optionExists(professionFilter, state.filters.profession)) {
     professionFilter.value = state.filters.profession;
   } else if (state.filters.profession && state.filters.profession !== "") {
     state.filters.profession = "";
   }
+
+  updateCountrySelectionBadge();
+  updateCountryPickerTrigger();
+  updateQuickChipStates();
+  updateActiveFiltersSummary();
 }
 
 function optionExists(select, value) {
@@ -498,22 +573,31 @@ function onFilterChange() {
 
 function syncStateFromFilters() {
   state.filters.workType = workTypeFilter ? workTypeFilter.value : "";
-  state.filters.country = countryFilter ? countryFilter.value : "";
+  state.filters.countries = countryFilter
+    ? Array.from(countryFilter.selectedOptions).map(option => option.value)
+    : [];
   state.filters.city = cityFilter ? cityFilter.value : "";
+  state.filters.sector = sectorFilter ? sectorFilter.value : "";
   state.filters.profession = professionFilter ? professionFilter.value : "";
+  state.filters.excludeInternship = Boolean(state.filters.excludeInternship);
   state.filters.search = searchFilter ? searchFilter.value.trim() : "";
   state.filters.sort = sortFilter ? sortFilter.value : "relevance";
+  updateCountrySelectionBadge();
 }
 
 function resetFilters() {
   state.filters = {
     workType: "",
-    country: "",
+    countries: [],
     city: "",
+    sector: "",
     profession: "",
+    excludeInternship: false,
     search: "",
     sort: "relevance"
   };
+  if (professionSearchFilter) professionSearchFilter.value = "";
+  renderProfessionOptions("");
   applyStateToFilters();
 }
 
@@ -528,16 +612,19 @@ function applyFiltersAndRender({ resetPage }) {
 
   filteredJobs = allJobs.filter(job => {
     const matchesWorkType = !state.filters.workType || job.workType === state.filters.workType;
-    const matchesCountry = !state.filters.country || job.country === state.filters.country;
+    const matchesCountry = state.filters.countries.length === 0 || state.filters.countries.includes(job.country);
     const matchesCity = !state.filters.city || job.city === state.filters.city;
+    const matchesSector = !state.filters.sector || job.sector === state.filters.sector;
     const matchesProfession = !state.filters.profession || job.profession === state.filters.profession;
+    const matchesInternship = !state.filters.excludeInternship || !isInternshipJob(job);
     const matchesSearch =
       !searchTerm ||
       job.title.toLowerCase().includes(searchTerm) ||
       job.company.toLowerCase().includes(searchTerm) ||
-      (job.city || "").toLowerCase().includes(searchTerm);
+      (job.city || "").toLowerCase().includes(searchTerm) ||
+      (job.sector || "").toLowerCase().includes(searchTerm);
 
-    return matchesWorkType && matchesCountry && matchesCity && matchesProfession && matchesSearch;
+    return matchesWorkType && matchesCountry && matchesCity && matchesSector && matchesProfession && matchesInternship && matchesSearch;
   });
 
   sortJobs(filteredJobs, state.filters.sort);
@@ -589,6 +676,7 @@ function displayJobs(jobs) {
       <div class="job-row-header">
         <div class="col-title">Position</div>
         <div class="col-company">Company</div>
+        <div class="col-sector">Sector</div>
         <div class="col-city">City</div>
         <div class="col-country">Country</div>
         <div class="col-contract">Contract</div>
@@ -608,7 +696,7 @@ function displayJobs(jobs) {
 function renderJobRow(job) {
   const safeTitle = escapeHtml(job.title);
   const safeCompany = escapeHtml(job.company);
-  const companyType = job.companyType || classifyCompanyType(job.company, job.title);
+  const safeSector = escapeHtml(job.sector || "Unknown");
   const safeCity = escapeHtml(job.city || "");
   const safeCountry = escapeHtml(fullCountryName(job.country));
   const safeJobLink = sanitizeUrl(job.jobLink);
@@ -631,7 +719,10 @@ function renderJobRow(job) {
       </div>
     </div>
     <div class="col-company job-cell" data-label="Company">
-      <span class="job-company-compact" title="${safeCompany}">${escapeHtml(companyType)}</span>
+      <span class="job-company-compact" title="${safeCompany}">${safeCompany}</span>
+    </div>
+    <div class="col-sector job-cell" data-label="Sector">
+      <span class="job-sector">${safeSector}</span>
     </div>
     <div class="col-city job-cell" data-label="City">
       <span class="job-location">${safeCity}</span>
@@ -794,36 +885,34 @@ function updateResultsSummary(total, from, to) {
     return;
   }
   const pageText = `Showing ${from}-${to} of ${total.toLocaleString()} jobs`;
-  const active = [];
-  if (state.filters.workType) active.push(state.filters.workType);
-  if (state.filters.country) active.push(fullCountryName(state.filters.country));
-  if (state.filters.city) active.push(state.filters.city);
-  if (state.filters.profession) active.push(PROFESSION_LABELS[state.filters.profession] || state.filters.profession);
-  if (state.filters.search) active.push(`"${state.filters.search}"`);
-
-  resultsSummary.textContent = active.length > 0 ? `${pageText} | Filters: ${active.join(", ")}` : pageText;
+  resultsSummary.textContent = pageText;
 }
 
 function updateFilterOptions() {
-  if (!workTypeFilter || !countryFilter || !professionFilter || !cityFilter) return;
+  if (!workTypeFilter || !countryFilter || !professionFilter || !cityFilter || !sectorFilter) return;
 
   const countries = new Set();
   const professions = new Set();
   const cities = new Set();
+  const sectors = new Set();
 
   allJobs.forEach(job => {
     if (isValidCountry(job.country)) countries.add(job.country);
     if (job.profession) professions.add(job.profession);
     if (job.city) cities.add(job.city);
+    if (job.sector) sectors.add(job.sector);
   });
 
-  countryFilter.innerHTML = '<option value="">All Countries</option>';
-  Array.from(countries).sort().forEach(country => {
+  availableCountries = Array.from(countries).sort();
+
+  countryFilter.innerHTML = "";
+  availableCountries.forEach(country => {
     const opt = document.createElement("option");
     opt.value = country;
     opt.textContent = fullCountryName(country);
     countryFilter.appendChild(opt);
   });
+  renderCountryPickerOptions(countryPickerSearch ? countryPickerSearch.value : "");
 
   cityFilter.innerHTML = '<option value="">All Cities</option>';
   Array.from(cities).sort().forEach(city => {
@@ -833,13 +922,188 @@ function updateFilterOptions() {
     cityFilter.appendChild(opt);
   });
 
+  sectorFilter.innerHTML = '<option value="">All Sectors</option>';
+  Array.from(sectors).sort((a, b) => a.localeCompare(b)).forEach(sector => {
+    const opt = document.createElement("option");
+    opt.value = sector;
+    opt.textContent = sector;
+    sectorFilter.appendChild(opt);
+  });
+
+  availableProfessions = Array.from(professions).sort();
+  renderProfessionOptions(professionSearchFilter ? professionSearchFilter.value : "");
+  updateCountrySelectionBadge();
+  updateCountryPickerTrigger();
+}
+
+function renderProfessionOptions(query = "") {
+  if (!professionFilter) return;
+  const normalized = String(query || "").trim().toLowerCase();
+  const current = state.filters.profession;
+
   professionFilter.innerHTML = '<option value="">All Roles</option>';
-  Array.from(professions).sort().forEach(profession => {
+  availableProfessions.forEach(profession => {
+    const label = PROFESSION_LABELS[profession] || capitalizeFirst(profession);
+    if (normalized && !label.toLowerCase().includes(normalized) && profession !== current) {
+      return;
+    }
     const opt = document.createElement("option");
     opt.value = profession;
-    opt.textContent = PROFESSION_LABELS[profession] || capitalizeFirst(profession);
+    opt.textContent = label;
     professionFilter.appendChild(opt);
   });
+
+  if (optionExists(professionFilter, current)) {
+    professionFilter.value = current;
+  } else if (current) {
+    state.filters.profession = "";
+    professionFilter.value = "";
+  }
+}
+
+function updateCountrySelectionBadge() {
+  if (!countrySelectionBadge) return;
+  const count = state.filters.countries.length;
+  if (count === 0) {
+    countrySelectionBadge.textContent = "All countries";
+    return;
+  }
+  countrySelectionBadge.textContent = count === 1
+    ? `1 country selected`
+    : `${count} countries selected`;
+}
+
+function appendCountrySelection(countryCode) {
+  let target = countryCode;
+  const mapped = resolveCountryCode(countryCode);
+  if (mapped) target = mapped;
+  if (!availableCountries.includes(target)) return;
+  const selected = new Set(state.filters.countries || []);
+  selected.add(target);
+  state.filters.countries = Array.from(selected);
+}
+
+function toggleCountrySelection(countryCode) {
+  const mapped = resolveCountryCode(countryCode);
+  if (!mapped) return;
+  const selected = new Set(state.filters.countries || []);
+  if (selected.has(mapped)) {
+    selected.delete(mapped);
+  } else {
+    selected.add(mapped);
+  }
+  state.filters.countries = Array.from(selected);
+}
+
+function resolveCountryCode(countryCode) {
+  const raw = String(countryCode || "").trim();
+  if (!raw) return "";
+
+  const normalized = raw.toLowerCase();
+  if (normalized === "nl" || normalized === "netherlands") {
+    if (availableCountries.includes("NL")) return "NL";
+    const nameMatch = availableCountries.find(code => String(code).toLowerCase() === "netherlands");
+    if (nameMatch) return nameMatch;
+  }
+
+  if (availableCountries.includes(raw)) return raw;
+  const byName = availableCountries.find(code => fullCountryName(code).toLowerCase() === normalized);
+  return byName || "";
+}
+
+function syncCountryPickerChecks() {
+  if (!countryPickerOptions) return;
+  const selected = new Set(state.filters.countries || []);
+  countryPickerOptions.querySelectorAll('input[type="checkbox"]').forEach(input => {
+    input.checked = selected.has(input.value);
+  });
+}
+
+function renderCountryPickerOptions(query = "") {
+  if (!countryPickerOptions) return;
+  const normalized = String(query || "").trim().toLowerCase();
+  const selected = new Set(state.filters.countries || []);
+  const rows = availableCountries.filter(code => {
+    if (!normalized) return true;
+    const label = fullCountryName(code).toLowerCase();
+    return label.includes(normalized);
+  });
+
+  if (rows.length === 0) {
+    countryPickerOptions.innerHTML = '<div class="country-empty">No matches.</div>';
+    return;
+  }
+
+  countryPickerOptions.innerHTML = rows.map(code => `
+    <label class="country-option">
+      <input type="checkbox" value="${escapeHtml(code)}" ${selected.has(code) ? "checked" : ""}>
+      <span>${escapeHtml(fullCountryName(code))}</span>
+    </label>
+  `).join("");
+
+  countryPickerOptions.querySelectorAll('input[type="checkbox"]').forEach(input => {
+    input.addEventListener("change", () => {
+      const current = new Set(state.filters.countries || []);
+      if (input.checked) current.add(input.value);
+      else current.delete(input.value);
+      state.filters.countries = Array.from(current);
+      applyStateToFilters();
+      applyFiltersAndRender({ resetPage: true });
+    });
+  });
+}
+
+function toggleCountryPickerPanel() {
+  if (!countryPickerPanel) return;
+  const isHidden = countryPickerPanel.classList.contains("hidden");
+  if (isHidden) {
+    countryPickerPanel.classList.remove("hidden");
+    if (countryPickerBtn) countryPickerBtn.setAttribute("aria-expanded", "true");
+    if (countryPickerSearch) countryPickerSearch.focus();
+    return;
+  }
+  closeCountryPickerPanel();
+}
+
+function closeCountryPickerPanel() {
+  if (!countryPickerPanel) return;
+  countryPickerPanel.classList.add("hidden");
+  if (countryPickerBtn) countryPickerBtn.setAttribute("aria-expanded", "false");
+}
+
+function updateCountryPickerTrigger() {
+  if (!countryPickerBtn) return;
+  const count = state.filters.countries.length;
+  countryPickerBtn.textContent = count > 0 ? `Country: ${count} selected` : "Country: All";
+}
+
+function updateQuickChipStates() {
+  document.querySelectorAll(".quick-chip").forEach(chip => {
+    const key = chip.dataset.quick;
+    let active = false;
+    if (key === "remote") active = state.filters.workType === "Remote";
+    else if (key === "technical-artist") active = state.filters.profession === "technical-artist";
+    else if (key === "exclude-internship") active = Boolean(state.filters.excludeInternship);
+    else if (key === "netherlands") {
+      const nl = resolveCountryCode("NL");
+      active = Boolean(nl) && state.filters.countries.includes(nl);
+    }
+    chip.classList.toggle("active", active);
+    chip.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function updateActiveFiltersSummary() {
+  if (!activeFiltersSummaryEl) return;
+  const active = [];
+  if (state.filters.workType) active.push(state.filters.workType);
+  if (state.filters.countries.length > 0) active.push(`Countries: ${state.filters.countries.length}`);
+  if (state.filters.city) active.push(`City: ${state.filters.city}`);
+  if (state.filters.sector) active.push(`Sector: ${state.filters.sector}`);
+  if (state.filters.profession) active.push(PROFESSION_LABELS[state.filters.profession] || state.filters.profession);
+  if (state.filters.excludeInternship) active.push("Exclude Internship");
+  if (state.filters.search) active.push(`Search: "${state.filters.search}"`);
+  activeFiltersSummaryEl.textContent = active.length ? `Active filters: ${active.join(" • ")}` : "No active filters";
 }
 
 async function fetchFromGoogleSheets() {
@@ -917,45 +1181,58 @@ function parseCSVLarge(csv) {
 
     const headers = rows[headerIdx].map(h => h.toLowerCase().trim());
 
-    const companyIdx = findColumnIndex(headers, ["company name", "company"]);
+    const companyIdx = findCompanyColumnIndex(headers);
+    const companyNameCandidateIdxs = findCompanyNameCandidateIndexes(headers, companyIdx);
     const titleIdx = findColumnIndex(headers, ["title", "role"]);
     const cityIdx = findColumnIndex(headers, ["city"]);
     const countryIdx = findColumnIndex(headers, ["country"]);
     const locationTypeIdx = findColumnIndex(headers, ["location type", "work type"]);
     const contractTypeIdx = findColumnIndex(headers, ["employment type", "contract type", "employment", "contract", "position type"]);
     const jobLinkIdx = findColumnIndex(headers, ["job link", "url", "apply"]);
+    const sectorIdx = findColumnIndexByPriority(
+      headers,
+      ["sector", "industry", "company type", "company category"],
+      []
+    );
 
     if (titleIdx === -1 || companyIdx === -1) return [];
 
     const jobs = [];
+    let uncategorizedCount = 0;
     for (let i = headerIdx + 1; i < rows.length; i++) {
       const fields = rows[i];
       if (!fields || fields.length === 0) continue;
 
       const title = (fields[titleIdx] || "").trim();
-      const company = (fields[companyIdx] || "").trim();
+      const company = resolveCompanyName(fields, companyIdx, companyNameCandidateIdxs);
       const city = (fields[cityIdx] || "").trim();
       const country = (fields[countryIdx] || "Unknown").trim();
       const locationType = (fields[locationTypeIdx] || "On-site").trim();
       const contractTypeText = contractTypeIdx !== -1 ? (fields[contractTypeIdx] || "").trim() : "";
       const jobLink = jobLinkIdx !== -1 ? (fields[jobLinkIdx] || "").trim() : "";
+      const sectorText = sectorIdx !== -1 ? (fields[sectorIdx] || "").trim() : "";
 
       if (!title || !company) continue;
+      const profession = mapProfession(title);
+      if (profession === "other") uncategorizedCount += 1;
 
       jobs.push({
         id: 1000 + i,
         title,
         company,
+        sector: normalizeSector(sectorText, company, title),
         companyType: classifyCompanyType(company, title),
         city,
         country,
         workType: detectWorkType(locationType),
         contractType: detectContractType(contractTypeText, title),
-        profession: mapProfession(title),
+        profession,
         description: `${title} at ${company}`,
         jobLink
       });
     }
+
+    console.info(`Role mapper uncategorized: ${uncategorizedCount}/${jobs.length}`);
 
     const endTime = performance.now();
     console.log(`Loaded ${jobs.length} jobs in ${((endTime - startTime) / 1000).toFixed(2)}s`);
@@ -964,6 +1241,20 @@ function parseCSVLarge(csv) {
     console.error("Error parsing CSV:", err.message);
     return [];
   }
+}
+
+function normalizeJobs(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map(row => {
+    const job = { ...row };
+    job.company = String(job.company || "").trim();
+    job.sector = normalizeSector(job.sector || "", job.company || "", job.title || "");
+    job.profession = PROFESSION_LABELS[job.profession] ? job.profession : mapProfession(String(job.title || ""));
+    if (!job.companyType) {
+      job.companyType = classifyCompanyType(job.company, job.title || "");
+    }
+    return job;
+  });
 }
 
 function parseCSVRecords(csv) {
@@ -1016,11 +1307,107 @@ function parseCSVRecords(csv) {
 }
 
 function findColumnIndex(headers, possibleNames) {
-  for (let i = 0; i < headers.length; i++) {
-    for (const name of possibleNames) {
-      if (headers[i].includes(name)) return i;
+  return findColumnIndexByPriority(headers, possibleNames, possibleNames);
+}
+
+function findCompanyColumnIndex(headers) {
+  const normalizedHeaders = headers.map(h => String(h || "").trim().toLowerCase());
+  const exactIdx = normalizedHeaders.findIndex(h => h === "company name" || h === "company");
+  if (exactIdx !== -1) return exactIdx;
+
+  for (let i = 0; i < normalizedHeaders.length; i++) {
+    const h = normalizedHeaders[i];
+    if (!h.includes("company")) continue;
+    if (h.includes("type") || h.includes("category") || h.includes("sector")) continue;
+    return i;
+  }
+  return -1;
+}
+
+function findCompanyNameCandidateIndexes(headers, primaryIdx) {
+  const normalizedHeaders = headers.map(h => String(h || "").trim().toLowerCase());
+  const seen = new Set();
+  const candidates = [];
+
+  const pushIdx = idx => {
+    if (idx < 0 || idx >= headers.length) return;
+    if (seen.has(idx)) return;
+    seen.add(idx);
+    candidates.push(idx);
+  };
+
+  pushIdx(primaryIdx);
+
+  normalizedHeaders.forEach((h, idx) => {
+    const isNameLike =
+      h.includes("company name") ||
+      h === "company" ||
+      h.includes("studio") ||
+      h.includes("employer") ||
+      h.includes("organization") ||
+      h.includes("organisation");
+    const isTypeLike =
+      h.includes("type") ||
+      h.includes("category") ||
+      h.includes("sector") ||
+      h.includes("industry");
+    if (isNameLike && !isTypeLike) {
+      pushIdx(idx);
+    }
+  });
+
+  return candidates;
+}
+
+function resolveCompanyName(fields, primaryIdx, candidateIdxs) {
+  const allCandidates = [];
+
+  if (Number.isInteger(primaryIdx) && primaryIdx >= 0) {
+    allCandidates.push(String(fields[primaryIdx] || "").trim());
+  }
+
+  (candidateIdxs || []).forEach(idx => {
+    allCandidates.push(String(fields[idx] || "").trim());
+  });
+
+  for (const value of allCandidates) {
+    if (!value) continue;
+    if (!isGenericCompanyLabel(value)) return value;
+  }
+
+  for (const value of allCandidates) {
+    if (value) return value;
+  }
+
+  return "";
+}
+
+function isGenericCompanyLabel(value) {
+  const lower = String(value || "").trim().toLowerCase();
+  return (
+    lower === "game" ||
+    lower === "tech" ||
+    lower === "game company" ||
+    lower === "tech company" ||
+    lower === "gaming company" ||
+    lower === "technology company"
+  );
+}
+
+function findColumnIndexByPriority(headers, exactNames, containsNames) {
+  const normalizedHeaders = headers.map(h => String(h || "").trim().toLowerCase());
+
+  for (const name of exactNames) {
+    const idx = normalizedHeaders.findIndex(h => h === name);
+    if (idx !== -1) return idx;
+  }
+
+  for (let i = 0; i < normalizedHeaders.length; i++) {
+    for (const name of containsNames) {
+      if (normalizedHeaders[i].includes(name)) return i;
     }
   }
+
   return -1;
 }
 
@@ -1034,6 +1421,13 @@ function detectWorkType(text) {
 
 function detectContractType(text, title = "") {
   const lower = `${text} ${title}`.toLowerCase();
+
+  if (
+    lower.includes("internship") ||
+    lower.includes("intern ")
+  ) {
+    return "Internship";
+  }
 
   if (
     lower.includes("full-time") ||
@@ -1051,8 +1445,7 @@ function detectContractType(text, title = "") {
     lower.includes("fixed term") ||
     lower.includes("freelance") ||
     lower.includes("part-time") ||
-    lower.includes("part time") ||
-    lower.includes("intern")
+    lower.includes("part time")
   ) {
     return "Temporary";
   }
@@ -1060,9 +1453,18 @@ function detectContractType(text, title = "") {
   return "Unknown";
 }
 
+function normalizeSector(text, company = "", title = "") {
+  const value = String(text || "").trim();
+  const lower = value.toLowerCase();
+  if (/\b(game|gaming|esports|studio|publisher)\b/.test(lower)) return "Game";
+  if (/\b(tech|technology|software|it)\b/.test(lower)) return "Tech";
+  return classifyCompanyType(company, title) === "Game" ? "Game" : "Tech";
+}
+
 function toContractClass(contractType) {
   const normalized = (contractType || "").toLowerCase();
   if (normalized === "full-time") return "full-time";
+  if (normalized === "internship") return "internship";
   if (normalized === "temporary") return "temporary";
   return "unknown";
 }
@@ -1100,6 +1502,7 @@ function toJobSnapshot(job) {
   return {
     title: job.title || "",
     company: job.company || "",
+    sector: job.sector || classifyCompanyType(job.company, job.title),
     companyType: job.companyType || classifyCompanyType(job.company, job.title),
     city: job.city || "",
     country: job.country || "",
@@ -1145,7 +1548,17 @@ async function toggleSaveJob(job) {
 function mapProfession(title) {
   const lower = title.toLowerCase();
 
+  if (lower.includes("technical animator")) return "technical-animator";
   if (lower.includes("technical artist")) return "technical-artist";
+  if (lower.includes("environment artist")) return "environment-artist";
+  if (lower.includes("character artist")) return "character-artist";
+  if (/\brigging\b/.test(lower) || /\brigger\b/.test(lower)) return "rigging";
+  if (lower.includes("vfx artist") || lower.includes("visual effects artist") || lower.includes("fx artist")) return "vfx-artist";
+  if (lower.includes("ui artist") || lower.includes("ux artist") || lower.includes("ui/ux")) return "ui-ux-artist";
+  if (lower.includes("concept artist")) return "concept-artist";
+  if (lower.includes("3d artist") || lower.includes("3d modeler") || lower.includes("3d modeller")) return "3d-artist";
+  if (lower.includes("art director")) return "art-director";
+
   if (lower.includes("gameplay") || lower.includes("game mechanics")) return "gameplay";
   if (lower.includes("graphics") || lower.includes("rendering") || lower.includes("shader")) return "graphics";
   if (lower.includes("engine") || lower.includes("architecture") || lower.includes("systems")) return "engine";
@@ -1153,9 +1566,17 @@ function mapProfession(title) {
   if (lower.includes("animator") || lower.includes("motion")) return "animator";
   if (lower.includes("tool") || lower.includes("pipeline") || lower.includes("editor") || (lower.includes("technical") && !lower.includes("artist"))) return "tools";
   if (lower.includes("designer") || lower.includes("level") || lower.includes("game design")) return "designer";
-  if (lower.includes("artist") || lower.includes("animation") || lower.includes("visual")) return "artist";
+  if (lower.includes("artist") || lower.includes("animation") || lower.includes("visual")) return "3d-artist";
 
   return "other";
+}
+
+function isInternshipJob(job) {
+  const contract = String(job?.contractType || "").toLowerCase();
+  if (contract === "internship") return true;
+
+  const text = `${job?.title || ""} ${job?.description || ""}`.toLowerCase();
+  return /\bintern(ship)?\b/.test(text);
 }
 
 
