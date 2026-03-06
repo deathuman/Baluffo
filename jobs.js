@@ -46,6 +46,7 @@ let authStatus;
 let authSignInBtn;
 let authSignOutBtn;
 let savedJobsBtn;
+let adminPageBtn;
 
 let currentUser = null;
 let savedJobKeys = new Set();
@@ -86,6 +87,7 @@ function cacheDom() {
   authSignInBtn = document.getElementById("auth-sign-in-btn");
   authSignOutBtn = document.getElementById("auth-sign-out-btn");
   savedJobsBtn = document.getElementById("saved-jobs-btn");
+  adminPageBtn = document.getElementById("admin-page-btn");
 }
 
 function bindEvents() {
@@ -99,6 +101,13 @@ function bindEvents() {
     savedJobsBtn.addEventListener("click", () => {
       rememberCurrentJobsUrl();
       window.location.href = "saved.html";
+    });
+  }
+
+  if (adminPageBtn) {
+    adminPageBtn.addEventListener("click", () => {
+      rememberCurrentJobsUrl();
+      window.location.href = "admin.html";
     });
   }
 

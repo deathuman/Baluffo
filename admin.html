@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="jobs-container">
+    <div class="jobs-header">
+      <h1>Administration</h1>
+      <div class="header-actions">
+        <button id="admin-jobs-btn" class="btn back-btn" aria-label="Go to jobs page">All Jobs</button>
+        <button id="admin-saved-btn" class="btn back-btn" aria-label="Go to saved jobs page">Saved Jobs</button>
+        <button id="admin-lock-btn" class="btn back-btn hidden" aria-label="Lock admin panel">Lock</button>
+      </div>
+    </div>
+
+    <p id="admin-source-status" class="source-status">Enter admin PIN to access user overview.</p>
+
+    <section id="admin-pin-gate" class="admin-panel">
+      <h2 class="admin-section-title">PIN Required</h2>
+      <div class="admin-pin-row">
+        <input id="admin-pin-input" type="password" class="admin-pin-input" placeholder="Enter admin PIN" autocomplete="off">
+        <button id="admin-unlock-btn" class="btn back-btn">Unlock</button>
+      </div>
+    </section>
+
+    <section id="admin-content" class="admin-panel hidden">
+      <div class="admin-toolbar">
+        <h2 class="admin-section-title">Stored Profiles Overview</h2>
+        <button id="admin-refresh-btn" class="btn clear-filters-btn">Refresh</button>
+      </div>
+
+      <div id="admin-totals" class="admin-totals"></div>
+      <div id="admin-users-list" class="jobs-list"></div>
+    </section>
+  </div>
+
+  <script src="local-data-client.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

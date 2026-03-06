@@ -4,6 +4,7 @@ let savedAuthStatusEl;
 let signInBtnEl;
 let signOutBtnEl;
 let jobsPageBtnEl;
+let adminPageBtnEl;
 let exportBackupBtnEl;
 let exportIncludeFilesEl;
 let importBackupBtnEl;
@@ -47,6 +48,7 @@ function cacheDom() {
   signInBtnEl = document.getElementById("saved-auth-sign-in-btn");
   signOutBtnEl = document.getElementById("saved-auth-sign-out-btn");
   jobsPageBtnEl = document.getElementById("jobs-page-btn");
+  adminPageBtnEl = document.getElementById("admin-page-btn");
   exportBackupBtnEl = document.getElementById("export-backup-btn");
   exportIncludeFilesEl = document.getElementById("export-include-files");
   importBackupBtnEl = document.getElementById("import-backup-btn");
@@ -58,6 +60,12 @@ function bindEvents() {
     jobsPageBtnEl.addEventListener("click", () => {
       const target = getLastJobsUrl();
       window.location.href = target;
+    });
+  }
+
+  if (adminPageBtnEl) {
+    adminPageBtnEl.addEventListener("click", () => {
+      window.location.href = "admin.html";
     });
   }
 

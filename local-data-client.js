@@ -3,6 +3,7 @@
   const DB_VERSION = 1;
   const SESSION_KEY = "baluffo_current_profile_id";
   const PROFILE_KEY = "baluffo_profiles";
+  const ADMIN_PIN = "1234";
 
   const APPLICATION_STATUSES = [
     "bookmark",
@@ -75,6 +76,14 @@
 
   function writeProfiles(profiles) {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles));
+  }
+
+  function verifyAdminPin(pin) {
+    return String(pin || "") === ADMIN_PIN;
+  }
+
+  function ensureAdmin(pin) {
+    if (!verifyAdminPin(pin)) throw new Error("Invalid admin PIN.");
   }
 
   function getStoredSessionUser() {
@@ -183,6 +192,22 @@
         done(rows);
       };
       request.onerror = () => fail(request.error || new Error("Could not list saved jobs."));
+    });
+  }
+
+  async function listAllSavedJobs() {
+    return withStore("saved_jobs", "readonly", (store, done, fail) => {
+      const request = store.getAll();
+      request.onsuccess = () => done((request.result || []).map(stripPk));
+      request.onerror = () => fail(request.error || new Error("Could not list all saved jobs."));
+    });
+  }
+
+  async function listAllAttachments() {
+    return withStore("attachments", "readonly", (store, done, fail) => {
+      const request = store.getAll();
+      request.onsuccess = () => done((request.result || []).map(stripAttachmentPk));
+      request.onerror = () => fail(request.error || new Error("Could not list all attachments."));
     });
   }
 
@@ -603,6 +628,158 @@
     await notifySavedJobsChanged(uid);
   }
 
+  function utf8ByteLength(input) {
+    const text = String(input || "");
+    if (typeof TextEncoder !== "undefined") {
+      return new TextEncoder().encode(text).length;
+    }
+    return unescape(encodeURIComponent(text)).length;
+  }
+
+  function getAttachmentByteSize(row) {
+    const meta = Number(row?.size) || 0;
+    if (meta > 0) return meta;
+    const blobSize = Number(row?.blob?.size) || 0;
+    return blobSize > 0 ? blobSize : 0;
+  }
+
+  function ensureAdminUserRow(map, uid, fallbackName = "Unknown Profile") {
+    if (!map.has(uid)) {
+      map.set(uid, {
+        uid,
+        name: fallbackName,
+        email: "",
+        savedJobsCount: 0,
+        notesBytes: 0,
+        attachmentsCount: 0,
+        attachmentsBytes: 0,
+        totalBytes: 0
+      });
+    }
+    return map.get(uid);
+  }
+
+  async function getAdminOverview(pin) {
+    ensureAdmin(pin);
+    const profiles = readProfiles();
+    const allSavedJobs = await listAllSavedJobs();
+    const allAttachments = await listAllAttachments();
+
+    const usersById = new Map();
+    profiles.forEach(profile => {
+      usersById.set(profile.id, {
+        uid: profile.id,
+        name: profile.name || profile.id,
+        email: profile.email || "",
+        savedJobsCount: 0,
+        notesBytes: 0,
+        attachmentsCount: 0,
+        attachmentsBytes: 0,
+        totalBytes: 0
+      });
+    });
+
+    allSavedJobs.forEach(row => {
+      const entry = ensureAdminUserRow(usersById, row.profileId, "Unknown Profile");
+      entry.savedJobsCount += 1;
+      entry.notesBytes += utf8ByteLength(row.notes || "");
+    });
+
+    allAttachments.forEach(row => {
+      const entry = ensureAdminUserRow(usersById, row.profileId, "Unknown Profile");
+      entry.attachmentsCount += 1;
+      entry.attachmentsBytes += getAttachmentByteSize(row);
+    });
+
+    const users = Array.from(usersById.values()).map(row => ({
+      ...row,
+      totalBytes: row.notesBytes + row.attachmentsBytes
+    }));
+    users.sort((a, b) => {
+      const byteDelta = b.totalBytes - a.totalBytes;
+      if (byteDelta !== 0) return byteDelta;
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
+
+    const totals = users.reduce((acc, row) => ({
+      usersCount: acc.usersCount + 1,
+      savedJobsCount: acc.savedJobsCount + row.savedJobsCount,
+      notesBytes: acc.notesBytes + row.notesBytes,
+      attachmentsCount: acc.attachmentsCount + row.attachmentsCount,
+      attachmentsBytes: acc.attachmentsBytes + row.attachmentsBytes,
+      totalBytes: acc.totalBytes + row.totalBytes
+    }), {
+      usersCount: 0,
+      savedJobsCount: 0,
+      notesBytes: 0,
+      attachmentsCount: 0,
+      attachmentsBytes: 0,
+      totalBytes: 0
+    });
+
+    return { users, totals };
+  }
+
+  async function deleteSavedJobsForProfile(uid) {
+    await withStore("saved_jobs", "readwrite", (store, done, fail) => {
+      const index = store.index("by_profile");
+      const cursorReq = index.openCursor(IDBKeyRange.only(uid));
+      cursorReq.onsuccess = event => {
+        const cursor = event.target.result;
+        if (!cursor) {
+          done();
+          return;
+        }
+        const delReq = cursor.delete();
+        delReq.onsuccess = () => cursor.continue();
+        delReq.onerror = () => fail(delReq.error || new Error("Could not delete saved job row."));
+      };
+      cursorReq.onerror = () => fail(cursorReq.error || new Error("Could not iterate saved jobs."));
+    });
+  }
+
+  async function deleteAttachmentsForProfile(uid) {
+    await withStore("attachments", "readwrite", (store, done, fail) => {
+      const index = store.index("by_profile_job");
+      const range = IDBKeyRange.bound([uid, ""], [uid, "\uffff"]);
+      const cursorReq = index.openCursor(range);
+      cursorReq.onsuccess = event => {
+        const cursor = event.target.result;
+        if (!cursor) {
+          done();
+          return;
+        }
+        const delReq = cursor.delete();
+        delReq.onsuccess = () => cursor.continue();
+        delReq.onerror = () => fail(delReq.error || new Error("Could not delete attachment row."));
+      };
+      cursorReq.onerror = () => fail(cursorReq.error || new Error("Could not iterate attachments."));
+    });
+  }
+
+  async function wipeAccountAdmin(pin, uid) {
+    ensureAdmin(pin);
+    const targetUid = String(uid || "");
+    if (!targetUid) throw new Error("Missing account id.");
+
+    const profiles = readProfiles();
+    const nextProfiles = profiles.filter(profile => profile.id !== targetUid);
+    writeProfiles(nextProfiles);
+
+    await deleteSavedJobsForProfile(targetUid);
+    await deleteAttachmentsForProfile(targetUid);
+
+    if (currentUser?.uid === targetUid) {
+      localStorage.removeItem(SESSION_KEY);
+      currentUser = null;
+      notifyAuthChanged();
+    } else {
+      await notifySavedJobsChanged(targetUid).catch(() => {
+        // No active listeners for this uid is expected.
+      });
+    }
+  }
+
   function stripAttachmentBlob(row) {
     const copy = stripAttachmentPk(row);
     delete copy.blob;
@@ -673,6 +850,9 @@
     deleteAttachmentForJob,
     getAttachmentBlob,
     exportProfileData,
-    importProfileData
+    importProfileData,
+    verifyAdminPin,
+    getAdminOverview,
+    wipeAccountAdmin
   };
 })();

@@ -28,5 +28,10 @@ Saved job record fields:
 - `notes` (default empty string)
 - `attachmentsCount` (default `0`)
 
+## Administration
+- `Admin` page (`admin.html`) shows local profiles and storage usage totals.
+- Access is protected by a local hardcoded PIN: `1234`.
+- Wiping an account removes profile, saved jobs, notes, and attachments for that user.
+
 ## Future migration note
 `local-data-client.js` exposes a provider-like interface (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
