@@ -92,12 +92,16 @@
       </div>
     </div>
 
-    <div class="quick-actions" aria-label="Quick filter actions">
-      <button class="btn quick-btn quick-chip" data-quick="remote" aria-pressed="false">Remote Only</button>
-      <button class="btn quick-btn quick-chip" data-quick="technical-artist" aria-pressed="false">Technical Artist</button>
-      <button class="btn quick-btn quick-chip" data-quick="exclude-internship" aria-pressed="false">Exclude Internship</button>
-      <button class="btn quick-btn quick-chip" data-quick="netherlands" aria-pressed="false">Netherlands</button>
-      <button class="btn quick-btn quick-clear" data-quick="clear">Clear Filters</button>
+    <div class="quick-actions-wrap">
+      <div id="quick-actions" class="quick-actions" aria-label="Quick filter actions"></div>
+      <div class="quick-actions-settings">
+        <button id="customize-quick-filters-btn" type="button" class="btn quick-btn quick-customize-btn" aria-haspopup="dialog" aria-expanded="false">Customize</button>
+        <div id="quick-filters-panel" class="quick-filters-panel hidden" role="dialog" aria-label="Customize quick filters">
+          <p class="quick-filters-title">Show quick filters</p>
+          <div id="quick-filters-options" class="quick-filters-options"></div>
+          <button id="quick-filters-reset-btn" type="button" class="btn quick-btn quick-filters-reset-btn">Reset defaults</button>
+        </div>
+      </div>
     </div>
     <div id="active-filters-summary" class="active-filters-summary">No active filters</div>
 
@@ -106,7 +110,6 @@
       <div class="toolbar-actions">
         <button id="refresh-jobs-btn" class="btn clear-filters-btn">Refresh Jobs</button>
         <span id="jobs-last-updated" class="jobs-last-updated" aria-live="polite"></span>
-        <button id="clear-filters-btn" class="btn clear-filters-btn">Reset Filters</button>
       </div>
     </div>
 
@@ -137,7 +140,7 @@
     </details>
 
     <div class="jobs-footer">
-      <p><strong>Data Source:</strong> Curated game development job listings from multiple job boards and industry sources</p>
+      <p><strong>Disclaimer:</strong> This website is vibecoded. Please verify critical details directly with the original job posting and company site.</p>
       <p><a href="admin.html">Admin</a></p>
     </div>
   </div>

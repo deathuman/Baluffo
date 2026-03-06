@@ -65,6 +65,11 @@ let authSignInBtn;
 let authSignOutBtn;
 let savedJobsBtn;
 let activeFiltersSummaryEl;
+let quickActionsEl;
+let customizeQuickFiltersBtn;
+let quickFiltersPanel;
+let quickFiltersOptionsEl;
+let quickFiltersResetBtn;
 
 let currentUser = null;
 let savedJobKeys = new Set();
@@ -74,13 +79,46 @@ const JOBS_CACHE_STORE = "jobs_feed";
 const JOBS_CACHE_KEY = "latest";
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const JOBS_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+const QUICK_FILTER_PREFS_KEY = "baluffo_quick_filter_prefs";
+
+const QUICK_FILTERS = [
+  { key: "remote", label: "Remote Only", type: "workType", value: "Remote", defaultVisible: true },
+  { key: "hybrid", label: "Hybrid Only", type: "workType", value: "Hybrid", defaultVisible: false },
+  { key: "onsite", label: "On-Site Only", type: "workType", value: "Onsite", defaultVisible: false },
+  { key: "exclude-internship", label: "Exclude Internship", type: "flag", value: "excludeInternship", defaultVisible: true },
+  { key: "sector-game", label: "Game Sector", type: "sector", value: "Game", defaultVisible: false },
+  { key: "sector-tech", label: "Tech Sector", type: "sector", value: "Tech", defaultVisible: false },
+  { key: "netherlands", label: "Netherlands", type: "country", value: "NL", defaultVisible: true },
+  { key: "united-states", label: "United States", type: "country", value: "US", defaultVisible: false },
+  { key: "united-kingdom", label: "United Kingdom", type: "country", value: "GB", defaultVisible: false },
+  { key: "gameplay", label: PROFESSION_LABELS.gameplay, type: "profession", value: "gameplay", defaultVisible: false },
+  { key: "graphics", label: PROFESSION_LABELS.graphics, type: "profession", value: "graphics", defaultVisible: false },
+  { key: "engine", label: PROFESSION_LABELS.engine, type: "profession", value: "engine", defaultVisible: false },
+  { key: "ai", label: PROFESSION_LABELS.ai, type: "profession", value: "ai", defaultVisible: false },
+  { key: "tools", label: PROFESSION_LABELS.tools, type: "profession", value: "tools", defaultVisible: false },
+  { key: "technical-artist", label: PROFESSION_LABELS["technical-artist"], type: "profession", value: "technical-artist", defaultVisible: true },
+  { key: "technical-animator", label: PROFESSION_LABELS["technical-animator"], type: "profession", value: "technical-animator", defaultVisible: false },
+  { key: "environment-artist", label: PROFESSION_LABELS["environment-artist"], type: "profession", value: "environment-artist", defaultVisible: false },
+  { key: "character-artist", label: PROFESSION_LABELS["character-artist"], type: "profession", value: "character-artist", defaultVisible: false },
+  { key: "rigging", label: PROFESSION_LABELS.rigging, type: "profession", value: "rigging", defaultVisible: false },
+  { key: "vfx-artist", label: PROFESSION_LABELS["vfx-artist"], type: "profession", value: "vfx-artist", defaultVisible: false },
+  { key: "ui-ux-artist", label: PROFESSION_LABELS["ui-ux-artist"], type: "profession", value: "ui-ux-artist", defaultVisible: false },
+  { key: "concept-artist", label: PROFESSION_LABELS["concept-artist"], type: "profession", value: "concept-artist", defaultVisible: false },
+  { key: "3d-artist", label: PROFESSION_LABELS["3d-artist"], type: "profession", value: "3d-artist", defaultVisible: false },
+  { key: "art-director", label: PROFESSION_LABELS["art-director"], type: "profession", value: "art-director", defaultVisible: false },
+  { key: "designer", label: PROFESSION_LABELS.designer, type: "profession", value: "designer", defaultVisible: false },
+  { key: "animator", label: PROFESSION_LABELS.animator, type: "profession", value: "animator", defaultVisible: false },
+  { key: "clear", label: "Clear Filters", type: "clear", defaultVisible: true }
+];
 
 let refreshInFlight = false;
 let availableProfessions = [];
 let availableCountries = [];
+let visibleQuickFilterKeys = [];
 
 document.addEventListener("DOMContentLoaded", () => {
   cacheDom();
+  initializeQuickFilters();
   bindEvents();
   readStateFromUrl();
   applyStateToStaticFilters();
@@ -116,6 +154,11 @@ function cacheDom() {
   authSignOutBtn = document.getElementById("auth-sign-out-btn");
   savedJobsBtn = document.getElementById("saved-jobs-btn");
   activeFiltersSummaryEl = document.getElementById("active-filters-summary");
+  quickActionsEl = document.getElementById("quick-actions");
+  customizeQuickFiltersBtn = document.getElementById("customize-quick-filters-btn");
+  quickFiltersPanel = document.getElementById("quick-filters-panel");
+  quickFiltersOptionsEl = document.getElementById("quick-filters-options");
+  quickFiltersResetBtn = document.getElementById("quick-filters-reset-btn");
 }
 
 function bindEvents() {
@@ -175,16 +218,26 @@ function bindEvents() {
     });
   }
   document.addEventListener("click", event => {
-    if (!countryPickerPanel || countryPickerPanel.classList.contains("hidden")) return;
-    const clickedInsidePanel = countryPickerPanel.contains(event.target);
-    const clickedTrigger = countryPickerBtn && countryPickerBtn.contains(event.target);
-    if (!clickedInsidePanel && !clickedTrigger) {
-      closeCountryPickerPanel();
+    if (countryPickerPanel && !countryPickerPanel.classList.contains("hidden")) {
+      const clickedInsidePanel = countryPickerPanel.contains(event.target);
+      const clickedTrigger = countryPickerBtn && countryPickerBtn.contains(event.target);
+      if (!clickedInsidePanel && !clickedTrigger) {
+        closeCountryPickerPanel();
+      }
+    }
+
+    if (quickFiltersPanel && !quickFiltersPanel.classList.contains("hidden")) {
+      const clickedInsideQuickPanel = quickFiltersPanel.contains(event.target);
+      const clickedQuickTrigger = customizeQuickFiltersBtn && customizeQuickFiltersBtn.contains(event.target);
+      if (!clickedInsideQuickPanel && !clickedQuickTrigger) {
+        closeQuickFiltersPanel();
+      }
     }
   });
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") {
       closeCountryPickerPanel();
+      closeQuickFiltersPanel();
     }
   });
 
@@ -215,24 +268,40 @@ function bindEvents() {
     });
   }
 
-  document.querySelectorAll(".quick-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
+  if (quickActionsEl) {
+    quickActionsEl.addEventListener("click", event => {
+      const btn = event.target.closest(".quick-btn");
+      if (!btn) return;
       const quick = btn.dataset.quick;
-      if (quick === "remote") {
-        state.filters.workType = state.filters.workType === "Remote" ? "" : "Remote";
-      } else if (quick === "technical-artist") {
-        state.filters.profession = state.filters.profession === "technical-artist" ? "" : "technical-artist";
-      } else if (quick === "exclude-internship") {
-        state.filters.excludeInternship = !state.filters.excludeInternship;
-      } else if (quick === "netherlands") {
-        toggleCountrySelection("NL");
-      } else {
-        resetFilters();
-      }
+      if (!quick) return;
+      applyQuickFilter(quick);
       applyStateToFilters();
       applyFiltersAndRender({ resetPage: true });
     });
-  });
+  }
+
+  if (customizeQuickFiltersBtn) {
+    customizeQuickFiltersBtn.addEventListener("click", event => {
+      event.stopPropagation();
+      toggleQuickFiltersPanel();
+    });
+  }
+
+  if (quickFiltersOptionsEl) {
+    quickFiltersOptionsEl.addEventListener("change", event => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
+      const { quick } = target.dataset;
+      if (!quick) return;
+      setQuickFilterVisibility(quick, target.checked);
+    });
+  }
+
+  if (quickFiltersResetBtn) {
+    quickFiltersResetBtn.addEventListener("click", () => {
+      resetQuickFilterPreferences();
+    });
+  }
 
   enableKeyboardNav();
 }
@@ -1071,6 +1140,136 @@ function closeCountryPickerPanel() {
   if (countryPickerBtn) countryPickerBtn.setAttribute("aria-expanded", "false");
 }
 
+function initializeQuickFilters() {
+  visibleQuickFilterKeys = loadQuickFilterPreferences();
+  renderQuickFilters();
+  renderQuickFilterOptions();
+}
+
+function loadQuickFilterPreferences() {
+  const defaults = QUICK_FILTERS.filter(item => item.defaultVisible).map(item => item.key);
+  try {
+    const raw = localStorage.getItem(QUICK_FILTER_PREFS_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return defaults;
+    const valid = parsed.filter(key => QUICK_FILTERS.some(item => item.key === key));
+    const keepClear = valid.includes("clear") ? valid : [...valid, "clear"];
+    return orderQuickFilterKeys(keepClear);
+  } catch (_) {
+    return defaults;
+  }
+}
+
+function saveQuickFilterPreferences() {
+  try {
+    localStorage.setItem(QUICK_FILTER_PREFS_KEY, JSON.stringify(visibleQuickFilterKeys));
+  } catch (_) {
+    // Ignore preference storage failures.
+  }
+}
+
+function orderQuickFilterKeys(keys) {
+  const set = new Set(keys);
+  return QUICK_FILTERS.filter(item => set.has(item.key)).map(item => item.key);
+}
+
+function renderQuickFilters() {
+  if (!quickActionsEl) return;
+  quickActionsEl.innerHTML = visibleQuickFilterKeys
+    .map(key => {
+      const item = QUICK_FILTERS.find(filter => filter.key === key);
+      if (!item) return "";
+      const isClear = item.type === "clear";
+      const classes = isClear ? "btn quick-btn quick-clear" : "btn quick-btn quick-chip";
+      const ariaPressed = isClear ? "" : ' aria-pressed="false"';
+      return `<button class="${classes}" data-quick="${item.key}"${ariaPressed}>${item.label}</button>`;
+    })
+    .join("");
+  updateQuickChipStates();
+}
+
+function renderQuickFilterOptions() {
+  if (!quickFiltersOptionsEl) return;
+  const current = new Set(visibleQuickFilterKeys);
+  quickFiltersOptionsEl.innerHTML = QUICK_FILTERS
+    .filter(item => item.type !== "clear")
+    .map(item => `
+      <label class="quick-filter-option">
+        <input type="checkbox" data-quick="${item.key}" ${current.has(item.key) ? "checked" : ""}>
+        <span>${item.label}</span>
+      </label>
+    `)
+    .join("");
+}
+
+function setQuickFilterVisibility(key, visible) {
+  const item = QUICK_FILTERS.find(filter => filter.key === key && filter.type !== "clear");
+  if (!item) return;
+  const next = new Set(visibleQuickFilterKeys);
+  if (visible) next.add(key);
+  else next.delete(key);
+  next.add("clear");
+  visibleQuickFilterKeys = orderQuickFilterKeys(Array.from(next));
+  saveQuickFilterPreferences();
+  renderQuickFilters();
+  renderQuickFilterOptions();
+}
+
+function resetQuickFilterPreferences() {
+  visibleQuickFilterKeys = QUICK_FILTERS.filter(item => item.defaultVisible).map(item => item.key);
+  saveQuickFilterPreferences();
+  renderQuickFilters();
+  renderQuickFilterOptions();
+}
+
+function toggleQuickFiltersPanel() {
+  if (!quickFiltersPanel) return;
+  const hidden = quickFiltersPanel.classList.contains("hidden");
+  if (hidden) {
+    renderQuickFilterOptions();
+    quickFiltersPanel.classList.remove("hidden");
+    if (customizeQuickFiltersBtn) customizeQuickFiltersBtn.setAttribute("aria-expanded", "true");
+    return;
+  }
+  closeQuickFiltersPanel();
+}
+
+function closeQuickFiltersPanel() {
+  if (!quickFiltersPanel) return;
+  quickFiltersPanel.classList.add("hidden");
+  if (customizeQuickFiltersBtn) customizeQuickFiltersBtn.setAttribute("aria-expanded", "false");
+}
+
+function applyQuickFilter(quick) {
+  const item = QUICK_FILTERS.find(filter => filter.key === quick);
+  if (!item) return;
+
+  if (item.type === "clear") {
+    resetFilters();
+    return;
+  }
+  if (item.type === "workType") {
+    state.filters.workType = state.filters.workType === item.value ? "" : item.value;
+    return;
+  }
+  if (item.type === "profession") {
+    state.filters.profession = state.filters.profession === item.value ? "" : item.value;
+    return;
+  }
+  if (item.type === "sector") {
+    state.filters.sector = state.filters.sector === item.value ? "" : item.value;
+    return;
+  }
+  if (item.type === "country") {
+    toggleCountrySelection(item.value);
+    return;
+  }
+  if (item.type === "flag" && item.value === "excludeInternship") {
+    state.filters.excludeInternship = !state.filters.excludeInternship;
+  }
+}
+
 function updateCountryPickerTrigger() {
   if (!countryPickerBtn) return;
   const count = state.filters.countries.length;
@@ -1078,15 +1277,19 @@ function updateCountryPickerTrigger() {
 }
 
 function updateQuickChipStates() {
-  document.querySelectorAll(".quick-chip").forEach(chip => {
+  if (!quickActionsEl) return;
+  quickActionsEl.querySelectorAll(".quick-chip").forEach(chip => {
     const key = chip.dataset.quick;
+    const item = QUICK_FILTERS.find(filter => filter.key === key);
+    if (!item) return;
     let active = false;
-    if (key === "remote") active = state.filters.workType === "Remote";
-    else if (key === "technical-artist") active = state.filters.profession === "technical-artist";
-    else if (key === "exclude-internship") active = Boolean(state.filters.excludeInternship);
-    else if (key === "netherlands") {
-      const nl = resolveCountryCode("NL");
-      active = Boolean(nl) && state.filters.countries.includes(nl);
+    if (item.type === "workType") active = state.filters.workType === item.value;
+    else if (item.type === "profession") active = state.filters.profession === item.value;
+    else if (item.type === "sector") active = state.filters.sector === item.value;
+    else if (item.type === "flag" && item.value === "excludeInternship") active = Boolean(state.filters.excludeInternship);
+    else if (item.type === "country") {
+      const mapped = resolveCountryCode(item.value);
+      active = Boolean(mapped) && state.filters.countries.includes(mapped);
     }
     chip.classList.toggle("active", active);
     chip.setAttribute("aria-pressed", active ? "true" : "false");
@@ -1563,7 +1766,7 @@ function mapProfession(title) {
   if (lower.includes("graphics") || lower.includes("rendering") || lower.includes("shader")) return "graphics";
   if (lower.includes("engine") || lower.includes("architecture") || lower.includes("systems")) return "engine";
   if (lower.includes("ai") || lower.includes("artificial intelligence") || lower.includes("behavior")) return "ai";
-  if (lower.includes("animator") || lower.includes("motion")) return "animator";
+  if (lower.includes("animator") || lower.includes("animation") || lower.includes("motion animator")) return "animator";
   if (lower.includes("tool") || lower.includes("pipeline") || lower.includes("editor") || (lower.includes("technical") && !lower.includes("artist"))) return "tools";
   if (lower.includes("designer") || lower.includes("level") || lower.includes("game design")) return "designer";
   if (lower.includes("artist") || lower.includes("animation") || lower.includes("visual")) return "3d-artist";
