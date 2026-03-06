@@ -260,7 +260,7 @@ h1 {
 
 .job-row-header {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 1.3fr 1.3fr 1fr;
+  grid-template-columns: 3fr 0.9fr 1.2fr 1.2fr 1fr 1fr;
   gap: 0;
   padding: 0.8rem 1rem;
   font-weight: 600;
@@ -278,7 +278,7 @@ h1 {
 .job-row,
 .job-row-link {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 1.3fr 1.3fr 1fr;
+  grid-template-columns: 3fr 0.9fr 1.2fr 1.2fr 1fr 1fr;
   gap: 0;
   padding: 0.8rem 1rem;
   border-bottom: 1px solid #333;
@@ -348,6 +348,11 @@ h1 {
   justify-content: center;
 }
 
+.col-contract {
+  display: flex;
+  justify-content: center;
+}
+
 .job-tag {
   display: inline-block;
   background-color: #333;
@@ -376,6 +381,36 @@ h1 {
   background-color: #2b3b3b;
   color: #a2d5f5;
   border-color: #4a6b7b;
+}
+
+.job-contract {
+  display: inline-block;
+  background-color: #333;
+  color: #eee;
+  padding: 0.35rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: 1px solid #444;
+  white-space: nowrap;
+}
+
+.job-contract.full-time {
+  background-color: #243628;
+  color: #96e8a4;
+  border-color: #3d5f45;
+}
+
+.job-contract.temporary {
+  background-color: #3c2f24;
+  color: #ffd199;
+  border-color: #6d5540;
+}
+
+.job-contract.unknown {
+  background-color: #2f2f2f;
+  color: #cfcfcf;
+  border-color: #4a4a4a;
 }
 
 .no-results,
@@ -562,6 +597,10 @@ h1 {
   }
 
   .col-type {
+    justify-content: flex-start;
+  }
+
+  .col-contract {
     justify-content: flex-start;
   }
 }

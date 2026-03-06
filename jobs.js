@@ -106,6 +106,12 @@ function bindEvents() {
         state.filters.workType = "Remote";
       } else if (quick === "technical-artist") {
         state.filters.profession = "technical-artist";
+      } else if (quick === "netherlands") {
+        if (countryFilter && optionExists(countryFilter, "NL")) {
+          state.filters.country = "NL";
+        } else {
+          state.filters.country = "Netherlands";
+        }
       } else {
         resetFilters();
       }
@@ -306,6 +312,7 @@ function displayJobs(jobs) {
         <div class="col-company">Company</div>
         <div class="col-city">City</div>
         <div class="col-country">Country</div>
+        <div class="col-contract">Contract</div>
         <div class="col-type">Type</div>
       </div>
     </div>
@@ -321,6 +328,7 @@ function displayJobs(jobs) {
 function renderJobRow(job) {
   const safeTitle = escapeHtml(job.title);
   const safeCompany = escapeHtml(job.company);
+  const companyType = job.companyType || classifyCompanyType(job.company, job.title);
   const safeCity = escapeHtml(job.city || "");
   const safeCountry = escapeHtml(fullCountryName(job.country));
   const safeJobLink = sanitizeUrl(job.jobLink);
@@ -332,13 +340,16 @@ function renderJobRow(job) {
       </div>
     </div>
     <div class="col-company job-cell" data-label="Company">
-      <span class="job-company-compact">${safeCompany}</span>
+      <span class="job-company-compact" title="${safeCompany}">${escapeHtml(companyType)}</span>
     </div>
     <div class="col-city job-cell" data-label="City">
       <span class="job-location">${safeCity}</span>
     </div>
     <div class="col-country job-cell" data-label="Country">
       <span class="job-location">${safeCountry}</span>
+    </div>
+    <div class="col-contract job-cell" data-label="Contract">
+      <span class="job-contract ${toContractClass(job.contractType)}">${escapeHtml(job.contractType || "Unknown")}</span>
     </div>
     <div class="col-type job-cell" data-label="Type">
       <span class="job-tag ${job.workType.toLowerCase()}">${capitalizeFirst(job.workType)}</span>
@@ -595,6 +606,7 @@ function parseCSVLarge(csv) {
     const cityIdx = findColumnIndex(headers, ["city"]);
     const countryIdx = findColumnIndex(headers, ["country"]);
     const locationTypeIdx = findColumnIndex(headers, ["location type", "work type"]);
+    const contractTypeIdx = findColumnIndex(headers, ["employment type", "contract type", "employment", "contract", "position type"]);
     const jobLinkIdx = findColumnIndex(headers, ["job link", "url", "apply"]);
 
     if (titleIdx === -1 || companyIdx === -1) return [];
@@ -609,6 +621,7 @@ function parseCSVLarge(csv) {
       const city = (fields[cityIdx] || "").trim();
       const country = (fields[countryIdx] || "Unknown").trim();
       const locationType = (fields[locationTypeIdx] || "On-site").trim();
+      const contractTypeText = contractTypeIdx !== -1 ? (fields[contractTypeIdx] || "").trim() : "";
       const jobLink = jobLinkIdx !== -1 ? (fields[jobLinkIdx] || "").trim() : "";
 
       if (!title || !company) continue;
@@ -617,9 +630,11 @@ function parseCSVLarge(csv) {
         id: 1000 + i,
         title,
         company,
+        companyType: classifyCompanyType(company, title),
         city,
         country,
         workType: detectWorkType(locationType),
+        contractType: detectContractType(contractTypeText, title),
         profession: mapProfession(title),
         description: `${title} at ${company}`,
         jobLink
@@ -699,6 +714,51 @@ function detectWorkType(text) {
   if (lower.includes("remote")) return "Remote";
   if (lower.includes("hybrid") || lower.includes("mixed")) return "Hybrid";
   return "Onsite";
+}
+
+function detectContractType(text, title = "") {
+  const lower = `${text} ${title}`.toLowerCase();
+
+  if (
+    lower.includes("full-time") ||
+    lower.includes("full time") ||
+    lower.includes("permanent")
+  ) {
+    return "Full-time";
+  }
+
+  if (
+    lower.includes("temporary") ||
+    lower.includes("temp ") ||
+    lower.includes("contract") ||
+    lower.includes("fixed-term") ||
+    lower.includes("fixed term") ||
+    lower.includes("freelance") ||
+    lower.includes("part-time") ||
+    lower.includes("part time") ||
+    lower.includes("intern")
+  ) {
+    return "Temporary";
+  }
+
+  return "Unknown";
+}
+
+function toContractClass(contractType) {
+  const normalized = (contractType || "").toLowerCase();
+  if (normalized === "full-time") return "full-time";
+  if (normalized === "temporary") return "temporary";
+  return "unknown";
+}
+
+function classifyCompanyType(company, title = "") {
+  const text = `${company} ${title}`.toLowerCase();
+
+  const isGame =
+    /\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b/.test(text) ||
+    /\b(gameplay|level design|character artist|environment artist|technical artist|animator)\b/.test(text);
+
+  return isGame ? "Game" : "Tech";
 }
 
 function mapProfession(title) {
