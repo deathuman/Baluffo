@@ -4,7 +4,7 @@
     {
       "label": "Serve static site (8080)",
       "type": "shell",
-      "command": "py -3 -m http.server 8080",
+      "command": "py -3 -m http.server 8080 --directory .",
       "isBackground": true,
       "problemMatcher": {
         "owner": "custom",
