@@ -10,8 +10,14 @@
   <div class="jobs-container">
     <div class="jobs-header">
       <h1>Game Development Jobs</h1>
-      <button id="back-btn" class="btn back-btn" aria-label="Go back to home page">&larr; Back</button>
+      <div class="header-actions">
+        <button id="saved-jobs-btn" class="btn back-btn hidden" aria-label="Go to saved jobs page">Saved Jobs</button>
+        <button id="auth-sign-in-btn" class="btn back-btn" aria-label="Sign in">Sign in</button>
+        <button id="auth-sign-out-btn" class="btn back-btn hidden" aria-label="Sign out">Sign out</button>
+        <button id="back-btn" class="btn back-btn" aria-label="Go back to home page">&larr; Back</button>
+      </div>
     </div>
+    <p id="auth-status" class="auth-status">Browsing as guest</p>
 
     <div id="fetch-progress" class="fetch-progress hidden"></div>
     <p id="source-status" class="source-status" aria-live="polite"></p>
@@ -112,6 +118,7 @@
     </div>
   </div>
 
+  <script src="local-data-client.js"></script>
   <script src="jobs.js"></script>
 </body>
 </html>

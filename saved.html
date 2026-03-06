@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Saved Jobs</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="jobs-container">
+    <div class="jobs-header">
+      <h1>Saved Jobs</h1>
+      <div class="header-actions">
+        <button id="jobs-page-btn" class="btn back-btn" aria-label="Back to jobs listing">All Jobs</button>
+        <button id="saved-auth-sign-in-btn" class="btn back-btn" aria-label="Sign in">Sign in</button>
+        <button id="saved-auth-sign-out-btn" class="btn back-btn hidden" aria-label="Sign out">Sign out</button>
+      </div>
+    </div>
+
+    <p id="saved-auth-status" class="auth-status">Browsing as guest</p>
+    <p id="saved-source-status" class="source-status">Sign in to view your saved jobs.</p>
+    <div class="saved-actions">
+      <button id="export-backup-btn" class="btn back-btn" disabled>Export Backup</button>
+      <button id="import-backup-btn" class="btn back-btn" disabled>Import Backup</button>
+      <input id="import-backup-input" type="file" accept="application/json" class="hidden">
+    </div>
+
+    <div id="saved-jobs-list" class="jobs-list">
+      <div class="loading">Loading saved jobs...</div>
+    </div>
+  </div>
+
+  <script src="local-data-client.js"></script>
+  <script src="saved.js"></script>
+</body>
+</html>

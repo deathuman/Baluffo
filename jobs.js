@@ -40,6 +40,13 @@ let sourceStatus;
 let fetchProgress;
 let pagination;
 let clearFiltersBtn;
+let authStatus;
+let authSignInBtn;
+let authSignOutBtn;
+let savedJobsBtn;
+
+let currentUser = null;
+let savedJobKeys = new Set();
 
 document.addEventListener("DOMContentLoaded", () => {
   cacheDom();
@@ -63,12 +70,34 @@ function cacheDom() {
   fetchProgress = document.getElementById("fetch-progress");
   pagination = document.getElementById("pagination");
   clearFiltersBtn = document.getElementById("clear-filters-btn");
+  authStatus = document.getElementById("auth-status");
+  authSignInBtn = document.getElementById("auth-sign-in-btn");
+  authSignOutBtn = document.getElementById("auth-sign-out-btn");
+  savedJobsBtn = document.getElementById("saved-jobs-btn");
 }
 
 function bindEvents() {
   if (backBtn) {
     backBtn.addEventListener("click", () => {
       window.location.href = "index.html";
+    });
+  }
+
+  if (savedJobsBtn) {
+    savedJobsBtn.addEventListener("click", () => {
+      window.location.href = "saved.html";
+    });
+  }
+
+  if (authSignInBtn) {
+    authSignInBtn.addEventListener("click", async () => {
+      await signInUser();
+    });
+  }
+
+  if (authSignOutBtn) {
+    authSignOutBtn.addEventListener("click", async () => {
+      await signOutUser();
     });
   }
 
@@ -126,6 +155,8 @@ function bindEvents() {
 async function init() {
   if (!jobsList) return;
 
+  initAuth();
+
   showLoading("Loading game development jobs...");
   setProgress(true);
   setSourceStatus("Fetching latest jobs from Google Sheets...");
@@ -145,6 +176,76 @@ async function init() {
   applyStateToFilters();
   applyFiltersAndRender({ resetPage: false });
   setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs.`);
+}
+
+function initAuth() {
+  const api = window.JobAppLocalData;
+  if (!api || !api.isReady()) {
+    setAuthStatus("Browsing as guest");
+    toggleAuthButtons(false);
+    return;
+  }
+
+  api.onAuthStateChanged(async user => {
+    currentUser = user || null;
+    if (!currentUser) {
+      savedJobKeys = new Set();
+      setAuthStatus("Browsing as guest");
+      toggleAuthButtons(false);
+      if (allJobs.length) applyFiltersAndRender({ resetPage: false });
+      return;
+    }
+
+    setAuthStatus(`Signed in as ${currentUser.displayName || currentUser.email || "user"}`);
+    toggleAuthButtons(true);
+
+    try {
+      savedJobKeys = await api.getSavedJobKeys(currentUser.uid);
+    } catch (err) {
+      console.error("Failed to load saved jobs:", err);
+      showToast("Could not load saved jobs.", "error");
+      savedJobKeys = new Set();
+    }
+
+    if (allJobs.length) applyFiltersAndRender({ resetPage: false });
+  });
+}
+
+function setAuthStatus(text) {
+  if (!authStatus) return;
+  authStatus.textContent = text;
+}
+
+function toggleAuthButtons(isSignedIn) {
+  if (authSignInBtn) authSignInBtn.classList.toggle("hidden", isSignedIn);
+  if (authSignOutBtn) authSignOutBtn.classList.toggle("hidden", !isSignedIn);
+  if (savedJobsBtn) savedJobsBtn.classList.toggle("hidden", !isSignedIn);
+}
+
+async function signInUser() {
+  const api = window.JobAppLocalData;
+  if (!api || !api.isReady()) {
+    showToast("Local auth provider unavailable.", "error");
+    return;
+  }
+  try {
+    await api.signIn();
+  } catch (err) {
+    if (String(err?.message || "").toLowerCase().includes("cancel")) return;
+    console.error("Sign-in failed:", err);
+    showToast("Sign-in failed. Please try again.", "error");
+  }
+}
+
+async function signOutUser() {
+  const api = window.JobAppLocalData;
+  if (!api || !api.isReady()) return;
+  try {
+    await api.signOut();
+  } catch (err) {
+    console.error("Sign-out failed:", err);
+    showToast("Sign-out failed. Please try again.", "error");
+  }
 }
 
 function readStateFromUrl() {
@@ -314,6 +415,7 @@ function displayJobs(jobs) {
         <div class="col-country">Country</div>
         <div class="col-contract">Contract</div>
         <div class="col-type">Type</div>
+        <div class="col-save">Save</div>
       </div>
     </div>
     <div class="jobs-table-body">
@@ -322,6 +424,7 @@ function displayJobs(jobs) {
   `;
 
   renderPagination(totalPages);
+  bindRenderedJobEvents(pageJobs);
   updateResultsSummary(jobs.length, startIndex + 1, startIndex + pageJobs.length);
 }
 
@@ -332,6 +435,8 @@ function renderJobRow(job) {
   const safeCity = escapeHtml(job.city || "");
   const safeCountry = escapeHtml(fullCountryName(job.country));
   const safeJobLink = sanitizeUrl(job.jobLink);
+  const jobKey = getJobKeyForJob(job);
+  const isSaved = savedJobKeys.has(jobKey);
 
   const content = `
     <div class="col-title job-cell" data-label="Position">
@@ -354,17 +459,47 @@ function renderJobRow(job) {
     <div class="col-type job-cell" data-label="Type">
       <span class="job-tag ${job.workType.toLowerCase()}">${capitalizeFirst(job.workType)}</span>
     </div>
+    <div class="col-save job-cell" data-label="Save">
+      <button class="save-job-btn ${isSaved ? "saved" : ""}" data-job-id="${job.id}" data-job-key="${jobKey}" ${!window.JobAppLocalData?.isReady() ? "disabled" : ""}>
+        ${isSaved ? "Saved" : "Save"}
+      </button>
+    </div>
   `;
 
-  if (safeJobLink) {
-    return `
-      <a class="job-row job-row-link" href="${safeJobLink}" target="_blank" rel="noopener noreferrer" aria-label="Open ${safeTitle} at ${safeCompany}">
-        ${content}
-      </a>
-    `;
-  }
+  return `<div class="job-row ${safeJobLink ? "job-row-link" : ""}" data-job-link="${safeJobLink}">${content}</div>`;
+}
 
-  return `<div class="job-row">${content}</div>`;
+function bindRenderedJobEvents(pageJobs) {
+  if (!jobsList) return;
+  const pageById = new Map(pageJobs.map(job => [String(job.id), job]));
+
+  jobsList.querySelectorAll(".job-row[data-job-link]").forEach(row => {
+    const link = row.dataset.jobLink;
+    if (!link) return;
+
+    row.tabIndex = 0;
+    row.setAttribute("role", "link");
+    row.addEventListener("click", e => {
+      if (e.target.closest(".save-job-btn")) return;
+      window.open(link, "_blank", "noopener,noreferrer");
+    });
+    row.addEventListener("keydown", e => {
+      if (e.key !== "Enter") return;
+      if (e.target.closest(".save-job-btn")) return;
+      window.open(link, "_blank", "noopener,noreferrer");
+    });
+  });
+
+  jobsList.querySelectorAll(".save-job-btn").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const job = pageById.get(btn.dataset.jobId || "");
+      if (!job) return;
+      await toggleSaveJob(job);
+    });
+  });
 }
 
 function renderPagination(totalPages) {
@@ -761,6 +896,71 @@ function classifyCompanyType(company, title = "") {
   return isGame ? "Game" : "Tech";
 }
 
+function getJobKeyForJob(job) {
+  const api = window.JobAppLocalData;
+  if (api && typeof api.generateJobKey === "function") {
+    return api.generateJobKey(job);
+  }
+
+  const canonical = `${job.title || ""}|${job.company || ""}|${job.city || ""}|${job.country || ""}`.toLowerCase();
+  return `job_${simpleHash(canonical)}`;
+}
+
+function simpleHash(input) {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) - hash) + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(16);
+}
+
+function toJobSnapshot(job) {
+  return {
+    title: job.title || "",
+    company: job.company || "",
+    companyType: job.companyType || classifyCompanyType(job.company, job.title),
+    city: job.city || "",
+    country: job.country || "",
+    workType: job.workType || "Onsite",
+    contractType: job.contractType || "Unknown",
+    jobLink: sanitizeUrl(job.jobLink || "")
+  };
+}
+
+async function toggleSaveJob(job) {
+  const api = window.JobAppLocalData;
+  if (!api || !api.isReady()) {
+    showToast("Local storage provider unavailable.", "error");
+    return;
+  }
+
+  if (!currentUser) {
+    showToast("Sign in to save jobs.", "info");
+    await signInUser();
+    return;
+  }
+
+  const jobKey = getJobKeyForJob(job);
+  const isSaved = savedJobKeys.has(jobKey);
+
+  try {
+    if (isSaved) {
+      await api.removeSavedJobForUser(currentUser.uid, jobKey);
+      savedJobKeys.delete(jobKey);
+      showToast("Removed from saved jobs.", "success");
+    } else {
+      await api.saveJobForUser(currentUser.uid, toJobSnapshot(job));
+      savedJobKeys.add(jobKey);
+      showToast("Saved job to your profile.", "success");
+    }
+    applyFiltersAndRender({ resetPage: false });
+  } catch (err) {
+    console.error("Could not toggle saved job:", err);
+    showToast("Could not update saved jobs right now.", "error");
+  }
+}
+
 function mapProfession(title) {
   const lower = title.toLowerCase();
 
@@ -855,6 +1055,20 @@ function setProgress(visible) {
 function setSourceStatus(text) {
   if (!sourceStatus) return;
   sourceStatus.textContent = text;
+}
+
+function showToast(message, type = "info") {
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.add("visible"));
+
+  setTimeout(() => {
+    toast.classList.remove("visible");
+    setTimeout(() => toast.remove(), 220);
+  }, 2600);
 }
 
 function showLoading(text) {
