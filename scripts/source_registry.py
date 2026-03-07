@@ -66,6 +66,12 @@ def source_identity(row: Dict[str, Any]) -> str:
     return f"{adapter}:unknown:{digest}"
 
 
+def ensure_source_id(row: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(row)
+    normalized["id"] = source_identity(normalized)
+    return normalized
+
+
 def unique_sources(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     seen = set()
@@ -76,7 +82,5 @@ def unique_sources(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if key in seen:
             continue
         seen.add(key)
-        normalized = dict(row)
-        normalized["id"] = key
-        out.append(normalized)
+        out.append(ensure_source_id(row))
     return out

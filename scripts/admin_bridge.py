@@ -23,6 +23,7 @@ from scripts.source_registry import (
     DISCOVERY_REPORT_PATH,
     PENDING_PATH,
     REJECTED_PATH,
+    ensure_source_id,
     load_json_array,
     load_json_object,
     save_json_atomic,
@@ -64,9 +65,7 @@ def normalize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Di
             if key in seen:
                 continue
             seen.add(key)
-            item = dict(row)
-            item["id"] = key
-            normalized[bucket].append(item)
+            normalized[bucket].append(ensure_source_id(row))
     return normalized
 
 

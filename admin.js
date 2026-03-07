@@ -46,11 +46,20 @@ const FETCH_REPORT_POLL_TIMEOUT_MS = Number(adminConfig.FETCH_REPORT_POLL_TIMEOU
 const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
 const BRIDGE_STATUS_POLL_INTERVAL_MS = Number(adminConfig.BRIDGE_STATUS_POLL_INTERVAL_MS || 10000);
 const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
+const UNKNOWN_ERROR_TEXT = "unknown error";
 
 let fetcherCompletionPollTimer = null;
 let fetcherCompletionPollDeadline = 0;
 let fetcherLaunchAtMs = 0;
 let bridgeStatusPollTimer = null;
+
+function getErrorMessage(err) {
+  return err?.message || UNKNOWN_ERROR_TEXT;
+}
+
+function logAdminError(context, err) {
+  console.error(`[admin] ${context}:`, err);
+}
 
 function bootAdminPage() {
   cacheDom();
@@ -242,13 +251,13 @@ function unlockAdmin() {
   setDiscoveryLogPlaceholder("Loading source discovery data...");
   startBridgeStatusWatch();
   refreshOverview().catch(err => {
-    console.error("Failed to refresh admin overview:", err);
+    logAdminError("Failed to refresh admin overview", err);
   });
   loadLatestFetcherReport({ silent: true }).catch(err => {
-    console.error("Failed to load jobs fetch report:", err);
+    logAdminError("Failed to load jobs fetch report", err);
   });
   loadDiscoveryData().catch(err => {
-    console.error("Failed to load discovery data:", err);
+    logAdminError("Failed to load discovery data", err);
   });
 }
 
@@ -304,8 +313,8 @@ async function triggerJobsFetcherTask() {
     appendFetcherLog("If VS Code did not open, run the fallback command shown below.", "warn");
     showToast("Fetcher task launch requested. Check VS Code.", "info");
   } catch (err) {
-    console.error("Could not trigger VS Code task:", err);
-    appendFetcherLog(`Could not trigger VS Code task automatically: ${err?.message || "unknown error"}`, "error");
+    logAdminError("Could not trigger VS Code task", err);
+    appendFetcherLog(`Could not trigger VS Code task automatically: ${getErrorMessage(err)}`, "error");
     showToast("Could not trigger VS Code task. Run python scripts/jobs_fetcher.py", "error");
     setSourceStatus("Could not trigger jobs fetcher task automatically.");
     return;
@@ -324,7 +333,7 @@ async function triggerJobsFetcherTask() {
   }
 
   loadLatestFetcherReport({ silent: true }).catch(fetchErr => {
-    console.error("Could not load fetch report after task trigger:", fetchErr);
+    logAdminError("Could not load fetch report after task trigger", fetchErr);
   });
   startFetcherCompletionWatch();
 }
@@ -349,7 +358,7 @@ async function refreshOverview() {
     renderUsers(overview.users);
     setSourceStatus(`Loaded ${overview.users.length} user profiles.`);
   } catch (err) {
-    console.error("Could not load admin overview:", err);
+    logAdminError("Could not load admin overview", err);
     showToast("Could not load admin overview.", "error");
     if (String(err?.message || "").toLowerCase().includes("pin")) {
       lockAdmin();
@@ -470,7 +479,7 @@ async function wipeAccount(uid, name) {
     showToast(`Wiped account ${name}.`, "success");
     await refreshOverview();
   } catch (err) {
-    console.error("Could not wipe account:", err);
+    logAdminError("Could not wipe account", err);
     showToast("Could not wipe account.", "error");
     if (String(err?.message || "").toLowerCase().includes("pin")) {
       lockAdmin();
@@ -538,27 +547,36 @@ function formatLogEventText(event) {
   return `${prefix}${source} ${event.message}`.trim();
 }
 
-function appendDiscoveryLog(message, level = "info") {
-  if (!adminDiscoveryLogEl) return;
-  const event = createLogEvent("discovery", message, level);
+function appendLogRow(container, event, maxRows = 220) {
+  if (!container) return;
   const row = document.createElement("div");
   row.className = `admin-fetcher-line ${normalizeLogLevel(event.level)}`;
   row.dataset.timestamp = event.timestamp;
   row.dataset.level = event.level;
   row.dataset.scope = event.scope;
   row.dataset.sourceId = event.sourceId;
+
   const stamp = document.createElement("span");
   stamp.className = "admin-fetcher-time";
   stamp.textContent = toLocalTime(new Date(event.timestamp));
+
   const text = document.createElement("span");
   text.className = "admin-fetcher-text";
   text.textContent = formatLogEventText(event);
+
   row.append(stamp, text);
-  adminDiscoveryLogEl.appendChild(row);
-  while (adminDiscoveryLogEl.children.length > 220) {
-    adminDiscoveryLogEl.removeChild(adminDiscoveryLogEl.firstChild);
+  container.appendChild(row);
+
+  while (container.children.length > maxRows) {
+    container.removeChild(container.firstChild);
   }
-  adminDiscoveryLogEl.scrollTop = adminDiscoveryLogEl.scrollHeight;
+  container.scrollTop = container.scrollHeight;
+}
+
+function appendDiscoveryLog(message, level = "info") {
+  if (!adminDiscoveryLogEl) return;
+  const event = createLogEvent("discovery", message, level);
+  appendLogRow(adminDiscoveryLogEl, event);
 }
 
 function setFetcherLogPlaceholder(message) {
@@ -570,28 +588,7 @@ function setFetcherLogPlaceholder(message) {
 function appendFetcherLog(message, level = "info") {
   if (!adminFetcherLogEl) return;
   const event = createLogEvent("fetcher", message, level);
-  const row = document.createElement("div");
-  row.className = `admin-fetcher-line ${normalizeLogLevel(event.level)}`;
-  row.dataset.timestamp = event.timestamp;
-  row.dataset.level = event.level;
-  row.dataset.scope = event.scope;
-  row.dataset.sourceId = event.sourceId;
-
-  const stamp = document.createElement("span");
-  stamp.className = "admin-fetcher-time";
-  stamp.textContent = toLocalTime(new Date(event.timestamp));
-
-  const text = document.createElement("span");
-  text.className = "admin-fetcher-text";
-  text.textContent = formatLogEventText(event);
-
-  row.append(stamp, text);
-  adminFetcherLogEl.appendChild(row);
-
-  while (adminFetcherLogEl.children.length > 220) {
-    adminFetcherLogEl.removeChild(adminFetcherLogEl.firstChild);
-  }
-  adminFetcherLogEl.scrollTop = adminFetcherLogEl.scrollHeight;
+  appendLogRow(adminFetcherLogEl, event);
 }
 
 function normalizeLogLevel(level) {
@@ -684,7 +681,7 @@ function stopFetcherCompletionWatch() {
 function scheduleFetcherCompletionPoll(delayMs) {
   fetcherCompletionPollTimer = setTimeout(() => {
     pollFetcherCompletion().catch(err => {
-      console.error("Fetcher completion poll failed:", err);
+      logAdminError("Fetcher completion poll failed", err);
       scheduleFetcherCompletionPoll(FETCH_REPORT_POLL_INTERVAL_MS);
     });
   }, delayMs);
@@ -786,7 +783,7 @@ async function runDiscoveryTask() {
       loadDiscoveryData().catch(() => {});
     }, 2500);
   } catch (err) {
-    appendDiscoveryLog(`Could not trigger discovery task: ${err?.message || "unknown error"}`, "error");
+    appendDiscoveryLog(`Could not trigger discovery task: ${getErrorMessage(err)}`, "error");
     showToast("Could not trigger source discovery task.", "error");
   }
 }
@@ -888,7 +885,7 @@ async function approveSelectedSources() {
     showToast("Sources approved.", "success");
     await loadDiscoveryData();
   } catch (err) {
-    appendDiscoveryLog(`Approve failed: ${err?.message || "unknown error"}`, "error");
+    appendDiscoveryLog(`Approve failed: ${getErrorMessage(err)}`, "error");
     showToast("Could not approve sources.", "error");
   }
 }
@@ -906,7 +903,7 @@ async function rejectSelectedSources() {
     showToast("Sources rejected.", "success");
     await loadDiscoveryData();
   } catch (err) {
-    appendDiscoveryLog(`Reject failed: ${err?.message || "unknown error"}`, "error");
+    appendDiscoveryLog(`Reject failed: ${getErrorMessage(err)}`, "error");
     showToast("Could not reject sources.", "error");
   }
 }
@@ -924,7 +921,7 @@ async function restoreRejectedSources() {
     showToast("Rejected sources restored to pending.", "success");
     await loadDiscoveryData();
   } catch (err) {
-    appendDiscoveryLog(`Restore failed: ${err?.message || "unknown error"}`, "error");
+    appendDiscoveryLog(`Restore failed: ${getErrorMessage(err)}`, "error");
     showToast("Could not restore rejected sources.", "error");
   }
 }
@@ -973,7 +970,7 @@ async function loadDiscoveryData() {
     }
     appendDiscoveryLog("Source discovery data loaded.", "success");
   } catch (err) {
-    appendDiscoveryLog(`Could not load source discovery data: ${err?.message || "unknown error"}`, "error");
+    appendDiscoveryLog(`Could not load source discovery data: ${getErrorMessage(err)}`, "error");
     if (adminDiscoverySummaryEl) {
       adminDiscoverySummaryEl.textContent = "Source discovery bridge unavailable. Start `Run admin bridge` task.";
     }

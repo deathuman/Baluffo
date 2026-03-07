@@ -268,19 +268,6 @@
   border-color: #4f3abf;
 }
 
-[data-theme="light"] .jobs-container .clear-filters-btn {
-  background: linear-gradient(180deg, #ffe6e6, #ffd0d0);
-  border-color: #d79a9a;
-  color: #7f1d1d;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7), 0 4px 12px rgba(165, 68, 68, 0.14);
-}
-
-[data-theme="light"] .jobs-container .clear-filters-btn:hover {
-  background: linear-gradient(180deg, #ffd7d7, #ffc3c3);
-  border-color: #c78383;
-  color: #6d1717;
-}
-
 [data-theme="light"] #refresh-jobs-btn.clear-filters-btn {
   background: linear-gradient(180deg, #deebff, #cddff8);
   border-color: #9db5dd;

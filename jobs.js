@@ -1,5 +1,6 @@
 let allJobs = [];
 let filteredJobs = [];
+const JOBS_LOG_SCOPE = "jobs";
 /**
  * @typedef {Object} JobRow
  * @property {string} title
@@ -24,6 +25,26 @@ const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
   sort: "relevance"
 };
 
+/**
+ * @typedef {Object} JobsFilterState
+ * @property {string} workType
+ * @property {string[]} countries
+ * @property {string} city
+ * @property {string} sector
+ * @property {string} profession
+ * @property {boolean} excludeInternship
+ * @property {string} search
+ * @property {string} sort
+ */
+
+/**
+ * @typedef {Object} JobsPageState
+ * @property {number} currentPage
+ * @property {number} itemsPerPage
+ * @property {JobsFilterState} filters
+ */
+
+/** @type {JobsPageState} */
 const state = {
   currentPage: 1,
   itemsPerPage: 10,
@@ -112,13 +133,21 @@ let pendingAutoRefreshSignal = null;
 let lastHandledAutoRefreshSignalId = readAppliedAutoRefreshId();
 let lastFilterOptionsSignature = "";
 
+function logJobsInfo(message, ...args) {
+  console.info(`[${JOBS_LOG_SCOPE}] ${message}`, ...args);
+}
+
+function logJobsError(message, err) {
+  console.error(`[${JOBS_LOG_SCOPE}] ${message}:`, err);
+}
+
 function bootJobsPage() {
   cacheDom();
   initializeQuickFilters();
   bindEvents();
   readStateFromUrl();
   applyStateToStaticFilters();
-  init().catch(err => console.error("Error initializing jobs:", err));
+  init().catch(err => logJobsError("Error initializing jobs", err));
 }
 
 window.JobsApp = {
@@ -391,7 +420,7 @@ function handleAutoRefreshSignalValue(rawValue) {
 
   pendingAutoRefreshSignal = null;
   triggerAutoRefreshFromSignal(signal).catch(err => {
-    console.error("Auto-refresh from admin signal failed:", err);
+    logJobsError("Auto-refresh from admin signal failed", err);
   });
 }
 
@@ -453,7 +482,7 @@ function initAuth() {
     try {
       savedJobKeys = await api.getSavedJobKeys(currentUser.uid);
     } catch (err) {
-      console.error("Failed to load saved jobs:", err);
+      logJobsError("Failed to load saved jobs", err);
       showToast("Could not load saved jobs.", "error");
       savedJobKeys = new Set();
     }
@@ -503,7 +532,7 @@ async function signInUser() {
     await api.signIn();
   } catch (err) {
     if (String(err?.message || "").toLowerCase().includes("cancel")) return;
-    console.error("Sign-in failed:", err);
+    logJobsError("Sign-in failed", err);
     showToast("Sign-in failed. Please try again.", "error");
   }
 }
@@ -514,7 +543,7 @@ async function signOutUser() {
   try {
     await api.signOut();
   } catch (err) {
-    console.error("Sign-out failed:", err);
+    logJobsError("Sign-out failed", err);
     showToast("Sign-out failed. Please try again.", "error");
   }
 }
@@ -668,7 +697,7 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
     renderDataSources().catch(() => {});
     return true;
   } catch (err) {
-    console.error("Refresh failed:", err);
+    logJobsError("Refresh failed", err);
     if (manual) showToast("Could not refresh jobs.", "error");
     return false;
   } finally {
@@ -1741,13 +1770,13 @@ function parseCSVLarge(csv) {
       });
     }
 
-    console.info(`Role mapper uncategorized: ${uncategorizedCount}/${jobs.length}`);
+    logJobsInfo(`Role mapper uncategorized: ${uncategorizedCount}/${jobs.length}`);
 
     const endTime = performance.now();
-    console.log(`Loaded ${jobs.length} jobs in ${((endTime - startTime) / 1000).toFixed(2)}s`);
+    logJobsInfo(`Loaded ${jobs.length} jobs in ${((endTime - startTime) / 1000).toFixed(2)}s`);
     return jobs;
   } catch (err) {
-    console.error("Error parsing CSV:", err.message);
+    logJobsError("Error parsing CSV", err);
     return [];
   }
 }
@@ -2089,7 +2118,7 @@ async function toggleSaveJob(job) {
     }
     applyFiltersAndRender({ resetPage: false });
   } catch (err) {
-    console.error("Could not toggle saved job:", err);
+    logJobsError("Could not toggle saved job", err);
     showToast("Could not update saved jobs right now.", "error");
   }
 }
@@ -2241,7 +2270,7 @@ function showError(message) {
   const retryBtn = document.getElementById("retry-fetch-btn");
   if (retryBtn) {
     retryBtn.addEventListener("click", () => {
-      init().catch(err => console.error("Retry failed:", err));
+      init().catch(err => logJobsError("Retry failed", err));
     });
   }
 }

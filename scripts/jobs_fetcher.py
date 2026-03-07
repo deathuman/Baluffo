@@ -25,7 +25,7 @@ from scripts.jobs_fetcher_registry import (
     SOURCE_REPORT_META,
 )
 from scripts.pipeline_io import (
-    read_existing_output as read_existing_output_file,
+    read_existing_output as read_existing_output_from_file,
     serialize_rows_for_csv,
     serialize_rows_for_json,
     write_text_if_changed,
@@ -2285,23 +2285,6 @@ def deduplicate_jobs(rows: Sequence[RawJob]) -> Tuple[List[RawJob], Dict[str, in
     return merged_rows, {"inputCount": len(rows), "mergedCount": merges, "outputCount": len(merged_rows)}
 
 
-def read_existing_output(json_path: Path, fetched_at: str) -> List[RawJob]:
-    return read_existing_output_file(
-        json_path,
-        fetched_at,
-        canonicalize_job=canonicalize_job,
-        clean_text=clean_text,
-    )
-
-
-def write_json_output(path: Path, rows: Sequence[RawJob], fields: Sequence[str] = OUTPUT_FIELDS) -> bool:
-    return write_text_if_changed(path, serialize_rows_for_json(rows, fields))
-
-
-def write_csv_output(path: Path, rows: Sequence[RawJob], fields: Sequence[str] = OUTPUT_FIELDS) -> bool:
-    return write_text_if_changed(path, serialize_rows_for_csv(rows, fields))
-
-
 def default_source_loaders() -> List[Tuple[str, SourceLoader]]:
     available = {
         "google_sheets": run_google_sheets_source,
@@ -2317,6 +2300,64 @@ def default_source_loaders() -> List[Tuple[str, SourceLoader]]:
         "static_studio_pages": run_static_studio_pages_source,
     }
     return [(name, available[name]) for name in DEFAULT_SOURCE_LOADER_NAMES if name in available]
+
+
+def format_source_error(source_name: str, error: Any) -> str:
+    message = clean_text(str(error))
+    prefix = f"{clean_text(source_name)}:"
+    if not message:
+        return "unknown error"
+    if message.lower().startswith(prefix.lower()):
+        return message
+    return f"{source_name}: {message}"
+
+
+def build_pipeline_summary(
+    dedup_stats: Dict[str, int],
+    deduped_rows: Sequence[RawJob],
+    source_reports: Sequence[Dict[str, Any]],
+    canonical_count: int,
+    preserved_previous: bool,
+    active_source_count: int,
+    pending_source_count: int,
+    newly_approved_since_last_run: int,
+    *,
+    json_bytes: int,
+    csv_bytes: int,
+    light_json_bytes: int,
+) -> Dict[str, Any]:
+    return {
+        **dedup_stats,
+        "rawFetchedCount": canonical_count,
+        "uniqueOutputCount": len(deduped_rows),
+        "sourceBundleCollisions": sum(1 for row in deduped_rows if int(row.get("sourceBundleCount") or 0) > 1),
+        "targetRoleCount": sum(1 for row in deduped_rows if norm_text(row.get("profession")) in TARGET_PROFESSIONS),
+        "netherlandsCount": sum(1 for row in deduped_rows if clean_text(row.get("country")).upper() == "NL"),
+        "remoteCount": sum(1 for row in deduped_rows if norm_text(row.get("workType")) == "remote"),
+        "targetRoleNetherlandsCount": sum(
+            1
+            for row in deduped_rows
+            if norm_text(row.get("profession")) in TARGET_PROFESSIONS and clean_text(row.get("country")).upper() == "NL"
+        ),
+        "targetRoleRemoteCount": sum(
+            1
+            for row in deduped_rows
+            if norm_text(row.get("profession")) in TARGET_PROFESSIONS and norm_text(row.get("workType")) == "remote"
+        ),
+        "preservedPreviousOutput": preserved_previous,
+        "sourceCount": len(source_reports),
+        "successfulSources": sum(1 for row in source_reports if row["status"] == "ok"),
+        "failedSources": sum(1 for row in source_reports if row["status"] == "error"),
+        "excludedSources": sum(1 for row in source_reports if row["status"] == "excluded"),
+        "activeSourceCount": active_source_count,
+        "pendingSourceCount": pending_source_count,
+        "newlyApprovedSinceLastRun": newly_approved_since_last_run,
+        "jsonBytes": int(json_bytes),
+        "csvBytes": int(csv_bytes),
+        "lightJsonBytes": int(light_json_bytes),
+        "sizeGuardrailExceeded": bool(json_bytes > 50_000_000 or csv_bytes > 50_000_000),
+        "recordGuardrailExceeded": bool(len(deduped_rows) > 100_000),
+    }
 
 
 def run_pipeline(
@@ -2378,10 +2419,10 @@ def run_pipeline(
                 report["details"] = details
             partial_errors = [clean_text(err) for err in (diag.get("partialErrors") or []) if clean_text(err)]
             if partial_errors:
-                report["error"] = "; ".join(partial_errors[:6])
+                report["error"] = "; ".join(format_source_error(name, err) for err in partial_errors[:6])
         except Exception as exc:  # noqa: BLE001
             report["status"] = "error"
-            report["error"] = str(exc)
+            report["error"] = format_source_error(name, exc)
 
         report["durationMs"] = int((time.perf_counter() - source_started) * 1000)
         source_reports.append(report)
@@ -2405,7 +2446,12 @@ def run_pipeline(
 
     preserved_previous = False
     if preserve_previous_on_empty and not deduped_rows:
-        previous_rows = read_existing_output(json_path, started_at)
+        previous_rows = read_existing_output_from_file(
+            json_path,
+            started_at,
+            canonicalize_job=canonicalize_job,
+            clean_text=clean_text,
+        )
         if previous_rows:
             deduped_rows = previous_rows
             preserved_previous = True
@@ -2416,9 +2462,12 @@ def run_pipeline(
     wrote_csv = False
     wrote_light_json = False
     if deduped_rows:
-        wrote_json = write_json_output(json_path, deduped_rows, OUTPUT_FIELDS)
-        wrote_csv = write_csv_output(csv_path, deduped_rows, OUTPUT_FIELDS)
-        wrote_light_json = write_json_output(light_json_path, deduped_rows, LIGHTWEIGHT_OUTPUT_FIELDS)
+        wrote_json = write_text_if_changed(json_path, serialize_rows_for_json(deduped_rows, OUTPUT_FIELDS))
+        wrote_csv = write_text_if_changed(csv_path, serialize_rows_for_csv(deduped_rows, OUTPUT_FIELDS))
+        wrote_light_json = write_text_if_changed(
+            light_json_path,
+            serialize_rows_for_json(deduped_rows, LIGHTWEIGHT_OUTPUT_FIELDS),
+        )
 
     json_bytes = json_path.stat().st_size if json_path.exists() else 0
     csv_bytes = csv_path.stat().st_size if csv_path.exists() else 0
@@ -2428,38 +2477,19 @@ def run_pipeline(
         "schemaVersion": SCHEMA_VERSION,
         "startedAt": started_at,
         "finishedAt": now_iso(),
-        "summary": {
-            **dedup_stats,
-            "rawFetchedCount": len(canonical_rows),
-            "uniqueOutputCount": len(deduped_rows),
-            "sourceBundleCollisions": sum(1 for row in deduped_rows if int(row.get("sourceBundleCount") or 0) > 1),
-            "targetRoleCount": sum(1 for row in deduped_rows if norm_text(row.get("profession")) in TARGET_PROFESSIONS),
-            "netherlandsCount": sum(1 for row in deduped_rows if clean_text(row.get("country")).upper() == "NL"),
-            "remoteCount": sum(1 for row in deduped_rows if norm_text(row.get("workType")) == "remote"),
-            "targetRoleNetherlandsCount": sum(
-                1
-                for row in deduped_rows
-                if norm_text(row.get("profession")) in TARGET_PROFESSIONS and clean_text(row.get("country")).upper() == "NL"
-            ),
-            "targetRoleRemoteCount": sum(
-                1
-                for row in deduped_rows
-                if norm_text(row.get("profession")) in TARGET_PROFESSIONS and norm_text(row.get("workType")) == "remote"
-            ),
-            "preservedPreviousOutput": preserved_previous,
-            "sourceCount": len(source_reports),
-            "successfulSources": sum(1 for row in source_reports if row["status"] == "ok"),
-            "failedSources": sum(1 for row in source_reports if row["status"] == "error"),
-            "excludedSources": sum(1 for row in source_reports if row["status"] == "excluded"),
-            "activeSourceCount": len([row for row in STUDIO_SOURCE_REGISTRY if bool(row.get("enabledByDefault", True))]),
-            "pendingSourceCount": len(load_registry_from_file(pending_registry_path, [])),
-            "newlyApprovedSinceLastRun": read_approved_since_last_run(approval_state_path),
-            "jsonBytes": int(json_bytes),
-            "csvBytes": int(csv_bytes),
-            "lightJsonBytes": int(light_json_bytes),
-            "sizeGuardrailExceeded": bool(json_bytes > 50_000_000 or csv_bytes > 50_000_000),
-            "recordGuardrailExceeded": bool(len(deduped_rows) > 100_000),
-        },
+        "summary": build_pipeline_summary(
+            dedup_stats,
+            deduped_rows,
+            source_reports,
+            len(canonical_rows),
+            preserved_previous,
+            len([row for row in STUDIO_SOURCE_REGISTRY if bool(row.get("enabledByDefault", True))]),
+            len(load_registry_from_file(pending_registry_path, [])),
+            read_approved_since_last_run(approval_state_path),
+            json_bytes=json_bytes,
+            csv_bytes=csv_bytes,
+            light_json_bytes=light_json_bytes,
+        ),
         "sources": source_reports,
         "outputs": {
             "json": str(json_path),
