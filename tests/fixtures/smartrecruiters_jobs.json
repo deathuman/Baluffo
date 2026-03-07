@@ -1,0 +1,19 @@
+{
+  "offset": 0,
+  "limit": 10,
+  "totalFound": 1,
+  "content": [
+    {
+      "id": "smart-1",
+      "name": "Environment Artist",
+      "ref": "https://jobs.smartrecruiters.com/CDPROJEKTRED/environment-artist",
+      "typeOfEmployment": "FULL_TIME",
+      "releasedDate": "2026-02-20T10:00:00Z",
+      "location": {
+        "city": "Warsaw",
+        "country": "PL"
+      },
+      "department": "Art"
+    }
+  ]
+}

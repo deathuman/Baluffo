@@ -32,11 +32,61 @@
     <section id="admin-content" class="admin-panel hidden">
       <div class="admin-toolbar">
         <h2 class="admin-section-title">Stored Profiles Overview</h2>
-        <button id="admin-refresh-btn" class="btn clear-filters-btn">Refresh</button>
+        <div class="admin-toolbar-actions">
+          <button id="admin-refresh-btn" class="btn clear-filters-btn">Refresh</button>
+        </div>
       </div>
 
       <div id="admin-totals" class="admin-totals"></div>
       <div id="admin-users-list" class="jobs-list"></div>
+
+      <section class="admin-fetcher-panel">
+        <div class="admin-fetcher-header">
+          <h3 class="admin-fetcher-title">Fetcher Output</h3>
+          <div class="admin-fetcher-actions">
+            <button
+              id="admin-clear-log-btn"
+              class="btn clear-filters-btn admin-fetcher-icon-btn"
+              type="button"
+              title="Clear output log"
+              aria-label="Clear output log"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                <path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM8 9h2v9H8V9Z" />
+              </svg>
+            </button>
+            <button id="admin-run-fetcher-btn" class="btn clear-filters-btn">Run Jobs Fetcher</button>
+            <button id="admin-refresh-report-btn" class="btn clear-filters-btn">Load Latest Report</button>
+          </div>
+        </div>
+        <div id="admin-fetcher-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
+      </section>
+
+      <section class="admin-fetcher-panel">
+        <div class="admin-fetcher-header">
+          <h3 class="admin-fetcher-title">Source Discovery</h3>
+          <div class="admin-fetcher-actions">
+            <span id="admin-bridge-status-badge" class="admin-bridge-badge checking" title="Local admin bridge status">Bridge Checking</span>
+            <button id="admin-run-discovery-btn" class="btn clear-filters-btn">Run Discovery</button>
+            <button id="admin-load-discovery-btn" class="btn clear-filters-btn">Load Discovery Report</button>
+            <button id="admin-approve-sources-btn" class="btn clear-filters-btn">Approve Selected</button>
+            <button id="admin-reject-sources-btn" class="btn clear-filters-btn">Reject Selected</button>
+          </div>
+        </div>
+        <div id="admin-discovery-summary" class="results-summary">No discovery report loaded yet.</div>
+        <h4 class="admin-section-title">Pending Sources</h4>
+        <div id="admin-pending-sources" class="jobs-list"></div>
+        <h4 class="admin-section-title">Active Sources</h4>
+        <div id="admin-active-sources" class="jobs-list"></div>
+        <details class="admin-rejected-section">
+          <summary class="admin-rejected-summary">Rejected Sources</summary>
+          <div class="admin-rejected-actions">
+            <button id="admin-restore-rejected-btn" class="btn clear-filters-btn" type="button">Restore Selected</button>
+          </div>
+          <div id="admin-rejected-sources" class="jobs-list"></div>
+        </details>
+        <div id="admin-discovery-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
+      </section>
     </section>
   </div>
 

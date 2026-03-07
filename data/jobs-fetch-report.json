@@ -1,0 +1,292 @@
+{
+  "startedAt": "2026-03-07T17:38:37.336530+00:00",
+  "finishedAt": "2026-03-07T17:39:06.819750+00:00",
+  "summary": {
+    "inputCount": 33256,
+    "mergedCount": 468,
+    "outputCount": 32788,
+    "rawFetchedCount": 33256,
+    "uniqueOutputCount": 32788,
+    "sourceBundleCollisions": 198,
+    "targetRoleCount": 195,
+    "netherlandsCount": 311,
+    "remoteCount": 5867,
+    "targetRoleNetherlandsCount": 0,
+    "targetRoleRemoteCount": 37,
+    "preservedPreviousOutput": false,
+    "sourceCount": 12,
+    "successfulSources": 10,
+    "failedSources": 1,
+    "excludedSources": 1,
+    "activeSourceCount": 16,
+    "pendingSourceCount": 4,
+    "newlyApprovedSinceLastRun": 0
+  },
+  "sources": [
+    {
+      "name": "google_sheets",
+      "status": "ok",
+      "adapter": "csv",
+      "studio": "community_sheet",
+      "fetchedCount": 32811,
+      "keptCount": 32811,
+      "error": "",
+      "durationMs": 3266
+    },
+    {
+      "name": "remote_ok",
+      "status": "ok",
+      "adapter": "api",
+      "studio": "remote_ok",
+      "fetchedCount": 47,
+      "keptCount": 47,
+      "error": "",
+      "durationMs": 91
+    },
+    {
+      "name": "gamesindustry",
+      "status": "ok",
+      "adapter": "html",
+      "studio": "gamesindustry",
+      "fetchedCount": 24,
+      "keptCount": 24,
+      "error": "",
+      "durationMs": 267
+    },
+    {
+      "name": "greenhouse_boards",
+      "status": "ok",
+      "adapter": "greenhouse",
+      "studio": "multiple",
+      "fetchedCount": 205,
+      "keptCount": 205,
+      "error": "",
+      "durationMs": 717,
+      "details": [
+        {
+          "adapter": "greenhouse",
+          "studio": "Guerrilla Games",
+          "name": "Guerrilla Games",
+          "status": "ok",
+          "fetchedCount": 9,
+          "keptCount": 9,
+          "error": ""
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "PlayStation Global",
+          "name": "PlayStation Global",
+          "status": "ok",
+          "fetchedCount": 196,
+          "keptCount": 196,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "teamtailor_sources",
+      "status": "ok",
+      "adapter": "teamtailor",
+      "studio": "multiple",
+      "fetchedCount": 20,
+      "keptCount": 20,
+      "error": "",
+      "durationMs": 2252,
+      "details": [
+        {
+          "adapter": "teamtailor",
+          "studio": "Paradox Interactive",
+          "name": "Paradox Careers",
+          "status": "ok",
+          "fetchedCount": 20,
+          "keptCount": 20,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "lever_sources",
+      "status": "ok",
+      "adapter": "lever",
+      "studio": "multiple",
+      "fetchedCount": 26,
+      "keptCount": 26,
+      "error": "",
+      "durationMs": 4586,
+      "details": [
+        {
+          "adapter": "lever",
+          "studio": "Jagex",
+          "name": "Jagex (Lever)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": ""
+        },
+        {
+          "adapter": "lever",
+          "studio": "Sandbox VR",
+          "name": "Sandbox VR (Lever)",
+          "status": "ok",
+          "fetchedCount": 31,
+          "keptCount": 0,
+          "error": ""
+        },
+        {
+          "adapter": "lever",
+          "studio": "Voodoo",
+          "name": "Voodoo (Lever)",
+          "status": "ok",
+          "fetchedCount": 34,
+          "keptCount": 26,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "smartrecruiters_sources",
+      "status": "ok",
+      "adapter": "smartrecruiters",
+      "studio": "multiple",
+      "fetchedCount": 95,
+      "keptCount": 95,
+      "error": "",
+      "durationMs": 387,
+      "details": [
+        {
+          "adapter": "smartrecruiters",
+          "studio": "CD PROJEKT RED",
+          "name": "CD PROJEKT RED (SmartRecruiters)",
+          "status": "ok",
+          "fetchedCount": 99,
+          "keptCount": 28,
+          "error": ""
+        },
+        {
+          "adapter": "smartrecruiters",
+          "studio": "Gameloft",
+          "name": "Gameloft (SmartRecruiters)",
+          "status": "ok",
+          "fetchedCount": 67,
+          "keptCount": 67,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "workable_sources",
+      "status": "ok",
+      "adapter": "workable",
+      "studio": "multiple",
+      "fetchedCount": 23,
+      "keptCount": 23,
+      "error": "",
+      "durationMs": 567,
+      "details": [
+        {
+          "adapter": "workable",
+          "studio": "Hutch",
+          "name": "Hutch (Workable)",
+          "status": "ok",
+          "fetchedCount": 8,
+          "keptCount": 8,
+          "error": ""
+        },
+        {
+          "adapter": "workable",
+          "studio": "Wargaming",
+          "name": "Wargaming (Workable)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": ""
+        },
+        {
+          "adapter": "workable",
+          "studio": "Vertigo Games",
+          "name": "Vertigo Games (Workable)",
+          "status": "ok",
+          "fetchedCount": 15,
+          "keptCount": 15,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "ashby_sources",
+      "status": "ok",
+      "adapter": "ashby",
+      "studio": "multiple",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "error": "",
+      "durationMs": 375,
+      "details": [
+        {
+          "adapter": "ashby",
+          "studio": "Jagex",
+          "name": "Jagex (Ashby)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "no jobs extracted from ashby board html"
+        },
+        {
+          "adapter": "ashby",
+          "studio": "Scopely",
+          "name": "Scopely (Ashby)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "no jobs extracted from ashby board html"
+        }
+      ]
+    },
+    {
+      "name": "personio_sources",
+      "status": "error",
+      "adapter": "personio",
+      "studio": "multiple",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "error": "personio:InnoGames (Personio): HTTP 429 for https://innogames.jobs.personio.de/xml; personio:Travian (Personio): HTTP 429 for https://travian.jobs.personio.de/xml",
+      "durationMs": 11313
+    },
+    {
+      "name": "static_studio_pages",
+      "status": "ok",
+      "adapter": "static",
+      "studio": "multiple",
+      "fetchedCount": 5,
+      "keptCount": 5,
+      "error": "",
+      "durationMs": 4110,
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Little Chicken",
+          "name": "Little Chicken",
+          "status": "ok",
+          "fetchedCount": 2,
+          "keptCount": 5,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "wellfound",
+      "status": "excluded",
+      "adapter": "html",
+      "studio": "wellfound",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "error": "disabled_by_default: blocked by anti-bot restrictions in non-browser fetch mode",
+      "durationMs": 0
+    }
+  ],
+  "outputs": {
+    "json": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-unified.json",
+    "csv": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-unified.csv",
+    "report": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-fetch-report.json"
+  }
+}

@@ -1,0 +1,182 @@
+[
+  {
+    "name": "Guerrilla Games",
+    "studio": "Guerrilla Games",
+    "adapter": "greenhouse",
+    "slug": "guerrilla-games",
+    "nlPriority": true,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "PlayStation Global",
+    "studio": "PlayStation Global",
+    "adapter": "greenhouse",
+    "slug": "sonyinteractiveentertainmentglobal",
+    "nlPriority": true,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Paradox Careers",
+    "studio": "Paradox Interactive",
+    "adapter": "teamtailor",
+    "listing_url": "https://career.paradoxplaza.com/jobs",
+    "base_url": "https://career.paradoxplaza.com",
+    "company": "Paradox Interactive",
+    "nlPriority": true,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Little Chicken",
+    "studio": "Little Chicken",
+    "adapter": "static",
+    "company": "Little Chicken",
+    "pages": [
+      "https://www.littlechicken.nl/about-us/jobs/",
+      "https://www.littlechicken.nl/job/"
+    ],
+    "nlPriority": true,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Larian Studios",
+    "studio": "Larian Studios",
+    "adapter": "greenhouse",
+    "slug": "larian-studios",
+    "nlPriority": true,
+    "remoteFriendly": true,
+    "enabledByDefault": false
+  },
+  {
+    "name": "Jagex (Lever)",
+    "studio": "Jagex",
+    "adapter": "lever",
+    "account": "jagex",
+    "api_url": "https://api.lever.co/v0/postings/jagex?mode=json",
+    "nlPriority": false,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Sandbox VR (Lever)",
+    "studio": "Sandbox VR",
+    "adapter": "lever",
+    "account": "sandboxvr",
+    "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json",
+    "nlPriority": false,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Voodoo (Lever)",
+    "studio": "Voodoo",
+    "adapter": "lever",
+    "account": "voodoo",
+    "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json",
+    "nlPriority": false,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "CD PROJEKT RED (SmartRecruiters)",
+    "studio": "CD PROJEKT RED",
+    "adapter": "smartrecruiters",
+    "company_id": "CDPROJEKTRED",
+    "api_url": "https://api.smartrecruiters.com/v1/companies/CDPROJEKTRED/postings",
+    "nlPriority": false,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Gameloft (SmartRecruiters)",
+    "studio": "Gameloft",
+    "adapter": "smartrecruiters",
+    "company_id": "Gameloft",
+    "api_url": "https://api.smartrecruiters.com/v1/companies/Gameloft/postings",
+    "nlPriority": false,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Hutch (Workable)",
+    "studio": "Hutch",
+    "adapter": "workable",
+    "account": "hutch",
+    "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true",
+    "nlPriority": false,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Wargaming (Workable)",
+    "studio": "Wargaming",
+    "adapter": "workable",
+    "account": "wargaming",
+    "api_url": "https://apply.workable.com/api/v1/widget/accounts/wargaming?details=true",
+    "nlPriority": false,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "InnoGames (Personio)",
+    "studio": "InnoGames",
+    "adapter": "personio",
+    "feed_url": "https://innogames.jobs.personio.de/xml",
+    "nlPriority": true,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Travian (Personio)",
+    "studio": "Travian",
+    "adapter": "personio",
+    "feed_url": "https://travian.jobs.personio.de/xml",
+    "nlPriority": true,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Jagex (Ashby)",
+    "studio": "Jagex",
+    "adapter": "ashby",
+    "board_url": "https://jobs.ashbyhq.com/jagex/jobs",
+    "nlPriority": false,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Scopely (Ashby)",
+    "studio": "Scopely",
+    "adapter": "ashby",
+    "board_url": "https://jobs.ashbyhq.com/scopely/jobs",
+    "nlPriority": false,
+    "remoteFriendly": true,
+    "enabledByDefault": true
+  },
+  {
+    "name": "Vertigo Games (Workable)",
+    "studio": "Vertigo Games",
+    "adapter": "workable",
+    "account": "vertigogames",
+    "api_url": "https://apply.workable.com/api/v1/widget/accounts/vertigogames?details=true",
+    "remoteFriendly": true,
+    "nlPriority": true,
+    "discoveryMethod": "pattern",
+    "discoveredAt": "2026-03-07T17:20:46.087505+00:00",
+    "id": "workable:account:vertigogames",
+    "enabledByDefault": true,
+    "score": 55,
+    "reasons": [
+      "nl_priority",
+      "remote_friendly",
+      "live_jobs_detected"
+    ],
+    "sampleCount": 15,
+    "jobsFound": 15,
+    "confidence": "high",
+    "lastProbedAt": "2026-03-07T17:20:55.753404+00:00"
+  }
+]

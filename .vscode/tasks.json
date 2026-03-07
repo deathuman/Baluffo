@@ -4,7 +4,7 @@
     {
       "label": "Serve static site (8080)",
       "type": "shell",
-      "command": "py -3 -m http.server 8080 --directory .",
+      "command": "python -m http.server 8080 --directory .",
       "isBackground": true,
       "problemMatcher": {
         "owner": "custom",
@@ -27,6 +27,82 @@
       "label": "Stop static site",
       "type": "shell",
       "command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'python(\\.exe)?' -and $_.CommandLine -match 'http\\.server 8080' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+      "problemMatcher": []
+    },
+    {
+      "label": "Serve admin check site (8765)",
+      "type": "shell",
+      "command": "python -m http.server 8765 --directory .",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "custom",
+        "fileLocation": "absolute",
+        "pattern": {
+          "regexp": "."
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Serving HTTP on"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Stop admin check site",
+      "type": "shell",
+      "command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'python(\\.exe)?' -and $_.CommandLine -match 'http\\.server 8765' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run jobs fetcher",
+      "type": "shell",
+      "command": "python scripts/jobs_fetcher.py",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Run source discovery",
+      "type": "shell",
+      "command": "python scripts/source_discovery.py --mode dynamic",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Run admin bridge",
+      "type": "shell",
+      "command": "python scripts/admin_bridge.py",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "custom",
+        "fileLocation": "absolute",
+        "pattern": {
+          "regexp": "."
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Admin bridge listening on"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Stop admin bridge",
+      "type": "shell",
+      "command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'python(\\.exe)?' -and $_.CommandLine -match 'scripts\\\\admin_bridge.py' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
       "problemMatcher": []
     }
   ]

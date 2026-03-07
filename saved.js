@@ -1,6 +1,8 @@
 let savedJobsListEl;
 let savedSourceStatusEl;
 let savedAuthStatusEl;
+let savedAuthStatusHintEl;
+let savedAuthAvatarEl;
 let signInBtnEl;
 let signOutBtnEl;
 let jobsPageBtnEl;
@@ -55,6 +57,8 @@ function cacheDom() {
   savedJobsListEl = document.getElementById("saved-jobs-list");
   savedSourceStatusEl = document.getElementById("saved-source-status");
   savedAuthStatusEl = document.getElementById("saved-auth-status");
+  savedAuthStatusHintEl = document.getElementById("saved-auth-status-hint");
+  savedAuthAvatarEl = document.getElementById("saved-auth-avatar");
   signInBtnEl = document.getElementById("saved-auth-sign-in-btn");
   signOutBtnEl = document.getElementById("saved-auth-sign-out-btn");
   jobsPageBtnEl = document.getElementById("jobs-page-btn");
@@ -911,7 +915,27 @@ function cssEscape(value) {
 
 function setAuthStatus(text) {
   if (!savedAuthStatusEl) return;
-  savedAuthStatusEl.textContent = text;
+  const raw = String(text || "").trim();
+  let label = raw || "Guest";
+  let hint = "";
+  const signedInMatch = raw.match(/^signed\s+in\s+as\s+(.+)$/i);
+
+  if (!raw || /^browsing\s+as\s+guest$/i.test(raw) || /^guest$/i.test(raw)) {
+    label = "Guest";
+    hint = "Browsing as guest";
+  } else if (signedInMatch) {
+    label = String(signedInMatch[1] || "").trim() || "User";
+    hint = "Signed in";
+  }
+
+  savedAuthStatusEl.textContent = label;
+  if (savedAuthStatusHintEl) {
+    savedAuthStatusHintEl.textContent = hint;
+  }
+  if (savedAuthAvatarEl) {
+    const initial = label.charAt(0).toUpperCase();
+    savedAuthAvatarEl.textContent = initial && /[A-Z0-9]/.test(initial) ? initial : "U";
+  }
 }
 
 function setSourceStatus(text) {

@@ -35,3 +35,44 @@ Saved job record fields:
 
 ## Future migration note
 `local-data-client.js` exposes a provider-like interface (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
+
+## Unified jobs feed generation
+- Run `python scripts/jobs_fetcher.py` to aggregate listings into:
+  - `data/jobs-unified.json` (primary feed used by `jobs.js`)
+  - `data/jobs-unified.csv` (CSV fallback + inspection)
+  - `data/jobs-fetch-report.json` (per-source diagnostics)
+- Active source configuration is file-backed:
+  - `data/source-registry-active.json` (used by fetcher at runtime)
+  - `data/source-registry-pending.json` (awaiting approval)
+  - `data/source-registry-rejected.json` (rejected history)
+- The fetch runner pulls from:
+  - Google Sheets (current curated source + mirror fallback)
+  - Remote OK API
+  - GamesIndustry HTML
+  - Greenhouse, Teamtailor, Lever, SmartRecruiters, Workable, Ashby, Personio, static studio pages
+- If the current run yields zero jobs, the runner keeps the previous `jobs-unified.json` output by default.
+
+## Source discovery and approval
+- Run `python scripts/source_discovery.py` (dynamic mode by default) to discover new candidate sources into:
+  - `data/source-discovery-report.json`
+  - `data/source-discovery-candidates.json`
+  - `data/source-registry-pending.json` (report-only, no auto-enable)
+- Optional flags:
+  - `--mode static` to probe only static seed list
+  - `--no-web-search` to skip lightweight web search expansion
+- Run `python scripts/admin_bridge.py` to expose localhost admin endpoints used by `admin.html`:
+  - `GET /discovery/report`
+  - `GET /registry/pending`
+  - `GET /registry/active`
+  - `POST /registry/approve`, `POST /registry/reject`, `POST /registry/rollback`
+  - `POST /tasks/run-discovery`, `POST /tasks/run-discovery-full`, `POST /tasks/run-fetcher`
+
+## Suggested local schedules
+- Windows Task Scheduler action:
+  - Program/script: `python`
+  - Arguments: `scripts/jobs_fetcher.py`
+  - Start in: repository root (`Baluffo`)
+- Discovery (daily):
+  - Program/script: `python`
+  - Arguments: `scripts/source_discovery.py --mode dynamic`
+  - Start in: repository root (`Baluffo`)

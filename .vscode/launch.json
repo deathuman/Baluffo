@@ -4,11 +4,22 @@
     {
       "name": "Launch Chrome on localhost",
       "type": "pwa-chrome",
+      "runtimeExecutable": "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe",
       "request": "launch",
       "url": "http://localhost:8080/index.html",
       "webRoot": "${workspaceFolder}",
       "preLaunchTask": "Serve static site (8080)",
       "postDebugTask": "Stop static site"
+    },
+    {
+      "name": "Launch Admin Check (8765)",
+      "type": "pwa-chrome",
+      "runtimeExecutable": "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe",
+      "request": "launch",
+      "url": "http://127.0.0.1:8765/admin.html",
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "Serve admin check site (8765)",
+      "postDebugTask": "Stop admin check site"
     }
   ]
 }

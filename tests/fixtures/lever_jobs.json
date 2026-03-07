@@ -1,0 +1,13 @@
+[
+  {
+    "id": "lever-1",
+    "text": "Technical Artist",
+    "hostedUrl": "https://jobs.example.com/technical-artist",
+    "createdAt": 1730419200000,
+    "categories": {
+      "location": "Amsterdam, Netherlands",
+      "commitment": "Full-time",
+      "team": "Art"
+    }
+  }
+]

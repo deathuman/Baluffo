@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workzag-jobs>
+  <position id="p-1">
+    <name>Environment Artist</name>
+    <subcompany>InnoGames</subcompany>
+    <office>Hamburg, Germany</office>
+    <department>Art</department>
+    <employmentType>Full-time</employmentType>
+    <url>https://innogames.jobs.personio.de/job/1</url>
+    <createdAt>2026-02-10T00:00:00Z</createdAt>
+  </position>
+  <position id="p-2">
+    <name>Generalist Engineer</name>
+    <subcompany>InnoGames</subcompany>
+    <office>Hamburg, Germany</office>
+    <department>Engineering</department>
+    <employmentType>Full-time</employmentType>
+    <url>https://innogames.jobs.personio.de/job/2</url>
+    <createdAt>2026-02-10T00:00:00Z</createdAt>
+  </position>
+</workzag-jobs>

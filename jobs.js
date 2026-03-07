@@ -60,6 +60,8 @@ let pagination;
 let refreshJobsBtn;
 let jobsLastUpdatedEl;
 let authStatus;
+let authStatusHint;
+let authAvatar;
 let authSignInBtn;
 let authSignOutBtn;
 let savedJobsBtn;
@@ -69,6 +71,8 @@ let customizeQuickFiltersBtn;
 let quickFiltersPanel;
 let quickFiltersOptionsEl;
 let quickFiltersResetBtn;
+let dataSourcesListEl;
+let dataSourcesCaptionEl;
 
 let currentUser = null;
 let savedJobKeys = new Set();
@@ -77,8 +81,30 @@ const JOBS_CACHE_DB = "baluffo_jobs_cache";
 const JOBS_CACHE_STORE = "jobs_feed";
 const JOBS_CACHE_KEY = "latest";
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
-const JOBS_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+const JOBS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const JOBS_AUTO_REFRESH_SIGNAL_KEY = "baluffo_jobs_auto_refresh_signal";
+const JOBS_AUTO_REFRESH_APPLIED_KEY = "baluffo_jobs_auto_refresh_applied";
 const QUICK_FILTER_PREFS_KEY = "baluffo_quick_filter_prefs";
+const UNIFIED_JSON_SOURCES = [
+  { name: "Unified JSON (local data)", url: "data/jobs-unified.json" },
+  { name: "Unified JSON (root)", url: "jobs-unified.json" }
+];
+const UNIFIED_CSV_SOURCES = [
+  { name: "Unified CSV (local data)", url: "data/jobs-unified.csv" },
+  { name: "Unified CSV (root)", url: "jobs-unified.csv" }
+];
+const LEGACY_SHEETS_SOURCE = {
+  sheetId: "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE",
+  gid: "1560329579"
+};
+const SOURCE_REGISTRY_ACTIVE_URLS = [
+  "data/source-registry-active.json",
+  "source-registry-active.json"
+];
+const JOBS_FETCH_REPORT_URLS = [
+  "data/jobs-fetch-report.json",
+  "jobs-fetch-report.json"
+];
 
 const QUICK_FILTERS = [
   { key: "remote", label: "Remote Only", type: "workType", value: "Remote", defaultVisible: true },
@@ -114,6 +140,9 @@ let refreshInFlight = false;
 let availableProfessions = [];
 let availableCountries = [];
 let visibleQuickFilterKeys = [];
+let hasInitializedJobsFeed = false;
+let pendingAutoRefreshSignal = null;
+let lastHandledAutoRefreshSignalId = readAppliedAutoRefreshId();
 
 document.addEventListener("DOMContentLoaded", () => {
   cacheDom();
@@ -148,6 +177,8 @@ function cacheDom() {
   refreshJobsBtn = document.getElementById("refresh-jobs-btn");
   jobsLastUpdatedEl = document.getElementById("jobs-last-updated");
   authStatus = document.getElementById("auth-status");
+  authStatusHint = document.getElementById("auth-status-hint");
+  authAvatar = document.getElementById("auth-avatar");
   authSignInBtn = document.getElementById("auth-sign-in-btn");
   authSignOutBtn = document.getElementById("auth-sign-out-btn");
   savedJobsBtn = document.getElementById("saved-jobs-btn");
@@ -157,6 +188,8 @@ function cacheDom() {
   quickFiltersPanel = document.getElementById("quick-filters-panel");
   quickFiltersOptionsEl = document.getElementById("quick-filters-options");
   quickFiltersResetBtn = document.getElementById("quick-filters-reset-btn");
+  dataSourcesListEl = document.getElementById("data-sources-list");
+  dataSourcesCaptionEl = document.getElementById("data-sources-caption");
 }
 
 function bindEvents() {
@@ -294,11 +327,18 @@ function bindEvents() {
     });
   }
 
+  window.addEventListener("storage", event => {
+    if (event.key !== JOBS_AUTO_REFRESH_SIGNAL_KEY) return;
+    if (!event.newValue) return;
+    handleAutoRefreshSignalValue(event.newValue);
+  });
+
   enableKeyboardNav();
 }
 
 async function init() {
   if (!jobsList) return;
+  renderDataSources().catch(() => {});
 
   initAuth();
 
@@ -319,12 +359,101 @@ async function init() {
       setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs from local cache.`);
     }
     updateLastUpdatedText(cached.savedAt);
+    hasInitializedJobsFeed = true;
+    await applyPendingAutoRefreshSignal();
     return;
   }
 
   const ok = await refreshJobsNow({ manual: false, firstLoad: true });
+  hasInitializedJobsFeed = true;
+  await applyPendingAutoRefreshSignal();
   if (!ok) {
     showError("Unable to load job listings right now.");
+  }
+}
+
+function readAppliedAutoRefreshId() {
+  try {
+    return String(localStorage.getItem(JOBS_AUTO_REFRESH_APPLIED_KEY) || "");
+  } catch {
+    return "";
+  }
+}
+
+function markAutoRefreshSignalHandled(signalId) {
+  if (!signalId) return;
+  lastHandledAutoRefreshSignalId = signalId;
+  try {
+    localStorage.setItem(JOBS_AUTO_REFRESH_APPLIED_KEY, signalId);
+  } catch {
+    // Ignore localStorage write failures.
+  }
+}
+
+function parseAutoRefreshSignal(rawValue) {
+  if (!rawValue) return null;
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (!parsed || typeof parsed !== "object") return null;
+    const signalId = String(parsed.id || "").trim();
+    if (!signalId) return null;
+    if (String(parsed.source || "").trim() !== "admin_fetcher") return null;
+    return {
+      id: signalId,
+      finishedAt: String(parsed.finishedAt || "")
+    };
+  } catch {
+    return null;
+  }
+}
+
+function handleAutoRefreshSignalValue(rawValue) {
+  const signal = parseAutoRefreshSignal(rawValue);
+  if (!signal) return;
+  if (signal.id === lastHandledAutoRefreshSignalId) return;
+
+  if (!hasInitializedJobsFeed) {
+    pendingAutoRefreshSignal = signal;
+    return;
+  }
+
+  pendingAutoRefreshSignal = null;
+  triggerAutoRefreshFromSignal(signal).catch(err => {
+    console.error("Auto-refresh from admin signal failed:", err);
+  });
+}
+
+async function applyPendingAutoRefreshSignal() {
+  if (pendingAutoRefreshSignal) {
+    const signal = pendingAutoRefreshSignal;
+    pendingAutoRefreshSignal = null;
+    await triggerAutoRefreshFromSignal(signal);
+    return;
+  }
+
+  try {
+    const latestRaw = localStorage.getItem(JOBS_AUTO_REFRESH_SIGNAL_KEY);
+    handleAutoRefreshSignalValue(latestRaw);
+  } catch {
+    // Ignore localStorage read failures.
+  }
+}
+
+async function triggerAutoRefreshFromSignal(signal) {
+  if (!signal?.id) return;
+  if (signal.id === lastHandledAutoRefreshSignalId) return;
+
+  const completedAt = signal.finishedAt ? new Date(signal.finishedAt) : null;
+  const completedLabel = completedAt && !Number.isNaN(completedAt.getTime())
+    ? completedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
+  const statusTail = completedLabel ? ` (${completedLabel})` : "";
+  setSourceStatus(`New feed available from admin fetcher${statusTail}. Refreshing jobs...`);
+
+  const ok = await refreshJobsNow({ manual: false });
+  markAutoRefreshSignalHandled(signal.id);
+  if (ok) {
+    showToast("Jobs auto-refreshed from latest fetcher run.", "success");
   }
 }
 
@@ -363,7 +492,27 @@ function initAuth() {
 
 function setAuthStatus(text) {
   if (!authStatus) return;
-  authStatus.textContent = text;
+  const raw = String(text || "").trim();
+  let label = raw || "Guest";
+  let hint = "";
+  const signedInMatch = raw.match(/^signed\s+in\s+as\s+(.+)$/i);
+
+  if (!raw || /^browsing\s+as\s+guest$/i.test(raw) || /^guest$/i.test(raw)) {
+    label = "Guest";
+    hint = "Browsing as guest";
+  } else if (signedInMatch) {
+    label = String(signedInMatch[1] || "").trim() || "User";
+    hint = "Signed in";
+  }
+
+  authStatus.textContent = label;
+  if (authStatusHint) {
+    authStatusHint.textContent = hint;
+  }
+  if (authAvatar) {
+    const initial = label.charAt(0).toUpperCase();
+    authAvatar.textContent = initial && /[A-Z0-9]/.test(initial) ? initial : "U";
+  }
 }
 
 function toggleAuthButtons(isSignedIn) {
@@ -518,10 +667,10 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
 
   if (refreshJobsBtn) refreshJobsBtn.disabled = true;
   if (manual || firstLoad) setProgress(true);
-  if (manual) setSourceStatus("Refreshing jobs from Google Sheets...");
+  if (manual) setSourceStatus("Refreshing jobs from unified feed...");
 
   try {
-    const result = await fetchFromGoogleSheets();
+    const result = await fetchUnifiedJobs();
     if (!result.jobs || result.jobs.length === 0) {
       if (manual) showToast(result.error || "Could not refresh jobs.", "error");
       return false;
@@ -542,7 +691,9 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
       showToast("Job cache auto-updated.", "info");
     }
 
-    setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs.`);
+    const sourceLabel = result.sourceName ? ` from ${result.sourceName}` : "";
+    setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs${sourceLabel}.`);
+    renderDataSources().catch(() => {});
     return true;
   } catch (err) {
     console.error("Refresh failed:", err);
@@ -1300,14 +1451,199 @@ function updateActiveFiltersSummary() {
   activeFiltersSummaryEl.textContent = active.length ? `Active filters: ${active.join(" • ")}` : "No active filters";
 }
 
+async function fetchUnifiedJobs() {
+  for (const source of UNIFIED_JSON_SOURCES) {
+    try {
+      setSourceStatus(`Fetching from ${source.name}...`);
+      const response = await fetchWithTimeout(source.url, 20000, {
+        headers: { Accept: "application/json" }
+      });
+      if (!response.ok) continue;
+
+      const payload = await response.json();
+      const jobs = parseUnifiedJobsPayload(payload);
+      if (jobs.length > 0) {
+        return { jobs, error: "", sourceName: source.name };
+      }
+    } catch (_) {
+      // Try next source.
+    }
+  }
+
+  for (const source of UNIFIED_CSV_SOURCES) {
+    try {
+      setSourceStatus(`Fetching from ${source.name}...`);
+      const response = await fetchWithTimeout(source.url, 20000, {
+        headers: { Accept: "text/csv,*/*" }
+      });
+      if (!response.ok) continue;
+
+      const csv = await response.text();
+      if (!csv || csv.length < 100) continue;
+
+      const jobs = parseCSVLarge(csv);
+      if (jobs.length > 0) {
+        return { jobs, error: "", sourceName: source.name };
+      }
+    } catch (_) {
+      // Try next source.
+    }
+  }
+
+  const legacy = await fetchFromGoogleSheets();
+  if (legacy.jobs && legacy.jobs.length > 0) return legacy;
+  return {
+    jobs: null,
+    error: "Could not fetch listings from unified feeds or fallback sheets source.",
+    sourceName: ""
+  };
+}
+
+async function fetchJsonFromCandidates(urls) {
+  for (const url of urls) {
+    try {
+      const response = await fetchWithTimeout(`${url}?t=${Date.now()}`, 12000, { cache: "no-store" });
+      if (!response.ok) continue;
+      return await response.json();
+    } catch {
+      // Try next source.
+    }
+  }
+  return null;
+}
+
+function sourceUrlFromRegistry(row) {
+  if (!row || typeof row !== "object") return "";
+  return String(
+    row.api_url
+    || row.feed_url
+    || row.board_url
+    || row.listing_url
+    || (Array.isArray(row.pages) && row.pages.length ? row.pages[0] : "")
+    || ""
+  ).trim();
+}
+
+function normalizeSourceRows(activeRegistry, fetchReport) {
+  const rows = [];
+  const seen = new Set();
+  const push = (name, url, status, note = "") => {
+    const key = `${String(name || "").toLowerCase()}|${String(url || "").toLowerCase()}`;
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+    rows.push({ name, url, status, note });
+  };
+
+  // Core sources (always part of pipeline).
+  push("Google Sheets", `https://docs.google.com/spreadsheets/d/${LEGACY_SHEETS_SOURCE.sheetId}/edit?gid=${LEGACY_SHEETS_SOURCE.gid}`, "core");
+  push("Remote OK", "https://remoteok.com/", "core");
+  push("GamesIndustry Jobs", "https://jobs.gamesindustry.biz/jobs", "core");
+
+  const reportSources = Array.isArray(fetchReport?.sources) ? fetchReport.sources : [];
+  const reportByName = new Map();
+  reportSources.forEach(item => {
+    reportByName.set(String(item?.name || ""), item);
+  });
+
+  const activeRows = Array.isArray(activeRegistry) ? activeRegistry : [];
+  activeRows
+    .filter(row => row && typeof row === "object" && Boolean(row.enabledByDefault))
+    .forEach(row => {
+      const name = String(row.name || row.studio || row.adapter || "Source").trim();
+      const url = sourceUrlFromRegistry(row);
+      push(name, url, "active");
+    });
+
+  // Add excluded sources explicitly from report (e.g., wellfound), if present.
+  reportSources
+    .filter(item => String(item?.status || "").toLowerCase() === "excluded")
+    .forEach(item => {
+      const name = String(item?.name || "Excluded source");
+      push(name, "", "excluded", String(item?.error || "").trim());
+    });
+
+  // Sort for stable reading.
+  rows.sort((a, b) => a.name.localeCompare(b.name));
+  return { rows, reportByName };
+}
+
+function renderSourceListRows(rows, reportByName) {
+  if (!dataSourcesListEl) return;
+  if (!rows.length) {
+    dataSourcesListEl.innerHTML = "<li>No source metadata available.</li>";
+    return;
+  }
+
+  dataSourcesListEl.innerHTML = rows.map(item => {
+    const reportKeyCandidates = [
+      item.name,
+      String(item.name || "").toLowerCase().replace(/\s+/g, "_")
+    ];
+    let report = null;
+    for (const key of reportKeyCandidates) {
+      if (reportByName.has(key)) {
+        report = reportByName.get(key);
+        break;
+      }
+    }
+
+    const fetched = Number(report?.fetchedCount || 0);
+    const kept = Number(report?.keptCount || 0);
+    const status = String(item.status || "active");
+    const suffix = report
+      ? ` - fetched ${fetched.toLocaleString()}, kept ${kept.toLocaleString()}`
+      : item.note
+        ? ` - ${escapeHtml(item.note)}`
+        : "";
+
+    if (item.url) {
+      return `<li><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.name)}</a> (${escapeHtml(status)})${suffix}</li>`;
+    }
+    return `<li>${escapeHtml(item.name)} (${escapeHtml(status)})${suffix}</li>`;
+  }).join("");
+}
+
+async function renderDataSources() {
+  if (!dataSourcesListEl) return;
+  const [activeRegistry, fetchReport] = await Promise.all([
+    fetchJsonFromCandidates(SOURCE_REGISTRY_ACTIVE_URLS),
+    fetchJsonFromCandidates(JOBS_FETCH_REPORT_URLS)
+  ]);
+
+  const normalized = normalizeSourceRows(activeRegistry, fetchReport);
+  renderSourceListRows(normalized.rows, normalized.reportByName);
+
+  if (dataSourcesCaptionEl) {
+    const finishedAt = String(fetchReport?.finishedAt || "").trim();
+    if (!finishedAt) {
+      dataSourcesCaptionEl.textContent = "Source list reflects your current local fetch configuration.";
+    } else {
+      const dt = new Date(finishedAt);
+      const stamp = Number.isNaN(dt.getTime())
+        ? finishedAt
+        : dt.toLocaleString([], { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+      dataSourcesCaptionEl.textContent = `Source list reflects your current local fetch configuration and latest fetch report (${stamp}).`;
+    }
+  }
+}
+
+function parseUnifiedJobsPayload(payload) {
+  let rows = [];
+  if (Array.isArray(payload)) {
+    rows = payload;
+  } else if (payload && typeof payload === "object") {
+    if (Array.isArray(payload.jobs)) rows = payload.jobs;
+    else if (Array.isArray(payload.items)) rows = payload.items;
+  }
+  return rows.filter(row => row && typeof row === "object");
+}
+
 async function fetchFromGoogleSheets() {
-  const sheetId = "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE";
-  const gid = "1560329579";
-  const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${LEGACY_SHEETS_SOURCE.sheetId}/export?format=csv&gid=${LEGACY_SHEETS_SOURCE.gid}`;
 
   const sources = [
-    { name: "Google Sheets", url: csvUrl },
-    { name: "AllOrigins mirror", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(csvUrl)}` }
+    { name: "Google Sheets fallback", url: csvUrl },
+    { name: "AllOrigins mirror fallback", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(csvUrl)}` }
   ];
 
   for (const source of sources) {
@@ -1321,7 +1657,7 @@ async function fetchFromGoogleSheets() {
 
       const jobs = parseCSVLarge(csv);
       if (jobs.length > 0) {
-        return { jobs, error: "" };
+        return { jobs, error: "", sourceName: source.name };
       }
     } catch (_) {
       // Try next source.
@@ -1330,15 +1666,17 @@ async function fetchFromGoogleSheets() {
 
   return {
     jobs: null,
-    error: "Could not fetch listings from the source feed. Check your connection and retry."
+    error: "Could not fetch listings from the fallback sheets feed.",
+    sourceName: ""
   };
 }
 
-async function fetchWithTimeout(url, timeoutMs) {
+async function fetchWithTimeout(url, timeoutMs, init = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
+      ...init,
       signal: controller.signal,
       mode: "cors",
       credentials: "omit"
@@ -1439,16 +1777,56 @@ function parseCSVLarge(csv) {
 
 function normalizeJobs(rows) {
   if (!Array.isArray(rows)) return [];
-  return rows.map(row => {
+  return rows.map((row, idx) => {
     const job = { ...row };
+    job.id = job.id || (1000 + idx);
+    job.title = String(job.title || "").trim();
     job.company = String(job.company || "").trim();
+    job.city = String(job.city || "").trim();
+    job.country = String(job.country || "Unknown").trim() || "Unknown";
+    job.workType = detectWorkType(job.workType || "");
+    job.contractType = detectContractType(job.contractType || "", job.title || "");
+    job.jobLink = sanitizeUrl(job.jobLink || "");
+    job.source = String(job.source || "").trim();
+    job.sourceJobId = String(job.sourceJobId || "").trim();
+    job.fetchedAt = normalizeTimestamp(job.fetchedAt);
+    job.postedAt = normalizeTimestamp(job.postedAt);
+    job.dedupKey = String(job.dedupKey || "").trim();
+    const quality = Number(job.qualityScore);
+    job.qualityScore = Number.isFinite(quality) ? Math.max(0, Math.min(100, Math.round(quality))) : 0;
     job.sector = normalizeSector(job.sector || "", job.company || "", job.title || "");
     job.profession = PROFESSION_LABELS[job.profession] ? job.profession : mapProfession(String(job.title || ""));
     if (!job.companyType) {
       job.companyType = classifyCompanyType(job.company, job.title || "");
     }
+    if (!job.description) {
+      job.description = `${job.title} at ${job.company}`;
+    }
     return job;
   });
+}
+
+function normalizeTimestamp(value) {
+  if (!value) return "";
+  let dt = null;
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const ms = value > 10_000_000_000 ? value : value * 1000;
+    dt = new Date(ms);
+  } else {
+    const trimmed = String(value).trim();
+    if (!trimmed) return "";
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric) && /^\d{10,13}$/.test(trimmed)) {
+      const ms = numeric > 10_000_000_000 ? numeric : numeric * 1000;
+      dt = new Date(ms);
+    } else {
+      dt = new Date(trimmed);
+    }
+  }
+
+  if (!dt || Number.isNaN(dt.getTime())) return "";
+  return dt.toISOString();
 }
 
 function parseCSVRecords(csv) {
