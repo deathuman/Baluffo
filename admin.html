@@ -40,6 +40,21 @@
       <div id="admin-totals" class="admin-totals"></div>
       <div id="admin-users-list" class="jobs-list"></div>
 
+      <section class="admin-fetcher-panel admin-ops-panel">
+        <div class="admin-fetcher-header">
+          <h3 class="admin-fetcher-title">Operations Health</h3>
+          <div class="admin-fetcher-actions">
+            <button id="admin-refresh-ops-btn" class="btn clear-filters-btn">Refresh Ops Health</button>
+          </div>
+        </div>
+        <div id="admin-ops-alerts" class="admin-ops-alerts"></div>
+        <div id="admin-ops-kpis" class="admin-ops-kpis"></div>
+        <div id="admin-ops-schedule" class="admin-ops-schedule"></div>
+        <div id="admin-ops-trends" class="results-summary">No run trend data yet.</div>
+        <h4 class="admin-section-title">Run History</h4>
+        <div id="admin-ops-history" class="jobs-list"></div>
+      </section>
+
       <section class="admin-fetcher-panel">
         <div class="admin-fetcher-header">
           <h3 class="admin-fetcher-title">Fetcher Output</h3>
@@ -55,6 +70,8 @@
                 <path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM8 9h2v9H8V9Z" />
               </svg>
             </button>
+            <button id="admin-retry-failed-btn" class="btn clear-filters-btn">Retry Failed Sources</button>
+            <button id="admin-copy-failures-btn" class="btn clear-filters-btn">Copy Failures</button>
             <button id="admin-run-fetcher-btn" class="btn clear-filters-btn">Run Jobs Fetcher</button>
             <button id="admin-refresh-report-btn" class="btn clear-filters-btn">Load Latest Report</button>
           </div>
@@ -74,6 +91,16 @@
           </div>
         </div>
         <div id="admin-discovery-summary" class="results-summary">No discovery report loaded yet.</div>
+        <div id="admin-source-filter-bar" class="admin-source-filter-bar">
+          <span class="saved-custom-filter-label">Source Filter</span>
+          <div class="saved-custom-filter-actions" role="group" aria-label="Source filter">
+            <button type="button" class="btn back-btn admin-source-filter-btn active" data-source-filter="all">All</button>
+            <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="error">Error</button>
+            <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="excluded">Excluded</button>
+            <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="zero">Zero-jobs</button>
+            <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="healthy">Healthy</button>
+          </div>
+        </div>
         <label class="backup-toggle admin-zero-toggle">
           <input id="admin-show-zero-jobs-toggle" type="checkbox">
           Show zero-jobs pending sources

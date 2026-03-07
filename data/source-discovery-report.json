@@ -1,7 +1,8 @@
 {
+  "schemaVersion": "1.0",
   "mode": "dynamic",
-  "startedAt": "2026-03-07T18:14:21.601094+00:00",
-  "finishedAt": "2026-03-07T18:15:44.998488+00:00",
+  "startedAt": "2026-03-07T22:20:43.465617+00:00",
+  "finishedAt": "2026-03-07T22:21:49.308152+00:00",
   "summary": {
     "probedCount": 80,
     "healthyCount": 0,
@@ -38,7 +39,7 @@
       "name": "Guerrilla Games (Personio)",
       "adapter": "personio",
       "domain": "guerrilla-games.jobs.personio.de",
-      "error": "https://guerrilla-games.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://guerrilla-games.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -66,7 +67,7 @@
       "name": "Guerrilla Games (Personio)",
       "adapter": "personio",
       "domain": "guerrillagames.jobs.personio.de",
-      "error": "https://guerrillagames.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://guerrillagames.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -94,7 +95,7 @@
       "name": "Nixxes (Personio)",
       "adapter": "personio",
       "domain": "nixxes.jobs.personio.de",
-      "error": "https://nixxes.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://nixxes.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -122,7 +123,7 @@
       "name": "Vertigo Games (Personio)",
       "adapter": "personio",
       "domain": "vertigo-games.jobs.personio.de",
-      "error": "https://vertigo-games.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://vertigo-games.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -150,7 +151,7 @@
       "name": "Vertigo Games (Personio)",
       "adapter": "personio",
       "domain": "vertigogames.jobs.personio.de",
-      "error": "https://vertigogames.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://vertigogames.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -178,7 +179,7 @@
       "name": "Triumph Studios (Personio)",
       "adapter": "personio",
       "domain": "triumph-studios.jobs.personio.de",
-      "error": "https://triumph-studios.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://triumph-studios.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -206,7 +207,7 @@
       "name": "Triumph Studios (Personio)",
       "adapter": "personio",
       "domain": "triumphstudios.jobs.personio.de",
-      "error": "https://triumphstudios.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://triumphstudios.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -234,7 +235,7 @@
       "name": "Little Chicken (Personio)",
       "adapter": "personio",
       "domain": "little-chicken.jobs.personio.de",
-      "error": "https://little-chicken.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://little-chicken.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -262,7 +263,7 @@
       "name": "Little Chicken (Personio)",
       "adapter": "personio",
       "domain": "littlechicken.jobs.personio.de",
-      "error": "https://littlechicken.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://littlechicken.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -290,7 +291,7 @@
       "name": "PlayStation Global (Personio)",
       "adapter": "personio",
       "domain": "playstation-global.jobs.personio.de",
-      "error": "https://playstation-global.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://playstation-global.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -318,7 +319,7 @@
       "name": "PlayStation Global (Personio)",
       "adapter": "personio",
       "domain": "playstationglobal.jobs.personio.de",
-      "error": "https://playstationglobal.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://playstationglobal.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -339,7 +340,7 @@
       "name": "PlayStation Global (Personio)",
       "adapter": "personio",
       "domain": "sonyinteractiveentertainmentglobal.jobs.personio.de",
-      "error": "https://sonyinteractiveentertainmentglobal.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://sonyinteractiveentertainmentglobal.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -367,7 +368,7 @@
       "name": "PlayStation Global (Personio)",
       "adapter": "personio",
       "domain": "playstation.jobs.personio.de",
-      "error": "https://playstation.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://playstation.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -395,7 +396,7 @@
       "name": "PlayStation Global (Personio)",
       "adapter": "personio",
       "domain": "sony-interactive-entertainment.jobs.personio.de",
-      "error": "https://sony-interactive-entertainment.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://sony-interactive-entertainment.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -423,7 +424,7 @@
       "name": "PlayStation Global (Personio)",
       "adapter": "personio",
       "domain": "sonyinteractiveentertainment.jobs.personio.de",
-      "error": "https://sonyinteractiveentertainment.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://sonyinteractiveentertainment.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -444,7 +445,7 @@
       "name": "Larian Studios (Personio)",
       "adapter": "personio",
       "domain": "larian-studios.jobs.personio.de",
-      "error": "https://larian-studios.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://larian-studios.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -472,7 +473,7 @@
       "name": "Larian Studios (Personio)",
       "adapter": "personio",
       "domain": "larianstudios.jobs.personio.de",
-      "error": "https://larianstudios.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://larianstudios.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -493,7 +494,7 @@
       "name": "Jagex (Personio)",
       "adapter": "personio",
       "domain": "jagex.jobs.personio.de",
-      "error": "https://jagex.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://jagex.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {
@@ -521,7 +522,7 @@
       "name": "Remedy Entertainment (Personio)",
       "adapter": "personio",
       "domain": "remedy-entertainment.jobs.personio.de",
-      "error": "https://remedy-entertainment.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "error": "https://remedy-entertainment.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
       "stage": "probe"
     },
     {

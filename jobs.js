@@ -123,10 +123,142 @@ const JOBS_FETCH_REPORT_URLS = [
 ];
 
 const QUICK_FILTERS = Array.isArray(jobsStateModule.QUICK_FILTERS) ? jobsStateModule.QUICK_FILTERS : [];
+const COUNTRY_DISPLAY_NAMES = (typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function")
+  ? new Intl.DisplayNames(["en"], { type: "region" })
+  : null;
+const COUNTRY_NAME_BY_CODE = {
+  US: "United States",
+  CA: "Canada",
+  GB: "United Kingdom",
+  UK: "United Kingdom",
+  DE: "Germany",
+  FI: "Finland",
+  JP: "Japan",
+  AU: "Australia",
+  SG: "Singapore",
+  FR: "France",
+  NL: "Netherlands",
+  SE: "Sweden",
+  NO: "Norway",
+  DK: "Denmark",
+  ES: "Spain",
+  IT: "Italy",
+  BR: "Brazil",
+  IN: "India",
+  MX: "Mexico",
+  AR: "Argentina",
+  CL: "Chile",
+  PL: "Poland",
+  PT: "Portugal",
+  IE: "Ireland",
+  CH: "Switzerland",
+  AT: "Austria",
+  BE: "Belgium",
+  CZ: "Czechia",
+  CN: "China",
+  KR: "South Korea",
+  NZ: "New Zealand"
+};
+const COUNTRY_ALIAS_TO_CANONICAL = {
+  usa: "United States",
+  unitedstatesofamerica: "United States",
+  america: "United States",
+  uk: "United Kingdom",
+  greatbritain: "United Kingdom",
+  england: "United Kingdom",
+  uae: "United Arab Emirates",
+  czechrepublic: "Czechia",
+  korea: "South Korea",
+  republicofkorea: "South Korea",
+  russianfederation: "Russia"
+};
+const REGION_DEFINITIONS = [
+  {
+    value: "region:europe",
+    label: "Europe",
+    countries: [
+      "Albania", "Andorra", "Austria", "Belarus", "Belgium", "Bosnia and Herzegovina", "Bulgaria",
+      "Croatia", "Cyprus", "Czechia", "Denmark", "Estonia", "Finland", "France", "Germany",
+      "Greece", "Hungary", "Iceland", "Ireland", "Italy", "Kosovo", "Latvia", "Liechtenstein",
+      "Lithuania", "Luxembourg", "Malta", "Moldova", "Monaco", "Montenegro", "Netherlands",
+      "North Macedonia", "Norway", "Poland", "Portugal", "Romania", "San Marino", "Serbia",
+      "Slovakia", "Slovenia", "Spain", "Sweden", "Switzerland", "Ukraine", "United Kingdom",
+      "Vatican City"
+    ]
+  },
+  {
+    value: "region:north-america",
+    label: "North America",
+    countries: [
+      "Antigua and Barbuda", "Bahamas", "Barbados", "Belize", "Canada", "Costa Rica", "Cuba",
+      "Dominica", "Dominican Republic", "El Salvador", "Grenada", "Guatemala", "Haiti", "Honduras",
+      "Jamaica", "Mexico", "Nicaragua", "Panama", "Saint Kitts and Nevis", "Saint Lucia",
+      "Saint Vincent and the Grenadines", "Trinidad and Tobago", "United States"
+    ]
+  },
+  {
+    value: "region:south-america",
+    label: "South America",
+    countries: [
+      "Argentina", "Bolivia", "Brazil", "Chile", "Colombia", "Ecuador", "Guyana", "Paraguay",
+      "Peru", "Suriname", "Uruguay", "Venezuela"
+    ]
+  },
+  {
+    value: "region:asia",
+    label: "Asia",
+    countries: [
+      "Afghanistan", "Armenia", "Azerbaijan", "Bahrain", "Bangladesh", "Bhutan", "Brunei", "Cambodia",
+      "China", "Georgia", "India", "Indonesia", "Iran", "Iraq", "Israel", "Japan", "Jordan",
+      "Kazakhstan", "Kuwait", "Kyrgyzstan", "Laos", "Lebanon", "Malaysia", "Maldives", "Mongolia",
+      "Myanmar", "Nepal", "North Korea", "Oman", "Pakistan", "Palestine", "Philippines", "Qatar",
+      "Russia", "Saudi Arabia", "Singapore", "South Korea", "Sri Lanka", "Syria", "Taiwan",
+      "Tajikistan", "Thailand", "Timor-Leste", "Turkey", "Turkmenistan", "United Arab Emirates",
+      "Uzbekistan", "Vietnam", "Yemen"
+    ]
+  },
+  {
+    value: "region:africa",
+    label: "Africa",
+    countries: [
+      "Algeria", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", "Cabo Verde", "Cameroon",
+      "Central African Republic", "Chad", "Comoros", "Congo", "Democratic Republic of the Congo",
+      "Djibouti", "Egypt", "Equatorial Guinea", "Eritrea", "Eswatini", "Ethiopia", "Gabon", "Gambia",
+      "Ghana", "Guinea", "Guinea-Bissau", "Ivory Coast", "Kenya", "Lesotho", "Liberia", "Libya",
+      "Madagascar", "Malawi", "Mali", "Mauritania", "Mauritius", "Morocco", "Mozambique", "Namibia",
+      "Niger", "Nigeria", "Rwanda", "Sao Tome and Principe", "Senegal", "Seychelles", "Sierra Leone",
+      "Somalia", "South Africa", "South Sudan", "Sudan", "Tanzania", "Togo", "Tunisia", "Uganda",
+      "Zambia", "Zimbabwe"
+    ]
+  },
+  {
+    value: "region:oceania",
+    label: "Oceania",
+    countries: [
+      "Australia", "Fiji", "Kiribati", "Marshall Islands", "Micronesia", "Nauru", "New Zealand",
+      "Palau", "Papua New Guinea", "Samoa", "Solomon Islands", "Tonga", "Tuvalu", "Vanuatu"
+    ]
+  },
+  {
+    value: "region:remote-worldwide",
+    label: "Remote / Worldwide",
+    countries: ["Remote", "Worldwide", "Global"]
+  }
+];
+const REMOTE_WORLDWIDE_TOKENS = new Set(
+  ["remote", "worldwide", "global", "anywhere"].map(item => normalizeCountryToken(item))
+);
+const REGION_COUNTRY_TOKEN_LOOKUP = Object.fromEntries(
+  REGION_DEFINITIONS.map(region => [
+    region.value,
+    new Set(region.countries.map(item => normalizeCountryToken(canonicalizeCountryName(item))).filter(Boolean))
+  ])
+);
 
 let refreshInFlight = false;
 let availableProfessions = [];
 let availableCountries = [];
+let availableCountryFilterValues = [];
 let visibleQuickFilterKeys = [];
 let hasInitializedJobsFeed = false;
 let pendingAutoRefreshSignal = null;
@@ -739,7 +871,13 @@ function applyStateToStaticFilters() {
 
 function applyStateToFilters() {
   applyStateToStaticFilters();
-  state.filters.countries = (state.filters.countries || []).filter(code => availableCountries.includes(code));
+  state.filters.countries = Array.from(
+    new Set(
+      (state.filters.countries || [])
+        .map(resolveCountryCode)
+        .filter(code => availableCountryFilterValues.includes(code))
+    )
+  );
 
   if (countryFilter) {
     const selected = new Set(state.filters.countries || []);
@@ -815,7 +953,8 @@ function applyFiltersAndRender({ resetPage }) {
 
   filteredJobs = allJobs.filter(job => {
     const matchesWorkType = !state.filters.workType || job.workType === state.filters.workType;
-    const matchesCountry = state.filters.countries.length === 0 || state.filters.countries.includes(job.country);
+    const matchesCountry = state.filters.countries.length === 0
+      || matchesCountrySelection(job.country, state.filters.countries);
     const matchesCity = !state.filters.city || job.city === state.filters.city;
     const matchesSector = !state.filters.sector || job.sector === state.filters.sector;
     const matchesProfession = !state.filters.profession || job.profession === state.filters.profession;
@@ -1106,13 +1245,18 @@ function updateFilterOptions() {
     if (job.sector) sectors.add(job.sector);
   });
 
-  availableCountries = Array.from(countries).sort();
+  availableCountries = Array.from(countries).sort((a, b) => fullCountryName(a).localeCompare(fullCountryName(b)));
+  const availableRegions = getAvailableRegionOptions(availableCountries);
+  availableCountryFilterValues = [
+    ...availableRegions.map(region => region.value),
+    ...availableCountries
+  ];
 
   countryFilter.innerHTML = "";
-  availableCountries.forEach(country => {
+  availableCountryFilterValues.forEach(country => {
     const opt = document.createElement("option");
     opt.value = country;
-    opt.textContent = fullCountryName(country);
+    opt.textContent = getCountryFilterOptionLabel(country);
     countryFilter.appendChild(opt);
   });
   renderCountryPickerOptions(countryPickerSearch ? countryPickerSearch.value : "");
@@ -1176,11 +1320,73 @@ function updateCountrySelectionBadge() {
     : `${count} countries selected`;
 }
 
+function isRegionSelection(value) {
+  return String(value || "").startsWith("region:");
+}
+
+function getCountryFilterOptionLabel(value) {
+  const region = REGION_DEFINITIONS.find(item => item.value === value);
+  if (region) return region.label;
+  return fullCountryName(value);
+}
+
+function resolveRegionSelection(value) {
+  const normalized = normalizeCountryToken(value);
+  if (!normalized) return "";
+  const match = REGION_DEFINITIONS.find(region =>
+    normalizeCountryToken(region.value) === normalized || normalizeCountryToken(region.label) === normalized
+  );
+  return match ? match.value : "";
+}
+
+function getAvailableRegionOptions(countries) {
+  const countryTokens = new Set(
+    (countries || [])
+      .map(item => normalizeCountryToken(canonicalizeCountryName(item)))
+      .filter(Boolean)
+  );
+
+  return REGION_DEFINITIONS.filter(region => {
+    const regionTokens = REGION_COUNTRY_TOKEN_LOOKUP[region.value];
+    if (!regionTokens || regionTokens.size === 0) return false;
+
+    for (const token of regionTokens) {
+      if (countryTokens.has(token)) return true;
+    }
+    return false;
+  });
+}
+
+function matchesCountrySelection(jobCountry, selections) {
+  const countryToken = normalizeCountryToken(canonicalizeCountryName(jobCountry));
+  if (!countryToken) return false;
+
+  for (const selection of selections || []) {
+    if (isRegionSelection(selection)) {
+      if (countryMatchesRegion(countryToken, selection)) return true;
+      continue;
+    }
+
+    const selectionToken = normalizeCountryToken(canonicalizeCountryName(selection));
+    if (selectionToken && selectionToken === countryToken) return true;
+  }
+  return false;
+}
+
+function countryMatchesRegion(countryToken, regionValue) {
+  const regionCountries = REGION_COUNTRY_TOKEN_LOOKUP[regionValue];
+  if (!regionCountries || regionCountries.size === 0) return false;
+  if (regionValue === "region:remote-worldwide") {
+    return REMOTE_WORLDWIDE_TOKENS.has(countryToken);
+  }
+  return regionCountries.has(countryToken);
+}
+
 function appendCountrySelection(countryCode) {
   let target = countryCode;
   const mapped = resolveCountryCode(countryCode);
   if (mapped) target = mapped;
-  if (!availableCountries.includes(target)) return;
+  if (!availableCountryFilterValues.includes(target)) return;
   const selected = new Set(state.filters.countries || []);
   selected.add(target);
   state.filters.countries = Array.from(selected);
@@ -1202,15 +1408,15 @@ function resolveCountryCode(countryCode) {
   const raw = String(countryCode || "").trim();
   if (!raw) return "";
 
-  const normalized = raw.toLowerCase();
-  if (normalized === "nl" || normalized === "netherlands") {
-    if (availableCountries.includes("NL")) return "NL";
-    const nameMatch = availableCountries.find(code => String(code).toLowerCase() === "netherlands");
-    if (nameMatch) return nameMatch;
+  const regionValue = resolveRegionSelection(raw);
+  if (regionValue && availableCountryFilterValues.includes(regionValue)) {
+    return regionValue;
   }
 
-  if (availableCountries.includes(raw)) return raw;
-  const byName = availableCountries.find(code => fullCountryName(code).toLowerCase() === normalized);
+  if (availableCountryFilterValues.includes(raw)) return raw;
+
+  const normalized = normalizeCountryToken(canonicalizeCountryName(raw));
+  const byName = availableCountries.find(code => normalizeCountryToken(canonicalizeCountryName(code)) === normalized);
   return byName || "";
 }
 
@@ -1226,9 +1432,9 @@ function renderCountryPickerOptions(query = "") {
   if (!countryPickerOptions) return;
   const normalized = String(query || "").trim().toLowerCase();
   const selected = new Set(state.filters.countries || []);
-  const rows = availableCountries.filter(code => {
+  const rows = availableCountryFilterValues.filter(code => {
     if (!normalized) return true;
-    const label = fullCountryName(code).toLowerCase();
+    const label = getCountryFilterOptionLabel(code).toLowerCase();
     return label.includes(normalized);
   });
 
@@ -1240,7 +1446,7 @@ function renderCountryPickerOptions(query = "") {
   countryPickerOptions.innerHTML = rows.map(code => `
     <label class="country-option">
       <input type="checkbox" value="${escapeHtml(code)}" ${selected.has(code) ? "checked" : ""}>
-      <span>${escapeHtml(fullCountryName(code))}</span>
+      <span>${escapeHtml(getCountryFilterOptionLabel(code))}</span>
     </label>
   `).join("");
 
@@ -2157,30 +2363,45 @@ function isInternshipJob(job) {
   return /\bintern(ship)?\b/.test(text);
 }
 
+function normalizeCountryToken(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
 
+function canonicalizeCountryName(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const uppercaseRaw = raw.toUpperCase();
+  if (COUNTRY_NAME_BY_CODE[uppercaseRaw]) {
+    return COUNTRY_NAME_BY_CODE[uppercaseRaw];
+  }
+
+  if (/^[A-Z]{2}$/.test(uppercaseRaw) && COUNTRY_DISPLAY_NAMES) {
+    try {
+      const fromIntl = COUNTRY_DISPLAY_NAMES.of(uppercaseRaw);
+      if (fromIntl && fromIntl !== uppercaseRaw) {
+        return fromIntl;
+      }
+    } catch {
+      // Ignore invalid region codes and continue with alias/raw fallback.
+    }
+  }
+
+  const normalized = normalizeCountryToken(raw);
+  if (COUNTRY_ALIAS_TO_CANONICAL[normalized]) {
+    return COUNTRY_ALIAS_TO_CANONICAL[normalized];
+  }
+
+  return raw;
+}
 
 function fullCountryName(code) {
-  const map = {
-    US: "United States",
-    CA: "Canada",
-    GB: "United Kingdom",
-    DE: "Germany",
-    FI: "Finland",
-    JP: "Japan",
-    AU: "Australia",
-    SG: "Singapore",
-    FR: "France",
-    NL: "Netherlands",
-    SE: "Sweden",
-    NO: "Norway",
-    DK: "Denmark",
-    ES: "Spain",
-    IT: "Italy",
-    BR: "Brazil",
-    IN: "India",
-    Remote: "Remote"
-  };
-  return map[code] || code;
+  return canonicalizeCountryName(code);
 }
 
 function isValidCountry(country) {

@@ -405,13 +405,20 @@
       getReq.onsuccess = () => {
         const existing = getReq.result || null;
         existingSnapshot = existing ? { ...existing } : null;
-        const savedAt = existing?.savedAt || currentIso;
+        const incomingSavedAt = String(job?.savedAt || "").trim();
+        const savedAt = existing?.savedAt || incomingSavedAt || currentIso;
         const phaseTimestamps = existing?.phaseTimestamps && typeof existing.phaseTimestamps === "object"
-          ? existing.phaseTimestamps
+          ? { ...existing.phaseTimestamps }
           : {};
+        if (!existing && job?.phaseTimestamps && typeof job.phaseTimestamps === "object") {
+          Object.assign(phaseTimestamps, job.phaseTimestamps);
+        }
         if (!phaseTimestamps.bookmark) {
           phaseTimestamps.bookmark = savedAt;
         }
+        const applicationStatus = existing
+          ? normalizeApplicationStatus(existing.applicationStatus)
+          : normalizeApplicationStatus(job?.applicationStatus);
         const payload = {
           pk,
           profileId: uid,
@@ -433,10 +440,12 @@
           reminderAt: String(job.reminderAt || existing?.reminderAt || "").trim(),
           contactedAt: String(job.contactedAt || existing?.contactedAt || "").trim(),
           updatedBy: String(job.updatedBy || existing?.updatedBy || "").trim(),
-          applicationStatus: normalizeApplicationStatus(existing?.applicationStatus),
+          applicationStatus,
           phaseTimestamps,
           notes: existing?.notes ?? String(job.notes || ""),
-          attachmentsCount: Number.isFinite(existing?.attachmentsCount) ? existing.attachmentsCount : 0,
+          attachmentsCount: Number.isFinite(existing?.attachmentsCount)
+            ? existing.attachmentsCount
+            : Math.max(0, Number(job?.attachmentsCount) || 0),
           savedAt,
           updatedAt: currentIso
         };
@@ -527,6 +536,8 @@
     if (uid !== user.uid) throw new Error("User mismatch.");
     const nextStatus = normalizeApplicationStatus(status);
     const allowOverride = Boolean(options && options.override);
+    const cleanupPhase = String(options?.cleanupPhase || "").trim();
+    const preserveTimestamp = String(options?.preserveTimestamp || "").trim();
     const pk = `${uid}::${jobKey}`;
 
     let logPayload = null;
@@ -548,10 +559,14 @@
           applicationStatus: nextStatus,
           phaseTimestamps: {
             ...(current.phaseTimestamps && typeof current.phaseTimestamps === "object" ? current.phaseTimestamps : {}),
-            [nextStatus]: nowIso()
           },
-          updatedAt: nowIso()
+          // Keep row ordering stable when changing phase.
+          updatedAt: current.updatedAt || current.savedAt || nowIso()
         };
+        if (cleanupPhase) {
+          delete next.phaseTimestamps[cleanupPhase];
+        }
+        next.phaseTimestamps[nextStatus] = preserveTimestamp || nowIso();
         logPayload = {
           profileId: uid,
           jobKey: current.jobKey || jobKey,

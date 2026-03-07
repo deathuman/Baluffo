@@ -1,0 +1,55 @@
+[
+  {
+    "type": "fetch",
+    "status": "warning",
+    "startedAt": "2026-03-07T17:38:37.336530+00:00",
+    "finishedAt": "2026-03-07T17:39:06.819750+00:00",
+    "durationMs": 27931,
+    "summary": {
+      "outputCount": 32788,
+      "failedSources": 1,
+      "sourceCount": 12
+    },
+    "id": "run_ff18461f5f94"
+  },
+  {
+    "type": "discovery",
+    "status": "error",
+    "startedAt": "2026-03-07T21:28:41.157584+00:00",
+    "finishedAt": "2026-03-07T21:30:17.904358+00:00",
+    "durationMs": 96746,
+    "summary": {
+      "queuedCandidateCount": 0,
+      "failedProbeCount": 80,
+      "probedCandidateCount": 80
+    },
+    "id": "run_9f576d9c54d6"
+  },
+  {
+    "type": "fetch",
+    "status": "started",
+    "startedAt": "2026-03-07T22:00:28.675713+00:00",
+    "finishedAt": "",
+    "durationMs": 0,
+    "summary": {},
+    "id": "run_963467c7b8ba"
+  },
+  {
+    "type": "discovery",
+    "status": "started",
+    "startedAt": "2026-03-07T22:20:43.345282+00:00",
+    "finishedAt": "",
+    "durationMs": 0,
+    "summary": {},
+    "id": "run_96e058dd9a4e"
+  },
+  {
+    "type": "fetch",
+    "status": "started",
+    "startedAt": "2026-03-07T22:21:09.716668+00:00",
+    "finishedAt": "",
+    "durationMs": 0,
+    "summary": {},
+    "id": "run_9e27d9fbae79"
+  }
+]

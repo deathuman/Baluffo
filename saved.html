@@ -38,7 +38,7 @@
         <button type="button" class="btn back-btn saved-sort-btn active" data-saved-sort="updated">Recently Updated</button>
         <button type="button" class="btn back-btn saved-sort-btn" data-saved-sort="saved">Recently Added</button>
         <button type="button" class="btn back-btn saved-sort-btn" data-saved-sort="reminder">Reminder Soon</button>
-        <button type="button" class="btn back-btn saved-sort-btn" data-saved-sort="personal">Personal First</button>
+        <button type="button" class="btn back-btn saved-sort-btn" data-saved-sort="personal">Custom Jobs First</button>
       </div>
       <span id="saved-reminder-counter" class="saved-reminder-counter"></span>
     </div>
@@ -46,14 +46,14 @@
       <span class="saved-custom-filter-label">Show</span>
       <div class="saved-custom-filter-actions" role="group" aria-label="Saved jobs source filter">
         <button type="button" class="btn back-btn saved-custom-filter-btn active" data-saved-filter="all">All</button>
-        <button type="button" class="btn back-btn saved-custom-filter-btn" data-saved-filter="custom">Personal</button>
+        <button type="button" class="btn back-btn saved-custom-filter-btn" data-saved-filter="custom">Custom Jobs</button>
         <button type="button" class="btn back-btn saved-custom-filter-btn" data-saved-filter="imported">Imported</button>
       </div>
       <span id="saved-custom-filter-count" class="saved-custom-filter-count"></span>
     </div>
     <section id="custom-job-panel" class="custom-job-panel hidden" aria-hidden="true">
       <div class="custom-job-panel-header">
-        <h2 id="custom-job-panel-title">Add Personal Job</h2>
+        <h2 id="custom-job-panel-title">Add Custom Job</h2>
         <p id="custom-job-panel-hint">Required: Title and Company. Job link is optional.</p>
       </div>
       <form id="custom-job-form" class="custom-job-form" novalidate>
@@ -117,9 +117,9 @@
           <span>Reminder (optional)</span>
           <input id="custom-job-reminder" name="reminderAt" type="datetime-local">
         </label>
-        <div id="custom-job-link-warning" class="custom-job-warning hidden">No job link set. You can still save this personal entry.</div>
+        <div id="custom-job-link-warning" class="custom-job-warning hidden">No job link set. You can still save this custom entry.</div>
         <div class="custom-job-form-actions">
-          <button type="submit" id="custom-job-save-btn" class="btn back-btn">Save Personal Job</button>
+          <button type="submit" id="custom-job-save-btn" class="btn back-btn">Save Custom Job</button>
           <button type="button" id="custom-job-cancel-btn" class="btn back-btn">Cancel</button>
         </div>
       </form>

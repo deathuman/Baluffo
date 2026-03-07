@@ -1088,7 +1088,7 @@ h1 {
 
 .admin-source-row-header,
 .admin-source-row {
-  grid-template-columns: 72px minmax(165px, 1.2fr) 115px 135px 95px 68px 84px minmax(240px, 2fr);
+  grid-template-columns: 72px minmax(150px, 1fr) 108px minmax(120px, 1fr) 92px 96px 68px 80px minmax(220px, 1.65fr);
 }
 
 .admin-source-row .admin-uid {
@@ -1145,6 +1145,102 @@ h1 {
   font-size: 0.76rem;
   line-height: 1.25;
   white-space: normal;
+}
+
+.admin-ops-panel {
+  margin-bottom: 1rem;
+}
+
+.admin-ops-alerts {
+  display: grid;
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+}
+
+.admin-alert-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 10px;
+  padding: 0.45rem 0.6rem;
+  background: color-mix(in srgb, var(--table-row-even) 68%, transparent);
+}
+
+.admin-alert-banner.warning {
+  border-color: color-mix(in srgb, #c7a56a 60%, var(--surface-11));
+}
+
+.admin-alert-banner.critical {
+  border-color: color-mix(in srgb, #cf6a6a 65%, var(--surface-11));
+}
+
+.admin-alert-banner.healthy {
+  border-color: color-mix(in srgb, #62a273 55%, var(--surface-11));
+}
+
+.admin-alert-message {
+  font-size: 0.9rem;
+}
+
+.admin-ops-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+.admin-status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.14rem 0.44rem;
+  border-radius: 999px;
+  border: 1px solid var(--surface-11);
+  text-transform: capitalize;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+}
+
+.admin-status-chip.healthy {
+  border-color: color-mix(in srgb, #61aa77 60%, var(--surface-11));
+}
+
+.admin-status-chip.warning {
+  border-color: color-mix(in srgb, #c9a86c 60%, var(--surface-11));
+}
+
+.admin-status-chip.critical {
+  border-color: color-mix(in srgb, #d36d6d 65%, var(--surface-11));
+}
+
+.admin-ops-schedule {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.45rem;
+  margin: 0 0 0.65rem;
+}
+
+.admin-ops-schedule-item {
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--surface-11);
+  background: color-mix(in srgb, var(--table-row-even) 60%, transparent);
+  font-size: 0.85rem;
+}
+
+.admin-ops-history-header,
+.admin-ops-history-row {
+  grid-template-columns: 0.9fr 1fr 0.9fr 1fr 0.8fr 1.25fr;
+}
+
+.admin-source-filter-bar {
+  margin: 0.45rem 0 0.35rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .admin-zero-toggle {

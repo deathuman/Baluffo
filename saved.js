@@ -57,7 +57,7 @@ let jobDetailTabByKey = new Map();
 let cachedActivityEntries = [];
 let lastSavedJobsByKey = new Map();
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
-const CUSTOM_SOURCE_LABEL = "Personal";
+const CUSTOM_SOURCE_LABEL = "Custom";
 const SAVED_FILTER_ALL = "all";
 const SAVED_FILTER_CUSTOM = "custom";
 const SAVED_FILTER_IMPORTED = "imported";
@@ -160,7 +160,7 @@ function bindEvents() {
   if (addCustomJobBtnEl) {
     addCustomJobBtnEl.addEventListener("click", () => {
       if (!currentUser) {
-        showToast("Sign in to add personal jobs.", "info");
+        showToast("Sign in to add custom jobs.", "info");
         return;
       }
       setCustomJobPanelOpen(!customJobPanelOpen);
@@ -307,7 +307,7 @@ function initSavedJobsPage() {
       setCustomJobPanelOpen(false);
       setSavedFilterBarVisible(false);
       setSavedSortBarVisible(false);
-      renderAuthRequired("Sign in to access your personal saved jobs table.");
+      renderAuthRequired("Sign in to access your custom saved jobs table.");
       renderActivityEntries([]);
       return;
     }
@@ -524,8 +524,8 @@ function renderSavedJobBlock(job) {
           </div>
           ${isCustom ? `
             <div class="saved-personal-actions">
-              <button class="btn back-btn personal-edit-btn" data-job-key="${jobKey}" aria-label="Edit personal job">Edit</button>
-              <button class="btn back-btn personal-duplicate-btn" data-job-key="${jobKey}" aria-label="Duplicate personal job">Duplicate</button>
+              <button class="btn back-btn personal-edit-btn" data-job-key="${jobKey}" aria-label="Edit custom job">Edit</button>
+              <button class="btn back-btn personal-duplicate-btn" data-job-key="${jobKey}" aria-label="Duplicate custom job">Duplicate</button>
             </div>
           ` : ""}
         </div>
@@ -841,6 +841,7 @@ async function updatePhase(jobKey, phase) {
   }
 
   try {
+    const previousPhaseTimestamp = String(row?.phaseTimestamps?.[currentPhase] || "").trim();
     await api.updateApplicationStatus(currentUser.uid, jobKey, normalized, {
       override: !regularAllowed && overrideArmed
     });
@@ -848,7 +849,27 @@ async function updatePhase(jobKey, phase) {
       phaseOverrideArmedGlobal = false;
       updateGlobalOverrideButton();
     }
-    showToast(`Phase updated to ${PHASE_LABELS[normalized] || normalized}.`, "success");
+    const previousPhase = currentPhase;
+    showToast(`Phase updated to ${PHASE_LABELS[normalized] || normalized}.`, "success", {
+      durationMs: 6500,
+      actionLabel: "Revert",
+      onAction: async () => {
+        if (!currentUser) return;
+        try {
+          await api.updateApplicationStatus(currentUser.uid, jobKey, previousPhase, {
+            override: true,
+            cleanupPhase: normalized,
+            preserveTimestamp: previousPhaseTimestamp
+          });
+          showToast(`Phase reverted to ${PHASE_LABELS[previousPhase] || previousPhase}.`, "success");
+          await refreshActivityLog();
+          renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
+        } catch (revertErr) {
+          console.error("Could not revert phase change:", revertErr);
+          showToast("Could not revert phase.", "error");
+        }
+      }
+    });
     await refreshActivityLog();
   } catch (err) {
     console.error("Could not update phase:", err);
@@ -1414,9 +1435,9 @@ function resetCustomJobForm() {
   if (customJobContractTypeEl) customJobContractTypeEl.value = "";
   if (customJobSectorEl) customJobSectorEl.value = "";
   if (customJobReminderEl) customJobReminderEl.value = "";
-  if (customJobPanelTitleEl) customJobPanelTitleEl.textContent = "Add Personal Job";
+  if (customJobPanelTitleEl) customJobPanelTitleEl.textContent = "Add Custom Job";
   if (customJobPanelHintEl) customJobPanelHintEl.textContent = "Required: Title and Company. Job link is optional.";
-  if (customJobSaveBtnEl) customJobSaveBtnEl.textContent = "Save Personal Job";
+  if (customJobSaveBtnEl) customJobSaveBtnEl.textContent = "Save Custom Job";
   updateCustomJobWarning();
 }
 
@@ -1438,7 +1459,7 @@ function setCustomJobPanelOpen(open) {
   customJobPanelEl.setAttribute("aria-hidden", customJobPanelOpen ? "false" : "true");
   if (addCustomJobBtnEl) {
     addCustomJobBtnEl.classList.toggle("active", customJobPanelOpen);
-    addCustomJobBtnEl.textContent = customJobPanelOpen ? "Close Personal Form" : "+ Add Custom Job";
+    addCustomJobBtnEl.textContent = customJobPanelOpen ? "Close Custom Job Form" : "+ Add Custom Job";
   }
   if (!customJobPanelOpen) {
     resetCustomJobForm();
@@ -1450,7 +1471,7 @@ function setCustomJobPanelOpen(open) {
 function openCustomJobEditor(jobKey, duplicate) {
   const row = lastSavedJobsByKey.get(String(jobKey || ""));
   if (!row || !isCustomJob(row)) {
-    showToast("Personal job not found.", "error");
+    showToast("Custom job not found.", "error");
     return;
   }
   customJobMode = duplicate ? "duplicate" : "edit";
@@ -1467,15 +1488,15 @@ function openCustomJobEditor(jobKey, duplicate) {
   if (customJobNotesEl) customJobNotesEl.value = row.notes || "";
   if (customJobReminderEl) customJobReminderEl.value = toDatetimeLocalValue(row.reminderAt);
   if (customJobPanelTitleEl) {
-    customJobPanelTitleEl.textContent = duplicate ? "Duplicate Personal Job" : "Edit Personal Job";
+    customJobPanelTitleEl.textContent = duplicate ? "Duplicate Custom Job" : "Edit Custom Job";
   }
   if (customJobPanelHintEl) {
     customJobPanelHintEl.textContent = duplicate
-      ? "Create a new personal entry using this job as a template."
-      : "Update this personal job while keeping its history and status.";
+      ? "Create a new custom entry using this job as a template."
+      : "Update this custom job while keeping its history and status.";
   }
   if (customJobSaveBtnEl) {
-    customJobSaveBtnEl.textContent = duplicate ? "Save Duplicate" : "Update Personal Job";
+    customJobSaveBtnEl.textContent = duplicate ? "Save Duplicate" : "Update Custom Job";
   }
   setCustomJobPanelOpen(true);
   customJobTitleEl?.focus();
@@ -1509,17 +1530,17 @@ async function createCustomJob() {
 
   try {
     let eventType = "custom_job_created";
-    let message = "Personal job saved.";
+    let message = "Custom job saved.";
     if (customJobMode === "edit") {
       normalized.jobKey = customJobTargetKey;
       normalized.updatedBy = "manual_edit";
       eventType = "custom_job_updated";
-      message = "Personal job updated.";
+      message = "Custom job updated.";
     } else if (customJobMode === "duplicate") {
       normalized.updatedBy = "manual_duplicate";
       normalized.keySalt = String(Date.now());
       eventType = "custom_job_duplicated";
-      message = "Personal job duplicated.";
+      message = "Custom job duplicated.";
     } else {
       normalized.updatedBy = "manual_create";
     }
@@ -1529,7 +1550,7 @@ async function createCustomJob() {
     await refreshActivityLog();
   } catch (err) {
     console.error("Could not save custom job:", err);
-    showToast("Could not save personal job.", "error");
+    showToast("Could not save custom job.", "error");
   }
 }
 
@@ -1674,16 +1695,16 @@ function formatActivityDetail(entry) {
     return `Removed from ${from}`;
   }
   if (type === "custom_job_created") {
-    return "Created personal job entry";
+    return "Created custom job entry";
   }
   if (type === "custom_job_removed") {
-    return "Deleted personal job entry";
+    return "Deleted custom job entry";
   }
   if (type === "custom_job_updated") {
-    return "Updated personal job fields";
+    return "Updated custom job fields";
   }
   if (type === "custom_job_duplicated") {
-    return "Created a duplicate personal entry";
+    return "Created a duplicate custom entry";
   }
   if (type === "reminder_set") {
     if (details.reminderAt) {
