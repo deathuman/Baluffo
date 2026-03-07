@@ -11,6 +11,9 @@ class JobsFetcherTests(unittest.TestCase):
         path = Path(__file__).parent / "fixtures" / name
         return path.read_text(encoding="utf-8")
 
+    def fixture_json(self, name: str):
+        return json.loads(self.fixture(name))
+
     def test_parse_google_sheets_csv_fixture(self) -> None:
         rows = jf.parse_google_sheets_csv(self.fixture("google_sheets.csv"))
         self.assertEqual(len(rows), 2)
@@ -500,6 +503,55 @@ class JobsFetcherTests(unittest.TestCase):
             self.assertTrue(all("sourceBundle" in row for row in rows))
             all_errors = " ".join(row.get("error", "") for row in report["sources"])
             self.assertNotIn("403", all_errors)
+
+    def test_pipeline_report_snapshot_contract(self) -> None:
+        def ok_loader(**_: object):
+            return [
+                {
+                    "title": "Technical Artist",
+                    "company": "Snapshot Studio",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "Remote",
+                    "contractType": "Full-time",
+                    "jobLink": "https://example.com/snapshot/ta",
+                    "sector": "Game",
+                    "sourceJobId": "snap-1",
+                    "postedAt": "2026-03-01",
+                }
+            ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report = jf.run_pipeline(output_dir=Path(tmp), source_loaders=[("ok", ok_loader)])
+            snapshot = {
+                "schemaVersion": report.get("schemaVersion"),
+                "summary": {
+                    "inputCount": int(report["summary"].get("inputCount") or 0),
+                    "mergedCount": int(report["summary"].get("mergedCount") or 0),
+                    "outputCount": int(report["summary"].get("outputCount") or 0),
+                    "rawFetchedCount": int(report["summary"].get("rawFetchedCount") or 0),
+                    "uniqueOutputCount": int(report["summary"].get("uniqueOutputCount") or 0),
+                    "sourceCount": int(report["summary"].get("sourceCount") or 0),
+                    "successfulSources": int(report["summary"].get("successfulSources") or 0),
+                    "failedSources": int(report["summary"].get("failedSources") or 0),
+                    "excludedSources": int(report["summary"].get("excludedSources") or 0),
+                },
+                "outputs": {
+                    "hasJson": bool(report.get("outputs", {}).get("json")),
+                    "hasCsv": bool(report.get("outputs", {}).get("csv")),
+                    "hasLightJson": bool(report.get("outputs", {}).get("lightJson")),
+                    "hasChangedFlags": isinstance(report.get("outputs", {}).get("changed"), dict),
+                },
+                "sources": [
+                    {
+                        "name": str(report["sources"][0].get("name")),
+                        "status": str(report["sources"][0].get("status")),
+                        "fetchedCount": int(report["sources"][0].get("fetchedCount") or 0),
+                        "keptCount": int(report["sources"][0].get("keptCount") or 0),
+                    }
+                ],
+            }
+            self.assertEqual(snapshot, self.fixture_json("jobs_fetch_report_snapshot.json"))
 
 
 if __name__ == "__main__":

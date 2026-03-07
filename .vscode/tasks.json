@@ -104,6 +104,16 @@
       "type": "shell",
       "command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'python(\\.exe)?' -and $_.CommandLine -match 'scripts\\\\admin_bridge.py' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
       "problemMatcher": []
+    },
+    {
+      "label": "Run validation",
+      "type": "shell",
+      "command": "node --check jobs.js; node --check admin.js; node --check saved.js; python -m unittest -v tests/test_jobs_fetcher.py tests/test_source_discovery.py tests/test_source_registry.py",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
     }
   ]
 }

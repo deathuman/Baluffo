@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0",
+  "summary": {
+    "inputCount": 1,
+    "mergedCount": 0,
+    "outputCount": 1,
+    "rawFetchedCount": 1,
+    "uniqueOutputCount": 1,
+    "sourceCount": 1,
+    "successfulSources": 1,
+    "failedSources": 0,
+    "excludedSources": 0
+  },
+  "outputs": {
+    "hasJson": true,
+    "hasCsv": true,
+    "hasLightJson": true,
+    "hasChangedFlags": true
+  },
+  "sources": [
+    {
+      "name": "ok",
+      "status": "ok",
+      "fetchedCount": 1,
+      "keptCount": 1
+    }
+  ]
+}

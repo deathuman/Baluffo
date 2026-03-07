@@ -7,6 +7,10 @@ from scripts import source_discovery as sd
 
 
 class SourceDiscoveryTests(unittest.TestCase):
+    def fixture_json(self, name: str):
+        path = Path(__file__).parent / "fixtures" / name
+        return json.loads(path.read_text(encoding="utf-8"))
+
     def test_build_pattern_candidates_includes_expected_adapters(self) -> None:
         previous = list(sd.STUDIO_SEEDS)
         sd.STUDIO_SEEDS = [
@@ -198,6 +202,81 @@ class SourceDiscoveryTests(unittest.TestCase):
                 )
                 self.assertEqual(report["summary"]["queuedCandidateCount"], 1)
                 self.assertGreaterEqual(report["summary"]["skippedDuplicateCount"], 1)
+            finally:
+                (
+                    sd.ACTIVE_PATH,
+                    sd.PENDING_PATH,
+                    sd.REJECTED_PATH,
+                    sd.DISCOVERY_CANDIDATES_PATH,
+                    sd.DISCOVERY_REPORT_PATH,
+                ) = prev_paths
+                sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+                sd.STUDIO_SEEDS = prev_seeds
+
+    def test_discovery_report_snapshot_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prev_paths = (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+            )
+            prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+            prev_seeds = list(sd.STUDIO_SEEDS)
+            try:
+                sd.ACTIVE_PATH = root / "active.json"
+                sd.PENDING_PATH = root / "pending.json"
+                sd.REJECTED_PATH = root / "rejected.json"
+                sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+                sd.DISCOVERY_REPORT_PATH = root / "report.json"
+
+                sd.STUDIO_SEEDS = []
+                sd.STATIC_DISCOVERY_CANDIDATES = [
+                    {
+                        "name": "Demo Lever",
+                        "studio": "Demo",
+                        "adapter": "lever",
+                        "account": "demo",
+                        "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
+                        "discoveryMethod": "seed",
+                    },
+                    {
+                        "name": "Demo Greenhouse",
+                        "studio": "Demo",
+                        "adapter": "greenhouse",
+                        "slug": "demo",
+                        "api_url": "https://boards-api.greenhouse.io/v1/boards/demo/jobs?content=true",
+                        "discoveryMethod": "seed",
+                    },
+                ]
+
+                def fake_fetch(url: str, _: int) -> str:
+                    if "api.lever.co" in url:
+                        return json.dumps([{"id": 1}, {"id": 2}])
+                    if "boards-api.greenhouse.io" in url:
+                        return json.dumps({"jobs": [{}]})
+                    raise RuntimeError(f"unexpected URL: {url}")
+
+                report = sd.run_discovery(timeout_s=5, top_n=0, mode="dynamic", include_web_search=False, fetcher=fake_fetch)
+                snapshot = {
+                    "schemaVersion": report.get("schemaVersion"),
+                    "mode": str(report.get("mode")),
+                    "summary": {
+                        "foundEndpointCount": int(report["summary"].get("foundEndpointCount") or 0),
+                        "probedCandidateCount": int(report["summary"].get("probedCandidateCount") or 0),
+                        "queuedCandidateCount": int(report["summary"].get("queuedCandidateCount") or 0),
+                        "failedProbeCount": int(report["summary"].get("failedProbeCount") or 0),
+                    },
+                    "counts": {
+                        "candidates": len(report.get("candidates") or []),
+                        "failures": len(report.get("failures") or []),
+                    },
+                    "adapterCounts": report["summary"].get("adapterCounts") or {},
+                    "methodCounts": report["summary"].get("methodCounts") or {},
+                }
+                self.assertEqual(snapshot, self.fixture_json("source_discovery_report_snapshot.json"))
             finally:
                 (
                     sd.ACTIVE_PATH,

@@ -52,12 +52,30 @@ def ensure_active_registry() -> List[Dict[str, Any]]:
     return active
 
 
+def normalize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+    # Precedence is explicit: active > pending > rejected.
+    seen = set()
+    normalized: Dict[str, List[Dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
+    for bucket in ("active", "pending", "rejected"):
+        for row in state.get(bucket, []):
+            if not isinstance(row, dict):
+                continue
+            key = source_identity(row)
+            if key in seen:
+                continue
+            seen.add(key)
+            item = dict(row)
+            item["id"] = key
+            normalized[bucket].append(item)
+    return normalized
+
+
 def load_state() -> Dict[str, List[Dict[str, Any]]]:
-    return {
+    return normalize_state({
         "active": ensure_active_registry(),
         "pending": load_json_array(PENDING_PATH, []),
         "rejected": load_json_array(REJECTED_PATH, []),
-    }
+    })
 
 
 def summarize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, int]:
@@ -66,6 +84,14 @@ def summarize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, int]:
         "pendingCount": len(state["pending"]),
         "rejectedCount": len(state["rejected"]),
     }
+
+
+def persist_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+    normalized = normalize_state(state)
+    save_json_atomic(ACTIVE_PATH, normalized["active"])
+    save_json_atomic(PENDING_PATH, normalized["pending"])
+    save_json_atomic(REJECTED_PATH, normalized["rejected"])
+    return normalized
 
 
 def move_entries(pending: List[Dict[str, Any]], selected_ids: List[str]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -141,8 +167,7 @@ class Handler(BaseHTTPRequestHandler):
                 row["enabledByDefault"] = True
             state["pending"] = remaining
             state["active"] = unique_sources([*state["active"], *moved])
-            save_json_atomic(PENDING_PATH, state["pending"])
-            save_json_atomic(ACTIVE_PATH, state["active"])
+            state = persist_state(state)
             approval = load_json_object(APPROVAL_STATE_PATH, {"approvedSinceLastRun": 0})
             approval["approvedSinceLastRun"] = int(approval.get("approvedSinceLastRun") or 0) + len(moved)
             save_json_atomic(APPROVAL_STATE_PATH, approval)
@@ -154,8 +179,7 @@ class Handler(BaseHTTPRequestHandler):
             moved, remaining = move_entries(state["pending"], [str(item) for item in ids])
             state["pending"] = remaining
             state["rejected"] = unique_sources([*state["rejected"], *moved])
-            save_json_atomic(PENDING_PATH, state["pending"])
-            save_json_atomic(REJECTED_PATH, state["rejected"])
+            state = persist_state(state)
             self._send_json({"rejected": len(moved), "summary": summarize_state(state)})
             return
 
@@ -171,8 +195,7 @@ class Handler(BaseHTTPRequestHandler):
                     active_remaining.append(row)
             state["active"] = active_remaining
             state["pending"] = unique_sources([*state["pending"], *moved])
-            save_json_atomic(ACTIVE_PATH, state["active"])
-            save_json_atomic(PENDING_PATH, state["pending"])
+            state = persist_state(state)
             self._send_json({"rolledBack": len(moved), "summary": summarize_state(state)})
             return
 
@@ -183,8 +206,7 @@ class Handler(BaseHTTPRequestHandler):
             for row in moved:
                 row["enabledByDefault"] = False
             state["pending"] = unique_sources([*state["pending"], *moved])
-            save_json_atomic(REJECTED_PATH, state["rejected"])
-            save_json_atomic(PENDING_PATH, state["pending"])
+            state = persist_state(state)
             self._send_json({"restored": len(moved), "summary": summarize_state(state)})
             return
 

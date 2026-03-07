@@ -74,6 +74,10 @@
           </div>
         </div>
         <div id="admin-discovery-summary" class="results-summary">No discovery report loaded yet.</div>
+        <label class="backup-toggle admin-zero-toggle">
+          <input id="admin-show-zero-jobs-toggle" type="checkbox">
+          Show zero-jobs pending sources
+        </label>
         <h4 class="admin-section-title">Pending Sources</h4>
         <div id="admin-pending-sources" class="jobs-list"></div>
         <h4 class="admin-section-title">Active Sources</h4>
@@ -91,6 +95,8 @@
   </div>
 
   <script src="local-data-client.js"></script>
+  <script src="admin-config.js"></script>
   <script src="admin.js"></script>
+  <script src="admin-bootstrap.js"></script>
 </body>
 </html>

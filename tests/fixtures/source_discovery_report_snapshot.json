@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "mode": "dynamic",
+  "summary": {
+    "foundEndpointCount": 2,
+    "probedCandidateCount": 2,
+    "queuedCandidateCount": 2,
+    "failedProbeCount": 0
+  },
+  "counts": {
+    "candidates": 2,
+    "failures": 0
+  },
+  "adapterCounts": {
+    "greenhouse": 1,
+    "lever": 1
+  },
+  "methodCounts": {
+    "seed": 2
+  }
+}

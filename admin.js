@@ -24,17 +24,28 @@ let adminRejectedSourcesEl;
 let adminRestoreRejectedBtnEl;
 let adminDiscoveryLogEl;
 let adminBridgeStatusBadgeEl;
+let adminShowZeroJobsToggleEl;
 
 let adminPin = "";
-const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
-const JOBS_FETCHER_COMMAND = "python scripts/jobs_fetcher.py";
-const JOBS_FETCHER_TASK_LABEL = "Run jobs fetcher";
-const JOBS_FETCH_REPORT_URL = "data/jobs-fetch-report.json";
-const JOBS_AUTO_REFRESH_SIGNAL_KEY = "baluffo_jobs_auto_refresh_signal";
-const FETCH_REPORT_POLL_INTERVAL_MS = 5000;
-const FETCH_REPORT_POLL_TIMEOUT_MS = 10 * 60 * 1000;
-const ADMIN_BRIDGE_BASE = "http://127.0.0.1:8877";
-const BRIDGE_STATUS_POLL_INTERVAL_MS = 10000;
+/**
+ * @typedef {Object} AdminLogEvent
+ * @property {string} timestamp
+ * @property {string} level
+ * @property {string} scope
+ * @property {string} sourceId
+ * @property {string} message
+ */
+const adminConfig = window.AdminConfig || {};
+const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";
+const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python scripts/jobs_fetcher.py";
+const JOBS_FETCHER_TASK_LABEL = adminConfig.JOBS_FETCHER_TASK_LABEL || "Run jobs fetcher";
+const JOBS_FETCH_REPORT_URL = adminConfig.JOBS_FETCH_REPORT_URL || "data/jobs-fetch-report.json";
+const JOBS_AUTO_REFRESH_SIGNAL_KEY = adminConfig.JOBS_AUTO_REFRESH_SIGNAL_KEY || "baluffo_jobs_auto_refresh_signal";
+const FETCH_REPORT_POLL_INTERVAL_MS = Number(adminConfig.FETCH_REPORT_POLL_INTERVAL_MS || 5000);
+const FETCH_REPORT_POLL_TIMEOUT_MS = Number(adminConfig.FETCH_REPORT_POLL_TIMEOUT_MS || (10 * 60 * 1000));
+const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
+const BRIDGE_STATUS_POLL_INTERVAL_MS = Number(adminConfig.BRIDGE_STATUS_POLL_INTERVAL_MS || 10000);
+const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 
 let fetcherCompletionPollTimer = null;
 let fetcherCompletionPollDeadline = 0;
@@ -47,11 +58,9 @@ function bootAdminPage() {
   initAdminPage();
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", bootAdminPage);
-} else {
-  bootAdminPage();
-}
+window.AdminApp = {
+  boot: bootAdminPage
+};
 
 function cacheDom() {
   adminSourceStatusEl = document.getElementById("admin-source-status");
@@ -80,6 +89,7 @@ function cacheDom() {
   adminRestoreRejectedBtnEl = document.getElementById("admin-restore-rejected-btn");
   adminDiscoveryLogEl = document.getElementById("admin-discovery-log");
   adminBridgeStatusBadgeEl = document.getElementById("admin-bridge-status-badge");
+  adminShowZeroJobsToggleEl = document.getElementById("admin-show-zero-jobs-toggle");
 }
 
 function bindEvents() {
@@ -168,6 +178,14 @@ function bindEvents() {
   if (adminRestoreRejectedBtnEl) {
     adminRestoreRejectedBtnEl.addEventListener("click", async () => {
       await restoreRejectedSources();
+    });
+  }
+
+  if (adminShowZeroJobsToggleEl) {
+    adminShowZeroJobsToggleEl.checked = readShowZeroJobsPreference();
+    adminShowZeroJobsToggleEl.addEventListener("change", () => {
+      writeShowZeroJobsPreference(Boolean(adminShowZeroJobsToggleEl.checked));
+      loadDiscoveryData().catch(() => {});
     });
   }
 }
@@ -495,16 +513,46 @@ function setDiscoveryLogPlaceholder(message) {
   appendDiscoveryLog(message, "muted");
 }
 
+function createLogEvent(scope, messageOrEvent, level = "info") {
+  if (messageOrEvent && typeof messageOrEvent === "object" && !Array.isArray(messageOrEvent)) {
+    return {
+      timestamp: String(messageOrEvent.timestamp || new Date().toISOString()),
+      level: normalizeLogLevel(messageOrEvent.level || level).replace("log-", ""),
+      scope: String(messageOrEvent.scope || scope || "admin"),
+      sourceId: String(messageOrEvent.sourceId || ""),
+      message: String(messageOrEvent.message || "")
+    };
+  }
+  return {
+    timestamp: new Date().toISOString(),
+    level: normalizeLogLevel(level).replace("log-", ""),
+    scope: String(scope || "admin"),
+    sourceId: "",
+    message: String(messageOrEvent || "")
+  };
+}
+
+function formatLogEventText(event) {
+  const prefix = `[${event.scope}]`;
+  const source = event.sourceId ? ` [${event.sourceId}]` : "";
+  return `${prefix}${source} ${event.message}`.trim();
+}
+
 function appendDiscoveryLog(message, level = "info") {
   if (!adminDiscoveryLogEl) return;
+  const event = createLogEvent("discovery", message, level);
   const row = document.createElement("div");
-  row.className = `admin-fetcher-line ${normalizeLogLevel(level)}`;
+  row.className = `admin-fetcher-line ${normalizeLogLevel(event.level)}`;
+  row.dataset.timestamp = event.timestamp;
+  row.dataset.level = event.level;
+  row.dataset.scope = event.scope;
+  row.dataset.sourceId = event.sourceId;
   const stamp = document.createElement("span");
   stamp.className = "admin-fetcher-time";
-  stamp.textContent = toLocalTime(new Date());
+  stamp.textContent = toLocalTime(new Date(event.timestamp));
   const text = document.createElement("span");
   text.className = "admin-fetcher-text";
-  text.textContent = message;
+  text.textContent = formatLogEventText(event);
   row.append(stamp, text);
   adminDiscoveryLogEl.appendChild(row);
   while (adminDiscoveryLogEl.children.length > 220) {
@@ -521,16 +569,21 @@ function setFetcherLogPlaceholder(message) {
 
 function appendFetcherLog(message, level = "info") {
   if (!adminFetcherLogEl) return;
+  const event = createLogEvent("fetcher", message, level);
   const row = document.createElement("div");
-  row.className = `admin-fetcher-line ${normalizeLogLevel(level)}`;
+  row.className = `admin-fetcher-line ${normalizeLogLevel(event.level)}`;
+  row.dataset.timestamp = event.timestamp;
+  row.dataset.level = event.level;
+  row.dataset.scope = event.scope;
+  row.dataset.sourceId = event.sourceId;
 
   const stamp = document.createElement("span");
   stamp.className = "admin-fetcher-time";
-  stamp.textContent = toLocalTime(new Date());
+  stamp.textContent = toLocalTime(new Date(event.timestamp));
 
   const text = document.createElement("span");
   text.className = "admin-fetcher-text";
-  text.textContent = message;
+  text.textContent = formatLogEventText(event);
 
   row.append(stamp, text);
   adminFetcherLogEl.appendChild(row);
@@ -894,7 +947,10 @@ async function loadDiscoveryData() {
     const failedCount = Number(summary.failedProbeCount || 0);
     const pendingRows = Array.isArray(pending?.sources) ? pending.sources : [];
     const hiddenZeroJobsCount = pendingRows.filter(row => getSourceJobsFoundCount(row) === 0).length;
-    const visiblePendingRows = pendingRows.filter(row => getSourceJobsFoundCount(row) !== 0);
+    const showZeroJobs = readShowZeroJobsPreference();
+    const visiblePendingRows = showZeroJobs
+      ? pendingRows
+      : pendingRows.filter(row => getSourceJobsFoundCount(row) !== 0);
 
     if (adminDiscoverySummaryEl) {
       adminDiscoverySummaryEl.textContent =
@@ -921,6 +977,22 @@ async function loadDiscoveryData() {
     if (adminDiscoverySummaryEl) {
       adminDiscoverySummaryEl.textContent = "Source discovery bridge unavailable. Start `Run admin bridge` task.";
     }
+  }
+}
+
+function readShowZeroJobsPreference() {
+  try {
+    return localStorage.getItem(ADMIN_SHOW_ZERO_JOBS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeShowZeroJobsPreference(enabled) {
+  try {
+    localStorage.setItem(ADMIN_SHOW_ZERO_JOBS_KEY, enabled ? "1" : "0");
+  } catch {
+    // Ignore localStorage failures in private mode.
   }
 }
 

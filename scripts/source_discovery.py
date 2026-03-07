@@ -32,6 +32,7 @@ from scripts.source_registry import (
     source_identity,
     unique_sources,
 )
+from scripts.contracts import SCHEMA_VERSION
 
 STATIC_DISCOVERY_CANDIDATES: List[Dict[str, Any]] = [
     {"name": "Sandbox VR (Lever)", "studio": "Sandbox VR", "adapter": "lever", "account": "sandboxvr", "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json", "remoteFriendly": True, "nlPriority": False},
@@ -776,6 +777,7 @@ def run_discovery(
     ]
 
     report = {
+        "schemaVersion": SCHEMA_VERSION,
         "mode": mode,
         "startedAt": started_at,
         "finishedAt": now_iso(),

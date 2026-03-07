@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
@@ -61,7 +62,8 @@ def source_identity(row: Dict[str, Any]) -> str:
         value = str(row.get(key) or "").strip().lower()
         if value:
             return f"{adapter}:{key}:{value}"
-    return f"{adapter}:unknown:{hash(json.dumps(row, sort_keys=True, ensure_ascii=False))}"
+    digest = hashlib.sha1(json.dumps(row, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    return f"{adapter}:unknown:{digest}"
 
 
 def unique_sources(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -74,5 +76,7 @@ def unique_sources(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if key in seen:
             continue
         seen.add(key)
-        out.append(row)
+        normalized = dict(row)
+        normalized["id"] = key
+        out.append(normalized)
     return out

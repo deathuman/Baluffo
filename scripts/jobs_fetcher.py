@@ -18,6 +18,18 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree as ET
+from scripts.contracts import SCHEMA_VERSION
+from scripts.jobs_fetcher_registry import (
+    DEFAULT_SOURCE_LOADER_NAMES,
+    EXCLUDED_DEFAULT_SOURCES,
+    SOURCE_REPORT_META,
+)
+from scripts.pipeline_io import (
+    read_existing_output as read_existing_output_file,
+    serialize_rows_for_csv,
+    serialize_rows_for_json,
+    write_text_if_changed,
+)
 
 RawJob = Dict[str, Any]
 SourceLoader = Callable[..., List[RawJob]]
@@ -197,10 +209,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
     },
 ]
 
-EXCLUDED_DEFAULT_SOURCES = {
-    "wellfound": "disabled_by_default: blocked by anti-bot restrictions in non-browser fetch mode",
-}
-
 DEFAULT_TIMEOUT_S = 20
 DEFAULT_RETRIES = 2
 DEFAULT_BACKOFF_S = 1.6
@@ -265,6 +273,23 @@ OPTIONAL_FIELDS = [
     "sourceBundle",
 ]
 OUTPUT_FIELDS = ["id", *REQUIRED_FIELDS, "companyType", "description", *OPTIONAL_FIELDS]
+LIGHTWEIGHT_OUTPUT_FIELDS = [
+    "id",
+    "title",
+    "company",
+    "city",
+    "country",
+    "workType",
+    "contractType",
+    "jobLink",
+    "sector",
+    "profession",
+    "source",
+    "postedAt",
+    "qualityScore",
+    "focusScore",
+    "sourceBundleCount",
+]
 TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source"}
 
 GAME_KEYWORDS = {
@@ -2261,79 +2286,37 @@ def deduplicate_jobs(rows: Sequence[RawJob]) -> Tuple[List[RawJob], Dict[str, in
 
 
 def read_existing_output(json_path: Path, fetched_at: str) -> List[RawJob]:
-    if not json_path.exists():
-        return []
-    try:
-        payload = json.loads(json_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-
-    if isinstance(payload, list):
-        rows = [row for row in payload if isinstance(row, dict)]
-    elif isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
-        rows = [row for row in payload["jobs"] if isinstance(row, dict)]
-    else:
-        return []
-
-    restored = []
-    for row in rows:
-        normalized = canonicalize_job(row, source=clean_text(row.get("source")) or "previous_output", fetched_at=fetched_at)
-        if normalized:
-            if clean_text(row.get("dedupKey")):
-                normalized["dedupKey"] = clean_text(row.get("dedupKey"))
-            restored.append(normalized)
-    return restored
+    return read_existing_output_file(
+        json_path,
+        fetched_at,
+        canonicalize_job=canonicalize_job,
+        clean_text=clean_text,
+    )
 
 
-def write_json_output(path: Path, rows: Sequence[RawJob]) -> None:
-    payload = [{field: row.get(field, "") for field in OUTPUT_FIELDS} for row in rows]
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def write_json_output(path: Path, rows: Sequence[RawJob], fields: Sequence[str] = OUTPUT_FIELDS) -> bool:
+    return write_text_if_changed(path, serialize_rows_for_json(rows, fields))
 
 
-def write_csv_output(path: Path, rows: Sequence[RawJob]) -> None:
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=OUTPUT_FIELDS)
-        writer.writeheader()
-        for row in rows:
-            payload: Dict[str, Any] = {}
-            for field in OUTPUT_FIELDS:
-                value = row.get(field, "")
-                if field == "sourceBundle" and isinstance(value, list):
-                    value = json.dumps(value, ensure_ascii=False)
-                payload[field] = value
-            writer.writerow(payload)
+def write_csv_output(path: Path, rows: Sequence[RawJob], fields: Sequence[str] = OUTPUT_FIELDS) -> bool:
+    return write_text_if_changed(path, serialize_rows_for_csv(rows, fields))
 
 
 def default_source_loaders() -> List[Tuple[str, SourceLoader]]:
-    return [
-        ("google_sheets", run_google_sheets_source),
-        ("remote_ok", run_remote_ok_source),
-        ("gamesindustry", run_gamesindustry_source),
-        ("greenhouse_boards", run_greenhouse_boards_source),
-        ("teamtailor_sources", run_teamtailor_sources_source),
-        ("lever_sources", run_lever_sources_source),
-        ("smartrecruiters_sources", run_smartrecruiters_sources_source),
-        ("workable_sources", run_workable_sources_source),
-        ("ashby_sources", run_ashby_sources_source),
-        ("personio_sources", run_personio_sources_source),
-        ("static_studio_pages", run_static_studio_pages_source),
-    ]
-
-
-SOURCE_REPORT_META = {
-    "google_sheets": {"adapter": "csv", "studio": "community_sheet"},
-    "remote_ok": {"adapter": "api", "studio": "remote_ok"},
-    "gamesindustry": {"adapter": "html", "studio": "gamesindustry"},
-    "greenhouse_boards": {"adapter": "greenhouse", "studio": "multiple"},
-    "teamtailor_sources": {"adapter": "teamtailor", "studio": "multiple"},
-    "lever_sources": {"adapter": "lever", "studio": "multiple"},
-    "smartrecruiters_sources": {"adapter": "smartrecruiters", "studio": "multiple"},
-    "workable_sources": {"adapter": "workable", "studio": "multiple"},
-    "ashby_sources": {"adapter": "ashby", "studio": "multiple"},
-    "personio_sources": {"adapter": "personio", "studio": "multiple"},
-    "static_studio_pages": {"adapter": "static", "studio": "multiple"},
-    "wellfound": {"adapter": "html", "studio": "wellfound"},
-}
+    available = {
+        "google_sheets": run_google_sheets_source,
+        "remote_ok": run_remote_ok_source,
+        "gamesindustry": run_gamesindustry_source,
+        "greenhouse_boards": run_greenhouse_boards_source,
+        "teamtailor_sources": run_teamtailor_sources_source,
+        "lever_sources": run_lever_sources_source,
+        "smartrecruiters_sources": run_smartrecruiters_sources_source,
+        "workable_sources": run_workable_sources_source,
+        "ashby_sources": run_ashby_sources_source,
+        "personio_sources": run_personio_sources_source,
+        "static_studio_pages": run_static_studio_pages_source,
+    }
+    return [(name, available[name]) for name in DEFAULT_SOURCE_LOADER_NAMES if name in available]
 
 
 def run_pipeline(
@@ -2351,6 +2334,7 @@ def run_pipeline(
 
     json_path = output_dir / "jobs-unified.json"
     csv_path = output_dir / "jobs-unified.csv"
+    light_json_path = output_dir / "jobs-unified-light.json"
     report_path = output_dir / "jobs-fetch-report.json"
     pending_registry_path = output_dir / "source-registry-pending.json"
     approval_state_path = output_dir / "source-approval-state.json"
@@ -2428,11 +2412,20 @@ def run_pipeline(
 
     dedup_stats["outputCount"] = len(deduped_rows)
 
+    wrote_json = False
+    wrote_csv = False
+    wrote_light_json = False
     if deduped_rows:
-        write_json_output(json_path, deduped_rows)
-        write_csv_output(csv_path, deduped_rows)
+        wrote_json = write_json_output(json_path, deduped_rows, OUTPUT_FIELDS)
+        wrote_csv = write_csv_output(csv_path, deduped_rows, OUTPUT_FIELDS)
+        wrote_light_json = write_json_output(light_json_path, deduped_rows, LIGHTWEIGHT_OUTPUT_FIELDS)
+
+    json_bytes = json_path.stat().st_size if json_path.exists() else 0
+    csv_bytes = csv_path.stat().st_size if csv_path.exists() else 0
+    light_json_bytes = light_json_path.stat().st_size if light_json_path.exists() else 0
 
     report_payload = {
+        "schemaVersion": SCHEMA_VERSION,
         "startedAt": started_at,
         "finishedAt": now_iso(),
         "summary": {
@@ -2461,11 +2454,22 @@ def run_pipeline(
             "activeSourceCount": len([row for row in STUDIO_SOURCE_REGISTRY if bool(row.get("enabledByDefault", True))]),
             "pendingSourceCount": len(load_registry_from_file(pending_registry_path, [])),
             "newlyApprovedSinceLastRun": read_approved_since_last_run(approval_state_path),
+            "jsonBytes": int(json_bytes),
+            "csvBytes": int(csv_bytes),
+            "lightJsonBytes": int(light_json_bytes),
+            "sizeGuardrailExceeded": bool(json_bytes > 50_000_000 or csv_bytes > 50_000_000),
+            "recordGuardrailExceeded": bool(len(deduped_rows) > 100_000),
         },
         "sources": source_reports,
-        "outputs": {"json": str(json_path), "csv": str(csv_path), "report": str(report_path)},
+        "outputs": {
+            "json": str(json_path),
+            "csv": str(csv_path),
+            "lightJson": str(light_json_path),
+            "report": str(report_path),
+            "changed": {"json": wrote_json, "csv": wrote_csv, "lightJson": wrote_light_json},
+        },
     }
-    report_path.write_text(json.dumps(report_payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_text_if_changed(report_path, json.dumps(report_payload, indent=2, ensure_ascii=False))
     return report_payload
 
 
