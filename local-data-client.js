@@ -1,6 +1,7 @@
 (function () {
   const DB_NAME = "baluffo_jobs_local";
   const DB_VERSION = 2;
+  const BACKUP_SCHEMA_VERSION = 2;
   const SESSION_KEY = "baluffo_current_profile_id";
   const PROFILE_KEY = "baluffo_profiles";
   const ADMIN_PIN = "1234";
@@ -146,14 +147,20 @@
   }
 
   function generateJobKey(job) {
+    const explicit = String(job?.jobKey || "").trim();
+    if (/^job_[a-f0-9]{8}$/i.test(explicit)) {
+      return explicit.toLowerCase();
+    }
+    const salt = String(job?.keySalt || "").trim().toLowerCase();
     const canonicalLink = sanitizeJobUrl(job.jobLink || "").toLowerCase();
     const fallback = [
       job.title || "",
       job.company || "",
       job.city || "",
-      job.country || ""
+      job.country || "",
     ].join("|").toLowerCase();
-    const seed = canonicalLink || fallback;
+    const seedBase = canonicalLink || fallback;
+    const seed = salt ? `${seedBase}|${salt}` : seedBase;
     return `job_${hashFNV1a(seed)}`;
   }
 
@@ -175,6 +182,11 @@
     if (ct === "game" || ct === "game company") return "Game";
     if (ct === "tech" || ct === "tech company") return "Tech";
     return raw || "Tech";
+  }
+
+  function normalizeCustomSourceLabel(label) {
+    const text = String(label || "").trim();
+    return text || "Personal";
   }
 
   function ensureCurrentUser() {
@@ -245,7 +257,7 @@
       const index = store.index("by_profile_job");
       const range = IDBKeyRange.bound([uid, ""], [uid, "\uffff"]);
       const request = index.getAll(range);
-      request.onsuccess = () => done(request.result || []);
+      request.onsuccess = () => done(dedupeAttachmentRows(request.result || []));
       request.onerror = () => fail(request.error || new Error("Could not list attachment metadata."));
     });
   }
@@ -262,6 +274,43 @@
     const copy = { ...row };
     delete copy.pk;
     return copy;
+  }
+
+  function attachmentDedupeKey(row) {
+    return [
+      String(row?.profileId || ""),
+      String(row?.jobKey || ""),
+      String(row?.name || "").trim().toLowerCase(),
+      String(row?.type || "").trim().toLowerCase(),
+      String(Number(row?.size) || 0)
+    ].join("|");
+  }
+
+  function dedupeAttachmentRows(rows) {
+    const byKey = new Map();
+    (Array.isArray(rows) ? rows : []).forEach(row => {
+      const key = attachmentDedupeKey(row);
+      if (!key) return;
+      const current = byKey.get(key);
+      if (!current) {
+        byKey.set(key, row);
+        return;
+      }
+      const currentHasBlob = current?.blob instanceof Blob;
+      const nextHasBlob = row?.blob instanceof Blob;
+      if (nextHasBlob && !currentHasBlob) {
+        byKey.set(key, row);
+        return;
+      }
+      if (nextHasBlob === currentHasBlob) {
+        const currentDate = new Date(String(current?.createdAt || "")).getTime();
+        const nextDate = new Date(String(row?.createdAt || "")).getTime();
+        if (Number.isFinite(nextDate) && (!Number.isFinite(currentDate) || nextDate > currentDate)) {
+          byKey.set(key, row);
+        }
+      }
+    });
+    return Array.from(byKey.values());
   }
 
   function toAttachmentId(fileName) {
@@ -341,7 +390,7 @@
     return () => listeners.delete(entry);
   }
 
-  async function saveJobForUser(uid, job) {
+  async function saveJobForUser(uid, job, options = {}) {
     const user = ensureCurrentUser();
     if (uid !== user.uid) throw new Error("User mismatch.");
 
@@ -349,11 +398,13 @@
     const pk = `${uid}::${jobKey}`;
     const currentIso = nowIso();
 
+    let existingSnapshot = null;
     let savedSnapshot = null;
     await withStore("saved_jobs", "readwrite", (store, done, fail) => {
       const getReq = store.get(pk);
       getReq.onsuccess = () => {
         const existing = getReq.result || null;
+        existingSnapshot = existing ? { ...existing } : null;
         const savedAt = existing?.savedAt || currentIso;
         const phaseTimestamps = existing?.phaseTimestamps && typeof existing.phaseTimestamps === "object"
           ? existing.phaseTimestamps
@@ -374,9 +425,17 @@
           workType: job.workType || "Onsite",
           contractType: job.contractType || "Unknown",
           jobLink: sanitizeJobUrl(job.jobLink || ""),
+          profession: job.profession || "",
+          isCustom: existing?.isCustom === true ? true : Boolean(job.isCustom),
+          customSourceLabel: (existing?.isCustom === true || Boolean(job.isCustom))
+            ? normalizeCustomSourceLabel(job.customSourceLabel || existing?.customSourceLabel)
+            : "",
+          reminderAt: String(job.reminderAt || existing?.reminderAt || "").trim(),
+          contactedAt: String(job.contactedAt || existing?.contactedAt || "").trim(),
+          updatedBy: String(job.updatedBy || existing?.updatedBy || "").trim(),
           applicationStatus: normalizeApplicationStatus(existing?.applicationStatus),
           phaseTimestamps,
-          notes: existing?.notes || "",
+          notes: existing?.notes ?? String(job.notes || ""),
           attachmentsCount: Number.isFinite(existing?.attachmentsCount) ? existing.attachmentsCount : 0,
           savedAt,
           updatedAt: currentIso
@@ -389,7 +448,27 @@
       getReq.onerror = () => fail(getReq.error || new Error("Could not read existing saved job."));
     });
 
-    await addActivityLog(uid, "job_saved", savedSnapshot || { jobKey, title: job.title, company: job.company });
+    let eventType = String(options?.eventType || "").trim();
+    if (!eventType) {
+      const hadExisting = Boolean(existingSnapshot);
+      if (savedSnapshot?.isCustom && hadExisting) {
+        eventType = "custom_job_updated";
+      } else {
+        eventType = savedSnapshot?.isCustom ? "custom_job_created" : "job_saved";
+      }
+    }
+    await addActivityLog(uid, eventType, savedSnapshot || { jobKey, title: job.title, company: job.company }, {
+      isCustom: Boolean(savedSnapshot?.isCustom)
+    });
+    const previousReminder = String(existingSnapshot?.reminderAt || "").trim();
+    const nextReminder = String(savedSnapshot?.reminderAt || "").trim();
+    if (!previousReminder && nextReminder) {
+      await addActivityLog(uid, "reminder_set", savedSnapshot, { reminderAt: nextReminder });
+    } else if (previousReminder && !nextReminder) {
+      await addActivityLog(uid, "reminder_cleared", savedSnapshot, {});
+    } else if (previousReminder && nextReminder && previousReminder !== nextReminder) {
+      await addActivityLog(uid, "reminder_set", savedSnapshot, { reminderAt: nextReminder });
+    }
     await notifySavedJobsChanged(uid);
     return jobKey;
   }
@@ -416,7 +495,11 @@
     });
 
     if (removedSnapshot) {
-      await addActivityLog(uid, "job_removed", removedSnapshot, { fromStatus: removedSnapshot.applicationStatus || "bookmark" });
+      const eventType = removedSnapshot?.isCustom ? "custom_job_removed" : "job_removed";
+      await addActivityLog(uid, eventType, removedSnapshot, {
+        fromStatus: removedSnapshot.applicationStatus || "bookmark",
+        isCustom: Boolean(removedSnapshot?.isCustom)
+      });
     }
     await notifySavedJobsChanged(uid);
   }
@@ -558,7 +641,7 @@
       const index = store.index("by_profile_job");
       const request = index.getAll(IDBKeyRange.only([uid, jobKey]));
       request.onsuccess = () => {
-        const rows = (request.result || [])
+        const rows = dedupeAttachmentRows(request.result || [])
           .map(stripAttachmentPk)
           .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
         done(rows);
@@ -608,9 +691,25 @@
           fail(new Error("Attachment not found."));
           return;
         }
-        const delReq = store.delete(attachmentId);
-        delReq.onsuccess = () => done();
-        delReq.onerror = () => fail(delReq.error || new Error("Could not delete attachment."));
+        const targetKey = attachmentDedupeKey(row);
+        const index = store.index("by_profile_job");
+        const cursorReq = index.openCursor(IDBKeyRange.only([uid, jobKey]));
+        cursorReq.onsuccess = event => {
+          const cursor = event.target.result;
+          if (!cursor) {
+            done();
+            return;
+          }
+          const currentRow = cursor.value;
+          if (attachmentDedupeKey(currentRow) !== targetKey) {
+            cursor.continue();
+            return;
+          }
+          const delReq = cursor.delete();
+          delReq.onsuccess = () => cursor.continue();
+          delReq.onerror = () => fail(delReq.error || new Error("Could not delete attachment."));
+        };
+        cursorReq.onerror = () => fail(cursorReq.error || new Error("Could not iterate attachments."));
       };
       getReq.onerror = () => fail(getReq.error || new Error("Could not load attachment."));
     });
@@ -656,6 +755,225 @@
     });
   }
 
+  async function listAllActivityForProfile(uid) {
+    return withStore("activity_log", "readonly", (store, done, fail) => {
+      const index = store.index("by_profile");
+      const request = index.getAll(IDBKeyRange.only(uid));
+      request.onsuccess = () => done((request.result || []).map(stripAttachmentPk));
+      request.onerror = () => fail(request.error || new Error("Could not list activity log entries."));
+    });
+  }
+
+  function normalizeIsoOrNow(value, fallback = "") {
+    const text = String(value || "").trim();
+    if (!text) return fallback;
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+  }
+
+  function toPlainObject(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return value;
+  }
+
+  function normalizeSavedJobRecord(uid, row, fallback = null) {
+    const source = toPlainObject(row);
+    const base = fallback ? toPlainObject(fallback) : {};
+    const inputForKey = {
+      ...base,
+      ...source,
+      jobKey: source.jobKey || base.jobKey || "",
+      keySalt: source.keySalt || ""
+    };
+    const jobKey = generateJobKey(inputForKey);
+    const savedAt = normalizeIsoOrNow(source.savedAt || base.savedAt, nowIso());
+    const mergedPhaseTimestamps = {
+      ...toPlainObject(base.phaseTimestamps),
+      ...toPlainObject(source.phaseTimestamps)
+    };
+    if (!mergedPhaseTimestamps.bookmark) {
+      mergedPhaseTimestamps.bookmark = savedAt;
+    }
+
+    const isCustom = source.isCustom === true || (source.isCustom == null ? base.isCustom === true : false);
+    return {
+      pk: `${uid}::${jobKey}`,
+      profileId: uid,
+      jobKey,
+      title: String(source.title ?? base.title ?? "").trim(),
+      company: String(source.company ?? base.company ?? "").trim(),
+      sector: normalizeSectorValue(source.sector ?? base.sector, source.companyType ?? base.companyType),
+      companyType: String(source.companyType ?? base.companyType ?? "Tech").trim() || "Tech",
+      city: String(source.city ?? base.city ?? "").trim(),
+      country: String(source.country ?? base.country ?? "").trim(),
+      workType: String(source.workType ?? base.workType ?? "Onsite").trim() || "Onsite",
+      contractType: String(source.contractType ?? base.contractType ?? "Unknown").trim() || "Unknown",
+      jobLink: sanitizeJobUrl(source.jobLink ?? base.jobLink ?? ""),
+      profession: String(source.profession ?? base.profession ?? "").trim(),
+      isCustom,
+      customSourceLabel: isCustom
+        ? normalizeCustomSourceLabel(source.customSourceLabel ?? base.customSourceLabel)
+        : "",
+      reminderAt: normalizeIsoOrNow(source.reminderAt ?? base.reminderAt, ""),
+      contactedAt: normalizeIsoOrNow(source.contactedAt ?? base.contactedAt, ""),
+      updatedBy: String(source.updatedBy ?? base.updatedBy ?? "").trim(),
+      applicationStatus: normalizeApplicationStatus(source.applicationStatus ?? base.applicationStatus),
+      phaseTimestamps: mergedPhaseTimestamps,
+      notes: String(source.notes ?? base.notes ?? ""),
+      attachmentsCount: Math.max(0, Number(source.attachmentsCount ?? base.attachmentsCount) || 0),
+      savedAt,
+      updatedAt: normalizeIsoOrNow(source.updatedAt ?? base.updatedAt, nowIso())
+    };
+  }
+
+  function isClearlyLowerQualityImported(existingRow, importedRow) {
+    const hasExistingRequired = Boolean(String(existingRow?.title || "").trim()) && Boolean(String(existingRow?.company || "").trim());
+    const hasImportedRequired = Boolean(String(importedRow?.title || "").trim()) && Boolean(String(importedRow?.company || "").trim());
+    return hasExistingRequired && !hasImportedRequired;
+  }
+
+  function mergeSavedJobRows(uid, existingRow, importedRow) {
+    const existing = normalizeSavedJobRecord(uid, existingRow);
+    const imported = normalizeSavedJobRecord(uid, importedRow, existing);
+    if (isClearlyLowerQualityImported(existing, imported)) {
+      return existing;
+    }
+    const merged = {
+      ...existing,
+      ...imported,
+      pk: existing.pk,
+      profileId: uid,
+      jobKey: existing.jobKey,
+      savedAt: normalizeIsoOrNow(existing.savedAt || imported.savedAt, nowIso()),
+      updatedAt: nowIso()
+    };
+    merged.phaseTimestamps = {
+      ...toPlainObject(existing.phaseTimestamps),
+      ...toPlainObject(imported.phaseTimestamps)
+    };
+    if (!merged.phaseTimestamps.bookmark) {
+      merged.phaseTimestamps.bookmark = merged.savedAt;
+    }
+    return merged;
+  }
+
+  function areSavedRowsEquivalent(a, b) {
+    if (!a || !b) return false;
+    const fields = [
+      "jobKey", "title", "company", "sector", "companyType", "city", "country", "workType",
+      "contractType", "jobLink", "profession", "isCustom", "customSourceLabel", "reminderAt",
+      "contactedAt", "updatedBy", "applicationStatus", "notes", "attachmentsCount", "savedAt"
+    ];
+    for (const field of fields) {
+      if (String(a[field] ?? "") !== String(b[field] ?? "")) return false;
+    }
+    return JSON.stringify(toPlainObject(a.phaseTimestamps)) === JSON.stringify(toPlainObject(b.phaseTimestamps));
+  }
+
+  function normalizeImportedAttachmentRow(uid, row) {
+    const source = toPlainObject(row);
+    const jobKey = String(source.jobKey || "").trim();
+    if (!jobKey) return null;
+    const attachmentId = String(source.id || "").trim() || toAttachmentId(source.name);
+    return {
+      pk: `${uid}::${jobKey}::${attachmentId}`,
+      id: attachmentId,
+      profileId: uid,
+      jobKey,
+      name: String(source.name || "file"),
+      type: String(source.type || "application/octet-stream"),
+      size: Number(source.size) || 0,
+      createdAt: normalizeIsoOrNow(source.createdAt, nowIso()),
+      blob: deserializeAttachmentBlob(source)
+    };
+  }
+
+  function toAttachmentFingerprint(row) {
+    return [
+      String(row?.profileId || ""),
+      String(row?.jobKey || ""),
+      String(row?.name || ""),
+      String(row?.type || ""),
+      String(Number(row?.size) || 0),
+      String(row?.createdAt || "")
+    ].join("|");
+  }
+
+  function normalizeImportedActivityEntry(uid, row) {
+    const source = toPlainObject(row);
+    const createdAt = normalizeIsoOrNow(source.createdAt, nowIso());
+    const type = String(source.type || "event").trim() || "event";
+    const jobKey = String(source.jobKey || "").trim();
+    const title = String(source.title || "").trim();
+    const company = String(source.company || "").trim();
+    const details = toPlainObject(source.details);
+    return {
+      id: String(source.id || "").trim() || toActivityId(uid, type, jobKey),
+      profileId: uid,
+      type,
+      jobKey,
+      title,
+      company,
+      createdAt,
+      details
+    };
+  }
+
+  function toActivityFingerprint(row) {
+    return [
+      String(row?.profileId || ""),
+      String(row?.type || ""),
+      String(row?.jobKey || ""),
+      String(row?.title || ""),
+      String(row?.company || ""),
+      String(row?.createdAt || ""),
+      JSON.stringify(toPlainObject(row?.details))
+    ].join("|");
+  }
+
+  function parseBackupPayload(payload) {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid import payload.");
+    }
+    const warnings = [];
+    const schemaVersion = Number(payload.schemaVersion || payload.version || 1) || 1;
+    const savedJobs = Array.isArray(payload.savedJobs) ? payload.savedJobs : [];
+    const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+    const activityLog = Array.isArray(payload.activityLog) ? payload.activityLog : [];
+    return {
+      schemaVersion,
+      savedJobs,
+      attachments,
+      activityLog,
+      warnings
+    };
+  }
+
+  function buildProfileBackupPayload(uid, context) {
+    const includeFiles = Boolean(context.includeFiles);
+    const exportedAt = nowIso();
+    const savedJobs = context.savedJobs.map(row => normalizeSavedJobRecord(uid, row));
+    const customJobs = savedJobs.filter(row => row.isCustom).length;
+    const attachmentsCount = context.attachments.length;
+    const historyEvents = context.activityLog.length;
+    return {
+      version: BACKUP_SCHEMA_VERSION,
+      schemaVersion: BACKUP_SCHEMA_VERSION,
+      exportedAt,
+      includesFiles: includeFiles,
+      counts: {
+        savedJobs: savedJobs.length,
+        customJobs,
+        historyEvents,
+        attachments: attachmentsCount
+      },
+      profile: context.profile,
+      savedJobs,
+      attachments: context.attachments,
+      activityLog: context.activityLog
+    };
+  }
+
   async function exportProfileData(uid, options = {}) {
     const user = ensureCurrentUser();
     if (uid !== user.uid) throw new Error("User mismatch.");
@@ -668,104 +986,215 @@
     const serializedAttachments = includeFiles
       ? await Promise.all(attachments.map(serializeAttachmentWithBlob))
       : attachments.map(stripAttachmentBlob);
+    const activityLog = await listAllActivityForProfile(uid);
 
-    return {
-      version: 2,
-      exportedAt: nowIso(),
-      includesFiles: includeFiles,
+    return buildProfileBackupPayload(uid, {
+      includeFiles,
       profile: profile || { id: uid, name: user.displayName || uid, email: user.email || "" },
       savedJobs,
-      attachments: serializedAttachments
+      attachments: serializedAttachments,
+      activityLog
+    });
+  }
+
+  async function mergeImportedJobs(uid, importedRows) {
+    const existingRows = await listSavedJobs(uid);
+    const existingByKey = new Map(existingRows.map(row => [String(row.jobKey || ""), row]));
+    const writes = [];
+    const summary = {
+      created: 0,
+      updated: 0,
+      skippedInvalid: 0
     };
+    const warnings = [];
+
+    for (const rawRow of importedRows) {
+      const source = toPlainObject(rawRow);
+      const title = String(source.title || "").trim();
+      const company = String(source.company || "").trim();
+      if (!title || !company) {
+        summary.skippedInvalid += 1;
+        warnings.push(`Skipped malformed saved job (missing title/company).`);
+        continue;
+      }
+      const normalized = normalizeSavedJobRecord(uid, source);
+      const key = String(normalized.jobKey || "");
+      if (!key) {
+        summary.skippedInvalid += 1;
+        warnings.push(`Skipped malformed saved job (missing jobKey).`);
+        continue;
+      }
+      const existing = existingByKey.get(key);
+      if (!existing) {
+        summary.created += 1;
+        existingByKey.set(key, normalized);
+        writes.push(normalized);
+        continue;
+      }
+      const merged = mergeSavedJobRows(uid, existing, source);
+      if (!areSavedRowsEquivalent(existing, merged)) {
+        summary.updated += 1;
+        existingByKey.set(key, merged);
+        writes.push(merged);
+      }
+    }
+
+    if (writes.length > 0) {
+      await withStore("saved_jobs", "readwrite", (store, done, fail) => {
+        try {
+          writes.forEach(row => store.put(row));
+          done();
+        } catch (err) {
+          fail(err);
+        }
+      });
+    }
+
+    return { summary, warnings, rowsByKey: existingByKey };
+  }
+
+  async function mergeImportedAttachments(uid, importedRows) {
+    const normalizedRows = importedRows
+      .map(row => normalizeImportedAttachmentRow(uid, row))
+      .filter(Boolean);
+    if (normalizedRows.length === 0) return { added: 0, hydrated: 0 };
+
+    const existing = await listAttachmentMetadata(uid);
+    const existingFingerprints = new Set(existing.map(toAttachmentFingerprint));
+    const existingIds = new Set(existing.map(row => String(row.id || "")));
+    const existingByComposite = new Map(
+      existing.map(row => [`${String(row?.jobKey || "")}::${String(row?.id || "")}`, row])
+    );
+    const writes = [];
+    let hydrated = 0;
+    for (const row of normalizedRows) {
+      const composite = `${row.jobKey}::${row.id}`;
+      const existingSameId = existingByComposite.get(composite) || null;
+      if (existingSameId) {
+        const existingHasBlob = existingSameId.blob instanceof Blob;
+        const incomingHasBlob = row.blob instanceof Blob;
+        if (!existingHasBlob && incomingHasBlob) {
+          writes.push({
+            pk: `${uid}::${row.jobKey}::${row.id}`,
+            id: row.id,
+            profileId: uid,
+            jobKey: row.jobKey,
+            name: row.name,
+            type: row.type,
+            size: row.size,
+            createdAt: row.createdAt || existingSameId.createdAt || nowIso(),
+            blob: row.blob
+          });
+          hydrated += 1;
+        }
+        continue;
+      }
+
+      const fingerprint = toAttachmentFingerprint(row);
+      if (existingFingerprints.has(fingerprint)) {
+        continue;
+      }
+      let next = row;
+      if (existingIds.has(next.id)) {
+        const replacementId = toAttachmentId(next.name);
+        next = {
+          ...next,
+          id: replacementId,
+          pk: `${uid}::${next.jobKey}::${replacementId}`
+        };
+      }
+      existingIds.add(next.id);
+      existingFingerprints.add(toAttachmentFingerprint(next));
+      existingByComposite.set(`${next.jobKey}::${next.id}`, next);
+      writes.push(next);
+    }
+
+    if (writes.length > 0) {
+      await withStore("attachments", "readwrite", (store, done, fail) => {
+        try {
+          writes.forEach(row => store.put(row));
+          done();
+        } catch (err) {
+          fail(err);
+        }
+      });
+    }
+    const added = Math.max(0, writes.length - hydrated);
+    return { added, hydrated };
+  }
+
+  async function mergeImportedActivity(uid, importedRows) {
+    const normalizedRows = importedRows
+      .map(row => normalizeImportedActivityEntry(uid, row))
+      .filter(Boolean);
+    if (normalizedRows.length === 0) return { added: 0 };
+
+    const existingRows = await listAllActivityForProfile(uid);
+    const existingFingerprints = new Set(existingRows.map(toActivityFingerprint));
+    const existingIds = new Set(existingRows.map(row => String(row.id || "")));
+    const writes = [];
+    for (const row of normalizedRows) {
+      const fingerprint = toActivityFingerprint(row);
+      if (existingFingerprints.has(fingerprint)) continue;
+      let next = row;
+      if (existingIds.has(next.id)) {
+        next = { ...next, id: toActivityId(uid, next.type, next.jobKey) };
+      }
+      existingIds.add(next.id);
+      existingFingerprints.add(toActivityFingerprint(next));
+      writes.push(next);
+    }
+
+    if (writes.length > 0) {
+      await withStore("activity_log", "readwrite", (store, done, fail) => {
+        try {
+          writes.forEach(row => store.put(row));
+          done();
+        } catch (err) {
+          fail(err);
+        }
+      });
+    }
+    return { added: writes.length };
+  }
+
+  async function syncAttachmentCountsForJobs(uid, jobKeys) {
+    if (!jobKeys || jobKeys.size === 0) return;
+    const meta = await listAttachmentMetadata(uid);
+    const countsByKey = new Map();
+    meta.forEach(att => {
+      const key = String(att?.jobKey || "");
+      if (!key) return;
+      countsByKey.set(key, (countsByKey.get(key) || 0) + 1);
+    });
+    for (const jobKey of jobKeys) {
+      const count = countsByKey.get(jobKey) || 0;
+      await updateAttachmentMetadata(uid, jobKey, count);
+    }
   }
 
   async function importProfileData(uid, payload) {
     const user = ensureCurrentUser();
     if (uid !== user.uid) throw new Error("User mismatch.");
-    if (!payload || typeof payload !== "object") {
-      throw new Error("Invalid import payload.");
-    }
+    const parsed = parseBackupPayload(payload);
 
-    const savedJobs = Array.isArray(payload.savedJobs) ? payload.savedJobs : [];
-    const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+    const mergeJobsResult = await mergeImportedJobs(uid, parsed.savedJobs);
+    const attachmentMerge = await mergeImportedAttachments(uid, parsed.attachments);
+    const activityMerge = await mergeImportedActivity(uid, parsed.activityLog);
 
-    await withStore("saved_jobs", "readwrite", (store, done, fail) => {
-      try {
-        for (const row of savedJobs) {
-          const jobKey = row.jobKey || generateJobKey(row);
-          const pk = `${uid}::${jobKey}`;
-          const savedAt = row.savedAt || nowIso();
-          const phaseTimestamps = row.phaseTimestamps && typeof row.phaseTimestamps === "object"
-            ? row.phaseTimestamps
-            : {};
-          if (!phaseTimestamps.bookmark) {
-            phaseTimestamps.bookmark = savedAt;
-          }
-          store.put({
-            pk,
-            profileId: uid,
-            jobKey,
-            title: row.title || "",
-            company: row.company || "",
-            sector: normalizeSectorValue(row.sector, row.companyType),
-            companyType: row.companyType || "Tech",
-            city: row.city || "",
-            country: row.country || "",
-            workType: row.workType || "Onsite",
-            contractType: row.contractType || "Unknown",
-            jobLink: sanitizeJobUrl(row.jobLink || ""),
-            applicationStatus: normalizeApplicationStatus(row.applicationStatus),
-            phaseTimestamps,
-            notes: row.notes || "",
-            attachmentsCount: Math.max(0, Number(row.attachmentsCount) || 0),
-            savedAt,
-            updatedAt: nowIso()
-          });
-        }
-        done();
-      } catch (err) {
-        fail(err);
-      }
-    });
-
-    await withStore("attachments", "readwrite", (store, done, fail) => {
-      try {
-        for (const row of attachments) {
-          if (!row || !row.jobKey) continue;
-          const attachmentId = row.id || toAttachmentId(row.name);
-          const pk = `${uid}::${row.jobKey}::${attachmentId}`;
-          store.put({
-            pk,
-            id: attachmentId,
-            profileId: uid,
-            jobKey: row.jobKey,
-            name: String(row.name || "file"),
-            type: String(row.type || "application/octet-stream"),
-            size: Number(row.size) || 0,
-            createdAt: row.createdAt || nowIso(),
-            blob: deserializeAttachmentBlob(row)
-          });
-        }
-        done();
-      } catch (err) {
-        fail(err);
-      }
-    });
-
-    const attachmentsByJob = new Map();
-    const importedAttachments = await listAttachmentMetadata(uid);
-    importedAttachments.forEach(att => {
-      const count = attachmentsByJob.get(att.jobKey) || 0;
-      attachmentsByJob.set(att.jobKey, count + 1);
-    });
-
-    for (const row of savedJobs) {
-      const jobKey = row.jobKey || generateJobKey(row);
-      const count = attachmentsByJob.get(jobKey) || 0;
-      await updateAttachmentMetadata(uid, jobKey, count);
-    }
-
+    await syncAttachmentCountsForJobs(uid, new Set(Array.from(mergeJobsResult.rowsByKey.keys())));
     await notifySavedJobsChanged(uid);
+
+    return {
+      schemaVersion: parsed.schemaVersion,
+      created: mergeJobsResult.summary.created,
+      updated: mergeJobsResult.summary.updated,
+      skippedInvalid: mergeJobsResult.summary.skippedInvalid,
+      historyAdded: activityMerge.added,
+      attachmentsAdded: attachmentMerge.added,
+      attachmentsHydrated: attachmentMerge.hydrated || 0,
+      warnings: parsed.warnings.concat(mergeJobsResult.warnings)
+    };
   }
 
   function utf8ByteLength(input) {

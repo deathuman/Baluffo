@@ -14,6 +14,7 @@
       <h1>Saved Jobs</h1>
       <div class="header-actions">
         <button id="jobs-page-btn" class="btn back-btn" aria-label="Back to jobs listing">All Jobs</button>
+        <button id="add-custom-job-btn" class="btn back-btn" aria-label="Add custom job">+ Add Custom Job</button>
       </div>
       <div class="auth-profile-shell" aria-live="polite">
         <div class="auth-profile-pill">
@@ -31,20 +32,122 @@
     </div>
 
     <p id="saved-source-status" class="source-status">Sign in to view your saved jobs.</p>
+    <div id="saved-sort-bar" class="saved-sort-bar hidden" aria-hidden="true">
+      <span class="saved-sort-label">Sort</span>
+      <div class="saved-sort-actions" role="group" aria-label="Saved jobs sort presets">
+        <button type="button" class="btn back-btn saved-sort-btn active" data-saved-sort="updated">Recently Updated</button>
+        <button type="button" class="btn back-btn saved-sort-btn" data-saved-sort="saved">Recently Added</button>
+        <button type="button" class="btn back-btn saved-sort-btn" data-saved-sort="reminder">Reminder Soon</button>
+        <button type="button" class="btn back-btn saved-sort-btn" data-saved-sort="personal">Personal First</button>
+      </div>
+      <span id="saved-reminder-counter" class="saved-reminder-counter"></span>
+    </div>
+    <div id="saved-custom-filter-bar" class="saved-custom-filter-bar hidden" aria-hidden="true">
+      <span class="saved-custom-filter-label">Show</span>
+      <div class="saved-custom-filter-actions" role="group" aria-label="Saved jobs source filter">
+        <button type="button" class="btn back-btn saved-custom-filter-btn active" data-saved-filter="all">All</button>
+        <button type="button" class="btn back-btn saved-custom-filter-btn" data-saved-filter="custom">Personal</button>
+        <button type="button" class="btn back-btn saved-custom-filter-btn" data-saved-filter="imported">Imported</button>
+      </div>
+      <span id="saved-custom-filter-count" class="saved-custom-filter-count"></span>
+    </div>
+    <section id="custom-job-panel" class="custom-job-panel hidden" aria-hidden="true">
+      <div class="custom-job-panel-header">
+        <h2 id="custom-job-panel-title">Add Personal Job</h2>
+        <p id="custom-job-panel-hint">Required: Title and Company. Job link is optional.</p>
+      </div>
+      <form id="custom-job-form" class="custom-job-form" novalidate>
+        <label>
+          <span>Title *</span>
+          <input id="custom-job-title" name="title" type="text" maxlength="160" required>
+        </label>
+        <label>
+          <span>Company *</span>
+          <input id="custom-job-company" name="company" type="text" maxlength="120" required>
+        </label>
+        <label>
+          <span>City</span>
+          <input id="custom-job-city" name="city" type="text" maxlength="100">
+        </label>
+        <label>
+          <span>Country</span>
+          <input id="custom-job-country" name="country" type="text" maxlength="80" placeholder="e.g. NL">
+        </label>
+        <label>
+          <span>Work Type</span>
+          <select id="custom-job-work-type" name="workType">
+            <option value="">Default (Onsite)</option>
+            <option value="Remote">Remote</option>
+            <option value="Hybrid">Hybrid</option>
+            <option value="Onsite">Onsite</option>
+          </select>
+        </label>
+        <label>
+          <span>Contract Type</span>
+          <select id="custom-job-contract-type" name="contractType">
+            <option value="">Unknown</option>
+            <option value="Full-time">Full-time</option>
+            <option value="Internship">Internship</option>
+            <option value="Temporary">Temporary</option>
+            <option value="Part-time">Part-time</option>
+            <option value="Freelance">Freelance</option>
+          </select>
+        </label>
+        <label>
+          <span>Sector</span>
+          <select id="custom-job-sector" name="sector">
+            <option value="">Tech</option>
+            <option value="Game">Game</option>
+            <option value="Tech">Tech</option>
+          </select>
+        </label>
+        <label>
+          <span>Profession</span>
+          <input id="custom-job-profession" name="profession" type="text" maxlength="120" placeholder="e.g. Technical Artist">
+        </label>
+        <label class="custom-job-form-wide">
+          <span>Job Link (optional)</span>
+          <input id="custom-job-link" name="jobLink" type="url" maxlength="400" placeholder="https://...">
+        </label>
+        <label class="custom-job-form-wide">
+          <span>Notes</span>
+          <textarea id="custom-job-notes" name="notes" rows="3" maxlength="5000" placeholder="Any details, contacts, or reminders..."></textarea>
+        </label>
+        <label class="custom-job-form-wide">
+          <span>Reminder (optional)</span>
+          <input id="custom-job-reminder" name="reminderAt" type="datetime-local">
+        </label>
+        <div id="custom-job-link-warning" class="custom-job-warning hidden">No job link set. You can still save this personal entry.</div>
+        <div class="custom-job-form-actions">
+          <button type="submit" id="custom-job-save-btn" class="btn back-btn">Save Personal Job</button>
+          <button type="button" id="custom-job-cancel-btn" class="btn back-btn">Cancel</button>
+        </div>
+      </form>
+    </section>
 
     <div id="saved-jobs-list" class="jobs-list">
       <div class="loading">Loading saved jobs...</div>
     </div>
 
     <div class="saved-actions saved-actions-bottom">
-      <button id="global-phase-override-btn" class="btn back-btn" disabled>Override Phase Lock</button>
-      <button id="export-backup-btn" class="btn back-btn" disabled>Export Backup</button>
-      <label class="backup-toggle">
-        <input id="export-include-files" type="checkbox">
-        Include files
-      </label>
-      <button id="import-backup-btn" class="btn back-btn" disabled>Import Backup</button>
-      <input id="import-backup-input" type="file" accept="application/json" class="hidden">
+      <div class="saved-actions-group">
+        <button id="global-phase-override-btn" class="btn back-btn" disabled>Override Phase Lock</button>
+      </div>
+
+      <section class="saved-backup-section" aria-label="Backup and restore">
+        <div class="saved-backup-head">Backup & Restore</div>
+        <div class="saved-backup-row">
+          <button id="export-backup-btn" class="btn back-btn" disabled>Export Backup</button>
+          <label class="backup-toggle">
+            <input id="export-include-files" type="checkbox">
+            <span class="backup-toggle-label">Include attachments</span>
+            <span class="backup-toggle-hint">Exports a `.zip` package with files.</span>
+          </label>
+          <button id="import-backup-btn" class="btn back-btn" disabled>Import Backup</button>
+        </div>
+      </section>
+
+      <input id="import-backup-input" type="file" accept="application/json,.zip" class="hidden">
     </div>
 
     <div class="jobs-footer">

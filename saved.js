@@ -7,6 +7,31 @@ let signInBtnEl;
 let signOutBtnEl;
 let jobsPageBtnEl;
 let adminPageBtnEl;
+let addCustomJobBtnEl;
+let customJobPanelEl;
+let customJobFormEl;
+let customJobTitleEl;
+let customJobCompanyEl;
+let customJobCityEl;
+let customJobCountryEl;
+let customJobWorkTypeEl;
+let customJobContractTypeEl;
+let customJobSectorEl;
+let customJobProfessionEl;
+let customJobLinkEl;
+let customJobNotesEl;
+let customJobReminderEl;
+let customJobLinkWarningEl;
+let customJobCancelBtnEl;
+let customJobPanelTitleEl;
+let customJobPanelHintEl;
+let customJobSaveBtnEl;
+let savedCustomFilterBarEl;
+let savedCustomFilterCountEl;
+let savedCustomFilterBtnEls = [];
+let savedSortBarEl;
+let savedSortBtnEls = [];
+let savedReminderCounterEl;
 let historyPanelToggleBtnEl;
 let exportBackupBtnEl;
 let exportIncludeFilesEl;
@@ -24,8 +49,25 @@ let unsubscribeSavedJobs = () => {};
 let expandedJobKey = null;
 let phaseOverrideArmedGlobal = false;
 let activityPanelOpen = false;
+let customJobPanelOpen = false;
+let customJobMode = "create";
+let customJobTargetKey = "";
+let activeSavedSort = "updated";
+let jobDetailTabByKey = new Map();
+let cachedActivityEntries = [];
 let lastSavedJobsByKey = new Map();
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
+const CUSTOM_SOURCE_LABEL = "Personal";
+const SAVED_FILTER_ALL = "all";
+const SAVED_FILTER_CUSTOM = "custom";
+const SAVED_FILTER_IMPORTED = "imported";
+const DEFAULT_SAVED_FILTER = SAVED_FILTER_ALL;
+const SORT_UPDATED = "updated";
+const SORT_SAVED = "saved";
+const SORT_REMINDER = "reminder";
+const SORT_PERSONAL = "personal";
+const REMINDER_SOON_HOURS = 72;
+let activeSavedFilter = DEFAULT_SAVED_FILTER;
 
 const PHASE_OPTIONS = ["bookmark", "applied", "interview_1", "interview_2", "offer", "rejected"];
 const PHASE_LABELS = {
@@ -63,6 +105,31 @@ function cacheDom() {
   signOutBtnEl = document.getElementById("saved-auth-sign-out-btn");
   jobsPageBtnEl = document.getElementById("jobs-page-btn");
   adminPageBtnEl = document.getElementById("admin-page-btn");
+  addCustomJobBtnEl = document.getElementById("add-custom-job-btn");
+  customJobPanelEl = document.getElementById("custom-job-panel");
+  customJobFormEl = document.getElementById("custom-job-form");
+  customJobTitleEl = document.getElementById("custom-job-title");
+  customJobCompanyEl = document.getElementById("custom-job-company");
+  customJobCityEl = document.getElementById("custom-job-city");
+  customJobCountryEl = document.getElementById("custom-job-country");
+  customJobWorkTypeEl = document.getElementById("custom-job-work-type");
+  customJobContractTypeEl = document.getElementById("custom-job-contract-type");
+  customJobSectorEl = document.getElementById("custom-job-sector");
+  customJobProfessionEl = document.getElementById("custom-job-profession");
+  customJobLinkEl = document.getElementById("custom-job-link");
+  customJobNotesEl = document.getElementById("custom-job-notes");
+  customJobReminderEl = document.getElementById("custom-job-reminder");
+  customJobLinkWarningEl = document.getElementById("custom-job-link-warning");
+  customJobCancelBtnEl = document.getElementById("custom-job-cancel-btn");
+  customJobPanelTitleEl = document.getElementById("custom-job-panel-title");
+  customJobPanelHintEl = document.getElementById("custom-job-panel-hint");
+  customJobSaveBtnEl = document.getElementById("custom-job-save-btn");
+  savedCustomFilterBarEl = document.getElementById("saved-custom-filter-bar");
+  savedCustomFilterCountEl = document.getElementById("saved-custom-filter-count");
+  savedCustomFilterBtnEls = Array.from(document.querySelectorAll(".saved-custom-filter-btn"));
+  savedSortBarEl = document.getElementById("saved-sort-bar");
+  savedSortBtnEls = Array.from(document.querySelectorAll(".saved-sort-btn"));
+  savedReminderCounterEl = document.getElementById("saved-reminder-counter");
   historyPanelToggleBtnEl = document.getElementById("history-panel-toggle-btn");
   exportBackupBtnEl = document.getElementById("export-backup-btn");
   exportIncludeFilesEl = document.getElementById("export-include-files");
@@ -89,6 +156,52 @@ function bindEvents() {
       window.location.href = "admin.html";
     });
   }
+
+  if (addCustomJobBtnEl) {
+    addCustomJobBtnEl.addEventListener("click", () => {
+      if (!currentUser) {
+        showToast("Sign in to add personal jobs.", "info");
+        return;
+      }
+      setCustomJobPanelOpen(!customJobPanelOpen);
+      if (customJobPanelOpen) {
+        customJobTitleEl?.focus();
+      }
+    });
+  }
+
+  if (customJobCancelBtnEl) {
+    customJobCancelBtnEl.addEventListener("click", () => {
+      setCustomJobPanelOpen(false);
+    });
+  }
+
+  if (customJobFormEl) {
+    customJobFormEl.addEventListener("submit", async event => {
+      event.preventDefault();
+      await createCustomJob();
+    });
+  }
+
+  if (customJobLinkEl) {
+    customJobLinkEl.addEventListener("input", updateCustomJobWarning);
+  }
+
+  savedCustomFilterBtnEls.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const nextFilter = String(btn.dataset.savedFilter || DEFAULT_SAVED_FILTER).toLowerCase();
+      setSavedFilter(nextFilter);
+      renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
+    });
+  });
+
+  savedSortBtnEls.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const sortKey = String(btn.dataset.savedSort || SORT_UPDATED).toLowerCase();
+      setSavedSort(sortKey);
+      renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
+    });
+  });
 
   if (historyPanelToggleBtnEl) {
     historyPanelToggleBtnEl.addEventListener("click", () => {
@@ -156,12 +269,16 @@ function bindEvents() {
 
 function initSavedJobsPage() {
   setActivityPanelOpen(false);
+  setCustomJobPanelOpen(false);
+  setCustomJobAvailability(false);
   const api = window.JobAppLocalData;
   if (!api || !api.isReady()) {
     setAuthStatus("Browsing as guest");
     setSourceStatus("Local storage provider unavailable.");
     setActivityStatus("Local provider unavailable.");
     toggleAuthButtons(false);
+    setCustomJobAvailability(false);
+    setSavedSortBarVisible(false);
     renderAuthRequired("Local auth provider is unavailable.");
     renderActivityEntries([]);
     return;
@@ -174,7 +291,11 @@ function initSavedJobsPage() {
     clearNoteSaveQueues();
     expandedJobKey = null;
     phaseOverrideArmedGlobal = false;
+    jobDetailTabByKey = new Map();
+    cachedActivityEntries = [];
     lastSavedJobsByKey = new Map();
+    setSavedFilter(DEFAULT_SAVED_FILTER);
+    setSavedSort(SORT_UPDATED);
 
     if (!currentUser) {
       setAuthStatus("Browsing as guest");
@@ -182,6 +303,10 @@ function initSavedJobsPage() {
       setActivityStatus("Sign in to view history.");
       toggleAuthButtons(false);
       setBackupButtonsEnabled(false);
+      setCustomJobAvailability(false);
+      setCustomJobPanelOpen(false);
+      setSavedFilterBarVisible(false);
+      setSavedSortBarVisible(false);
       renderAuthRequired("Sign in to access your personal saved jobs table.");
       renderActivityEntries([]);
       return;
@@ -192,6 +317,7 @@ function initSavedJobsPage() {
     setActivityStatus("Loading activity...");
     toggleAuthButtons(true);
     setBackupButtonsEnabled(true);
+    setCustomJobAvailability(true);
     subscribeToSavedJobs(currentUser.uid);
     refreshActivityLog().catch(err => {
       console.error("Failed to load activity:", err);
@@ -230,14 +356,25 @@ function renderAuthRequired(message) {
 
 function renderSavedJobs(jobs) {
   if (!savedJobsListEl) return;
+  const allJobs = Array.isArray(jobs) ? jobs : [];
+  const filteredJobs = sortSavedJobs(filterSavedJobs(allJobs, activeSavedFilter), activeSavedSort);
+  setSavedFilterBarVisible(allJobs.length > 0 && Boolean(currentUser));
+  setSavedSortBarVisible(allJobs.length > 0 && Boolean(currentUser));
+  renderSavedFilterMeta(allJobs.length, filteredJobs.length);
+  renderReminderCounter(allJobs);
 
-  if (!jobs || jobs.length === 0) {
+  if (!allJobs || allJobs.length === 0) {
     expandedJobKey = null;
     savedJobsListEl.innerHTML = '<div class="no-results">No saved jobs yet.</div>';
     return;
   }
-  if (!jobs.some(job => String(job.jobKey || job.id || "") === expandedJobKey)) {
+  if (!filteredJobs.some(job => String(job.jobKey || job.id || "") === expandedJobKey)) {
     expandedJobKey = null;
+  }
+
+  if (filteredJobs.length === 0) {
+    savedJobsListEl.innerHTML = '<div class="no-results">No saved jobs match this filter.</div>';
+    return;
   }
 
   savedJobsListEl.innerHTML = `
@@ -254,7 +391,7 @@ function renderSavedJobs(jobs) {
       </div>
     </div>
     <div class="jobs-table-body">
-      ${jobs.map(renderSavedJobBlock).join("")}
+      ${filteredJobs.map(renderSavedJobBlock).join("")}
     </div>
   `;
 
@@ -276,6 +413,34 @@ function renderSavedJobs(jobs) {
     btn.addEventListener("click", () => {
       const jobKey = btn.dataset.jobKey || "";
       toggleDetailsForJob(jobKey);
+    });
+  });
+
+  savedJobsListEl.querySelectorAll(".personal-edit-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      openCustomJobEditor(btn.dataset.jobKey || "", false);
+    });
+  });
+
+  savedJobsListEl.querySelectorAll(".personal-duplicate-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      openCustomJobEditor(btn.dataset.jobKey || "", true);
+    });
+  });
+
+  savedJobsListEl.querySelectorAll(".saved-details-tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const jobKey = btn.dataset.jobKey || "";
+      const tab = btn.dataset.detailsTab || "notes";
+      setJobDetailsTab(jobKey, tab);
+      renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
+    });
+  });
+
+  savedJobsListEl.querySelectorAll(".job-history-refresh-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await refreshActivityLog();
+      renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
     });
   });
 
@@ -308,44 +473,74 @@ function renderSavedJobs(jobs) {
   bindAttachmentActionButtons();
   applyDetailsAccordion();
 
-  hydrateAttachmentLists(jobs).catch(err => {
+  hydrateAttachmentLists(filteredJobs).catch(err => {
     console.error("Could not load attachment lists:", err);
   });
 }
 
 function renderSavedJobBlock(job) {
+  const isCustom = isCustomJob(job);
   const safeTitle = escapeHtml(job.title || "");
   const safeCompany = escapeHtml(job.company || "");
+  const customSource = escapeHtml(String(job.customSourceLabel || CUSTOM_SOURCE_LABEL));
   const safeSector = escapeHtml(normalizeSavedSector(job));
   const safeCity = escapeHtml(job.city || "");
   const safeCountry = escapeHtml(fullCountryName(job.country || ""));
   const safeContract = escapeHtml(job.contractType || "Unknown");
   const safeWorkType = escapeHtml(job.workType || "Onsite");
   const safeLink = sanitizeUrl(job.jobLink || "");
+  const hasLink = Boolean(safeLink);
   const contractClass = toContractClass(job.contractType || "Unknown");
   const rawJobKey = String(job.jobKey || job.id || "");
   const jobKey = escapeHtml(rawJobKey);
   const normalizedPhase = normalizePhase(job.applicationStatus);
   const isExpanded = expandedJobKey === rawJobKey;
+  const activeTab = getJobDetailsTab(rawJobKey);
   const detailsSummary = renderDetailsSummary(job);
+  const reminderMeta = getReminderMeta(job.reminderAt);
+  const missingChips = renderMissingInfoChips(job);
+  const updateHint = renderUpdatedHint(job);
+  const historyRows = getJobHistoryEntries(rawJobKey);
+  const tabClassNotes = activeTab === "notes" ? "active" : "";
+  const tabClassAttachments = activeTab === "attachments" ? "active" : "";
+  const tabClassHistory = activeTab === "history" ? "active" : "";
+  const reminderBadge = reminderMeta.isSoon
+    ? `<span class="saved-reminder-badge" title="${escapeHtml(reminderMeta.label)}">Due soon</span>`
+    : "";
 
   return `
     <div class="saved-job-block" data-job-key="${jobKey}">
       <div class="saved-job-row">
         <button class="remove-saved-btn remove-inline-btn" data-job-key="${jobKey}" aria-label="Remove saved job">X</button>
-        <div class="col-title job-cell" data-label="Position">${safeTitle}</div>
-        <div class="col-company job-cell" data-label="Company">${safeCompany}</div>
-        <div class="col-sector job-cell" data-label="Sector">${safeSector}</div>
-        <div class="col-city job-cell" data-label="City">${safeCity}</div>
-        <div class="col-country job-cell" data-label="Country">${safeCountry}</div>
-        <div class="col-contract job-cell" data-label="Contract">
+        <div class="col-title job-cell" data-label="Position" title="${safeTitle}">
+          <div class="saved-title-stack">
+            <span class="saved-title-main">${safeTitle}</span>
+            <div class="saved-title-meta">
+              ${isCustom ? `<span class="saved-custom-badge" title="Custom job source">${customSource}</span>` : ""}
+              ${reminderBadge}
+              ${missingChips}
+            </div>
+            ${updateHint}
+          </div>
+          ${isCustom ? `
+            <div class="saved-personal-actions">
+              <button class="btn back-btn personal-edit-btn" data-job-key="${jobKey}" aria-label="Edit personal job">Edit</button>
+              <button class="btn back-btn personal-duplicate-btn" data-job-key="${jobKey}" aria-label="Duplicate personal job">Duplicate</button>
+            </div>
+          ` : ""}
+        </div>
+        <div class="col-company job-cell" data-label="Company" title="${safeCompany}">${safeCompany}</div>
+        <div class="col-sector job-cell" data-label="Sector" title="${safeSector}">${safeSector}</div>
+        <div class="col-city job-cell" data-label="City" title="${safeCity}">${safeCity}</div>
+        <div class="col-country job-cell" data-label="Country" title="${safeCountry}">${safeCountry}</div>
+        <div class="col-contract job-cell" data-label="Contract" title="${safeContract}">
           <span class="job-contract ${contractClass}">${safeContract}</span>
         </div>
-        <div class="col-type job-cell" data-label="Type">
+        <div class="col-type job-cell" data-label="Type" title="${safeWorkType}">
           <span class="job-tag ${safeWorkType.toLowerCase()}">${safeWorkType}</span>
         </div>
         <div class="col-link job-cell" data-label="Link">
-          ${safeLink ? `<a class="saved-open-link-icon" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="Open job link" title="Open job link">${renderWebIcon()}</a>` : '<span class="muted">N/A</span>'}
+          ${hasLink ? `<a class="saved-open-link-icon" href="${safeLink}" target="_blank" rel="noopener noreferrer" aria-label="Open job link" title="Open job link">${renderWebIcon()}</a>` : `<span class="saved-no-link ${isCustom ? "saved-no-link-custom" : ""}" title="${isCustom ? "Custom entry without external URL" : "No URL available"}">${isCustom ? "No link" : "N/A"}</span>`}
         </div>
       </div>
       <div class="saved-phase-row">
@@ -362,28 +557,46 @@ function renderSavedJobBlock(job) {
           aria-expanded="${isExpanded ? "true" : "false"}"
           aria-label="${isExpanded ? "Collapse" : "Expand"} notes and attachments"
         >
-          <span class="details-toggle-text">${detailsSummary}Notes & Attachments</span>
+          <span class="details-toggle-text">${detailsSummary}Notes, Files & History</span>
           <span class="details-toggle-arrow" aria-hidden="true">${isExpanded ? "v" : ">"}</span>
         </button>
       </div>
       <div class="saved-details-section ${isExpanded ? "" : "collapsed"}" data-job-key="${jobKey}" aria-hidden="${isExpanded ? "false" : "true"}">
-        <div class="saved-notes-row">
-          <div class="notes-label">Notes</div>
-          <div class="notes-value">
-            <textarea class="job-notes-input" data-job-key="${jobKey}" placeholder="Add notes, links, interview reminders..." ${!currentUser ? "disabled" : ""}>${escapeHtml(job.notes || "")}</textarea>
-            <div class="note-save-state" data-job-key="${jobKey}">Saved</div>
-          </div>
+        <div class="saved-details-tabs" role="tablist" aria-label="Saved job details tabs">
+          <button class="saved-details-tab-btn ${tabClassNotes}" data-job-key="${jobKey}" data-details-tab="notes" role="tab" aria-selected="${activeTab === "notes" ? "true" : "false"}">Notes</button>
+          <button class="saved-details-tab-btn ${tabClassAttachments}" data-job-key="${jobKey}" data-details-tab="attachments" role="tab" aria-selected="${activeTab === "attachments" ? "true" : "false"}">Attachments</button>
+          <button class="saved-details-tab-btn ${tabClassHistory}" data-job-key="${jobKey}" data-details-tab="history" role="tab" aria-selected="${activeTab === "history" ? "true" : "false"}">History</button>
         </div>
-        <div class="saved-attachments-row">
-          <div class="attachments-label">Attachments</div>
-          <div class="attachments-value">
-            <div class="attachments-toolbar">
-              <button class="btn back-btn attach-upload-btn" data-job-key="${jobKey}" ${!currentUser ? "disabled" : ""}>Upload</button>
-              <span class="attachments-hint">Max ${MAX_ATTACHMENTS_PER_JOB} files, ${Math.round(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB each</span>
+        <div class="saved-details-panels">
+          <div class="saved-notes-row saved-details-panel ${activeTab === "notes" ? "" : "hidden"}" data-tab-panel="notes">
+            <div class="notes-label">Notes</div>
+            <div class="notes-value">
+              <textarea class="job-notes-input" data-job-key="${jobKey}" placeholder="Add notes, links, interview reminders..." ${!currentUser ? "disabled" : ""}>${escapeHtml(job.notes || "")}</textarea>
+              <div class="note-save-state" data-job-key="${jobKey}">Saved</div>
             </div>
-            <input class="attach-file-input hidden" type="file" multiple data-job-key="${jobKey}" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
-            <div class="attachments-list" data-job-key="${jobKey}">
-              <div class="muted">No attachments yet.</div>
+          </div>
+          <div class="saved-attachments-row saved-details-panel ${activeTab === "attachments" ? "" : "hidden"}" data-tab-panel="attachments">
+            <div class="attachments-label">Attachments</div>
+            <div class="attachments-value">
+              <div class="attachments-toolbar">
+                <button class="btn back-btn attach-upload-btn" data-job-key="${jobKey}" ${!currentUser ? "disabled" : ""}>Upload</button>
+                <span class="attachments-hint">Max ${MAX_ATTACHMENTS_PER_JOB} files, ${Math.round(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB each</span>
+              </div>
+              <input class="attach-file-input hidden" type="file" multiple data-job-key="${jobKey}" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
+              <div class="attachments-list" data-job-key="${jobKey}">
+                <div class="muted">No attachments yet.</div>
+              </div>
+            </div>
+          </div>
+          <div class="saved-history-row saved-details-panel ${activeTab === "history" ? "" : "hidden"}" data-tab-panel="history">
+            <div class="attachments-label">History</div>
+            <div class="attachments-value">
+              <div class="job-history-toolbar">
+                <button class="btn back-btn job-history-refresh-btn" data-job-key="${jobKey}">Refresh</button>
+              </div>
+              <div class="job-history-list">
+                ${historyRows}
+              </div>
             </div>
           </div>
         </div>
@@ -402,6 +615,91 @@ function normalizeSavedSector(job) {
   if (ct === "game" || ct === "game company") return "Game";
   if (ct === "tech" || ct === "tech company") return "Tech";
   return raw || "Tech";
+}
+
+function renderMissingInfoChips(job) {
+  if (!isCustomJob(job)) return "";
+  const chips = [];
+  if (!sanitizeUrl(job.jobLink || "")) chips.push("No link");
+  if (!String(job.city || "").trim()) chips.push("No city");
+  if (!String(job.contractType || "").trim() || String(job.contractType || "").toLowerCase() === "unknown") chips.push("No contract");
+  if (chips.length === 0) return "";
+  return chips.map(label => `<span class="saved-missing-chip">${escapeHtml(label)}</span>`).join("");
+}
+
+function renderUpdatedHint(job) {
+  if (!isCustomJob(job)) return "";
+  const label = String(job?.updatedBy || "").trim();
+  if (!label) return "";
+  const time = formatRelativeTime(job.updatedAt);
+  if (label && time) {
+    return `<div class="saved-updated-hint">Updated: ${escapeHtml(label)} · ${escapeHtml(time)}</div>`;
+  }
+  return `<div class="saved-updated-hint">Updated: ${escapeHtml(label)}</div>`;
+}
+
+function parseIsoDate(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getReminderMeta(reminderAt) {
+  const parsed = parseIsoDate(reminderAt);
+  if (!parsed) return { isSoon: false, label: "" };
+  const now = Date.now();
+  const diffMs = parsed.getTime() - now;
+  const soonMs = REMINDER_SOON_HOURS * 60 * 60 * 1000;
+  const isSoon = diffMs >= 0 && diffMs <= soonMs;
+  return {
+    isSoon,
+    label: parsed.toLocaleString()
+  };
+}
+
+function formatRelativeTime(value) {
+  const parsed = parseIsoDate(value);
+  if (!parsed) return "";
+  const deltaMs = Date.now() - parsed.getTime();
+  const deltaMin = Math.round(deltaMs / 60000);
+  if (deltaMin < 1) return "just now";
+  if (deltaMin < 60) return `${deltaMin}m ago`;
+  const deltaHours = Math.round(deltaMin / 60);
+  if (deltaHours < 24) return `${deltaHours}h ago`;
+  const deltaDays = Math.round(deltaHours / 24);
+  if (deltaDays < 8) return `${deltaDays}d ago`;
+  return parsed.toLocaleDateString();
+}
+
+function getJobDetailsTab(jobKey) {
+  const key = String(jobKey || "");
+  return jobDetailTabByKey.get(key) || "notes";
+}
+
+function setJobDetailsTab(jobKey, tab) {
+  const safeTab = tab === "attachments" || tab === "history" ? tab : "notes";
+  jobDetailTabByKey.set(String(jobKey || ""), safeTab);
+}
+
+function getJobHistoryEntries(jobKey) {
+  const key = String(jobKey || "");
+  const rows = (cachedActivityEntries || [])
+    .filter(entry => String(entry?.jobKey || "") === key)
+    .slice(0, 12);
+  if (rows.length === 0) {
+    return '<div class="muted">No activity for this job yet.</div>';
+  }
+  return rows.map(entry => {
+    const type = escapeHtml(activityTypeLabel(String(entry?.type || "event")));
+    const time = escapeHtml(formatPhaseTimestamp(entry?.createdAt) || "");
+    const detail = escapeHtml(formatActivityDetail(entry));
+    return `
+      <div class="job-history-item">
+        <div class="job-history-top"><span>${type}</span><span>${time}</span></div>
+        <div class="job-history-detail">${detail}</div>
+      </div>
+    `;
+  }).join("");
 }
 
 function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt) {
@@ -495,9 +793,23 @@ async function removeSavedJob(jobKey) {
     showToast("Sign in required.", "error");
     return;
   }
+  const removedSnapshot = lastSavedJobsByKey.get(String(jobKey || "")) || null;
   try {
     await api.removeSavedJobForUser(currentUser.uid, jobKey);
-    showToast("Removed saved job.", "success");
+    showToast("Removed saved job.", "success", {
+      durationMs: 6500,
+      actionLabel: "Revert",
+      onAction: async () => {
+        if (!currentUser || !removedSnapshot) return;
+        try {
+          await api.saveJobForUser(currentUser.uid, removedSnapshot);
+          showToast("Saved job restored.", "success");
+        } catch (restoreErr) {
+          console.error("Could not restore removed job:", restoreErr);
+          showToast("Could not restore removed job.", "error");
+        }
+      }
+    });
   } catch (err) {
     console.error("Could not remove saved job:", err);
     showToast("Could not remove job.", "error");
@@ -609,7 +921,11 @@ function clearNoteSaveQueues() {
 
 function toggleDetailsForJob(jobKey) {
   if (!jobKey) return;
-  expandedJobKey = expandedJobKey === jobKey ? null : jobKey;
+  const nextKey = expandedJobKey === jobKey ? null : jobKey;
+  if (nextKey && !jobDetailTabByKey.has(nextKey)) {
+    jobDetailTabByKey.set(nextKey, "notes");
+  }
+  expandedJobKey = nextKey;
   applyDetailsAccordion();
 }
 
@@ -627,7 +943,7 @@ function applyDetailsAccordion() {
     }
     if (toggle) {
       toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-      toggle.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} notes and attachments`);
+      toggle.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} notes, attachments, and history`);
     }
     if (arrow) {
       arrow.textContent = expanded ? "v" : ">";
@@ -938,6 +1254,285 @@ function setAuthStatus(text) {
   }
 }
 
+function isCustomJob(job) {
+  return Boolean(job && job.isCustom);
+}
+
+function filterSavedJobs(jobs, filter) {
+  if (!Array.isArray(jobs)) return [];
+  if (filter === SAVED_FILTER_CUSTOM) {
+    return jobs.filter(isCustomJob);
+  }
+  if (filter === SAVED_FILTER_IMPORTED) {
+    return jobs.filter(job => !isCustomJob(job));
+  }
+  return jobs;
+}
+
+function isValidSavedFilter(value) {
+  return value === SAVED_FILTER_ALL || value === SAVED_FILTER_CUSTOM || value === SAVED_FILTER_IMPORTED;
+}
+
+function setSavedFilter(nextFilter) {
+  activeSavedFilter = isValidSavedFilter(nextFilter) ? nextFilter : DEFAULT_SAVED_FILTER;
+  savedCustomFilterBtnEls.forEach(btn => {
+    const isActive = String(btn.dataset.savedFilter || "").toLowerCase() === activeSavedFilter;
+    btn.classList.toggle("active", isActive);
+  });
+}
+
+function isValidSavedSort(value) {
+  return value === SORT_UPDATED || value === SORT_SAVED || value === SORT_REMINDER || value === SORT_PERSONAL;
+}
+
+function setSavedSort(nextSort) {
+  activeSavedSort = isValidSavedSort(nextSort) ? nextSort : SORT_UPDATED;
+  savedSortBtnEls.forEach(btn => {
+    const isActive = String(btn.dataset.savedSort || "").toLowerCase() === activeSavedSort;
+    btn.classList.toggle("active", isActive);
+  });
+}
+
+function setSavedSortBarVisible(visible) {
+  if (!savedSortBarEl) return;
+  savedSortBarEl.classList.toggle("hidden", !visible);
+  savedSortBarEl.setAttribute("aria-hidden", visible ? "false" : "true");
+}
+
+function sortSavedJobs(jobs, mode) {
+  const rows = Array.isArray(jobs) ? [...jobs] : [];
+  const byUpdated = (a, b) => String(b.updatedAt || b.savedAt || "").localeCompare(String(a.updatedAt || a.savedAt || ""));
+  const bySaved = (a, b) => String(b.savedAt || "").localeCompare(String(a.savedAt || ""));
+  const byTitle = (a, b) => String(a.title || "").localeCompare(String(b.title || ""));
+  if (mode === SORT_SAVED) {
+    return rows.sort((a, b) => bySaved(a, b) || byTitle(a, b));
+  }
+  if (mode === SORT_PERSONAL) {
+    return rows.sort((a, b) => {
+      const customA = isCustomJob(a) ? 0 : 1;
+      const customB = isCustomJob(b) ? 0 : 1;
+      if (customA !== customB) return customA - customB;
+      return byUpdated(a, b) || byTitle(a, b);
+    });
+  }
+  if (mode === SORT_REMINDER) {
+    return rows.sort((a, b) => {
+      const reminderA = getReminderWeight(a.reminderAt);
+      const reminderB = getReminderWeight(b.reminderAt);
+      if (reminderA !== reminderB) return reminderA - reminderB;
+      return byUpdated(a, b) || byTitle(a, b);
+    });
+  }
+  return rows.sort((a, b) => byUpdated(a, b) || byTitle(a, b));
+}
+
+function getReminderWeight(reminderAt) {
+  const parsed = parseIsoDate(reminderAt);
+  if (!parsed) return 3;
+  const diff = parsed.getTime() - Date.now();
+  if (diff < 0) return 2;
+  if (diff <= REMINDER_SOON_HOURS * 60 * 60 * 1000) return 0;
+  return 1;
+}
+
+function setSavedFilterBarVisible(visible) {
+  if (!savedCustomFilterBarEl) return;
+  savedCustomFilterBarEl.classList.toggle("hidden", !visible);
+  savedCustomFilterBarEl.setAttribute("aria-hidden", visible ? "false" : "true");
+}
+
+function renderSavedFilterMeta(totalCount, filteredCount) {
+  if (!savedCustomFilterCountEl) return;
+  const safeTotal = Math.max(0, Number(totalCount) || 0);
+  const safeFiltered = Math.max(0, Number(filteredCount) || 0);
+  if (safeTotal <= 0) {
+    savedCustomFilterCountEl.textContent = "";
+    return;
+  }
+  savedCustomFilterCountEl.textContent = `${safeFiltered}/${safeTotal}`;
+}
+
+function renderReminderCounter(allJobs) {
+  if (!savedReminderCounterEl) return;
+  const rows = Array.isArray(allJobs) ? allJobs : [];
+  const soonCount = rows.filter(job => getReminderMeta(job?.reminderAt).isSoon).length;
+  savedReminderCounterEl.textContent = soonCount > 0 ? `${soonCount} due soon` : "";
+}
+
+function toCanonicalCountry(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const upper = raw.toUpperCase();
+  if (upper === "NETHERLANDS") return "NL";
+  if (upper === "UNITED STATES" || upper === "USA" || upper === "US") return "US";
+  if (upper === "UNITED KINGDOM" || upper === "UK" || upper === "GB") return "GB";
+  return raw.length === 2 ? upper : raw;
+}
+
+function normalizeCustomJobInput(values) {
+  const title = String(values?.title || "").trim();
+  const company = String(values?.company || "").trim();
+  const reminderAt = normalizeReminderInput(values?.reminderAt);
+  return {
+    title,
+    company,
+    city: String(values?.city || "").trim(),
+    country: toCanonicalCountry(values?.country),
+    workType: String(values?.workType || "").trim() || "Onsite",
+    contractType: String(values?.contractType || "").trim() || "Unknown",
+    sector: String(values?.sector || "").trim() || "Tech",
+    profession: String(values?.profession || "").trim(),
+    jobLink: String(values?.jobLink || "").trim(),
+    notes: String(values?.notes || "").trim(),
+    reminderAt,
+    isCustom: true,
+    customSourceLabel: CUSTOM_SOURCE_LABEL
+  };
+}
+
+function normalizeReminderInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString();
+}
+
+function toDatetimeLocalValue(value) {
+  const parsed = parseIsoDate(value);
+  if (!parsed) return "";
+  const offsetMs = parsed.getTimezoneOffset() * 60 * 1000;
+  const local = new Date(parsed.getTime() - offsetMs);
+  return local.toISOString().slice(0, 16);
+}
+
+function resetCustomJobForm() {
+  customJobMode = "create";
+  customJobTargetKey = "";
+  customJobFormEl?.reset();
+  if (customJobWorkTypeEl) customJobWorkTypeEl.value = "";
+  if (customJobContractTypeEl) customJobContractTypeEl.value = "";
+  if (customJobSectorEl) customJobSectorEl.value = "";
+  if (customJobReminderEl) customJobReminderEl.value = "";
+  if (customJobPanelTitleEl) customJobPanelTitleEl.textContent = "Add Personal Job";
+  if (customJobPanelHintEl) customJobPanelHintEl.textContent = "Required: Title and Company. Job link is optional.";
+  if (customJobSaveBtnEl) customJobSaveBtnEl.textContent = "Save Personal Job";
+  updateCustomJobWarning();
+}
+
+function updateCustomJobWarning() {
+  if (!customJobLinkWarningEl) return;
+  const hasLink = Boolean(String(customJobLinkEl?.value || "").trim());
+  customJobLinkWarningEl.classList.toggle("hidden", hasLink);
+}
+
+function setCustomJobAvailability(enabled) {
+  if (!addCustomJobBtnEl) return;
+  addCustomJobBtnEl.disabled = !enabled;
+}
+
+function setCustomJobPanelOpen(open) {
+  customJobPanelOpen = Boolean(open);
+  if (!customJobPanelEl) return;
+  customJobPanelEl.classList.toggle("hidden", !customJobPanelOpen);
+  customJobPanelEl.setAttribute("aria-hidden", customJobPanelOpen ? "false" : "true");
+  if (addCustomJobBtnEl) {
+    addCustomJobBtnEl.classList.toggle("active", customJobPanelOpen);
+    addCustomJobBtnEl.textContent = customJobPanelOpen ? "Close Personal Form" : "+ Add Custom Job";
+  }
+  if (!customJobPanelOpen) {
+    resetCustomJobForm();
+  } else {
+    updateCustomJobWarning();
+  }
+}
+
+function openCustomJobEditor(jobKey, duplicate) {
+  const row = lastSavedJobsByKey.get(String(jobKey || ""));
+  if (!row || !isCustomJob(row)) {
+    showToast("Personal job not found.", "error");
+    return;
+  }
+  customJobMode = duplicate ? "duplicate" : "edit";
+  customJobTargetKey = duplicate ? "" : String(row.jobKey || "");
+  if (customJobTitleEl) customJobTitleEl.value = row.title || "";
+  if (customJobCompanyEl) customJobCompanyEl.value = row.company || "";
+  if (customJobCityEl) customJobCityEl.value = row.city || "";
+  if (customJobCountryEl) customJobCountryEl.value = row.country || "";
+  if (customJobWorkTypeEl) customJobWorkTypeEl.value = row.workType || "";
+  if (customJobContractTypeEl) customJobContractTypeEl.value = row.contractType || "";
+  if (customJobSectorEl) customJobSectorEl.value = row.sector || "";
+  if (customJobProfessionEl) customJobProfessionEl.value = row.profession || "";
+  if (customJobLinkEl) customJobLinkEl.value = row.jobLink || "";
+  if (customJobNotesEl) customJobNotesEl.value = row.notes || "";
+  if (customJobReminderEl) customJobReminderEl.value = toDatetimeLocalValue(row.reminderAt);
+  if (customJobPanelTitleEl) {
+    customJobPanelTitleEl.textContent = duplicate ? "Duplicate Personal Job" : "Edit Personal Job";
+  }
+  if (customJobPanelHintEl) {
+    customJobPanelHintEl.textContent = duplicate
+      ? "Create a new personal entry using this job as a template."
+      : "Update this personal job while keeping its history and status.";
+  }
+  if (customJobSaveBtnEl) {
+    customJobSaveBtnEl.textContent = duplicate ? "Save Duplicate" : "Update Personal Job";
+  }
+  setCustomJobPanelOpen(true);
+  customJobTitleEl?.focus();
+  updateCustomJobWarning();
+}
+
+async function createCustomJob() {
+  const api = window.JobAppLocalData;
+  if (!api || !currentUser) {
+    showToast("Sign in required.", "error");
+    return;
+  }
+  const normalized = normalizeCustomJobInput({
+    title: customJobTitleEl?.value,
+    company: customJobCompanyEl?.value,
+    city: customJobCityEl?.value,
+    country: customJobCountryEl?.value,
+    workType: customJobWorkTypeEl?.value,
+    contractType: customJobContractTypeEl?.value,
+    sector: customJobSectorEl?.value,
+    profession: customJobProfessionEl?.value,
+    jobLink: customJobLinkEl?.value,
+    notes: customJobNotesEl?.value,
+    reminderAt: customJobReminderEl?.value
+  });
+
+  if (!normalized.title || !normalized.company) {
+    showToast("Title and Company are required.", "error");
+    return;
+  }
+
+  try {
+    let eventType = "custom_job_created";
+    let message = "Personal job saved.";
+    if (customJobMode === "edit") {
+      normalized.jobKey = customJobTargetKey;
+      normalized.updatedBy = "manual_edit";
+      eventType = "custom_job_updated";
+      message = "Personal job updated.";
+    } else if (customJobMode === "duplicate") {
+      normalized.updatedBy = "manual_duplicate";
+      normalized.keySalt = String(Date.now());
+      eventType = "custom_job_duplicated";
+      message = "Personal job duplicated.";
+    } else {
+      normalized.updatedBy = "manual_create";
+    }
+    await api.saveJobForUser(currentUser.uid, normalized, { eventType });
+    showToast(message, "success");
+    setCustomJobPanelOpen(false);
+    await refreshActivityLog();
+  } catch (err) {
+    console.error("Could not save custom job:", err);
+    showToast("Could not save personal job.", "error");
+  }
+}
+
 function setSourceStatus(text) {
   if (!savedSourceStatusEl) return;
   savedSourceStatusEl.textContent = text;
@@ -992,10 +1587,12 @@ async function refreshActivityLog() {
   setActivityStatus("Loading activity...");
   try {
     const entries = await api.listActivityForUser(currentUser.uid, 400);
+    cachedActivityEntries = Array.isArray(entries) ? entries : [];
     renderActivityEntries(entries);
     setActivityStatus(`Showing ${entries.length} recent events.`);
   } catch (err) {
     console.error("Could not load activity log:", err);
+    cachedActivityEntries = [];
     setActivityStatus("Could not load history.");
     renderActivityEntries([]);
   }
@@ -1046,6 +1643,18 @@ function activityTypeLabel(type) {
       return "Attachment Added";
     case "attachment_deleted":
       return "Attachment Deleted";
+    case "custom_job_created":
+      return "Custom Job";
+    case "custom_job_removed":
+      return "Custom Job Removed";
+    case "custom_job_updated":
+      return "Custom Job Updated";
+    case "custom_job_duplicated":
+      return "Custom Job Duplicated";
+    case "reminder_set":
+      return "Reminder Set";
+    case "reminder_cleared":
+      return "Reminder Cleared";
     default:
       return "Event";
   }
@@ -1063,6 +1672,27 @@ function formatActivityDetail(entry) {
   if (type === "job_removed") {
     const from = PHASE_LABELS[normalizePhase(details.fromStatus)] || "Saved";
     return `Removed from ${from}`;
+  }
+  if (type === "custom_job_created") {
+    return "Created personal job entry";
+  }
+  if (type === "custom_job_removed") {
+    return "Deleted personal job entry";
+  }
+  if (type === "custom_job_updated") {
+    return "Updated personal job fields";
+  }
+  if (type === "custom_job_duplicated") {
+    return "Created a duplicate personal entry";
+  }
+  if (type === "reminder_set") {
+    if (details.reminderAt) {
+      return `Reminder set for ${formatPhaseTimestamp(details.reminderAt) || "scheduled time"}`;
+    }
+    return "Reminder set";
+  }
+  if (type === "reminder_cleared") {
+    return "Reminder removed";
   }
   if (type === "attachment_added") {
     const name = String(details.fileName || "file");
@@ -1116,21 +1746,39 @@ async function exportBackup() {
   if (!currentUser || !api) return;
 
   try {
+    const includeFiles = Boolean(exportIncludeFilesEl?.checked);
     const payload = await api.exportProfileData(currentUser.uid, {
-      includeFiles: Boolean(exportIncludeFilesEl?.checked)
+      includeFiles
     });
-    const text = JSON.stringify(payload, null, 2);
-    const blob = new Blob([text], { type: "application/json" });
+    const date = new Date().toISOString().slice(0, 10);
+    let blob;
+    let filename;
+    if (includeFiles) {
+      blob = await buildBackupZipBlob(payload);
+      filename = `baluffo-backup-${currentUser.uid}-${date}.zip`;
+    } else {
+      const text = JSON.stringify(payload, null, 2);
+      blob = new Blob([text], { type: "application/json" });
+      filename = `baluffo-backup-${currentUser.uid}-${date}.json`;
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const date = new Date().toISOString().slice(0, 10);
     a.href = url;
-    a.download = `baluffo-backup-${currentUser.uid}-${date}.json`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    showToast("Backup exported.", "success");
+    const counts = payload?.counts || {};
+    const schemaVersion = payload?.schemaVersion ?? payload?.version ?? "?";
+    const jobsCount = Number(counts.savedJobs) || 0;
+    const historyCount = Number(counts.historyEvents) || 0;
+    const attachmentsCount = Number(counts.attachments) || 0;
+    showToast(
+      `Backup exported (v${schemaVersion}) · Jobs ${jobsCount} · History ${historyCount} · Attachments ${attachmentsCount}`,
+      "success",
+      { durationMs: 4600 }
+    );
   } catch (err) {
     console.error("Backup export failed:", err);
     showToast("Could not export backup.", "error");
@@ -1142,14 +1790,296 @@ async function importBackup(file) {
   if (!currentUser || !api) return;
 
   try {
-    const text = await file.text();
-    const payload = JSON.parse(text);
-    await api.importProfileData(currentUser.uid, payload);
-    showToast("Backup imported.", "success");
+    const payload = await parseBackupInputFile(file);
+    const result = await api.importProfileData(currentUser.uid, payload);
+    const created = Number(result?.created) || 0;
+    const updated = Number(result?.updated) || 0;
+    const skippedInvalid = Number(result?.skippedInvalid) || 0;
+    const historyAdded = Number(result?.historyAdded) || 0;
+    const attachmentsAdded = Number(result?.attachmentsAdded) || 0;
+    const attachmentsHydrated = Number(result?.attachmentsHydrated) || 0;
+    const warningCount = Array.isArray(result?.warnings) ? result.warnings.length : 0;
+    showToast(
+      `Backup imported · Created ${created} · Updated ${updated} · Skipped ${skippedInvalid} · History +${historyAdded} · Attachments +${attachmentsAdded} · Files hydrated ${attachmentsHydrated}`,
+      "success",
+      { durationMs: 6400 }
+    );
+    if (warningCount > 0) {
+      showToast(`${warningCount} non-fatal import warnings.`, "info", { durationMs: 4200 });
+    }
+    await refreshActivityLog();
   } catch (err) {
     console.error("Backup import failed:", err);
     showToast("Could not import backup file.", "error");
   }
+}
+
+async function parseBackupInputFile(file) {
+  const name = String(file?.name || "").toLowerCase();
+  const type = String(file?.type || "").toLowerCase();
+  const isZip = name.endsWith(".zip") || type === "application/zip" || type === "application/x-zip-compressed";
+  if (!isZip) {
+    const text = await file.text();
+    return JSON.parse(text);
+  }
+  return readBackupPayloadFromZip(file);
+}
+
+async function buildBackupZipBlob(payload) {
+  const packPayload = JSON.parse(JSON.stringify(payload || {}));
+  const attachments = Array.isArray(packPayload.attachments) ? packPayload.attachments : [];
+  const entries = [];
+  const filePathByFingerprint = new Map();
+
+  attachments.forEach((att, idx) => {
+    const dataUrl = String(att?.blobDataUrl || "");
+    if (!dataUrl) return;
+    const parsed = parseDataUrl(dataUrl);
+    if (!parsed) return;
+    const safeName = sanitizeBackupFileName(att?.name || `attachment-${idx + 1}`);
+    const crc = getCrc32(parsed.bytes);
+    const fingerprint = `${String(parsed.mime || "").toLowerCase()}|${parsed.bytes.length}|${crc}`;
+    let filePath = filePathByFingerprint.get(fingerprint) || "";
+    if (!filePath) {
+      filePath = `files/${String(att?.id || `att_${idx + 1}`)}-${safeName}`;
+      entries.push({
+        name: filePath,
+        bytes: parsed.bytes
+      });
+      filePathByFingerprint.set(fingerprint, filePath);
+    }
+    att.filePath = filePath;
+    delete att.blobDataUrl;
+  });
+
+  packPayload.packageFormat = "zip-v1";
+  packPayload.includesFiles = true;
+  entries.unshift({
+    name: "backup.json",
+    bytes: utf8Encode(JSON.stringify(packPayload, null, 2))
+  });
+
+  return buildZipStoreOnly(entries);
+}
+
+async function readBackupPayloadFromZip(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const files = parseZipStoreOnly(bytes);
+  const backupEntry = files.get("backup.json");
+  if (!backupEntry) {
+    throw new Error("ZIP backup is missing backup.json.");
+  }
+  const payload = JSON.parse(utf8Decode(backupEntry));
+  const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+  for (const att of attachments) {
+    if (!att || typeof att !== "object") continue;
+    if (att.blobDataUrl) continue;
+    const filePath = String(att.filePath || "").trim();
+    if (!filePath) continue;
+    const content = files.get(filePath);
+    if (!content) continue;
+    att.blobDataUrl = toDataUrl(content, String(att.type || "application/octet-stream"));
+  }
+  return payload;
+}
+
+function sanitizeBackupFileName(name) {
+  const raw = String(name || "").trim() || "file.bin";
+  return raw.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function parseDataUrl(dataUrl) {
+  const text = String(dataUrl || "");
+  const parts = text.split(",");
+  if (parts.length !== 2) return null;
+  const header = parts[0];
+  const body = parts[1];
+  if (!/;base64$/i.test(header)) return null;
+  const mimeMatch = header.match(/^data:([^;]+);base64$/i);
+  const mime = mimeMatch ? String(mimeMatch[1] || "").trim().toLowerCase() : "application/octet-stream";
+  const binary = atob(body);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return { bytes: out, mime };
+}
+
+function toDataUrl(bytes, mimeType) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+function utf8Encode(text) {
+  return new TextEncoder().encode(String(text || ""));
+}
+
+function utf8Decode(bytes) {
+  return new TextDecoder().decode(bytes);
+}
+
+function getCrc32(bytes) {
+  let crc = -1;
+  for (let i = 0; i < bytes.length; i++) {
+    crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ bytes[i]) & 0xff];
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function makeDosTimeDate(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const hours = date.getHours();
+  const mins = date.getMinutes();
+  const secs = Math.floor(date.getSeconds() / 2);
+  const dosTime = (hours << 11) | (mins << 5) | secs;
+  const dosDate = ((year - 1980) << 9) | (month << 5) | day;
+  return { dosTime, dosDate };
+}
+
+function concatUint8(parts) {
+  const total = parts.reduce((sum, p) => sum + p.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+function buildZipStoreOnly(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const now = new Date();
+
+  for (const entry of entries) {
+    const nameBytes = utf8Encode(entry.name);
+    const dataBytes = entry.bytes instanceof Uint8Array ? entry.bytes : new Uint8Array();
+    const crc = getCrc32(dataBytes);
+    const size = dataBytes.length >>> 0;
+    const { dosTime, dosDate } = makeDosTimeDate(now);
+
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const lh = new DataView(localHeader.buffer);
+    lh.setUint32(0, 0x04034b50, true);
+    lh.setUint16(4, 20, true);
+    lh.setUint16(6, 0, true);
+    lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosTime, true);
+    lh.setUint16(12, dosDate, true);
+    lh.setUint32(14, crc, true);
+    lh.setUint32(18, size, true);
+    lh.setUint32(22, size, true);
+    lh.setUint16(26, nameBytes.length, true);
+    lh.setUint16(28, 0, true);
+    localHeader.set(nameBytes, 30);
+    localParts.push(localHeader, dataBytes);
+
+    const central = new Uint8Array(46 + nameBytes.length);
+    const ch = new DataView(central.buffer);
+    ch.setUint32(0, 0x02014b50, true);
+    ch.setUint16(4, 20, true);
+    ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0, true);
+    ch.setUint16(10, 0, true);
+    ch.setUint16(12, dosTime, true);
+    ch.setUint16(14, dosDate, true);
+    ch.setUint32(16, crc, true);
+    ch.setUint32(20, size, true);
+    ch.setUint32(24, size, true);
+    ch.setUint16(28, nameBytes.length, true);
+    ch.setUint16(30, 0, true);
+    ch.setUint16(32, 0, true);
+    ch.setUint16(34, 0, true);
+    ch.setUint16(36, 0, true);
+    ch.setUint32(38, 0, true);
+    ch.setUint32(42, offset, true);
+    central.set(nameBytes, 46);
+    centralParts.push(central);
+
+    offset += localHeader.length + dataBytes.length;
+  }
+
+  const centralData = concatUint8(centralParts);
+  const eocd = new Uint8Array(22);
+  const e = new DataView(eocd.buffer);
+  e.setUint32(0, 0x06054b50, true);
+  e.setUint16(4, 0, true);
+  e.setUint16(6, 0, true);
+  e.setUint16(8, entries.length, true);
+  e.setUint16(10, entries.length, true);
+  e.setUint32(12, centralData.length, true);
+  e.setUint32(16, offset, true);
+  e.setUint16(20, 0, true);
+
+  return new Blob([concatUint8([...localParts, centralData, eocd])], { type: "application/zip" });
+}
+
+function parseZipStoreOnly(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let eocdOffset = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset < 0) {
+    throw new Error("Invalid ZIP: end of central directory not found.");
+  }
+  const totalEntries = dv.getUint16(eocdOffset + 10, true);
+  const centralSize = dv.getUint32(eocdOffset + 12, true);
+  const centralOffset = dv.getUint32(eocdOffset + 16, true);
+  const out = new Map();
+
+  let ptr = centralOffset;
+  const centralEnd = centralOffset + centralSize;
+  for (let i = 0; i < totalEntries && ptr < centralEnd; i++) {
+    if (dv.getUint32(ptr, true) !== 0x02014b50) {
+      throw new Error("Invalid ZIP: bad central directory header.");
+    }
+    const method = dv.getUint16(ptr + 10, true);
+    const compressedSize = dv.getUint32(ptr + 20, true);
+    const fileNameLen = dv.getUint16(ptr + 28, true);
+    const extraLen = dv.getUint16(ptr + 30, true);
+    const commentLen = dv.getUint16(ptr + 32, true);
+    const localOffset = dv.getUint32(ptr + 42, true);
+    const nameBytes = bytes.subarray(ptr + 46, ptr + 46 + fileNameLen);
+    const fileName = utf8Decode(nameBytes);
+    ptr += 46 + fileNameLen + extraLen + commentLen;
+
+    if (method !== 0) {
+      throw new Error(`Unsupported ZIP compression for ${fileName}.`);
+    }
+
+    if (dv.getUint32(localOffset, true) !== 0x04034b50) {
+      throw new Error("Invalid ZIP: bad local header.");
+    }
+    const localNameLen = dv.getUint16(localOffset + 26, true);
+    const localExtraLen = dv.getUint16(localOffset + 28, true);
+    const dataOffset = localOffset + 30 + localNameLen + localExtraLen;
+    const fileBytes = bytes.subarray(dataOffset, dataOffset + compressedSize);
+    out.set(fileName, new Uint8Array(fileBytes));
+  }
+  return out;
 }
 
 function sanitizeUrl(url) {
@@ -1206,16 +2136,37 @@ function escapeHtml(text) {
     .replace(/'/g, "&#039;");
 }
 
-function showToast(message, type = "info") {
+function showToast(message, type = "info", options = {}) {
   const toast = document.createElement("div");
   toast.className = `toast ${type}`;
-  toast.textContent = message;
+  const messageSpan = document.createElement("span");
+  messageSpan.textContent = message;
+  toast.appendChild(messageSpan);
+
+  const hasAction = typeof options?.onAction === "function" && options?.actionLabel;
+  if (hasAction) {
+    const actionBtn = document.createElement("button");
+    actionBtn.type = "button";
+    actionBtn.className = "toast-action-btn";
+    actionBtn.textContent = String(options.actionLabel);
+    actionBtn.addEventListener("click", async () => {
+      try {
+        await options.onAction();
+      } finally {
+        toast.classList.remove("visible");
+        setTimeout(() => toast.remove(), 220);
+      }
+    });
+    toast.appendChild(actionBtn);
+  }
+
   document.body.appendChild(toast);
 
   requestAnimationFrame(() => toast.classList.add("visible"));
 
+  const durationMs = Number(options?.durationMs) > 0 ? Number(options.durationMs) : 2600;
   setTimeout(() => {
     toast.classList.remove("visible");
     setTimeout(() => toast.remove(), 220);
-  }, 2600);
+  }, durationMs);
 }
