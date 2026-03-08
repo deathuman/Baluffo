@@ -60,6 +60,7 @@ const JOBS_LOG_SCOPE = "jobs";
  */
 const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
   workType: "",
+  lifecycleStatus: "active",
   countries: [],
   city: "",
   sector: "",
@@ -72,6 +73,7 @@ const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
 /**
  * @typedef {Object} JobsFilterState
  * @property {string} workType
+ * @property {string} lifecycleStatus
  * @property {string[]} countries
  * @property {string} city
  * @property {string} sector
@@ -101,6 +103,7 @@ const PROFESSION_LABELS = jobsStateModule.PROFESSION_LABELS || {};
 let jobsList;
 let backBtn;
 let workTypeFilter;
+let lifecycleStatusFilter;
 let countryFilter;
 let countryPickerBtn;
 let countryPickerPanel;
@@ -338,6 +341,7 @@ function cacheDom() {
   jobsList = document.getElementById("jobs-list");
   backBtn = document.getElementById("back-btn");
   workTypeFilter = document.getElementById("work-type-filter");
+  lifecycleStatusFilter = document.getElementById("lifecycle-status-filter");
   countryFilter = document.getElementById("country-filter");
   countryPickerBtn = document.getElementById("country-picker-btn");
   countryPickerPanel = document.getElementById("country-picker-panel");
@@ -398,6 +402,7 @@ function bindEvents() {
 
   [
     workTypeFilter,
+    lifecycleStatusFilter,
     countryFilter,
     cityFilter,
     sectorFilter,
@@ -710,6 +715,7 @@ function readStateFromUrl() {
   }
 
   state.filters.workType = params.get("workType") || "";
+  state.filters.lifecycleStatus = normalizeLifecycleStatus(params.get("lifecycleStatus"), "active");
   state.filters.countries = Array.from(new Set(params.getAll("country").filter(Boolean)));
   state.filters.city = params.get("city") || "";
   state.filters.sector = params.get("sector") || "";
@@ -724,6 +730,9 @@ function writeStateToUrl() {
 
   if (state.currentPage > 1) params.set("page", String(state.currentPage));
   if (state.filters.workType) params.set("workType", state.filters.workType);
+  if (state.filters.lifecycleStatus && state.filters.lifecycleStatus !== "active") {
+    params.set("lifecycleStatus", state.filters.lifecycleStatus);
+  }
   state.filters.countries.forEach(country => params.append("country", country));
   if (state.filters.city) params.set("city", state.filters.city);
   if (state.filters.sector) params.set("sector", state.filters.sector);
@@ -898,6 +907,7 @@ async function writeCachedJobs(jobs) {
 
 function applyStateToStaticFilters() {
   if (workTypeFilter) workTypeFilter.value = state.filters.workType;
+  if (lifecycleStatusFilter) lifecycleStatusFilter.value = state.filters.lifecycleStatus || "active";
   if (searchFilter) searchFilter.value = state.filters.search;
   if (sortFilter) sortFilter.value = state.filters.sort;
 }
@@ -960,6 +970,7 @@ function onFilterChange() {
 
 function syncStateFromFilters() {
   state.filters.workType = workTypeFilter ? workTypeFilter.value : "";
+  state.filters.lifecycleStatus = normalizeLifecycleStatus(lifecycleStatusFilter ? lifecycleStatusFilter.value : "active", "active");
   state.filters.countries = countryFilter
     ? Array.from(countryFilter.selectedOptions).map(option => option.value)
     : [];
@@ -970,6 +981,13 @@ function syncStateFromFilters() {
   state.filters.search = searchFilter ? searchFilter.value.trim() : "";
   state.filters.sort = sortFilter ? sortFilter.value : "relevance";
   updateCountrySelectionBadge();
+}
+
+function normalizeLifecycleStatus(value, fallback = "active") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (normalized === "active" || normalized === "likely_removed" || normalized === "archived") return normalized;
+  return fallback;
 }
 
 function resetFilters() {
@@ -990,6 +1008,8 @@ function applyFiltersAndRender({ resetPage }) {
 
   filteredJobs = allJobs.filter(job => {
     const matchesWorkType = !state.filters.workType || job.workType === state.filters.workType;
+    const lifecycleStatus = String(job.status || "active").toLowerCase() || "active";
+    const matchesLifecycle = !state.filters.lifecycleStatus || lifecycleStatus === state.filters.lifecycleStatus;
     const matchesCountry = state.filters.countries.length === 0
       || matchesCountrySelection(job.country, state.filters.countries);
     const matchesCity = !state.filters.city || job.city === state.filters.city;
@@ -1003,7 +1023,7 @@ function applyFiltersAndRender({ resetPage }) {
       (job.city || "").toLowerCase().includes(searchTerm) ||
       (job.sector || "").toLowerCase().includes(searchTerm);
 
-    return matchesWorkType && matchesCountry && matchesCity && matchesSector && matchesProfession && matchesInternship && matchesSearch;
+    return matchesWorkType && matchesLifecycle && matchesCountry && matchesCity && matchesSector && matchesProfession && matchesInternship && matchesSearch;
   });
 
   sortJobs(filteredJobs, state.filters.sort);
@@ -1056,6 +1076,7 @@ function displayJobs(jobs) {
   jobsList.innerHTML = `
     <div class="jobs-table-header">
       <div class="job-row-header">
+        <div class="col-freshness" title="Freshness (posted/fetched recency)" aria-hidden="true"></div>
         <div class="col-title">Position</div>
         <div class="col-company">Company</div>
         <div class="col-sector">Sector</div>
@@ -1639,6 +1660,9 @@ function updateActiveFiltersSummary() {
   if (!activeFiltersSummaryEl) return;
   const active = [];
   if (state.filters.workType) active.push(state.filters.workType);
+  if (state.filters.lifecycleStatus && state.filters.lifecycleStatus !== "active") {
+    active.push(`Status: ${state.filters.lifecycleStatus.replace("_", " ")}`);
+  }
   if (state.filters.countries.length > 0) active.push(`Countries: ${state.filters.countries.length}`);
   if (state.filters.city) active.push(`City: ${state.filters.city}`);
   if (state.filters.sector) active.push(`Sector: ${state.filters.sector}`);

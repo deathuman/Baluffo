@@ -28,7 +28,10 @@ import {
   formatLogEventText as formatLogEventTextFromDomain,
   mergeSourceStatusFromReport as mergeSourceStatusFromDomain,
   applySourceFilter as applySourceFilterFromDomain,
-  getSourceJobsFoundCount as getSourceJobsFoundCountFromDomain
+  getSourceJobsFoundCount as getSourceJobsFoundCountFromDomain,
+  deriveSourceStatus as deriveSourceStatusFromDomain,
+  normalizeOpsRuns as normalizeOpsRunsFromDomain,
+  getOpsPollIntervalMs as getOpsPollIntervalMsFromDomain
 } from "./domain.js";
 import {
   fetchJobsFetchReportJson as fetchJobsFetchReportJsonFromData,
@@ -50,6 +53,8 @@ let adminUnlockBtnEl;
 let adminLockBtnEl;
 let adminRefreshBtnEl;
 let adminRunFetcherBtnEl;
+let adminRunFetcherIncrementalBtnEl;
+let adminRunFetcherForceBtnEl;
 let adminRefreshReportBtnEl;
 let adminClearLogBtnEl;
 let adminRetryFailedBtnEl;
@@ -63,12 +68,17 @@ let adminRunDiscoveryBtnEl;
 let adminLoadDiscoveryBtnEl;
 let adminApproveSourcesBtnEl;
 let adminRejectSourcesBtnEl;
+let adminDeleteSourcesBtnEl;
 let adminDiscoverySummaryEl;
+let adminManualSourceUrlEl;
+let adminAddManualSourceBtnEl;
+let adminManualSourceFeedbackEl;
 let adminPendingSourcesEl;
 let adminActiveSourcesEl;
 let adminRejectedSourcesEl;
 let adminRestoreRejectedBtnEl;
 let adminDiscoveryLogEl;
+let adminDiscoveryLogDetailsEl;
 let adminBridgeStatusBadgeEl;
 let adminShowZeroJobsToggleEl;
 let adminRefreshOpsBtnEl;
@@ -77,6 +87,9 @@ let adminOpsKpisEl;
 let adminOpsScheduleEl;
 let adminOpsTrendsEl;
 let adminOpsHistoryEl;
+let adminFetcherProgressBadgeEl;
+let adminDiscoveryProgressBadgeEl;
+let adminOpsProgressBadgeEl;
 let adminSourceFilterBtnEls = [];
 
 let adminPin = "";
@@ -88,6 +101,26 @@ let adminPin = "";
  * @property {string} sourceId
  * @property {string} message
  */
+/**
+ * @typedef {Object} ManualSourceAddResult
+ * @property {"added"|"duplicate"|"invalid"} status
+ * @property {string} [sourceId]
+ * @property {Object} [source]
+ * @property {string} [message]
+ */
+/**
+ * @typedef {Object} SourceCheckTriggerResult
+ * @property {boolean} started
+ * @property {string} [runId]
+ * @property {boolean} [ok]
+ * @property {string} [error]
+ * @property {string} [errorCode]
+ * @property {number} [jobsFound]
+ * @property {boolean} [weakSignal]
+ * @property {string[]} [suggestedUrls]
+ * @property {boolean} [browserFallbackAttempted]
+ * @property {boolean} [browserFallbackUsed]
+ */
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";
 const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python scripts/jobs_fetcher.py";
 const JOBS_FETCHER_TASK_LABEL = adminConfig.JOBS_FETCHER_TASK_LABEL || "Run jobs fetcher";
@@ -95,21 +128,79 @@ const JOBS_FETCH_REPORT_URL = adminConfig.JOBS_FETCH_REPORT_URL || "data/jobs-fe
 const JOBS_AUTO_REFRESH_SIGNAL_KEY = adminConfig.JOBS_AUTO_REFRESH_SIGNAL_KEY || "baluffo_jobs_auto_refresh_signal";
 const FETCH_REPORT_POLL_INTERVAL_MS = Number(adminConfig.FETCH_REPORT_POLL_INTERVAL_MS || 5000);
 const FETCH_REPORT_POLL_TIMEOUT_MS = Number(adminConfig.FETCH_REPORT_POLL_TIMEOUT_MS || (10 * 60 * 1000));
+const DISCOVERY_REPORT_POLL_INTERVAL_MS = Number(adminConfig.DISCOVERY_REPORT_POLL_INTERVAL_MS || 5000);
+const DISCOVERY_REPORT_POLL_TIMEOUT_MS = Number(adminConfig.DISCOVERY_REPORT_POLL_TIMEOUT_MS || (10 * 60 * 1000));
 const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
 const BRIDGE_STATUS_POLL_INTERVAL_MS = Number(adminConfig.BRIDGE_STATUS_POLL_INTERVAL_MS || 10000);
+const OPS_POLL_IDLE_INTERVAL_MS = 10000;
+const OPS_POLL_LIVE_INTERVAL_MS = 2000;
 const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const ADMIN_SOURCE_FILTER_KEY = "baluffo_admin_source_filter";
 const UNKNOWN_ERROR_TEXT = "unknown error";
+const FETCHER_PRESET_META = {
+  default: {
+    preset: "default",
+    buttonKey: "default",
+    busyLabel: "Fetcher Running...",
+    title: "Run the standard fetcher flow with current defaults (parallel workers, domain limits, circuit breaker).",
+    ariaLabel: "Run jobs fetcher with default options"
+  },
+  incremental: {
+    preset: "incremental",
+    buttonKey: "incremental",
+    busyLabel: "Incremental Running...",
+    title: "Run incremental mode: skip recently successful sources based on TTL and reuse existing output.",
+    ariaLabel: "Run incremental fetcher"
+  },
+  force_full: {
+    preset: "force_full",
+    buttonKey: "force",
+    busyLabel: "Force Running...",
+    title: "Run full fetch while ignoring circuit breaker quarantine for temporarily blocked sources.",
+    ariaLabel: "Run fetcher ignoring circuit breaker"
+  },
+  retry_failed: {
+    preset: "retry_failed",
+    buttonKey: "retry",
+    busyLabel: "Retry Running...",
+    title: "Run fetcher only for sources that failed in the latest report, bypassing circuit breaker.",
+    ariaLabel: "Retry failed sources only",
+    requestedLog: "Retry failed sources requested."
+  }
+};
 
 let fetcherCompletionPollTimer = null;
 let fetcherCompletionPollDeadline = 0;
 let fetcherLaunchAtMs = 0;
+let fetcherLiveProgressState = null;
+let discoveryCompletionPollTimer = null;
+let discoveryCompletionPollDeadline = 0;
+let discoveryLaunchAtMs = 0;
+let discoveryLiveProgressState = null;
 let bridgeStatusPollTimer = null;
+let opsHealthPollTimer = null;
 let latestFetcherReportCache = null;
 let latestOpsHealthCache = null;
+let discoveryLogDetailsSyncing = false;
+let discoveryLogUserToggled = false;
+let discoveryLogPreferredOpen = true;
 const adminPageState = {
   activeSourceFilter: readSourceFilterPreference(),
   selectedSourceIds: new Set()
+};
+const adminBusyState = {
+  fetcherRun: false,
+  fetcherWatch: false,
+  fetcherReportLoad: false,
+  discoveryRun: false,
+  discoveryWatch: false,
+  discoveryLoad: false,
+  discoveryWrite: false,
+  manualAdd: false,
+  manualCheck: false,
+  opsLoad: false,
+  liveFetchRunning: false,
+  liveDiscoveryRunning: false
 };
 const adminDispatch = createAdminDispatcher();
 let activeSourceFilter = adminPageState.activeSourceFilter;
@@ -122,10 +213,171 @@ function logAdminError(context, err) {
   console.error(`[admin] ${context}:`, err);
 }
 
+function isFetcherBusy() {
+  return Boolean(
+    adminBusyState.fetcherRun
+    || adminBusyState.fetcherWatch
+    || adminBusyState.fetcherReportLoad
+    || adminBusyState.liveFetchRunning
+  );
+}
+
+function isDiscoveryBusy() {
+  return Boolean(
+    adminBusyState.discoveryRun
+    || adminBusyState.discoveryWatch
+    || adminBusyState.discoveryLoad
+    || adminBusyState.discoveryWrite
+    || adminBusyState.manualAdd
+    || adminBusyState.manualCheck
+    || adminBusyState.liveDiscoveryRunning
+  );
+}
+
+function isOpsBusy() {
+  return Boolean(adminBusyState.opsLoad);
+}
+
+function setBusyBadge(el, state, text) {
+  if (!el) return;
+  const normalized = String(state || "idle").toLowerCase();
+  el.classList.remove("idle", "running");
+  el.classList.add(normalized === "running" ? "running" : "idle");
+  el.textContent = String(text || "");
+}
+
+function setButtonBusy(el, busy, busyText) {
+  if (!el) return;
+  if (!el.dataset.idleLabel) {
+    el.dataset.idleLabel = String(el.textContent || "");
+  }
+  el.disabled = Boolean(busy);
+  el.setAttribute("aria-disabled", busy ? "true" : "false");
+  if (busy && busyText) {
+    el.textContent = String(busyText);
+  } else if (!busy && typeof el.dataset.idleLabel === "string") {
+    el.textContent = el.dataset.idleLabel;
+  }
+}
+
+function syncAdminBusyUi() {
+  const fetcherBusy = isFetcherBusy();
+  const discoveryBusy = isDiscoveryBusy();
+  const opsBusy = isOpsBusy();
+
+  setButtonBusy(adminRunFetcherBtnEl, fetcherBusy, FETCHER_PRESET_META.default.busyLabel);
+  setButtonBusy(adminRunFetcherIncrementalBtnEl, fetcherBusy, FETCHER_PRESET_META.incremental.busyLabel);
+  setButtonBusy(adminRunFetcherForceBtnEl, fetcherBusy, FETCHER_PRESET_META.force_full.busyLabel);
+  setButtonBusy(adminRetryFailedBtnEl, fetcherBusy, FETCHER_PRESET_META.retry_failed.busyLabel);
+  setButtonBusy(adminRefreshReportBtnEl, Boolean(adminBusyState.fetcherReportLoad), "Loading Report...");
+  setButtonBusy(adminRefreshBtnEl, false);
+  setButtonBusy(adminRefreshOpsBtnEl, opsBusy, "Refreshing...");
+
+  setButtonBusy(adminRunDiscoveryBtnEl, discoveryBusy, "Discovery Running...");
+  setButtonBusy(adminLoadDiscoveryBtnEl, discoveryBusy, "Loading...");
+  setButtonBusy(adminApproveSourcesBtnEl, discoveryBusy, "Working...");
+  setButtonBusy(adminRejectSourcesBtnEl, discoveryBusy, "Working...");
+  setButtonBusy(adminDeleteSourcesBtnEl, discoveryBusy, "Working...");
+  setButtonBusy(adminRestoreRejectedBtnEl, discoveryBusy, "Working...");
+  setButtonBusy(adminAddManualSourceBtnEl, discoveryBusy, "Adding...");
+  if (adminManualSourceUrlEl) {
+    adminManualSourceUrlEl.disabled = discoveryBusy;
+    adminManualSourceUrlEl.setAttribute("aria-disabled", discoveryBusy ? "true" : "false");
+  }
+  adminSourceFilterBtnEls.forEach(btn => {
+    btn.disabled = discoveryBusy;
+    btn.setAttribute("aria-disabled", discoveryBusy ? "true" : "false");
+  });
+
+  const fetcherLabel = adminBusyState.fetcherWatch
+    ? "Fetcher Running"
+    : adminBusyState.liveFetchRunning
+      ? "Fetcher Running"
+    : adminBusyState.fetcherReportLoad
+      ? "Loading Report"
+      : "Fetcher Idle";
+  const discoveryLabel = adminBusyState.liveDiscoveryRunning ? "Discovery Running" : (discoveryBusy ? "Discovery Busy" : "Discovery Idle");
+  const opsLabel = opsBusy ? "Ops Refreshing" : "Ops Idle";
+  setBusyBadge(adminFetcherProgressBadgeEl, fetcherBusy ? "running" : "idle", fetcherLabel);
+  setBusyBadge(adminDiscoveryProgressBadgeEl, discoveryBusy ? "running" : "idle", discoveryLabel);
+  setBusyBadge(adminOpsProgressBadgeEl, opsBusy ? "running" : "idle", opsLabel);
+  syncDiscoveryLogDisclosure();
+}
+
+function isDiscoveryMobileViewport() {
+  return window.matchMedia("(max-width: 768px)").matches;
+}
+
+function setDiscoveryLogOpen(nextOpen) {
+  if (!adminDiscoveryLogDetailsEl) return;
+  const desired = Boolean(nextOpen);
+  if (adminDiscoveryLogDetailsEl.open === desired) return;
+  discoveryLogDetailsSyncing = true;
+  adminDiscoveryLogDetailsEl.open = desired;
+  window.setTimeout(() => {
+    discoveryLogDetailsSyncing = false;
+  }, 0);
+}
+
+function syncDiscoveryLogDisclosure() {
+  if (!adminDiscoveryLogDetailsEl) return;
+  const hasLiveDiscovery = Boolean(
+    adminBusyState.discoveryRun || adminBusyState.discoveryWatch || adminBusyState.liveDiscoveryRunning
+  );
+  if (hasLiveDiscovery) {
+    setDiscoveryLogOpen(true);
+    return;
+  }
+  if (discoveryLogUserToggled) {
+    setDiscoveryLogOpen(discoveryLogPreferredOpen);
+    return;
+  }
+  setDiscoveryLogOpen(!isDiscoveryMobileViewport());
+}
+
+function setBusyFlag(key, value) {
+  if (!Object.prototype.hasOwnProperty.call(adminBusyState, key)) return;
+  adminBusyState[key] = Boolean(value);
+  syncAdminBusyUi();
+}
+
+function resetBusyFlags() {
+  Object.keys(adminBusyState).forEach(key => {
+    adminBusyState[key] = false;
+  });
+  syncAdminBusyUi();
+}
+
 function bootAdminPage() {
   cacheDom();
+  applyFetcherPresetMetadata();
   bindEvents();
   initAdminPage();
+}
+
+function getFetcherPresetMeta(preset) {
+  const key = String(preset || "default").trim().toLowerCase();
+  return FETCHER_PRESET_META[key] || FETCHER_PRESET_META.default;
+}
+
+function getFetcherPresetButtons() {
+  return [
+    { preset: "default", el: adminRunFetcherBtnEl },
+    { preset: "incremental", el: adminRunFetcherIncrementalBtnEl },
+    { preset: "force_full", el: adminRunFetcherForceBtnEl },
+    { preset: "retry_failed", el: adminRetryFailedBtnEl }
+  ];
+}
+
+function applyFetcherPresetMetadata() {
+  getFetcherPresetButtons().forEach(item => {
+    const btn = item?.el;
+    if (!btn) return;
+    const meta = getFetcherPresetMeta(item.preset);
+    btn.dataset.fetcherPreset = meta.preset;
+    if (meta.title) btn.title = meta.title;
+    if (meta.ariaLabel) btn.setAttribute("aria-label", meta.ariaLabel);
+  });
 }
 
 
@@ -138,6 +390,8 @@ function cacheDom() {
   adminLockBtnEl = document.getElementById("admin-lock-btn");
   adminRefreshBtnEl = document.getElementById("admin-refresh-btn");
   adminRunFetcherBtnEl = document.getElementById("admin-run-fetcher-btn");
+  adminRunFetcherIncrementalBtnEl = document.getElementById("admin-run-fetcher-incremental-btn");
+  adminRunFetcherForceBtnEl = document.getElementById("admin-run-fetcher-force-btn");
   adminRefreshReportBtnEl = document.getElementById("admin-refresh-report-btn");
   adminClearLogBtnEl = document.getElementById("admin-clear-log-btn");
   adminRetryFailedBtnEl = document.getElementById("admin-retry-failed-btn");
@@ -151,12 +405,17 @@ function cacheDom() {
   adminLoadDiscoveryBtnEl = document.getElementById("admin-load-discovery-btn");
   adminApproveSourcesBtnEl = document.getElementById("admin-approve-sources-btn");
   adminRejectSourcesBtnEl = document.getElementById("admin-reject-sources-btn");
+  adminDeleteSourcesBtnEl = document.getElementById("admin-delete-sources-btn");
   adminDiscoverySummaryEl = document.getElementById("admin-discovery-summary");
+  adminManualSourceUrlEl = document.getElementById("admin-manual-source-url");
+  adminAddManualSourceBtnEl = document.getElementById("admin-add-manual-source-btn");
+  adminManualSourceFeedbackEl = document.getElementById("admin-manual-source-feedback");
   adminPendingSourcesEl = document.getElementById("admin-pending-sources");
   adminActiveSourcesEl = document.getElementById("admin-active-sources");
   adminRejectedSourcesEl = document.getElementById("admin-rejected-sources");
   adminRestoreRejectedBtnEl = document.getElementById("admin-restore-rejected-btn");
   adminDiscoveryLogEl = document.getElementById("admin-discovery-log");
+  adminDiscoveryLogDetailsEl = document.getElementById("admin-discovery-log-details");
   adminBridgeStatusBadgeEl = document.getElementById("admin-bridge-status-badge");
   adminShowZeroJobsToggleEl = document.getElementById("admin-show-zero-jobs-toggle");
   adminRefreshOpsBtnEl = document.getElementById("admin-refresh-ops-btn");
@@ -165,6 +424,9 @@ function cacheDom() {
   adminOpsScheduleEl = document.getElementById("admin-ops-schedule");
   adminOpsTrendsEl = document.getElementById("admin-ops-trends");
   adminOpsHistoryEl = document.getElementById("admin-ops-history");
+  adminFetcherProgressBadgeEl = document.getElementById("admin-fetcher-progress-badge");
+  adminDiscoveryProgressBadgeEl = document.getElementById("admin-discovery-progress-badge");
+  adminOpsProgressBadgeEl = document.getElementById("admin-ops-progress-badge");
   adminSourceFilterBtnEls = Array.from(document.querySelectorAll(".admin-source-filter-btn"));
 }
 
@@ -189,12 +451,14 @@ function bindEvents() {
   }
 
   bindAsyncClick(adminRefreshBtnEl, refreshOverview);
-  bindAsyncClick(adminRunFetcherBtnEl, triggerJobsFetcherTask);
+  bindAsyncClick(adminRunFetcherBtnEl, () => triggerJobsFetcherTask({ preset: "default" }));
+  bindAsyncClick(adminRunFetcherIncrementalBtnEl, () => triggerJobsFetcherTask({ preset: "incremental" }));
+  bindAsyncClick(adminRunFetcherForceBtnEl, () => triggerJobsFetcherTask({ preset: "force_full" }));
   bindAsyncClick(adminRefreshReportBtnEl, loadLatestFetcherReport);
   bindUi(adminClearLogBtnEl, "click", () => setFetcherLogPlaceholder("Output log cleared."));
   bindAsyncClick(adminRetryFailedBtnEl, async () => {
-    appendFetcherLog("Retry failed sources requested (v1 runs full fetcher).", "warn");
-    await triggerJobsFetcherTask();
+    appendFetcherLog(getFetcherPresetMeta("retry_failed").requestedLog || "Retry failed sources requested.", "warn");
+    await triggerJobsFetcherTask({ preset: "retry_failed" });
   });
   bindAsyncClick(adminCopyFailuresBtnEl, copyLatestFailureSummary);
   bindUi(adminLockBtnEl, "click", lockAdmin);
@@ -202,7 +466,30 @@ function bindEvents() {
   bindAsyncClick(adminLoadDiscoveryBtnEl, loadDiscoveryData);
   bindAsyncClick(adminApproveSourcesBtnEl, approveSelectedSources);
   bindAsyncClick(adminRejectSourcesBtnEl, rejectSelectedSources);
+  bindAsyncClick(adminDeleteSourcesBtnEl, deleteSelectedSources);
   bindAsyncClick(adminRestoreRejectedBtnEl, restoreRejectedSources);
+  bindAsyncClick(adminAddManualSourceBtnEl, addManualSource);
+
+  if (adminDiscoveryLogDetailsEl) {
+    adminDiscoveryLogDetailsEl.addEventListener("toggle", () => {
+      if (discoveryLogDetailsSyncing) return;
+      discoveryLogUserToggled = true;
+      discoveryLogPreferredOpen = Boolean(adminDiscoveryLogDetailsEl.open);
+    });
+  }
+
+  window.addEventListener("resize", () => {
+    syncDiscoveryLogDisclosure();
+  });
+
+  if (adminManualSourceUrlEl) {
+    adminManualSourceUrlEl.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addManualSource().catch(() => {});
+      }
+    });
+  }
 
   if (adminShowZeroJobsToggleEl) {
     adminShowZeroJobsToggleEl.checked = readShowZeroJobsPreference();
@@ -224,9 +511,12 @@ function bindEvents() {
 }
 
 function initAdminPage() {
+  syncAdminBusyUi();
+  syncDiscoveryLogDisclosure();
   setSourceFilter(activeSourceFilter);
   setFetcherLogPlaceholder("Unlock admin to view fetcher logs and latest report details.");
   setDiscoveryLogPlaceholder("Unlock admin to manage source discovery approvals.");
+  setManualSourceFeedback("Unlock admin to add a manual source.", "muted");
   setOpsPlaceholders();
   setBridgeStatusBadge("checking", "Bridge Checking");
   if (!adminPageService.isAvailable() || !isAdminApiReady()) {
@@ -258,16 +548,20 @@ function unlockAdmin() {
   }
 
   adminPin = nextPin;
+  resetBusyFlags();
   adminDispatch.dispatch({ type: ADMIN_ACTIONS.UNLOCKED });
   setSourceStatus("Admin access granted.");
+  if (adminBridgeStatusBadgeEl) adminBridgeStatusBadgeEl.classList.remove("hidden");
   if (adminPinGateEl) adminPinGateEl.classList.add("hidden");
   if (adminContentEl) adminContentEl.classList.remove("hidden");
   if (adminLockBtnEl) adminLockBtnEl.classList.remove("hidden");
   if (adminPinInputEl) adminPinInputEl.value = "";
   setFetcherLogPlaceholder("Loading latest jobs fetch report...");
   setDiscoveryLogPlaceholder("Loading source discovery data...");
+  setManualSourceFeedback("", "muted");
   setOpsPlaceholders("Loading operations health...");
   startBridgeStatusWatch();
+  scheduleOpsHealthPolling(900);
   refreshOverview().catch(err => {
     logAdminError("Failed to refresh admin overview", err);
   });
@@ -284,29 +578,45 @@ function unlockAdmin() {
 
 function lockAdmin() {
   adminPin = "";
+  resetBusyFlags();
   adminDispatch.dispatch({ type: ADMIN_ACTIONS.LOCKED });
   if (adminPinGateEl) adminPinGateEl.classList.remove("hidden");
   if (adminContentEl) adminContentEl.classList.add("hidden");
   if (adminLockBtnEl) adminLockBtnEl.classList.add("hidden");
+  if (adminBridgeStatusBadgeEl) adminBridgeStatusBadgeEl.classList.add("hidden");
   renderUsersEmpty("");
   if (adminTotalsEl) adminTotalsEl.innerHTML = "";
   stopBridgeStatusWatch();
+  stopOpsHealthPolling();
   setBridgeStatusBadge("checking", "Bridge Locked");
   setFetcherLogPlaceholder("Unlock admin to view fetcher logs and latest report details.");
   setDiscoveryLogPlaceholder("Unlock admin to manage source discovery approvals.");
+  setManualSourceFeedback("Unlock admin to add a manual source.", "muted");
   setOpsPlaceholders();
   setSourceStatus("Enter admin PIN to access user overview.");
 }
 
-async function triggerJobsFetcherTask() {
+async function triggerJobsFetcherTask(runOptions = {}) {
   if (!adminPin) {
     showToast("Unlock admin before running fetcher.", "error");
     return;
   }
+  if (isFetcherBusy()) {
+    showToast("Fetcher task is already running.", "info");
+    return;
+  }
+  setBusyFlag("fetcherRun", true);
+  const preset = String(runOptions?.preset || "default");
+  const presetMeta = getFetcherPresetMeta(preset);
+  const payload = { ...runOptions };
   try {
-    const bridge = await postBridge("/tasks/run-fetcher", {});
+    const bridge = await postBridge("/tasks/run-fetcher", payload);
     if (bridge && bridge.started) {
-      appendFetcherLog("Triggered fetcher via local admin bridge.");
+      const presetLabel = String(bridge?.preset || presetMeta.preset || "default");
+      const argsLabel = Array.isArray(bridge?.args) ? bridge.args.join(" ") : "";
+      appendFetcherLog(
+        `Triggered fetcher via local admin bridge (preset ${presetLabel})${argsLabel ? `, args: ${argsLabel}` : ""}.`
+      );
       setSourceStatus("Triggered local fetcher task via admin bridge.");
       showToast("Fetcher started via admin bridge.", "success");
       loadOpsHealthData().catch(() => {});
@@ -316,6 +626,13 @@ async function triggerJobsFetcherTask() {
     }
   } catch {
     appendFetcherLog("Admin bridge unavailable, falling back to VS Code task launch.", "warn");
+  } finally {
+    setBusyFlag("fetcherRun", false);
+  }
+  if (presetMeta.preset !== "default") {
+    appendFetcherLog("Bridge fallback does not support preset fetcher runs. Start admin bridge and retry.", "error");
+    showToast("Fetcher preset requires admin bridge.", "error");
+    return;
   }
   appendFetcherLog("Preparing jobs fetcher task launch from admin panel.");
   showToast("Attempting fetcher launch...", "info");
@@ -458,6 +775,16 @@ function setDiscoveryLogPlaceholder(message) {
   appendDiscoveryLog(message, "muted");
 }
 
+function setManualSourceFeedback(message, level = "muted") {
+  if (!adminManualSourceFeedbackEl) return;
+  const normalized = String(level || "muted").toLowerCase();
+  adminManualSourceFeedbackEl.textContent = String(message || "");
+  adminManualSourceFeedbackEl.classList.remove("success", "warn", "error", "muted");
+  adminManualSourceFeedbackEl.classList.add(
+    normalized === "success" ? "success" : normalized === "warn" ? "warn" : normalized === "error" ? "error" : "muted"
+  );
+}
+
 function setOpsPlaceholders(message = "Unlock admin to view operations health.") {
   if (adminOpsAlertsEl) {
     adminOpsAlertsEl.innerHTML = `<div class="muted">${escapeHtml(message)}</div>`;
@@ -476,15 +803,41 @@ function setOpsPlaceholders(message = "Unlock admin to view operations health.")
   }
 }
 
-async function loadOpsHealthData() {
+function stopOpsHealthPolling() {
+  if (!opsHealthPollTimer) return;
+  clearTimeout(opsHealthPollTimer);
+  opsHealthPollTimer = null;
+}
+
+function scheduleOpsHealthPolling(delayMs) {
+  stopOpsHealthPolling();
   if (!adminPin) return;
-  if (adminOpsTrendsEl) adminOpsTrendsEl.textContent = "Loading operations health...";
+  const waitMs = Math.max(600, Number(delayMs) || OPS_POLL_IDLE_INTERVAL_MS);
+  opsHealthPollTimer = setTimeout(() => {
+    loadOpsHealthData({ fromPoll: true }).catch(() => {});
+  }, waitMs);
+}
+
+async function loadOpsHealthData(options = {}) {
+  if (!adminPin) return;
+  if (adminBusyState.opsLoad) {
+    if (options?.fromPoll) scheduleOpsHealthPolling(OPS_POLL_IDLE_INTERVAL_MS);
+    return;
+  }
+  setBusyFlag("opsLoad", true);
+  const showLoadingState = !options?.fromPoll && !latestOpsHealthCache;
+  if (showLoadingState && adminOpsTrendsEl) adminOpsTrendsEl.textContent = "Loading operations health...";
   try {
     const [health, historyPayload] = await Promise.all([
       getBridge("/ops/health"),
-      getBridge("/ops/history?limit=30")
+      getBridge("/ops/history?limit=80")
     ]);
     latestOpsHealthCache = health || null;
+    const runModel = normalizeOpsRuns(historyPayload?.runs || [], Date.now());
+    const liveTypes = new Set(Array.isArray(runModel?.liveTypes) ? runModel.liveTypes : []);
+    setBusyFlag("liveFetchRunning", liveTypes.has("fetch"));
+    setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
+
     renderAdminOpsAlerts(adminOpsAlertsEl, health?.alerts || [], {
       onAck: async alertId => {
         if (!alertId) return;
@@ -498,11 +851,17 @@ async function loadOpsHealthData() {
     });
     renderAdminOpsKpis(adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
     renderAdminOpsSchedule(adminOpsScheduleEl, health?.schedule || {}, latestOpsHealthCache);
-    renderAdminOpsHistory(adminOpsHistoryEl, historyPayload?.runs || []);
+    renderAdminOpsHistory(adminOpsHistoryEl, runModel);
     renderAdminOpsTrends(adminOpsTrendsEl, historyPayload?.runs || []);
     adminDispatch.dispatch({ type: ADMIN_ACTIONS.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
+    scheduleOpsHealthPolling(getOpsPollIntervalMs(Boolean(runModel?.hasLiveRuns)));
   } catch (err) {
     setOpsPlaceholders(`Ops health unavailable: ${getErrorMessage(err)}`);
+    setBusyFlag("liveFetchRunning", false);
+    setBusyFlag("liveDiscoveryRunning", false);
+    scheduleOpsHealthPolling(OPS_POLL_IDLE_INTERVAL_MS);
+  } finally {
+    setBusyFlag("opsLoad", false);
   }
 }
 
@@ -560,6 +919,17 @@ function appendDiscoveryLog(message, level = "info") {
   appendLogRow(adminDiscoveryLogEl, event);
 }
 
+function formatManualCheckFailureMessage(checkResult) {
+  const code = String(checkResult?.errorCode || "").toLowerCase();
+  if (code === "browser_fallback_unavailable") return "Manual source check failed (browser fallback is not installed).";
+  if (code === "not_found") return "Manual source check failed (404 not found).";
+  if (code === "forbidden") return "Manual source check failed (403 forbidden).";
+  if (code === "ssl_error") return "Manual source check failed (SSL certificate/hostname issue).";
+  if (code === "dns_error") return "Manual source check failed (DNS/host resolution issue).";
+  if (code === "timeout") return "Manual source check failed (timeout).";
+  return "Manual source check failed.";
+}
+
 function setFetcherLogPlaceholder(message) {
   if (!adminFetcherLogEl) return;
   adminFetcherLogEl.innerHTML = "";
@@ -570,6 +940,51 @@ function appendFetcherLog(message, level = "info") {
   if (!adminFetcherLogEl) return;
   const event = createLogEvent("fetcher", message, level);
   appendLogRow(adminFetcherLogEl, event);
+}
+
+function formatFetcherRuntimeOptions(report) {
+  const runtime = report?.runtime || {};
+  const maxWorkers = Number(runtime.maxWorkers || 0);
+  const maxPerDomain = Number(runtime.maxPerDomain || 0);
+  const sourceTtlMinutes = Number(runtime.sourceTtlMinutes || 0);
+  const circuitBreakerFailures = Number(runtime.circuitBreakerFailures || 0);
+  const circuitBreakerCooldownMinutes = Number(runtime.circuitBreakerCooldownMinutes || 0);
+  const selectedSourceCount = Number(runtime.selectedSourceCount || 0);
+  const seedFromExistingOutput = Boolean(runtime.seedFromExistingOutput);
+  const ignoreCircuitBreaker = Boolean(runtime.ignoreCircuitBreaker);
+  if (
+    maxWorkers <= 0
+    && maxPerDomain <= 0
+    && sourceTtlMinutes <= 0
+    && circuitBreakerFailures <= 0
+    && circuitBreakerCooldownMinutes <= 0
+    && selectedSourceCount <= 0
+    && !seedFromExistingOutput
+    && !ignoreCircuitBreaker
+  ) {
+    return "";
+  }
+  return [
+    `workers ${maxWorkers || "n/a"}`,
+    `per-domain ${maxPerDomain || "n/a"}`,
+    `ttl ${sourceTtlMinutes || 0}m`,
+    `circuit ${circuitBreakerFailures || 0}/${circuitBreakerCooldownMinutes || 0}m`,
+    `selected ${selectedSourceCount || 0}`,
+    `seed ${seedFromExistingOutput ? "on" : "off"}`,
+    `ignore-cb ${ignoreCircuitBreaker ? "on" : "off"}`
+  ].join(", ");
+}
+
+function formatLifecycleSummary(report) {
+  const summary = report?.summary || {};
+  const active = Number(summary.lifecycleActiveCount || 0);
+  const likelyRemoved = Number(summary.lifecycleLikelyRemovedCount || 0);
+  const archived = Number(summary.lifecycleArchivedCount || 0);
+  const tracked = Number(summary.lifecycleTrackedCount || 0);
+  if (active <= 0 && likelyRemoved <= 0 && archived <= 0 && tracked <= 0) {
+    return "";
+  }
+  return `Lifecycle: active ${active.toLocaleString()}, likely removed ${likelyRemoved.toLocaleString()}, archived ${archived.toLocaleString()}, tracked ${tracked.toLocaleString()}`;
 }
 
 function normalizeLogLevel(level) {
@@ -584,51 +999,68 @@ async function loadLatestFetcherReport(options = {}) {
     return;
   }
   const silent = Boolean(options.silent);
-  if (!silent) {
-    appendFetcherLog("Loading latest jobs fetch report...");
+  if (adminBusyState.fetcherReportLoad) {
+    if (!silent) showToast("Fetch report loading already in progress.", "info");
+    return;
   }
-
-  const report = await fetchJobsFetchReportJson();
-  if (!report) {
-    appendFetcherLog("Could not load fetch report: unavailable or not yet generated.", "error");
+  setBusyFlag("fetcherReportLoad", true);
+  try {
     if (!silent) {
-      showToast("Could not load jobs fetch report.", "error");
+      appendFetcherLog("Loading latest jobs fetch report...");
     }
-    return;
-  }
-  latestFetcherReportCache = report;
 
-  const summary = report?.summary || {};
-  appendFetcherLog(
-    `Summary: output ${Number(summary.outputCount || 0).toLocaleString()}, merged ${Number(summary.mergedCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
-    "success"
-  );
+    const report = await fetchJobsFetchReportJson();
+    if (!report) {
+      appendFetcherLog("Could not load fetch report: unavailable or not yet generated.", "error");
+      if (!silent) {
+        showToast("Could not load jobs fetch report.", "error");
+      }
+      return;
+    }
+    latestFetcherReportCache = report;
 
-  const sources = Array.isArray(report?.sources) ? report.sources : [];
-  if (!sources.length) {
-    appendFetcherLog("No source entries found in report.", "warn");
-    return;
-  }
+    const summary = report?.summary || {};
+    appendFetcherLog(
+      `Summary: output ${Number(summary.outputCount || 0).toLocaleString()}, merged ${Number(summary.mergedCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
+      "success"
+    );
+    const lifecycleLabel = formatLifecycleSummary(report);
+    if (lifecycleLabel) {
+      appendFetcherLog(lifecycleLabel, "muted");
+    }
+    const runtimeLabel = formatFetcherRuntimeOptions(report);
+    if (runtimeLabel) {
+      appendFetcherLog(`Runtime options: ${runtimeLabel}.`, "muted");
+    }
 
-  sources.forEach(source => {
-    const status = String(source?.status || "unknown").toLowerCase();
-    const line = `${source?.name || "unknown"} [${status}] fetched ${Number(source?.fetchedCount || 0).toLocaleString()}, kept ${Number(source?.keptCount || 0).toLocaleString()}, duration ${Number(source?.durationMs || 0)}ms${source?.error ? `, note: ${source.error}` : ""}`;
-    const level = status === "error" ? "error" : status === "excluded" ? "warn" : "info";
-    appendFetcherLog(line, level);
+    const sources = Array.isArray(report?.sources) ? report.sources : [];
+    if (!sources.length) {
+      appendFetcherLog("No source entries found in report.", "warn");
+      return;
+    }
 
-    const details = Array.isArray(source?.details) ? source.details : [];
-    details.forEach(detail => {
-      const detailStatus = String(detail?.status || "unknown").toLowerCase();
-      const detailLevel = detailStatus === "error" ? "error" : detailStatus === "excluded" ? "warn" : "muted";
-      const detailLine =
-        `  - ${detail?.name || detail?.studio || "source"} [${detailStatus}] ` +
-        `fetched ${Number(detail?.fetchedCount || 0).toLocaleString()}, kept ${Number(detail?.keptCount || 0).toLocaleString()}` +
-        `${detail?.error ? `, note: ${detail.error}` : ""}`;
-      appendFetcherLog(detailLine, detailLevel);
+    sources.forEach(source => {
+      const status = String(source?.status || "unknown").toLowerCase();
+      const line = `${source?.name || "unknown"} [${status}] fetched ${Number(source?.fetchedCount || 0).toLocaleString()}, kept ${Number(source?.keptCount || 0).toLocaleString()}, duration ${Number(source?.durationMs || 0)}ms${source?.error ? `, note: ${source.error}` : ""}`;
+      const level = status === "error" ? "error" : status === "excluded" ? "warn" : "info";
+      appendFetcherLog(line, level);
+
+      const details = Array.isArray(source?.details) ? source.details : [];
+      details.forEach(detail => {
+        const detailStatus = String(detail?.status || "unknown").toLowerCase();
+        const detailLevel = detailStatus === "error" ? "error" : detailStatus === "excluded" ? "warn" : "muted";
+        const detailLine =
+          `  - ${detail?.name || detail?.studio || "source"} [${detailStatus}] ` +
+          `fetched ${Number(detail?.fetchedCount || 0).toLocaleString()}, kept ${Number(detail?.keptCount || 0).toLocaleString()}` +
+          `${detail?.error ? `, note: ${detail.error}` : ""}`;
+        appendFetcherLog(detailLine, detailLevel);
+      });
     });
-  });
 
-  loadOpsHealthData().catch(() => {});
+    loadOpsHealthData().catch(() => {});
+  } finally {
+    setBusyFlag("fetcherReportLoad", false);
+  }
 }
 
 async function fetchJobsFetchReportJson() {
@@ -666,16 +1098,26 @@ async function copyLatestFailureSummary() {
 
 function startFetcherCompletionWatch() {
   stopFetcherCompletionWatch();
+  setBusyFlag("fetcherWatch", true);
   fetcherLaunchAtMs = Date.now();
   fetcherCompletionPollDeadline = fetcherLaunchAtMs + FETCH_REPORT_POLL_TIMEOUT_MS;
+  fetcherLiveProgressState = {
+    summarySignature: "",
+    runtimeSignature: "",
+    sourceSignatures: new Map(),
+    lastHeartbeatAtMs: 0
+  };
   appendFetcherLog("Watching fetch report for completion to trigger jobs auto-refresh...");
   scheduleFetcherCompletionPoll(900);
 }
 
 function stopFetcherCompletionWatch() {
-  if (!fetcherCompletionPollTimer) return;
-  clearTimeout(fetcherCompletionPollTimer);
-  fetcherCompletionPollTimer = null;
+  if (fetcherCompletionPollTimer) {
+    clearTimeout(fetcherCompletionPollTimer);
+    fetcherCompletionPollTimer = null;
+  }
+  fetcherLiveProgressState = null;
+  setBusyFlag("fetcherWatch", false);
 }
 
 function scheduleFetcherCompletionPoll(delayMs) {
@@ -696,6 +1138,11 @@ async function pollFetcherCompletion() {
   }
 
   const report = await fetchJobsFetchReportJson();
+  const startedMs = parseReportTimestampMs(report?.startedAt);
+  const isCurrentRunReport = startedMs >= (fetcherLaunchAtMs - 1000);
+  if (isCurrentRunReport) {
+    appendFetcherProgressFromReport(report, now);
+  }
   const finishedMs = parseReportTimestampMs(report?.finishedAt);
   if (finishedMs >= (fetcherLaunchAtMs - 1000)) {
     const summary = report?.summary || {};
@@ -703,12 +1150,84 @@ async function pollFetcherCompletion() {
       `Fetcher run completed: output ${Number(summary.outputCount || 0).toLocaleString()}, failed sources ${Number(summary.failedSources || 0)}.`,
       "success"
     );
+    const lifecycleLabel = formatLifecycleSummary(report);
+    if (lifecycleLabel) {
+      appendFetcherLog(lifecycleLabel, "muted");
+    }
+    const runtimeLabel = formatFetcherRuntimeOptions(report);
+    if (runtimeLabel) {
+      appendFetcherLog(`Completed with runtime options: ${runtimeLabel}.`, "muted");
+    }
     emitJobsAutoRefreshSignal(report);
     stopFetcherCompletionWatch();
     return;
   }
 
   scheduleFetcherCompletionPoll(FETCH_REPORT_POLL_INTERVAL_MS);
+}
+
+function appendFetcherProgressFromReport(report, nowMs) {
+  const state = fetcherLiveProgressState;
+  if (!state) return;
+  const summary = report?.summary || {};
+  const outputCount = Number(summary.outputCount || 0);
+  const mergedCount = Number(summary.mergedCount || 0);
+  const rawFetchedCount = Number(summary.rawFetchedCount || 0);
+  const failedSources = Number(summary.failedSources || 0);
+  const excludedSources = Number(summary.excludedSources || 0);
+  const successfulSources = Number(summary.successfulSources || 0);
+  const lifecycleActive = Number(summary.lifecycleActiveCount || 0);
+  const lifecycleLikelyRemoved = Number(summary.lifecycleLikelyRemovedCount || 0);
+  const lifecycleArchived = Number(summary.lifecycleArchivedCount || 0);
+
+  const summarySignature = [
+    outputCount,
+    mergedCount,
+    rawFetchedCount,
+    failedSources,
+    excludedSources,
+    successfulSources,
+    lifecycleActive,
+    lifecycleLikelyRemoved,
+    lifecycleArchived
+  ].join("|");
+  if (summarySignature !== state.summarySignature) {
+    state.summarySignature = summarySignature;
+    appendFetcherLog(
+      `Progress: output ${outputCount.toLocaleString()}, merged ${mergedCount.toLocaleString()}, fetched ${rawFetchedCount.toLocaleString()}, ok ${successfulSources}, failed ${failedSources}, excluded ${excludedSources}, lifecycle active ${lifecycleActive.toLocaleString()}, likely removed ${lifecycleLikelyRemoved.toLocaleString()}, archived ${lifecycleArchived.toLocaleString()}.`,
+      failedSources > 0 ? "warn" : "info"
+    );
+  }
+  const runtimeLabel = formatFetcherRuntimeOptions(report);
+  if (runtimeLabel && runtimeLabel !== state.runtimeSignature) {
+    state.runtimeSignature = runtimeLabel;
+    appendFetcherLog(`Progress runtime: ${runtimeLabel}.`, "muted");
+  }
+
+  const sources = Array.isArray(report?.sources) ? report.sources : [];
+  sources.forEach(source => {
+    const name = String(source?.name || "unknown");
+    const status = String(source?.status || "unknown").toLowerCase();
+    const signature = [
+      status,
+      Number(source?.fetchedCount || 0),
+      Number(source?.keptCount || 0),
+      Number(source?.durationMs || 0),
+      String(source?.error || "")
+    ].join("|");
+    if (state.sourceSignatures.get(name) === signature) return;
+    state.sourceSignatures.set(name, signature);
+    const level = status === "error" ? "error" : status === "excluded" ? "warn" : "muted";
+    appendFetcherLog(
+      `Progress source: ${name} [${status}] fetched ${Number(source?.fetchedCount || 0).toLocaleString()}, kept ${Number(source?.keptCount || 0).toLocaleString()}, duration ${Number(source?.durationMs || 0)}ms${source?.error ? `, note: ${source.error}` : ""}`,
+      level
+    );
+  });
+
+  if ((nowMs - Number(state.lastHeartbeatAtMs || 0)) >= 20000) {
+    state.lastHeartbeatAtMs = nowMs;
+    appendFetcherLog("Fetcher still running. Waiting for more source updates...", "muted");
+  }
 }
 
 function parseReportTimestampMs(value) {
@@ -760,25 +1279,239 @@ async function runDiscoveryTask() {
     showToast("Unlock admin before running discovery.", "error");
     return;
   }
+  if (isDiscoveryBusy()) {
+    showToast("Discovery operation already in progress.", "info");
+    return;
+  }
+  setBusyFlag("discoveryRun", true);
   appendDiscoveryLog("Triggering source discovery task...");
   try {
     await postBridge("/tasks/run-discovery-full", {});
     appendDiscoveryLog("Source discovery task started.", "success");
     showToast("Source discovery started.", "success");
+    startDiscoveryCompletionWatch();
     loadOpsHealthData().catch(() => {});
-    setTimeout(() => {
-      loadDiscoveryData().catch(() => {});
-      loadOpsHealthData().catch(() => {});
-    }, 2500);
   } catch (err) {
     appendDiscoveryLog(`Could not trigger discovery task: ${getErrorMessage(err)}`, "error");
     showToast("Could not trigger source discovery task.", "error");
+  } finally {
+    setBusyFlag("discoveryRun", false);
+  }
+}
+
+function startDiscoveryCompletionWatch() {
+  stopDiscoveryCompletionWatch();
+  setBusyFlag("discoveryWatch", true);
+  discoveryLaunchAtMs = Date.now();
+  discoveryCompletionPollDeadline = discoveryLaunchAtMs + DISCOVERY_REPORT_POLL_TIMEOUT_MS;
+  discoveryLiveProgressState = {
+    summarySignature: "",
+    candidateCount: 0,
+    failureCount: 0,
+    lastHeartbeatAtMs: 0
+  };
+  appendDiscoveryLog("Watching discovery report for live progress...");
+  scheduleDiscoveryCompletionPoll(900);
+}
+
+function stopDiscoveryCompletionWatch() {
+  if (discoveryCompletionPollTimer) {
+    clearTimeout(discoveryCompletionPollTimer);
+    discoveryCompletionPollTimer = null;
+  }
+  discoveryLiveProgressState = null;
+  setBusyFlag("discoveryWatch", false);
+}
+
+function scheduleDiscoveryCompletionPoll(delayMs) {
+  discoveryCompletionPollTimer = setTimeout(() => {
+    pollDiscoveryCompletion().catch(err => {
+      logAdminError("Discovery completion poll failed", err);
+      scheduleDiscoveryCompletionPoll(DISCOVERY_REPORT_POLL_INTERVAL_MS);
+    });
+  }, delayMs);
+}
+
+async function pollDiscoveryCompletion() {
+  const now = Date.now();
+  if (now >= discoveryCompletionPollDeadline) {
+    appendDiscoveryLog("Could not confirm discovery completion from report within timeout window.", "warn");
+    stopDiscoveryCompletionWatch();
+    return;
+  }
+
+  const report = await getBridge("/discovery/report");
+  const startedMs = parseReportTimestampMs(report?.startedAt);
+  const isCurrentRunReport = startedMs >= (discoveryLaunchAtMs - 1000);
+  if (isCurrentRunReport) {
+    appendDiscoveryProgressFromReport(report, now);
+  }
+  const finishedMs = parseReportTimestampMs(report?.finishedAt);
+  if (finishedMs >= (discoveryLaunchAtMs - 1000)) {
+    const summary = report?.summary || {};
+    const queuedCount = Number(summary.queuedCandidateCount ?? summary.newCandidateCount ?? 0);
+    const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
+    const failedCount = Number(summary.failedProbeCount || 0);
+    appendDiscoveryLog(
+      `Discovery run completed: found ${Number(summary.foundEndpointCount ?? 0)}, probed ${probedCount}, queued (new) ${queuedCount}, failed ${failedCount}.`,
+      failedCount > 0 ? "warn" : "success"
+    );
+    await Promise.allSettled([loadDiscoveryData(), loadOpsHealthData()]);
+    stopDiscoveryCompletionWatch();
+    return;
+  }
+
+  scheduleDiscoveryCompletionPoll(DISCOVERY_REPORT_POLL_INTERVAL_MS);
+}
+
+function appendDiscoveryProgressFromReport(report, nowMs) {
+  const state = discoveryLiveProgressState;
+  if (!state) return;
+  const summary = report?.summary || {};
+  const foundCount = Number(summary.foundEndpointCount ?? 0);
+  const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
+  const queuedCount = Number(summary.queuedCandidateCount ?? summary.newCandidateCount ?? 0);
+  const failedCount = Number(summary.failedProbeCount || 0);
+  const skippedCount = Number(summary.skippedDuplicateCount || 0);
+  const invalidCount = Number(summary.skippedInvalidCount || 0);
+
+  const summarySignature = [
+    foundCount,
+    probedCount,
+    queuedCount,
+    failedCount,
+    skippedCount,
+    invalidCount
+  ].join("|");
+  if (summarySignature !== state.summarySignature) {
+    state.summarySignature = summarySignature;
+    appendDiscoveryLog(
+      `Progress: found ${foundCount}, probed ${probedCount}, queued (new) ${queuedCount}, failed ${failedCount}, skipped dupes ${skippedCount}, skipped invalid ${invalidCount}.`,
+      failedCount > 0 ? "warn" : "info"
+    );
+  }
+
+  const candidates = Array.isArray(report?.candidates) ? report.candidates : [];
+  if (candidates.length > state.candidateCount) {
+    const newRows = candidates.slice(state.candidateCount, candidates.length).slice(-3);
+    newRows.forEach(row => {
+      appendDiscoveryLog(
+        `Queued candidate: ${String(row?.name || "unknown")} [${String(row?.adapter || "unknown")}] jobs ${Number(row?.jobsFound || 0)}.`,
+        "muted"
+      );
+    });
+    state.candidateCount = candidates.length;
+  } else {
+    state.candidateCount = candidates.length;
+  }
+
+  const failures = Array.isArray(report?.failures) ? report.failures : [];
+  if (failures.length > state.failureCount) {
+    const newFailures = failures.slice(state.failureCount, failures.length).slice(-3);
+    newFailures.forEach(item => {
+      const stage = String(item?.stage || "probe");
+      const name = String(item?.name || item?.domain || "unknown");
+      appendDiscoveryLog(`Probe issue: ${name} [${stage}] ${String(item?.error || "unknown error")}`, "warn");
+    });
+    state.failureCount = failures.length;
+  } else {
+    state.failureCount = failures.length;
+  }
+
+  if ((nowMs - Number(state.lastHeartbeatAtMs || 0)) >= 20000) {
+    state.lastHeartbeatAtMs = nowMs;
+    appendDiscoveryLog("Discovery still running. Waiting for more probe updates...", "muted");
+  }
+}
+
+async function addManualSource() {
+  if (!adminPin) {
+    showToast("Unlock admin before adding a source.", "error");
+    return;
+  }
+  if (isDiscoveryBusy()) {
+    showToast("Another discovery operation is running.", "info");
+    return;
+  }
+  setBusyFlag("manualAdd", true);
+  const url = String(adminManualSourceUrlEl?.value || "").trim();
+  if (!url) {
+    setManualSourceFeedback("invalid URL", "error");
+    showToast("Enter a source URL.", "error");
+    setBusyFlag("manualAdd", false);
+    return;
+  }
+  try {
+    /** @type {ManualSourceAddResult} */
+    const addResult = await postBridge("/sources/manual", { url });
+    const status = String(addResult?.status || "").toLowerCase();
+
+    if (status === "invalid") {
+      setManualSourceFeedback("invalid URL", "error");
+      appendDiscoveryLog(`Manual source invalid: ${String(addResult?.message || "invalid URL")}`, "error");
+      showToast(String(addResult?.message || "Invalid source URL."), "error");
+      return;
+    }
+
+    if (status === "duplicate") {
+      setManualSourceFeedback("duplicate skipped", "warn");
+      appendDiscoveryLog("Manual source duplicate skipped.", "warn");
+      showToast("Source already exists. Skipped duplicate.", "info");
+      return;
+    }
+
+    if (status !== "added") {
+      setManualSourceFeedback("check failed", "error");
+      showToast("Could not add manual source.", "error");
+      return;
+    }
+
+    if (adminManualSourceUrlEl) adminManualSourceUrlEl.value = "";
+    setManualSourceFeedback("added", "success");
+    if (String(addResult?.source?.adapter || "").toLowerCase() === "static") {
+      appendDiscoveryLog("No known provider detected, using generic website scraping.", "warn");
+    }
+    appendDiscoveryLog("Manual source added.", "success");
+
+    const sourceId = String(addResult?.sourceId || "");
+    if (sourceId) {
+      setBusyFlag("manualCheck", true);
+      setManualSourceFeedback("check started", "muted");
+      /** @type {SourceCheckTriggerResult} */
+      const checkResult = await postBridge("/discovery/check-source", { sourceId });
+      if (!checkResult?.started || checkResult?.ok === false) {
+        setManualSourceFeedback("check failed", "error");
+        appendDiscoveryLog(`Manual source check failed: ${String(checkResult?.error || "unknown error")}`, "error");
+        if (Array.isArray(checkResult?.suggestedUrls) && checkResult.suggestedUrls.length) {
+          appendDiscoveryLog(`Try alternate URL(s): ${checkResult.suggestedUrls.join(" | ")}`, "warn");
+        }
+        if (checkResult?.browserFallbackAttempted) {
+          appendDiscoveryLog("Browser fallback was attempted during this check.", "muted");
+        }
+        showToast(formatManualCheckFailureMessage(checkResult), "error");
+      } else {
+        appendDiscoveryLog(
+          `Manual source check completed (jobs found: ${Number(checkResult?.jobsFound || 0)}${checkResult?.weakSignal ? ", weak signal" : ""}).`,
+          "success"
+        );
+        if (checkResult?.browserFallbackUsed) {
+          appendDiscoveryLog("Generic browser fallback was used to bypass a blocked page.", "warn");
+        }
+        showToast("Manual source added and checked.", "success");
+      }
+    }
+
+    await loadDiscoveryData();
+    await loadOpsHealthData();
+  } finally {
+    setBusyFlag("manualCheck", false);
+    setBusyFlag("manualAdd", false);
   }
 }
 
 function renderSourcesTable(container, rows, mode = "pending") {
   if (!container) return;
-  container.innerHTML = renderSourcesTableHtml(rows, mode, formatSourceJobsFound);
+  container.innerHTML = renderSourcesTableHtml(rows, mode, formatSourceJobsFound, deriveSourceStatus);
 }
 
 function formatSourceJobsFound(row) {
@@ -793,6 +1526,18 @@ function getSourceJobsFoundCount(row) {
   return getSourceJobsFoundCountFromDomain(row);
 }
 
+function deriveSourceStatus(row) {
+  return deriveSourceStatusFromDomain(row);
+}
+
+function normalizeOpsRuns(runs, nowMs = Date.now()) {
+  return normalizeOpsRunsFromDomain(runs, nowMs);
+}
+
+function getOpsPollIntervalMs(hasLiveRuns) {
+  return getOpsPollIntervalMsFromDomain(hasLiveRuns, OPS_POLL_IDLE_INTERVAL_MS, OPS_POLL_LIVE_INTERVAL_MS);
+}
+
 function getCheckedSourceIds(selector) {
   return Array.from(document.querySelectorAll(selector))
     .filter(el => el instanceof HTMLInputElement && el.checked)
@@ -804,13 +1549,45 @@ function selectedIds(selector) {
   return getCheckedSourceIds(selector);
 }
 
+function getCheckedSources(selector) {
+  return Array.from(document.querySelectorAll(selector))
+    .filter(el => el instanceof HTMLInputElement && el.checked)
+    .map(el => ({
+      id: String(el.dataset.sourceId || "").trim(),
+      url: String(el.dataset.sourceUrl || "").trim()
+    }))
+    .filter(item => item.id || item.url);
+}
+
+function selectedSourcesAcrossDiscoveryBuckets() {
+  const out = [];
+  const seen = new Set();
+  const rows = [
+    ...getCheckedSources(".pending-source-checkbox"),
+    ...getCheckedSources(".active-source-checkbox"),
+    ...getCheckedSources(".rejected-source-checkbox")
+  ];
+  rows.forEach(item => {
+    const key = `${item.id}|${item.url}`;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(item);
+  });
+  return out;
+}
+
 async function approveSelectedSources() {
   if (!adminPin) return;
+  if (isDiscoveryBusy()) {
+    showToast("Another discovery operation is running.", "info");
+    return;
+  }
   const ids = selectedIds(".pending-source-checkbox");
   if (!ids.length) {
     showToast("Select pending sources to approve.", "info");
     return;
   }
+  setBusyFlag("discoveryWrite", true);
   try {
     const result = await postBridge("/registry/approve", { ids });
     appendDiscoveryLog(`Approved ${Number(result?.approved || 0)} source(s).`, "success");
@@ -820,16 +1597,23 @@ async function approveSelectedSources() {
   } catch (err) {
     appendDiscoveryLog(`Approve failed: ${getErrorMessage(err)}`, "error");
     showToast("Could not approve sources.", "error");
+  } finally {
+    setBusyFlag("discoveryWrite", false);
   }
 }
 
 async function rejectSelectedSources() {
   if (!adminPin) return;
+  if (isDiscoveryBusy()) {
+    showToast("Another discovery operation is running.", "info");
+    return;
+  }
   const ids = selectedIds(".pending-source-checkbox");
   if (!ids.length) {
     showToast("Select pending sources to reject.", "info");
     return;
   }
+  setBusyFlag("discoveryWrite", true);
   try {
     const result = await postBridge("/registry/reject", { ids });
     appendDiscoveryLog(`Rejected ${Number(result?.rejected || 0)} source(s).`, "warn");
@@ -839,16 +1623,23 @@ async function rejectSelectedSources() {
   } catch (err) {
     appendDiscoveryLog(`Reject failed: ${getErrorMessage(err)}`, "error");
     showToast("Could not reject sources.", "error");
+  } finally {
+    setBusyFlag("discoveryWrite", false);
   }
 }
 
 async function restoreRejectedSources() {
   if (!adminPin) return;
+  if (isDiscoveryBusy()) {
+    showToast("Another discovery operation is running.", "info");
+    return;
+  }
   const ids = selectedIds(".rejected-source-checkbox");
   if (!ids.length) {
     showToast("Select rejected sources to restore.", "info");
     return;
   }
+  setBusyFlag("discoveryWrite", true);
   try {
     const result = await postBridge("/registry/restore-rejected", { ids });
     appendDiscoveryLog(`Restored ${Number(result?.restored || 0)} rejected source(s) to pending.`, "success");
@@ -858,11 +1649,45 @@ async function restoreRejectedSources() {
   } catch (err) {
     appendDiscoveryLog(`Restore failed: ${getErrorMessage(err)}`, "error");
     showToast("Could not restore rejected sources.", "error");
+  } finally {
+    setBusyFlag("discoveryWrite", false);
+  }
+}
+
+async function deleteSelectedSources() {
+  if (!adminPin) return;
+  if (isDiscoveryBusy()) {
+    showToast("Another discovery operation is running.", "info");
+    return;
+  }
+  const sources = selectedSourcesAcrossDiscoveryBuckets();
+  const ids = Array.from(new Set(sources.map(item => item.id).filter(Boolean)));
+  const urls = Array.from(new Set(sources.map(item => item.url).filter(Boolean)));
+  if (!ids.length && !urls.length) {
+    showToast("Select sources to delete.", "info");
+    return;
+  }
+  const confirmed = window.confirm(`Delete ${sources.length} selected source(s) from registry? This cannot be undone.`);
+  if (!confirmed) return;
+  setBusyFlag("discoveryWrite", true);
+  try {
+    const result = await postBridge("/registry/delete", { ids, urls });
+    appendDiscoveryLog(`Deleted ${Number(result?.deleted || 0)} source(s).`, "warn");
+    showToast("Selected sources deleted.", "success");
+    await loadDiscoveryData();
+    await loadOpsHealthData();
+  } catch (err) {
+    appendDiscoveryLog(`Delete failed: ${getErrorMessage(err)}`, "error");
+    showToast("Could not delete selected sources.", "error");
+  } finally {
+    setBusyFlag("discoveryWrite", false);
   }
 }
 
 async function loadDiscoveryData() {
   if (!adminPin) return;
+  if (adminBusyState.discoveryLoad) return;
+  setBusyFlag("discoveryLoad", true);
   appendDiscoveryLog("Loading source discovery report and registries...");
   try {
     const [report, pending, active, rejected] = await Promise.all([
@@ -893,13 +1718,13 @@ async function loadDiscoveryData() {
 
     if (adminDiscoverySummaryEl) {
       adminDiscoverySummaryEl.textContent =
-        `Found ${foundCount} | Probed ${probedCount} | Queued ${queuedCount} | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Active ${Number(active?.summary?.activeCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
+        `Found ${foundCount} | Probed ${probedCount} | Queued (new) ${queuedCount} | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Active ${Number(active?.summary?.activeCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
     }
     renderSourcesTable(adminPendingSourcesEl, visiblePendingRows, "pending");
     renderSourcesTable(adminActiveSourcesEl, visibleActiveRows, "active");
     renderSourcesTable(adminRejectedSourcesEl, visibleRejectedRows, "rejected");
     appendDiscoveryLog(
-      `Discovery summary: found ${foundCount}, probed ${probedCount}, queued ${queuedCount}, failed ${failedCount}, skipped duplicates ${skippedCount}.`,
+      `Discovery summary: found ${foundCount}, probed ${probedCount}, queued (new) ${queuedCount}, failed ${failedCount}, skipped duplicates ${skippedCount}.`,
       "info"
     );
     const topFailures = Array.isArray(report?.topFailures) ? report.topFailures : [];
@@ -917,6 +1742,8 @@ async function loadDiscoveryData() {
     if (adminDiscoverySummaryEl) {
       adminDiscoverySummaryEl.textContent = "Source discovery bridge unavailable. Start `Run admin bridge` task.";
     }
+  } finally {
+    setBusyFlag("discoveryLoad", false);
   }
 }
 

@@ -51,6 +51,7 @@ const QUICK_FILTERS = [
 
 const DEFAULT_FILTERS = {
   workType: "",
+  lifecycleStatus: "active",
   countries: [],
   city: "",
   sector: "",

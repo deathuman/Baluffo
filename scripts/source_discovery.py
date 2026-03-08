@@ -203,8 +203,11 @@ def validate_candidate_for_probe(candidate: Dict[str, Any]) -> Tuple[bool, str]:
         return True, ""
     if adapter == "teamtailor":
         url = str(candidate.get("listing_url") or "").strip()
-        host = (urlparse(url).netloc or "").lower()
-        if ".teamtailor.com" not in host:
+        parsed = urlparse(url)
+        host = (parsed.netloc or "").lower()
+        path = (parsed.path or "").lower()
+        # Teamtailor can be on custom career domains (not only *.teamtailor.com).
+        if ".teamtailor.com" not in host and not path.startswith("/jobs"):
             return False, "invalid teamtailor host"
         return True, ""
     if adapter == "ashby":
@@ -308,6 +311,18 @@ def probe_candidate(candidate: Dict[str, Any], timeout_s: int, *, fetcher=fetch_
             last_error = f"{probe_url}: {exc}"
             continue
     return False, 0, last_error
+
+
+def classify_probe_failure_stage(error: str) -> str:
+    text = str(error or "").lower()
+    if "http error 404" in text or "http error 410" in text:
+        return "probe_miss"
+    # Common signal that endpoint exists but response shape is from non-matching site/board.
+    if "not well-formed (invalid token)" in text:
+        return "probe_miss"
+    if "expecting value" in text and "line 1 column 1" in text:
+        return "probe_miss"
+    return "probe"
 
 
 def compute_candidate_score(candidate: Dict[str, Any], jobs_found: int) -> Tuple[int, List[str]]:
@@ -696,8 +711,46 @@ def run_discovery(
     adapter_counter: Counter[str] = Counter()
     method_counter: Counter[str] = Counter()
     skipped_invalid = 0
+    processed_count = 0
 
+    def write_progress_report() -> None:
+        progress_summary = {
+            "probedCount": probed,
+            "healthyCount": healthy,
+            "newCandidateCount": len(candidates),
+            "taEnvCandidateCount": sum(1 for row in candidates if "target_role_signal" in row.get("reasons", [])),
+            "nlCandidateCount": sum(1 for row in candidates if bool(row.get("nlPriority"))),
+            "remoteCandidateCount": sum(1 for row in candidates if bool(row.get("remoteFriendly"))),
+            "failedProbeCount": len([row for row in failures if str(row.get("stage")) == "probe"]),
+            "probeMissCount": len([row for row in failures if str(row.get("stage")) == "probe_miss"]),
+            "foundEndpointCount": found_endpoint_count,
+            "probedCandidateCount": probed,
+            "queuedCandidateCount": len(candidates),
+            "skippedDuplicateCount": skipped_duplicate_count,
+            "skippedInvalidCount": skipped_invalid,
+            "adapterCounts": dict(adapter_counter),
+            "methodCounts": dict(method_counter),
+        }
+        progress_report = {
+            "schemaVersion": SCHEMA_VERSION,
+            "mode": mode,
+            "startedAt": started_at,
+            "finishedAt": "",
+            "summary": progress_summary,
+            "candidates": candidates,
+            "failures": failures,
+            "topFailures": [],
+            "outputs": {
+                "report": str(DISCOVERY_REPORT_PATH),
+                "candidates": str(DISCOVERY_CANDIDATES_PATH),
+                "pending": str(PENDING_PATH),
+            },
+        }
+        save_json_atomic(DISCOVERY_REPORT_PATH, progress_report)
+
+    write_progress_report()
     for raw in filtered:
+        processed_count += 1
         valid, invalid_reason = validate_candidate_for_probe(raw)
         if not valid:
             skipped_invalid += 1
@@ -710,19 +763,24 @@ def run_discovery(
                     "stage": "validation",
                 }
             )
+            if processed_count % 5 == 0:
+                write_progress_report()
             continue
         probed += 1
         ok, jobs_found, error = probe_candidate(raw, timeout_s, fetcher=fetcher)
         if not ok:
+            stage = classify_probe_failure_stage(error)
             failures.append(
                 {
                     "name": raw.get("name"),
                     "adapter": raw.get("adapter"),
                     "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
                     "error": error,
-                    "stage": "probe",
+                    "stage": stage,
                 }
             )
+            if processed_count % 5 == 0:
+                write_progress_report()
             continue
 
         healthy += 1
@@ -731,6 +789,10 @@ def run_discovery(
         candidates.append(normalized)
         adapter_counter[str(normalized.get("adapter") or "unknown")] += 1
         method_counter[str(normalized.get("discoveryMethod") or "unknown")] += 1
+        if processed_count % 5 == 0:
+            write_progress_report()
+
+    write_progress_report()
 
     candidates.sort(
         key=lambda row: (
@@ -755,6 +817,7 @@ def run_discovery(
         "nlCandidateCount": sum(1 for row in candidates if bool(row.get("nlPriority"))),
         "remoteCandidateCount": sum(1 for row in candidates if bool(row.get("remoteFriendly"))),
         "failedProbeCount": len([row for row in failures if str(row.get("stage")) == "probe"]),
+        "probeMissCount": len([row for row in failures if str(row.get("stage")) == "probe_miss"]),
         "foundEndpointCount": found_endpoint_count,
         "probedCandidateCount": probed,
         "queuedCandidateCount": len(candidates),
@@ -816,7 +879,8 @@ def main() -> int:
         "Source discovery completed. "
         f"Found endpoints: {report['summary']['foundEndpointCount']}. "
         f"Queued candidates: {report['summary']['queuedCandidateCount']}. "
-        f"Failures: {len(report.get('failures', []))}. "
+        f"Failed probes: {report['summary'].get('failedProbeCount', 0)}. "
+        f"Probe misses: {report['summary'].get('probeMissCount', 0)}. "
         f"Report: {report['outputs']['report']}"
     )
     return 0

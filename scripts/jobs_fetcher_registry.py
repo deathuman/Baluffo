@@ -9,6 +9,7 @@ DEFAULT_SOURCE_LOADER_NAMES: List[str] = [
     "google_sheets",
     "remote_ok",
     "gamesindustry",
+    "epic_games_careers",
     "greenhouse_boards",
     "teamtailor_sources",
     "lever_sources",
@@ -16,13 +17,13 @@ DEFAULT_SOURCE_LOADER_NAMES: List[str] = [
     "workable_sources",
     "ashby_sources",
     "personio_sources",
-    "static_studio_pages",
 ]
 
 SOURCE_REPORT_META: Dict[str, Dict[str, str]] = {
     "google_sheets": {"adapter": "csv", "studio": "community_sheet"},
     "remote_ok": {"adapter": "api", "studio": "remote_ok"},
     "gamesindustry": {"adapter": "html", "studio": "gamesindustry"},
+    "epic_games_careers": {"adapter": "api", "studio": "epic_games"},
     "greenhouse_boards": {"adapter": "greenhouse", "studio": "multiple"},
     "teamtailor_sources": {"adapter": "teamtailor", "studio": "multiple"},
     "lever_sources": {"adapter": "lever", "studio": "multiple"},
@@ -30,6 +31,9 @@ SOURCE_REPORT_META: Dict[str, Dict[str, str]] = {
     "workable_sources": {"adapter": "workable", "studio": "multiple"},
     "ashby_sources": {"adapter": "ashby", "studio": "multiple"},
     "personio_sources": {"adapter": "personio", "studio": "multiple"},
+    "static_studio_pages_a_i": {"adapter": "static", "studio": "multiple"},
+    "static_studio_pages_j_r": {"adapter": "static", "studio": "multiple"},
+    "static_studio_pages_s_z": {"adapter": "static", "studio": "multiple"},
     "static_studio_pages": {"adapter": "static", "studio": "multiple"},
     "wellfound": {"adapter": "html", "studio": "wellfound"},
 }

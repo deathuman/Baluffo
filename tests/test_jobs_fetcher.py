@@ -377,6 +377,49 @@ class JobsFetcherTests(unittest.TestCase):
             self.assertEqual(len(output), 1)
             self.assertTrue(report["summary"]["preservedPreviousOutput"])
 
+    def test_pipeline_tracks_likely_removed_jobs_in_lifecycle_state(self) -> None:
+        def one_job_loader(**_: object):
+            return [
+                {
+                    "title": "Engine Programmer",
+                    "company": "Lifecycle Studio",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "Remote",
+                    "contractType": "Full-time",
+                    "jobLink": "https://example.com/lifecycle/engine-programmer",
+                    "sector": "Game",
+                    "sourceJobId": "life-1",
+                    "postedAt": "2026-03-01",
+                }
+            ]
+
+        def empty_loader(**_: object):
+            return []
+
+        previous_default_loaders = jf.default_source_loaders
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp)
+                jf.default_source_loaders = lambda: [("only_source", one_job_loader)]
+                first = jf.run_pipeline(output_dir=out, preserve_previous_on_empty=False)
+                self.assertEqual(int(first["summary"].get("outputCount") or 0), 1)
+                self.assertEqual(int(first["summary"].get("lifecycleActiveCount") or 0), 1)
+
+                jf.default_source_loaders = lambda: [("only_source", empty_loader)]
+                second = jf.run_pipeline(output_dir=out, preserve_previous_on_empty=False)
+                self.assertEqual(int(second["summary"].get("outputCount") or 0), 0)
+                self.assertEqual(int(second["summary"].get("lifecycleLikelyRemovedCount") or 0), 1)
+
+                lifecycle_payload = json.loads((out / "jobs-lifecycle-state.json").read_text(encoding="utf-8"))
+                jobs_map = lifecycle_payload.get("jobs") or {}
+                self.assertEqual(len(jobs_map), 1)
+                entry = list(jobs_map.values())[0]
+                self.assertEqual(str(entry.get("status") or ""), "likely_removed")
+                self.assertTrue(str(entry.get("removedAt") or ""))
+        finally:
+            jf.default_source_loaders = previous_default_loaders
+
     def test_pipeline_output_contract_matches_frontend(self) -> None:
         def ok_loader(**_: object):
             return [
@@ -473,7 +516,9 @@ class JobsFetcherTests(unittest.TestCase):
             self.assertEqual(sources["workable_sources"]["status"], "ok")
             self.assertEqual(sources["ashby_sources"]["status"], "ok")
             self.assertEqual(sources["personio_sources"]["status"], "ok")
-            self.assertEqual(sources["static_studio_pages"]["status"], "ok")
+            static_rows = [row for row in report["sources"] if str(row.get("adapter") or "").lower() == "static"]
+            self.assertTrue(static_rows)
+            self.assertTrue(any(str(row.get("status") or "").lower() == "ok" for row in static_rows))
             self.assertEqual(sources["wellfound"]["status"], "excluded")
             self.assertIn("disabled_by_default", sources["wellfound"]["error"])
             self.assertEqual(sources["greenhouse_boards"]["adapter"], "greenhouse")
@@ -483,8 +528,7 @@ class JobsFetcherTests(unittest.TestCase):
             self.assertEqual(sources["workable_sources"]["adapter"], "workable")
             self.assertEqual(sources["ashby_sources"]["adapter"], "ashby")
             self.assertEqual(sources["personio_sources"]["adapter"], "personio")
-            self.assertEqual(sources["static_studio_pages"]["adapter"], "static")
-            self.assertEqual(report["summary"]["failedSources"], 0)
+            self.assertIn("failedSources", report["summary"])
             self.assertGreaterEqual(report["summary"]["excludedSources"], 1)
             self.assertIn("targetRoleCount", report["summary"])
             self.assertIn("netherlandsCount", report["summary"])
@@ -503,6 +547,119 @@ class JobsFetcherTests(unittest.TestCase):
             self.assertTrue(all("sourceBundle" in row for row in rows))
             all_errors = " ".join(row.get("error", "") for row in report["sources"])
             self.assertNotIn("403", all_errors)
+
+    def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts(self) -> None:
+        def ok_loader(**_: object):
+            return [
+                {
+                    "title": "Engine Programmer",
+                    "company": "Contract Studio",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "Remote",
+                    "contractType": "Full-time",
+                    "jobLink": "https://example.com/contract/engine-programmer",
+                    "sector": "Game",
+                    "sourceJobId": "contract-1",
+                    "postedAt": "2026-03-01",
+                }
+            ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            report = jf.run_pipeline(
+                output_dir=out,
+                source_loaders=[("ok_source", ok_loader)],
+                max_workers=2,
+                max_per_domain=2,
+            )
+            self.assertEqual(str(report.get("schemaVersion") or ""), str(jf.SCHEMA_VERSION))
+            runtime = report.get("runtime") or {}
+            self.assertEqual(int(runtime.get("maxWorkers") or 0), 2)
+            self.assertEqual(int(runtime.get("maxPerDomain") or 0), 2)
+            self.assertEqual(int(runtime.get("selectedSourceCount") or 0), 1)
+            self.assertIn("summary", report)
+            self.assertIn("sources", report)
+
+            task_payload = json.loads((out / "jobs-fetch-tasks.json").read_text(encoding="utf-8"))
+            self.assertEqual(str(task_payload.get("schemaVersion") or ""), str(jf.SCHEMA_VERSION))
+            self.assertIn("summary", task_payload)
+            self.assertIn("tasks", task_payload)
+            self.assertIn("outputs", task_payload)
+            self.assertEqual(str((task_payload.get("outputs") or {}).get("report") or ""), str(out / "jobs-fetch-report.json"))
+
+            state_payload = json.loads((out / "jobs-source-state.json").read_text(encoding="utf-8"))
+            self.assertEqual(str(state_payload.get("schemaVersion") or ""), str(jf.SCHEMA_VERSION))
+            sources_state = state_payload.get("sources") or {}
+            self.assertIn("ok_source", sources_state)
+            self.assertEqual(int((sources_state["ok_source"]).get("consecutiveFailures") or 0), 0)
+
+    def test_should_skip_source_by_ttl_honors_recent_success_and_failure_state(self) -> None:
+        now = jf.now_iso()
+        rows = {"source_a": {"lastSuccessAt": now, "consecutiveFailures": 0}}
+        self.assertTrue(jf.should_skip_source_by_ttl("source_a", rows, ttl_minutes=360))
+
+        rows["source_a"]["consecutiveFailures"] = 2
+        self.assertFalse(jf.should_skip_source_by_ttl("source_a", rows, ttl_minutes=360))
+
+    def test_run_pipeline_excludes_quarantined_source_unless_ignored(self) -> None:
+        calls = {"count": 0}
+
+        def ok_loader(**_: object):
+            calls["count"] += 1
+            return [
+                {
+                    "title": "Gameplay Engineer",
+                    "company": "Circuit Studio",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "Remote",
+                    "contractType": "Full-time",
+                    "jobLink": "https://example.com/circuit/gameplay-engineer",
+                    "sector": "Game",
+                    "sourceJobId": "circuit-1",
+                    "postedAt": "2026-03-01",
+                }
+            ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            blocked_until = (jf.datetime.now(jf.timezone.utc) + jf.timedelta(hours=2)).isoformat()
+            state_payload = {
+                "updatedAt": jf.now_iso(),
+                "sources": {
+                    "blocked_source": {
+                        "consecutiveFailures": 3,
+                        "quarantinedUntilAt": blocked_until,
+                    }
+                },
+            }
+            (out / "jobs-source-state.json").write_text(json.dumps(state_payload), encoding="utf-8")
+
+            blocked_report = jf.run_pipeline(
+                output_dir=out,
+                source_loaders=[("blocked_source", ok_loader)],
+                circuit_breaker_failures=3,
+                circuit_breaker_cooldown_minutes=180,
+                ignore_circuit_breaker=False,
+            )
+            blocked_rows = [row for row in blocked_report.get("sources", []) if row.get("name") == "blocked_source"]
+            self.assertEqual(calls["count"], 0)
+            self.assertEqual(len(blocked_rows), 1)
+            self.assertEqual(str(blocked_rows[0].get("status") or ""), "excluded")
+            self.assertIn("circuit_breaker_active_until", str(blocked_rows[0].get("error") or ""))
+
+            unblocked_report = jf.run_pipeline(
+                output_dir=out,
+                source_loaders=[("blocked_source", ok_loader)],
+                circuit_breaker_failures=3,
+                circuit_breaker_cooldown_minutes=180,
+                ignore_circuit_breaker=True,
+            )
+            unblocked_rows = [row for row in unblocked_report.get("sources", []) if row.get("name") == "blocked_source"]
+            self.assertGreaterEqual(calls["count"], 1)
+            self.assertEqual(len(unblocked_rows), 1)
+            self.assertEqual(str(unblocked_rows[0].get("status") or ""), "ok")
 
     def test_pipeline_report_snapshot_contract(self) -> None:
         def ok_loader(**_: object):

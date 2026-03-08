@@ -3,6 +3,7 @@ __pycache__/
 node_modules/
 playwright-report/
 test-results/
+dist/
 
 # Local runtime/generated admin state (keep local, do not track)
 data/admin-alert-state.json

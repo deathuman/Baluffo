@@ -1,0 +1,205 @@
+{
+  "schemaVersion": "1.0",
+  "startedAt": "2026-03-08T19:44:36.843229+00:00",
+  "finishedAt": "2026-03-08T19:46:26.183269+00:00",
+  "summary": {
+    "queued": 0,
+    "running": 0,
+    "ok": 21,
+    "error": 0
+  },
+  "tasks": [
+    {
+      "name": "google_sheets",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.849600+00:00",
+      "finishedAt": "2026-03-08T19:44:40.955163+00:00",
+      "durationMs": 4099,
+      "heartbeatAt": "2026-03-08T19:44:40.955163+00:00",
+      "error": ""
+    },
+    {
+      "name": "remote_ok",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.850699+00:00",
+      "finishedAt": "2026-03-08T19:44:37.076518+00:00",
+      "durationMs": 223,
+      "heartbeatAt": "2026-03-08T19:44:37.076518+00:00",
+      "error": ""
+    },
+    {
+      "name": "gamesindustry",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.852315+00:00",
+      "finishedAt": "2026-03-08T19:44:37.282297+00:00",
+      "durationMs": 429,
+      "heartbeatAt": "2026-03-08T19:44:37.282297+00:00",
+      "error": ""
+    },
+    {
+      "name": "epic_games_careers",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.853098+00:00",
+      "finishedAt": "2026-03-08T19:44:43.890673+00:00",
+      "durationMs": 6842,
+      "heartbeatAt": "2026-03-08T19:44:43.890673+00:00",
+      "error": ""
+    },
+    {
+      "name": "greenhouse_boards",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.853950+00:00",
+      "finishedAt": "2026-03-08T19:44:38.727882+00:00",
+      "durationMs": 1872,
+      "heartbeatAt": "2026-03-08T19:44:38.727882+00:00",
+      "error": ""
+    },
+    {
+      "name": "teamtailor_sources",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.854774+00:00",
+      "finishedAt": "2026-03-08T19:44:52.165877+00:00",
+      "durationMs": 12442,
+      "heartbeatAt": "2026-03-08T19:44:52.165877+00:00",
+      "error": ""
+    },
+    {
+      "name": "lever_sources",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.855667+00:00",
+      "finishedAt": "2026-03-08T19:44:57.445937+00:00",
+      "durationMs": 20369,
+      "heartbeatAt": "2026-03-08T19:44:57.445937+00:00",
+      "error": ""
+    },
+    {
+      "name": "smartrecruiters_sources",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.856347+00:00",
+      "finishedAt": "2026-03-08T19:44:37.800342+00:00",
+      "durationMs": 517,
+      "heartbeatAt": "2026-03-08T19:44:37.800342+00:00",
+      "error": ""
+    },
+    {
+      "name": "workable_sources",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.856921+00:00",
+      "finishedAt": "2026-03-08T19:44:38.952628+00:00",
+      "durationMs": 1152,
+      "heartbeatAt": "2026-03-08T19:44:38.952628+00:00",
+      "error": ""
+    },
+    {
+      "name": "ashby_sources",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.857384+00:00",
+      "finishedAt": "2026-03-08T19:44:38.742882+00:00",
+      "durationMs": 0,
+      "heartbeatAt": "2026-03-08T19:44:38.742882+00:00",
+      "error": ""
+    },
+    {
+      "name": "personio_sources",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.858177+00:00",
+      "finishedAt": "2026-03-08T19:44:38.756939+00:00",
+      "durationMs": 0,
+      "heartbeatAt": "2026-03-08T19:44:38.756939+00:00",
+      "error": ""
+    },
+    {
+      "name": "static_source::static:name:little chicken",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.858785+00:00",
+      "finishedAt": "2026-03-08T19:44:49.430607+00:00",
+      "durationMs": 8701,
+      "heartbeatAt": "2026-03-08T19:44:49.430607+00:00",
+      "error": ""
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.nixxes.com/jobs",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.859382+00:00",
+      "finishedAt": "2026-03-08T19:44:42.444828+00:00",
+      "durationMs": 3492,
+      "heartbeatAt": "2026-03-08T19:44:42.444828+00:00",
+      "error": ""
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.cdprojekt.com/en/careers",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.859882+00:00",
+      "finishedAt": "2026-03-08T19:44:45.209101+00:00",
+      "durationMs": 2915,
+      "heartbeatAt": "2026-03-08T19:44:45.209101+00:00",
+      "error": ""
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.ioi.dk/careers",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.957085+00:00",
+      "finishedAt": "2026-03-08T19:44:46.514603+00:00",
+      "durationMs": 2217,
+      "heartbeatAt": "2026-03-08T19:44:46.514603+00:00",
+      "error": ""
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.fingersoft.com/careers",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.958096+00:00",
+      "finishedAt": "2026-03-08T19:44:47.882058+00:00",
+      "durationMs": 1823,
+      "heartbeatAt": "2026-03-08T19:44:47.882058+00:00",
+      "error": ""
+    },
+    {
+      "name": "static_source::static:listing_url:https://career.paradoxplaza.com",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.958767+00:00",
+      "finishedAt": "2026-03-08T19:44:50.822531+00:00",
+      "durationMs": 3886,
+      "heartbeatAt": "2026-03-08T19:44:50.822531+00:00",
+      "error": ""
+    },
+    {
+      "name": "static_source::static:listing_url:https://careers.activision.com",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.959334+00:00",
+      "finishedAt": "2026-03-08T19:44:53.620808+00:00",
+      "durationMs": 7366,
+      "heartbeatAt": "2026-03-08T19:44:53.620808+00:00",
+      "error": ""
+    },
+    {
+      "name": "static_source::static:listing_url:https://ea.gr8people.com",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.960165+00:00",
+      "finishedAt": "2026-03-08T19:45:24.289837+00:00",
+      "durationMs": 38769,
+      "heartbeatAt": "2026-03-08T19:45:24.289837+00:00",
+      "error": ""
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.961203+00:00",
+      "finishedAt": "2026-03-08T19:44:59.191872+00:00",
+      "durationMs": 11762,
+      "heartbeatAt": "2026-03-08T19:44:59.191872+00:00",
+      "error": ""
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.riotgames.com/en/work-with-us/jobs",
+      "status": "ok",
+      "startedAt": "2026-03-08T19:44:36.961861+00:00",
+      "finishedAt": "2026-03-08T19:46:22.982800+00:00",
+      "durationMs": 95226,
+      "heartbeatAt": "2026-03-08T19:46:22.982800+00:00",
+      "error": ""
+    }
+  ],
+  "outputs": {
+    "report": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-fetch-report.json"
+  }
+}

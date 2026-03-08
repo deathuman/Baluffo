@@ -67,6 +67,13 @@ Saved job record fields:
   - `POST /registry/approve`, `POST /registry/reject`, `POST /registry/rollback`
   - `POST /tasks/run-discovery`, `POST /tasks/run-discovery-full`, `POST /tasks/run-fetcher`
 
+- Optional bridge runtime options:
+  - CLI:
+    - `--host`, `--port`, `--data-dir`, `--log-format (human|jsonl)`, `--log-level (info|debug)`, `--quiet-requests`
+  - env:
+    - `BALUFFO_BRIDGE_HOST`, `BALUFFO_BRIDGE_PORT`, `BALUFFO_DATA_DIR`, `BALUFFO_BRIDGE_LOG_FORMAT`, `BALUFFO_BRIDGE_LOG_LEVEL`
+  - precedence: `CLI > env > defaults`
+
 ## Suggested local schedules
 - Windows Task Scheduler action:
   - Program/script: `python`
@@ -76,3 +83,16 @@ Saved job record fields:
   - Program/script: `python`
   - Arguments: `scripts/source_discovery.py --mode dynamic`
   - Start in: repository root (`Baluffo`)
+
+## Ship bundle (zip-first)
+
+- Build:
+  - `python scripts/build_ship_bundle.py`
+- Output:
+  - `dist/baluffo-ship`
+- Launchers in bundle root:
+  - `run-site.ps1`
+  - `run-bridge.ps1`
+  - `run-all.ps1`
+- Detailed runbook:
+  - `docs/ship-bundle-runbook.md`

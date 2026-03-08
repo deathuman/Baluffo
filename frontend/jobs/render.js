@@ -12,6 +12,73 @@ export function showJobsToast(message, type = "info", options = {}) {
   showToast(message, type, options);
 }
 
+function getFreshnessTier(score) {
+  if (!Number.isFinite(score)) return "";
+  if (score <= 40) return "fresh";
+  if (score <= 70) return "mid";
+  return "stale";
+}
+
+function getFreshnessTooltip(ageDays, source) {
+  if (!Number.isFinite(ageDays)) return "";
+  if (source === "postedAt") return `Posted ${ageDays}d ago`;
+  if (source === "fetchedAt") return `Fetched ${ageDays}d ago (best guess)`;
+  return "";
+}
+
+function formatTooltipDate(value) {
+  const parsed = new Date(String(value || ""));
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric"
+  });
+}
+
+function renderFreshnessCell(job) {
+  const rawScore = job?.freshnessScore;
+  const rawAgeDays = job?.freshnessAgeDays;
+  const score = typeof rawScore === "number" ? rawScore : Number.NaN;
+  const ageDays = typeof rawAgeDays === "number" ? rawAgeDays : Number.NaN;
+  const source = String(job?.freshnessSource || "");
+  if (!Number.isFinite(score) || !Number.isFinite(ageDays)) {
+    return '<div class="col-freshness" aria-hidden="true"></div>';
+  }
+  const tier = getFreshnessTier(score);
+  const baseTooltip = getFreshnessTooltip(ageDays, source);
+  const sourceDateRaw = source === "postedAt" ? job?.postedAt : job?.fetchedAt;
+  const guessedDate = formatTooltipDate(sourceDateRaw);
+  const tooltip = guessedDate ? `${baseTooltip} (${guessedDate})` : baseTooltip;
+  return `
+    <div class="col-freshness" aria-hidden="true">
+      <span class="job-freshness-ping ${tier}" title="${escapeHtml(tooltip)}"></span>
+    </div>
+  `;
+}
+
+function formatDateForStatus(value) {
+  const parsed = new Date(String(value || ""));
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function renderLifecycleBadge(job) {
+  const status = String(job?.status || "active").trim().toLowerCase() || "active";
+  let label = "Active";
+  let cssClass = "active";
+  if (status === "likely_removed") {
+    label = "Likely removed";
+    cssClass = "likely-removed";
+  } else if (status === "archived") {
+    label = "Archived";
+    cssClass = "archived";
+  }
+  const removedDate = status !== "active" ? formatDateForStatus(job?.removedAt) : "";
+  const title = removedDate ? `${label} since ${removedDate}` : label;
+  return `<span class="job-lifecycle-badge ${cssClass}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
+}
+
 export function renderJobRowHtml(job, options = {}) {
   const {
     fullCountryName,
@@ -40,9 +107,11 @@ export function renderJobRowHtml(job, options = {}) {
     >
       ${isSaved ? "x" : "+"}
     </button>
+    ${renderFreshnessCell(job)}
     <div class="col-title job-cell" data-label="Position">
       <div class="job-title-wrap">
         <div class="job-title-compact">${safeTitle}</div>
+        ${renderLifecycleBadge(job)}
       </div>
     </div>
     <div class="col-company job-cell" data-label="Company">

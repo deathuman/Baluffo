@@ -137,6 +137,52 @@ export function normalizeTimestamp(value) {
   return dt.toISOString();
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function parseTimestampMs(value) {
+  if (!value) return null;
+  const ms = Date.parse(String(value));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+export function mapFreshnessAgeToScore(ageDays) {
+  if (!Number.isFinite(ageDays)) return null;
+  const age = Math.max(0, ageDays);
+  if (age < 2) {
+    return Math.round((age / 2) * 15);
+  }
+  if (age <= 7) {
+    return Math.round(16 + ((age - 2) / 5) * 24);
+  }
+  if (age <= 21) {
+    return Math.round(41 + ((age - 8) / 13) * 29);
+  }
+  const staleProgress = Math.min(1, (age - 22) / 68);
+  return Math.round(71 + staleProgress * 29);
+}
+
+export function deriveFreshness(row, options = {}) {
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
+  const postedMs = parseTimestampMs(row?.postedAt);
+  const fetchedMs = parseTimestampMs(row?.fetchedAt);
+  const source = postedMs != null ? "postedAt" : (fetchedMs != null ? "fetchedAt" : "");
+  const timestampMs = source === "postedAt" ? postedMs : fetchedMs;
+  if (!source || timestampMs == null) {
+    return {
+      freshnessAgeDays: null,
+      freshnessScore: null,
+      freshnessSource: ""
+    };
+  }
+
+  const ageDays = Math.max(0, Math.floor((nowMs - timestampMs) / DAY_MS));
+  return {
+    freshnessAgeDays: ageDays,
+    freshnessScore: mapFreshnessAgeToScore(ageDays),
+    freshnessSource: source
+  };
+}
+
 export function normalizeJobs(rows, options = {}) {
   if (!Array.isArray(rows)) return [];
   const professionLabels = options.professionLabels || {};
@@ -155,6 +201,14 @@ export function normalizeJobs(rows, options = {}) {
     job.sourceJobId = String(job.sourceJobId || "").trim();
     job.fetchedAt = normalizeTimestamp(job.fetchedAt);
     job.postedAt = normalizeTimestamp(job.postedAt);
+    job.firstSeenAt = normalizeTimestamp(job.firstSeenAt);
+    job.lastSeenAt = normalizeTimestamp(job.lastSeenAt);
+    job.removedAt = normalizeTimestamp(job.removedAt);
+    job.status = String(job.status || "active").trim().toLowerCase() || "active";
+    const freshness = deriveFreshness(job, options);
+    job.freshnessAgeDays = freshness.freshnessAgeDays;
+    job.freshnessScore = freshness.freshnessScore;
+    job.freshnessSource = freshness.freshnessSource;
     job.dedupKey = String(job.dedupKey || "").trim();
     const quality = Number(job.qualityScore);
     job.qualityScore = Number.isFinite(quality) ? Math.max(0, Math.min(100, Math.round(quality))) : 0;

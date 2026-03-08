@@ -78,6 +78,12 @@ class SourceDiscoveryTests(unittest.TestCase):
         self.assertFalse(valid)
         self.assertIn("invalid", reason)
 
+    def test_validate_candidate_for_probe_allows_custom_teamtailor_domain_with_jobs_path(self) -> None:
+        custom_tt = {"adapter": "teamtailor", "listing_url": "https://career.paradoxplaza.com/jobs"}
+        valid, reason = sd.validate_candidate_for_probe(custom_tt)
+        self.assertTrue(valid)
+        self.assertEqual(reason, "")
+
     def test_run_discovery_dynamic_adds_probe_metadata_and_summary_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -202,6 +208,56 @@ class SourceDiscoveryTests(unittest.TestCase):
                 )
                 self.assertEqual(report["summary"]["queuedCandidateCount"], 1)
                 self.assertGreaterEqual(report["summary"]["skippedDuplicateCount"], 1)
+            finally:
+                (
+                    sd.ACTIVE_PATH,
+                    sd.PENDING_PATH,
+                    sd.REJECTED_PATH,
+                    sd.DISCOVERY_CANDIDATES_PATH,
+                    sd.DISCOVERY_REPORT_PATH,
+                ) = prev_paths
+                sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+                sd.STUDIO_SEEDS = prev_seeds
+
+    def test_run_discovery_tracks_probe_miss_separately_from_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prev_paths = (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+            )
+            prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+            prev_seeds = list(sd.STUDIO_SEEDS)
+            try:
+                sd.ACTIVE_PATH = root / "active.json"
+                sd.PENDING_PATH = root / "pending.json"
+                sd.REJECTED_PATH = root / "rejected.json"
+                sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+                sd.DISCOVERY_REPORT_PATH = root / "report.json"
+                sd.STUDIO_SEEDS = []
+                sd.STATIC_DISCOVERY_CANDIDATES = [
+                    {
+                        "name": "Demo Lever",
+                        "studio": "Demo",
+                        "adapter": "lever",
+                        "account": "demo",
+                        "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
+                        "discoveryMethod": "seed",
+                    }
+                ]
+
+                def fake_fetch(_url: str, _timeout: int) -> str:
+                    raise RuntimeError("HTTP Error 404: Not Found")
+
+                report = sd.run_discovery(timeout_s=5, top_n=0, mode="dynamic", include_web_search=False, fetcher=fake_fetch)
+                self.assertEqual(int(report["summary"].get("probedCandidateCount") or 0), 1)
+                self.assertEqual(int(report["summary"].get("failedProbeCount") or 0), 0)
+                self.assertEqual(int(report["summary"].get("probeMissCount") or 0), 1)
+                failures = report.get("failures") or []
+                self.assertEqual(str(failures[0].get("stage") or ""), "probe_miss")
             finally:
                 (
                     sd.ACTIVE_PATH,

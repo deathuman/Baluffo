@@ -103,6 +103,37 @@ python scripts/source_discovery.py --mode dynamic
 python scripts/admin_bridge.py
 ```
 
+Optional runtime overrides:
+
+```powershell
+$env:BALUFFO_DATA_DIR = "C:\baluffo\data"
+python scripts/admin_bridge.py --host 127.0.0.1 --port 8877 --log-format human --log-level info
+```
+
+Supported env vars:
+
+- `BALUFFO_BRIDGE_HOST`
+- `BALUFFO_BRIDGE_PORT`
+- `BALUFFO_DATA_DIR`
+- `BALUFFO_BRIDGE_LOG_FORMAT`
+- `BALUFFO_BRIDGE_LOG_LEVEL`
+
+CLI/env precedence: `CLI > env > defaults`.
+
+### 6) Build ship bundle (zip-first)
+
+```powershell
+python scripts/build_ship_bundle.py
+```
+
+Bundle output: `dist/baluffo-ship` with launcher scripts:
+
+- `run-site.ps1`
+- `run-bridge.ps1`
+- `run-all.ps1`
+
+Detailed runbook: `docs/ship-bundle-runbook.md`.
+
 ## Local Auth and Storage Model
 
 - Sign in is local profile based (name prompt), no remote backend required

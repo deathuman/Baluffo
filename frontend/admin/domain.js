@@ -40,6 +40,10 @@ export function getSourceJobsFoundCount(row) {
   const value = Number(
     row?.jobsFound
       ?? row?.sampleCount
+      ?? row?._lastKeptCount
+      ?? row?.keptCount
+      ?? row?.lastKeptCount
+      ?? row?._lastFetchedCount
       ?? row?.fetchedCount
       ?? row?.lastFetchedCount
       ?? NaN
@@ -47,17 +51,74 @@ export function getSourceJobsFoundCount(row) {
   return Number.isFinite(value) ? value : NaN;
 }
 
+function normalizeSourceStatusToken(value) {
+  const token = String(value || "").trim().toLowerCase();
+  if (!token) return "";
+  if (token === "success" || token === "healthy") return "ok";
+  if (token === "failed" || token === "failure") return "error";
+  return token;
+}
+
+function toSourceMatchKeys(row) {
+  const out = new Set();
+  const studio = String(row?.studio || "").trim().toLowerCase();
+  const name = String(row?.name || "").trim().toLowerCase();
+  if (studio) out.add(studio);
+  if (name) out.add(name);
+  if (studio && name) out.add(`${studio}|${name}`);
+  return Array.from(out);
+}
+
+function shouldTryGroupErrorMatch(group) {
+  const status = normalizeSourceStatusToken(group?.status);
+  return status === "error" && String(group?.error || "").trim().length > 0;
+}
+
+function rowMatchesGroupError(row, group) {
+  if (!shouldTryGroupErrorMatch(group)) return false;
+  const errorText = String(group?.error || "").toLowerCase();
+  const tokens = toSourceMatchKeys(row).filter(token => token.length >= 4);
+  return tokens.some(token => errorText.includes(token));
+}
+
+export function deriveSourceStatus(row) {
+  const mergedStatus = normalizeSourceStatusToken(row?._lastStatus);
+  if (mergedStatus) return mergedStatus;
+  const rowStatus = normalizeSourceStatusToken(row?.status);
+  if (rowStatus) return rowStatus;
+  if (String(row?.lastProbeError || "").trim()) return "error";
+  const jobsFound = getSourceJobsFoundCount(row);
+  if (Number.isFinite(jobsFound) && jobsFound > 0) return "ok";
+  if (String(row?.lastProbedAt || "").trim()) return "warning";
+  return "n/a";
+}
+
 export function mergeSourceStatusFromReport(rows, report, mode) {
   const sourceRows = Array.isArray(rows) ? rows : [];
-  const sources = Array.isArray(report?.sources) ? report.sources : [];
-  const byName = new Map(sources.map(row => [String(row?.studio || row?.name || "").toLowerCase(), row]));
+  const groups = Array.isArray(report?.sources) ? report.sources : [];
+  const candidates = [];
+  groups.forEach(group => {
+    if (!group || typeof group !== "object") return;
+    candidates.push(group);
+    const details = Array.isArray(group?.details) ? group.details : [];
+    details.forEach(detail => {
+      if (detail && typeof detail === "object") candidates.push(detail);
+    });
+  });
+  const byKey = new Map();
+  candidates.forEach(candidate => {
+    toSourceMatchKeys(candidate).forEach(key => {
+      if (!byKey.has(key)) byKey.set(key, candidate);
+    });
+  });
   return sourceRows.map(row => {
-    const key = String(row?.studio || row?.name || "").toLowerCase();
-    const matched = byName.get(key) || null;
+    const keys = toSourceMatchKeys(row);
+    const direct = keys.map(key => byKey.get(key)).find(Boolean) || null;
+    const matched = direct || groups.find(group => rowMatchesGroupError(row, group)) || null;
     if (!matched) return row;
     return {
       ...row,
-      _lastStatus: String(matched?.status || ""),
+      _lastStatus: normalizeSourceStatusToken(matched?.status),
       _lastError: String(matched?.error || ""),
       _lastFetchedCount: Number(matched?.fetchedCount || 0),
       _lastKeptCount: Number(matched?.keptCount || 0),
@@ -70,12 +131,83 @@ export function applySourceFilter(rows, activeSourceFilter) {
   const filter = activeSourceFilter || "all";
   if (filter === "all") return rows;
   return (Array.isArray(rows) ? rows : []).filter(row => {
-    const status = String(row?._lastStatus || row?.status || "").toLowerCase();
+    const status = deriveSourceStatus(row);
     const jobsFound = getSourceJobsFoundCount(row);
     if (filter === "error") return status === "error";
     if (filter === "excluded") return status === "excluded";
     if (filter === "zero") return jobsFound === 0;
-    if (filter === "healthy") return status === "ok" || (jobsFound > 0 && !status);
+    if (filter === "healthy") return status === "ok" || (jobsFound > 0 && status !== "error");
     return true;
   });
+}
+
+function parseRunTimestampMs(row) {
+  const raw = String(row?.finishedAt || row?.startedAt || "").trim();
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeRunStatus(value) {
+  const token = String(value || "").trim().toLowerCase();
+  return token || "unknown";
+}
+
+function isRunLive(row) {
+  return normalizeRunStatus(row?.status) === "started" && !String(row?.finishedAt || "").trim();
+}
+
+function toOpsRunRow(row, nowMs) {
+  const startedMs = Date.parse(String(row?.startedAt || ""));
+  const live = isRunLive(row);
+  const elapsedMs = live && Number.isFinite(startedMs) ? Math.max(0, Number(nowMs || Date.now()) - startedMs) : Number(row?.durationMs || 0);
+  const status = live ? "running" : normalizeRunStatus(row?.status);
+  return {
+    ...row,
+    isLive: live,
+    elapsedMs,
+    displayStatus: status
+  };
+}
+
+export function normalizeOpsRuns(runs, nowMs = Date.now()) {
+  const rows = Array.isArray(runs) ? runs.filter(row => row && typeof row === "object") : [];
+  const sorted = [...rows].sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a));
+  const latestByType = new Map();
+  sorted.forEach(row => {
+    const type = String(row?.type || "").trim().toLowerCase();
+    if (!type || latestByType.has(type)) return;
+    latestByType.set(type, toOpsRunRow(row, nowMs));
+  });
+
+  const currentRows = Array.from(latestByType.values())
+    .sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a));
+
+  const currentIds = new Set(currentRows.map(row => String(row?.id || "")));
+  const completedRows = sorted
+    .filter(row => !isRunLive(row))
+    .filter(row => {
+      const id = String(row?.id || "");
+      return !id || !currentIds.has(id);
+    })
+    .map(row => toOpsRunRow(row, nowMs));
+
+  const visibleCompletedRows = completedRows.slice(0, 3);
+  const olderCompletedRows = completedRows.slice(3);
+  const hasLiveRuns = currentRows.some(row => Boolean(row?.isLive));
+  const liveTypes = currentRows
+    .filter(row => Boolean(row?.isLive))
+    .map(row => String(row?.type || "").toLowerCase())
+    .filter(Boolean);
+
+  return {
+    currentRows,
+    visibleCompletedRows,
+    olderCompletedRows,
+    hasLiveRuns,
+    liveTypes
+  };
+}
+
+export function getOpsPollIntervalMs(hasLiveRuns, idleMs = 10000, liveMs = 2000) {
+  return Boolean(hasLiveRuns) ? Number(liveMs) : Number(idleMs);
 }

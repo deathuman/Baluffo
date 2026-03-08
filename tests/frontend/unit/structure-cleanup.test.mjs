@@ -45,3 +45,13 @@ test("cleanup structure: page indexes boot direct from sibling app modules", () 
     assert.match(source, /from "\.\/app\.js"/, `Expected direct app import in ${rel}`);
   }
 });
+
+test("cleanup structure: admin app defines centralized fetcher preset metadata", () => {
+  const source = fs.readFileSync(repoPath("frontend", "admin", "app.js"), "utf8");
+  assert.match(source, /const FETCHER_PRESET_META\s*=\s*\{/);
+  assert.match(source, /\bdefault:\s*\{/);
+  assert.match(source, /\bincremental:\s*\{/);
+  assert.match(source, /\bforce_full:\s*\{/);
+  assert.match(source, /\bretry_failed:\s*\{/);
+  assert.match(source, /function applyFetcherPresetMetadata\(\)/);
+});

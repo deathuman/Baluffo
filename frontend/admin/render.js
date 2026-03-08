@@ -87,7 +87,7 @@ export function renderUsersEmptyHtml(message) {
   return message ? `<div class="no-results">${escapeHtml(message)}</div>` : "";
 }
 
-export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound) {
+export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolveSourceStatus) {
   if (!Array.isArray(rows) || rows.length === 0) {
     const emptyText = mode === "pending"
       ? "No pending sources."
@@ -98,7 +98,8 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound) {
   }
   const isPending = mode === "pending";
   const isRejected = mode === "rejected";
-  const leadHeader = isPending || isRejected ? "Select" : "State";
+  const isActive = mode === "active";
+  const leadHeader = "Select";
   return `
     <div class="jobs-table-header">
       <div class="admin-row-header admin-source-row-header">
@@ -107,38 +108,55 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound) {
         <div>Adapter</div>
         <div>Studio</div>
         <div>Status</div>
-        <div>Jobs Found</div>
-        <div>NL</div>
+        <div>Jobs</div>
         <div>Remote</div>
-        <div>Source ID</div>
       </div>
     </div>
     <div class="jobs-table-body">
       ${rows.map(row => {
-        const sourceId = escapeHtml(String(row.id || ""));
+        const sourceIdRaw = String(row.id || "").trim();
+        const sourceId = escapeHtml(sourceIdRaw);
         const name = escapeHtml(String(row.name || ""));
         const adapter = escapeHtml(String(row.adapter || ""));
         const studio = escapeHtml(String(row.studio || ""));
-        const status = escapeHtml(String(row._lastStatus || row.status || "n/a"));
+        const resolvedStatus = typeof resolveSourceStatus === "function"
+          ? resolveSourceStatus(row)
+          : String(row._lastStatus || row.status || "n/a");
+        const status = escapeHtml(String(resolvedStatus || "n/a"));
+        const normalizedStatus = String(resolvedStatus || "").toLowerCase();
+        const statusErrorDetail = String(row?._lastError || row?.lastProbeError || row?.error || "").trim();
+        const statusTitle = normalizedStatus === "error" && statusErrorDetail
+          ? ` title="${escapeHtml(`Error: ${statusErrorDetail}`)}"`
+          : "";
         const jobsFound = formatSourceJobsFound(row);
-        const nl = row.nlPriority ? "Yes" : "No";
         const remote = row.remoteFriendly ? "Yes" : "No";
+        const sourceUrl = escapeHtml(String(
+          row.listing_url
+          || row.api_url
+          || row.feed_url
+          || row.board_url
+          || (Array.isArray(row.pages) ? (row.pages[0] || "") : "")
+          || ""
+        ));
+        const sourceIdTitle = escapeHtml(sourceIdRaw || "missing source id");
+        const sourceIdAria = escapeHtml(`Source ID: ${sourceIdRaw || "missing source id"}`);
+        const idIconHtml = `<span class="admin-source-id-inline" title="${sourceIdTitle}" aria-label="${sourceIdAria}">i</span>`;
         const leadCell = isPending
-          ? `<input type="checkbox" class="pending-source-checkbox" data-source-id="${sourceId}">`
+          ? `<span class="admin-select-cell-inner"><input type="checkbox" class="pending-source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
           : isRejected
-            ? `<input type="checkbox" class="rejected-source-checkbox" data-source-id="${sourceId}">`
-            : `<span class="muted">Active</span>`;
+            ? `<span class="admin-select-cell-inner"><input type="checkbox" class="rejected-source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
+            : isActive
+              ? `<span class="admin-select-cell-inner"><input type="checkbox" class="active-source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
+              : `<span class="muted">N/A</span>`;
         return `
           <div class="admin-user-row admin-source-row">
             <div class="admin-cell" data-label="${leadHeader}">${leadCell}</div>
             <div class="admin-cell" data-label="Name">${name}</div>
             <div class="admin-cell" data-label="Adapter">${adapter}</div>
             <div class="admin-cell" data-label="Studio">${studio}</div>
-            <div class="admin-cell" data-label="Status"><span class="admin-status-chip ${status === "error" ? "critical" : status === "excluded" ? "warning" : "healthy"}">${status}</span></div>
-            <div class="admin-cell" data-label="Jobs Found">${jobsFound}</div>
-            <div class="admin-cell" data-label="NL">${nl}</div>
+            <div class="admin-cell" data-label="Status"><span class="admin-status-chip ${status === "error" ? "critical" : status === "excluded" ? "warning" : "healthy"}"${statusTitle}>${status}</span></div>
+            <div class="admin-cell" data-label="Jobs">${jobsFound}</div>
             <div class="admin-cell" data-label="Remote">${remote}</div>
-            <div class="admin-cell admin-uid" data-label="Source ID">${sourceId}</div>
           </div>
         `;
       }).join("")}
@@ -207,14 +225,69 @@ function formatLastRunCell(lastRun) {
   return `${type} ${status} @ ${finished}`;
 }
 
+function buildRunStatusTooltip(row) {
+  const status = String(row?.status || "").toLowerCase();
+  if (status !== "warning" && status !== "error") return "";
+  const type = String(row?.type || "").toLowerCase();
+  const summary = row?.summary || {};
+  const parts = [];
+  if (type === "discovery") {
+    const failed = Number(summary?.failedProbeCount || 0);
+    const probed = Number(summary?.probedCandidateCount || 0);
+    const queued = Number(summary?.queuedCandidateCount || 0);
+    parts.push(`Failed probes: ${failed}`);
+    if (probed > 0) parts.push(`Probed: ${probed}`);
+    if (queued >= 0) parts.push(`Queued (new): ${queued}`);
+  } else {
+    const failed = Number(summary?.failedSources || 0);
+    const sourceCount = Number(summary?.sourceCount || 0);
+    const output = Number(summary?.outputCount || 0);
+    parts.push(`Failed sources: ${failed}`);
+    if (sourceCount > 0) parts.push(`Sources: ${sourceCount}`);
+    parts.push(`Output: ${output}`);
+  }
+  const durationMs = Number(row?.durationMs || 0);
+  if (durationMs > 0) parts.push(`Duration: ${formatDuration(durationMs)}`);
+  const stamp = formatDateTime(row?.finishedAt || row?.startedAt || "");
+  if (stamp && stamp !== "unknown") parts.push(`Finished: ${stamp}`);
+  return parts.join(" | ");
+}
+
+function getRunStatusChipClass(status) {
+  const token = String(status || "").toLowerCase();
+  if (token === "error") return "critical";
+  if (token === "warning") return "warning";
+  if (token === "running" || token === "started") return "healthy";
+  return "healthy";
+}
+
 function formatSignedInt(value) {
   const num = Number(value) || 0;
   return num > 0 ? `+${num}` : `${num}`;
 }
 
+function stableOpsSignature(value) {
+  try {
+    if (Array.isArray(value)) {
+      return JSON.stringify(value.map(item => item || {}));
+    }
+    return JSON.stringify(value || {});
+  } catch {
+    return String(value || "");
+  }
+}
+
 export function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
   if (!alertsEl) return;
+  const canPatchInPlace = Boolean(alertsEl && alertsEl.dataset);
   const rows = Array.isArray(alerts) ? alerts : [];
+  const signature = stableOpsSignature(rows.map(alert => ({
+    id: String(alert?.id || ""),
+    severity: String(alert?.severity || ""),
+    message: String(alert?.message || "")
+  })));
+  if (canPatchInPlace && alertsEl.dataset.opsAlertsSig === signature) return;
+  if (canPatchInPlace) alertsEl.dataset.opsAlertsSig = signature;
   if (!rows.length) {
     alertsEl.innerHTML = '<div class="admin-alert-banner healthy">No active alerts.</div>';
     return;
@@ -242,6 +315,17 @@ export function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
 
 export function renderAdminOpsKpis(kpisEl, kpis, status) {
   if (!kpisEl) return;
+  const canPatchInPlace = Boolean(kpisEl && kpisEl.dataset);
+  const signature = stableOpsSignature({
+    status: String(status || ""),
+    sevenDayFetchSuccessRate: Number(kpis?.sevenDayFetchSuccessRate || 0),
+    failedSourceRatioLatest: Number(kpis?.failedSourceRatioLatest || 0),
+    pendingApprovalsCount: Number(kpis?.pendingApprovalsCount || 0),
+    avgFetchDurationMs7d: Number(kpis?.avgFetchDurationMs7d || 0),
+    lastSuccessfulFetchAge: String(kpis?.lastSuccessfulFetchAge || "")
+  });
+  if (canPatchInPlace && kpisEl.dataset.opsKpisSig === signature) return;
+  if (canPatchInPlace) kpisEl.dataset.opsKpisSig = signature;
   const successRate = Number(kpis?.sevenDayFetchSuccessRate || 0);
   const failedRatio = Number(kpis?.failedSourceRatioLatest || 0);
   const pending = Number(kpis?.pendingApprovalsCount || 0);
@@ -277,6 +361,13 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
 
 export function renderAdminOpsSchedule(scheduleEl, schedule, latestOpsHealthCache) {
   if (!scheduleEl) return;
+  const canPatchInPlace = Boolean(scheduleEl && scheduleEl.dataset);
+  const signature = stableOpsSignature({
+    schedule: schedule || {},
+    lastRunResult: latestOpsHealthCache?.kpis?.lastRunResult || {}
+  });
+  if (canPatchInPlace && scheduleEl.dataset.opsScheduleSig === signature) return;
+  if (canPatchInPlace) scheduleEl.dataset.opsScheduleSig = signature;
   const fetcher = schedule?.fetcher || {};
   const discovery = schedule?.discovery || {};
   scheduleEl.innerHTML = `
@@ -288,11 +379,14 @@ export function renderAdminOpsSchedule(scheduleEl, schedule, latestOpsHealthCach
 
 export function renderAdminOpsTrends(trendsEl, runs) {
   if (!trendsEl) return;
+  const canPatchInPlace = Boolean(trendsEl && trendsEl.dataset);
   const rows = Array.isArray(runs) ? runs : [];
   const fetchRuns = rows.filter(row => String(row?.type || "") === "fetch");
   const latest = fetchRuns[fetchRuns.length - 1];
   const prev = fetchRuns[fetchRuns.length - 2];
   if (!latest || !prev) {
+    if (canPatchInPlace && trendsEl.dataset.opsTrendSig === "insufficient") return;
+    if (canPatchInPlace) trendsEl.dataset.opsTrendSig = "insufficient";
     trendsEl.textContent = "Trends: not enough fetch history yet.";
     return;
   }
@@ -300,55 +394,244 @@ export function renderAdminOpsTrends(trendsEl, runs) {
   const prevOutput = Number(prev?.summary?.outputCount || 0);
   const latestFailed = Number(latest?.summary?.failedSources || 0);
   const prevFailed = Number(prev?.summary?.failedSources || 0);
-  trendsEl.textContent =
+  const summaryText =
     `Trends: output Δ ${formatSignedInt(latestOutput - prevOutput)} (latest ${latestOutput.toLocaleString()}); failed sources Δ ${formatSignedInt(latestFailed - prevFailed)}.`;
-}
 
-export function renderAdminOpsHistory(historyEl, runs) {
-  if (!historyEl) return;
-  const rows = Array.isArray(runs) ? runs : [];
-  if (!rows.length) {
-    historyEl.innerHTML = '<div class="no-results">No run history yet.</div>';
+  const successfulRuns = fetchRuns
+    .filter(row => {
+      const status = String(row?.status || row?.displayStatus || "ok").toLowerCase();
+      const output = Number(row?.summary?.outputCount || 0);
+      return status !== "error" && Number.isFinite(output) && output > 0;
+    })
+    .map(row => {
+      const stamp = Date.parse(String(row?.finishedAt || row?.startedAt || ""));
+      return {
+        output: Number(row?.summary?.outputCount || 0),
+        ts: Number.isFinite(stamp) ? stamp : 0
+      };
+    })
+    .sort((a, b) => a.ts - b.ts)
+    .slice(-20);
+
+  if (!successfulRuns.length) {
+    if (canPatchInPlace && trendsEl.dataset.opsTrendSig === "empty") return;
+    if (canPatchInPlace) trendsEl.dataset.opsTrendSig = "empty";
+    trendsEl.textContent = "Trends: no successful fetch history yet.";
     return;
   }
-  const sorted = [...rows].sort((a, b) =>
-    String(b?.finishedAt || b?.startedAt || "").localeCompare(String(a?.finishedAt || a?.startedAt || ""))
+  const signature = successfulRuns.map(item => `${item.ts}:${item.output}`).join("|");
+  if (canPatchInPlace && trendsEl.dataset.opsTrendSig === signature) return;
+  if (canPatchInPlace) trendsEl.dataset.opsTrendSig = signature;
+
+  const width = 640;
+  const height = 170;
+  const padLeft = 54;
+  const padRight = 16;
+  const padTop = 18;
+  const padBottom = 34;
+  const chartW = width - padLeft - padRight;
+  const chartH = height - padTop - padBottom;
+  const values = successfulRuns.map(item => item.output);
+  const rawMinY = Math.min(...values);
+  const rawMaxY = Math.max(...values);
+  const range = Math.max(1, rawMaxY - rawMinY);
+  const pad = Math.max(1, range * 0.18);
+  const zoomMinY = Math.max(0, rawMinY - pad);
+  const zoomMaxY = rawMaxY + pad;
+  const spanY = Math.max(1, zoomMaxY - zoomMinY);
+
+  const points = successfulRuns.map((item, idx) => {
+    const x = padLeft + (successfulRuns.length <= 1 ? chartW / 2 : (idx * chartW) / (successfulRuns.length - 1));
+    const y = padTop + chartH - ((item.output - zoomMinY) / spanY) * chartH;
+    return { x, y, value: item.output, ts: item.ts };
+  });
+
+  const linePath = points.length <= 1
+    ? `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`
+    : points.slice(1).reduce((acc, point, idx) => {
+      const prevPoint = points[idx];
+      const dx = point.x - prevPoint.x;
+      const c1x = prevPoint.x + (dx / 3);
+      const c1y = prevPoint.y;
+      const c2x = prevPoint.x + (2 * dx / 3);
+      const c2y = point.y;
+      return `${acc} C ${c1x.toFixed(2)} ${c1y.toFixed(2)} ${c2x.toFixed(2)} ${c2y.toFixed(2)} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+    }, `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`);
+
+  const areaPath = `${linePath} L ${points[points.length - 1].x.toFixed(2)} ${(padTop + chartH).toFixed(2)} L ${points[0].x.toFixed(2)} ${(padTop + chartH).toFixed(2)} Z`;
+  const yTicks = [0, 0.5, 1].map(ratio => ({
+    y: padTop + chartH - ratio * chartH,
+    label: Math.round(zoomMinY + (spanY * ratio))
+  }));
+  const xLabel = item => (item.ts ? new Date(item.ts).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "n/a");
+  const first = points[0];
+  const mid = points[Math.floor((points.length - 1) / 2)];
+  const last = points[points.length - 1];
+  const pointDots = points.map(point =>
+    `<circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="2.0" class="admin-ops-trend-dot"><title>${point.value.toLocaleString()} jobs</title></circle>`
+  ).join("");
+
+  trendsEl.innerHTML = `
+    <div class="admin-ops-trend-summary">${escapeHtml(summaryText)}</div>
+    <svg class="admin-ops-trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Successful jobs fetched over time">
+      <path class="admin-ops-trend-area" d="${areaPath}" />
+      ${yTicks.map(tick => `<line class="admin-ops-trend-grid" x1="${padLeft}" x2="${width - padRight}" y1="${tick.y.toFixed(2)}" y2="${tick.y.toFixed(2)}" />`).join("")}
+      ${yTicks.map(tick => `<text class="admin-ops-trend-y-label" x="${padLeft - 8}" y="${(tick.y + 4).toFixed(2)}" text-anchor="end">${tick.label.toLocaleString()}</text>`).join("")}
+      <path class="admin-ops-trend-line" d="${linePath}" />
+      ${pointDots}
+      <text class="admin-ops-trend-x-label" x="${first.x.toFixed(2)}" y="${height - 10}" text-anchor="start">${escapeHtml(xLabel(first))}</text>
+      <text class="admin-ops-trend-x-label" x="${mid.x.toFixed(2)}" y="${height - 10}" text-anchor="middle">${escapeHtml(xLabel(mid))}</text>
+      <text class="admin-ops-trend-x-label" x="${last.x.toFixed(2)}" y="${height - 10}" text-anchor="end">${escapeHtml(xLabel(last))}</text>
+    </svg>
+  `;
+}
+
+export function renderAdminOpsHistory(historyEl, runsOrModel) {
+  if (!historyEl) return;
+  const model = Array.isArray(runsOrModel)
+    ? {
+      currentRows: [],
+      visibleCompletedRows: runsOrModel,
+      olderCompletedRows: []
+    }
+    : (runsOrModel || {});
+  const currentRows = Array.isArray(model.currentRows) ? model.currentRows : [];
+  const visibleCompletedRows = Array.isArray(model.visibleCompletedRows) ? model.visibleCompletedRows : [];
+  const olderCompletedRows = Array.isArray(model.olderCompletedRows) ? model.olderCompletedRows : [];
+  const completedRows = [...visibleCompletedRows, ...olderCompletedRows];
+  const canPatchInPlace = Boolean(
+    historyEl
+    && typeof historyEl.querySelector === "function"
+    && typeof historyEl.querySelectorAll === "function"
+    && historyEl.dataset
   );
+  if (!currentRows.length && !visibleCompletedRows.length && !olderCompletedRows.length) {
+    historyEl.innerHTML = '<div class="no-results">No run history yet.</div>';
+    if (canPatchInPlace) {
+      delete historyEl.dataset.opsStructureSig;
+    }
+    return;
+  }
+
+  const toRowView = (row, rowArea, index) => {
+    const rawStatus = String(row?.displayStatus || row?.status || "unknown");
+    const statusToken = rawStatus.toLowerCase();
+    const summary = row?.summary || {};
+    const type = String(row?.type || "unknown");
+    const key = [
+      rowArea,
+      String(row?.id || ""),
+      type,
+      String(row?.startedAt || ""),
+      String(row?.finishedAt || ""),
+      String(index)
+    ].join("|");
+    return {
+      key,
+      rowArea,
+      typeText: type,
+      statusText: rawStatus,
+      statusClass: getRunStatusChipClass(rawStatus),
+      statusTitle: buildRunStatusTooltip(row),
+      isRunning: statusToken === "running" || statusToken === "started",
+      durationText: formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),
+      outputOrQueuedText: row?.type === "discovery"
+        ? `Queued (new): ${Number(summary?.queuedCandidateCount || 0).toLocaleString()}`
+        : Number(summary?.outputCount || 0).toLocaleString(),
+      failedText: (row?.type === "discovery"
+        ? Number(summary?.failedProbeCount || 0)
+        : Number(summary?.failedSources || 0)).toLocaleString(),
+      finishedText: formatDateTime(row?.finishedAt || row?.startedAt || "")
+    };
+  };
+
+  const currentViews = currentRows.map((row, index) => toRowView(row, "current", index));
+  const completedViews = completedRows.map((row, index) => toRowView(row, "completed", index));
+
+  const structureSignature = JSON.stringify({
+    current: currentViews.map(row => row.key),
+    completed: completedViews.map(row => row.key)
+  });
+
+  const updateExistingRows = (views, rowArea) => {
+    const rowMap = new Map(
+      Array.from(historyEl.querySelectorAll(`.admin-ops-history-row[data-row-area="${rowArea}"]`))
+        .map(rowEl => [String(rowEl.dataset.runKey || ""), rowEl])
+    );
+    views.forEach(view => {
+      const rowEl = rowMap.get(view.key);
+      if (!rowEl) return;
+      rowEl.classList.toggle("admin-ops-history-row-running", view.isRunning);
+      const cells = rowEl.querySelectorAll(".admin-cell");
+      if (cells.length < 6) return;
+      cells[0].textContent = view.typeText;
+      const chip = cells[1].querySelector(".admin-status-chip");
+      if (chip) {
+        chip.className = `admin-status-chip ${view.statusClass}`;
+        chip.textContent = view.statusText;
+        if (view.statusTitle) {
+          chip.setAttribute("title", view.statusTitle);
+        } else {
+          chip.removeAttribute("title");
+        }
+      }
+      cells[2].textContent = view.durationText;
+      cells[3].textContent = view.outputOrQueuedText;
+      cells[4].textContent = view.failedText;
+      cells[5].textContent = view.finishedText;
+    });
+  };
+
+  if (canPatchInPlace && historyEl.dataset.opsStructureSig === structureSignature) {
+    updateExistingRows(currentViews, "current");
+    updateExistingRows(completedViews, "completed");
+    return;
+  }
+
+  const olderOpen = canPatchInPlace ? Boolean(historyEl.querySelector(".admin-ops-history-older")?.open) : false;
+  if (canPatchInPlace) {
+    historyEl.dataset.opsStructureSig = structureSignature;
+  }
+
+  const renderRows = views => views.map(view => `
+      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
+        <div class="admin-cell">${escapeHtml(view.typeText)}</div>
+        <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${view.statusTitle ? ` title="${escapeHtml(view.statusTitle)}"` : ""}>${escapeHtml(view.statusText)}</span></div>
+        <div class="admin-cell">${escapeHtml(view.durationText)}</div>
+        <div class="admin-cell">${escapeHtml(view.outputOrQueuedText)}</div>
+        <div class="admin-cell">${escapeHtml(view.failedText)}</div>
+        <div class="admin-cell">${escapeHtml(view.finishedText)}</div>
+      </div>
+    `).join("");
+
   historyEl.innerHTML = `
-    <div class="jobs-table-header">
-      <div class="admin-row-header admin-ops-history-header">
-        <div>Type</div>
-        <div>Status</div>
-        <div>Duration</div>
-        <div>Output/Queued</div>
-        <div>Failed</div>
-        <div>Finished</div>
+    <div class="admin-ops-current-runs">
+      <div class="admin-ops-history-title">Current Runs</div>
+      <div class="jobs-table-header">
+        <div class="admin-row-header admin-ops-history-header">
+          <div>Type</div>
+          <div>Status</div>
+          <div>Duration</div>
+          <div>Output / Queued (new)</div>
+          <div>Failed</div>
+          <div>Finished</div>
+        </div>
+      </div>
+      <div class="jobs-table-body">
+        ${currentViews.length ? renderRows(currentViews) : '<div class="no-results">No active runs.</div>'}
       </div>
     </div>
-    <div class="jobs-table-body">
-      ${sorted.map(row => {
-        const type = escapeHtml(String(row?.type || "unknown"));
-        const status = escapeHtml(String(row?.status || "unknown"));
-        const duration = formatDuration(Number(row?.durationMs || 0));
-        const summary = row?.summary || {};
-        const outputOrQueued = row?.type === "discovery"
-          ? Number(summary?.queuedCandidateCount || 0)
-          : Number(summary?.outputCount || 0);
-        const failed = row?.type === "discovery"
-          ? Number(summary?.failedProbeCount || 0)
-          : Number(summary?.failedSources || 0);
-        const finished = escapeHtml(formatDateTime(row?.finishedAt || row?.startedAt || ""));
-        return `
-          <div class="admin-user-row admin-source-row admin-ops-history-row">
-            <div class="admin-cell">${type}</div>
-            <div class="admin-cell"><span class="admin-status-chip ${status === "error" ? "critical" : status === "warning" ? "warning" : "healthy"}">${status}</span></div>
-            <div class="admin-cell">${duration}</div>
-            <div class="admin-cell">${Number(outputOrQueued).toLocaleString()}</div>
-            <div class="admin-cell">${Number(failed).toLocaleString()}</div>
-            <div class="admin-cell">${finished}</div>
-          </div>
-        `;
-      }).join("")}
-    </div>
+    ${completedRows.length ? `
+      <details class="admin-ops-history-older admin-ops-completed-runs">
+        <summary>Older runs (${completedRows.length})</summary>
+        <div class="jobs-table-body">
+          ${renderRows(completedViews)}
+        </div>
+      </details>
+    ` : ""}
   `;
+  if (canPatchInPlace) {
+    const detailsEl = historyEl.querySelector(".admin-ops-history-older");
+    if (detailsEl) detailsEl.open = olderOpen;
+  }
 }

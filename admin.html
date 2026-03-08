@@ -9,6 +9,7 @@
 </head>
 <body>
   <button class="btn back-btn theme-toggle-btn global-theme-toggle" type="button" aria-label="Switch theme">Theme</button>
+  <span id="admin-bridge-status-badge" class="admin-bridge-badge admin-bridge-floating checking hidden" title="Local admin bridge status">Bridge Checking</span>
   <div class="jobs-container">
     <div class="jobs-header">
       <h1>Administration</h1>
@@ -71,52 +72,94 @@
               </svg>
             </button>
             <button id="admin-retry-failed-btn" class="btn clear-filters-btn">Retry Failed Sources</button>
-            <button id="admin-copy-failures-btn" class="btn clear-filters-btn">Copy Failures</button>
+            <button id="admin-copy-failures-btn" class="btn clear-filters-btn" title="Copy latest failed source names and errors from the current fetch report." aria-label="Copy failure summary">Copy Failures</button>
             <button id="admin-run-fetcher-btn" class="btn clear-filters-btn">Run Jobs Fetcher</button>
-            <button id="admin-refresh-report-btn" class="btn clear-filters-btn">Load Latest Report</button>
+            <button id="admin-run-fetcher-incremental-btn" class="btn clear-filters-btn">Run Incremental</button>
+            <button id="admin-run-fetcher-force-btn" class="btn clear-filters-btn">Force Ignore Circuit</button>
+            <button id="admin-refresh-report-btn" class="btn clear-filters-btn" title="Reload the latest jobs fetch report and append per-source details to this output log." aria-label="Load latest fetch report">Load Latest Report</button>
           </div>
         </div>
         <div id="admin-fetcher-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
       </section>
 
-      <section class="admin-fetcher-panel">
+      <section class="admin-fetcher-panel admin-discovery-panel">
         <div class="admin-fetcher-header">
           <h3 class="admin-fetcher-title">Source Discovery</h3>
-          <div class="admin-fetcher-actions">
-            <span id="admin-bridge-status-badge" class="admin-bridge-badge checking" title="Local admin bridge status">Bridge Checking</span>
-            <button id="admin-run-discovery-btn" class="btn clear-filters-btn">Run Discovery</button>
-            <button id="admin-load-discovery-btn" class="btn clear-filters-btn">Load Discovery Report</button>
-            <button id="admin-approve-sources-btn" class="btn clear-filters-btn">Approve Selected</button>
-            <button id="admin-reject-sources-btn" class="btn clear-filters-btn">Reject Selected</button>
+        </div>
+        <div class="admin-discovery-layout">
+          <div class="admin-discovery-top-row">
+            <div class="admin-discovery-card admin-discovery-run-card">
+              <div class="admin-fetcher-actions">
+                <button id="admin-run-discovery-btn" class="btn clear-filters-btn">Run Discovery</button>
+                <button id="admin-load-discovery-btn" class="btn clear-filters-btn">Load Discovery Report</button>
+              </div>
+              <div id="admin-discovery-summary" class="results-summary">No discovery report loaded yet.</div>
+            </div>
+
+            <div class="admin-discovery-card admin-discovery-manual-card">
+              <h4 class="admin-section-title">Add Source</h4>
+              <div class="admin-manual-source-row">
+                <input
+                  id="admin-manual-source-url"
+                  type="url"
+                  class="admin-pin-input admin-manual-source-input"
+                  placeholder="https://company.teamtailor.com/jobs"
+                  autocomplete="off"
+                >
+                <button id="admin-add-manual-source-btn" class="btn clear-filters-btn" type="button">Add Source</button>
+              </div>
+              <div id="admin-manual-source-feedback" class="results-summary admin-manual-source-feedback"></div>
+            </div>
+          </div>
+
+          <details id="admin-discovery-log-details" class="admin-discovery-card admin-discovery-log-card" open>
+            <summary class="admin-discovery-log-summary">Discovery Log</summary>
+            <div id="admin-discovery-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
+          </details>
+
+          <div class="admin-discovery-content">
+            <div class="admin-discovery-card admin-discovery-bulk-card">
+              <h4 class="admin-section-title">Bulk Actions</h4>
+              <div class="admin-fetcher-actions">
+                <button id="admin-approve-sources-btn" class="btn clear-filters-btn">Approve Selected</button>
+                <button id="admin-reject-sources-btn" class="btn clear-filters-btn">Reject Selected</button>
+                <button id="admin-restore-rejected-btn" class="btn clear-filters-btn" type="button">Restore Selected</button>
+              </div>
+              <div class="admin-fetcher-actions">
+                <button id="admin-delete-sources-btn" class="btn clear-filters-btn admin-delete-sources-btn">Delete Selected</button>
+              </div>
+            </div>
+
+            <div class="admin-discovery-card admin-discovery-filter-card">
+              <h4 class="admin-section-title">Filters</h4>
+              <details class="admin-source-filter-details">
+                <summary>Filter options</summary>
+                <div id="admin-source-filter-bar" class="admin-source-filter-bar">
+                  <span class="saved-custom-filter-label">Source Filter</span>
+                  <div class="saved-custom-filter-actions" role="group" aria-label="Source filter">
+                    <button type="button" class="btn back-btn admin-source-filter-btn active" data-source-filter="all">All</button>
+                    <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="error">Error</button>
+                    <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="excluded">Excluded</button>
+                    <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="zero">Zero-jobs</button>
+                    <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="healthy">Healthy</button>
+                  </div>
+                </div>
+                <label class="backup-toggle admin-zero-toggle">
+                  <input id="admin-show-zero-jobs-toggle" type="checkbox">
+                  Show zero-jobs pending sources
+                </label>
+              </details>
+            </div>
+            <h4 class="admin-section-title">Pending Sources</h4>
+            <div id="admin-pending-sources" class="jobs-list"></div>
+            <h4 class="admin-section-title">Active Sources</h4>
+            <div id="admin-active-sources" class="jobs-list"></div>
+            <details class="admin-rejected-section">
+              <summary class="admin-rejected-summary">Rejected Sources</summary>
+              <div id="admin-rejected-sources" class="jobs-list"></div>
+            </details>
           </div>
         </div>
-        <div id="admin-discovery-summary" class="results-summary">No discovery report loaded yet.</div>
-        <div id="admin-source-filter-bar" class="admin-source-filter-bar">
-          <span class="saved-custom-filter-label">Source Filter</span>
-          <div class="saved-custom-filter-actions" role="group" aria-label="Source filter">
-            <button type="button" class="btn back-btn admin-source-filter-btn active" data-source-filter="all">All</button>
-            <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="error">Error</button>
-            <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="excluded">Excluded</button>
-            <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="zero">Zero-jobs</button>
-            <button type="button" class="btn back-btn admin-source-filter-btn" data-source-filter="healthy">Healthy</button>
-          </div>
-        </div>
-        <label class="backup-toggle admin-zero-toggle">
-          <input id="admin-show-zero-jobs-toggle" type="checkbox">
-          Show zero-jobs pending sources
-        </label>
-        <h4 class="admin-section-title">Pending Sources</h4>
-        <div id="admin-pending-sources" class="jobs-list"></div>
-        <h4 class="admin-section-title">Active Sources</h4>
-        <div id="admin-active-sources" class="jobs-list"></div>
-        <details class="admin-rejected-section">
-          <summary class="admin-rejected-summary">Rejected Sources</summary>
-          <div class="admin-rejected-actions">
-            <button id="admin-restore-rejected-btn" class="btn clear-filters-btn" type="button">Restore Selected</button>
-          </div>
-          <div id="admin-rejected-sources" class="jobs-list"></div>
-        </details>
-        <div id="admin-discovery-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
       </section>
     </section>
   </div>

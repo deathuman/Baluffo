@@ -48,6 +48,16 @@
       </div>
 
       <div class="filter-group">
+        <label for="lifecycle-status-filter">Listing Status:</label>
+        <select id="lifecycle-status-filter">
+          <option value="active">Active</option>
+          <option value="">Any</option>
+          <option value="likely_removed">Likely Removed</option>
+          <option value="archived">Archived</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
         <label for="country-picker-btn">Country:</label>
         <button id="country-picker-btn" type="button" class="country-picker-btn" aria-haspopup="dialog" aria-expanded="false">Country: All</button>
         <div id="country-picker-panel" class="country-picker-panel hidden" role="dialog" aria-label="Country filter options">

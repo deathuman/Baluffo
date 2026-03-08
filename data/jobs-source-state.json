@@ -1,0 +1,220 @@
+{
+  "updatedAt": "2026-03-08T19:46:26.567493+00:00",
+  "sources": {
+    "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 11762,
+      "lastFetchedCount": 31,
+      "lastKeptCount": 31,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "2c116102c320c1a8fe61bc278a9ec28b914a5b00",
+      "consecutiveFailures": 0
+    },
+    "lever_sources": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 20369,
+      "lastFetchedCount": 111,
+      "lastKeptCount": 111,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "2e6dfff4063d02eac75c992f0c9379668098df92",
+      "consecutiveFailures": 0
+    },
+    "remote_ok": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 223,
+      "lastFetchedCount": 48,
+      "lastKeptCount": 48,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "999be625a99151fa1d0b2d2f6b07155d82d66a81",
+      "consecutiveFailures": 0
+    },
+    "gamesindustry": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 429,
+      "lastFetchedCount": 24,
+      "lastKeptCount": 24,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "a5558d303f1ba7e8cc8ad5bb3b4afd8cd6d19244",
+      "consecutiveFailures": 0
+    },
+    "smartrecruiters_sources": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 517,
+      "lastFetchedCount": 103,
+      "lastKeptCount": 103,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "209670f0d5c379bef9fb9894379179842d8ab175",
+      "consecutiveFailures": 0
+    },
+    "google_sheets": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 4099,
+      "lastFetchedCount": 32811,
+      "lastKeptCount": 32811,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "fd46db29ba494f4f3b2194585e3f5941194f6e40",
+      "consecutiveFailures": 0
+    },
+    "ashby_sources": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "consecutiveFailures": 0
+    },
+    "personio_sources": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "consecutiveFailures": 0
+    },
+    "greenhouse_boards": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 1872,
+      "lastFetchedCount": 402,
+      "lastKeptCount": 402,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "88b09c790d36af153bd1414bbb8c359210f5c665",
+      "consecutiveFailures": 0
+    },
+    "workable_sources": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 1152,
+      "lastFetchedCount": 87,
+      "lastKeptCount": 87,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "9e14d0be67fc14240acddea87b0c709bd720592b",
+      "consecutiveFailures": 0
+    },
+    "epic_games_careers": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 6842,
+      "lastFetchedCount": 256,
+      "lastKeptCount": 256,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "e405e8c6019d49ad1fe17094af0c37c795f6eb09",
+      "consecutiveFailures": 0
+    },
+    "static_source::static:listing_url:https://www.ioi.dk/careers": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 2217,
+      "lastFetchedCount": 1,
+      "lastKeptCount": 1,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "45944bc4237175638911cada32bf223af6ba5c7a",
+      "consecutiveFailures": 0
+    },
+    "static_source::static:listing_url:https://www.nixxes.com/jobs": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 3492,
+      "lastFetchedCount": 2,
+      "lastKeptCount": 2,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "08f86dc988b81816f939a1b2f0a4d1a03d9445fc",
+      "consecutiveFailures": 0
+    },
+    "static_source::static:listing_url:https://www.cdprojekt.com/en/careers": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 2915,
+      "lastFetchedCount": 1,
+      "lastKeptCount": 1,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "b9d64f20ad18d550f0f50b9b054030ed577bb5f4",
+      "consecutiveFailures": 0
+    },
+    "static_source::static:listing_url:https://www.fingersoft.com/careers": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 1823,
+      "lastFetchedCount": 1,
+      "lastKeptCount": 1,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "9f92f44b478169ec6c605d1b99e92bcbf3129ac1",
+      "consecutiveFailures": 0
+    },
+    "static_source::static:listing_url:https://career.paradoxplaza.com": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 3886,
+      "lastFetchedCount": 5,
+      "lastKeptCount": 5,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "99be510f2228637d055f28b104631c21e0e3bab0",
+      "consecutiveFailures": 0
+    },
+    "static_source::static:name:little chicken": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 8701,
+      "lastFetchedCount": 10,
+      "lastKeptCount": 10,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "25b594c2c89e6cf3914f4126c3962658a2eb3ecd",
+      "consecutiveFailures": 0
+    },
+    "static_source::static:listing_url:https://careers.activision.com": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 7366,
+      "lastFetchedCount": 10,
+      "lastKeptCount": 10,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "53b291289c5a62aa726d8568e5b180c3d9ffe091",
+      "consecutiveFailures": 0
+    },
+    "teamtailor_sources": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 12442,
+      "lastFetchedCount": 33,
+      "lastKeptCount": 33,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "b02bc166a85dedca2a51bf84973319a4fbdcd6ec",
+      "consecutiveFailures": 0
+    },
+    "static_source::static:listing_url:https://ea.gr8people.com": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 38769,
+      "lastFetchedCount": 20,
+      "lastKeptCount": 20,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "fe79ad2617685577a3c9b5fb7331033a07129a27",
+      "consecutiveFailures": 0
+    },
+    "static_source::static:listing_url:https://www.riotgames.com/en/work-with-us/jobs": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 95226,
+      "lastFetchedCount": 154,
+      "lastKeptCount": 154,
+      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastFingerprint": "b3a806129517cbd815bc8e9d261416e89c6b32ad",
+      "consecutiveFailures": 0
+    },
+    "wellfound": {
+      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0
+    }
+  }
+}

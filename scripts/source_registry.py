@@ -6,10 +6,13 @@ from __future__ import annotations
 import json
 import os
 import hashlib
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
+from urllib.parse import urlparse, urlunsplit
 
-DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+_DEFAULT_DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+DATA_DIR = Path(os.getenv("BALUFFO_DATA_DIR") or _DEFAULT_DATA_DIR).expanduser().resolve()
 ACTIVE_PATH = DATA_DIR / "source-registry-active.json"
 PENDING_PATH = DATA_DIR / "source-registry-pending.json"
 REJECTED_PATH = DATA_DIR / "source-registry-rejected.json"
@@ -48,9 +51,28 @@ def load_json_object(path: Path, default: Dict[str, Any] | None = None) -> Dict[
 
 def save_json_atomic(path: Path, payload: Any) -> None:
     ensure_data_dir()
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, path)
+    # Use a unique temp file per write to avoid collisions across threads/processes.
+    tmp = path.with_suffix(path.suffix + f".{os.getpid()}.{time.time_ns()}.tmp")
+    try:
+        tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        last_error: Exception | None = None
+        for attempt in range(18):
+            try:
+                os.replace(tmp, path)
+                last_error = None
+                break
+            except PermissionError as exc:
+                last_error = exc
+                # Windows can transiently lock the destination while another thread replaces it.
+                time.sleep(0.012 * (attempt + 1))
+        if last_error is not None:
+            raise last_error
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
 
 
 def source_identity(row: Dict[str, Any]) -> str:
@@ -70,6 +92,40 @@ def ensure_source_id(row: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(row)
     normalized["id"] = source_identity(normalized)
     return normalized
+
+
+def normalize_source_url(raw_url: str) -> str:
+    text = str(raw_url or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = urlparse(text)
+    except ValueError:
+        return ""
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.netloc or "").strip().lower()
+    if scheme not in {"http", "https"} or not host:
+        return ""
+    path = (parsed.path or "").rstrip("/")
+    return urlunsplit((scheme, host, path, "", ""))
+
+
+def source_endpoint_url(row: Dict[str, Any]) -> str:
+    for key in ("api_url", "feed_url", "board_url", "listing_url"):
+        value = str(row.get(key) or "").strip()
+        if value:
+            return value
+    pages = row.get("pages")
+    if isinstance(pages, list):
+        for value in pages:
+            text = str(value or "").strip()
+            if text:
+                return text
+    return ""
+
+
+def source_url_fingerprint(row: Dict[str, Any]) -> str:
+    return normalize_source_url(source_endpoint_url(row))
 
 
 def unique_sources(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:

@@ -91,7 +91,7 @@
         "background": {
           "activeOnStart": true,
           "beginsPattern": ".",
-          "endsPattern": "Admin bridge listening on"
+          "endsPattern": "admin_bridge_started"
         }
       },
       "presentation": {

@@ -34,6 +34,28 @@ class SourceRegistryTests(unittest.TestCase):
             self.assertEqual(len(loaded), 1)
             self.assertEqual(loaded[0]["company_id"], "Gameloft")
 
+    def test_normalize_source_url_trims_query_trailing_slash_and_case(self) -> None:
+        normalized = sr.normalize_source_url("HTTPS://Jobs.Ashbyhq.com/Acme/jobs/?foo=1#frag")
+        self.assertEqual(normalized, "https://jobs.ashbyhq.com/Acme/jobs")
+
+    def test_source_url_fingerprint_prefers_endpoint_fields(self) -> None:
+        row = {
+            "adapter": "workable",
+            "account": "acme",
+            "api_url": "https://apply.workable.com/api/v1/widget/accounts/acme/?details=true",
+        }
+        self.assertEqual(
+            sr.source_url_fingerprint(row),
+            "https://apply.workable.com/api/v1/widget/accounts/acme",
+        )
+
+    def test_source_url_fingerprint_uses_static_pages_when_no_endpoint_field(self) -> None:
+        row = {
+            "adapter": "static",
+            "pages": ["https://milestone.it/careers/?utm_source=x"],
+        }
+        self.assertEqual(sr.source_url_fingerprint(row), "https://milestone.it/careers")
+
 
 if __name__ == "__main__":
     unittest.main()
