@@ -1,21 +1,21 @@
 {
   "schemaVersion": "1.0",
   "mode": "dynamic",
-  "startedAt": "2026-03-08T15:55:41.009291+00:00",
-  "finishedAt": "",
+  "startedAt": "2026-03-08T22:15:20.567422+00:00",
+  "finishedAt": "2026-03-08T22:16:49.280521+00:00",
   "summary": {
-    "probedCount": 70,
+    "probedCount": 80,
     "healthyCount": 0,
     "newCandidateCount": 0,
     "taEnvCandidateCount": 0,
     "nlCandidateCount": 0,
     "remoteCandidateCount": 0,
-    "failedProbeCount": 0,
-    "probeMissCount": 70,
-    "foundEndpointCount": 157,
-    "probedCandidateCount": 70,
+    "failedProbeCount": 3,
+    "probeMissCount": 77,
+    "foundEndpointCount": 158,
+    "probedCandidateCount": 80,
     "queuedCandidateCount": 0,
-    "skippedDuplicateCount": 77,
+    "skippedDuplicateCount": 78,
     "skippedInvalidCount": 0,
     "adapterCounts": {},
     "methodCounts": {}
@@ -511,9 +511,100 @@
       "domain": "boards-api.greenhouse.io",
       "error": "https://boards.greenhouse.io/remedy-entertainment: HTTP Error 404: Not Found",
       "stage": "probe_miss"
+    },
+    {
+      "name": "Remedy Entertainment (Teamtailor)",
+      "adapter": "teamtailor",
+      "domain": "remedy-entertainment.teamtailor.com",
+      "error": "https://remedy-entertainment.teamtailor.com/jobs: HTTP Error 404: Not Found",
+      "stage": "probe_miss"
+    },
+    {
+      "name": "Remedy Entertainment (Personio)",
+      "adapter": "personio",
+      "domain": "remedy-entertainment.jobs.personio.de",
+      "error": "https://remedy-entertainment.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "stage": "probe"
+    },
+    {
+      "name": "Remedy Entertainment (Lever)",
+      "adapter": "lever",
+      "domain": "api.lever.co",
+      "error": "https://jobs.lever.co/remedyentertainment: HTTP Error 404: Not Found",
+      "stage": "probe_miss"
+    },
+    {
+      "name": "Remedy Entertainment (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "boards-api.greenhouse.io",
+      "error": "https://boards.greenhouse.io/remedyentertainment: HTTP Error 404: Not Found",
+      "stage": "probe_miss"
+    },
+    {
+      "name": "Remedy Entertainment (Teamtailor)",
+      "adapter": "teamtailor",
+      "domain": "remedyentertainment.teamtailor.com",
+      "error": "https://remedyentertainment.teamtailor.com/jobs: HTTP Error 404: Not Found",
+      "stage": "probe_miss"
+    },
+    {
+      "name": "Remedy Entertainment (Personio)",
+      "adapter": "personio",
+      "domain": "remedyentertainment.jobs.personio.de",
+      "error": "https://remedyentertainment.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "stage": "probe"
+    },
+    {
+      "name": "Supercell (Lever)",
+      "adapter": "lever",
+      "domain": "api.lever.co",
+      "error": "https://jobs.lever.co/supercell: HTTP Error 404: Not Found",
+      "stage": "probe_miss"
+    },
+    {
+      "name": "Supercell (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "boards-api.greenhouse.io",
+      "error": "https://boards.greenhouse.io/supercell: HTTP Error 404: Not Found",
+      "stage": "probe_miss"
+    },
+    {
+      "name": "Supercell (Teamtailor)",
+      "adapter": "teamtailor",
+      "domain": "supercell.teamtailor.com",
+      "error": "https://supercell.teamtailor.com/jobs: HTTP Error 404: Not Found",
+      "stage": "probe_miss"
+    },
+    {
+      "name": "Supercell (Personio)",
+      "adapter": "personio",
+      "domain": "supercell.jobs.personio.de",
+      "error": "https://supercell.jobs.personio.de/: HTTP Error 403: Forbidden",
+      "stage": "probe"
     }
   ],
-  "topFailures": [],
+  "topFailures": [
+    {
+      "key": "lever:api.lever.co",
+      "count": 20
+    },
+    {
+      "key": "greenhouse:boards-api.greenhouse.io",
+      "count": 18
+    },
+    {
+      "key": "teamtailor:guerrilla-games.teamtailor.com",
+      "count": 1
+    },
+    {
+      "key": "personio:guerrilla-games.jobs.personio.de",
+      "count": 1
+    },
+    {
+      "key": "teamtailor:guerrillagames.teamtailor.com",
+      "count": 1
+    }
+  ],
   "outputs": {
     "report": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-discovery-report.json",
     "candidates": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-discovery-candidates.json",

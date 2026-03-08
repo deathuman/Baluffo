@@ -11,8 +11,10 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await page.goto("/jobs.html");
 
   await expect(page.locator("#jobs-list")).toBeVisible();
+  await expect(page.locator("#source-status")).toHaveText(/./);
   await page.selectOption("#work-type-filter", "Remote");
   await page.click("#refresh-jobs-btn");
+  await expect(page.locator("#source-status")).toHaveText(/Fetching|Loaded|Could not/i);
 
   const pageButtons = page.locator("#pagination .page-btn");
   const count = await pageButtons.count();
@@ -33,6 +35,9 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await page.click("#auth-sign-out-btn");
   await saveBtn.click();
   await expect(page.locator(".toast").last()).toContainText("Sign in to save jobs");
+
+  await page.locator(".jobs-sources summary").click();
+  await expect(page.locator("#data-sources-list")).toContainText("Google Sheets");
 });
 
 test("saved smoke: sign-in + custom job + notes autosave + export + guest warning", async ({ page }) => {

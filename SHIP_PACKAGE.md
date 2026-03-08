@@ -4,7 +4,7 @@
 
 ### What's New
 - Completed a final frontend architecture refactor focused on maintainability:
-  - removed non-essential legacy frontend globals (kept only `window.JobAppLocalData` compatibility facade)
+  - removed non-essential frontend globals (kept only the `window.JobAppLocalData` compatibility boundary)
   - expanded page-level action dispatch coverage for jobs/saved/admin core flows
   - introduced additional local-data domain modules (`constants`, `phase`, `profile-session`, `job-utils`)
   - extracted jobs source-metadata rendering into dedicated module
@@ -71,6 +71,7 @@
 ### Operator Notes (Local Usage)
 - Run the local admin bridge before using discovery controls in Admin.
 - Discovery actions depend on bridge availability.
+- If bridge startup is delayed, Admin falls back to VS Code task launch and logs a manual command fallback for operators.
 - Approvals affect the next fetch run (run fetcher after approving sources).
 - This setup is optimized for local personal operation, not internet-exposed deployment.
 

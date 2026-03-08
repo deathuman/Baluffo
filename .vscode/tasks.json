@@ -80,7 +80,7 @@
     {
       "label": "Run admin bridge",
       "type": "shell",
-      "command": "python scripts/admin_bridge.py",
+      "command": "python scripts/admin_bridge.py --host 127.0.0.1 --port 8878",
       "isBackground": true,
       "problemMatcher": {
         "owner": "custom",

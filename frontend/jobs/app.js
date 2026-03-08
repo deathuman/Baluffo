@@ -157,7 +157,7 @@ const UNIFIED_CSV_SOURCES = [
   { name: "Unified CSV (local data)", url: "data/jobs-unified.csv" },
   { name: "Unified CSV (root)", url: "jobs-unified.csv" }
 ];
-const LEGACY_SHEETS_SOURCE = {
+const SHEETS_FALLBACK_SOURCE = {
   sheetId: "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE",
   gid: "1560329579"
 };
@@ -1676,7 +1676,7 @@ async function fetchUnifiedJobs() {
   return fetchUnifiedJobsFromData({
     unifiedJsonSources: UNIFIED_JSON_SOURCES,
     unifiedCsvSources: UNIFIED_CSV_SOURCES,
-    legacySheetsSource: LEGACY_SHEETS_SOURCE,
+    sheetsFallbackSource: SHEETS_FALLBACK_SOURCE,
     setSourceStatus,
     parseUnifiedPayload: payload => parseUnifiedJobsPayload(payload, jobsParsing),
     parseCSV: parseJobsCsv
@@ -1693,7 +1693,7 @@ async function renderDataSources() {
     dataSourcesCaptionEl,
     sourceRegistryActiveUrls: SOURCE_REGISTRY_ACTIVE_URLS,
     jobsFetchReportUrls: JOBS_FETCH_REPORT_URLS,
-    legacySheetsSource: LEGACY_SHEETS_SOURCE,
+    sheetsFallbackSource: SHEETS_FALLBACK_SOURCE,
     fetchJsonFromCandidates
   });
 }

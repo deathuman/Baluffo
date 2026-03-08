@@ -12,7 +12,7 @@ function repoPath(...parts) {
   return path.join(ROOT, ...parts);
 }
 
-test("cleanup structure: legacy wrappers/bootstraps remain removed", () => {
+test("cleanup structure: removed wrappers/bootstraps remain removed", () => {
   const removed = [
     "jobs.js",
     "saved.js",
@@ -49,9 +49,22 @@ test("cleanup structure: page indexes boot direct from sibling app modules", () 
 test("cleanup structure: admin app defines centralized fetcher preset metadata", () => {
   const source = fs.readFileSync(repoPath("frontend", "admin", "app.js"), "utf8");
   assert.match(source, /const FETCHER_PRESET_META\s*=\s*\{/);
+  assert.match(source, /const FETCHER_FALLBACK_MESSAGES\s*=\s*\{/);
   assert.match(source, /\bdefault:\s*\{/);
   assert.match(source, /\bincremental:\s*\{/);
   assert.match(source, /\bforce_full:\s*\{/);
   assert.match(source, /\bretry_failed:\s*\{/);
   assert.match(source, /function applyFetcherPresetMetadata\(\)/);
+  assert.doesNotMatch(source, /compatibility URI fallback/i);
+});
+
+test("cleanup structure: jobs modules avoid legacy sheets symbol naming", () => {
+  const jobsApp = fs.readFileSync(repoPath("frontend", "jobs", "app.js"), "utf8");
+  const jobsDataSource = fs.readFileSync(repoPath("frontend", "jobs", "data-source.js"), "utf8");
+  const sourceMetadata = fs.readFileSync(repoPath("frontend", "jobs", "source-metadata.js"), "utf8");
+
+  assert.doesNotMatch(jobsApp, /\bLEGACY_SHEETS_SOURCE\b/);
+  assert.doesNotMatch(jobsApp, /\blegacySheetsSource\b/);
+  assert.doesNotMatch(jobsDataSource, /\blegacySheetsSource\b/);
+  assert.doesNotMatch(sourceMetadata, /\blegacySheetsSource\b/);
 });

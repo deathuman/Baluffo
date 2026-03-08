@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Baluffo Ship Update Manifest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "version",
+    "artifact_url",
+    "sha256",
+    "signature",
+    "min_updater_version",
+    "migration_plan",
+    "rollback_allowed"
+  ],
+  "properties": {
+    "version": { "type": "string", "minLength": 1 },
+    "artifact_url": { "type": "string" },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "min_updater_version": { "type": "string", "minLength": 1 },
+    "migration_plan": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "rollback_allowed": { "type": "boolean" }
+  }
+}

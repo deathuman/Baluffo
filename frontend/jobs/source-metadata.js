@@ -12,7 +12,7 @@ function sourceUrlFromRegistry(row) {
   ).trim();
 }
 
-function normalizeSourceRows(activeRegistry, fetchReport, legacySheetsSource) {
+export function normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackSource) {
   const rows = [];
   const seen = new Set();
   const push = (name, url, status, note = "") => {
@@ -22,7 +22,7 @@ function normalizeSourceRows(activeRegistry, fetchReport, legacySheetsSource) {
     rows.push({ name, url, status, note });
   };
 
-  push("Google Sheets", `https://docs.google.com/spreadsheets/d/${legacySheetsSource.sheetId}/edit?gid=${legacySheetsSource.gid}`, "core");
+  push("Google Sheets", `https://docs.google.com/spreadsheets/d/${sheetsFallbackSource.sheetId}/edit?gid=${sheetsFallbackSource.gid}`, "core");
   push("Remote OK", "https://remoteok.com/", "core");
   push("GamesIndustry Jobs", "https://jobs.gamesindustry.biz/jobs", "core");
 
@@ -94,7 +94,7 @@ export async function renderDataSourcesPanel(options) {
     dataSourcesCaptionEl,
     sourceRegistryActiveUrls,
     jobsFetchReportUrls,
-    legacySheetsSource,
+    sheetsFallbackSource,
     fetchJsonFromCandidates
   } = options;
 
@@ -105,7 +105,7 @@ export async function renderDataSourcesPanel(options) {
     fetchJsonFromCandidates(jobsFetchReportUrls)
   ]);
 
-  const normalized = normalizeSourceRows(activeRegistry, fetchReport, legacySheetsSource);
+  const normalized = normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackSource);
   renderSourceListRows(dataSourcesListEl, normalized.rows, normalized.reportByName);
 
   if (dataSourcesCaptionEl) {

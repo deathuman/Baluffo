@@ -8,6 +8,7 @@ export function toResult(data, error = "") {
 }
 
 export function getLocalDataApi() {
+  // Intentional compatibility boundary: runtime continues to expose this global for now.
   return window.JobAppLocalData || null;
 }
 

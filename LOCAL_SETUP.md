@@ -34,7 +34,7 @@ Saved job record fields:
 - Wiping an account removes profile, saved jobs, notes, and attachments for that user.
 
 ## Future migration note
-`local-data-client.js` exposes a provider-like interface (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
+`local-data-client.js` intentionally keeps a compatibility boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
 
 ## Unified jobs feed generation
 - Run `python scripts/jobs_fetcher.py` to aggregate listings into:
@@ -66,6 +66,7 @@ Saved job record fields:
   - `GET /registry/active`
   - `POST /registry/approve`, `POST /registry/reject`, `POST /registry/rollback`
   - `POST /tasks/run-discovery`, `POST /tasks/run-discovery-full`, `POST /tasks/run-fetcher`
+- If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback and shows a manual command fallback (`python scripts/jobs_fetcher.py`).
 
 - Optional bridge runtime options:
   - CLI:
@@ -88,11 +89,15 @@ Saved job record fields:
 
 - Build:
   - `python scripts/build_ship_bundle.py`
+  - optional version: `python scripts/build_ship_bundle.py --bundle-version 1.2.3`
 - Output:
   - `dist/baluffo-ship`
 - Launchers in bundle root:
   - `run-site.ps1`
   - `run-bridge.ps1`
   - `run-all.ps1`
+  - `apply-update.ps1`
+  - `recover-previous.ps1`
+  - `create-support-bundle.ps1`
 - Detailed runbook:
   - `docs/ship-bundle-runbook.md`

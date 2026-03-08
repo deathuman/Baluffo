@@ -35,12 +35,12 @@ export function parseCSVLarge(csv, options = {}) {
 
 export async function fetchFromGoogleSheets(options = {}) {
   const {
-    legacySheetsSource,
+    sheetsFallbackSource,
     setSourceStatus,
     parseCSV,
     fetcher = fetchWithTimeout
   } = options;
-  const csvUrl = `https://docs.google.com/spreadsheets/d/${legacySheetsSource.sheetId}/export?format=csv&gid=${legacySheetsSource.gid}`;
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetsFallbackSource.sheetId}/export?format=csv&gid=${sheetsFallbackSource.gid}`;
   const sources = [
     { name: "Google Sheets fallback", url: csvUrl },
     { name: "AllOrigins mirror fallback", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(csvUrl)}` }
@@ -62,7 +62,7 @@ export async function fetchFromGoogleSheets(options = {}) {
 
   return {
     jobs: null,
-    error: "Could not fetch listings from the fallback sheets feed.",
+    error: "Could not fetch listings from the Sheets fallback feed.",
     sourceName: ""
   };
 }
@@ -71,7 +71,7 @@ export async function fetchUnifiedJobs(options = {}) {
   const {
     unifiedJsonSources,
     unifiedCsvSources,
-    legacySheetsSource,
+    sheetsFallbackSource,
     setSourceStatus,
     parseUnifiedPayload,
     parseCSV,
@@ -105,16 +105,16 @@ export async function fetchUnifiedJobs(options = {}) {
     }
   }
 
-  const legacy = await fetchFromGoogleSheets({
-    legacySheetsSource,
+  const sheetsFallback = await fetchFromGoogleSheets({
+    sheetsFallbackSource,
     setSourceStatus,
     parseCSV,
     fetcher
   });
-  if (legacy.jobs && legacy.jobs.length > 0) return legacy;
+  if (sheetsFallback.jobs && sheetsFallback.jobs.length > 0) return sheetsFallback;
   return {
     jobs: null,
-    error: "Could not fetch listings from unified feeds or fallback sheets source.",
+    error: "Could not fetch listings from unified feeds or Sheets fallback source.",
     sourceName: ""
   };
 }

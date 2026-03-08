@@ -126,13 +126,24 @@ CLI/env precedence: `CLI > env > defaults`.
 python scripts/build_ship_bundle.py
 ```
 
+Optional version:
+
+```powershell
+python scripts/build_ship_bundle.py --bundle-version 1.2.3
+```
+
 Bundle output: `dist/baluffo-ship` with launcher scripts:
 
 - `run-site.ps1`
 - `run-bridge.ps1`
 - `run-all.ps1`
+- `apply-update.ps1`
+- `recover-previous.ps1`
+- `create-support-bundle.ps1`
 
 Detailed runbook: `docs/ship-bundle-runbook.md`.
+Deployment/update procedure: `docs/deployment-and-update-guide.md`.
+Versioning policy + release checklist: `docs/versioning-policy-and-release-checklist.md`.
 
 ## Local Auth and Storage Model
 
@@ -164,18 +175,14 @@ node --check frontend/shared/ui/index.js frontend/shared/data/index.js
 ```powershell
 npm install
 npx playwright install chromium
-npm run test:unit
+npm run test:frontend:unit
 npm run test:smoke
 ```
 
 ### Python tests
 
 ```powershell
-python -m unittest -v `
-  tests/test_jobs_fetcher.py `
-  tests/test_source_discovery.py `
-  tests/test_source_registry.py `
-  tests/test_admin_bridge_ops.py
+npm run test:py
 ```
 
 ## Data and Registry Files

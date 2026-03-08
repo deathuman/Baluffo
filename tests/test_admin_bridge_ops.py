@@ -1018,7 +1018,7 @@ class AdminBridgeOpsTests(unittest.TestCase):
         finally:
             admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
-    def test_load_state_normalizes_legacy_static_www_studio(self):
+    def test_load_state_normalizes_static_www_studio_placeholder(self):
         pending_row = {
             "name": "Www (Manual Website)",
             "studio": "Www",

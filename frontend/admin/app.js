@@ -137,6 +137,15 @@ const OPS_POLL_LIVE_INTERVAL_MS = 2000;
 const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const ADMIN_SOURCE_FILTER_KEY = "baluffo_admin_source_filter";
 const UNKNOWN_ERROR_TEXT = "unknown error";
+const FETCHER_FALLBACK_MESSAGES = {
+  bridgeUnavailable: "Admin bridge unavailable, using VS Code task fallback.",
+  presetNeedsBridge: "VS Code task fallback supports default fetcher runs only. Start admin bridge and retry.",
+  launchPrimary: taskLabel => `Triggered VS Code task URI (primary): ${taskLabel}`,
+  launchSecondary: "Triggered VS Code task URI fallback (quoted task label).",
+  manualHint: "If VS Code did not open, run the manual command fallback shown below.",
+  copiedManualCommand: command => `Copied manual command fallback: ${command}`,
+  manualCommand: command => `Manual command fallback: ${command}`
+};
 const FETCHER_PRESET_META = {
   default: {
     preset: "default",
@@ -625,12 +634,12 @@ async function triggerJobsFetcherTask(runOptions = {}) {
       return;
     }
   } catch {
-    appendFetcherLog("Admin bridge unavailable, falling back to VS Code task launch.", "warn");
+    appendFetcherLog(FETCHER_FALLBACK_MESSAGES.bridgeUnavailable, "warn");
   } finally {
     setBusyFlag("fetcherRun", false);
   }
   if (presetMeta.preset !== "default") {
-    appendFetcherLog("Bridge fallback does not support preset fetcher runs. Start admin bridge and retry.", "error");
+    appendFetcherLog(FETCHER_FALLBACK_MESSAGES.presetNeedsBridge, "error");
     showToast("Fetcher preset requires admin bridge.", "error");
     return;
   }
@@ -645,13 +654,13 @@ async function triggerJobsFetcherTask(runOptions = {}) {
 
   try {
     launchVsCodeUri(taskUris[0]);
-    appendFetcherLog(`Triggered VS Code task URI (primary): ${JOBS_FETCHER_TASK_LABEL}`);
+    appendFetcherLog(FETCHER_FALLBACK_MESSAGES.launchPrimary(JOBS_FETCHER_TASK_LABEL));
     setSourceStatus("Triggered VS Code task to run jobs fetcher. Check VS Code terminal for progress.");
     window.setTimeout(() => {
       launchVsCodeUri(taskUris[1]);
-      appendFetcherLog("Triggered compatibility URI fallback for VS Code task launch.");
+      appendFetcherLog(FETCHER_FALLBACK_MESSAGES.launchSecondary);
     }, 180);
-    appendFetcherLog("If VS Code did not open, run the fallback command shown below.", "warn");
+    appendFetcherLog(FETCHER_FALLBACK_MESSAGES.manualHint, "warn");
     showToast("Fetcher task launch requested. Check VS Code.", "info");
   } catch (err) {
     logAdminError("Could not trigger VS Code task", err);
@@ -664,13 +673,13 @@ async function triggerJobsFetcherTask(runOptions = {}) {
   if (navigator?.clipboard?.writeText) {
     navigator.clipboard.writeText(JOBS_FETCHER_COMMAND)
       .then(() => {
-        appendFetcherLog(`Copied fallback command: ${JOBS_FETCHER_COMMAND}`);
+        appendFetcherLog(FETCHER_FALLBACK_MESSAGES.copiedManualCommand(JOBS_FETCHER_COMMAND));
       })
       .catch(() => {
-        appendFetcherLog(`Fallback command: ${JOBS_FETCHER_COMMAND}`, "warn");
+        appendFetcherLog(FETCHER_FALLBACK_MESSAGES.manualCommand(JOBS_FETCHER_COMMAND), "warn");
       });
   } else {
-    appendFetcherLog(`Fallback command: ${JOBS_FETCHER_COMMAND}`, "warn");
+    appendFetcherLog(FETCHER_FALLBACK_MESSAGES.manualCommand(JOBS_FETCHER_COMMAND), "warn");
   }
 
   loadLatestFetcherReport({ silent: true }).catch(fetchErr => {
