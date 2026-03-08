@@ -1,3 +1,47 @@
+import { AdminConfig as adminConfig } from "../../admin-config.js";
+import {
+  escapeHtml,
+  showToast,
+  setText,
+  bindUi,
+  bindAsyncClick
+} from "../shared/ui/index.js";
+import { getLastJobsUrl as getLastJobsUrlFromData } from "../shared/data/index.js";
+import { isAdminApiReady, adminService, adminPageService } from "./services.js";
+import { createAdminDispatcher, ADMIN_ACTIONS } from "./actions.js";
+import {
+  renderTotalsHtml,
+  renderUsersTableHtml,
+  renderUsersEmptyHtml,
+  renderSourcesTableHtml,
+  appendAdminLogRow,
+  renderAdminOpsAlerts,
+  renderAdminOpsKpis,
+  renderAdminOpsSchedule,
+  renderAdminOpsTrends,
+  renderAdminOpsHistory
+} from "./render.js";
+import {
+  getErrorMessage as getErrorMessageFromDomain,
+  normalizeLogLevel as normalizeLogLevelFromDomain,
+  createLogEvent as createLogEventFromDomain,
+  formatLogEventText as formatLogEventTextFromDomain,
+  mergeSourceStatusFromReport as mergeSourceStatusFromDomain,
+  applySourceFilter as applySourceFilterFromDomain,
+  getSourceJobsFoundCount as getSourceJobsFoundCountFromDomain
+} from "./domain.js";
+import {
+  fetchJobsFetchReportJson as fetchJobsFetchReportJsonFromData,
+  getBridge as getBridgeFromData,
+  postBridge as postBridgeFromData
+} from "./data-source.js";
+import {
+  readSourceFilter,
+  writeSourceFilter,
+  readShowZeroJobs,
+  writeShowZeroJobs
+} from "./state-sync/index.js";
+import { safeWriteJsonLocal } from "../local-data/storage-gateway.js";
 let adminSourceStatusEl;
 let adminPinGateEl;
 let adminContentEl;
@@ -44,7 +88,6 @@ let adminPin = "";
  * @property {string} sourceId
  * @property {string} message
  */
-const adminConfig = window.AdminConfig || {};
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";
 const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python scripts/jobs_fetcher.py";
 const JOBS_FETCHER_TASK_LABEL = adminConfig.JOBS_FETCHER_TASK_LABEL || "Run jobs fetcher";
@@ -64,10 +107,15 @@ let fetcherLaunchAtMs = 0;
 let bridgeStatusPollTimer = null;
 let latestFetcherReportCache = null;
 let latestOpsHealthCache = null;
-let activeSourceFilter = readSourceFilterPreference();
+const adminPageState = {
+  activeSourceFilter: readSourceFilterPreference(),
+  selectedSourceIds: new Set()
+};
+const adminDispatch = createAdminDispatcher();
+let activeSourceFilter = adminPageState.activeSourceFilter;
 
 function getErrorMessage(err) {
-  return err?.message || UNKNOWN_ERROR_TEXT;
+  return getErrorMessageFromDomain(err, UNKNOWN_ERROR_TEXT);
 }
 
 function logAdminError(context, err) {
@@ -80,9 +128,6 @@ function bootAdminPage() {
   initAdminPage();
 }
 
-window.AdminApp = {
-  boot: bootAdminPage
-};
 
 function cacheDom() {
   adminSourceStatusEl = document.getElementById("admin-source-status");
@@ -124,24 +169,15 @@ function cacheDom() {
 }
 
 function bindEvents() {
-  if (adminJobsBtnEl) {
-    adminJobsBtnEl.addEventListener("click", () => {
-      const target = getLastJobsUrl();
-      window.location.href = target;
-    });
-  }
 
-  if (adminSavedBtnEl) {
-    adminSavedBtnEl.addEventListener("click", () => {
-      window.location.href = "saved.html";
-    });
-  }
-
-  if (adminUnlockBtnEl) {
-    adminUnlockBtnEl.addEventListener("click", () => {
-      unlockAdmin();
-    });
-  }
+  bindUi(adminJobsBtnEl, "click", () => {
+    const target = getLastJobsUrl();
+    window.location.href = target;
+  });
+  bindUi(adminSavedBtnEl, "click", () => {
+    window.location.href = "saved.html";
+  });
+  bindUi(adminUnlockBtnEl, "click", unlockAdmin);
 
   if (adminPinInputEl) {
     adminPinInputEl.addEventListener("keydown", event => {
@@ -152,78 +188,21 @@ function bindEvents() {
     });
   }
 
-  if (adminRefreshBtnEl) {
-    adminRefreshBtnEl.addEventListener("click", async () => {
-      await refreshOverview();
-    });
-  }
-
-  if (adminRunFetcherBtnEl) {
-    adminRunFetcherBtnEl.addEventListener("click", async () => {
-      await triggerJobsFetcherTask();
-    });
-  }
-
-  if (adminRefreshReportBtnEl) {
-    adminRefreshReportBtnEl.addEventListener("click", async () => {
-      await loadLatestFetcherReport();
-    });
-  }
-
-  if (adminClearLogBtnEl) {
-    adminClearLogBtnEl.addEventListener("click", () => {
-      setFetcherLogPlaceholder("Output log cleared.");
-    });
-  }
-
-  if (adminRetryFailedBtnEl) {
-    adminRetryFailedBtnEl.addEventListener("click", async () => {
-      appendFetcherLog("Retry failed sources requested (v1 runs full fetcher).", "warn");
-      await triggerJobsFetcherTask();
-    });
-  }
-
-  if (adminCopyFailuresBtnEl) {
-    adminCopyFailuresBtnEl.addEventListener("click", async () => {
-      await copyLatestFailureSummary();
-    });
-  }
-
-  if (adminLockBtnEl) {
-    adminLockBtnEl.addEventListener("click", () => {
-      lockAdmin();
-    });
-  }
-
-  if (adminRunDiscoveryBtnEl) {
-    adminRunDiscoveryBtnEl.addEventListener("click", async () => {
-      await runDiscoveryTask();
-    });
-  }
-
-  if (adminLoadDiscoveryBtnEl) {
-    adminLoadDiscoveryBtnEl.addEventListener("click", async () => {
-      await loadDiscoveryData();
-    });
-  }
-
-  if (adminApproveSourcesBtnEl) {
-    adminApproveSourcesBtnEl.addEventListener("click", async () => {
-      await approveSelectedSources();
-    });
-  }
-
-  if (adminRejectSourcesBtnEl) {
-    adminRejectSourcesBtnEl.addEventListener("click", async () => {
-      await rejectSelectedSources();
-    });
-  }
-
-  if (adminRestoreRejectedBtnEl) {
-    adminRestoreRejectedBtnEl.addEventListener("click", async () => {
-      await restoreRejectedSources();
-    });
-  }
+  bindAsyncClick(adminRefreshBtnEl, refreshOverview);
+  bindAsyncClick(adminRunFetcherBtnEl, triggerJobsFetcherTask);
+  bindAsyncClick(adminRefreshReportBtnEl, loadLatestFetcherReport);
+  bindUi(adminClearLogBtnEl, "click", () => setFetcherLogPlaceholder("Output log cleared."));
+  bindAsyncClick(adminRetryFailedBtnEl, async () => {
+    appendFetcherLog("Retry failed sources requested (v1 runs full fetcher).", "warn");
+    await triggerJobsFetcherTask();
+  });
+  bindAsyncClick(adminCopyFailuresBtnEl, copyLatestFailureSummary);
+  bindUi(adminLockBtnEl, "click", lockAdmin);
+  bindAsyncClick(adminRunDiscoveryBtnEl, runDiscoveryTask);
+  bindAsyncClick(adminLoadDiscoveryBtnEl, loadDiscoveryData);
+  bindAsyncClick(adminApproveSourcesBtnEl, approveSelectedSources);
+  bindAsyncClick(adminRejectSourcesBtnEl, rejectSelectedSources);
+  bindAsyncClick(adminRestoreRejectedBtnEl, restoreRejectedSources);
 
   if (adminShowZeroJobsToggleEl) {
     adminShowZeroJobsToggleEl.checked = readShowZeroJobsPreference();
@@ -233,11 +212,7 @@ function bindEvents() {
     });
   }
 
-  if (adminRefreshOpsBtnEl) {
-    adminRefreshOpsBtnEl.addEventListener("click", async () => {
-      await loadOpsHealthData();
-    });
-  }
+  bindAsyncClick(adminRefreshOpsBtnEl, loadOpsHealthData);
 
   adminSourceFilterBtnEls.forEach(btn => {
     btn.addEventListener("click", () => {
@@ -249,13 +224,12 @@ function bindEvents() {
 }
 
 function initAdminPage() {
-  const api = window.JobAppLocalData;
   setSourceFilter(activeSourceFilter);
   setFetcherLogPlaceholder("Unlock admin to view fetcher logs and latest report details.");
   setDiscoveryLogPlaceholder("Unlock admin to manage source discovery approvals.");
   setOpsPlaceholders();
   setBridgeStatusBadge("checking", "Bridge Checking");
-  if (!api || !api.isReady()) {
+  if (!adminPageService.isAvailable() || !isAdminApiReady()) {
     setSourceStatus("Local storage provider unavailable.");
     if (adminPinGateEl) adminPinGateEl.classList.add("hidden");
     renderUsersEmpty("Admin view is unavailable in this browser.");
@@ -264,35 +238,27 @@ function initAdminPage() {
 }
 
 function getLastJobsUrl() {
-  try {
-    const url = sessionStorage.getItem(JOBS_LAST_URL_KEY);
-    if (!url) return "jobs.html";
-    if (!url.startsWith("/") && !url.startsWith("jobs.html")) return "jobs.html";
-    return url;
-  } catch {
-    return "jobs.html";
-  }
+  return getLastJobsUrlFromData(JOBS_LAST_URL_KEY, "jobs.html");
 }
 
 function setSourceStatus(text) {
-  if (!adminSourceStatusEl) return;
-  adminSourceStatusEl.textContent = text;
+  setText(adminSourceStatusEl, text);
 }
 
 function unlockAdmin() {
-  const api = window.JobAppLocalData;
   const nextPin = String(adminPinInputEl?.value || "").trim();
   if (!nextPin) {
     showToast("Enter admin PIN.", "error");
     return;
   }
-  if (!api || !api.verifyAdminPin || !api.verifyAdminPin(nextPin)) {
+  if (!adminService.verifyAdminPin(nextPin)) {
     showToast("Invalid admin PIN.", "error");
     setSourceStatus("Invalid PIN. Access denied.");
     return;
   }
 
   adminPin = nextPin;
+  adminDispatch.dispatch({ type: ADMIN_ACTIONS.UNLOCKED });
   setSourceStatus("Admin access granted.");
   if (adminPinGateEl) adminPinGateEl.classList.add("hidden");
   if (adminContentEl) adminContentEl.classList.remove("hidden");
@@ -318,6 +284,7 @@ function unlockAdmin() {
 
 function lockAdmin() {
   adminPin = "";
+  adminDispatch.dispatch({ type: ADMIN_ACTIONS.LOCKED });
   if (adminPinGateEl) adminPinGateEl.classList.remove("hidden");
   if (adminContentEl) adminContentEl.classList.add("hidden");
   if (adminLockBtnEl) adminLockBtnEl.classList.add("hidden");
@@ -405,15 +372,19 @@ function launchVsCodeUri(uri) {
 }
 
 async function refreshOverview() {
-  const api = window.JobAppLocalData;
-  if (!api || !adminPin) return;
+  if (!adminPin) return;
 
   setSourceStatus("Loading admin overview...");
   try {
-    const overview = await api.getAdminOverview(adminPin);
+    const overviewResult = await adminService.getAdminOverview(adminPin);
+    if (!overviewResult.ok) {
+      throw new Error(overviewResult.error || "Could not load admin overview.");
+    }
+    const overview = overviewResult.data || { users: [], totals: {} };
     renderTotals(overview.totals);
     renderUsers(overview.users);
     setSourceStatus(`Loaded ${overview.users.length} user profiles.`);
+    adminDispatch.dispatch({ type: ADMIN_ACTIONS.OVERVIEW_REFRESHED, payload: { at: new Date().toISOString() } });
   } catch (err) {
     logAdminError("Could not load admin overview", err);
     showToast("Could not load admin overview.", "error");
@@ -427,37 +398,7 @@ async function refreshOverview() {
 
 function renderTotals(totals) {
   if (!adminTotalsEl) return;
-  if (!totals) {
-    adminTotalsEl.innerHTML = "";
-    return;
-  }
-
-  adminTotalsEl.innerHTML = `
-    <div class="admin-total-card">
-      <div class="admin-total-label">Users</div>
-      <div class="admin-total-value">${Number(totals.usersCount || 0).toLocaleString()}</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Saved Jobs</div>
-      <div class="admin-total-value">${Number(totals.savedJobsCount || 0).toLocaleString()}</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Notes Size</div>
-      <div class="admin-total-value">${formatBytes(totals.notesBytes || 0)}</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Attachments</div>
-      <div class="admin-total-value">${Number(totals.attachmentsCount || 0).toLocaleString()}</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Attachment Size</div>
-      <div class="admin-total-value">${formatBytes(totals.attachmentsBytes || 0)}</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Total Size</div>
-      <div class="admin-total-value">${formatBytes(totals.totalBytes || 0)}</div>
-    </div>
-  `;
+  adminTotalsEl.innerHTML = renderTotalsHtml(totals, formatBytes);
 }
 
 function renderUsers(users) {
@@ -467,23 +408,7 @@ function renderUsers(users) {
   }
   if (!adminUsersListEl) return;
 
-  adminUsersListEl.innerHTML = `
-    <div class="jobs-table-header">
-      <div class="admin-row-header">
-        <div>Name</div>
-        <div>User ID</div>
-        <div>Saved Jobs</div>
-        <div>Notes Size</div>
-        <div>Attachments</div>
-        <div>Attachment Size</div>
-        <div>Total Size</div>
-        <div>Actions</div>
-      </div>
-    </div>
-    <div class="jobs-table-body">
-      ${users.map(renderUserRow).join("")}
-    </div>
-  `;
+  adminUsersListEl.innerHTML = renderUsersTableHtml(users, formatBytes);
 
   adminUsersListEl.querySelectorAll(".admin-wipe-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
@@ -494,45 +419,20 @@ function renderUsers(users) {
   });
 }
 
-function renderUserRow(user) {
-  const uid = escapeHtml(user.uid || "");
-  const name = escapeHtml(user.name || user.uid || "Unknown");
-  const email = escapeHtml(user.email || "");
-  const label = email ? `${name} (${email})` : name;
-
-  return `
-    <div class="admin-user-row">
-      <div class="admin-cell" data-label="Name">${label}</div>
-      <div class="admin-cell admin-uid" data-label="User ID">${uid}</div>
-      <div class="admin-cell" data-label="Saved Jobs">${Number(user.savedJobsCount || 0).toLocaleString()}</div>
-      <div class="admin-cell" data-label="Notes Size">${formatBytes(user.notesBytes || 0)}</div>
-      <div class="admin-cell" data-label="Attachments">${Number(user.attachmentsCount || 0).toLocaleString()}</div>
-      <div class="admin-cell" data-label="Attachment Size">${formatBytes(user.attachmentsBytes || 0)}</div>
-      <div class="admin-cell" data-label="Total Size">${formatBytes(user.totalBytes || 0)}</div>
-      <div class="admin-cell" data-label="Actions">
-        <button class="btn back-btn admin-wipe-btn" data-uid="${uid}" data-name="${name}">Wipe Account</button>
-      </div>
-    </div>
-  `;
-}
-
 function renderUsersEmpty(message) {
   if (!adminUsersListEl) return;
-  adminUsersListEl.innerHTML = message
-    ? `<div class="no-results">${escapeHtml(message)}</div>`
-    : "";
+  adminUsersListEl.innerHTML = renderUsersEmptyHtml(message);
 }
 
 async function wipeAccount(uid, name) {
   if (!uid || !adminPin) return;
-  const api = window.JobAppLocalData;
-  if (!api) return;
 
   const confirmed = window.confirm(`Permanently wipe account "${name}"? This deletes profile, saved jobs, notes, and attachments.`);
   if (!confirmed) return;
 
   try {
-    await api.wipeAccountAdmin(adminPin, uid);
+    const wipeResult = await adminService.wipeAccountAdmin(adminPin, uid);
+    if (!wipeResult.ok) throw new Error(wipeResult.error || "Could not wipe account.");
     showToast(`Wiped account ${name}.`, "success");
     await refreshOverview();
   } catch (err) {
@@ -550,27 +450,6 @@ function formatBytes(bytes) {
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-function escapeHtml(text) {
-  return String(text || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function showToast(message, type = "info") {
-  const toast = document.createElement("div");
-  toast.className = `toast ${type}`;
-  toast.textContent = message;
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("visible"));
-  setTimeout(() => {
-    toast.classList.remove("visible");
-    setTimeout(() => toast.remove(), 220);
-  }, 2600);
 }
 
 function setDiscoveryLogPlaceholder(message) {
@@ -606,198 +485,25 @@ async function loadOpsHealthData() {
       getBridge("/ops/history?limit=30")
     ]);
     latestOpsHealthCache = health || null;
-    renderOpsAlerts(health?.alerts || []);
-    renderOpsKpis(health?.kpis || {}, String(health?.status || "healthy"));
-    renderOpsSchedule(health?.schedule || {});
-    renderOpsHistory(historyPayload?.runs || []);
-    renderOpsTrends(historyPayload?.runs || []);
+    renderAdminOpsAlerts(adminOpsAlertsEl, health?.alerts || [], {
+      onAck: async alertId => {
+        if (!alertId) return;
+        try {
+          await postBridge("/ops/alerts/ack", { id: alertId });
+          await loadOpsHealthData();
+        } catch (err) {
+          showToast(`Could not dismiss alert: ${getErrorMessage(err)}`, "error");
+        }
+      }
+    });
+    renderAdminOpsKpis(adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
+    renderAdminOpsSchedule(adminOpsScheduleEl, health?.schedule || {}, latestOpsHealthCache);
+    renderAdminOpsHistory(adminOpsHistoryEl, historyPayload?.runs || []);
+    renderAdminOpsTrends(adminOpsTrendsEl, historyPayload?.runs || []);
+    adminDispatch.dispatch({ type: ADMIN_ACTIONS.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
   } catch (err) {
     setOpsPlaceholders(`Ops health unavailable: ${getErrorMessage(err)}`);
   }
-}
-
-function renderOpsAlerts(alerts) {
-  if (!adminOpsAlertsEl) return;
-  const rows = Array.isArray(alerts) ? alerts : [];
-  if (!rows.length) {
-    adminOpsAlertsEl.innerHTML = '<div class="admin-alert-banner healthy">No active alerts.</div>';
-    return;
-  }
-  adminOpsAlertsEl.innerHTML = rows.map(alert => {
-    const id = escapeHtml(String(alert?.id || ""));
-    const severity = String(alert?.severity || "warning").toLowerCase();
-    const cls = severity === "critical" ? "critical" : "warning";
-    return `
-      <div class="admin-alert-banner ${cls}">
-        <div class="admin-alert-message">${escapeHtml(String(alert?.message || id))}</div>
-        <button class="btn back-btn admin-alert-ack-btn" data-alert-id="${id}">Dismiss</button>
-      </div>
-    `;
-  }).join("");
-  adminOpsAlertsEl.querySelectorAll(".admin-alert-ack-btn").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const alertId = String(btn.dataset.alertId || "");
-      if (!alertId) return;
-      try {
-        await postBridge("/ops/alerts/ack", { id: alertId });
-        await loadOpsHealthData();
-      } catch (err) {
-        showToast(`Could not dismiss alert: ${getErrorMessage(err)}`, "error");
-      }
-    });
-  });
-}
-
-function renderOpsKpis(kpis, status) {
-  if (!adminOpsKpisEl) return;
-  const successRate = Number(kpis?.sevenDayFetchSuccessRate || 0);
-  const failedRatio = Number(kpis?.failedSourceRatioLatest || 0);
-  const pending = Number(kpis?.pendingApprovalsCount || 0);
-  const avgMs = Number(kpis?.avgFetchDurationMs7d || 0);
-  const statusClass = status === "critical" ? "critical" : status === "warning" ? "warning" : "healthy";
-  adminOpsKpisEl.innerHTML = `
-    <div class="admin-total-card">
-      <div class="admin-total-label">Ops Status</div>
-      <div class="admin-total-value"><span class="admin-status-chip ${statusClass}">${escapeHtml(status)}</span></div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Last Successful Fetch</div>
-      <div class="admin-total-value">${escapeHtml(String(kpis?.lastSuccessfulFetchAge || "unknown"))}</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Fetch Success (7d)</div>
-      <div class="admin-total-value">${(successRate * 100).toFixed(1)}%</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Avg Fetch Duration (7d)</div>
-      <div class="admin-total-value">${formatDuration(avgMs)}</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Failed Source Ratio</div>
-      <div class="admin-total-value">${(failedRatio * 100).toFixed(1)}%</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Pending Approvals</div>
-      <div class="admin-total-value">${pending.toLocaleString()}</div>
-    </div>
-  `;
-}
-
-function renderOpsSchedule(schedule) {
-  if (!adminOpsScheduleEl) return;
-  const fetcher = schedule?.fetcher || {};
-  const discovery = schedule?.discovery || {};
-  adminOpsScheduleEl.innerHTML = `
-    <div class="admin-ops-schedule-item"><strong>Fetcher</strong>: ${formatScheduleCell(fetcher)}</div>
-    <div class="admin-ops-schedule-item"><strong>Discovery</strong>: ${formatScheduleCell(discovery)}</div>
-    <div class="admin-ops-schedule-item"><strong>Last Run</strong>: ${formatLastRunCell(latestOpsHealthCache?.kpis?.lastRunResult || {})}</div>
-  `;
-}
-
-function renderOpsTrends(runs) {
-  if (!adminOpsTrendsEl) return;
-  const rows = Array.isArray(runs) ? runs : [];
-  const fetchRuns = rows.filter(row => String(row?.type || "") === "fetch");
-  const latest = fetchRuns[fetchRuns.length - 1];
-  const prev = fetchRuns[fetchRuns.length - 2];
-  if (!latest || !prev) {
-    adminOpsTrendsEl.textContent = "Trends: not enough fetch history yet.";
-    return;
-  }
-  const latestOutput = Number(latest?.summary?.outputCount || 0);
-  const prevOutput = Number(prev?.summary?.outputCount || 0);
-  const latestFailed = Number(latest?.summary?.failedSources || 0);
-  const prevFailed = Number(prev?.summary?.failedSources || 0);
-  adminOpsTrendsEl.textContent =
-    `Trends: output Δ ${formatSignedInt(latestOutput - prevOutput)} (latest ${latestOutput.toLocaleString()}); failed sources Δ ${formatSignedInt(latestFailed - prevFailed)}.`;
-}
-
-function renderOpsHistory(runs) {
-  if (!adminOpsHistoryEl) return;
-  const rows = Array.isArray(runs) ? runs : [];
-  if (!rows.length) {
-    adminOpsHistoryEl.innerHTML = '<div class="no-results">No run history yet.</div>';
-    return;
-  }
-  const sorted = [...rows].sort((a, b) =>
-    String(b?.finishedAt || b?.startedAt || "").localeCompare(String(a?.finishedAt || a?.startedAt || ""))
-  );
-  adminOpsHistoryEl.innerHTML = `
-    <div class="jobs-table-header">
-      <div class="admin-row-header admin-ops-history-header">
-        <div>Type</div>
-        <div>Status</div>
-        <div>Duration</div>
-        <div>Output/Queued</div>
-        <div>Failed</div>
-        <div>Finished</div>
-      </div>
-    </div>
-    <div class="jobs-table-body">
-      ${sorted.map(row => {
-        const type = escapeHtml(String(row?.type || "unknown"));
-        const status = escapeHtml(String(row?.status || "unknown"));
-        const duration = formatDuration(Number(row?.durationMs || 0));
-        const summary = row?.summary || {};
-        const outputOrQueued = row?.type === "discovery"
-          ? Number(summary?.queuedCandidateCount || 0)
-          : Number(summary?.outputCount || 0);
-        const failed = row?.type === "discovery"
-          ? Number(summary?.failedProbeCount || 0)
-          : Number(summary?.failedSources || 0);
-        const finished = escapeHtml(formatDateTime(row?.finishedAt || row?.startedAt || ""));
-        return `
-          <div class="admin-user-row admin-source-row admin-ops-history-row">
-            <div class="admin-cell">${type}</div>
-            <div class="admin-cell"><span class="admin-status-chip ${status === "error" ? "critical" : status === "warning" ? "warning" : "healthy"}">${status}</span></div>
-            <div class="admin-cell">${duration}</div>
-            <div class="admin-cell">${Number(outputOrQueued).toLocaleString()}</div>
-            <div class="admin-cell">${Number(failed).toLocaleString()}</div>
-            <div class="admin-cell">${finished}</div>
-          </div>
-        `;
-      }).join("")}
-    </div>
-  `;
-}
-
-function formatDuration(ms) {
-  const value = Math.max(0, Number(ms) || 0);
-  if (!value) return "0s";
-  if (value < 1000) return `${value}ms`;
-  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
-  return `${(value / 60_000).toFixed(1)}m`;
-}
-
-function formatDateTime(value) {
-  const parsed = Date.parse(String(value || ""));
-  if (!Number.isFinite(parsed)) return "unknown";
-  return new Date(parsed).toLocaleString();
-}
-
-function formatScheduleCell(entry) {
-  const interval = Number(entry?.intervalHours || 0);
-  const next = formatDateTime(entry?.nextRunAt || "");
-  if (interval > 0) {
-    return `every ${interval}h, next ${next}`;
-  }
-  if (String(entry?.note || "") === "manual_task") {
-    return "manual task (no interval)";
-  }
-  return "unknown";
-}
-
-function formatLastRunCell(lastRun) {
-  const type = String(lastRun?.type || "");
-  const status = String(lastRun?.status || "");
-  const finished = formatDateTime(lastRun?.finishedAt || "");
-  if (!type) return "none";
-  return `${type} ${status} @ ${finished}`;
-}
-
-function formatSignedInt(value) {
-  const num = Number(value) || 0;
-  return num > 0 ? `+${num}` : `${num}`;
 }
 
 function isValidSourceFilter(value) {
@@ -815,104 +521,37 @@ function setSourceFilter(value) {
 }
 
 function readSourceFilterPreference() {
-  try {
-    const value = localStorage.getItem(ADMIN_SOURCE_FILTER_KEY) || "all";
-    return isValidSourceFilter(value) ? value : "all";
-  } catch {
-    return "all";
-  }
+  const value = readSourceFilter(ADMIN_SOURCE_FILTER_KEY, "all");
+  return isValidSourceFilter(value) ? value : "all";
 }
 
 function writeSourceFilterPreference(value) {
-  try {
-    localStorage.setItem(ADMIN_SOURCE_FILTER_KEY, isValidSourceFilter(value) ? value : "all");
-  } catch {
-    // Ignore.
-  }
+  writeSourceFilter(ADMIN_SOURCE_FILTER_KEY, isValidSourceFilter(value) ? value : "all");
 }
 
 function mergeSourceStatusFromReport(rows, report, mode) {
-  const sourceRows = Array.isArray(rows) ? rows : [];
-  const sources = Array.isArray(report?.sources) ? report.sources : [];
-  const byName = new Map(sources.map(row => [String(row?.studio || row?.name || "").toLowerCase(), row]));
-  return sourceRows.map(row => {
-    const key = String(row?.studio || row?.name || "").toLowerCase();
-    const matched = byName.get(key) || null;
-    if (!matched) return row;
-    return {
-      ...row,
-      _lastStatus: String(matched?.status || ""),
-      _lastError: String(matched?.error || ""),
-      _lastFetchedCount: Number(matched?.fetchedCount || 0),
-      _lastKeptCount: Number(matched?.keptCount || 0),
-      _mode: mode
-    };
-  });
+  return mergeSourceStatusFromDomain(rows, report, mode);
 }
 
 function applySourceFilter(rows) {
-  const filter = activeSourceFilter || "all";
-  if (filter === "all") return rows;
-  return (Array.isArray(rows) ? rows : []).filter(row => {
-    const status = String(row?._lastStatus || row?.status || "").toLowerCase();
-    const jobsFound = getSourceJobsFoundCount(row);
-    if (filter === "error") return status === "error";
-    if (filter === "excluded") return status === "excluded";
-    if (filter === "zero") return jobsFound === 0;
-    if (filter === "healthy") return status === "ok" || (jobsFound > 0 && !status);
-    return true;
-  });
+  return applySourceFilterFromDomain(rows, activeSourceFilter);
 }
 
 function createLogEvent(scope, messageOrEvent, level = "info") {
-  if (messageOrEvent && typeof messageOrEvent === "object" && !Array.isArray(messageOrEvent)) {
-    return {
-      timestamp: String(messageOrEvent.timestamp || new Date().toISOString()),
-      level: normalizeLogLevel(messageOrEvent.level || level).replace("log-", ""),
-      scope: String(messageOrEvent.scope || scope || "admin"),
-      sourceId: String(messageOrEvent.sourceId || ""),
-      message: String(messageOrEvent.message || "")
-    };
-  }
-  return {
-    timestamp: new Date().toISOString(),
-    level: normalizeLogLevel(level).replace("log-", ""),
-    scope: String(scope || "admin"),
-    sourceId: "",
-    message: String(messageOrEvent || "")
-  };
+  return createLogEventFromDomain(scope, messageOrEvent, level);
 }
 
 function formatLogEventText(event) {
-  const prefix = `[${event.scope}]`;
-  const source = event.sourceId ? ` [${event.sourceId}]` : "";
-  return `${prefix}${source} ${event.message}`.trim();
+  return formatLogEventTextFromDomain(event);
 }
 
 function appendLogRow(container, event, maxRows = 220) {
-  if (!container) return;
-  const row = document.createElement("div");
-  row.className = `admin-fetcher-line ${normalizeLogLevel(event.level)}`;
-  row.dataset.timestamp = event.timestamp;
-  row.dataset.level = event.level;
-  row.dataset.scope = event.scope;
-  row.dataset.sourceId = event.sourceId;
-
-  const stamp = document.createElement("span");
-  stamp.className = "admin-fetcher-time";
-  stamp.textContent = toLocalTime(new Date(event.timestamp));
-
-  const text = document.createElement("span");
-  text.className = "admin-fetcher-text";
-  text.textContent = formatLogEventText(event);
-
-  row.append(stamp, text);
-  container.appendChild(row);
-
-  while (container.children.length > maxRows) {
-    container.removeChild(container.firstChild);
-  }
-  container.scrollTop = container.scrollHeight;
+  appendAdminLogRow(container, event, {
+    maxRows,
+    normalizeLogLevel,
+    toLocalTime,
+    formatLogEventText
+  });
 }
 
 function appendDiscoveryLog(message, level = "info") {
@@ -934,12 +573,7 @@ function appendFetcherLog(message, level = "info") {
 }
 
 function normalizeLogLevel(level) {
-  const value = String(level || "info").toLowerCase();
-  if (value === "error") return "log-error";
-  if (value === "warn" || value === "warning") return "log-warn";
-  if (value === "success") return "log-success";
-  if (value === "muted") return "log-muted";
-  return "log-info";
+  return normalizeLogLevelFromDomain(level);
 }
 
 async function loadLatestFetcherReport(options = {}) {
@@ -998,15 +632,7 @@ async function loadLatestFetcherReport(options = {}) {
 }
 
 async function fetchJobsFetchReportJson() {
-  try {
-    const response = await fetch(`${JOBS_FETCH_REPORT_URL}?t=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    return await response.json();
-  } catch {
-    return null;
-  }
+  return fetchJobsFetchReportJsonFromData(JOBS_FETCH_REPORT_URL);
 }
 
 async function copyLatestFailureSummary() {
@@ -1100,7 +726,7 @@ function emitJobsAutoRefreshSignal(report) {
   };
 
   try {
-    localStorage.setItem(JOBS_AUTO_REFRESH_SIGNAL_KEY, JSON.stringify(signal));
+    safeWriteJsonLocal(JOBS_AUTO_REFRESH_SIGNAL_KEY, signal);
     appendFetcherLog("Signaled jobs page to auto-refresh from unified feed.", "success");
   } catch {
     appendFetcherLog("Could not write auto-refresh signal to localStorage.", "warn");
@@ -1109,15 +735,9 @@ function emitJobsAutoRefreshSignal(report) {
 
 async function getBridge(path) {
   try {
-    const response = await fetch(`${ADMIN_BRIDGE_BASE}${path}?t=${Date.now()}`, {
-      method: "GET",
-      cache: "no-store"
-    });
-    if (!response.ok) {
-      throw new Error(`Bridge GET ${path} failed with HTTP ${response.status}`);
-    }
+    const data = await getBridgeFromData(ADMIN_BRIDGE_BASE, path);
     setBridgeStatusBadge("online", "Bridge Online");
-    return await response.json();
+    return data;
   } catch (error) {
     setBridgeStatusBadge("offline", "Bridge Offline");
     throw error;
@@ -1126,17 +746,9 @@ async function getBridge(path) {
 
 async function postBridge(path, payload) {
   try {
-    const response = await fetch(`${ADMIN_BRIDGE_BASE}${path}`, {
-      method: "POST",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload || {})
-    });
-    if (!response.ok) {
-      throw new Error(`Bridge POST ${path} failed with HTTP ${response.status}`);
-    }
+    const data = await postBridgeFromData(ADMIN_BRIDGE_BASE, path, payload);
     setBridgeStatusBadge("online", "Bridge Online");
-    return await response.json();
+    return data;
   } catch (error) {
     setBridgeStatusBadge("offline", "Bridge Offline");
     throw error;
@@ -1166,63 +778,7 @@ async function runDiscoveryTask() {
 
 function renderSourcesTable(container, rows, mode = "pending") {
   if (!container) return;
-  if (!Array.isArray(rows) || rows.length === 0) {
-    const emptyText = mode === "pending"
-      ? "No pending sources."
-      : mode === "rejected"
-        ? "No rejected sources."
-        : "No active sources.";
-    container.innerHTML = `<div class="no-results">${emptyText}</div>`;
-    return;
-  }
-  const isPending = mode === "pending";
-  const isRejected = mode === "rejected";
-  const leadHeader = isPending || isRejected ? "Select" : "State";
-  container.innerHTML = `
-    <div class="jobs-table-header">
-      <div class="admin-row-header admin-source-row-header">
-        <div>${leadHeader}</div>
-        <div>Name</div>
-        <div>Adapter</div>
-        <div>Studio</div>
-        <div>Status</div>
-        <div>Jobs Found</div>
-        <div>NL</div>
-        <div>Remote</div>
-        <div>Source ID</div>
-      </div>
-    </div>
-    <div class="jobs-table-body">
-      ${rows.map(row => {
-        const sourceId = escapeHtml(String(row.id || ""));
-        const name = escapeHtml(String(row.name || ""));
-        const adapter = escapeHtml(String(row.adapter || ""));
-        const studio = escapeHtml(String(row.studio || ""));
-        const status = escapeHtml(String(row._lastStatus || row.status || "n/a"));
-        const jobsFound = formatSourceJobsFound(row);
-        const nl = row.nlPriority ? "Yes" : "No";
-        const remote = row.remoteFriendly ? "Yes" : "No";
-        const leadCell = isPending
-          ? `<input type="checkbox" class="pending-source-checkbox" data-source-id="${sourceId}">`
-          : isRejected
-            ? `<input type="checkbox" class="rejected-source-checkbox" data-source-id="${sourceId}">`
-            : `<span class="muted">Active</span>`;
-        return `
-          <div class="admin-user-row admin-source-row">
-            <div class="admin-cell" data-label="${leadHeader}">${leadCell}</div>
-            <div class="admin-cell" data-label="Name">${name}</div>
-            <div class="admin-cell" data-label="Adapter">${adapter}</div>
-            <div class="admin-cell" data-label="Studio">${studio}</div>
-            <div class="admin-cell" data-label="Status"><span class="admin-status-chip ${status === "error" ? "critical" : status === "excluded" ? "warning" : "healthy"}">${status}</span></div>
-            <div class="admin-cell" data-label="Jobs Found">${jobsFound}</div>
-            <div class="admin-cell" data-label="NL">${nl}</div>
-            <div class="admin-cell" data-label="Remote">${remote}</div>
-            <div class="admin-cell admin-uid" data-label="Source ID">${sourceId}</div>
-          </div>
-        `;
-      }).join("")}
-    </div>
-  `;
+  container.innerHTML = renderSourcesTableHtml(rows, mode, formatSourceJobsFound);
 }
 
 function formatSourceJobsFound(row) {
@@ -1234,21 +790,18 @@ function formatSourceJobsFound(row) {
 }
 
 function getSourceJobsFoundCount(row) {
-  const value = Number(
-    row?.jobsFound
-      ?? row?.sampleCount
-      ?? row?.fetchedCount
-      ?? row?.lastFetchedCount
-      ?? NaN
-  );
-  return Number.isFinite(value) ? value : NaN;
+  return getSourceJobsFoundCountFromDomain(row);
 }
 
-function selectedIds(selector) {
+function getCheckedSourceIds(selector) {
   return Array.from(document.querySelectorAll(selector))
     .filter(el => el instanceof HTMLInputElement && el.checked)
     .map(el => String(el.dataset.sourceId || ""))
     .filter(Boolean);
+}
+
+function selectedIds(selector) {
+  return getCheckedSourceIds(selector);
 }
 
 async function approveSelectedSources() {
@@ -1358,6 +911,7 @@ async function loadDiscoveryData() {
       appendDiscoveryLog(`Top failures: ${line}`, "warn");
     }
     appendDiscoveryLog("Source discovery data loaded.", "success");
+    adminDispatch.dispatch({ type: ADMIN_ACTIONS.DISCOVERY_REFRESHED, payload: { at: new Date().toISOString() } });
   } catch (err) {
     appendDiscoveryLog(`Could not load source discovery data: ${getErrorMessage(err)}`, "error");
     if (adminDiscoverySummaryEl) {
@@ -1367,19 +921,11 @@ async function loadDiscoveryData() {
 }
 
 function readShowZeroJobsPreference() {
-  try {
-    return localStorage.getItem(ADMIN_SHOW_ZERO_JOBS_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return readShowZeroJobs(ADMIN_SHOW_ZERO_JOBS_KEY);
 }
 
 function writeShowZeroJobsPreference(enabled) {
-  try {
-    localStorage.setItem(ADMIN_SHOW_ZERO_JOBS_KEY, enabled ? "1" : "0");
-  } catch {
-    // Ignore localStorage failures in private mode.
-  }
+  writeShowZeroJobs(ADMIN_SHOW_ZERO_JOBS_KEY, Boolean(enabled));
 }
 
 function setBridgeStatusBadge(state, label) {
@@ -1440,3 +986,9 @@ function toLocalTime(value) {
     return "--:--:--";
   }
 }
+
+export { bootAdminPage as boot };
+
+
+
+

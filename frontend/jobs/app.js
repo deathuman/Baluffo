@@ -1,3 +1,48 @@
+import { JobsStateModule as jobsStateModule } from "../../jobs-state.js";
+import {
+  escapeHtml,
+  showToast,
+  setText,
+  bindUi,
+  bindAsyncClick,
+  bindHandlersMap
+} from "../shared/ui/index.js";
+import { sanitizeUrl as sanitizeUrlValue, fullCountryName as fullCountryNameFromData } from "../shared/data/index.js";
+import { BaluffoJobsParsing as jobsParsing } from "../../jobs-parsing-utils.js";
+import {
+  detectWorkType,
+  detectContractType,
+  normalizeSector,
+  classifyCompanyType,
+  mapProfession,
+  isInternshipJob,
+  normalizeCountryToken,
+  canonicalizeCountryName,
+  fullCountryName as fullCountryNameFromDomainLayer,
+  isValidCountry,
+  normalizeJobs,
+  getJobKeyForJob,
+  toJobSnapshot
+} from "./domain.js";
+import {
+  fetchUnifiedJobs as fetchUnifiedJobsFromData,
+  fetchJsonFromCandidates as fetchJsonFromCandidatesFromData,
+  parseUnifiedJobsPayload,
+  parseCSVLarge as parseCSVLargeFromData
+} from "./data-source.js";
+import { isJobsApiReady, jobsAuthService, jobsSavedJobsService, jobsPageService } from "./services.js";
+import { createJobsDispatcher, JOBS_ACTIONS } from "./actions.js";
+import { renderDataSourcesPanel } from "./source-metadata.js";
+import { renderJobRowHtml, showJobsLoading, showJobsError } from "./render.js";
+import {
+  readAutoRefreshAppliedId,
+  readAutoRefreshSignal,
+  writeAutoRefreshAppliedId,
+  readQuickFilterPreferences,
+  writeQuickFilterPreferences,
+  writeAutoRefreshSignal,
+  rememberJobsUrl
+} from "./state-sync/index.js";
 let allJobs = [];
 let filteredJobs = [];
 const JOBS_LOG_SCOPE = "jobs";
@@ -13,7 +58,6 @@ const JOBS_LOG_SCOPE = "jobs";
  * @property {string} sector
  * @property {string} profession
  */
-const jobsStateModule = window.JobsStateModule || {};
 const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
   workType: "",
   countries: [],
@@ -50,6 +94,7 @@ const state = {
   itemsPerPage: 10,
   filters: { ...defaultFilters, countries: Array.from(defaultFilters.countries || []) }
 };
+const jobsDispatch = createJobsDispatcher();
 
 const PROFESSION_LABELS = jobsStateModule.PROFESSION_LABELS || {};
 
@@ -172,6 +217,12 @@ const COUNTRY_ALIAS_TO_CANONICAL = {
   republicofkorea: "South Korea",
   russianfederation: "Russia"
 };
+const COUNTRY_NAME_OPTIONS = {
+  fullCountryNameFromData,
+  countryNamesByCode: COUNTRY_NAME_BY_CODE,
+  countryAliasToCanonical: COUNTRY_ALIAS_TO_CANONICAL,
+  countryDisplayNames: COUNTRY_DISPLAY_NAMES
+};
 const REGION_DEFINITIONS = [
   {
     value: "region:europe",
@@ -251,7 +302,7 @@ const REMOTE_WORLDWIDE_TOKENS = new Set(
 const REGION_COUNTRY_TOKEN_LOOKUP = Object.fromEntries(
   REGION_DEFINITIONS.map(region => [
     region.value,
-    new Set(region.countries.map(item => normalizeCountryToken(canonicalizeCountryName(item))).filter(Boolean))
+    new Set(region.countries.map(item => normalizeCountryToken(canonicalizeCountryName(item, COUNTRY_NAME_OPTIONS))).filter(Boolean))
   ])
 );
 
@@ -282,9 +333,6 @@ function bootJobsPage() {
   init().catch(err => logJobsError("Error initializing jobs", err));
 }
 
-window.JobsApp = {
-  boot: bootJobsPage
-};
 
 function cacheDom() {
   jobsList = document.getElementById("jobs-list");
@@ -326,37 +374,37 @@ function cacheDom() {
 }
 
 function bindEvents() {
-  if (backBtn) {
-    backBtn.addEventListener("click", () => {
-      window.location.href = "index.html";
-    });
-  }
 
-  if (savedJobsBtn) {
-    savedJobsBtn.addEventListener("click", () => {
+  const clickHandlers = new Map([
+    [backBtn, () => { window.location.href = "index.html"; }],
+    [savedJobsBtn, () => {
       rememberCurrentJobsUrl();
       window.location.href = "saved.html";
-    });
-  }
+    }],
+    [countryPickerClearBtn, () => {
+      state.filters.countries = [];
+      applyStateToFilters();
+      applyFiltersAndRender({ resetPage: true });
+    }],
+    [quickFiltersResetBtn, () => {
+      resetQuickFilterPreferences();
+    }]
+  ]);
+  bindHandlersMap(clickHandlers);
 
-  if (authSignInBtn) {
-    authSignInBtn.addEventListener("click", async () => {
-      await signInUser();
-    });
-  }
+  bindAsyncClick(authSignInBtn, signInUser);
+  bindAsyncClick(authSignOutBtn, signOutUser);
+  bindAsyncClick(refreshJobsBtn, () => refreshJobsNow({ manual: true }));
 
-  if (authSignOutBtn) {
-    authSignOutBtn.addEventListener("click", async () => {
-      await signOutUser();
-    });
-  }
+  [
+    workTypeFilter,
+    countryFilter,
+    cityFilter,
+    sectorFilter,
+    professionFilter,
+    sortFilter
+  ].forEach(el => bindUi(el, "change", () => onFilterChange()));
 
-  if (workTypeFilter) workTypeFilter.addEventListener("change", () => onFilterChange());
-  if (countryFilter) countryFilter.addEventListener("change", () => onFilterChange());
-  if (cityFilter) cityFilter.addEventListener("change", () => onFilterChange());
-  if (sectorFilter) sectorFilter.addEventListener("change", () => onFilterChange());
-  if (professionFilter) professionFilter.addEventListener("change", () => onFilterChange());
-  if (sortFilter) sortFilter.addEventListener("change", () => onFilterChange());
   if (professionSearchFilter) {
     professionSearchFilter.addEventListener("input", () => {
       renderProfessionOptions(professionSearchFilter.value);
@@ -374,13 +422,7 @@ function bindEvents() {
       renderCountryPickerOptions(countryPickerSearch.value);
     });
   }
-  if (countryPickerClearBtn) {
-    countryPickerClearBtn.addEventListener("click", () => {
-      state.filters.countries = [];
-      applyStateToFilters();
-      applyFiltersAndRender({ resetPage: true });
-    });
-  }
+
   document.addEventListener("click", event => {
     if (countryPickerPanel && !countryPickerPanel.classList.contains("hidden")) {
       const clickedInsidePanel = countryPickerPanel.contains(event.target);
@@ -406,7 +448,7 @@ function bindEvents() {
   });
 
   if (searchFilter) {
-    searchFilter.addEventListener("input", debounce(() => {
+    bindUi(searchFilter, "input", debounce(() => {
       onFilterChange();
     }, 180));
   }
@@ -418,12 +460,6 @@ function bindEvents() {
       applyFiltersAndRender({ resetPage: false });
     }
   }, 150));
-
-  if (refreshJobsBtn) {
-    refreshJobsBtn.addEventListener("click", async () => {
-      await refreshJobsNow({ manual: true });
-    });
-  }
 
   if (quickActionsEl) {
     quickActionsEl.addEventListener("click", event => {
@@ -454,12 +490,6 @@ function bindEvents() {
     });
   }
 
-  if (quickFiltersResetBtn) {
-    quickFiltersResetBtn.addEventListener("click", () => {
-      resetQuickFilterPreferences();
-    });
-  }
-
   window.addEventListener("storage", event => {
     if (event.key !== JOBS_AUTO_REFRESH_SIGNAL_KEY) return;
     if (!event.newValue) return;
@@ -477,7 +507,10 @@ async function init() {
 
   const cached = await readCachedJobs();
   if (cached?.jobs && cached.jobs.length > 0) {
-    allJobs = normalizeJobs(cached.jobs);
+    allJobs = normalizeJobs(cached.jobs, {
+      professionLabels: PROFESSION_LABELS,
+      sanitizeUrl
+    });
     recalculateItemsPerPage();
     updateFilterOptions();
     applyStateToFilters();
@@ -506,21 +539,13 @@ async function init() {
 }
 
 function readAppliedAutoRefreshId() {
-  try {
-    return String(localStorage.getItem(JOBS_AUTO_REFRESH_APPLIED_KEY) || "");
-  } catch {
-    return "";
-  }
+  return readAutoRefreshAppliedId(JOBS_AUTO_REFRESH_APPLIED_KEY);
 }
 
 function markAutoRefreshSignalHandled(signalId) {
   if (!signalId) return;
   lastHandledAutoRefreshSignalId = signalId;
-  try {
-    localStorage.setItem(JOBS_AUTO_REFRESH_APPLIED_KEY, signalId);
-  } catch {
-    // Ignore localStorage write failures.
-  }
+  writeAutoRefreshAppliedId(JOBS_AUTO_REFRESH_APPLIED_KEY, signalId);
 }
 
 function parseAutoRefreshSignal(rawValue) {
@@ -564,12 +589,8 @@ async function applyPendingAutoRefreshSignal() {
     return;
   }
 
-  try {
-    const latestRaw = localStorage.getItem(JOBS_AUTO_REFRESH_SIGNAL_KEY);
-    handleAutoRefreshSignalValue(latestRaw);
-  } catch {
-    // Ignore localStorage read failures.
-  }
+  const latestRaw = readAutoRefreshSignal(JOBS_AUTO_REFRESH_SIGNAL_KEY);
+  handleAutoRefreshSignalValue(latestRaw);
 }
 
 async function triggerAutoRefreshFromSignal(signal) {
@@ -591,15 +612,18 @@ async function triggerAutoRefreshFromSignal(signal) {
 }
 
 function initAuth() {
-  const api = window.JobAppLocalData;
-  if (!api || !api.isReady()) {
+  if (!isJobsApiReady() || !jobsPageService.isAvailable()) {
     setAuthStatus("Browsing as guest");
     toggleAuthButtons(false);
     return;
   }
 
-  api.onAuthStateChanged(async user => {
+  jobsAuthService.onAuthStateChanged(async user => {
     currentUser = user || null;
+    jobsDispatch.dispatch({
+      type: JOBS_ACTIONS.AUTH_CHANGED,
+      payload: { uid: currentUser?.uid || "" }
+    });
     if (!currentUser) {
       savedJobKeys = new Set();
       setAuthStatus("Browsing as guest");
@@ -612,7 +636,8 @@ function initAuth() {
     toggleAuthButtons(true);
 
     try {
-      savedJobKeys = await api.getSavedJobKeys(currentUser.uid);
+      const keysResult = await jobsSavedJobsService.getSavedJobKeys(currentUser.uid);
+      savedJobKeys = new Set(keysResult.data || []);
     } catch (err) {
       logJobsError("Failed to load saved jobs", err);
       showToast("Could not load saved jobs.", "error");
@@ -655,27 +680,23 @@ function toggleAuthButtons(isSignedIn) {
 }
 
 async function signInUser() {
-  const api = window.JobAppLocalData;
-  if (!api || !api.isReady()) {
+  if (!isJobsApiReady()) {
     showToast("Local auth provider unavailable.", "error");
     return;
   }
-  try {
-    await api.signIn();
-  } catch (err) {
-    if (String(err?.message || "").toLowerCase().includes("cancel")) return;
-    logJobsError("Sign-in failed", err);
+  const result = await jobsAuthService.signIn();
+  if (!result.ok) {
+    if (String(result.error || "").toLowerCase().includes("cancel")) return;
+    logJobsError("Sign-in failed", new Error(result.error));
     showToast("Sign-in failed. Please try again.", "error");
   }
 }
 
 async function signOutUser() {
-  const api = window.JobAppLocalData;
-  if (!api || !api.isReady()) return;
-  try {
-    await api.signOut();
-  } catch (err) {
-    logJobsError("Sign-out failed", err);
+  if (!isJobsApiReady()) return;
+  const result = await jobsAuthService.signOut();
+  if (!result.ok) {
+    logJobsError("Sign-out failed", new Error(result.error));
     showToast("Sign-out failed. Please try again.", "error");
   }
 }
@@ -718,12 +739,8 @@ function writeStateToUrl() {
 }
 
 function rememberCurrentJobsUrl() {
-  try {
-    const url = `${window.location.pathname}${window.location.search}`;
-    sessionStorage.setItem(JOBS_LAST_URL_KEY, url);
-  } catch {
-    // Ignore storage errors.
-  }
+  const url = `${window.location.pathname}${window.location.search}`;
+  rememberJobsUrl(JOBS_LAST_URL_KEY, url);
 }
 
 function openJobsCacheDb() {
@@ -797,6 +814,7 @@ function updateLastUpdatedText(timestamp) {
 async function refreshJobsNow({ manual, firstLoad = false }) {
   if (refreshInFlight) return false;
   refreshInFlight = true;
+  jobsDispatch.dispatch({ type: JOBS_ACTIONS.REFRESH_REQUESTED });
 
   if (refreshJobsBtn) refreshJobsBtn.disabled = true;
   if (manual || firstLoad) setProgress(true);
@@ -806,11 +824,18 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
     const result = await fetchUnifiedJobs();
     if (!result.jobs || result.jobs.length === 0) {
       if (manual) showToast(result.error || "Could not refresh jobs.", "error");
+      jobsDispatch.dispatch({
+        type: JOBS_ACTIONS.REFRESH_FAILED,
+        payload: { error: result.error || "Could not refresh jobs." }
+      });
       return false;
     }
 
     const previousLength = allJobs.length;
-    allJobs = normalizeJobs(result.jobs);
+    allJobs = normalizeJobs(result.jobs, {
+      professionLabels: PROFESSION_LABELS,
+      sanitizeUrl
+    });
     await writeCachedJobs(allJobs);
     updateLastUpdatedText(Date.now());
     recalculateItemsPerPage();
@@ -827,10 +852,18 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
     const sourceLabel = result.sourceName ? ` from ${result.sourceName}` : "";
     setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs${sourceLabel}.`);
     renderDataSources().catch(() => {});
+    jobsDispatch.dispatch({
+      type: JOBS_ACTIONS.REFRESH_COMPLETED,
+      payload: { finishedAt: new Date().toISOString() }
+    });
     return true;
   } catch (err) {
     logJobsError("Refresh failed", err);
     if (manual) showToast("Could not refresh jobs.", "error");
+    jobsDispatch.dispatch({
+      type: JOBS_ACTIONS.REFRESH_FAILED,
+      payload: { error: err?.message || "Could not refresh jobs." }
+    });
     return false;
   } finally {
     refreshInFlight = false;
@@ -917,6 +950,10 @@ function optionExists(select, value) {
 }
 
 function onFilterChange() {
+  jobsDispatch.dispatch({
+    type: JOBS_ACTIONS.FILTERS_CHANGED,
+    payload: { signature: JSON.stringify(state.filters || {}) }
+  });
   syncStateFromFilters();
   applyFiltersAndRender({ resetPage: true });
 }
@@ -984,7 +1021,10 @@ function sortJobs(jobs, sortMode) {
     return;
   }
   if (sortMode === "country-asc") {
-    jobs.sort((a, b) => fullCountryName(a.country).localeCompare(fullCountryName(b.country)));
+    jobs.sort((a, b) =>
+      fullCountryNameFromDomainLayer(a.country, COUNTRY_NAME_OPTIONS)
+        .localeCompare(fullCountryNameFromDomainLayer(b.country, COUNTRY_NAME_OPTIONS))
+    );
     return;
   }
   if (sortMode === "remote-first") {
@@ -1036,51 +1076,15 @@ function displayJobs(jobs) {
 }
 
 function renderJobRow(job) {
-  const safeTitle = escapeHtml(job.title);
-  const safeCompany = escapeHtml(job.company);
-  const safeSector = escapeHtml(job.sector || "Unknown");
-  const safeCity = escapeHtml(job.city || "");
-  const safeCountry = escapeHtml(fullCountryName(job.country));
-  const safeJobLink = sanitizeUrl(job.jobLink);
-  const jobKey = getJobKeyForJob(job);
-  const isSaved = savedJobKeys.has(jobKey);
-
-  const content = `
-    <button
-      class="save-job-btn job-inline-save-btn ${isSaved ? "saved" : ""}"
-      data-job-id="${job.id}"
-      data-job-key="${jobKey}"
-      ${!window.JobAppLocalData?.isReady() ? "disabled" : ""}
-      aria-label="${isSaved ? "Remove saved job" : "Save job"}"
-    >
-      ${isSaved ? "x" : "+"}
-    </button>
-    <div class="col-title job-cell" data-label="Position">
-      <div class="job-title-wrap">
-        <div class="job-title-compact">${safeTitle}</div>
-      </div>
-    </div>
-    <div class="col-company job-cell" data-label="Company">
-      <span class="job-company-compact" title="${safeCompany}">${safeCompany}</span>
-    </div>
-    <div class="col-sector job-cell" data-label="Sector">
-      <span class="job-sector">${safeSector}</span>
-    </div>
-    <div class="col-city job-cell" data-label="City">
-      <span class="job-location">${safeCity}</span>
-    </div>
-    <div class="col-country job-cell" data-label="Country">
-      <span class="job-location">${safeCountry}</span>
-    </div>
-    <div class="col-contract job-cell" data-label="Contract">
-      <span class="job-contract ${toContractClass(job.contractType)}">${escapeHtml(job.contractType || "Unknown")}</span>
-    </div>
-    <div class="col-type job-cell" data-label="Type">
-      <span class="job-tag ${job.workType.toLowerCase()}">${capitalizeFirst(job.workType)}</span>
-    </div>
-  `;
-
-  return `<div class="job-row ${safeJobLink ? "job-row-link" : ""}" data-job-link="${safeJobLink}">${content}</div>`;
+  return renderJobRowHtml(job, {
+    fullCountryName: value => fullCountryNameFromDomainLayer(value, COUNTRY_NAME_OPTIONS),
+    sanitizeUrl,
+    getJobKeyForJob: getJobKeyForJobWithService,
+    savedJobKeys,
+    isJobsApiReady,
+    toContractClass,
+    capitalizeFirst
+  });
 }
 
 function bindRenderedJobEvents(pageJobs) {
@@ -1245,7 +1249,10 @@ function updateFilterOptions() {
     if (job.sector) sectors.add(job.sector);
   });
 
-  availableCountries = Array.from(countries).sort((a, b) => fullCountryName(a).localeCompare(fullCountryName(b)));
+  availableCountries = Array.from(countries).sort((a, b) =>
+    fullCountryNameFromDomainLayer(a, COUNTRY_NAME_OPTIONS)
+      .localeCompare(fullCountryNameFromDomainLayer(b, COUNTRY_NAME_OPTIONS))
+  );
   const availableRegions = getAvailableRegionOptions(availableCountries);
   availableCountryFilterValues = [
     ...availableRegions.map(region => region.value),
@@ -1327,7 +1334,7 @@ function isRegionSelection(value) {
 function getCountryFilterOptionLabel(value) {
   const region = REGION_DEFINITIONS.find(item => item.value === value);
   if (region) return region.label;
-  return fullCountryName(value);
+  return fullCountryNameFromDomainLayer(value, COUNTRY_NAME_OPTIONS);
 }
 
 function resolveRegionSelection(value) {
@@ -1342,7 +1349,7 @@ function resolveRegionSelection(value) {
 function getAvailableRegionOptions(countries) {
   const countryTokens = new Set(
     (countries || [])
-      .map(item => normalizeCountryToken(canonicalizeCountryName(item)))
+      .map(item => normalizeCountryToken(canonicalizeCountryName(item, COUNTRY_NAME_OPTIONS)))
       .filter(Boolean)
   );
 
@@ -1358,7 +1365,7 @@ function getAvailableRegionOptions(countries) {
 }
 
 function matchesCountrySelection(jobCountry, selections) {
-  const countryToken = normalizeCountryToken(canonicalizeCountryName(jobCountry));
+  const countryToken = normalizeCountryToken(canonicalizeCountryName(jobCountry, COUNTRY_NAME_OPTIONS));
   if (!countryToken) return false;
 
   for (const selection of selections || []) {
@@ -1367,7 +1374,7 @@ function matchesCountrySelection(jobCountry, selections) {
       continue;
     }
 
-    const selectionToken = normalizeCountryToken(canonicalizeCountryName(selection));
+    const selectionToken = normalizeCountryToken(canonicalizeCountryName(selection, COUNTRY_NAME_OPTIONS));
     if (selectionToken && selectionToken === countryToken) return true;
   }
   return false;
@@ -1415,8 +1422,10 @@ function resolveCountryCode(countryCode) {
 
   if (availableCountryFilterValues.includes(raw)) return raw;
 
-  const normalized = normalizeCountryToken(canonicalizeCountryName(raw));
-  const byName = availableCountries.find(code => normalizeCountryToken(canonicalizeCountryName(code)) === normalized);
+  const normalized = normalizeCountryToken(canonicalizeCountryName(raw, COUNTRY_NAME_OPTIONS));
+  const byName = availableCountries.find(
+    code => normalizeCountryToken(canonicalizeCountryName(code, COUNTRY_NAME_OPTIONS)) === normalized
+  );
   return byName || "";
 }
 
@@ -1488,25 +1497,15 @@ function initializeQuickFilters() {
 
 function loadQuickFilterPreferences() {
   const defaults = QUICK_FILTERS.filter(item => item.defaultVisible).map(item => item.key);
-  try {
-    const raw = localStorage.getItem(QUICK_FILTER_PREFS_KEY);
-    if (!raw) return defaults;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return defaults;
-    const valid = parsed.filter(key => QUICK_FILTERS.some(item => item.key === key));
-    const keepClear = valid.includes("clear") ? valid : [...valid, "clear"];
-    return orderQuickFilterKeys(keepClear);
-  } catch (_) {
-    return defaults;
-  }
+  const parsed = readQuickFilterPreferences(QUICK_FILTER_PREFS_KEY, defaults);
+  if (!Array.isArray(parsed)) return defaults;
+  const valid = parsed.filter(key => QUICK_FILTERS.some(item => item.key === key));
+  const keepClear = valid.includes("clear") ? valid : [...valid, "clear"];
+  return orderQuickFilterKeys(keepClear);
 }
 
 function saveQuickFilterPreferences() {
-  try {
-    localStorage.setItem(QUICK_FILTER_PREFS_KEY, JSON.stringify(visibleQuickFilterKeys));
-  } catch (_) {
-    // Ignore preference storage failures.
-  }
+  writeQuickFilterPreferences(QUICK_FILTER_PREFS_KEY, visibleQuickFilterKeys);
 }
 
 function orderQuickFilterKeys(keys) {
@@ -1650,599 +1649,44 @@ function updateActiveFiltersSummary() {
 }
 
 async function fetchUnifiedJobs() {
-  for (const source of UNIFIED_JSON_SOURCES) {
-    try {
-      setSourceStatus(`Fetching from ${source.name}...`);
-      const response = await fetchWithTimeout(source.url, 20000, {
-        headers: { Accept: "application/json" }
-      });
-      if (!response.ok) continue;
-
-      const payload = await response.json();
-      const jobs = parseUnifiedJobsPayload(payload);
-      if (jobs.length > 0) {
-        return { jobs, error: "", sourceName: source.name };
-      }
-    } catch (_) {
-      // Try next source.
-    }
-  }
-
-  for (const source of UNIFIED_CSV_SOURCES) {
-    try {
-      setSourceStatus(`Fetching from ${source.name}...`);
-      const response = await fetchWithTimeout(source.url, 20000, {
-        headers: { Accept: "text/csv,*/*" }
-      });
-      if (!response.ok) continue;
-
-      const csv = await response.text();
-      if (!csv || csv.length < 100) continue;
-
-      const jobs = parseCSVLarge(csv);
-      if (jobs.length > 0) {
-        return { jobs, error: "", sourceName: source.name };
-      }
-    } catch (_) {
-      // Try next source.
-    }
-  }
-
-  const legacy = await fetchFromGoogleSheets();
-  if (legacy.jobs && legacy.jobs.length > 0) return legacy;
-  return {
-    jobs: null,
-    error: "Could not fetch listings from unified feeds or fallback sheets source.",
-    sourceName: ""
-  };
+  return fetchUnifiedJobsFromData({
+    unifiedJsonSources: UNIFIED_JSON_SOURCES,
+    unifiedCsvSources: UNIFIED_CSV_SOURCES,
+    legacySheetsSource: LEGACY_SHEETS_SOURCE,
+    setSourceStatus,
+    parseUnifiedPayload: payload => parseUnifiedJobsPayload(payload, jobsParsing),
+    parseCSV: parseJobsCsv
+  });
 }
 
 async function fetchJsonFromCandidates(urls) {
-  for (const url of urls) {
-    try {
-      const response = await fetchWithTimeout(`${url}?t=${Date.now()}`, 12000, { cache: "no-store" });
-      if (!response.ok) continue;
-      return await response.json();
-    } catch {
-      // Try next source.
-    }
-  }
-  return null;
-}
-
-function sourceUrlFromRegistry(row) {
-  if (!row || typeof row !== "object") return "";
-  return String(
-    row.api_url
-    || row.feed_url
-    || row.board_url
-    || row.listing_url
-    || (Array.isArray(row.pages) && row.pages.length ? row.pages[0] : "")
-    || ""
-  ).trim();
-}
-
-function normalizeSourceRows(activeRegistry, fetchReport) {
-  const rows = [];
-  const seen = new Set();
-  const push = (name, url, status, note = "") => {
-    const key = `${String(name || "").toLowerCase()}|${String(url || "").toLowerCase()}`;
-    if (!name || seen.has(key)) return;
-    seen.add(key);
-    rows.push({ name, url, status, note });
-  };
-
-  // Core sources (always part of pipeline).
-  push("Google Sheets", `https://docs.google.com/spreadsheets/d/${LEGACY_SHEETS_SOURCE.sheetId}/edit?gid=${LEGACY_SHEETS_SOURCE.gid}`, "core");
-  push("Remote OK", "https://remoteok.com/", "core");
-  push("GamesIndustry Jobs", "https://jobs.gamesindustry.biz/jobs", "core");
-
-  const reportSources = Array.isArray(fetchReport?.sources) ? fetchReport.sources : [];
-  const reportByName = new Map();
-  reportSources.forEach(item => {
-    reportByName.set(String(item?.name || ""), item);
-  });
-
-  const signature = [
-    allJobs.length,
-    countries.size,
-    professions.size,
-    cities.size,
-    sectors.size
-  ].join("|");
-  if (signature === lastFilterOptionsSignature) {
-    updateCountrySelectionBadge();
-    updateCountryPickerTrigger();
-    return;
-  }
-  lastFilterOptionsSignature = signature;
-
-  const activeRows = Array.isArray(activeRegistry) ? activeRegistry : [];
-  activeRows
-    .filter(row => row && typeof row === "object" && Boolean(row.enabledByDefault))
-    .forEach(row => {
-      const name = String(row.name || row.studio || row.adapter || "Source").trim();
-      const url = sourceUrlFromRegistry(row);
-      push(name, url, "active");
-    });
-
-  // Add excluded sources explicitly from report (e.g., wellfound), if present.
-  reportSources
-    .filter(item => String(item?.status || "").toLowerCase() === "excluded")
-    .forEach(item => {
-      const name = String(item?.name || "Excluded source");
-      push(name, "", "excluded", String(item?.error || "").trim());
-    });
-
-  // Sort for stable reading.
-  rows.sort((a, b) => a.name.localeCompare(b.name));
-  return { rows, reportByName };
-}
-
-function renderSourceListRows(rows, reportByName) {
-  if (!dataSourcesListEl) return;
-  if (!rows.length) {
-    dataSourcesListEl.innerHTML = "<li>No source metadata available.</li>";
-    return;
-  }
-
-  dataSourcesListEl.innerHTML = rows.map(item => {
-    const reportKeyCandidates = [
-      item.name,
-      String(item.name || "").toLowerCase().replace(/\s+/g, "_")
-    ];
-    let report = null;
-    for (const key of reportKeyCandidates) {
-      if (reportByName.has(key)) {
-        report = reportByName.get(key);
-        break;
-      }
-    }
-
-    const fetched = Number(report?.fetchedCount || 0);
-    const kept = Number(report?.keptCount || 0);
-    const status = String(item.status || "active");
-    const suffix = report
-      ? ` - fetched ${fetched.toLocaleString()}, kept ${kept.toLocaleString()}`
-      : item.note
-        ? ` - ${escapeHtml(item.note)}`
-        : "";
-
-    if (item.url) {
-      return `<li><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.name)}</a> (${escapeHtml(status)})${suffix}</li>`;
-    }
-    return `<li>${escapeHtml(item.name)} (${escapeHtml(status)})${suffix}</li>`;
-  }).join("");
+  return fetchJsonFromCandidatesFromData(urls);
 }
 
 async function renderDataSources() {
-  if (!dataSourcesListEl) return;
-  const [activeRegistry, fetchReport] = await Promise.all([
-    fetchJsonFromCandidates(SOURCE_REGISTRY_ACTIVE_URLS),
-    fetchJsonFromCandidates(JOBS_FETCH_REPORT_URLS)
-  ]);
-
-  const normalized = normalizeSourceRows(activeRegistry, fetchReport);
-  renderSourceListRows(normalized.rows, normalized.reportByName);
-
-  if (dataSourcesCaptionEl) {
-    const finishedAt = String(fetchReport?.finishedAt || "").trim();
-    if (!finishedAt) {
-      dataSourcesCaptionEl.textContent = "Source list reflects your current local fetch configuration.";
-    } else {
-      const dt = new Date(finishedAt);
-      const stamp = Number.isNaN(dt.getTime())
-        ? finishedAt
-        : dt.toLocaleString([], { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-      dataSourcesCaptionEl.textContent = `Source list reflects your current local fetch configuration and latest fetch report (${stamp}).`;
-    }
-  }
-}
-
-function parseUnifiedJobsPayload(payload) {
-  let rows = [];
-  if (Array.isArray(payload)) {
-    rows = payload;
-  } else if (payload && typeof payload === "object") {
-    if (Array.isArray(payload.jobs)) rows = payload.jobs;
-    else if (Array.isArray(payload.items)) rows = payload.items;
-  }
-  return rows.filter(row => row && typeof row === "object");
-}
-
-async function fetchFromGoogleSheets() {
-  const csvUrl = `https://docs.google.com/spreadsheets/d/${LEGACY_SHEETS_SOURCE.sheetId}/export?format=csv&gid=${LEGACY_SHEETS_SOURCE.gid}`;
-
-  const sources = [
-    { name: "Google Sheets fallback", url: csvUrl },
-    { name: "AllOrigins mirror fallback", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(csvUrl)}` }
-  ];
-
-  for (const source of sources) {
-    try {
-      setSourceStatus(`Fetching from ${source.name}...`);
-      const response = await fetchWithTimeout(source.url, 20000);
-      if (!response.ok) continue;
-
-      const csv = await response.text();
-      if (!csv || csv.length < 100) continue;
-
-      const jobs = parseCSVLarge(csv);
-      if (jobs.length > 0) {
-        return { jobs, error: "", sourceName: source.name };
-      }
-    } catch (_) {
-      // Try next source.
-    }
-  }
-
-  return {
-    jobs: null,
-    error: "Could not fetch listings from the fallback sheets feed.",
-    sourceName: ""
-  };
-}
-
-async function fetchWithTimeout(url, timeoutMs, init = {}) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      mode: "cors",
-      credentials: "omit"
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-function parseCSVLarge(csv) {
-  try {
-    const startTime = performance.now();
-    const rows = parseCSVRecords(csv);
-    if (rows.length < 2) return [];
-
-    let headerIdx = -1;
-    for (let i = 0; i < Math.min(250, rows.length); i++) {
-      const normalizedRow = rows[i]
-        .map(cell => cell.toLowerCase().trim())
-        .filter(Boolean);
-
-      // Require actual header cells to avoid matching intro/instruction text rows.
-      const hasTitleHeader = normalizedRow.includes("title");
-      const hasCompanyHeader = normalizedRow.includes("company name") || normalizedRow.includes("company");
-      const hasLocationHeader = normalizedRow.includes("city") || normalizedRow.includes("country");
-
-      if (hasTitleHeader && hasCompanyHeader && hasLocationHeader) {
-        headerIdx = i;
-        break;
-      }
-    }
-
-    if (headerIdx === -1) return [];
-
-    const headers = rows[headerIdx].map(h => h.toLowerCase().trim());
-
-    const companyIdx = findCompanyColumnIndex(headers);
-    const companyNameCandidateIdxs = findCompanyNameCandidateIndexes(headers, companyIdx);
-    const titleIdx = findColumnIndex(headers, ["title", "role"]);
-    const cityIdx = findColumnIndex(headers, ["city"]);
-    const countryIdx = findColumnIndex(headers, ["country"]);
-    const locationTypeIdx = findColumnIndex(headers, ["location type", "work type"]);
-    const contractTypeIdx = findColumnIndex(headers, ["employment type", "contract type", "employment", "contract", "position type"]);
-    const jobLinkIdx = findColumnIndex(headers, ["job link", "url", "apply"]);
-    const sectorIdx = findColumnIndexByPriority(
-      headers,
-      ["sector", "industry", "company type", "company category"],
-      []
-    );
-
-    if (titleIdx === -1 || companyIdx === -1) return [];
-
-    const jobs = [];
-    let uncategorizedCount = 0;
-    for (let i = headerIdx + 1; i < rows.length; i++) {
-      const fields = rows[i];
-      if (!fields || fields.length === 0) continue;
-
-      const title = (fields[titleIdx] || "").trim();
-      const company = resolveCompanyName(fields, companyIdx, companyNameCandidateIdxs);
-      const city = (fields[cityIdx] || "").trim();
-      const country = (fields[countryIdx] || "Unknown").trim();
-      const locationType = (fields[locationTypeIdx] || "On-site").trim();
-      const contractTypeText = contractTypeIdx !== -1 ? (fields[contractTypeIdx] || "").trim() : "";
-      const jobLink = jobLinkIdx !== -1 ? (fields[jobLinkIdx] || "").trim() : "";
-      const sectorText = sectorIdx !== -1 ? (fields[sectorIdx] || "").trim() : "";
-
-      if (!title || !company) continue;
-      const profession = mapProfession(title);
-      if (profession === "other") uncategorizedCount += 1;
-
-      jobs.push({
-        id: 1000 + i,
-        title,
-        company,
-        sector: normalizeSector(sectorText, company, title),
-        companyType: classifyCompanyType(company, title),
-        city,
-        country,
-        workType: detectWorkType(locationType),
-        contractType: detectContractType(contractTypeText, title),
-        profession,
-        description: `${title} at ${company}`,
-        jobLink
-      });
-    }
-
-    logJobsInfo(`Role mapper uncategorized: ${uncategorizedCount}/${jobs.length}`);
-
-    const endTime = performance.now();
-    logJobsInfo(`Loaded ${jobs.length} jobs in ${((endTime - startTime) / 1000).toFixed(2)}s`);
-    return jobs;
-  } catch (err) {
-    logJobsError("Error parsing CSV", err);
-    return [];
-  }
-}
-
-function normalizeJobs(rows) {
-  if (!Array.isArray(rows)) return [];
-  return rows.map((row, idx) => {
-    const job = { ...row };
-    job.id = job.id || (1000 + idx);
-    job.title = String(job.title || "").trim();
-    job.company = String(job.company || "").trim();
-    job.city = String(job.city || "").trim();
-    job.country = String(job.country || "Unknown").trim() || "Unknown";
-    job.workType = detectWorkType(job.workType || "");
-    job.contractType = detectContractType(job.contractType || "", job.title || "");
-    job.jobLink = sanitizeUrl(job.jobLink || "");
-    job.source = String(job.source || "").trim();
-    job.sourceJobId = String(job.sourceJobId || "").trim();
-    job.fetchedAt = normalizeTimestamp(job.fetchedAt);
-    job.postedAt = normalizeTimestamp(job.postedAt);
-    job.dedupKey = String(job.dedupKey || "").trim();
-    const quality = Number(job.qualityScore);
-    job.qualityScore = Number.isFinite(quality) ? Math.max(0, Math.min(100, Math.round(quality))) : 0;
-    job.sector = normalizeSector(job.sector || "", job.company || "", job.title || "");
-    job.profession = PROFESSION_LABELS[job.profession] ? job.profession : mapProfession(String(job.title || ""));
-    if (!job.companyType) {
-      job.companyType = classifyCompanyType(job.company, job.title || "");
-    }
-    if (!job.description) {
-      job.description = `${job.title} at ${job.company}`;
-    }
-    return job;
+  return renderDataSourcesPanel({
+    dataSourcesListEl,
+    dataSourcesCaptionEl,
+    sourceRegistryActiveUrls: SOURCE_REGISTRY_ACTIVE_URLS,
+    jobsFetchReportUrls: JOBS_FETCH_REPORT_URLS,
+    legacySheetsSource: LEGACY_SHEETS_SOURCE,
+    fetchJsonFromCandidates
   });
 }
 
-function normalizeTimestamp(value) {
-  if (!value) return "";
-  let dt = null;
-
-  if (typeof value === "number" && Number.isFinite(value)) {
-    const ms = value > 10_000_000_000 ? value : value * 1000;
-    dt = new Date(ms);
-  } else {
-    const trimmed = String(value).trim();
-    if (!trimmed) return "";
-    const numeric = Number(trimmed);
-    if (Number.isFinite(numeric) && /^\d{10,13}$/.test(trimmed)) {
-      const ms = numeric > 10_000_000_000 ? numeric : numeric * 1000;
-      dt = new Date(ms);
-    } else {
-      dt = new Date(trimmed);
-    }
-  }
-
-  if (!dt || Number.isNaN(dt.getTime())) return "";
-  return dt.toISOString();
-}
-
-function parseCSVRecords(csv) {
-  const rows = [];
-  let row = [];
-  let field = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < csv.length; i++) {
-    const ch = csv[i];
-
-    if (ch === '"') {
-      if (inQuotes && csv[i + 1] === '"') {
-        field += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (ch === "," && !inQuotes) {
-      row.push(field);
-      field = "";
-      continue;
-    }
-
-    if ((ch === "\n" || ch === "\r") && !inQuotes) {
-      if (ch === "\r" && csv[i + 1] === "\n") i++;
-      row.push(field);
-      field = "";
-      if (row.some(cell => cell.trim() !== "")) {
-        rows.push(row);
-      }
-      row = [];
-      continue;
-    }
-
-    field += ch;
-  }
-
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    if (row.some(cell => cell.trim() !== "")) {
-      rows.push(row);
-    }
-  }
-
-  return rows;
-}
-
-function findColumnIndex(headers, possibleNames) {
-  return findColumnIndexByPriority(headers, possibleNames, possibleNames);
-}
-
-function findCompanyColumnIndex(headers) {
-  const normalizedHeaders = headers.map(h => String(h || "").trim().toLowerCase());
-  const exactIdx = normalizedHeaders.findIndex(h => h === "company name" || h === "company");
-  if (exactIdx !== -1) return exactIdx;
-
-  for (let i = 0; i < normalizedHeaders.length; i++) {
-    const h = normalizedHeaders[i];
-    if (!h.includes("company")) continue;
-    if (h.includes("type") || h.includes("category") || h.includes("sector")) continue;
-    return i;
-  }
-  return -1;
-}
-
-function findCompanyNameCandidateIndexes(headers, primaryIdx) {
-  const normalizedHeaders = headers.map(h => String(h || "").trim().toLowerCase());
-  const seen = new Set();
-  const candidates = [];
-
-  const pushIdx = idx => {
-    if (idx < 0 || idx >= headers.length) return;
-    if (seen.has(idx)) return;
-    seen.add(idx);
-    candidates.push(idx);
-  };
-
-  pushIdx(primaryIdx);
-
-  normalizedHeaders.forEach((h, idx) => {
-    const isNameLike =
-      h.includes("company name") ||
-      h === "company" ||
-      h.includes("studio") ||
-      h.includes("employer") ||
-      h.includes("organization") ||
-      h.includes("organisation");
-    const isTypeLike =
-      h.includes("type") ||
-      h.includes("category") ||
-      h.includes("sector") ||
-      h.includes("industry");
-    if (isNameLike && !isTypeLike) {
-      pushIdx(idx);
+function parseJobsCsv(csv) {
+  return parseCSVLargeFromData(csv, {
+    jobsParsing,
+    parserDeps: {
+      mapProfession,
+      normalizeSector,
+      classifyCompanyType,
+      detectWorkType,
+      detectContractType,
+      logInfo: logJobsInfo,
+      logError: logJobsError
     }
   });
-
-  return candidates;
-}
-
-function resolveCompanyName(fields, primaryIdx, candidateIdxs) {
-  const allCandidates = [];
-
-  if (Number.isInteger(primaryIdx) && primaryIdx >= 0) {
-    allCandidates.push(String(fields[primaryIdx] || "").trim());
-  }
-
-  (candidateIdxs || []).forEach(idx => {
-    allCandidates.push(String(fields[idx] || "").trim());
-  });
-
-  for (const value of allCandidates) {
-    if (!value) continue;
-    if (!isGenericCompanyLabel(value)) return value;
-  }
-
-  for (const value of allCandidates) {
-    if (value) return value;
-  }
-
-  return "";
-}
-
-function isGenericCompanyLabel(value) {
-  const lower = String(value || "").trim().toLowerCase();
-  return (
-    lower === "game" ||
-    lower === "tech" ||
-    lower === "game company" ||
-    lower === "tech company" ||
-    lower === "gaming company" ||
-    lower === "technology company"
-  );
-}
-
-function findColumnIndexByPriority(headers, exactNames, containsNames) {
-  const normalizedHeaders = headers.map(h => String(h || "").trim().toLowerCase());
-
-  for (const name of exactNames) {
-    const idx = normalizedHeaders.findIndex(h => h === name);
-    if (idx !== -1) return idx;
-  }
-
-  for (let i = 0; i < normalizedHeaders.length; i++) {
-    for (const name of containsNames) {
-      if (normalizedHeaders[i].includes(name)) return i;
-    }
-  }
-
-  return -1;
-}
-
-function detectWorkType(text) {
-  if (!text) return "Onsite";
-  const lower = text.toLowerCase();
-  if (lower.includes("remote")) return "Remote";
-  if (lower.includes("hybrid") || lower.includes("mixed")) return "Hybrid";
-  return "Onsite";
-}
-
-function detectContractType(text, title = "") {
-  const lower = `${text} ${title}`.toLowerCase();
-
-  if (
-    lower.includes("internship") ||
-    lower.includes("intern ")
-  ) {
-    return "Internship";
-  }
-
-  if (
-    lower.includes("full-time") ||
-    lower.includes("full time") ||
-    lower.includes("permanent")
-  ) {
-    return "Full-time";
-  }
-
-  if (
-    lower.includes("temporary") ||
-    lower.includes("temp ") ||
-    lower.includes("contract") ||
-    lower.includes("fixed-term") ||
-    lower.includes("fixed term") ||
-    lower.includes("freelance") ||
-    lower.includes("part-time") ||
-    lower.includes("part time")
-  ) {
-    return "Temporary";
-  }
-
-  return "Unknown";
-}
-
-function normalizeSector(text, company = "", title = "") {
-  const value = String(text || "").trim();
-  const lower = value.toLowerCase();
-  if (/\b(game|gaming|esports|studio|publisher)\b/.test(lower)) return "Game";
-  if (/\b(tech|technology|software|it)\b/.test(lower)) return "Tech";
-  return classifyCompanyType(company, title) === "Game" ? "Game" : "Tech";
 }
 
 function toContractClass(contractType) {
@@ -2253,52 +1697,14 @@ function toContractClass(contractType) {
   return "unknown";
 }
 
-function classifyCompanyType(company, title = "") {
-  const text = `${company} ${title}`.toLowerCase();
-
-  const isGame =
-    /\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b/.test(text) ||
-    /\b(gameplay|level design|character artist|environment artist|technical artist|animator)\b/.test(text);
-
-  return isGame ? "Game" : "Tech";
-}
-
-function getJobKeyForJob(job) {
-  const api = window.JobAppLocalData;
-  if (api && typeof api.generateJobKey === "function") {
-    return api.generateJobKey(job);
-  }
-
-  const canonical = `${job.title || ""}|${job.company || ""}|${job.city || ""}|${job.country || ""}`.toLowerCase();
-  return `job_${simpleHash(canonical)}`;
-}
-
-function simpleHash(input) {
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    hash = ((hash << 5) - hash) + input.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(16);
-}
-
-function toJobSnapshot(job) {
-  return {
-    title: job.title || "",
-    company: job.company || "",
-    sector: job.sector || classifyCompanyType(job.company, job.title),
-    companyType: job.companyType || classifyCompanyType(job.company, job.title),
-    city: job.city || "",
-    country: job.country || "",
-    workType: job.workType || "Onsite",
-    contractType: job.contractType || "Unknown",
-    jobLink: sanitizeUrl(job.jobLink || "")
-  };
+function getJobKeyForJobWithService(job) {
+  return getJobKeyForJob(job, {
+    generateJobKey: row => jobsPageService.generateJobKey(row)
+  });
 }
 
 async function toggleSaveJob(job) {
-  const api = window.JobAppLocalData;
-  if (!api || !api.isReady()) {
+  if (!isJobsApiReady()) {
     showToast("Local storage provider unavailable.", "error");
     return;
   }
@@ -2309,19 +1715,22 @@ async function toggleSaveJob(job) {
     return;
   }
 
-  const jobKey = getJobKeyForJob(job);
+  const jobKey = getJobKeyForJobWithService(job);
   const isSaved = savedJobKeys.has(jobKey);
 
   try {
     if (isSaved) {
-      await api.removeSavedJobForUser(currentUser.uid, jobKey);
+      const removeResult = await jobsSavedJobsService.removeSavedJobForUser(currentUser.uid, jobKey);
+      if (!removeResult.ok) throw new Error(removeResult.error);
       savedJobKeys.delete(jobKey);
       showToast("Removed from saved jobs.", "success");
     } else {
-      await api.saveJobForUser(currentUser.uid, toJobSnapshot(job));
+      const saveResult = await jobsSavedJobsService.saveJobForUser(currentUser.uid, toJobSnapshot(job, { sanitizeUrl }));
+      if (!saveResult.ok) throw new Error(saveResult.error);
       savedJobKeys.add(jobKey);
       showToast("Saved job to your profile.", "success");
     }
+    jobsDispatch.dispatch({ type: JOBS_ACTIONS.SAVE_TOGGLED, payload: { jobKey } });
     applyFiltersAndRender({ resetPage: false });
   } catch (err) {
     logJobsError("Could not toggle saved job", err);
@@ -2329,110 +1738,8 @@ async function toggleSaveJob(job) {
   }
 }
 
-function mapProfession(title) {
-  const lower = title.toLowerCase();
-
-  if (lower.includes("technical animator")) return "technical-animator";
-  if (lower.includes("technical artist")) return "technical-artist";
-  if (lower.includes("environment artist")) return "environment-artist";
-  if (lower.includes("character artist")) return "character-artist";
-  if (/\brigging\b/.test(lower) || /\brigger\b/.test(lower)) return "rigging";
-  if (lower.includes("vfx artist") || lower.includes("visual effects artist") || lower.includes("fx artist")) return "vfx-artist";
-  if (lower.includes("ui artist") || lower.includes("ux artist") || lower.includes("ui/ux")) return "ui-ux-artist";
-  if (lower.includes("concept artist")) return "concept-artist";
-  if (lower.includes("3d artist") || lower.includes("3d modeler") || lower.includes("3d modeller")) return "3d-artist";
-  if (lower.includes("art director")) return "art-director";
-
-  if (lower.includes("gameplay") || lower.includes("game mechanics")) return "gameplay";
-  if (lower.includes("graphics") || lower.includes("rendering") || lower.includes("shader")) return "graphics";
-  if (lower.includes("engine") || lower.includes("architecture") || lower.includes("systems")) return "engine";
-  if (lower.includes("ai") || lower.includes("artificial intelligence") || lower.includes("behavior")) return "ai";
-  if (lower.includes("animator") || lower.includes("animation") || lower.includes("motion animator")) return "animator";
-  if (lower.includes("tool") || lower.includes("pipeline") || lower.includes("editor") || (lower.includes("technical") && !lower.includes("artist"))) return "tools";
-  if (lower.includes("designer") || lower.includes("level") || lower.includes("game design")) return "designer";
-  if (lower.includes("artist") || lower.includes("animation") || lower.includes("visual")) return "3d-artist";
-
-  return "other";
-}
-
-function isInternshipJob(job) {
-  const contract = String(job?.contractType || "").toLowerCase();
-  if (contract === "internship") return true;
-
-  const text = `${job?.title || ""} ${job?.description || ""}`.toLowerCase();
-  return /\bintern(ship)?\b/.test(text);
-}
-
-function normalizeCountryToken(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, "");
-}
-
-function canonicalizeCountryName(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-
-  const uppercaseRaw = raw.toUpperCase();
-  if (COUNTRY_NAME_BY_CODE[uppercaseRaw]) {
-    return COUNTRY_NAME_BY_CODE[uppercaseRaw];
-  }
-
-  if (/^[A-Z]{2}$/.test(uppercaseRaw) && COUNTRY_DISPLAY_NAMES) {
-    try {
-      const fromIntl = COUNTRY_DISPLAY_NAMES.of(uppercaseRaw);
-      if (fromIntl && fromIntl !== uppercaseRaw) {
-        return fromIntl;
-      }
-    } catch {
-      // Ignore invalid region codes and continue with alias/raw fallback.
-    }
-  }
-
-  const normalized = normalizeCountryToken(raw);
-  if (COUNTRY_ALIAS_TO_CANONICAL[normalized]) {
-    return COUNTRY_ALIAS_TO_CANONICAL[normalized];
-  }
-
-  return raw;
-}
-
-function fullCountryName(code) {
-  return canonicalizeCountryName(code);
-}
-
-function isValidCountry(country) {
-  if (!country || typeof country !== "string") return false;
-  const trimmed = country.trim();
-  if (!trimmed || trimmed.length < 2) return false;
-  if (trimmed.includes(",")) return false;
-  return true;
-}
-
 function sanitizeUrl(url) {
-  if (!url) return "";
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-      return parsed.href;
-    }
-    return "";
-  } catch {
-    return "";
-  }
-}
-
-function escapeHtml(text) {
-  if (!text) return "";
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+  return sanitizeUrlValue(url);
 }
 
 function capitalizeFirst(str) {
@@ -2454,44 +1761,20 @@ function setProgress(visible) {
 }
 
 function setSourceStatus(text) {
-  if (!sourceStatus) return;
-  sourceStatus.textContent = text;
-}
-
-function showToast(message, type = "info") {
-  const toast = document.createElement("div");
-  toast.className = `toast ${type}`;
-  toast.textContent = message;
-  document.body.appendChild(toast);
-
-  requestAnimationFrame(() => toast.classList.add("visible"));
-
-  setTimeout(() => {
-    toast.classList.remove("visible");
-    setTimeout(() => toast.remove(), 220);
-  }, 2600);
+  setText(sourceStatus, text);
 }
 
 function showLoading(text) {
-  if (!jobsList) return;
-  jobsList.innerHTML = `<div class="loading">${escapeHtml(text)}</div>`;
+  showJobsLoading(jobsList, text);
 }
 
 function showError(message) {
-  if (!jobsList) return;
-  jobsList.innerHTML = `
-    <div class="error">
-      <p>${escapeHtml(message)}</p>
-      <button id="retry-fetch-btn" class="btn retry-btn">Retry</button>
-    </div>
-  `;
-  if (pagination) pagination.innerHTML = "";
+  showJobsError(jobsList, pagination, message, () => {
+    init().catch(err => logJobsError("Retry failed", err));
+  });
   updateResultsSummary(0, 0, 0);
-
-  const retryBtn = document.getElementById("retry-fetch-btn");
-  if (retryBtn) {
-    retryBtn.addEventListener("click", () => {
-      init().catch(err => logJobsError("Retry failed", err));
-    });
-  }
 }
+
+export { bootJobsPage as boot };
+
+

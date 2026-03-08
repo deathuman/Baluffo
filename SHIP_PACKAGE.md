@@ -3,6 +3,11 @@
 ## Release Notes
 
 ### What's New
+- Completed a final frontend architecture refactor focused on maintainability:
+  - removed non-essential legacy frontend globals (kept only `window.JobAppLocalData` compatibility facade)
+  - expanded page-level action dispatch coverage for jobs/saved/admin core flows
+  - introduced additional local-data domain modules (`constants`, `phase`, `profile-session`, `job-utils`)
+  - extracted jobs source-metadata rendering into dedicated module
 - Added a unified local aggregation pipeline that publishes:
   - `data/jobs-unified.json`
   - `data/jobs-unified.csv`
@@ -54,6 +59,9 @@
 - Certain sources may be valid but currently return zero open jobs.
 
 ### Validation
+- Verified frontend architecture regressions with:
+  - `npm run test:frontend:unit` (dispatch + local-data service contracts)
+  - `npm run test:frontend` (Playwright smoke suite)
 - Verified fetch pipeline continues producing report artifacts under partial source failure conditions.
 - Verified admin discovery flow updates pending/active/rejected states through approve/reject/restore actions.
 - Verified approved sources are applied on subsequent fetch runs and reflected in fetch reporting.
@@ -76,6 +84,11 @@ This PR ships a broader local jobs platform upgrade spanning ingestion, discover
 - Admin-managed source lifecycle with discovery, approval/rejection, and rejected-source restore.
 - Enhanced job source coverage strategy with ATS/static adapters and probe hardening.
 - Jobs/Saved auth module refresh and listing/filter UX improvements.
+- Frontend maintainability refactor:
+  - local-data internals split into domain modules behind a stable facade
+  - controller/service/state-sync boundaries tightened
+  - dispatch transition coverage expanded for core UI mutations
+  - non-essential utility/config globals removed
 
 ### Reliability & Data Coverage
 - Implemented resilient source execution semantics:
@@ -119,6 +132,9 @@ This PR ships a broader local jobs platform upgrade spanning ingestion, discover
 
 ### Validation
 - Unit/integration coverage includes discovery probing, dedup behavior, and pipeline invariants.
+- Frontend test gates now include both:
+  - Node unit tests for dispatch/state-transition and local-data service contracts
+  - Playwright smoke regression suite for jobs/saved/admin core flows
 - Manual sanity checks confirm:
   - outputs generated (`jobs-unified.*`, fetch/discovery reports)
   - admin actions mutate source registry state correctly

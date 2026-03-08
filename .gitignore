@@ -1,2 +1,12 @@
 __pycache__/
 *.py[cod]
+node_modules/
+playwright-report/
+test-results/
+
+# Local runtime/generated admin state (keep local, do not track)
+data/admin-alert-state.json
+data/admin-run-history.json
+data/source-registry-active.json
+data/source-registry-pending.json
+data/source-registry-rejected.json

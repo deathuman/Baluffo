@@ -31,7 +31,7 @@ It combines:
 
 ## Tech Stack
 
-- Frontend: plain HTML/CSS/JavaScript (no framework)
+- Frontend: plain HTML/CSS/JavaScript with native ES modules (no framework)
 - Local storage:
   - `localStorage` for profile/session state
   - IndexedDB for saved jobs/attachments metadata
@@ -42,9 +42,11 @@ It combines:
 ```text
 .
 ├─ index.html                 # Landing page
-├─ jobs.html / jobs.js        # Jobs listing and filters
-├─ saved.html / saved.js      # Saved jobs, custom entries, backup/restore
-├─ admin.html / admin.js      # Admin controls and ops dashboards
+├─ jobs.html                  # Jobs page
+├─ saved.html                 # Saved jobs page
+├─ admin.html                 # Admin page
+├─ frontend/                  # ES module entrypoints + page architecture layers
+│  └─ home/                   # Landing page module entrypoint + app
 ├─ local-data-client.js       # Local auth/storage provider
 ├─ jobs-state.js              # Shared filter labels/config
 ├─ data/                      # Feed outputs, source registries, reports
@@ -54,6 +56,15 @@ It combines:
 │  └─ admin_bridge.py         # Local admin HTTP bridge
 └─ tests/                     # Python test suite
 ```
+
+## Architecture Map
+
+- `frontend/*/app.js`: page orchestration (events, state flow, service calls)
+- `frontend/home/app.js`: landing page behavior orchestration
+- `frontend/*/domain.js`: pure transformation/business rules
+- `frontend/*/data-source.js`: async fetch/read envelopes
+- `frontend/*/render.js`: HTML/DOM composition
+- `frontend/shared/ui` and `frontend/shared/data`: reusable cross-page helpers
 
 ## Getting Started
 
@@ -105,10 +116,25 @@ python scripts/admin_bridge.py
 ### JavaScript syntax checks
 
 ```powershell
-node --check jobs.js
-node --check admin.js
-node --check saved.js
 node --check local-data-client.js
+node --check jobs-parsing-utils.js
+node --check saved-zip-utils.js
+node --check jobs-state.js
+node --check admin-config.js
+node --check frontend/home/index.js frontend/home/app.js
+node --check frontend/jobs/index.js frontend/jobs/app.js
+node --check frontend/saved/index.js frontend/saved/app.js
+node --check frontend/admin/index.js frontend/admin/app.js
+node --check frontend/shared/ui/index.js frontend/shared/data/index.js
+```
+
+### Frontend smoke regression (Playwright)
+
+```powershell
+npm install
+npx playwright install chromium
+npm run test:unit
+npm run test:smoke
 ```
 
 ### Python tests

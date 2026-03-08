@@ -38,7 +38,7 @@ Saved job record fields:
 
 ## Unified jobs feed generation
 - Run `python scripts/jobs_fetcher.py` to aggregate listings into:
-  - `data/jobs-unified.json` (primary feed used by `jobs.js`)
+  - `data/jobs-unified.json` (primary feed used by Jobs page modules)
   - `data/jobs-unified.csv` (CSV fallback + inspection)
   - `data/jobs-fetch-report.json` (per-source diagnostics)
 - Active source configuration is file-backed:

@@ -1,0 +1,17 @@
+{
+  "name": "baluffo-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:unit": "npm run test:frontend:unit",
+    "test:smoke": "npm run test:frontend",
+    "test:frontend": "playwright test",
+    "test:frontend:unit": "node --test tests/frontend/unit/*.test.mjs",
+    "test:frontend:headed": "playwright test --headed",
+    "test:frontend:ci": "playwright test --reporter=line",
+    "test:py": "python -m unittest -v tests/test_jobs_fetcher.py tests/test_source_discovery.py tests/test_source_registry.py tests/test_admin_bridge_ops.py"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}
