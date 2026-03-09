@@ -1,8 +1,8 @@
-import tempfile
 import unittest
 from pathlib import Path
 
 from scripts import source_registry as sr
+from tests.temp_paths import workspace_tmpdir
 
 
 class SourceRegistryTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class SourceRegistryTests(unittest.TestCase):
         self.assertEqual(len(deduped), 2)
 
     def test_save_json_atomic_and_load_array(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("source-registry") as tmp:
             path = Path(tmp) / "registry.json"
             payload = [{"adapter": "smartrecruiters", "company_id": "Gameloft"}]
             sr.save_json_atomic(path, payload)

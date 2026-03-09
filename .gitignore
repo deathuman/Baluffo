@@ -4,10 +4,16 @@ node_modules/
 playwright-report/
 test-results/
 dist/
+.codex-test-tmp/
+.codex-tmp-tests/
+support/
+logs/
 
-# Local runtime/generated admin state (keep local, do not track)
-data/admin-alert-state.json
-data/admin-run-history.json
-data/source-registry-active.json
-data/source-registry-pending.json
-data/source-registry-rejected.json
+# Local runtime/generated data (keep local, do not track)
+data/*.json
+data/*.csv
+data/*.log
+!data/.gitkeep
+
+# Packaged/local secrets
+packaging/github-app-sync-config.json

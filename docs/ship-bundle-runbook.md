@@ -6,7 +6,7 @@ Versioning and release policy: `docs/versioning-policy-and-release-checklist.md`
 ## Build
 
 ```powershell
-python scripts/build_ship_bundle.py
+py -3 scripts/build_ship_bundle.py
 ```
 
 Default output:
@@ -16,13 +16,13 @@ Default output:
 Optional output override:
 
 ```powershell
-python scripts/build_ship_bundle.py --output-dir C:\temp\baluffo-ship
+py -3 scripts/build_ship_bundle.py --output-dir C:\temp\baluffo-ship
 ```
 
 Optional bundle version:
 
 ```powershell
-python scripts/build_ship_bundle.py --bundle-version 1.2.3
+py -3 scripts/build_ship_bundle.py --bundle-version 1.2.3
 ```
 
 ## Start from bundle
@@ -47,6 +47,7 @@ Or launch both:
 - `app\update-state.json`: updater state (`current_version`, `previous_version`, `last_update_status`, `last_error_code`)
 - `app\staging`: temporary extraction area for in-progress updates
 - `data`: persistent user/runtime data (outside app version folders)
+- `app\versions\<version>\packaging`: packaged sync template/config location
 - `data\backups`: pre-migration snapshots
 - `data\migration-reports`: migration apply/verify/rollback reports
 
@@ -116,7 +117,7 @@ Example:
 
 ```powershell
 $env:BALUFFO_DATA_DIR="C:\baluffo\data"
-python scripts/admin_bridge.py --port 9988
+py -3 scripts/admin_bridge.py --port 9988
 ```
 
 ## Troubleshooting

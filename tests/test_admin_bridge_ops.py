@@ -1,8 +1,10 @@
-import tempfile
+import shutil
 import os
 import unittest
 import io
+import html
 import json
+import uuid
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -11,8 +13,12 @@ from scripts import admin_bridge
 
 class AdminBridgeOpsTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        root = Path(self.tmp.name)
+        temp_root = Path(__file__).resolve().parents[1] / ".codex-tmp-tests"
+        temp_root.mkdir(parents=True, exist_ok=True)
+        self.test_root = temp_root / f"admin-bridge-{uuid.uuid4().hex}"
+        self.test_root.mkdir(parents=True, exist_ok=True)
+        root = self.test_root
+        self._orig_sync_env = os.environ.get(admin_bridge.source_sync_module.PACKAGED_SYNC_CONFIG_ENV)
         self._orig = {
             "OPS_HISTORY_PATH": admin_bridge.OPS_HISTORY_PATH,
             "OPS_ALERT_STATE_PATH": admin_bridge.OPS_ALERT_STATE_PATH,
@@ -23,9 +29,12 @@ class AdminBridgeOpsTests(unittest.TestCase):
             "REJECTED_PATH": admin_bridge.REJECTED_PATH,
             "TASKS_CONFIG_PATH": admin_bridge.TASKS_CONFIG_PATH,
             "TASK_STATE_PATH": admin_bridge.TASK_STATE_PATH,
+            "SYNC_CONFIG_PATH": admin_bridge.SYNC_CONFIG_PATH,
+            "SYNC_RUNTIME_PATH": admin_bridge.SYNC_RUNTIME_PATH,
             "RUNTIME_CONFIG": admin_bridge.RUNTIME_CONFIG,
             "SYNC_CONFIG": admin_bridge.SYNC_CONFIG,
             "SYNC_STATUS": dict(admin_bridge.SYNC_STATUS),
+            "ACTIVE_SYNC_RUNS": set(admin_bridge.ACTIVE_SYNC_RUNS),
             "SOURCE_REGISTRY_DATA_DIR": admin_bridge.source_registry_module.DATA_DIR,
             "MAX_HISTORY_ROWS": admin_bridge.MAX_HISTORY_ROWS,
         }
@@ -38,11 +47,25 @@ class AdminBridgeOpsTests(unittest.TestCase):
         admin_bridge.REJECTED_PATH = root / "source-registry-rejected.json"
         admin_bridge.TASKS_CONFIG_PATH = root / "tasks.json"
         admin_bridge.TASK_STATE_PATH = root / "admin-task-state.json"
+        admin_bridge.SYNC_CONFIG_PATH = root / "source-sync-config.json"
+        admin_bridge.SYNC_RUNTIME_PATH = root / "source-sync-runtime.json"
         admin_bridge.MAX_HISTORY_ROWS = 5
         admin_bridge.save_json_atomic(admin_bridge.ACTIVE_PATH, [])
         admin_bridge.save_json_atomic(admin_bridge.PENDING_PATH, [])
         admin_bridge.save_json_atomic(admin_bridge.REJECTED_PATH, [])
         admin_bridge.save_json_atomic(admin_bridge.TASKS_CONFIG_PATH, {"tasks": []})
+        packaged_sync_config = root / "github-app-sync-config.json"
+        packaged_sync_config.write_text(json.dumps({
+            "schemaVersion": 1,
+            "appId": "123456",
+            "installationId": "999999",
+            "repo": "owner/repo",
+            "branch": "main",
+            "path": "baluffo/source-sync.json",
+            "privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----",
+        }), encoding="utf-8")
+        os.environ[admin_bridge.source_sync_module.PACKAGED_SYNC_CONFIG_ENV] = str(packaged_sync_config)
+        admin_bridge.refresh_sync_config()
 
     def tearDown(self):
         for key, value in self._orig.items():
@@ -52,12 +75,19 @@ class AdminBridgeOpsTests(unittest.TestCase):
             if key == "SYNC_STATUS":
                 admin_bridge.SYNC_STATUS = dict(value)
                 continue
+            if key == "ACTIVE_SYNC_RUNS":
+                admin_bridge.ACTIVE_SYNC_RUNS = set(value)
+                continue
             setattr(admin_bridge, key, value)
-        self.tmp.cleanup()
+        if self._orig_sync_env is None:
+            os.environ.pop(admin_bridge.source_sync_module.PACKAGED_SYNC_CONFIG_ENV, None)
+        else:
+            os.environ[admin_bridge.source_sync_module.PACKAGED_SYNC_CONFIG_ENV] = self._orig_sync_env
+        shutil.rmtree(self.test_root, ignore_errors=True)
 
     def test_resolve_runtime_config_cli_env_precedence(self):
         cfg = admin_bridge.resolve_runtime_config(
-            ["--port", "9001", "--host", "127.0.0.9", "--data-dir", self.tmp.name, "--log-format", "jsonl", "--log-level", "debug"],
+            ["--port", "9001", "--host", "127.0.0.9", "--data-dir", str(self.test_root), "--log-format", "jsonl", "--log-level", "debug"],
             env={
                 "BALUFFO_BRIDGE_HOST": "1.2.3.4",
                 "BALUFFO_BRIDGE_PORT": "9999",
@@ -68,7 +98,7 @@ class AdminBridgeOpsTests(unittest.TestCase):
         )
         self.assertEqual(cfg.host, "127.0.0.9")
         self.assertEqual(cfg.port, 9001)
-        self.assertEqual(str(cfg.data_dir), str(Path(self.tmp.name).resolve()))
+        self.assertEqual(str(cfg.data_dir), str(self.test_root.resolve()))
         self.assertEqual(cfg.log_format, "jsonl")
         self.assertEqual(cfg.log_level, "debug")
 
@@ -78,21 +108,21 @@ class AdminBridgeOpsTests(unittest.TestCase):
             env={
                 "BALUFFO_BRIDGE_HOST": "0.0.0.0",
                 "BALUFFO_BRIDGE_PORT": "9911",
-                "BALUFFO_DATA_DIR": self.tmp.name,
+                "BALUFFO_DATA_DIR": str(self.test_root),
                 "BALUFFO_BRIDGE_LOG_FORMAT": "jsonl",
                 "BALUFFO_BRIDGE_LOG_LEVEL": "debug",
             },
         )
         self.assertEqual(cfg.host, "0.0.0.0")
         self.assertEqual(cfg.port, 9911)
-        self.assertEqual(str(cfg.data_dir), str(Path(self.tmp.name).resolve()))
+        self.assertEqual(str(cfg.data_dir), str(self.test_root.resolve()))
         self.assertEqual(cfg.log_format, "jsonl")
         self.assertEqual(cfg.log_level, "debug")
 
     def test_bridge_log_jsonl_output_is_valid_json(self):
         cfg = admin_bridge.RuntimeConfig(
-            root=Path(self.tmp.name),
-            data_dir=Path(self.tmp.name),
+            root=self.test_root,
+            data_dir=self.test_root,
             host="127.0.0.1",
             port=8877,
             log_format="jsonl",
@@ -110,9 +140,9 @@ class AdminBridgeOpsTests(unittest.TestCase):
         self.assertEqual(str(payload.get("level") or ""), "info")
 
     def test_configure_runtime_paths_updates_bridge_paths(self):
-        data_dir = Path(self.tmp.name) / "runtime-data"
+        data_dir = self.test_root / "runtime-data"
         cfg = admin_bridge.RuntimeConfig(
-            root=Path(self.tmp.name),
+            root=self.test_root,
             data_dir=data_dir,
             host="127.0.0.1",
             port=8877,
@@ -567,6 +597,79 @@ class AdminBridgeOpsTests(unittest.TestCase):
             self.assertEqual(int(result["jobsFound"]), 1)
             self.assertTrue(bool(result.get("browserFallbackAttempted")))
             self.assertTrue(bool(result.get("browserFallbackUsed")))
+        finally:
+            admin_bridge.discovery.fetch_text_with_retry = original_fetch
+            admin_bridge._try_fetch_with_playwright = original_browser_fetch
+
+    def test_trigger_source_check_static_fallback_attempts_browser_on_challenge_page(self):
+        added = admin_bridge.add_manual_source("https://jobs.zenimax.com/jobs")
+        source_id = str(added.get("sourceId") or "")
+        self.assertTrue(source_id)
+
+        original_fetch = admin_bridge.discovery.fetch_text_with_retry
+        original_browser_fetch = admin_bridge._try_fetch_with_playwright
+        try:
+            admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: (
+                '<html><head><script src="/cdn-cgi/challenge-platform/h/g/scripts/jsd/main.js"></script></head>'
+                '<body>Just a moment...</body></html>'
+            )
+            admin_bridge._try_fetch_with_playwright = lambda *_args, **_kwargs: (
+                '<a href="/requisitions/view/3472">Associate DevOps Programmer</a>'
+                '<a href="/requisitions/view/3479">Development QA Manager</a>',
+                "",
+            )
+            result = admin_bridge.trigger_source_check(source_id)
+            self.assertTrue(result["started"])
+            self.assertTrue(result["ok"])
+            self.assertEqual(int(result["jobsFound"]), 2)
+            self.assertTrue(bool(result.get("browserFallbackAttempted")))
+            self.assertTrue(bool(result.get("browserFallbackUsed")))
+        finally:
+            admin_bridge.discovery.fetch_text_with_retry = original_fetch
+            admin_bridge._try_fetch_with_playwright = original_browser_fetch
+
+    def test_trigger_source_check_static_parses_embedded_job_filter_payload(self):
+        added = admin_bridge.add_manual_source("https://jobs.zenimax.com/jobs")
+        source_id = str(added.get("sourceId") or "")
+        self.assertTrue(source_id)
+
+        payload = {
+            "jobs": [
+                {
+                    "id": 3472,
+                    "title": "Associate DevOps Programmer",
+                    "link": "https://careers-zenimax.icims.com/jobs/3472/associate-devops-programmer/job",
+                },
+                {
+                    "id": 3479,
+                    "title": "Development QA Manager",
+                    "link": "https://careers-zenimax.icims.com/jobs/3479/development-qa-manager/job",
+                },
+                {
+                    "id": 3488,
+                    "title": "Senior Gameplay Programmer",
+                    "link": "https://careers-zenimax.icims.com/jobs/3488/senior-gameplay-programmer/job",
+                },
+            ]
+        }
+        raw_data = html.escape(json.dumps(payload), quote=True)
+        listing_html = (
+            '<script src="/cdn-cgi/challenge-platform/h/g/scripts/jsd/main.js"></script>'
+            f'<job-filter :raw-data="{raw_data}"></job-filter>'
+        )
+
+        original_fetch = admin_bridge.discovery.fetch_text_with_retry
+        original_browser_fetch = admin_bridge._try_fetch_with_playwright
+        try:
+            admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: listing_html
+            admin_bridge._try_fetch_with_playwright = lambda *_args, **_kwargs: ("", "unexpected browser fallback")
+            result = admin_bridge.trigger_source_check(source_id)
+            self.assertTrue(result["started"])
+            self.assertTrue(result["ok"])
+            self.assertFalse(bool(result.get("weakSignal")))
+            self.assertEqual(int(result["jobsFound"]), 3)
+            self.assertFalse(bool(result.get("browserFallbackAttempted")))
+            self.assertFalse(bool(result.get("browserFallbackUsed")))
         finally:
             admin_bridge.discovery.fetch_text_with_retry = original_fetch
             admin_bridge._try_fetch_with_playwright = original_browser_fetch
@@ -1064,17 +1167,23 @@ class AdminBridgeOpsTests(unittest.TestCase):
         self.assertEqual(str(row.get("name") or ""), "Nixxes (Manual Website)")
 
     def test_sync_status_reports_disabled_when_explicitly_disabled(self):
-        admin_bridge.SYNC_CONFIG = admin_bridge.source_sync_module.resolve_sync_config(env={"BALUFFO_SYNC_ENABLED": "false"})
+        admin_bridge.update_saved_sync_settings({"enabled": False})
         payload = admin_bridge.get_sync_status_payload()
         self.assertTrue(payload.get("ok"))
         self.assertEqual(str((payload.get("config") or {}).get("state") or ""), "disabled")
 
+    def test_update_saved_sync_settings_persists_local_enablement_only(self):
+        result = admin_bridge.update_saved_sync_settings({"enabled": True})
+        self.assertTrue(bool(result.get("enabled")))
+        saved = admin_bridge.load_saved_sync_settings()
+        self.assertTrue(bool(saved.get("enabled")))
+        payload = admin_bridge.get_sync_status_payload()
+        saved_payload = payload.get("savedConfig") or {}
+        self.assertTrue(bool(saved_payload.get("enabled")))
+        self.assertEqual(str((payload.get("config") or {}).get("authMode") or ""), "github_app")
+
     def test_sync_pull_updates_local_registry_counts(self):
-        admin_bridge.SYNC_CONFIG = admin_bridge.source_sync_module.resolve_sync_config(env={
-            "BALUFFO_SYNC_ENABLED": "true",
-            "BALUFFO_SYNC_GITHUB_TOKEN": "token",
-            "BALUFFO_SYNC_REPO": "owner/repo",
-        })
+        admin_bridge.update_saved_sync_settings({"enabled": True})
         admin_bridge.save_json_atomic(admin_bridge.ACTIVE_PATH, [])
         admin_bridge.save_json_atomic(admin_bridge.PENDING_PATH, [])
         admin_bridge.save_json_atomic(admin_bridge.REJECTED_PATH, [])
@@ -1100,11 +1209,7 @@ class AdminBridgeOpsTests(unittest.TestCase):
             admin_bridge.source_sync_module.pull_and_merge_sources = original_pull
 
     def test_sync_push_serializes_expected_snapshot_counts(self):
-        admin_bridge.SYNC_CONFIG = admin_bridge.source_sync_module.resolve_sync_config(env={
-            "BALUFFO_SYNC_ENABLED": "true",
-            "BALUFFO_SYNC_GITHUB_TOKEN": "token",
-            "BALUFFO_SYNC_REPO": "owner/repo",
-        })
+        admin_bridge.update_saved_sync_settings({"enabled": True})
         admin_bridge.save_json_atomic(admin_bridge.ACTIVE_PATH, [{"adapter": "static", "listing_url": "https://a.com/jobs"}])
         admin_bridge.save_json_atomic(admin_bridge.PENDING_PATH, [{"adapter": "teamtailor", "name": "Foo"}])
         admin_bridge.save_json_atomic(admin_bridge.REJECTED_PATH, [{"adapter": "lever", "company": "Bar"}])
@@ -1126,17 +1231,14 @@ class AdminBridgeOpsTests(unittest.TestCase):
             admin_bridge.source_sync_module.push_sources_snapshot = original_push
 
     def test_start_sync_task_creates_started_history_row(self):
-        admin_bridge.SYNC_CONFIG = admin_bridge.source_sync_module.resolve_sync_config(env={
-            "BALUFFO_SYNC_ENABLED": "true",
-            "BALUFFO_SYNC_GITHUB_TOKEN": "token",
-            "BALUFFO_SYNC_REPO": "owner/repo",
-        })
+        admin_bridge.update_saved_sync_settings({"enabled": True})
         original_thread_cls = admin_bridge.threading.Thread
         try:
             class _NoStartThread:
-                def __init__(self, target=None, args=(), name=None, daemon=None):  # noqa: ANN001
+                def __init__(self, target=None, args=(), kwargs=None, name=None, daemon=None):  # noqa: ANN001
                     self.target = target
                     self.args = args
+                    self.kwargs = dict(kwargs or {})
                     self.name = name
                     self.daemon = daemon
 
@@ -1155,12 +1257,21 @@ class AdminBridgeOpsTests(unittest.TestCase):
         finally:
             admin_bridge.threading.Thread = original_thread_cls
 
-    def test_sync_worker_writes_completed_row_with_summary(self):
-        admin_bridge.SYNC_CONFIG = admin_bridge.source_sync_module.resolve_sync_config(env={
-            "BALUFFO_SYNC_ENABLED": "true",
-            "BALUFFO_SYNC_GITHUB_TOKEN": "token",
-            "BALUFFO_SYNC_REPO": "owner/repo",
+    def test_sync_history_prunes_stale_started_rows_without_live_worker(self):
+        admin_bridge.append_run_history({
+            "id": "sync_stale_1",
+            "type": "sync",
+            "status": "started",
+            "startedAt": "2026-03-09T12:00:00+00:00",
+            "finishedAt": "",
+            "durationMs": 0,
+            "summary": {"action": "push"},
         })
+        rows = admin_bridge.sync_history_from_reports()
+        self.assertFalse(any(str(row.get("id") or "") == "sync_stale_1" for row in rows))
+
+    def test_sync_worker_writes_completed_row_with_summary(self):
+        admin_bridge.update_saved_sync_settings({"enabled": True})
         started_at = admin_bridge.now_iso()
         admin_bridge.append_run_history({
             "id": "sync_test_1",

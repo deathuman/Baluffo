@@ -5,6 +5,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$PythonLauncher = Get-Command py -ErrorAction SilentlyContinue
+$PythonCommand = "python"
+$PythonArgs = @()
+if ($PythonLauncher) {
+  $PythonCommand = $PythonLauncher.Source
+  $PythonArgs = @("-3")
+}
 $Root = if (Test-Path (Join-Path $PSScriptRoot "scripts")) {
   $PSScriptRoot
 } else {
@@ -18,7 +25,7 @@ if (-not (Test-Path $Manager)) {
   throw "Update manager not found: $Manager"
 }
 
-python $Manager startup-check --root $Root --data-dir $DataDir
+& $PythonCommand @PythonArgs $Manager startup-check --root $Root --data-dir $DataDir
 if ($LASTEXITCODE -ne 0) {
   throw "Startup validation failed. See error above."
 }
@@ -35,10 +42,11 @@ Write-Host "[baluffo-ship] Starting admin bridge..." -ForegroundColor Cyan
 Write-Host "[baluffo-ship] URL: http://$Host`:$Port" -ForegroundColor Gray
 Write-Host "[baluffo-ship] Data dir: $DataDir" -ForegroundColor Gray
 Write-Host "[baluffo-ship] Version: $CurrentVersion" -ForegroundColor Gray
+Write-Host "[baluffo-ship] Python: $PythonCommand $($PythonArgs -join ' ')" -ForegroundColor Gray
 
 Push-Location $ActiveRoot
 try {
-  python scripts/admin_bridge.py --host $Host --port $Port --data-dir $DataDir --log-format human --log-level info
+  & $PythonCommand @PythonArgs scripts/admin_bridge.py --host $Host --port $Port --data-dir $DataDir --log-format human --log-level info
 }
 finally {
   Pop-Location

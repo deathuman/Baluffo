@@ -37,7 +37,7 @@ Saved job record fields:
 `local-data-client.js` intentionally keeps a compatibility boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
 
 ## Unified jobs feed generation
-- Run `python scripts/jobs_fetcher.py` to aggregate listings into:
+- Run `py -3 scripts/jobs_fetcher.py` to aggregate listings into:
   - `data/jobs-unified.json` (primary feed used by Jobs page modules)
   - `data/jobs-unified.csv` (CSV fallback + inspection)
   - `data/jobs-fetch-report.json` (per-source diagnostics)
@@ -53,14 +53,14 @@ Saved job record fields:
 - If the current run yields zero jobs, the runner keeps the previous `jobs-unified.json` output by default.
 
 ## Source discovery and approval
-- Run `python scripts/source_discovery.py` (dynamic mode by default) to discover new candidate sources into:
+- Run `py -3 scripts/source_discovery.py` (dynamic mode by default) to discover new candidate sources into:
   - `data/source-discovery-report.json`
   - `data/source-discovery-candidates.json`
   - `data/source-registry-pending.json` (report-only, no auto-enable)
 - Optional flags:
   - `--mode static` to probe only static seed list
   - `--no-web-search` to skip lightweight web search expansion
-- Run `python scripts/admin_bridge.py` to expose localhost admin endpoints used by `admin.html`:
+- Run `py -3 scripts/admin_bridge.py` to expose localhost admin endpoints used by `admin.html`:
   - `GET /discovery/report`
   - `GET /registry/pending`
   - `GET /registry/active`
@@ -69,26 +69,24 @@ Saved job record fields:
   - `POST /sync/pull`, `POST /sync/push`
   - `POST /tasks/run-discovery`, `POST /tasks/run-fetcher`
   - `POST /tasks/run-sync-pull`, `POST /tasks/run-sync-push` (preferred for UI task/history tracking)
-- If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback and shows a manual command fallback (`python scripts/jobs_fetcher.py`).
+- If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback and shows a manual command fallback (`py -3 scripts/jobs_fetcher.py`).
 
 - Optional bridge runtime options:
   - CLI:
     - `--host`, `--port`, `--data-dir`, `--log-format (human|jsonl)`, `--log-level (info|debug)`, `--quiet-requests`
   - env:
     - `BALUFFO_BRIDGE_HOST`, `BALUFFO_BRIDGE_PORT`, `BALUFFO_DATA_DIR`, `BALUFFO_BRIDGE_LOG_FORMAT`, `BALUFFO_BRIDGE_LOG_LEVEL`
-    - `BALUFFO_SYNC_ENABLED` (default `true`; set `false` to disable), `BALUFFO_SYNC_GITHUB_TOKEN`, `BALUFFO_SYNC_REPO`, `BALUFFO_SYNC_BRANCH`, `BALUFFO_SYNC_PATH`
+    - `BALUFFO_SYNC_APP_CONFIG_PATH` (optional override for the packaged GitHub App sync config)
   - precedence: `CLI > env > defaults`
 
 ### GitHub source sync (multi-PC)
-- Recommended: dedicated private repo for source sync state.
-- Configure per machine:
-  - `BALUFFO_SYNC_GITHUB_TOKEN=<PAT with repo contents write access>`
-  - `BALUFFO_SYNC_REPO=<owner/repo>`
-  - optional `BALUFFO_SYNC_BRANCH` (default `main`)
-  - optional `BALUFFO_SYNC_PATH` (default `baluffo/source-sync.json`)
-- One-time migration for your current local custom sources:
-  - on your current machine: start bridge, click `Push Sources Sync`
-  - on each other machine: set token+repo env vars, start bridge (startup pull runs), or click `Pull Sources Sync`
+- Source sync is now packaged GitHub App based.
+- Ship or local package the GitHub App config JSON as `packaging/github-app-sync-config.json`, or override with `BALUFFO_SYNC_APP_CONFIG_PATH`.
+- Standard user flow:
+  - start the bridge
+  - keep Source Sync enabled in Admin
+  - startup pull runs automatically
+  - use `Pull Sources Sync` / `Push Sources Sync` for manual recovery when needed
 - Behavior:
   - bridge does a best-effort pull on startup (non-fatal on failure)
   - admin UI includes manual pull/push actions
@@ -96,19 +94,19 @@ Saved job record fields:
 
 ## Suggested local schedules
 - Windows Task Scheduler action:
-  - Program/script: `python`
-  - Arguments: `scripts/jobs_fetcher.py`
+  - Program/script: `py`
+  - Arguments: `-3 scripts/jobs_fetcher.py`
   - Start in: repository root (`Baluffo`)
 - Discovery (daily):
-  - Program/script: `python`
-  - Arguments: `scripts/source_discovery.py --mode dynamic`
+  - Program/script: `py`
+  - Arguments: `-3 scripts/source_discovery.py --mode dynamic`
   - Start in: repository root (`Baluffo`)
 
 ## Ship bundle (zip-first)
 
 - Build:
-  - `python scripts/build_ship_bundle.py`
-  - optional version: `python scripts/build_ship_bundle.py --bundle-version 1.2.3`
+  - `py -3 scripts/build_ship_bundle.py`
+  - optional version: `py -3 scripts/build_ship_bundle.py --bundle-version 1.2.3`
 - Output:
   - `dist/baluffo-ship`
 - Launchers in bundle root:
@@ -120,3 +118,4 @@ Saved job record fields:
   - `create-support-bundle.ps1`
 - Detailed runbook:
   - `docs/ship-bundle-runbook.md`
+- The ship bundle seeds clean runtime files under `data\`; it does not package the repo's local runtime JSON/CSV state.

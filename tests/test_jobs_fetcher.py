@@ -1,9 +1,9 @@
 import json
-import tempfile
 import unittest
 from pathlib import Path
 
 from scripts import jobs_fetcher as jf
+from tests.temp_paths import workspace_tmpdir
 
 
 class JobsFetcherTests(unittest.TestCase):
@@ -328,7 +328,7 @@ class JobsFetcherTests(unittest.TestCase):
                 }
             ]
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("jobs-fetcher") as tmp:
             report = jf.run_pipeline(
                 output_dir=Path(tmp),
                 source_loaders=[("failing", failing_loader), ("ok", ok_loader)],
@@ -368,7 +368,7 @@ class JobsFetcherTests(unittest.TestCase):
         def empty_loader(**_: object):
             return []
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("jobs-fetcher") as tmp:
             out = Path(tmp)
             (out / "jobs-unified.json").write_text(json.dumps(existing), encoding="utf-8")
             report = jf.run_pipeline(output_dir=out, source_loaders=[("empty", empty_loader)])
@@ -399,7 +399,7 @@ class JobsFetcherTests(unittest.TestCase):
 
         previous_default_loaders = jf.default_source_loaders
         try:
-            with tempfile.TemporaryDirectory() as tmp:
+            with workspace_tmpdir("jobs-fetcher") as tmp:
                 out = Path(tmp)
                 jf.default_source_loaders = lambda: [("only_source", one_job_loader)]
                 first = jf.run_pipeline(output_dir=out, preserve_previous_on_empty=False)
@@ -437,7 +437,7 @@ class JobsFetcherTests(unittest.TestCase):
                 }
             ]
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("jobs-fetcher") as tmp:
             jf.run_pipeline(output_dir=Path(tmp), source_loaders=[("ok", ok_loader)])
             rows = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
             self.assertEqual(len(rows), 1)
@@ -496,7 +496,7 @@ class JobsFetcherTests(unittest.TestCase):
                 return littlechicken_detail
             raise RuntimeError(f"Unhandled URL in fake fetch: {url}")
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("jobs-fetcher") as tmp:
             report = jf.run_pipeline(
                 output_dir=Path(tmp),
                 fetch_text=fake_fetch,
@@ -565,7 +565,7 @@ class JobsFetcherTests(unittest.TestCase):
                 }
             ]
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("jobs-fetcher") as tmp:
             out = Path(tmp)
             report = jf.run_pipeline(
                 output_dir=out,
@@ -648,7 +648,7 @@ class JobsFetcherTests(unittest.TestCase):
                 }
             ]
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("jobs-fetcher") as tmp:
             out = Path(tmp)
             blocked_until = (jf.datetime.now(jf.timezone.utc) + jf.timedelta(hours=2)).isoformat()
             state_payload = {
@@ -704,7 +704,7 @@ class JobsFetcherTests(unittest.TestCase):
                 }
             ]
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("jobs-fetcher") as tmp:
             report = jf.run_pipeline(output_dir=Path(tmp), source_loaders=[("ok", ok_loader)])
             snapshot = {
                 "schemaVersion": report.get("schemaVersion"),

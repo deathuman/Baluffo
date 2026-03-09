@@ -1,613 +1,198 @@
 {
   "schemaVersion": "1.0",
   "mode": "dynamic",
-  "startedAt": "2026-03-08T22:15:20.567422+00:00",
-  "finishedAt": "2026-03-08T22:16:49.280521+00:00",
+  "startedAt": "2026-03-09T12:52:43.049230+00:00",
+  "finishedAt": "2026-03-09T12:53:32.808678+00:00",
   "summary": {
-    "probedCount": 80,
+    "probedCount": 2,
     "healthyCount": 0,
     "newCandidateCount": 0,
     "taEnvCandidateCount": 0,
     "nlCandidateCount": 0,
     "remoteCandidateCount": 0,
-    "failedProbeCount": 3,
-    "probeMissCount": 77,
-    "foundEndpointCount": 158,
-    "probedCandidateCount": 80,
+    "failedProbeCount": 0,
+    "probeMissCount": 2,
+    "foundEndpointCount": 55,
+    "probedCandidateCount": 2,
     "queuedCandidateCount": 0,
-    "skippedDuplicateCount": 78,
+    "discoverableButDeferredCount": 0,
+    "skippedDuplicateCount": 44,
     "skippedInvalidCount": 0,
+    "skippedLowEvidenceProbeCount": 9,
     "adapterCounts": {},
-    "methodCounts": {}
+    "methodCounts": {},
+    "generatedCountByStage": {
+      "curated_seed": 10,
+      "provider_pattern": 28,
+      "web_provider": 11,
+      "generic_static": 6
+    },
+    "survivedDedupeCountByStage": {
+      "curated_seed": 0,
+      "provider_pattern": 11,
+      "web_provider": 0,
+      "generic_static": 0
+    },
+    "probedCountByStage": {
+      "curated_seed": 0,
+      "provider_pattern": 2,
+      "web_provider": 0,
+      "generic_static": 0
+    },
+    "queuedCountByStage": {
+      "curated_seed": 0,
+      "provider_pattern": 0,
+      "web_provider": 0,
+      "generic_static": 0
+    },
+    "duplicateReasons": {
+      "existing_id": 44
+    },
+    "deferredReasons": {}
   },
   "candidates": [],
   "failures": [
     {
-      "name": "Guerrilla Games (Lever)",
+      "name": "https://www.nixxes.com/careers",
+      "adapter": "seed_careers_page",
+      "error": "HTTP Error 404: Not Found",
+      "stage": "page_fetch"
+    },
+    {
+      "name": "https://vertigo-games.com/careers",
+      "adapter": "seed_careers_page",
+      "error": "HTTP Error 404: Not Found",
+      "stage": "page_fetch"
+    },
+    {
+      "name": "https://www.triumphstudios.com/careers",
+      "adapter": "seed_careers_page",
+      "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'www.triumphstudios.com'. (_ssl.c:1077)>",
+      "stage": "page_fetch"
+    },
+    {
+      "name": "https://careers.jagex.com/",
+      "adapter": "seed_careers_page",
+      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "stage": "page_fetch"
+    },
+    {
+      "name": "https://www.avalanche-studios.com/careers",
+      "adapter": "seed_careers_page",
+      "error": "HTTP Error 404: Not Found",
+      "stage": "page_fetch"
+    },
+    {
+      "name": "https://www.rebellion.com/careers",
+      "adapter": "seed_careers_page",
+      "error": "HTTP Error 403: Forbidden",
+      "stage": "page_fetch"
+    },
+    {
+      "name": "https://jobs.lever.co/voodoo",
+      "adapter": "seed_careers_page",
+      "error": "HTTP Error 404: Not Found",
+      "stage": "page_fetch"
+    },
+    {
+      "name": "Sandbox VR (Lever)",
       "adapter": "lever",
       "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/guerrilla-games: HTTP Error 404: Not Found",
+      "error": "https://jobs.lever.co/sandbox-vr: HTTP Error 404: Not Found",
       "stage": "probe_miss"
     },
     {
-      "name": "Guerrilla Games (Teamtailor)",
+      "name": "Paradox Interactive (Teamtailor)",
       "adapter": "teamtailor",
-      "domain": "guerrilla-games.teamtailor.com",
-      "error": "https://guerrilla-games.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Guerrilla Games (Personio)",
-      "adapter": "personio",
-      "domain": "guerrilla-games.jobs.personio.de",
-      "error": "https://guerrilla-games.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Guerrilla Games (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/guerrillagames: HTTP Error 404: Not Found",
+      "domain": "paradoxinteractive.teamtailor.com",
+      "error": "https://paradoxinteractive.teamtailor.com/jobs: HTTP Error 404: Not Found",
       "stage": "probe_miss"
     },
     {
       "name": "Guerrilla Games (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/guerrillagames: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Guerrilla Games (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "guerrillagames.teamtailor.com",
-      "error": "https://guerrillagames.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Guerrilla Games (Personio)",
-      "adapter": "personio",
-      "domain": "guerrillagames.jobs.personio.de",
-      "error": "https://guerrillagames.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Nixxes (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/nixxes: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Nixxes (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/nixxes: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Nixxes (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "nixxes.teamtailor.com",
-      "error": "https://nixxes.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Nixxes (Personio)",
-      "adapter": "personio",
-      "domain": "nixxes.jobs.personio.de",
-      "error": "https://nixxes.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Vertigo Games (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/vertigo-games: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Vertigo Games (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/vertigo-games: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Vertigo Games (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "vertigo-games.teamtailor.com",
-      "error": "https://vertigo-games.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Vertigo Games (Personio)",
-      "adapter": "personio",
-      "domain": "vertigo-games.jobs.personio.de",
-      "error": "https://vertigo-games.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Vertigo Games (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/vertigogames: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Vertigo Games (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/vertigogames: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Vertigo Games (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "vertigogames.teamtailor.com",
-      "error": "https://vertigogames.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Vertigo Games (Personio)",
-      "adapter": "personio",
-      "domain": "vertigogames.jobs.personio.de",
-      "error": "https://vertigogames.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Triumph Studios (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/triumph-studios: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Triumph Studios (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/triumph-studios: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Triumph Studios (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "triumph-studios.teamtailor.com",
-      "error": "https://triumph-studios.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Triumph Studios (Personio)",
-      "adapter": "personio",
-      "domain": "triumph-studios.jobs.personio.de",
-      "error": "https://triumph-studios.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Triumph Studios (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/triumphstudios: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Triumph Studios (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/triumphstudios: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Triumph Studios (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "triumphstudios.teamtailor.com",
-      "error": "https://triumphstudios.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Triumph Studios (Personio)",
-      "adapter": "personio",
-      "domain": "triumphstudios.jobs.personio.de",
-      "error": "https://triumphstudios.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Little Chicken (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/little-chicken: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Little Chicken (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/little-chicken: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Little Chicken (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "little-chicken.teamtailor.com",
-      "error": "https://little-chicken.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Little Chicken (Personio)",
-      "adapter": "personio",
-      "domain": "little-chicken.jobs.personio.de",
-      "error": "https://little-chicken.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Little Chicken (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/littlechicken: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Little Chicken (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/littlechicken: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Little Chicken (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "littlechicken.teamtailor.com",
-      "error": "https://littlechicken.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Little Chicken (Personio)",
-      "adapter": "personio",
-      "domain": "littlechicken.jobs.personio.de",
-      "error": "https://littlechicken.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/playstation-global: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
     },
     {
       "name": "PlayStation Global (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/playstation-global: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "playstation-global.teamtailor.com",
-      "error": "https://playstation-global.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Personio)",
-      "adapter": "personio",
-      "domain": "playstation-global.jobs.personio.de",
-      "error": "https://playstation-global.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/playstationglobal: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
     },
     {
       "name": "PlayStation Global (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/playstationglobal: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "playstationglobal.teamtailor.com",
-      "error": "https://playstationglobal.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Personio)",
-      "adapter": "personio",
-      "domain": "playstationglobal.jobs.personio.de",
-      "error": "https://playstationglobal.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/sonyinteractiveentertainmentglobal: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "sonyinteractiveentertainmentglobal.teamtailor.com",
-      "error": "https://sonyinteractiveentertainmentglobal.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Personio)",
-      "adapter": "personio",
-      "domain": "sonyinteractiveentertainmentglobal.jobs.personio.de",
-      "error": "https://sonyinteractiveentertainmentglobal.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/playstation: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/playstation: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "playstation.teamtailor.com",
-      "error": "https://playstation.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Personio)",
-      "adapter": "personio",
-      "domain": "playstation.jobs.personio.de",
-      "error": "https://playstation.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/sony-interactive-entertainment: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/sony-interactive-entertainment: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "sony-interactive-entertainment.teamtailor.com",
-      "error": "https://sony-interactive-entertainment.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Personio)",
-      "adapter": "personio",
-      "domain": "sony-interactive-entertainment.jobs.personio.de",
-      "error": "https://sony-interactive-entertainment.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/sonyinteractiveentertainment: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/sonyinteractiveentertainment: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "sonyinteractiveentertainment.teamtailor.com",
-      "error": "https://sonyinteractiveentertainment.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "PlayStation Global (Personio)",
-      "adapter": "personio",
-      "domain": "sonyinteractiveentertainment.jobs.personio.de",
-      "error": "https://sonyinteractiveentertainment.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Larian Studios (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/larian-studios: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Larian Studios (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "larian-studios.teamtailor.com",
-      "error": "https://larian-studios.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Larian Studios (Personio)",
-      "adapter": "personio",
-      "domain": "larian-studios.jobs.personio.de",
-      "error": "https://larian-studios.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Larian Studios (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/larianstudios: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
     },
     {
       "name": "Larian Studios (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/larianstudios: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Larian Studios (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "larianstudios.teamtailor.com",
-      "error": "https://larianstudios.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Larian Studios (Personio)",
-      "adapter": "personio",
-      "domain": "larianstudios.jobs.personio.de",
-      "error": "https://larianstudios.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Jagex (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/jagex: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Jagex (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "jagex.teamtailor.com",
-      "error": "https://jagex.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Jagex (Personio)",
-      "adapter": "personio",
-      "domain": "jagex.jobs.personio.de",
-      "error": "https://jagex.jobs.personio.de/: not well-formed (invalid token): line 5, column 241291",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Remedy Entertainment (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/remedy-entertainment: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
     },
     {
       "name": "Remedy Entertainment (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/remedy-entertainment: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Remedy Entertainment (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "remedy-entertainment.teamtailor.com",
-      "error": "https://remedy-entertainment.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Remedy Entertainment (Personio)",
-      "adapter": "personio",
-      "domain": "remedy-entertainment.jobs.personio.de",
-      "error": "https://remedy-entertainment.jobs.personio.de/: HTTP Error 403: Forbidden",
-      "stage": "probe"
-    },
-    {
-      "name": "Remedy Entertainment (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/remedyentertainment: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
     },
     {
       "name": "Remedy Entertainment (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/remedyentertainment: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Remedy Entertainment (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "remedyentertainment.teamtailor.com",
-      "error": "https://remedyentertainment.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
-    },
-    {
-      "name": "Remedy Entertainment (Personio)",
-      "adapter": "personio",
-      "domain": "remedyentertainment.jobs.personio.de",
-      "error": "https://remedyentertainment.jobs.personio.de/: HTTP Error 403: Forbidden",
-      "stage": "probe"
-    },
-    {
-      "name": "Supercell (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/supercell: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
     },
     {
       "name": "Supercell (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/supercell: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
     },
     {
-      "name": "Supercell (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "supercell.teamtailor.com",
-      "error": "https://supercell.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
+      "name": "IO Interactive (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "boards-api.greenhouse.io",
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
     },
     {
-      "name": "Supercell (Personio)",
-      "adapter": "personio",
-      "domain": "supercell.jobs.personio.de",
-      "error": "https://supercell.jobs.personio.de/: HTTP Error 403: Forbidden",
-      "stage": "probe"
+      "name": "IO Interactive (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "boards-api.greenhouse.io",
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
     }
   ],
   "topFailures": [
     {
-      "key": "lever:api.lever.co",
-      "count": 20
-    },
-    {
       "key": "greenhouse:boards-api.greenhouse.io",
-      "count": 18
+      "count": 9
     },
     {
-      "key": "teamtailor:guerrilla-games.teamtailor.com",
+      "key": "seed_careers_page",
+      "count": 7
+    },
+    {
+      "key": "lever:api.lever.co",
       "count": 1
     },
     {
-      "key": "personio:guerrilla-games.jobs.personio.de",
-      "count": 1
-    },
-    {
-      "key": "teamtailor:guerrillagames.teamtailor.com",
+      "key": "teamtailor:paradoxinteractive.teamtailor.com",
       "count": 1
     }
   ],
   "outputs": {
-    "report": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-discovery-report.json",
-    "candidates": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-discovery-candidates.json",
-    "pending": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-registry-pending.json"
+    "report": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\source-discovery-report.json",
+    "candidates": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\source-discovery-candidates.json",
+    "pending": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\source-registry-pending.json"
   }
 }

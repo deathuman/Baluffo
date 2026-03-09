@@ -25,7 +25,7 @@ Important rule:
 From repo root:
 
 ```powershell
-python scripts/build_ship_bundle.py --bundle-version 1.2.3
+py -3 scripts/build_ship_bundle.py --bundle-version 1.2.3
 ```
 
 Output (default):
@@ -33,6 +33,8 @@ Output (default):
 - `dist\baluffo-ship`
 
 Zip and distribute the full `dist\baluffo-ship` directory to users.
+
+The bundle seeds a clean `data\` runtime. Do not package repo-local `data\*.json`, `data\*.csv`, or log files as release state.
 
 ## 3) First-time deployment on end-user machine
 
@@ -75,7 +77,7 @@ Example signing command:
 
 ```powershell
 $env:BALUFFO_UPDATE_SIGNING_KEY="replace-with-release-key"
-python scripts/ship/update_manager.py sign-manifest --version 1.2.4 --sha256 <artifact_sha256>
+py -3 scripts/ship/update_manager.py sign-manifest --version 1.2.4 --sha256 <artifact_sha256>
 ```
 
 ## 5) How updates must be applied

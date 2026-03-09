@@ -14,6 +14,37 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = ROOT / "dist" / "baluffo-ship"
 DEFAULT_BUNDLE_VERSION = "1.0.0"
+APP_RUNTIME_FILES = (
+    "admin.html",
+    "index.html",
+    "jobs.html",
+    "saved.html",
+    "styles.css",
+    "theme.js",
+    "admin-config.js",
+    "local-data-client.js",
+    "jobs-parsing-utils.js",
+    "jobs-state.js",
+    "saved-zip-utils.js",
+    "README.md",
+)
+APP_RUNTIME_SCRIPTS = (
+    "__init__.py",
+    "admin_bridge.py",
+    "contracts.py",
+    "fetcher_metrics.py",
+    "jobs_fetcher.py",
+    "jobs_fetcher_registry.py",
+    "pipeline_io.py",
+    "source_discovery.py",
+    "source_registry.py",
+    "source_sync.py",
+    "discovery_seed_catalog.json",
+)
+PACKAGING_FILES = (
+    "README.md",
+    "github-app-sync-config.template.json",
+)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -94,27 +125,18 @@ def _seed_runtime_data(data_dir: Path) -> None:
 
 def _copy_app_version(version_dir: Path) -> None:
     # Static frontend/runtime assets.
-    for rel in (
-        "admin.html",
-        "index.html",
-        "jobs.html",
-        "saved.html",
-        "styles.css",
-        "theme.js",
-        "admin-config.js",
-        "local-data-client.js",
-        "jobs-parsing-utils.js",
-        "jobs-state.js",
-        "saved-zip-utils.js",
-        "package.json",
-        "package-lock.json",
-        "README.md",
-        "LOCAL_SETUP.md",
-    ):
+    for rel in APP_RUNTIME_FILES:
         _copy_file(ROOT / rel, version_dir / rel)
 
     _copy_tree(ROOT / "frontend", version_dir / "frontend")
-    _copy_tree(ROOT / "scripts", version_dir / "scripts")
+    for rel in APP_RUNTIME_SCRIPTS:
+        _copy_file(ROOT / "scripts" / rel, version_dir / "scripts" / rel)
+    _copy_file(ROOT / "scripts" / "ship" / "__init__.py", version_dir / "scripts" / "ship" / "__init__.py")
+    for rel in PACKAGING_FILES:
+        _copy_file(ROOT / "packaging" / rel, version_dir / "packaging" / rel)
+    packaged_sync_config = ROOT / "packaging" / "github-app-sync-config.json"
+    if packaged_sync_config.exists():
+        _copy_file(packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json")
 
 
 def build_bundle(output_dir: Path, version: str) -> Path:

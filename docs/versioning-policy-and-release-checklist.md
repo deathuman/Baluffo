@@ -89,10 +89,6 @@ Validation policy:
 2. `min_updater_version` comparison must be numeric SemVer comparison, not lexical string comparison.
 3. Signature must be verified before staging or install.
 
-Known hardening gap (current implementation):
-
-- `min_updater_version` is currently compared lexically in `scripts/ship/update_manager.py`; this must be upgraded to numeric SemVer parsing in follow-up code.
-
 ## 5) Migration policy
 
 Every migration must provide:
@@ -134,7 +130,7 @@ Current signing command:
 
 ```powershell
 $env:BALUFFO_UPDATE_SIGNING_KEY="replace-with-release-key"
-python scripts/ship/update_manager.py sign-manifest --version 1.2.4 --sha256 <artifact_sha256>
+py -3 scripts/ship/update_manager.py sign-manifest --version 1.2.4 --sha256 <artifact_sha256>
 ```
 
 Roadmap to asymmetric signing:
@@ -149,13 +145,18 @@ Roadmap to asymmetric signing:
 ### Pre-release gates
 
 1. Build bundle with target `app_version`:
-   - `python scripts/build_ship_bundle.py --bundle-version <app_version>`
+   - `py -3 scripts/build_ship_bundle.py --bundle-version <app_version>`
 2. Run required validations/tests:
    - `npm run test:py` (minimum gate)
-3. Prepare update artifact zip and manifest.
-4. Compute `sha256` and signature.
-5. Validate manifest fields and schema.
-6. Rehearse update on staging machine:
+   - `npm run test:frontend:unit`
+3. Verify packaged output layout before publish:
+   - launcher scripts exist in bundle root
+   - `app\versions\<app_version>\packaging\github-app-sync-config.template.json` exists
+   - `data\` contains seeded defaults, not repo-local runtime artifacts
+4. Prepare update artifact zip and manifest.
+5. Compute `sha256` and signature.
+6. Validate manifest fields and schema.
+7. Rehearse update on staging machine:
    - apply update
    - confirm startup passes
    - verify user data integrity
@@ -213,5 +214,5 @@ Compliance status:
 3. Manifest required-field validation: implemented.
 4. Checksum + signature verification: implemented (HMAC).
 5. Backup/rollback/recovery flows: implemented.
-6. Numeric SemVer check for `min_updater_version`: not yet implemented (known hardening gap).
+6. Numeric SemVer check for `min_updater_version`: implemented.
 7. Retention pruning automation (`N=3` policy): not yet implemented (policy requirement for follow-up automation).

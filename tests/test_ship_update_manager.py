@@ -1,10 +1,10 @@
 import json
-import tempfile
 import unittest
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from scripts.ship import update_manager as um
+from tests.temp_paths import workspace_tmpdir
 
 
 def _write(path: Path, text: str) -> None:
@@ -53,7 +53,7 @@ def _build_update_zip(work: Path, version: str) -> Path:
 
 class ShipUpdateManagerTests(unittest.TestCase):
     def test_startup_check_rejects_data_dir_inside_versions(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("ship-update") as tmp:
             root = Path(tmp) / "ship"
             _seed_root(root)
             bad_data_dir = root / "app" / "versions" / "1.0.0" / "data"
@@ -62,7 +62,7 @@ class ShipUpdateManagerTests(unittest.TestCase):
                 um.startup_check(root, bad_data_dir)
 
     def test_apply_update_success_switches_current_version_and_keeps_data(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("ship-update") as tmp:
             root = Path(tmp) / "ship"
             _seed_root(root, version="1.0.0")
             bundle = _build_update_zip(Path(tmp), "1.1.0")
@@ -86,7 +86,7 @@ class ShipUpdateManagerTests(unittest.TestCase):
             self.assertEqual(json.loads((root / "data" / "user-settings.json").read_text(encoding="utf-8"))["theme"], "dark")
 
     def test_apply_update_rejects_checksum_mismatch(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("ship-update") as tmp:
             root = Path(tmp) / "ship"
             _seed_root(root, version="1.0.0")
             bundle = _build_update_zip(Path(tmp), "1.1.0")
@@ -108,7 +108,7 @@ class ShipUpdateManagerTests(unittest.TestCase):
             self.assertEqual((root / "app" / "current.txt").read_text(encoding="utf-8").strip(), "1.0.0")
 
     def test_recover_previous_swaps_versions(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
+        with workspace_tmpdir("ship-update") as tmp:
             root = Path(tmp) / "ship"
             _seed_root(root, version="1.1.0")
             (root / "app" / "versions" / "1.0.0" / "scripts").mkdir(parents=True, exist_ok=True)
@@ -123,6 +123,23 @@ class ShipUpdateManagerTests(unittest.TestCase):
             result = um.recover_previous(root)
             self.assertTrue(result["ok"])
             self.assertEqual((root / "app" / "current.txt").read_text(encoding="utf-8").strip(), "1.0.0")
+
+    def test_validate_manifest_uses_numeric_semver_for_min_updater_version(self) -> None:
+        previous = um.UPDATER_VERSION
+        manifest = {
+            "version": "2.0.0",
+            "artifact_url": "file://local",
+            "sha256": "1" * 64,
+            "signature": "2" * 64,
+            "min_updater_version": "1.0.10",
+            "migration_plan": [],
+            "rollback_allowed": False,
+        }
+        um.UPDATER_VERSION = "1.0.12"
+        try:
+            um.validate_manifest(manifest)
+        finally:
+            um.UPDATER_VERSION = previous
 
 
 if __name__ == "__main__":

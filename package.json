@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:ship-bundle": "python scripts/build_ship_bundle.py",
+    "build:ship-bundle": "py -3 scripts/build_ship_bundle.py",
     "test:unit": "npm run test:frontend:unit",
     "test:smoke": "npm run test:frontend",
     "test:frontend": "playwright test",
-    "test:frontend:unit": "node --test tests/frontend/unit/*.test.mjs",
+    "test:frontend:unit": "node tests/frontend/unit/all.test.mjs",
     "test:frontend:headed": "playwright test --headed",
     "test:frontend:ci": "playwright test --reporter=line",
     "test:py": "scripts\\run_py_tests.cmd"

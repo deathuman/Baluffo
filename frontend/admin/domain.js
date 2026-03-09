@@ -187,8 +187,8 @@ export function normalizeOpsRuns(runs, nowMs = Date.now()) {
     .filter(row => !isRunLive(row))
     .map(row => toOpsRunRow(row, nowMs));
 
-  const visibleCompletedRows = completedRows.slice(0, 3);
-  const olderCompletedRows = completedRows.slice(3);
+  const visibleCompletedRows = completedRows.slice(0, 2);
+  const olderCompletedRows = completedRows.slice(2);
   const hasLiveRuns = currentRows.some(row => Boolean(row?.isLive));
   const liveTypes = currentRows
     .filter(row => Boolean(row?.isLive))

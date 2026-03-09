@@ -85,8 +85,10 @@ let adminShowZeroJobsToggleEl;
 let adminRefreshOpsBtnEl;
 let adminSyncPullBtnEl;
 let adminSyncPushBtnEl;
-let adminSyncRefreshBtnEl;
+let adminSyncTestBtnEl;
 let adminSyncStatusEl;
+let adminSyncEnabledEl;
+let adminSyncConfigHintEl;
 let adminOpsAlertsEl;
 let adminOpsKpisEl;
 let adminOpsScheduleEl;
@@ -192,6 +194,7 @@ let discoveryCompletionPollTimer = null;
 let discoveryCompletionPollDeadline = 0;
 let discoveryLaunchAtMs = 0;
 let discoveryLiveProgressState = null;
+let discoveryLogRemoteOffset = 0;
 let bridgeStatusPollTimer = null;
 let opsHealthPollTimer = null;
 let latestFetcherReportCache = null;
@@ -200,6 +203,7 @@ let latestSyncStatusCache = null;
 let discoveryLogDetailsSyncing = false;
 let discoveryLogUserToggled = false;
 let discoveryLogPreferredOpen = true;
+let syncConfigDirty = false;
 const adminPageState = {
   activeSourceFilter: readSourceFilterPreference(),
   selectedSourceIds: new Set()
@@ -295,9 +299,14 @@ function syncAdminBusyUi() {
   setButtonBusy(adminRefreshReportBtnEl, Boolean(adminBusyState.fetcherReportLoad), "Loading Report...");
   setButtonBusy(adminRefreshBtnEl, false);
   setButtonBusy(adminRefreshOpsBtnEl, opsBusy, "Refreshing...");
+  setButtonBusy(adminSyncTestBtnEl, syncBusy, "Testing...");
   setButtonBusy(adminSyncPullBtnEl, syncBusy, "Pull Running...");
   setButtonBusy(adminSyncPushBtnEl, syncBusy, "Push Running...");
-  setButtonBusy(adminSyncRefreshBtnEl, syncBusy, "Sync Running...");
+  [adminSyncEnabledEl].forEach(el => {
+    if (!el) return;
+    el.disabled = syncBusy;
+    el.setAttribute("aria-disabled", syncBusy ? "true" : "false");
+  });
 
   setButtonBusy(adminRunDiscoveryBtnEl, discoveryBusy, "Discovery Running...");
   setButtonBusy(adminLoadDiscoveryBtnEl, discoveryBusy, "Loading...");
@@ -447,8 +456,10 @@ function cacheDom() {
   adminRefreshOpsBtnEl = document.getElementById("admin-refresh-ops-btn");
   adminSyncPullBtnEl = document.getElementById("admin-sync-pull-btn");
   adminSyncPushBtnEl = document.getElementById("admin-sync-push-btn");
-  adminSyncRefreshBtnEl = document.getElementById("admin-sync-refresh-btn");
+  adminSyncTestBtnEl = document.getElementById("admin-sync-test-btn");
   adminSyncStatusEl = document.getElementById("admin-sync-status");
+  adminSyncEnabledEl = document.getElementById("admin-sync-enabled");
+  adminSyncConfigHintEl = document.getElementById("admin-sync-config-hint");
   adminOpsAlertsEl = document.getElementById("admin-ops-alerts");
   adminOpsKpisEl = document.getElementById("admin-ops-kpis");
   adminOpsScheduleEl = document.getElementById("admin-ops-schedule");
@@ -531,9 +542,19 @@ function bindEvents() {
   }
 
   bindAsyncClick(adminRefreshOpsBtnEl, loadOpsHealthData);
-  bindAsyncClick(adminSyncRefreshBtnEl, () => loadSyncStatus({ silent: false }));
+  bindAsyncClick(adminSyncTestBtnEl, testSyncConfig);
   bindAsyncClick(adminSyncPullBtnEl, pullSourcesSync);
   bindAsyncClick(adminSyncPushBtnEl, pushSourcesSync);
+  [adminSyncEnabledEl].forEach(el => {
+    if (!el) return;
+    el.addEventListener("input", () => {
+      syncConfigDirty = true;
+    });
+    el.addEventListener("change", () => {
+      syncConfigDirty = true;
+      saveSyncConfig().catch(() => {});
+    });
+  });
 
   adminSourceFilterBtnEls.forEach(btn => {
     btn.addEventListener("click", () => {
@@ -582,6 +603,7 @@ function unlockAdmin() {
   }
 
   adminPin = nextPin;
+  syncConfigDirty = false;
   resetBusyFlags();
   adminDispatch.dispatch({ type: ADMIN_ACTIONS.UNLOCKED });
   setSourceStatus("Admin access granted.");
@@ -609,13 +631,14 @@ function unlockAdmin() {
   loadOpsHealthData().catch(err => {
     logAdminError("Failed to load ops health data", err);
   });
-  loadSyncStatus({ silent: true }).catch(err => {
+  loadSyncStatus({ silent: true, forceForm: true }).catch(err => {
     logAdminError("Failed to load sync status", err);
   });
 }
 
 function lockAdmin() {
   adminPin = "";
+  syncConfigDirty = false;
   latestSyncStatusCache = null;
   resetBusyFlags();
   adminDispatch.dispatch({ type: ADMIN_ACTIONS.LOCKED });
@@ -811,6 +834,7 @@ function formatBytes(bytes) {
 function setDiscoveryLogPlaceholder(message) {
   if (!adminDiscoveryLogEl) return;
   adminDiscoveryLogEl.innerHTML = "";
+  discoveryLogRemoteOffset = 0;
   appendDiscoveryLog(message, "muted");
 }
 
@@ -827,6 +851,9 @@ function setManualSourceFeedback(message, level = "muted") {
 function setOpsPlaceholders(message = "Unlock admin to view operations health.") {
   if (adminSyncStatusEl) {
     adminSyncStatusEl.textContent = message;
+  }
+  if (adminSyncConfigHintEl) {
+    adminSyncConfigHintEl.textContent = "GitHub App credentials are packaged with the app.";
   }
   if (adminOpsAlertsEl) {
     adminOpsAlertsEl.innerHTML = `<div class="muted">${escapeHtml(message)}</div>`;
@@ -848,20 +875,32 @@ function setOpsPlaceholders(message = "Unlock admin to view operations health.")
   }
 }
 
-function renderSyncStatus(statusPayload) {
+function populateSyncConfigForm(savedConfig, options = {}) {
+  if (syncConfigDirty && !options.force) return;
+  const config = savedConfig || {};
+  if (adminSyncEnabledEl) {
+    adminSyncEnabledEl.checked = config.enabled === null ? true : Boolean(config.enabled);
+  }
+}
+
+function collectSyncConfigPayload() {
+  return { enabled: Boolean(adminSyncEnabledEl?.checked) };
+}
+
+function renderSyncStatus(statusPayload, options = {}) {
   if (!adminSyncStatusEl) return;
+  populateSyncConfigForm(statusPayload?.savedConfig || {}, { force: Boolean(options.forceForm) });
   const config = statusPayload?.config || {};
   const runtime = statusPayload?.runtime || {};
   const state = String(config?.state || "disabled");
   const missing = Array.isArray(config?.missing) ? config.missing : [];
-  if (state === "disabled") {
-    adminSyncStatusEl.textContent = "Source sync is disabled.";
-    return;
-  }
-  if (state === "misconfigured") {
-    const missingText = missing.length ? ` Missing: ${missing.join(", ")}.` : "";
-    adminSyncStatusEl.textContent = `Source sync misconfigured.${missingText}`;
-    return;
+  const configMessage = String(config?.message || "").trim();
+  const authMode = String(config?.authMode || "github_app");
+  const configPath = String(config?.configPath || "").trim();
+  if (adminSyncConfigHintEl) {
+    adminSyncConfigHintEl.textContent = configPath
+      ? `GitHub App mode: ${authMode}. Packaged config: ${configPath}`
+      : "GitHub App credentials are packaged with the app.";
   }
   const repo = String(config?.repo || "unknown");
   const branch = String(config?.branch || "main");
@@ -869,25 +908,112 @@ function renderSyncStatus(statusPayload) {
   const lastPullAt = String(runtime?.lastPullAt || "");
   const lastPushAt = String(runtime?.lastPushAt || "");
   const lastError = String(runtime?.lastError || "");
-  const base = `Source sync ready (${repo} @ ${branch}:${path}).`;
-  const pullText = lastPullAt ? ` Last pull: ${toLocalTime(new Date(lastPullAt))}.` : " Last pull: never.";
-  const pushText = lastPushAt ? ` Last push: ${toLocalTime(new Date(lastPushAt))}.` : " Last push: never.";
-  const errorText = lastError ? ` Last error: ${lastError}` : "";
-  adminSyncStatusEl.textContent = `${base}${pullText}${pushText}${errorText}`;
+  const lastResult = String(runtime?.lastResult || "");
+  const lastAction = String(runtime?.lastAction || "");
+  const badgeLabel = state === "ready"
+    ? "Ready"
+    : state === "misconfigured"
+      ? "Needs Attention"
+      : "Disabled";
+  const summaryText = state === "disabled"
+    ? "Source sync is disabled on this machine. Remote state remains untouched until you enable it again."
+    : state === "misconfigured"
+      ? `Source sync cannot run yet.${missing.length ? ` Missing: ${missing.join(", ")}.` : ""}${configMessage ? ` ${configMessage}` : ""}`
+      : `Connected to ${repo} and ready to keep the shared source registry in sync.`;
+  const meta = [
+    ["Mode", authMode],
+    ["Repository", repo],
+    ["Branch", branch],
+    ["Remote Path", path],
+    ["Last Pull", lastPullAt ? toLocalTime(new Date(lastPullAt)) : "Never"],
+    ["Last Push", lastPushAt ? toLocalTime(new Date(lastPushAt)) : "Never"],
+    ["Last Action", lastAction || "None"],
+    ["Last Result", lastResult || "None"]
+  ];
+  const metaHtml = meta.map(([label, value]) => `
+    <div class="admin-sync-meta-item">
+      <span class="admin-sync-meta-label">${escapeHtml(label)}</span>
+      <div class="admin-sync-meta-value">${escapeHtml(value)}</div>
+    </div>
+  `).join("");
+  const errorHtml = lastError
+    ? `<div class="admin-sync-error">${escapeHtml(lastError)}</div>`
+    : "";
+  adminSyncStatusEl.innerHTML = `
+    <div class="admin-sync-status-head">
+      <span class="admin-sync-badge ${escapeHtml(state)}">${escapeHtml(badgeLabel)}</span>
+      <span class="admin-sync-inline-note">${escapeHtml(config?.enabled ? "Local sync enabled" : "Local sync disabled")}</span>
+    </div>
+    <p class="admin-sync-summary">${escapeHtml(summaryText)}</p>
+    <div class="admin-sync-meta-grid">${metaHtml}</div>
+    ${errorHtml}
+  `;
 }
 
 async function loadSyncStatus(options = {}) {
   if (!adminPin) return null;
   const silent = Boolean(options?.silent);
+  const forceForm = Boolean(options?.forceForm);
   try {
     const payload = await getBridge("/sync/status");
     latestSyncStatusCache = payload || null;
-    renderSyncStatus(payload || {});
+    renderSyncStatus(payload || {}, { forceForm });
     return payload || null;
   } catch (err) {
     if (adminSyncStatusEl) adminSyncStatusEl.textContent = `Sync status unavailable: ${getErrorMessage(err)}`;
     if (!silent) showToast(`Could not load sync status: ${getErrorMessage(err)}`, "error");
     throw err;
+  }
+}
+
+async function saveSyncConfig() {
+  if (!adminPin) {
+    showToast("Unlock admin to save sync settings.", "error");
+    return;
+  }
+  if (isSyncBusy()) {
+    showToast("Sync task is already running.", "info");
+    return;
+  }
+  setBusyFlag("syncRun", true);
+  try {
+    const payload = collectSyncConfigPayload();
+    const result = await postBridge("/sync/config", payload);
+    latestSyncStatusCache = result || null;
+    syncConfigDirty = false;
+    renderSyncStatus(result || {}, { forceForm: true });
+    showToast("Source sync preference updated.", "success");
+  } catch (err) {
+    showToast(`Could not save sync settings: ${getErrorMessage(err)}`, "error");
+  } finally {
+    setBusyFlag("syncRun", false);
+  }
+}
+
+async function testSyncConfig() {
+  if (!adminPin) {
+    showToast("Unlock admin to test sync settings.", "error");
+    return;
+  }
+  if (isSyncBusy()) {
+    showToast("Sync task is already running.", "info");
+    return;
+  }
+  setBusyFlag("syncRun", true);
+  try {
+    const result = await postBridge("/sync/test", {});
+    if (result?.ok) {
+      const remoteFound = Boolean(result?.remoteFound);
+      const message = remoteFound ? "Sync test passed. Remote snapshot found." : "Sync test passed. Remote snapshot not created yet.";
+      showToast(message, "success");
+      await loadSyncStatus({ silent: true });
+      return;
+    }
+    showToast(`Sync test failed: ${String(result?.error || "unknown error")}`, "error");
+  } catch (err) {
+    showToast(`Sync test failed: ${getErrorMessage(err)}`, "error");
+  } finally {
+    setBusyFlag("syncRun", false);
   }
 }
 
@@ -1067,6 +1193,45 @@ function appendDiscoveryLog(message, level = "info") {
   if (!adminDiscoveryLogEl) return;
   const event = createLogEvent("discovery", message, level);
   appendLogRow(adminDiscoveryLogEl, event);
+}
+
+function appendDiscoveryLogEvent(eventLike, fallbackLevel = "muted") {
+  if (!adminDiscoveryLogEl) return;
+  const event = createLogEvent("discovery", eventLike, fallbackLevel);
+  appendLogRow(adminDiscoveryLogEl, event);
+}
+
+function appendDiscoveryServerLogText(text) {
+  const payload = String(text || "");
+  if (!payload) return;
+  payload.split(/\r?\n/).forEach(line => {
+    const trimmed = String(line || "").trim();
+    if (!trimmed) return;
+    const match = trimmed.match(/^\[([^\]]+)\]\s*(.*)$/);
+    if (match) {
+      appendDiscoveryLogEvent({
+        timestamp: match[1],
+        level: "muted",
+        scope: "discovery",
+        message: match[2] || ""
+      }, "muted");
+      return;
+    }
+    appendDiscoveryLog(trimmed, "muted");
+  });
+}
+
+async function loadDiscoveryLogChunk(options = {}) {
+  if (!adminPin) return null;
+  const reset = Boolean(options?.reset);
+  const offset = reset ? 0 : Math.max(0, Number(discoveryLogRemoteOffset) || 0);
+  const payload = await getBridge(`/discovery/log?offset=${offset}`);
+  if (reset) {
+    discoveryLogRemoteOffset = 0;
+  }
+  appendDiscoveryServerLogText(String(payload?.text || ""));
+  discoveryLogRemoteOffset = Math.max(0, Number(payload?.nextOffset) || 0);
+  return payload || null;
 }
 
 function formatManualCheckFailureMessage(checkResult) {
@@ -1431,6 +1596,8 @@ async function runDiscoveryTask() {
     return;
   }
   setBusyFlag("discoveryRun", true);
+  setBusyFlag("liveDiscoveryRunning", true);
+  discoveryLogRemoteOffset = 0;
   appendDiscoveryLog("Triggering source discovery task...");
   try {
     await postBridge("/tasks/run-discovery", {});
@@ -1438,9 +1605,11 @@ async function runDiscoveryTask() {
     showToast("Source discovery started.", "success");
     startDiscoveryCompletionWatch();
     loadOpsHealthData().catch(() => {});
+    scheduleOpsHealthPolling(250);
   } catch (err) {
     appendDiscoveryLog(`Could not trigger discovery task: ${getErrorMessage(err)}`, "error");
     showToast("Could not trigger source discovery task.", "error");
+    setBusyFlag("liveDiscoveryRunning", false);
   } finally {
     setBusyFlag("discoveryRun", false);
   }
@@ -1451,6 +1620,7 @@ function startDiscoveryCompletionWatch() {
   setBusyFlag("discoveryWatch", true);
   discoveryLaunchAtMs = Date.now();
   discoveryCompletionPollDeadline = discoveryLaunchAtMs + DISCOVERY_REPORT_POLL_TIMEOUT_MS;
+  discoveryLogRemoteOffset = 0;
   discoveryLiveProgressState = {
     summarySignature: "",
     candidateCount: 0,
@@ -1458,7 +1628,8 @@ function startDiscoveryCompletionWatch() {
     lastHeartbeatAtMs: 0
   };
   appendDiscoveryLog("Watching discovery report for live progress...");
-  scheduleDiscoveryCompletionPoll(900);
+  loadDiscoveryLogChunk({ reset: true }).catch(() => {});
+  scheduleDiscoveryCompletionPoll(250);
 }
 
 function stopDiscoveryCompletionWatch() {
@@ -1487,7 +1658,10 @@ async function pollDiscoveryCompletion() {
     return;
   }
 
-  const report = await getBridge("/discovery/report");
+  const [report] = await Promise.all([
+    getBridge("/discovery/report"),
+    loadDiscoveryLogChunk().catch(() => null)
+  ]);
   const startedMs = parseReportTimestampMs(report?.startedAt);
   const isCurrentRunReport = startedMs >= (discoveryLaunchAtMs - 1000);
   if (isCurrentRunReport) {

@@ -9,7 +9,6 @@ import hmac
 import json
 import os
 import shutil
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -155,7 +154,11 @@ def validate_manifest(manifest: Dict[str, Any]) -> None:
     missing = [key for key in required if key not in manifest]
     if missing:
         raise ValueError(f"Manifest missing fields: {', '.join(missing)}")
-    if str(manifest.get("min_updater_version") or "").strip() > UPDATER_VERSION:
+    minimum = str(manifest.get("min_updater_version") or "").strip()
+    if minimum and _parse_version(minimum) and _parse_version(UPDATER_VERSION):
+        if _parse_version(minimum) > _parse_version(UPDATER_VERSION):
+            raise ValueError("Updater is too old for this package.")
+    elif minimum > UPDATER_VERSION:
         raise ValueError("Updater is too old for this package.")
     if not isinstance(manifest.get("migration_plan"), list):
         raise ValueError("Manifest migration_plan must be a list.")

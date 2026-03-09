@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -13,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.error import HTTPError
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree as ET
 
@@ -34,6 +35,47 @@ from scripts.source_registry import (
 )
 from scripts.contracts import SCHEMA_VERSION
 
+SEED_CATALOG_PATH = ROOT / "scripts" / "discovery_seed_catalog.json"
+DISCOVERY_STAGES = ("curated_seed", "provider_pattern", "web_provider", "generic_static")
+SUPPORTED_PROVIDERS = ("greenhouse", "lever", "smartrecruiters", "workable", "teamtailor", "ashby", "personio")
+CAREERS_URL_HINTS = ("careers", "career", "jobs", "join-us", "open-positions", "vacancies", "work-with-us")
+GENERIC_STATIC_BLOCKED_DOMAINS = (
+    "linkedin.com",
+    "indeed.com",
+    "glassdoor.com",
+    "ziprecruiter.com",
+    "monster.com",
+    "welcome to the jungle.com",
+    "welcometothejungle.com",
+)
+FOCUS_KEYWORDS = ("technical artist", "tech artist", "environment artist", "environment art", "world artist", "terrain artist")
+DUCKDUCKGO_HTML_SEARCH = "https://duckduckgo.com/html/?q={query}"
+WEB_SEARCH_QUERY_SUFFIX = ("careers", "jobs")
+FETCH_MAX_RETRIES = 2
+RETRY_BACKOFF_SECONDS = 1.2
+RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504}
+MAX_SEARCH_LINKS_PER_QUERY = 8
+MIN_PROVIDER_EVIDENCE_TO_PROBE = 18
+MIN_STATIC_EVIDENCE_TO_PROBE = 22
+MIN_PROVIDER_EVIDENCE_TO_QUEUE = 26
+MIN_STATIC_EVIDENCE_TO_QUEUE = 34
+LOW_EVIDENCE_PROBE_LIMIT = 12
+PATTERN_PROVIDER_PROBE_THRESHOLD = 30
+PATTERN_PROVIDER_QUEUE_THRESHOLD = 40
+DOMAIN_QUEUE_CAP_DEFAULT = 2
+ADAPTER_QUEUE_CAPS = {
+    "greenhouse": 4,
+    "lever": 4,
+    "smartrecruiters": 4,
+    "workable": 4,
+    "teamtailor": 4,
+    "ashby": 4,
+    "personio": 3,
+    "static": 6,
+}
+
+DISCOVERY_LOG_PATH = str(os.getenv("BALUFFO_DISCOVERY_LOG_PATH") or "").strip()
+
 STATIC_DISCOVERY_CANDIDATES: List[Dict[str, Any]] = [
     {"name": "Sandbox VR (Lever)", "studio": "Sandbox VR", "adapter": "lever", "account": "sandboxvr", "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json", "remoteFriendly": True, "nlPriority": False},
     {"name": "Voodoo (Lever)", "studio": "Voodoo", "adapter": "lever", "account": "voodoo", "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json", "remoteFriendly": True, "nlPriority": False},
@@ -47,29 +89,35 @@ STATIC_DISCOVERY_CANDIDATES: List[Dict[str, Any]] = [
     {"name": "Scopely (Ashby)", "studio": "Scopely", "adapter": "ashby", "board_url": "https://jobs.ashbyhq.com/scopely/jobs", "remoteFriendly": True, "nlPriority": False},
 ]
 
-STUDIO_SEEDS: List[Dict[str, Any]] = [
-    {"studio": "Guerrilla Games", "aliases": ["guerrilla-games", "guerrillagames"], "nlPriority": True, "remoteFriendly": True},
-    {"studio": "Nixxes", "aliases": ["nixxes"], "nlPriority": True, "remoteFriendly": True},
-    {"studio": "Vertigo Games", "aliases": ["vertigo-games", "vertigogames"], "nlPriority": True, "remoteFriendly": True},
-    {"studio": "Triumph Studios", "aliases": ["triumph-studios", "triumphstudios"], "nlPriority": True, "remoteFriendly": True},
-    {"studio": "Little Chicken", "aliases": ["littlechicken", "little-chicken"], "nlPriority": True, "remoteFriendly": True},
-    {"studio": "PlayStation Global", "aliases": ["sonyinteractiveentertainmentglobal", "playstation", "sony-interactive-entertainment"], "nlPriority": True, "remoteFriendly": True},
-    {"studio": "Larian Studios", "aliases": ["larian-studios", "larianstudios"], "nlPriority": True, "remoteFriendly": True},
-    {"studio": "Jagex", "aliases": ["jagex"], "nlPriority": False, "remoteFriendly": True},
-    {"studio": "Remedy Entertainment", "aliases": ["remedy-entertainment", "remedyentertainment"], "nlPriority": False, "remoteFriendly": True},
-    {"studio": "Supercell", "aliases": ["supercell"], "nlPriority": False, "remoteFriendly": True},
+DEFAULT_STUDIO_SEEDS: List[Dict[str, Any]] = [
+    {"studio": "Guerrilla Games", "aliases": ["guerrilla-games", "guerrillagames"], "nlPriority": True, "remoteFriendly": True, "likelyProviders": ["greenhouse"], "careersUrl": "https://www.guerrilla-games.com/join"},
+    {"studio": "Nixxes", "aliases": ["nixxes"], "nlPriority": True, "remoteFriendly": True, "likelyProviders": ["static"], "careersUrl": "https://www.nixxes.com/careers"},
+    {"studio": "Vertigo Games", "aliases": ["vertigo-games", "vertigogames"], "nlPriority": True, "remoteFriendly": True, "likelyProviders": ["workable", "smartrecruiters"], "careersUrl": "https://vertigo-games.com/careers"},
+    {"studio": "Triumph Studios", "aliases": ["triumph-studios", "triumphstudios"], "nlPriority": True, "remoteFriendly": True, "likelyProviders": ["static"], "careersUrl": "https://www.triumphstudios.com/careers"},
+    {"studio": "Little Chicken", "aliases": ["littlechicken", "little-chicken"], "nlPriority": True, "remoteFriendly": True, "likelyProviders": ["static"], "careersUrl": "https://www.littlechicken.nl/about-us/jobs/"},
 ]
 
-FOCUS_KEYWORDS = ("technical artist", "tech artist", "environment artist", "environment art", "world artist", "terrain artist")
-DUCKDUCKGO_HTML_SEARCH = "https://duckduckgo.com/html/?q={query}"
-WEB_SEARCH_QUERY_SUFFIX = ("careers", "jobs")
-FETCH_MAX_RETRIES = 2
-RETRY_BACKOFF_SECONDS = 1.2
-RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504}
+
+def load_studio_seeds() -> List[Dict[str, Any]]:
+    try:
+        payload = json.loads(SEED_CATALOG_PATH.read_text(encoding="utf-8"))
+        if isinstance(payload, list):
+            return [row for row in payload if isinstance(row, dict)] or list(DEFAULT_STUDIO_SEEDS)
+    except (OSError, json.JSONDecodeError):
+        pass
+    return list(DEFAULT_STUDIO_SEEDS)
+
+
+STUDIO_SEEDS: List[Dict[str, Any]] = load_studio_seeds()
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def emit_log(message: str) -> None:
+    line = f"[{now_iso()}] {str(message or '').strip()}"
+    print(line, flush=True)
 
 
 def clean_token(value: str) -> str:
@@ -105,6 +153,42 @@ def adapter_domain_fingerprint(candidate: Dict[str, Any]) -> str:
     return f"{adapter}:{domain}:{path}"
 
 
+def careers_keyword_count(text: str) -> int:
+    lowered = str(text or "").lower()
+    return sum(1 for token in CAREERS_URL_HINTS if token in lowered)
+
+
+def root_domain(host: str) -> str:
+    token = str(host or "").strip().lower()
+    if not token:
+        return ""
+    parts = [part for part in token.split(".") if part]
+    if len(parts) >= 2:
+        return ".".join(parts[-2:])
+    return token
+
+
+def queue_family_key(candidate: Dict[str, Any]) -> str:
+    url = endpoint_url(candidate) or str(candidate.get("careersUrl") or "")
+    try:
+        host = (urlparse(url).netloc or "").lower()
+    except ValueError:
+        host = ""
+    adapter = str(candidate.get("adapter") or "").strip().lower()
+    studio = clean_token(str(candidate.get("studio") or candidate.get("name") or ""))
+    domain_key = root_domain(host) or studio or "unknown"
+    return f"{adapter}:{domain_key}"
+
+
+def is_blocked_generic_static_url(url: str) -> bool:
+    try:
+        host = (urlparse(str(url or "")).netloc or "").lower()
+    except ValueError:
+        return False
+    host = host.lstrip(".")
+    return any(host == domain or host.endswith(f".{domain}") for domain in GENERIC_STATIC_BLOCKED_DOMAINS)
+
+
 def fetch_text(url: str, timeout_s: int) -> str:
     req = Request(
         url,
@@ -127,11 +211,8 @@ def fetch_text(url: str, timeout_s: int) -> str:
 def _http_code_from_error(exc: Exception) -> Optional[int]:
     if isinstance(exc, HTTPError):
         return int(exc.code)
-    message = str(exc)
-    match = re.search(r"\bHTTP Error (\d{3})\b", message)
-    if match:
-        return int(match.group(1))
-    return None
+    match = re.search(r"\bHTTP Error (\d{3})\b", str(exc))
+    return int(match.group(1)) if match else None
 
 
 def _is_retryable_error(exc: Exception) -> bool:
@@ -142,14 +223,7 @@ def _is_retryable_error(exc: Exception) -> bool:
     return "timed out" in message or "temporary failure" in message
 
 
-def fetch_text_with_retry(
-    url: str,
-    timeout_s: int,
-    *,
-    adapter: str,
-    fetcher=fetch_text,
-) -> str:
-    # Pace 429-prone providers to reduce burst failures during dynamic scans.
+def fetch_text_with_retry(url: str, timeout_s: int, *, adapter: str, fetcher=fetch_text) -> str:
     if adapter in {"workable", "personio", "ashby"}:
         time.sleep(0.18)
     attempts = FETCH_MAX_RETRIES + 1
@@ -169,53 +243,38 @@ def fetch_text_with_retry(
 
 def _is_valid_identity_token(token: str) -> bool:
     value = str(token or "").strip()
-    if len(value) < 3:
-        return False
-    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9_-]*$", value):
-        return False
-    if value.isdigit():
-        return False
-    return True
+    return bool(len(value) >= 3 and re.match(r"^[A-Za-z0-9][A-Za-z0-9_-]*$", value) and not value.isdigit())
 
 
 def validate_candidate_for_probe(candidate: Dict[str, Any]) -> Tuple[bool, str]:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     if adapter in {"lever", "workable"}:
         token = str(candidate.get("account") or "").strip()
-        if not _is_valid_identity_token(token):
-            return False, "invalid account token"
-        return True, ""
+        return (_is_valid_identity_token(token), "" if _is_valid_identity_token(token) else "invalid account token")
     if adapter == "greenhouse":
         slug = str(candidate.get("slug") or "").strip()
-        if not _is_valid_identity_token(slug):
-            return False, "invalid board slug"
-        return True, ""
+        return (_is_valid_identity_token(slug), "" if _is_valid_identity_token(slug) else "invalid board slug")
     if adapter == "smartrecruiters":
         company_id = str(candidate.get("company_id") or "").strip()
-        if len(company_id) < 3 or not re.search(r"[A-Za-z]", company_id):
-            return False, "invalid company identifier"
-        return True, ""
+        valid = len(company_id) >= 3 and bool(re.search(r"[A-Za-z]", company_id))
+        return (valid, "" if valid else "invalid company identifier")
     if adapter == "personio":
-        url = str(candidate.get("feed_url") or "").strip()
-        host = (urlparse(url).netloc or "").lower()
-        if ".jobs.personio.de" not in host:
-            return False, "invalid personio host"
-        return True, ""
+        host = (urlparse(str(candidate.get("feed_url") or "")).netloc or "").lower()
+        return (".jobs.personio.de" in host, "" if ".jobs.personio.de" in host else "invalid personio host")
     if adapter == "teamtailor":
-        url = str(candidate.get("listing_url") or "").strip()
-        parsed = urlparse(url)
+        parsed = urlparse(str(candidate.get("listing_url") or "").strip())
         host = (parsed.netloc or "").lower()
         path = (parsed.path or "").lower()
-        # Teamtailor can be on custom career domains (not only *.teamtailor.com).
-        if ".teamtailor.com" not in host and not path.startswith("/jobs"):
-            return False, "invalid teamtailor host"
-        return True, ""
+        valid = ".teamtailor.com" in host or path.startswith("/jobs")
+        return (valid, "" if valid else "invalid teamtailor host")
     if adapter == "ashby":
-        url = str(candidate.get("board_url") or "").strip()
-        host = (urlparse(url).netloc or "").lower()
-        if "ashbyhq.com" not in host:
-            return False, "invalid ashby host"
-        return True, ""
+        host = (urlparse(str(candidate.get("board_url") or "").strip()).netloc or "").lower()
+        return ("ashbyhq.com" in host, "" if "ashbyhq.com" in host else "invalid ashby host")
+    if adapter == "static":
+        listing = str(candidate.get("listing_url") or "").strip()
+        pages = candidate.get("pages")
+        valid = bool(listing) or bool(isinstance(pages, list) and any(str(item or "").strip() for item in pages))
+        return (valid, "" if valid else "invalid static source")
     return True, ""
 
 
@@ -245,6 +304,26 @@ def fallback_probe_urls(candidate: Dict[str, Any]) -> List[str]:
     return urls
 
 
+def extract_jobish_links(html: str, base_url: str) -> List[str]:
+    matches = re.findall(r'(?is)href=["\']([^"\']+)["\']', str(html or ""))
+    out: List[str] = []
+    seen = set()
+    for raw in matches:
+        if not raw or raw.startswith("#") or raw.startswith("mailto:") or raw.startswith("javascript:"):
+            continue
+        absolute = urljoin(base_url, raw) if base_url else raw
+        parsed = urlparse(absolute)
+        text = f"{parsed.path} {absolute}".lower()
+        if not any(token in text for token in CAREERS_URL_HINTS + ("job", "position", "opening", "vacancy")):
+            continue
+        normalized = absolute.split("#", 1)[0]
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        out.append(normalized)
+    return out
+
+
 def parse_probe_count(adapter: str, text: str) -> int:
     if adapter == "lever":
         if text.strip().startswith("{"):
@@ -257,31 +336,27 @@ def parse_probe_count(adapter: str, text: str) -> int:
         if text.strip().startswith("{"):
             payload = json.loads(text)
             return len(payload.get("jobs", [])) if isinstance(payload, dict) else 0
-        links = re.findall(r'(?is)href=["\'][^"\']+/jobs/\d+[^"\']*["\']', text)
-        return len(set(links))
+        return len(set(re.findall(r'(?is)href=["\'][^"\']+/jobs/\d+[^"\']*["\']', text)))
     if adapter == "smartrecruiters":
         if text.strip().startswith("{"):
             payload = json.loads(text)
             return len(payload.get("content", [])) if isinstance(payload, dict) else 0
-        links = re.findall(r'(?is)href=["\'][^"\']+/job/[^"\']+["\']', text)
-        return len(set(links))
+        return len(set(re.findall(r'(?is)href=["\'][^"\']+/job/[^"\']+["\']', text)))
     if adapter == "workable":
         if text.strip().startswith("{"):
             payload = json.loads(text)
             return len(payload.get("jobs", [])) if isinstance(payload, dict) else 0
-        links = re.findall(r'(?is)href=["\'][^"\']+/j/[^"\']+["\']', text)
-        return len(set(links))
+        return len(set(re.findall(r'(?is)href=["\'][^"\']+/j/[^"\']+["\']', text)))
     if adapter == "personio":
         if text.lstrip().startswith("<"):
-            root = ET.fromstring(text)
-            return len(root.findall(".//position"))
+            return len(ET.fromstring(text).findall(".//position"))
         return 0
     if adapter == "ashby":
-        links = re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/job/[^"\']+)["\']', text)
-        return len(set(links))
+        return len(set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/job/[^"\']+)["\']', text)))
     if adapter == "teamtailor":
-        links = re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/jobs/[^"\']+)["\']', text)
-        return len(set(links))
+        return len(set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/jobs/[^"\']+)["\']', text)))
+    if adapter == "static":
+        return len(extract_jobish_links(text, ""))
     raise ValueError("unsupported adapter")
 
 
@@ -290,26 +365,21 @@ def probe_candidate(candidate: Dict[str, Any], timeout_s: int, *, fetcher=fetch_
     url = endpoint_url(candidate)
     if not adapter or not url:
         return False, 0, "missing adapter or URL"
-
     valid, reason = validate_candidate_for_probe(candidate)
     if not valid:
         return False, 0, reason
-
     probe_urls = [url, *fallback_probe_urls(candidate)]
     seen_urls = set()
     last_error = "probe failed"
-
     for probe_url in probe_urls:
         if not probe_url or probe_url in seen_urls:
             continue
         seen_urls.add(probe_url)
         try:
             text = fetch_text_with_retry(probe_url, timeout_s, adapter=adapter, fetcher=fetcher)
-            count = parse_probe_count(adapter, text)
-            return True, max(0, int(count)), ""
+            return True, max(0, int(parse_probe_count(adapter, text))), ""
         except Exception as exc:  # noqa: BLE001
             last_error = f"{probe_url}: {exc}"
-            continue
     return False, 0, last_error
 
 
@@ -317,7 +387,6 @@ def classify_probe_failure_stage(error: str) -> str:
     text = str(error or "").lower()
     if "http error 404" in text or "http error 410" in text:
         return "probe_miss"
-    # Common signal that endpoint exists but response shape is from non-matching site/board.
     if "not well-formed (invalid token)" in text:
         return "probe_miss"
     if "expecting value" in text and "line 1 column 1" in text:
@@ -338,6 +407,10 @@ def compute_candidate_score(candidate: Dict[str, Any], jobs_found: int) -> Tuple
     if bool(candidate.get("remoteFriendly")):
         score += 15
         reasons.append("remote_friendly")
+    evidence = int(candidate.get("evidenceScore") or 0)
+    if evidence > 0:
+        score += min(25, evidence // 2)
+        reasons.append("strong_evidence" if evidence >= 50 else "evidence_signal")
     if jobs_found > 0:
         score += min(25, jobs_found)
         reasons.append("live_jobs_detected")
@@ -345,22 +418,15 @@ def compute_candidate_score(candidate: Dict[str, Any], jobs_found: int) -> Tuple
 
 
 def compute_confidence(candidate: Dict[str, Any], jobs_found: int) -> str:
-    method = str(candidate.get("discoveryMethod") or "seed").lower()
-    if jobs_found >= 10:
+    evidence = int(candidate.get("evidenceScore") or 0)
+    if jobs_found >= 10 or evidence >= 60:
         return "high"
-    if jobs_found >= 1:
-        return "medium" if method == "web_search" else "high"
+    if jobs_found >= 1 or evidence >= 35:
+        return "medium"
     return "low"
 
 
-def normalize_candidate(
-    candidate: Dict[str, Any],
-    score: int,
-    reasons: List[str],
-    jobs_found: int,
-    *,
-    probed_at: str,
-) -> Dict[str, Any]:
+def normalize_candidate(candidate: Dict[str, Any], score: int, reasons: List[str], jobs_found: int, *, probed_at: str) -> Dict[str, Any]:
     row = dict(candidate)
     row["id"] = source_identity(row)
     row["enabledByDefault"] = False
@@ -372,7 +438,26 @@ def normalize_candidate(
     row["discoveredAt"] = str(row.get("discoveredAt") or probed_at)
     row["lastProbedAt"] = probed_at
     row["discoveryMethod"] = str(row.get("discoveryMethod") or "seed")
+    row["discoveryStage"] = str(row.get("discoveryStage") or "provider_pattern")
+    row["evidenceScore"] = int(row.get("evidenceScore") or 0)
+    row["evidenceTypes"] = unique_string_list(row.get("evidenceTypes") or [])
+    row["evidenceSource"] = str(row.get("evidenceSource") or row.get("discoveryMethod") or "unknown")
+    row["careersUrl"] = str(row.get("careersUrl") or endpoint_url(row) or "")
+    row["weakSignal"] = bool(row.get("weakSignal"))
+    row["deferred"] = bool(row.get("deferred"))
     return row
+
+
+def unique_string_list(values: Iterable[Any]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for raw in values:
+        token = str(raw or "").strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        out.append(token)
+    return out
 
 
 def expand_aliases(seed: Dict[str, Any]) -> List[str]:
@@ -391,6 +476,51 @@ def expand_aliases(seed: Dict[str, Any]) -> List[str]:
     return normalized
 
 
+def likely_providers_for_seed(seed: Dict[str, Any]) -> List[str]:
+    explicit = [str(item).strip().lower() for item in (seed.get("likelyProviders") or []) if str(item).strip()]
+    if explicit:
+        return [item for item in explicit if item in SUPPORTED_PROVIDERS or item == "static"]
+    providers = {"greenhouse", "workable", "teamtailor"}
+    if not bool(seed.get("nlPriority")):
+        providers.update({"lever", "smartrecruiters", "ashby"})
+    if bool(seed.get("remoteFriendly")):
+        providers.add("personio")
+    return [item for item in SUPPORTED_PROVIDERS if item in providers]
+
+
+def provider_reinforcement_score(seed: Dict[str, Any], provider: str) -> int:
+    careers_url = str(seed.get("careersUrl") or "").strip().lower()
+    if not careers_url:
+        return 0
+    parsed = urlparse(careers_url)
+    host = (parsed.netloc or "").lower()
+    path = (parsed.path or "").lower()
+    if provider == "greenhouse":
+        return 18 if "greenhouse" in host or "greenhouse" in path else 0
+    if provider == "lever":
+        return 18 if "lever.co" in host else 0
+    if provider == "smartrecruiters":
+        return 18 if "smartrecruiters" in host else 0
+    if provider == "workable":
+        return 18 if "workable" in host else 0
+    if provider == "ashby":
+        return 18 if "ashbyhq" in host else 0
+    if provider == "personio":
+        return 18 if ".jobs.personio.de" in host else 0
+    if provider == "teamtailor":
+        if ".teamtailor.com" in host:
+            return 18
+        if path.startswith("/jobs") and careers_keyword_count(careers_url):
+            return 8
+        return 0
+    return 0
+
+
+def _pattern_aliases_for_provider(seed: Dict[str, Any], provider: str) -> List[str]:
+    aliases = expand_aliases(seed)
+    return aliases[:2] if provider in {"greenhouse", "lever", "workable", "teamtailor"} else aliases[:1]
+
+
 def build_pattern_candidates() -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for seed in STUDIO_SEEDS:
@@ -399,81 +529,53 @@ def build_pattern_candidates() -> List[Dict[str, Any]]:
             continue
         nl_priority = bool(seed.get("nlPriority"))
         remote_friendly = bool(seed.get("remoteFriendly"))
-        for alias in expand_aliases(seed):
-            display = studio
-            rows.extend(
-                [
-                    {
-                        "name": f"{display} (Lever)",
-                        "studio": display,
-                        "adapter": "lever",
-                        "account": alias,
-                        "api_url": f"https://api.lever.co/v0/postings/{alias}?mode=json",
-                        "remoteFriendly": remote_friendly,
-                        "nlPriority": nl_priority,
-                        "discoveryMethod": "pattern",
-                    },
-                    {
-                        "name": f"{display} (Greenhouse)",
-                        "studio": display,
-                        "adapter": "greenhouse",
-                        "slug": alias,
-                        "api_url": f"https://boards-api.greenhouse.io/v1/boards/{alias}/jobs?content=true",
-                        "remoteFriendly": remote_friendly,
-                        "nlPriority": nl_priority,
-                        "discoveryMethod": "pattern",
-                    },
-                    {
-                        "name": f"{display} (SmartRecruiters)",
-                        "studio": display,
-                        "adapter": "smartrecruiters",
-                        "company_id": alias.upper(),
-                        "api_url": f"https://api.smartrecruiters.com/v1/companies/{alias.upper()}/postings",
-                        "remoteFriendly": remote_friendly,
-                        "nlPriority": nl_priority,
-                        "discoveryMethod": "pattern",
-                    },
-                    {
-                        "name": f"{display} (Workable)",
-                        "studio": display,
-                        "adapter": "workable",
-                        "account": alias,
-                        "api_url": f"https://apply.workable.com/api/v1/widget/accounts/{alias}?details=true",
-                        "remoteFriendly": remote_friendly,
-                        "nlPriority": nl_priority,
-                        "discoveryMethod": "pattern",
-                    },
-                    {
-                        "name": f"{display} (Teamtailor)",
-                        "studio": display,
-                        "adapter": "teamtailor",
-                        "company": display,
-                        "listing_url": f"https://{alias}.teamtailor.com/jobs",
-                        "base_url": f"https://{alias}.teamtailor.com",
-                        "remoteFriendly": remote_friendly,
-                        "nlPriority": nl_priority,
-                        "discoveryMethod": "pattern",
-                    },
-                    {
-                        "name": f"{display} (Ashby)",
-                        "studio": display,
-                        "adapter": "ashby",
-                        "board_url": f"https://jobs.ashbyhq.com/{alias}/jobs",
-                        "remoteFriendly": remote_friendly,
-                        "nlPriority": nl_priority,
-                        "discoveryMethod": "pattern",
-                    },
-                    {
-                        "name": f"{display} (Personio)",
-                        "studio": display,
-                        "adapter": "personio",
-                        "feed_url": f"https://{alias}.jobs.personio.de/xml",
-                        "remoteFriendly": remote_friendly,
-                        "nlPriority": nl_priority,
-                        "discoveryMethod": "pattern",
-                    },
-                ]
-            )
+        careers_url = str(seed.get("careersUrl") or "").strip()
+        evidence_types = ["provider_hint", "seed_catalog"]
+        explicit = [str(item).strip().lower() for item in (seed.get("likelyProviders") or []) if str(item).strip()]
+        for provider in likely_providers_for_seed(seed):
+            reinforcement = provider_reinforcement_score(seed, provider)
+            for alias in _pattern_aliases_for_provider(seed, provider):
+                base: Dict[str, Any] = {
+                    "studio": studio,
+                    "remoteFriendly": remote_friendly,
+                    "nlPriority": nl_priority,
+                    "discoveryMethod": "pattern",
+                    "discoveryStage": "provider_pattern",
+                    "careersUrl": careers_url,
+                    "evidenceScore": 14 + (10 if provider in explicit else 0) + reinforcement,
+                    "evidenceTypes": unique_string_list([*evidence_types, "provider_reinforced"] if reinforcement else evidence_types),
+                    "evidenceSource": "pattern",
+                }
+                if provider == "lever":
+                    rows.append({**base, "name": f"{studio} (Lever)", "adapter": "lever", "account": alias, "api_url": f"https://api.lever.co/v0/postings/{alias}?mode=json"})
+                elif provider == "greenhouse":
+                    rows.append({**base, "name": f"{studio} (Greenhouse)", "adapter": "greenhouse", "slug": alias, "api_url": f"https://boards-api.greenhouse.io/v1/boards/{alias}/jobs?content=true"})
+                elif provider == "smartrecruiters":
+                    rows.append({**base, "name": f"{studio} (SmartRecruiters)", "adapter": "smartrecruiters", "company_id": alias.upper(), "api_url": f"https://api.smartrecruiters.com/v1/companies/{alias.upper()}/postings"})
+                elif provider == "workable":
+                    rows.append({**base, "name": f"{studio} (Workable)", "adapter": "workable", "account": alias, "api_url": f"https://apply.workable.com/api/v1/widget/accounts/{alias}?details=true"})
+                elif provider == "teamtailor":
+                    rows.append({**base, "name": f"{studio} (Teamtailor)", "adapter": "teamtailor", "company": studio, "listing_url": f"https://{alias}.teamtailor.com/jobs", "base_url": f"https://{alias}.teamtailor.com"})
+                elif provider == "ashby":
+                    rows.append({**base, "name": f"{studio} (Ashby)", "adapter": "ashby", "board_url": f"https://jobs.ashbyhq.com/{alias}/jobs"})
+                elif provider == "personio":
+                    rows.append({**base, "name": f"{studio} (Personio)", "adapter": "personio", "feed_url": f"https://{alias}.jobs.personio.de/xml"})
+    return unique_sources(rows)
+
+
+def stage_curated_seed_candidates() -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for raw in STATIC_DISCOVERY_CANDIDATES:
+        if not isinstance(raw, dict):
+            continue
+        row = dict(raw)
+        row["discoveryMethod"] = str(row.get("discoveryMethod") or "seed")
+        row["discoveryStage"] = "curated_seed"
+        row["evidenceScore"] = int(row.get("evidenceScore") or 52)
+        row["evidenceTypes"] = list(row.get("evidenceTypes") or ["curated_seed"])
+        row["evidenceSource"] = str(row.get("evidenceSource") or "seed")
+        row["careersUrl"] = str(row.get("careersUrl") or endpoint_url(row) or "")
+        rows.append(row)
     return unique_sources(rows)
 
 
@@ -493,137 +595,270 @@ def extract_links_from_html(html: str) -> List[str]:
     return out
 
 
-def infer_web_candidate(url: str, studio: str, *, nl_priority: bool, remote_friendly: bool) -> Optional[Dict[str, Any]]:
+def studio_domain_match(studio: str, url: str) -> bool:
+    token = clean_token(studio)
+    if not token:
+        return False
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    return bool(token[:8] and token[:8] in clean_token(f"{parsed.netloc} {parsed.path}"))
+
+
+def _provider_candidate(*, studio: str, adapter: str, url: str, nl_priority: bool, remote_friendly: bool, discovery_method: str, evidence_types: List[str], evidence_source: str, evidence_score: int) -> Optional[Dict[str, Any]]:
     parsed = urlparse(url)
     host = (parsed.netloc or "").lower()
     path = parsed.path or ""
-    if "boards.greenhouse.io" in host or "jobs.greenhouse.io" in host:
-        parts = [p for p in path.split("/") if p]
-        if not parts:
-            return None
-        slug = clean_token(parts[0])
+    if adapter == "greenhouse":
+        slug = clean_token(path.split("/boards/", 1)[1].split("/", 1)[0]) if "boards-api.greenhouse.io" in host and "/boards/" in path else clean_token(([p for p in path.split("/") if p] or [""])[0])
         if not slug:
             return None
-        return {
-            "name": f"{studio} (Greenhouse)",
-            "studio": studio,
-            "adapter": "greenhouse",
-            "slug": slug,
-            "api_url": f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true",
-            "remoteFriendly": remote_friendly,
-            "nlPriority": nl_priority,
-            "discoveryMethod": "web_search",
-        }
-    if "jobs.ashbyhq.com" in host:
-        parts = [p for p in path.split("/") if p]
-        if not parts:
-            return None
-        slug = clean_token(parts[0])
-        if not slug:
-            return None
-        return {
-            "name": f"{studio} (Ashby)",
-            "studio": studio,
-            "adapter": "ashby",
-            "board_url": f"https://jobs.ashbyhq.com/{slug}/jobs",
-            "remoteFriendly": remote_friendly,
-            "nlPriority": nl_priority,
-            "discoveryMethod": "web_search",
-        }
-    if "apply.workable.com" in host:
-        parts = [p for p in path.split("/") if p]
-        account = clean_token(parts[-1]) if parts else ""
+        return {"name": f"{studio} (Greenhouse)", "studio": studio, "adapter": "greenhouse", "slug": slug, "api_url": f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+    if adapter == "lever":
+        if "api.lever.co" in host and "/v0/postings/" in path:
+            account = clean_token(path.split("/v0/postings/", 1)[1].split("/", 1)[0])
+        else:
+            account = clean_token(([p for p in path.split("/") if p] or [""])[0])
         if not account:
             return None
-        return {
-            "name": f"{studio} (Workable)",
-            "studio": studio,
-            "adapter": "workable",
-            "account": account,
-            "api_url": f"https://apply.workable.com/api/v1/widget/accounts/{account}?details=true",
-            "remoteFriendly": remote_friendly,
-            "nlPriority": nl_priority,
-            "discoveryMethod": "web_search",
-        }
-    if ".teamtailor.com" in host:
+        return {"name": f"{studio} (Lever)", "studio": studio, "adapter": "lever", "account": account, "api_url": f"https://api.lever.co/v0/postings/{account}?mode=json", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+    if adapter == "smartrecruiters":
+        company_id = ""
+        if "api.smartrecruiters.com" in host and "/companies/" in path:
+            pieces = [p for p in path.split("/") if p]
+            if "companies" in pieces:
+                idx = pieces.index("companies")
+                if idx + 1 < len(pieces):
+                    company_id = pieces[idx + 1].strip()
+        elif "jobs.smartrecruiters.com" in host:
+            company_id = ([p for p in path.split("/") if p] or [""])[0].strip()
+        if not company_id:
+            return None
+        return {"name": f"{studio} (SmartRecruiters)", "studio": studio, "adapter": "smartrecruiters", "company_id": company_id, "api_url": f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+    if adapter == "workable":
+        account = clean_token(([p for p in path.split("/") if p] or [""])[-1])
+        if not account:
+            return None
+        return {"name": f"{studio} (Workable)", "studio": studio, "adapter": "workable", "account": account, "api_url": f"https://apply.workable.com/api/v1/widget/accounts/{account}?details=true", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+    if adapter == "teamtailor":
         base_url = f"{parsed.scheme}://{host}" if parsed.scheme else f"https://{host}"
-        return {
-            "name": f"{studio} (Teamtailor)",
-            "studio": studio,
-            "adapter": "teamtailor",
-            "listing_url": f"{base_url}/jobs",
-            "base_url": base_url,
-            "company": studio,
-            "remoteFriendly": remote_friendly,
-            "nlPriority": nl_priority,
-            "discoveryMethod": "web_search",
-        }
-    if ".jobs.personio.de" in host:
+        return {"name": f"{studio} (Teamtailor)", "studio": studio, "adapter": "teamtailor", "listing_url": f"{base_url}/jobs", "base_url": base_url, "company": studio, "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+    if adapter == "ashby":
+        slug = clean_token(([p for p in path.split("/") if p] or [""])[0])
+        if not slug:
+            return None
+        return {"name": f"{studio} (Ashby)", "studio": studio, "adapter": "ashby", "board_url": f"https://jobs.ashbyhq.com/{slug}/jobs", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+    if adapter == "personio":
         token = host.split(".jobs.personio.de", 1)[0]
         if not token:
             return None
-        return {
-            "name": f"{studio} (Personio)",
-            "studio": studio,
-            "adapter": "personio",
-            "feed_url": f"https://{token}.jobs.personio.de/xml",
-            "remoteFriendly": remote_friendly,
-            "nlPriority": nl_priority,
-            "discoveryMethod": "web_search",
-        }
-    if "api.lever.co" in host and "/v0/postings/" in path:
-        account = clean_token(path.split("/v0/postings/", 1)[1].split("/", 1)[0])
-        if not account:
-            return None
-        return {
-            "name": f"{studio} (Lever)",
-            "studio": studio,
-            "adapter": "lever",
-            "account": account,
-            "api_url": f"https://api.lever.co/v0/postings/{account}?mode=json",
-            "remoteFriendly": remote_friendly,
-            "nlPriority": nl_priority,
-            "discoveryMethod": "web_search",
-        }
-    if "api.smartrecruiters.com" in host and "/companies/" in path:
-        pieces = [p for p in path.split("/") if p]
-        if "companies" not in pieces:
-            return None
-        idx = pieces.index("companies")
-        if idx + 1 >= len(pieces):
-            return None
-        company_id = pieces[idx + 1].strip()
-        if not company_id:
-            return None
-        return {
-            "name": f"{studio} (SmartRecruiters)",
-            "studio": studio,
-            "adapter": "smartrecruiters",
-            "company_id": company_id,
-            "api_url": f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings",
-            "remoteFriendly": remote_friendly,
-            "nlPriority": nl_priority,
-            "discoveryMethod": "web_search",
-        }
+        return {"name": f"{studio} (Personio)", "studio": studio, "adapter": "personio", "feed_url": f"https://{token}.jobs.personio.de/xml", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
     return None
 
 
-def build_web_search_queries(max_queries: int = 12) -> List[Tuple[str, Dict[str, Any]]]:
+def candidate_variant_key(candidate: Dict[str, Any]) -> str:
+    adapter = str(candidate.get("adapter") or "").strip().lower()
+    studio = clean_token(str(candidate.get("studio") or candidate.get("name") or ""))
+    careers_url = str(candidate.get("careersUrl") or "").strip().lower()
+    if not adapter:
+        return ""
+    return f"{adapter}:{studio}:{careers_url}"
+
+
+def collapse_competing_candidates(candidates: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    preferred: Dict[str, Dict[str, Any]] = {}
+    passthrough: List[Dict[str, Any]] = []
+    for raw in candidates:
+        if not isinstance(raw, dict):
+            continue
+        row = dict(raw)
+        if str(row.get("discoveryMethod") or "") != "seed_careers_page":
+            passthrough.append(row)
+            continue
+        key = candidate_variant_key(row)
+        if not key:
+            passthrough.append(row)
+            continue
+        current = preferred.get(key)
+        if current is None:
+            preferred[key] = row
+            continue
+        current_score = (
+            int(current.get("evidenceScore") or 0),
+            careers_keyword_count(endpoint_url(current)),
+            int(bool(studio_domain_match(str(current.get("studio") or ""), endpoint_url(current)))),
+            len(endpoint_url(current)),
+        )
+        row_score = (
+            int(row.get("evidenceScore") or 0),
+            careers_keyword_count(endpoint_url(row)),
+            int(bool(studio_domain_match(str(row.get("studio") or ""), endpoint_url(row)))),
+            len(endpoint_url(row)),
+        )
+        if row_score > current_score:
+            preferred[key] = row
+    return unique_sources([*passthrough, *preferred.values()])
+
+
+def infer_web_candidate(url: str, studio: str, *, nl_priority: bool, remote_friendly: bool, discovery_method: str = "web_search") -> Optional[Dict[str, Any]]:
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    path = parsed.path or ""
+    evidence_types = ["provider_url"]
+    evidence_score = 28 + (12 if studio_domain_match(studio, url) else 0) + (4 if careers_keyword_count(url) else 0)
+    if "boards.greenhouse.io" in host or "jobs.greenhouse.io" in host or "boards-api.greenhouse.io" in host:
+        return _provider_candidate(studio=studio, adapter="greenhouse", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+    if "jobs.ashbyhq.com" in host:
+        return _provider_candidate(studio=studio, adapter="ashby", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+    if "apply.workable.com" in host:
+        return _provider_candidate(studio=studio, adapter="workable", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+    if ".teamtailor.com" in host:
+        return _provider_candidate(studio=studio, adapter="teamtailor", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+    if ".jobs.personio.de" in host:
+        return _provider_candidate(studio=studio, adapter="personio", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+    if ("api.lever.co" in host and "/v0/postings/" in path) or ("lever.co" in host and host != "api.lever.co"):
+        return _provider_candidate(studio=studio, adapter="lever", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+    if ("api.smartrecruiters.com" in host and "/companies/" in path) or "jobs.smartrecruiters.com" in host:
+        return _provider_candidate(studio=studio, adapter="smartrecruiters", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+    return None
+
+
+def infer_provider_candidates_from_html(page_url: str, html: str, *, studio: str, nl_priority: bool, remote_friendly: bool, discovery_method: str = "web_search") -> List[Dict[str, Any]]:
+    candidates: List[Dict[str, Any]] = []
+    page_candidate = infer_web_candidate(page_url, studio, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method)
+    if page_candidate:
+        page_candidate["evidenceSource"] = "page_url"
+        page_candidate["evidenceTypes"] = unique_string_list([*(page_candidate.get("evidenceTypes") or []), "careers_page"])
+        page_candidate["evidenceScore"] = int(page_candidate.get("evidenceScore") or 0) + 10
+        page_candidate["careersUrl"] = page_url
+        candidates.append(page_candidate)
+    embedded_urls = extract_links_from_html(html)
+    embedded_urls.extend(re.findall(r'https?://[^"\')\s]+', str(html or "")))
+    text = str(html or "").lower()
+    if "teamtailor" in text and careers_keyword_count(page_url):
+        embedded_urls.append(page_url)
+    seen = set()
+    for raw_url in embedded_urls:
+        url = str(raw_url or "").strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        inferred = infer_web_candidate(url, studio, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method)
+        if not inferred:
+            continue
+        inferred["evidenceSource"] = "html_embed"
+        inferred["evidenceTypes"] = unique_string_list([*(inferred.get("evidenceTypes") or []), "html_embed", "careers_page"])
+        inferred["evidenceScore"] = int(inferred.get("evidenceScore") or 0) + 12
+        inferred["careersUrl"] = page_url
+        candidates.append(inferred)
+    return collapse_competing_candidates(candidates)
+
+
+def build_static_candidate_from_page(page_url: str, html: str, *, studio: str, nl_priority: bool, remote_friendly: bool, discovery_method: str) -> Optional[Dict[str, Any]]:
+    if is_blocked_generic_static_url(page_url):
+        return None
+    if not careers_keyword_count(page_url) and careers_keyword_count(html) == 0:
+        return None
+    detail_links = extract_jobish_links(html, page_url)
+    jsonld_hits = re.findall(r'"@type"\s*:\s*"JobPosting"', str(html or ""), flags=re.I)
+    if not detail_links and not jsonld_hits:
+        return None
+    evidence_types = ["careers_keyword"]
+    evidence_score = 18
+    if detail_links:
+        evidence_types.append("structured_job_links")
+        evidence_score += min(24, len(detail_links) * 6)
+    if jsonld_hits:
+        evidence_types.append("jobposting_jsonld")
+        evidence_score += 18
+    if studio_domain_match(studio, page_url):
+        evidence_types.append("studio_domain_match")
+        evidence_score += 10
+    detail_sample = detail_links[:6]
+    return {
+        "name": f"{studio} (Manual Website)",
+        "studio": studio,
+        "company": studio,
+        "adapter": "static",
+        "pages": [page_url, *detail_sample],
+        "listing_url": page_url,
+        "remoteFriendly": remote_friendly,
+        "nlPriority": nl_priority,
+        "enabledByDefault": False,
+        "discoveryMethod": discovery_method,
+        "discoveryStage": "generic_static",
+        "careersUrl": page_url,
+        "evidenceSource": "careers_page",
+        "evidenceTypes": evidence_types,
+        "evidenceScore": evidence_score,
+        "weakSignal": len(detail_sample) < 2 and not jsonld_hits,
+        "detailPageCount": len(detail_links),
+        "detailPagesSample": detail_sample,
+    }
+
+
+def build_web_search_queries(max_queries: int = 18) -> List[Tuple[str, Dict[str, Any]]]:
     queries: List[Tuple[str, Dict[str, Any]]] = []
     for seed in STUDIO_SEEDS:
         studio = str(seed.get("studio") or "").strip()
         if not studio:
             continue
         for suffix in WEB_SEARCH_QUERY_SUFFIX:
-            query = f"{studio} {suffix} game studio"
-            queries.append((query, seed))
+            queries.append((f"{studio} {suffix} game studio", seed))
+        careers_url = str(seed.get("careersUrl") or "").strip()
+        if careers_url:
+            host = (urlparse(careers_url).netloc or "").strip()
+            if host:
+                queries.append((f"{studio} site:{host} jobs", seed))
         if len(queries) >= max_queries:
             break
     return queries[:max_queries]
 
 
-def discover_web_search_candidates(timeout_s: int, *, fetcher=fetch_text, max_queries: int = 12) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    candidates: List[Dict[str, Any]] = []
+def discover_seed_careers_page_candidates(timeout_s: int, *, fetcher=fetch_text) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    provider_candidates: List[Dict[str, Any]] = []
+    static_candidates: List[Dict[str, Any]] = []
+    failures: List[Dict[str, Any]] = []
+    for seed in STUDIO_SEEDS:
+        careers_url = str(seed.get("careersUrl") or "").strip()
+        studio = str(seed.get("studio") or "").strip()
+        if not careers_url or not studio:
+            continue
+        nl_priority = bool(seed.get("nlPriority"))
+        remote_friendly = bool(seed.get("remoteFriendly"))
+        try:
+            page_html = fetcher(careers_url, timeout_s)
+        except Exception as exc:  # noqa: BLE001
+            failures.append({"name": careers_url, "adapter": "seed_careers_page", "error": str(exc), "stage": "page_fetch"})
+            continue
+        page_provider_candidates = infer_provider_candidates_from_html(
+            careers_url,
+            page_html,
+            studio=studio,
+            nl_priority=nl_priority,
+            remote_friendly=remote_friendly,
+            discovery_method="seed_careers_page",
+        )
+        provider_candidates.extend(page_provider_candidates)
+        if page_provider_candidates:
+            continue
+        static_candidate = build_static_candidate_from_page(
+            careers_url,
+            page_html,
+            studio=studio,
+            nl_priority=nl_priority,
+            remote_friendly=remote_friendly,
+            discovery_method="seed_careers_page",
+        )
+        if static_candidate:
+            static_candidates.append(static_candidate)
+    return collapse_competing_candidates(provider_candidates), unique_sources(static_candidates), failures
+
+
+def discover_web_search_candidates(timeout_s: int, *, fetcher=fetch_text, max_queries: int = 18) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    provider_candidates: List[Dict[str, Any]] = []
+    static_candidates: List[Dict[str, Any]] = []
     failures: List[Dict[str, Any]] = []
     for query, seed in build_web_search_queries(max_queries=max_queries):
         url = DUCKDUCKGO_HTML_SEARCH.format(query=quote_plus(query))
@@ -632,212 +867,326 @@ def discover_web_search_candidates(timeout_s: int, *, fetcher=fetch_text, max_qu
         except Exception as exc:  # noqa: BLE001
             failures.append({"name": query, "adapter": "web_search", "error": str(exc), "stage": "search"})
             continue
-        links = extract_links_from_html(html)
+        links = extract_links_from_html(html)[:MAX_SEARCH_LINKS_PER_QUERY]
         studio = str(seed.get("studio") or "")
+        nl_priority = bool(seed.get("nlPriority"))
+        remote_friendly = bool(seed.get("remoteFriendly"))
         for link in links:
-            inferred = infer_web_candidate(
-                link,
-                studio,
-                nl_priority=bool(seed.get("nlPriority")),
-                remote_friendly=bool(seed.get("remoteFriendly")),
-            )
+            inferred = infer_web_candidate(link, studio, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method="web_search")
             if inferred:
-                candidates.append(inferred)
-    return unique_sources(candidates), failures
+                provider_candidates.append(inferred)
+                continue
+            if not careers_keyword_count(link):
+                continue
+            try:
+                page_html = fetcher(link, timeout_s)
+            except Exception as exc:  # noqa: BLE001
+                failures.append({"name": link, "adapter": "web_search", "error": str(exc), "stage": "page_fetch"})
+                continue
+            provider_candidates.extend(
+                infer_provider_candidates_from_html(
+                    link,
+                    page_html,
+                    studio=studio,
+                    nl_priority=nl_priority,
+                    remote_friendly=remote_friendly,
+                    discovery_method="web_search",
+                )
+            )
+            static_candidate = build_static_candidate_from_page(link, page_html, studio=studio, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method="web_search")
+            if static_candidate:
+                static_candidates.append(static_candidate)
+    return collapse_competing_candidates(provider_candidates), unique_sources(static_candidates), failures
 
 
 def merge_candidate_streams(streams: Iterable[Tuple[str, List[Dict[str, Any]]]]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
-    for method, items in streams:
+    for stage, items in streams:
         for raw in items:
             if not isinstance(raw, dict):
                 continue
             row = dict(raw)
-            row["discoveryMethod"] = str(row.get("discoveryMethod") or method)
+            row["discoveryStage"] = str(row.get("discoveryStage") or stage)
+            row["discoveryMethod"] = str(row.get("discoveryMethod") or ("seed" if stage == "curated_seed" else "pattern"))
             row["discoveredAt"] = str(row.get("discoveredAt") or now_iso())
+            row["evidenceTypes"] = unique_string_list(row.get("evidenceTypes") or [])
+            row["evidenceScore"] = int(row.get("evidenceScore") or 0)
             rows.append(row)
     return rows
 
 
-def run_discovery(
-    timeout_s: int,
-    top_n: int,
-    *,
-    mode: str = "dynamic",
-    include_web_search: bool = True,
-    fetcher=fetch_text,
-) -> Dict[str, Any]:
+def estimate_probe_priority(candidate: Dict[str, Any]) -> int:
+    return int(candidate.get("evidenceScore") or 0) + (20 if str(candidate.get("discoveryStage") or "") == "curated_seed" else 0)
+
+
+def _evidence_threshold_for_probe(candidate: Dict[str, Any]) -> int:
+    if str(candidate.get("discoveryStage") or "") == "provider_pattern":
+        return PATTERN_PROVIDER_PROBE_THRESHOLD
+    return MIN_STATIC_EVIDENCE_TO_PROBE if str(candidate.get("adapter") or "") == "static" else MIN_PROVIDER_EVIDENCE_TO_PROBE
+
+
+def _evidence_threshold_for_queue(candidate: Dict[str, Any]) -> int:
+    if str(candidate.get("discoveryStage") or "") == "provider_pattern":
+        return PATTERN_PROVIDER_QUEUE_THRESHOLD
+    return MIN_STATIC_EVIDENCE_TO_QUEUE if str(candidate.get("adapter") or "") == "static" else MIN_PROVIDER_EVIDENCE_TO_QUEUE
+
+
+def _should_queue_candidate(candidate: Dict[str, Any], jobs_found: int) -> bool:
+    return jobs_found > 0 or int(candidate.get("evidenceScore") or 0) >= _evidence_threshold_for_queue(candidate)
+
+
+def _sort_candidate_key(row: Dict[str, Any]) -> Tuple[int, int, int, str]:
+    return (int(row.get("score") or 0), int(row.get("evidenceScore") or 0), int(row.get("jobsFound") or 0), str(row.get("name") or ""))
+
+
+def apply_queue_balancing(candidates: List[Dict[str, Any]], top_n: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, int]]:
+    queued: List[Dict[str, Any]] = []
+    all_rows: List[Dict[str, Any]] = []
+    deferred_counts: Counter[str] = Counter()
+    adapter_counts: Counter[str] = Counter()
+    family_counts: Counter[str] = Counter()
+    for row in sorted(candidates, key=_sort_candidate_key, reverse=True):
+        adapter = str(row.get("adapter") or "unknown")
+        family = queue_family_key(row)
+        defer_reason = ""
+        if top_n > 0 and len(queued) >= top_n:
+            defer_reason = "top_n_cap"
+        elif adapter_counts[adapter] >= ADAPTER_QUEUE_CAPS.get(adapter, 3):
+            defer_reason = "adapter_cap"
+        elif family and family_counts[family] >= DOMAIN_QUEUE_CAP_DEFAULT:
+            defer_reason = "domain_cap"
+        normalized = dict(row)
+        if defer_reason:
+            normalized["deferred"] = True
+            normalized["deferReason"] = defer_reason
+            deferred_counts[defer_reason] += 1
+        else:
+            normalized["deferred"] = False
+            queued.append(normalized)
+            adapter_counts[adapter] += 1
+            if family:
+                family_counts[family] += 1
+        all_rows.append(normalized)
+    return queued, all_rows, dict(deferred_counts)
+
+
+def _init_stage_counter() -> Dict[str, int]:
+    return {stage: 0 for stage in DISCOVERY_STAGES}
+
+
+def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_web_search: bool = True, fetcher=fetch_text) -> Dict[str, Any]:
     started_at = now_iso()
     active = load_json_array(ACTIVE_PATH, [])
     pending_existing = load_json_array(PENDING_PATH, [])
     rejected = load_json_array(REJECTED_PATH, [])
+    emit_log(f"Starting source discovery: mode={mode}, top_n={top_n}, web_search={'on' if include_web_search else 'off'}.")
+    emit_log(f"Loaded registries: active={len(active)}, pending={len(pending_existing)}, rejected={len(rejected)}.")
 
     existing_rows = [*active, *pending_existing, *rejected]
     seen_ids = {source_identity(row) for row in existing_rows if isinstance(row, dict)}
     seen_domains = {fp for fp in (adapter_domain_fingerprint(row) for row in existing_rows if isinstance(row, dict)) if fp}
 
-    web_candidates: List[Dict[str, Any]] = []
+    provider_web_candidates: List[Dict[str, Any]] = []
+    static_web_candidates: List[Dict[str, Any]] = []
     web_failures: List[Dict[str, Any]] = []
 
-    streams: List[Tuple[str, List[Dict[str, Any]]]] = [("seed", STATIC_DISCOVERY_CANDIDATES)]
+    streams: List[Tuple[str, List[Dict[str, Any]]]] = [("curated_seed", stage_curated_seed_candidates())]
     if mode == "dynamic":
-        streams.append(("pattern", build_pattern_candidates()))
+        streams.append(("provider_pattern", build_pattern_candidates()))
+        provider_web_candidates, static_web_candidates, web_failures = discover_seed_careers_page_candidates(timeout_s, fetcher=fetcher)
+        streams.append(("web_provider", provider_web_candidates))
+        streams.append(("generic_static", static_web_candidates))
         if include_web_search:
-            web_candidates, web_failures = discover_web_search_candidates(timeout_s, fetcher=fetcher)
-            streams.append(("web_search", web_candidates))
+            provider_search_candidates, static_search_candidates, search_failures = discover_web_search_candidates(timeout_s, fetcher=fetcher)
+            provider_web_candidates.extend(provider_search_candidates)
+            static_web_candidates.extend(static_search_candidates)
+            web_failures.extend(search_failures)
+            streams.append(("web_provider", provider_search_candidates))
+            streams.append(("generic_static", static_search_candidates))
+
+    generated_count_by_stage = _init_stage_counter()
+    survived_dedupe_count_by_stage = _init_stage_counter()
+    probed_count_by_stage = _init_stage_counter()
+    queued_count_by_stage = _init_stage_counter()
+    duplicate_reasons: Counter[str] = Counter()
 
     discovered = merge_candidate_streams(streams)
+    for row in discovered:
+        generated_count_by_stage[str(row.get("discoveryStage") or "provider_pattern")] += 1
     found_endpoint_count = len(discovered)
+    emit_log(
+        "Generated candidates by stage: "
+        + ", ".join(f"{stage}={generated_count_by_stage.get(stage, 0)}" for stage in DISCOVERY_STAGES)
+        + f" (total={found_endpoint_count})."
+    )
 
     filtered: List[Dict[str, Any]] = []
     skipped_duplicate_count = 0
     local_seen_ids = set(seen_ids)
     local_seen_domains = set(seen_domains)
     for row in discovered:
+        stage = str(row.get("discoveryStage") or "provider_pattern")
         row_id = source_identity(row)
         row_domain = adapter_domain_fingerprint(row)
-        if row_id in local_seen_ids or (row_domain and row_domain in local_seen_domains):
+        if row_id in seen_ids:
             skipped_duplicate_count += 1
+            duplicate_reasons["existing_id"] += 1
+            continue
+        if row_domain and row_domain in seen_domains:
+            skipped_duplicate_count += 1
+            duplicate_reasons["existing_domain"] += 1
+            continue
+        if row_id in local_seen_ids:
+            skipped_duplicate_count += 1
+            duplicate_reasons["run_id"] += 1
+            continue
+        if row_domain and row_domain in local_seen_domains:
+            skipped_duplicate_count += 1
+            duplicate_reasons["run_domain"] += 1
             continue
         local_seen_ids.add(row_id)
         if row_domain:
             local_seen_domains.add(row_domain)
+        survived_dedupe_count_by_stage[stage] += 1
         filtered.append(row)
 
-    candidates: List[Dict[str, Any]] = []
+    filtered.sort(key=estimate_probe_priority, reverse=True)
+    emit_log(
+        "After dedupe: "
+        + ", ".join(f"{stage}={survived_dedupe_count_by_stage.get(stage, 0)}" for stage in DISCOVERY_STAGES)
+        + f"; skipped_duplicates={skipped_duplicate_count}."
+    )
+
+    queueable_candidates: List[Dict[str, Any]] = []
     failures: List[Dict[str, Any]] = list(web_failures)
     healthy = 0
     probed = 0
     adapter_counter: Counter[str] = Counter()
     method_counter: Counter[str] = Counter()
     skipped_invalid = 0
+    skipped_low_evidence_probe_count = 0
     processed_count = 0
+    low_evidence_probes_used = 0
 
-    def write_progress_report() -> None:
-        progress_summary = {
+    def build_summary(current_candidates: List[Dict[str, Any]], deferred_candidates: int = 0, deferred_counts: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+        return {
             "probedCount": probed,
             "healthyCount": healthy,
-            "newCandidateCount": len(candidates),
-            "taEnvCandidateCount": sum(1 for row in candidates if "target_role_signal" in row.get("reasons", [])),
-            "nlCandidateCount": sum(1 for row in candidates if bool(row.get("nlPriority"))),
-            "remoteCandidateCount": sum(1 for row in candidates if bool(row.get("remoteFriendly"))),
+            "newCandidateCount": len(current_candidates),
+            "taEnvCandidateCount": sum(1 for row in current_candidates if "target_role_signal" in row.get("reasons", [])),
+            "nlCandidateCount": sum(1 for row in current_candidates if bool(row.get("nlPriority"))),
+            "remoteCandidateCount": sum(1 for row in current_candidates if bool(row.get("remoteFriendly"))),
             "failedProbeCount": len([row for row in failures if str(row.get("stage")) == "probe"]),
             "probeMissCount": len([row for row in failures if str(row.get("stage")) == "probe_miss"]),
             "foundEndpointCount": found_endpoint_count,
             "probedCandidateCount": probed,
-            "queuedCandidateCount": len(candidates),
+            "queuedCandidateCount": len([row for row in current_candidates if not bool(row.get("deferred"))]),
+            "discoverableButDeferredCount": int(deferred_candidates),
             "skippedDuplicateCount": skipped_duplicate_count,
             "skippedInvalidCount": skipped_invalid,
+            "skippedLowEvidenceProbeCount": skipped_low_evidence_probe_count,
             "adapterCounts": dict(adapter_counter),
             "methodCounts": dict(method_counter),
+            "generatedCountByStage": dict(generated_count_by_stage),
+            "survivedDedupeCountByStage": dict(survived_dedupe_count_by_stage),
+            "probedCountByStage": dict(probed_count_by_stage),
+            "queuedCountByStage": dict(queued_count_by_stage),
+            "duplicateReasons": dict(duplicate_reasons),
+            "deferredReasons": dict(deferred_counts or {}),
         }
-        progress_report = {
-            "schemaVersion": SCHEMA_VERSION,
-            "mode": mode,
-            "startedAt": started_at,
-            "finishedAt": "",
-            "summary": progress_summary,
-            "candidates": candidates,
-            "failures": failures,
-            "topFailures": [],
-            "outputs": {
-                "report": str(DISCOVERY_REPORT_PATH),
-                "candidates": str(DISCOVERY_CANDIDATES_PATH),
-                "pending": str(PENDING_PATH),
-            },
-        }
-        save_json_atomic(DISCOVERY_REPORT_PATH, progress_report)
 
-    write_progress_report()
+    def write_progress_report(current_candidates: List[Dict[str, Any]]) -> None:
+        save_json_atomic(
+            DISCOVERY_REPORT_PATH,
+            {
+                "schemaVersion": SCHEMA_VERSION,
+                "mode": mode,
+                "startedAt": started_at,
+                "finishedAt": "",
+                "summary": build_summary(current_candidates),
+                "candidates": current_candidates,
+                "failures": failures,
+                "topFailures": [],
+                "outputs": {
+                    "report": str(DISCOVERY_REPORT_PATH),
+                    "candidates": str(DISCOVERY_CANDIDATES_PATH),
+                    "pending": str(PENDING_PATH),
+                },
+            },
+        )
+
+    write_progress_report([])
+    emit_log(f"Starting probe phase for {len(filtered)} candidate(s).")
     for raw in filtered:
         processed_count += 1
+        stage = str(raw.get("discoveryStage") or "provider_pattern")
         valid, invalid_reason = validate_candidate_for_probe(raw)
         if not valid:
             skipped_invalid += 1
-            failures.append(
-                {
-                    "name": raw.get("name"),
-                    "adapter": raw.get("adapter"),
-                    "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
-                    "error": invalid_reason,
-                    "stage": "validation",
-                }
-            )
+            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": invalid_reason, "stage": "validation"})
             if processed_count % 5 == 0:
-                write_progress_report()
+                write_progress_report(queueable_candidates)
             continue
+        evidence_score = int(raw.get("evidenceScore") or 0)
+        threshold = _evidence_threshold_for_probe(raw)
+        if evidence_score < threshold:
+            if stage == "provider_pattern":
+                skipped_low_evidence_probe_count += 1
+                failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"pattern evidence score {evidence_score} below probe threshold {threshold}", "stage": "probe_skipped"})
+                if processed_count % 5 == 0:
+                    write_progress_report(queueable_candidates)
+                continue
+            if low_evidence_probes_used >= LOW_EVIDENCE_PROBE_LIMIT:
+                skipped_low_evidence_probe_count += 1
+                failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"evidence score {evidence_score} below probe threshold {threshold}", "stage": "probe_skipped"})
+                if processed_count % 5 == 0:
+                    write_progress_report(queueable_candidates)
+                continue
+            low_evidence_probes_used += 1
         probed += 1
+        probed_count_by_stage[stage] += 1
         ok, jobs_found, error = probe_candidate(raw, timeout_s, fetcher=fetcher)
         if not ok:
-            stage = classify_probe_failure_stage(error)
-            failures.append(
-                {
-                    "name": raw.get("name"),
-                    "adapter": raw.get("adapter"),
-                    "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
-                    "error": error,
-                    "stage": stage,
-                }
-            )
+            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": error, "stage": classify_probe_failure_stage(error)})
             if processed_count % 5 == 0:
-                write_progress_report()
+                write_progress_report(queueable_candidates)
             continue
-
+        if not _should_queue_candidate(raw, jobs_found):
+            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"candidate passed probe but evidence {evidence_score} is below queue threshold", "stage": "queue_filtered"})
+            if processed_count % 5 == 0:
+                write_progress_report(queueable_candidates)
+            continue
         healthy += 1
         score, reasons = compute_candidate_score(raw, jobs_found)
         normalized = normalize_candidate(raw, score, reasons, jobs_found, probed_at=now_iso())
-        candidates.append(normalized)
+        queueable_candidates.append(normalized)
         adapter_counter[str(normalized.get("adapter") or "unknown")] += 1
         method_counter[str(normalized.get("discoveryMethod") or "unknown")] += 1
         if processed_count % 5 == 0:
-            write_progress_report()
+            emit_log(
+                f"Progress: processed={processed_count}/{len(filtered)}, probed={probed}, queued={len(queueable_candidates)}, "
+                f"probe_misses={len([row for row in failures if str(row.get('stage')) == 'probe_miss'])}, "
+                f"skipped_low_evidence={skipped_low_evidence_probe_count}."
+            )
+            write_progress_report(queueable_candidates)
 
-    write_progress_report()
-
-    candidates.sort(
-        key=lambda row: (
-            int(row.get("score") or 0),
-            int(row.get("jobsFound") or 0),
-            str(row.get("name") or ""),
-        ),
-        reverse=True,
+    queued_candidates, report_candidates, deferred_reason_counts = apply_queue_balancing(queueable_candidates, top_n)
+    for row in queued_candidates:
+        queued_count_by_stage[str(row.get("discoveryStage") or "provider_pattern")] += 1
+    emit_log(
+        f"Probe phase finished: healthy={healthy}, queued={len(queued_candidates)}, "
+        f"deferred={len([row for row in report_candidates if bool(row.get('deferred'))])}, probe_misses={len([row for row in failures if str(row.get('stage')) == 'probe_miss'])}."
     )
-    if top_n > 0:
-        candidates = candidates[:top_n]
 
-    merged_pending = unique_sources([*pending_existing, *candidates])
-    save_json_atomic(PENDING_PATH, merged_pending)
-    save_json_atomic(DISCOVERY_CANDIDATES_PATH, candidates)
+    save_json_atomic(PENDING_PATH, unique_sources([*pending_existing, *queued_candidates]))
+    save_json_atomic(DISCOVERY_CANDIDATES_PATH, queued_candidates)
 
-    summary = {
-        "probedCount": probed,
-        "healthyCount": healthy,
-        "newCandidateCount": len(candidates),
-        "taEnvCandidateCount": sum(1 for row in candidates if "target_role_signal" in row.get("reasons", [])),
-        "nlCandidateCount": sum(1 for row in candidates if bool(row.get("nlPriority"))),
-        "remoteCandidateCount": sum(1 for row in candidates if bool(row.get("remoteFriendly"))),
-        "failedProbeCount": len([row for row in failures if str(row.get("stage")) == "probe"]),
-        "probeMissCount": len([row for row in failures if str(row.get("stage")) == "probe_miss"]),
-        "foundEndpointCount": found_endpoint_count,
-        "probedCandidateCount": probed,
-        "queuedCandidateCount": len(candidates),
-        "skippedDuplicateCount": skipped_duplicate_count,
-        "skippedInvalidCount": skipped_invalid,
-        "adapterCounts": dict(adapter_counter),
-        "methodCounts": dict(method_counter),
-    }
-
+    summary = build_summary(report_candidates, deferred_candidates=len([row for row in report_candidates if bool(row.get("deferred"))]), deferred_counts=deferred_reason_counts)
     failure_counter: Counter[str] = Counter()
     for row in failures:
         adapter = str(row.get("adapter") or "unknown")
         domain = str(row.get("domain") or "").strip()
-        key = f"{adapter}:{domain}" if domain else adapter
-        failure_counter[key] += 1
-
-    top_failures = [
-        {"key": key, "count": count}
-        for key, count in failure_counter.most_common(5)
-    ]
+        failure_counter[f"{adapter}:{domain}" if domain else adapter] += 1
 
     report = {
         "schemaVersion": SCHEMA_VERSION,
@@ -845,9 +1194,9 @@ def run_discovery(
         "startedAt": started_at,
         "finishedAt": now_iso(),
         "summary": summary,
-        "candidates": candidates,
+        "candidates": report_candidates,
         "failures": failures,
-        "topFailures": top_failures,
+        "topFailures": [{"key": key, "count": count} for key, count in failure_counter.most_common(5)],
         "outputs": {
             "report": str(DISCOVERY_REPORT_PATH),
             "candidates": str(DISCOVERY_CANDIDATES_PATH),
@@ -855,6 +1204,7 @@ def run_discovery(
         },
     }
     save_json_atomic(DISCOVERY_REPORT_PATH, report)
+    emit_log(f"Discovery report written to {DISCOVERY_REPORT_PATH}.")
     return report
 
 
@@ -869,16 +1219,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    report = run_discovery(
-        timeout_s=args.timeout,
-        top_n=args.top,
-        mode=args.mode,
-        include_web_search=not bool(args.no_web_search),
-    )
-    print(
+    report = run_discovery(timeout_s=args.timeout, top_n=args.top, mode=args.mode, include_web_search=not bool(args.no_web_search))
+    emit_log(
         "Source discovery completed. "
         f"Found endpoints: {report['summary']['foundEndpointCount']}. "
         f"Queued candidates: {report['summary']['queuedCandidateCount']}. "
+        f"Deferred candidates: {report['summary'].get('discoverableButDeferredCount', 0)}. "
         f"Failed probes: {report['summary'].get('failedProbeCount', 0)}. "
         f"Probe misses: {report['summary'].get('probeMissCount', 0)}. "
         f"Report: {report['outputs']['report']}"

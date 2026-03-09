@@ -574,7 +574,6 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
   const currentRows = Array.isArray(model.currentRows) ? model.currentRows : [];
   const visibleCompletedRows = Array.isArray(model.visibleCompletedRows) ? model.visibleCompletedRows : [];
   const olderCompletedRows = Array.isArray(model.olderCompletedRows) ? model.olderCompletedRows : [];
-  const completedRows = [...visibleCompletedRows, ...olderCompletedRows];
   const canPatchInPlace = Boolean(
     historyEl
     && typeof historyEl.querySelector === "function"
@@ -632,11 +631,13 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
   };
 
   const currentViews = currentRows.map((row, index) => toRowView(row, "current", index));
-  const completedViews = completedRows.map((row, index) => toRowView(row, "completed", index));
+  const visibleCompletedViews = visibleCompletedRows.map((row, index) => toRowView(row, "current", currentRows.length + index));
+  const olderCompletedViews = olderCompletedRows.map((row, index) => toRowView(row, "completed_older", index));
+  const primaryViews = [...currentViews, ...visibleCompletedViews];
 
   const structureSignature = JSON.stringify({
-    current: currentViews.map(row => row.key),
-    completed: completedViews.map(row => row.key)
+    current: primaryViews.map(row => row.key),
+    completedOlder: olderCompletedViews.map(row => row.key)
   });
 
   const updateExistingRows = (views, rowArea) => {
@@ -669,8 +670,8 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
   };
 
   if (canPatchInPlace && historyEl.dataset.opsStructureSig === structureSignature) {
-    updateExistingRows(currentViews, "current");
-    updateExistingRows(completedViews, "completed");
+    updateExistingRows(primaryViews, "current");
+    updateExistingRows(olderCompletedViews, "completed_older");
     return;
   }
 
@@ -704,14 +705,14 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
         </div>
       </div>
       <div class="jobs-table-body">
-        ${currentViews.length ? renderRows(currentViews) : '<div class="no-results">No active runs.</div>'}
+        ${primaryViews.length ? renderRows(primaryViews) : '<div class="no-results">No active runs.</div>'}
       </div>
     </div>
-    ${completedRows.length ? `
+    ${olderCompletedViews.length ? `
       <details class="admin-ops-history-older admin-ops-completed-runs">
-        <summary>Older runs (${completedRows.length})</summary>
+        <summary>Older runs (${olderCompletedViews.length})</summary>
         <div class="jobs-table-body">
-          ${renderRows(completedViews)}
+          ${renderRows(olderCompletedViews)}
         </div>
       </details>
     ` : ""}

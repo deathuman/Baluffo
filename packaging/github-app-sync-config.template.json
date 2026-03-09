@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "appId": "123456",
+  "installationId": "98765432",
+  "repo": "your-org/job-sources-backup",
+  "branch": "main",
+  "path": "baluffo/source-sync.json",
+  "keySalt": "replace-with-base64url-random-salt",
+  "privateKeyPemEnc": "replace-with-base64url-encrypted-private-key"
+}

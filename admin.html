@@ -46,12 +46,8 @@
           <h3 class="admin-fetcher-title">Operations Health</h3>
           <div class="admin-fetcher-actions">
             <button id="admin-refresh-ops-btn" class="btn clear-filters-btn">Refresh Ops Health</button>
-            <button id="admin-sync-pull-btn" class="btn clear-filters-btn">Pull Sources Sync</button>
-            <button id="admin-sync-push-btn" class="btn clear-filters-btn">Push Sources Sync</button>
-            <button id="admin-sync-refresh-btn" class="btn clear-filters-btn">Sync Status</button>
           </div>
         </div>
-        <div id="admin-sync-status" class="results-summary">Sync status unavailable.</div>
         <div id="admin-ops-alerts" class="admin-ops-alerts"></div>
         <div id="admin-ops-kpis" class="admin-ops-kpis"></div>
         <div id="admin-ops-schedule" class="admin-ops-schedule"></div>
@@ -165,6 +161,34 @@
               <div id="admin-rejected-sources" class="jobs-list"></div>
             </details>
           </div>
+        </div>
+      </section>
+
+      <section class="admin-fetcher-panel admin-sync-panel">
+        <div class="admin-fetcher-header">
+          <div class="admin-sync-title-wrap">
+            <h3 class="admin-fetcher-title">Source Sync</h3>
+            <p class="admin-sync-subtitle">Shared source registry sync powered by the packaged GitHub App.</p>
+          </div>
+          <div class="admin-fetcher-actions admin-sync-actions">
+            <button id="admin-sync-test-btn" class="btn clear-filters-btn admin-sync-action-btn" data-tooltip="Verify GitHub App access and confirm the remote registry is reachable.">Test Connection</button>
+            <button id="admin-sync-pull-btn" class="btn clear-filters-btn admin-sync-action-btn" data-tooltip="Pull the latest remote registry and replace local source buckets with the shared state.">Pull Latest</button>
+            <button id="admin-sync-push-btn" class="btn clear-filters-btn admin-sync-action-btn" data-tooltip="Push the current local registry to GitHub as the latest shared source state.">Push Current</button>
+          </div>
+        </div>
+        <div class="admin-sync-layout">
+          <div class="admin-sync-card admin-sync-settings-card">
+            <div class="admin-sync-card-head">
+              <h4 class="admin-section-title">Local Control</h4>
+              <span class="admin-sync-inline-note">Saved immediately on change</span>
+            </div>
+            <label class="backup-toggle admin-zero-toggle admin-sync-toggle">
+              <input id="admin-sync-enabled" type="checkbox">
+              Enable packaged GitHub source sync
+            </label>
+            <div id="admin-sync-config-hint" class="results-summary admin-manual-source-feedback admin-sync-config-hint">GitHub App credentials are packaged with the app. Only local sync enablement is configurable here.</div>
+          </div>
+          <div id="admin-sync-status" class="admin-sync-card admin-sync-status-card">Sync status unavailable.</div>
         </div>
       </section>
     </section>

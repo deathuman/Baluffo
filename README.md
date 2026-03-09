@@ -73,10 +73,12 @@ It combines:
 - Python 3.10+ (recommended)
 - Node.js (only needed for JS syntax checks in validation)
 
+Windows commands below use `py -3` so the project does not accidentally resolve to Python 2. On non-Windows shells, use `python3` instead.
+
 ### 2) Serve the site locally
 
 ```powershell
-python -m http.server 8080 --directory .
+py -3 -m http.server 8080 --directory .
 ```
 
 Open:
@@ -88,26 +90,26 @@ Open:
 ### 3) Generate or refresh jobs feed
 
 ```powershell
-python scripts/jobs_fetcher.py
+py -3 scripts/jobs_fetcher.py
 ```
 
 ### 4) Run source discovery (optional)
 
 ```powershell
-python scripts/source_discovery.py --mode dynamic
+py -3 scripts/source_discovery.py --mode dynamic
 ```
 
 ### 5) Run admin bridge (for Admin discovery actions)
 
 ```powershell
-python scripts/admin_bridge.py
+py -3 scripts/admin_bridge.py
 ```
 
 Optional runtime overrides:
 
 ```powershell
 $env:BALUFFO_DATA_DIR = "C:\baluffo\data"
-python scripts/admin_bridge.py --host 127.0.0.1 --port 8877 --log-format human --log-level info
+py -3 scripts/admin_bridge.py --host 127.0.0.1 --port 8877 --log-format human --log-level info
 ```
 
 Supported env vars:
@@ -117,11 +119,7 @@ Supported env vars:
 - `BALUFFO_DATA_DIR`
 - `BALUFFO_BRIDGE_LOG_FORMAT`
 - `BALUFFO_BRIDGE_LOG_LEVEL`
-- `BALUFFO_SYNC_ENABLED` (`true|false`, default `true`; set `false` to disable)
-- `BALUFFO_SYNC_GITHUB_TOKEN` (GitHub PAT, local env only)
-- `BALUFFO_SYNC_REPO` (`owner/repo`, dedicated private config repo)
-- `BALUFFO_SYNC_BRANCH` (optional, default `main`)
-- `BALUFFO_SYNC_PATH` (optional, default `baluffo/source-sync.json`)
+- `BALUFFO_SYNC_APP_CONFIG_PATH` (optional override for packaged GitHub App config JSON)
 
 CLI/env precedence: `CLI > env > defaults`.
 
@@ -136,6 +134,7 @@ Source sync API (admin bridge):
 Notes:
 - `/sync/pull` and `/sync/push` remain supported as direct synchronous APIs.
 - Task endpoints start async runs that appear in Ops Run History (`type: sync`).
+- Source sync now uses packaged GitHub App credentials plus a local enabled/disabled toggle; end users do not enter PATs.
 
 Snapshot schema (`source-sync.json`, v1):
 
@@ -145,13 +144,13 @@ Snapshot schema (`source-sync.json`, v1):
 ### 6) Build ship bundle (zip-first)
 
 ```powershell
-python scripts/build_ship_bundle.py
+py -3 scripts/build_ship_bundle.py
 ```
 
 Optional version:
 
 ```powershell
-python scripts/build_ship_bundle.py --bundle-version 1.2.3
+py -3 scripts/build_ship_bundle.py --bundle-version 1.2.3
 ```
 
 Bundle output: `dist/baluffo-ship` with launcher scripts:
@@ -212,7 +211,7 @@ npm run test:py
 Compute current performance metrics (latest run + rolling history median):
 
 ```powershell
-python scripts/fetcher_metrics.py --data-dir data --window-runs 20
+py -3 scripts/fetcher_metrics.py --data-dir data --window-runs 20
 ```
 
 ## Data and Registry Files

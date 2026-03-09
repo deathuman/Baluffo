@@ -5,6 +5,7 @@
     "foundEndpointCount": 2,
     "probedCandidateCount": 2,
     "queuedCandidateCount": 2,
+    "discoverableButDeferredCount": 0,
     "failedProbeCount": 0
   },
   "counts": {
@@ -17,5 +18,11 @@
   },
   "methodCounts": {
     "seed": 2
+  },
+  "generatedCountByStage": {
+    "curated_seed": 2,
+    "provider_pattern": 0,
+    "web_provider": 0,
+    "generic_static": 0
   }
 }

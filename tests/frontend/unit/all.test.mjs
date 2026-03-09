@@ -1,0 +1,14 @@
+import "./actions.test.mjs";
+import "./admin-domain.test.mjs";
+import "./admin-render.test.mjs";
+import "./jobs-data-source.test.mjs";
+import "./jobs-domain.test.mjs";
+import "./jobs-render.test.mjs";
+import "./jobs-source-metadata.test.mjs";
+import "./local-data-backup-domain.test.mjs";
+import "./local-data-domains.test.mjs";
+import "./local-data-services.test.mjs";
+import "./saved-data-source.test.mjs";
+import "./saved-domain.test.mjs";
+import "./saved-render.test.mjs";
+import "./structure-cleanup.test.mjs";

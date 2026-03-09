@@ -3,6 +3,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$PythonLauncher = Get-Command py -ErrorAction SilentlyContinue
+$PythonCommand = "python"
+$PythonArgs = @()
+if ($PythonLauncher) {
+  $PythonCommand = $PythonLauncher.Source
+  $PythonArgs = @("-3")
+}
 $Root = if (Test-Path (Join-Path $PSScriptRoot "scripts")) {
   $PSScriptRoot
 } else {
@@ -24,10 +31,11 @@ Write-Host "[baluffo-ship] Starting static site..." -ForegroundColor Cyan
 Write-Host "[baluffo-ship] URL: http://127.0.0.1:$Port" -ForegroundColor Gray
 Write-Host "[baluffo-ship] Root: $ActiveRoot" -ForegroundColor Gray
 Write-Host "[baluffo-ship] Version: $CurrentVersion" -ForegroundColor Gray
+Write-Host "[baluffo-ship] Python: $PythonCommand $($PythonArgs -join ' ')" -ForegroundColor Gray
 
 Push-Location $ActiveRoot
 try {
-  python -m http.server $Port --directory .
+  & $PythonCommand @PythonArgs -m http.server $Port --directory .
 }
 finally {
   Pop-Location
