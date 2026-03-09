@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-03-08T19:46:26.290317+00:00",
+  "updatedAt": "2026-03-09T09:20:18.744626+00:00",
   "successfulSources": [
     "epic_games_careers",
     "gamesindustry",
@@ -8,6 +8,7 @@
     "lever_sources",
     "remote_ok",
     "smartrecruiters_sources",
+    "static_source::auto:00fb61a6597b",
     "static_source::static:listing_url:https://career.paradoxplaza.com",
     "static_source::static:listing_url:https://careers.activision.com",
     "static_source::static:listing_url:https://ea.gr8people.com",

@@ -24,6 +24,8 @@ class AdminBridgeOpsTests(unittest.TestCase):
             "TASKS_CONFIG_PATH": admin_bridge.TASKS_CONFIG_PATH,
             "TASK_STATE_PATH": admin_bridge.TASK_STATE_PATH,
             "RUNTIME_CONFIG": admin_bridge.RUNTIME_CONFIG,
+            "SYNC_CONFIG": admin_bridge.SYNC_CONFIG,
+            "SYNC_STATUS": dict(admin_bridge.SYNC_STATUS),
             "SOURCE_REGISTRY_DATA_DIR": admin_bridge.source_registry_module.DATA_DIR,
             "MAX_HISTORY_ROWS": admin_bridge.MAX_HISTORY_ROWS,
         }
@@ -46,6 +48,9 @@ class AdminBridgeOpsTests(unittest.TestCase):
         for key, value in self._orig.items():
             if key == "SOURCE_REGISTRY_DATA_DIR":
                 admin_bridge.source_registry_module.DATA_DIR = value
+                continue
+            if key == "SYNC_STATUS":
+                admin_bridge.SYNC_STATUS = dict(value)
                 continue
             setattr(admin_bridge, key, value)
         self.tmp.cleanup()
@@ -184,6 +189,8 @@ class AdminBridgeOpsTests(unittest.TestCase):
         self.assertEqual(args[idx + 1], "google_sheets,remote_ok")
         self.assertIn("--ignore-circuit-breaker", args)
         self.assertIn("--quiet", args)
+        self.assertIn("--fetch-strategy", args)
+        self.assertIn("--adapter-http-concurrency", args)
 
     def test_build_fetcher_args_retry_failed_omits_only_sources_when_no_known_failures(self):
         admin_bridge.save_json_atomic(admin_bridge.JOBS_FETCH_REPORT_PATH, {
@@ -197,6 +204,26 @@ class AdminBridgeOpsTests(unittest.TestCase):
         self.assertNotIn("--only-sources", args)
         self.assertIn("--ignore-circuit-breaker", args)
         self.assertIn("--quiet", args)
+
+    def test_build_fetcher_args_accepts_cadence_and_strategy_overrides(self):
+        args, preset = admin_bridge.build_fetcher_args_from_payload({
+            "preset": "default",
+            "fetchStrategy": "http",
+            "adapterHttpConcurrency": 48,
+            "respectSourceCadence": True,
+            "hotSourceCadenceMinutes": 20,
+            "coldSourceCadenceMinutes": 90,
+        })
+        self.assertEqual(preset, "default")
+        self.assertIn("--fetch-strategy", args)
+        self.assertEqual(args[args.index("--fetch-strategy") + 1], "http")
+        self.assertIn("--adapter-http-concurrency", args)
+        self.assertEqual(args[args.index("--adapter-http-concurrency") + 1], "48")
+        self.assertIn("--respect-source-cadence", args)
+        self.assertIn("--hot-source-cadence-minutes", args)
+        self.assertEqual(args[args.index("--hot-source-cadence-minutes") + 1], "20")
+        self.assertIn("--cold-source-cadence-minutes", args)
+        self.assertEqual(args[args.index("--cold-source-cadence-minutes") + 1], "90")
 
     def test_sync_history_from_reports_prunes_stale_started_rows_when_report_stuck(self):
         old_started = "2026-03-01T00:00:00+00:00"
@@ -1035,6 +1062,164 @@ class AdminBridgeOpsTests(unittest.TestCase):
         row = state["pending"][0]
         self.assertEqual(str(row.get("studio") or ""), "Nixxes")
         self.assertEqual(str(row.get("name") or ""), "Nixxes (Manual Website)")
+
+    def test_sync_status_reports_disabled_when_explicitly_disabled(self):
+        admin_bridge.SYNC_CONFIG = admin_bridge.source_sync_module.resolve_sync_config(env={"BALUFFO_SYNC_ENABLED": "false"})
+        payload = admin_bridge.get_sync_status_payload()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(str((payload.get("config") or {}).get("state") or ""), "disabled")
+
+    def test_sync_pull_updates_local_registry_counts(self):
+        admin_bridge.SYNC_CONFIG = admin_bridge.source_sync_module.resolve_sync_config(env={
+            "BALUFFO_SYNC_ENABLED": "true",
+            "BALUFFO_SYNC_GITHUB_TOKEN": "token",
+            "BALUFFO_SYNC_REPO": "owner/repo",
+        })
+        admin_bridge.save_json_atomic(admin_bridge.ACTIVE_PATH, [])
+        admin_bridge.save_json_atomic(admin_bridge.PENDING_PATH, [])
+        admin_bridge.save_json_atomic(admin_bridge.REJECTED_PATH, [])
+        original_pull = admin_bridge.source_sync_module.pull_and_merge_sources
+        try:
+            admin_bridge.source_sync_module.pull_and_merge_sources = lambda _cfg, _state: {
+                "changed": True,
+                "remoteFound": True,
+                "remoteSha": "abc",
+                "mergedState": {
+                    "active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
+                    "pending": [{"adapter": "teamtailor", "name": "Foo"}],
+                    "rejected": [],
+                },
+            }
+            result = admin_bridge.sync_pull_sources()
+            self.assertTrue(result.get("ok"))
+            self.assertTrue(result.get("changed"))
+            summary = result.get("summary") or {}
+            self.assertEqual(int(summary.get("activeCount") or 0), 1)
+            self.assertEqual(int(summary.get("pendingCount") or 0), 1)
+        finally:
+            admin_bridge.source_sync_module.pull_and_merge_sources = original_pull
+
+    def test_sync_push_serializes_expected_snapshot_counts(self):
+        admin_bridge.SYNC_CONFIG = admin_bridge.source_sync_module.resolve_sync_config(env={
+            "BALUFFO_SYNC_ENABLED": "true",
+            "BALUFFO_SYNC_GITHUB_TOKEN": "token",
+            "BALUFFO_SYNC_REPO": "owner/repo",
+        })
+        admin_bridge.save_json_atomic(admin_bridge.ACTIVE_PATH, [{"adapter": "static", "listing_url": "https://a.com/jobs"}])
+        admin_bridge.save_json_atomic(admin_bridge.PENDING_PATH, [{"adapter": "teamtailor", "name": "Foo"}])
+        admin_bridge.save_json_atomic(admin_bridge.REJECTED_PATH, [{"adapter": "lever", "company": "Bar"}])
+        original_push = admin_bridge.source_sync_module.push_sources_snapshot
+        try:
+            admin_bridge.source_sync_module.push_sources_snapshot = lambda _cfg, local_state: {
+                "pushed": True,
+                "remotePreviouslyExisted": True,
+                "remoteSha": "newsha",
+                "snapshot": admin_bridge.source_sync_module.build_snapshot(local_state),
+            }
+            result = admin_bridge.sync_push_sources()
+            self.assertTrue(result.get("ok"))
+            counts = result.get("counts") or {}
+            self.assertEqual(int(counts.get("active") or 0), 1)
+            self.assertEqual(int(counts.get("pending") or 0), 1)
+            self.assertEqual(int(counts.get("rejected") or 0), 1)
+        finally:
+            admin_bridge.source_sync_module.push_sources_snapshot = original_push
+
+    def test_start_sync_task_creates_started_history_row(self):
+        admin_bridge.SYNC_CONFIG = admin_bridge.source_sync_module.resolve_sync_config(env={
+            "BALUFFO_SYNC_ENABLED": "true",
+            "BALUFFO_SYNC_GITHUB_TOKEN": "token",
+            "BALUFFO_SYNC_REPO": "owner/repo",
+        })
+        original_thread_cls = admin_bridge.threading.Thread
+        try:
+            class _NoStartThread:
+                def __init__(self, target=None, args=(), name=None, daemon=None):  # noqa: ANN001
+                    self.target = target
+                    self.args = args
+                    self.name = name
+                    self.daemon = daemon
+
+                def start(self):  # noqa: D401
+                    return None
+
+            admin_bridge.threading.Thread = _NoStartThread
+            result = admin_bridge.start_sync_task("pull")
+            self.assertTrue(result.get("started"))
+            self.assertEqual(str(result.get("task") or ""), "source_sync")
+            self.assertEqual(str(result.get("action") or ""), "pull")
+            rows = admin_bridge.load_run_history()
+            started = [row for row in rows if str(row.get("type") or "") == "sync" and str(row.get("status") or "") == "started"]
+            self.assertGreaterEqual(len(started), 1)
+            self.assertEqual(str(((started[-1].get("summary") or {}).get("action") or "")), "pull")
+        finally:
+            admin_bridge.threading.Thread = original_thread_cls
+
+    def test_sync_worker_writes_completed_row_with_summary(self):
+        admin_bridge.SYNC_CONFIG = admin_bridge.source_sync_module.resolve_sync_config(env={
+            "BALUFFO_SYNC_ENABLED": "true",
+            "BALUFFO_SYNC_GITHUB_TOKEN": "token",
+            "BALUFFO_SYNC_REPO": "owner/repo",
+        })
+        started_at = admin_bridge.now_iso()
+        admin_bridge.append_run_history({
+            "id": "sync_test_1",
+            "type": "sync",
+            "status": "started",
+            "startedAt": started_at,
+            "finishedAt": "",
+            "durationMs": 0,
+            "summary": {"action": "pull"},
+        })
+        original_pull = admin_bridge.sync_pull_sources
+        try:
+            admin_bridge.sync_pull_sources = lambda: {
+                "ok": True,
+                "changed": True,
+                "remoteFound": True,
+                "remoteSha": "abc123",
+                "remoteGeneratedAt": "2026-03-09T10:00:00+00:00",
+                "summary": {"activeCount": 1, "pendingCount": 2, "rejectedCount": 3},
+            }
+            admin_bridge._run_sync_task_worker("sync_test_1", "pull", started_at)  # noqa: SLF001
+            rows = admin_bridge.load_run_history()
+            finished = [row for row in rows if str(row.get("type") or "") == "sync" and str(row.get("finishedAt") or "")]
+            self.assertGreaterEqual(len(finished), 1)
+            last = finished[-1]
+            self.assertEqual(str(last.get("status") or ""), "ok")
+            summary = last.get("summary") or {}
+            self.assertEqual(str(summary.get("action") or ""), "pull")
+            self.assertEqual(int(summary.get("activeCount") or 0), 1)
+            self.assertEqual(int(summary.get("pendingCount") or 0), 2)
+            self.assertEqual(int(summary.get("rejectedCount") or 0), 3)
+        finally:
+            admin_bridge.sync_pull_sources = original_pull
+
+    def test_sync_worker_failure_writes_error_row(self):
+        started_at = admin_bridge.now_iso()
+        admin_bridge.append_run_history({
+            "id": "sync_test_err",
+            "type": "sync",
+            "status": "started",
+            "startedAt": started_at,
+            "finishedAt": "",
+            "durationMs": 0,
+            "summary": {"action": "push"},
+        })
+        original_push = admin_bridge.sync_push_sources
+        try:
+            def _boom():  # noqa: ANN202
+                raise RuntimeError("network down")
+
+            admin_bridge.sync_push_sources = _boom
+            admin_bridge._run_sync_task_worker("sync_test_err", "push", started_at)  # noqa: SLF001
+            rows = admin_bridge.load_run_history()
+            finished = [row for row in rows if str(row.get("id") or "") == "sync_test_err" and str(row.get("finishedAt") or "")]
+            self.assertEqual(len(finished), 1)
+            self.assertEqual(str(finished[0].get("status") or ""), "error")
+            self.assertIn("network down", str((finished[0].get("summary") or {}).get("error") or ""))
+        finally:
+            admin_bridge.sync_push_sources = original_push
 
 
 if __name__ == "__main__":

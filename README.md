@@ -117,8 +117,30 @@ Supported env vars:
 - `BALUFFO_DATA_DIR`
 - `BALUFFO_BRIDGE_LOG_FORMAT`
 - `BALUFFO_BRIDGE_LOG_LEVEL`
+- `BALUFFO_SYNC_ENABLED` (`true|false`, default `true`; set `false` to disable)
+- `BALUFFO_SYNC_GITHUB_TOKEN` (GitHub PAT, local env only)
+- `BALUFFO_SYNC_REPO` (`owner/repo`, dedicated private config repo)
+- `BALUFFO_SYNC_BRANCH` (optional, default `main`)
+- `BALUFFO_SYNC_PATH` (optional, default `baluffo/source-sync.json`)
 
 CLI/env precedence: `CLI > env > defaults`.
+
+Source sync API (admin bridge):
+
+- `GET /sync/status`
+- `POST /sync/pull`
+- `POST /sync/push`
+- `POST /tasks/run-sync-pull` (preferred for UI/task history)
+- `POST /tasks/run-sync-push` (preferred for UI/task history)
+
+Notes:
+- `/sync/pull` and `/sync/push` remain supported as direct synchronous APIs.
+- Task endpoints start async runs that appear in Ops Run History (`type: sync`).
+
+Snapshot schema (`source-sync.json`, v1):
+
+- `schemaVersion`, `generatedAt`, `source`
+- `active[]`, `pending[]`, `rejected[]`
 
 ### 6) Build ship bundle (zip-first)
 
@@ -183,6 +205,14 @@ npm run test:smoke
 
 ```powershell
 npm run test:py
+```
+
+### Fetcher performance baseline
+
+Compute current performance metrics (latest run + rolling history median):
+
+```powershell
+python scripts/fetcher_metrics.py --data-dir data --window-runs 20
 ```
 
 ## Data and Registry Files

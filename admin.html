@@ -46,11 +46,17 @@
           <h3 class="admin-fetcher-title">Operations Health</h3>
           <div class="admin-fetcher-actions">
             <button id="admin-refresh-ops-btn" class="btn clear-filters-btn">Refresh Ops Health</button>
+            <button id="admin-sync-pull-btn" class="btn clear-filters-btn">Pull Sources Sync</button>
+            <button id="admin-sync-push-btn" class="btn clear-filters-btn">Push Sources Sync</button>
+            <button id="admin-sync-refresh-btn" class="btn clear-filters-btn">Sync Status</button>
           </div>
         </div>
+        <div id="admin-sync-status" class="results-summary">Sync status unavailable.</div>
         <div id="admin-ops-alerts" class="admin-ops-alerts"></div>
         <div id="admin-ops-kpis" class="admin-ops-kpis"></div>
         <div id="admin-ops-schedule" class="admin-ops-schedule"></div>
+        <h4 class="admin-section-title">Fetcher Metrics</h4>
+        <div id="admin-ops-fetcher-metrics" class="admin-ops-kpis"></div>
         <div id="admin-ops-trends" class="results-summary">No run trend data yet.</div>
         <h4 class="admin-section-title">Run History</h4>
         <div id="admin-ops-history" class="jobs-list"></div>

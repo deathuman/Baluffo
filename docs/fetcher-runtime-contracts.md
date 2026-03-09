@@ -4,8 +4,13 @@
 
 - `--max-workers` (default `6`): max concurrent source loaders.
 - `--max-per-domain` (default `2`): max concurrent requests per host across workers.
+- `--fetch-strategy` (default `auto`): transport preference (`auto`, `http`, `browser`).
+- `--adapter-http-concurrency` (default `24`): async HTTP client connection pool size.
 - `--skip-successful-sources`: incremental mode, skips sources recently successful within TTL.
 - `--source-ttl-minutes` (default `360`): TTL window for incremental skip.
+- `--respect-source-cadence`: applies hot/cold cadence skip based on source-state recency.
+- `--hot-source-cadence-minutes` (default `15`): cadence for recently changed sources.
+- `--cold-source-cadence-minutes` (default `60`): cadence for stable sources.
 - `--only-sources`: comma-separated list of source loader names to run.
 - `--circuit-breaker-failures` (default `3`): consecutive failures to trigger quarantine.
 - `--circuit-breaker-cooldown-minutes` (default `180`): quarantine duration.
@@ -23,7 +28,12 @@ Optional overrides:
 
 - `maxWorkers`
 - `maxPerDomain`
+- `fetchStrategy`
+- `adapterHttpConcurrency`
 - `sourceTtlMinutes`
+- `respectSourceCadence`
+- `hotSourceCadenceMinutes`
+- `coldSourceCadenceMinutes`
 - `circuitBreakerFailures`
 - `circuitBreakerCooldownMinutes`
 - `skipSuccessfulSources`

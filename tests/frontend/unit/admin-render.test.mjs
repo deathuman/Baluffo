@@ -79,6 +79,13 @@ test("admin render: schedule/trends/history render deterministic core text", () 
     ],
     olderCompletedRows: [
       {
+        type: "sync",
+        status: "ok",
+        durationMs: 700,
+        finishedAt: "2026-03-08T08:30:00.000Z",
+        summary: { action: "pull", activeCount: 12, pendingCount: 4, rejectedCount: 1 }
+      },
+      {
         type: "fetch",
         status: "ok",
         durationMs: 2100,
@@ -89,11 +96,12 @@ test("admin render: schedule/trends/history render deterministic core text", () 
   });
   assert.match(historyEl.innerHTML, /admin-ops-history-row/);
   assert.match(historyEl.innerHTML, /Current Runs/);
-  assert.match(historyEl.innerHTML, /Older runs \(2\)/);
+  assert.match(historyEl.innerHTML, /Older runs \(3\)/);
   assert.match(historyEl.innerHTML, /running/);
   assert.match(historyEl.innerHTML, /critical/);
   assert.match(historyEl.innerHTML, />42</);
   assert.match(historyEl.innerHTML, /Queued \(new\): 5/);
+  assert.match(historyEl.innerHTML, /Sync pull/i);
 });
 
 test("admin render: signature patching skips redundant alerts/kpis/schedule rewrites", () => {

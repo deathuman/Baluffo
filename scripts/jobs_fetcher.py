@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 import hashlib
@@ -21,6 +22,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree as ET
+try:
+    import httpx
+except Exception:  # noqa: BLE001
+    httpx = None
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -221,6 +226,10 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
 DEFAULT_TIMEOUT_S = 20
 DEFAULT_RETRIES = 2
 DEFAULT_BACKOFF_S = 1.6
+DEFAULT_FETCH_STRATEGY = "auto"
+DEFAULT_ADAPTER_HTTP_CONCURRENCY = 24
+DEFAULT_HOT_SOURCE_CADENCE_MINUTES = 15
+DEFAULT_COLD_SOURCE_CADENCE_MINUTES = 60
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / "data"
 SOURCE_REGISTRY_ACTIVE_PATH = DEFAULT_OUTPUT_DIR / "source-registry-active.json"
 SOURCE_REGISTRY_PENDING_PATH = DEFAULT_OUTPUT_DIR / "source-registry-pending.json"
@@ -361,7 +370,10 @@ def registry_entries(adapter: str, *, enabled_only: bool = True) -> List[Dict[st
             continue
         if enabled_only and not bool(row.get("enabledByDefault", True)):
             continue
-        rows.append(row)
+        normalized = dict(row)
+        normalized["fetchStrategy"] = clean_text(row.get("fetchStrategy")) or "auto"
+        normalized["cadenceMinutes"] = _clamped_int(row.get("cadenceMinutes"), 0, 0)
+        rows.append(normalized)
     return rows
 
 
@@ -1107,6 +1119,91 @@ def default_fetch_text(url: str, timeout_s: int) -> str:
         raise RuntimeError(f"HTTP {exc.code} for {url}") from exc
     except URLError as exc:
         raise RuntimeError(f"Network error for {url}: {exc.reason}") from exc
+
+
+class AsyncHttpTextFetcher:
+    def __init__(self, *, max_connections: int = DEFAULT_ADAPTER_HTTP_CONCURRENCY) -> None:
+        if httpx is None:
+            raise RuntimeError("httpx is not installed")
+        self._max_connections = max(1, int(max_connections or 1))
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._ready = threading.Event()
+        self._closed = False
+        self._thread.start()
+        if not self._ready.wait(timeout=5):
+            raise RuntimeError("Async HTTP loop initialization timed out")
+
+    def _run_loop(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        self._client = httpx.AsyncClient(
+            follow_redirects=True,
+            headers={
+                "User-Agent": "BaluffoJobsFetcher/1.0 (+https://github.com/)",
+                "Accept": "application/json,text/html,text/csv,*/*",
+            },
+            limits=httpx.Limits(
+                max_keepalive_connections=self._max_connections,
+                max_connections=max(self._max_connections * 2, self._max_connections),
+            ),
+        )
+        self._ready.set()
+        self._loop.run_forever()
+
+    async def _fetch(self, url: str, timeout_s: int) -> str:
+        timeout = httpx.Timeout(float(max(1, timeout_s)))
+        try:
+            response = await self._client.get(url, timeout=timeout)
+            response.raise_for_status()
+            return response.text
+        except httpx.HTTPStatusError as exc:
+            code = int(getattr(exc.response, "status_code", 0) or 0)
+            raise RuntimeError(f"HTTP {code} for {url}") from exc
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"Network error for {url}: {exc}") from exc
+
+    async def _aclose(self) -> None:
+        await self._client.aclose()
+
+    def fetch_text(self, url: str, timeout_s: int) -> str:
+        if self._closed:
+            raise RuntimeError("Async HTTP fetcher is closed")
+        future = asyncio.run_coroutine_threadsafe(self._fetch(url, timeout_s), self._loop)
+        return str(future.result())
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            future = asyncio.run_coroutine_threadsafe(self._aclose(), self._loop)
+            future.result(timeout=5)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        except Exception:  # noqa: BLE001
+            pass
+        self._thread.join(timeout=2)
+
+
+def resolve_fetch_text_impl(
+    *,
+    fetch_text: Callable[[str, int], str],
+    fetch_strategy: str,
+    adapter_http_concurrency: int,
+) -> Tuple[Callable[[str, int], str], str, Optional[AsyncHttpTextFetcher]]:
+    strategy = norm_text(fetch_strategy)
+    chosen = "urllib"
+    async_fetcher: Optional[AsyncHttpTextFetcher] = None
+    if strategy in {"http", "auto"} and httpx is not None:
+        try:
+            async_fetcher = AsyncHttpTextFetcher(max_connections=adapter_http_concurrency)
+            chosen = "httpx_async"
+            return async_fetcher.fetch_text, chosen, async_fetcher
+        except Exception:  # noqa: BLE001
+            pass
+    return fetch_text, chosen, async_fetcher
 
 
 def fetch_with_retries(url: str, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> str:
@@ -2920,8 +3017,18 @@ def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count:
     return {
         "maxWorkers": _clamped_int(src.get("maxWorkers"), 1, 1),
         "maxPerDomain": _clamped_int(src.get("maxPerDomain"), 1, 1),
+        "fetchStrategy": clean_text(src.get("fetchStrategy")) or DEFAULT_FETCH_STRATEGY,
+        "fetchClient": clean_text(src.get("fetchClient")) or "urllib",
+        "adapterHttpConcurrency": _clamped_int(src.get("adapterHttpConcurrency"), DEFAULT_ADAPTER_HTTP_CONCURRENCY, 1),
         "seedFromExistingOutput": bool(src.get("seedFromExistingOutput")),
         "sourceTtlMinutes": _clamped_int(src.get("sourceTtlMinutes"), 0, 0),
+        "respectSourceCadence": bool(src.get("respectSourceCadence")),
+        "hotSourceCadenceMinutes": _clamped_int(
+            src.get("hotSourceCadenceMinutes"), DEFAULT_HOT_SOURCE_CADENCE_MINUTES, 1
+        ),
+        "coldSourceCadenceMinutes": _clamped_int(
+            src.get("coldSourceCadenceMinutes"), DEFAULT_COLD_SOURCE_CADENCE_MINUTES, 1
+        ),
         "circuitBreakerFailures": _clamped_int(src.get("circuitBreakerFailures"), 0, 0),
         "circuitBreakerCooldownMinutes": _clamped_int(src.get("circuitBreakerCooldownMinutes"), 0, 0),
         "ignoreCircuitBreaker": bool(src.get("ignoreCircuitBreaker")),
@@ -2935,6 +3042,7 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "name": clean_text(src.get("name")),
         "status": norm_text(src.get("status")) or "error",
         "adapter": clean_text(src.get("adapter")) or "custom",
+        "fetchStrategy": clean_text(src.get("fetchStrategy")) or "auto",
         "studio": clean_text(src.get("studio")),
         "fetchedCount": _clamped_int(src.get("fetchedCount"), 0, 0),
         "keptCount": _clamped_int(src.get("keptCount"), 0, 0),
@@ -3033,6 +3141,31 @@ def should_skip_source_by_ttl(source_name: str, state_rows: Dict[str, Dict[str, 
     return age_seconds < float(ttl_minutes * 60)
 
 
+def should_skip_source_by_cadence(
+    source_name: str,
+    state_rows: Dict[str, Dict[str, Any]],
+    *,
+    hot_minutes: int,
+    cold_minutes: int,
+) -> bool:
+    entry = state_rows.get(source_name)
+    if not isinstance(entry, dict):
+        return False
+    if int(entry.get("consecutiveFailures") or 0) > 0:
+        return False
+    baseline = parse_datetime(entry.get("lastSuccessAt"))
+    if not baseline:
+        return False
+    cadence_minutes = max(1, int(cold_minutes or 1))
+    last_changed = parse_datetime(entry.get("lastChangedAt"))
+    if last_changed:
+        age_since_change_seconds = max(0.0, (datetime.now(timezone.utc) - last_changed).total_seconds())
+        if age_since_change_seconds <= 24 * 60 * 60:
+            cadence_minutes = max(1, int(hot_minutes or 1))
+    age_seconds = max(0.0, (datetime.now(timezone.utc) - baseline).total_seconds())
+    return age_seconds < float(cadence_minutes * 60)
+
+
 def circuit_breaker_until(source_name: str, state_rows: Dict[str, Dict[str, Any]], failure_threshold: int) -> Optional[datetime]:
     if failure_threshold <= 0:
         return None
@@ -3052,6 +3185,7 @@ def _build_excluded_source_report(source_name: str, reason: str) -> Dict[str, An
         "name": source_name,
         "status": "excluded",
         "adapter": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter")) or "custom",
+        "fetchStrategy": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy")) or "auto",
         "studio": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("studio")) or "",
         "fetchedCount": 0,
         "keptCount": 0,
@@ -3108,10 +3242,16 @@ def update_source_state_rows(
         entry["lastKeptCount"] = int(report.get("keptCount") or 0)
         if entry["lastStatus"] == "ok":
             entry["lastSuccessAt"] = finished_at
-            if entry["lastKeptCount"] > 0:
-                entry["lastFingerprint"] = source_rows_fingerprint(
+            reported_fingerprint = clean_text(report.get("sourceFingerprint"))
+            if not reported_fingerprint and entry["lastKeptCount"] > 0:
+                reported_fingerprint = source_rows_fingerprint(
                     [row for row in canonical_rows if clean_text(row.get("source")) == name]
                 )
+            previous_fingerprint = clean_text(entry.get("lastFingerprint"))
+            if reported_fingerprint:
+                entry["lastFingerprint"] = reported_fingerprint
+                if reported_fingerprint != previous_fingerprint:
+                    entry["lastChangedAt"] = finished_at
             entry["consecutiveFailures"] = 0
             entry.pop("quarantinedUntilAt", None)
             entry.pop("lastFailureAt", None)
@@ -3142,6 +3282,11 @@ def run_pipeline(
     source_ttl_minutes: int = 0,
     max_workers: int = 1,
     max_per_domain: int = 2,
+    fetch_strategy: str = DEFAULT_FETCH_STRATEGY,
+    adapter_http_concurrency: int = DEFAULT_ADAPTER_HTTP_CONCURRENCY,
+    respect_source_cadence: bool = False,
+    hot_source_cadence_minutes: int = DEFAULT_HOT_SOURCE_CADENCE_MINUTES,
+    cold_source_cadence_minutes: int = DEFAULT_COLD_SOURCE_CADENCE_MINUTES,
     circuit_breaker_failures: int = 3,
     circuit_breaker_cooldown_minutes: int = 180,
     ignore_circuit_breaker: bool = False,
@@ -3167,6 +3312,14 @@ def run_pipeline(
     canonical_rows: List[RawJob] = []
     max_workers = max(1, int(max_workers or 1))
     max_per_domain = max(1, int(max_per_domain or 1))
+    adapter_http_concurrency = max(1, int(adapter_http_concurrency or 1))
+    hot_source_cadence_minutes = max(1, int(hot_source_cadence_minutes or 1))
+    cold_source_cadence_minutes = max(1, int(cold_source_cadence_minutes or 1))
+    fetch_text_impl, fetch_client, async_fetcher = resolve_fetch_text_impl(
+        fetch_text=fetch_text,
+        fetch_strategy=fetch_strategy,
+        adapter_http_concurrency=adapter_http_concurrency,
+    )
     source_state_rows = read_source_state(source_state_path)
     lifecycle_rows = read_job_lifecycle_state(lifecycle_state_path)
     if seed_from_existing_output:
@@ -3219,13 +3372,36 @@ def run_pipeline(
     runtime_payload = normalize_runtime_payload({
         "maxWorkers": max_workers,
         "maxPerDomain": max_per_domain,
+        "fetchStrategy": clean_text(fetch_strategy) or DEFAULT_FETCH_STRATEGY,
+        "fetchClient": fetch_client,
+        "adapterHttpConcurrency": adapter_http_concurrency,
         "seedFromExistingOutput": bool(seed_from_existing_output),
         "sourceTtlMinutes": int(source_ttl_minutes or 0),
+        "respectSourceCadence": bool(respect_source_cadence),
+        "hotSourceCadenceMinutes": hot_source_cadence_minutes,
+        "coldSourceCadenceMinutes": cold_source_cadence_minutes,
         "circuitBreakerFailures": int(circuit_breaker_failures or 0),
         "circuitBreakerCooldownMinutes": int(circuit_breaker_cooldown_minutes or 0),
         "ignoreCircuitBreaker": bool(ignore_circuit_breaker),
         "selectedSourceCount": len(selected_loaders),
     }, selected_source_count=len(selected_loaders))
+
+    if respect_source_cadence:
+        cadence_skipped: List[Dict[str, Any]] = []
+        filtered_loaders: List[Tuple[str, SourceLoader]] = []
+        for name, loader in selected_loaders:
+            if should_skip_source_by_cadence(
+                name,
+                source_state_rows,
+                hot_minutes=hot_source_cadence_minutes,
+                cold_minutes=cold_source_cadence_minutes,
+            ):
+                cadence_skipped.append(_build_excluded_source_report(name, "skipped_by_source_cadence"))
+                continue
+            filtered_loaders.append((name, loader))
+        selected_loaders = filtered_loaders
+        source_reports.extend(cadence_skipped)
+        runtime_payload["selectedSourceCount"] = len(selected_loaders)
 
     selected_loaders, excluded_by_circuit = apply_circuit_breaker_exclusions(
         selected_loaders,
@@ -3296,7 +3472,7 @@ def run_pipeline(
                             task_rows[current]["heartbeatAt"] = now_iso()
                     last_heartbeat_write[current] = now_mono
                     write_task_state()
-            return fetch_text(url, timeout)
+            return fetch_text_impl(url, timeout)
         finally:
             gate.release()
 
@@ -3307,6 +3483,7 @@ def run_pipeline(
             "name": name,
             "status": "ok",
             "adapter": clean_text(base_meta.get("adapter")) or "custom",
+            "fetchStrategy": clean_text(base_meta.get("fetchStrategy")) or "auto",
             "studio": clean_text(base_meta.get("studio")) or "",
             "fetchedCount": 0,
             "keptCount": 0,
@@ -3325,6 +3502,10 @@ def run_pipeline(
                     canonical_batch.append(normalized)
                     kept += 1
             report["keptCount"] = kept
+            current_fingerprint = source_rows_fingerprint(canonical_batch)
+            previous_fingerprint = clean_text((source_state_rows.get(name) or {}).get("lastFingerprint"))
+            report["sourceFingerprint"] = current_fingerprint
+            report["fingerprintChanged"] = bool(current_fingerprint != previous_fingerprint)
             diag = SOURCE_DIAGNOSTICS.get(name) or {}
             if clean_text(diag.get("adapter")):
                 report["adapter"] = clean_text(diag.get("adapter"))
@@ -3384,6 +3565,7 @@ def run_pipeline(
             "name": source_name,
             "status": "error",
             "adapter": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter")) or "custom",
+            "fetchStrategy": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy")) or "auto",
             "studio": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("studio")) or "",
             "fetchedCount": 0,
             "keptCount": 0,
@@ -3415,7 +3597,11 @@ def run_pipeline(
 
     write_progress_report()
     write_task_state(force=True)
-    run_source_execution_stage()
+    try:
+        run_source_execution_stage()
+    finally:
+        if async_fetcher is not None:
+            async_fetcher.close()
 
     if using_default_loaders:
         append_excluded_default_sources(source_reports)
@@ -3549,10 +3735,39 @@ def parse_args() -> argparse.Namespace:
         help="Max concurrent in-flight requests allowed per domain across workers.",
     )
     parser.add_argument(
+        "--fetch-strategy",
+        choices=("auto", "http", "browser"),
+        default=DEFAULT_FETCH_STRATEGY,
+        help="Fetch transport strategy. 'http' prefers async httpx, 'auto' falls back safely, 'browser' keeps HTTP mode in this runtime.",
+    )
+    parser.add_argument(
+        "--adapter-http-concurrency",
+        type=int,
+        default=DEFAULT_ADAPTER_HTTP_CONCURRENCY,
+        help="Connection pool size used by async HTTP fetch transport.",
+    )
+    parser.add_argument(
         "--source-ttl-minutes",
         type=int,
         default=360,
         help="Freshness window for --skip-successful-sources. Recently successful sources are skipped until TTL expires.",
+    )
+    parser.add_argument(
+        "--respect-source-cadence",
+        action="store_true",
+        help="Apply source-level hot/cold cadence skipping using source state history.",
+    )
+    parser.add_argument(
+        "--hot-source-cadence-minutes",
+        type=int,
+        default=DEFAULT_HOT_SOURCE_CADENCE_MINUTES,
+        help="Cadence for recently changed sources when --respect-source-cadence is enabled.",
+    )
+    parser.add_argument(
+        "--cold-source-cadence-minutes",
+        type=int,
+        default=DEFAULT_COLD_SOURCE_CADENCE_MINUTES,
+        help="Cadence for stable sources when --respect-source-cadence is enabled.",
     )
     parser.add_argument(
         "--circuit-breaker-failures",
@@ -3626,8 +3841,13 @@ def main() -> int:
         source_ttl_minutes=args.source_ttl_minutes,
         max_workers=args.max_workers,
         max_per_domain=args.max_per_domain,
+        fetch_strategy=args.fetch_strategy,
+        adapter_http_concurrency=args.adapter_http_concurrency,
         circuit_breaker_failures=args.circuit_breaker_failures,
         circuit_breaker_cooldown_minutes=args.circuit_breaker_cooldown_minutes,
+        respect_source_cadence=bool(args.respect_source_cadence),
+        hot_source_cadence_minutes=args.hot_source_cadence_minutes,
+        cold_source_cadence_minutes=args.cold_source_cadence_minutes,
         ignore_circuit_breaker=bool(args.ignore_circuit_breaker or forced_only_sources),
         show_progress=not args.quiet,
     )

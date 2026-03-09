@@ -1,612 +1,218 @@
 {
   "schemaVersion": "1.0",
-  "startedAt": "2026-03-08T19:44:36.843229+00:00",
-  "finishedAt": "2026-03-08T19:46:26.183269+00:00",
+  "startedAt": "2026-03-09T09:19:57.062820+00:00",
+  "finishedAt": "2026-03-09T09:20:16.165568+00:00",
   "runtime": {
     "maxWorkers": 6,
     "maxPerDomain": 2,
+    "fetchStrategy": "auto",
+    "fetchClient": "urllib",
+    "adapterHttpConcurrency": 24,
     "seedFromExistingOutput": false,
     "sourceTtlMinutes": 360,
+    "respectSourceCadence": false,
+    "hotSourceCadenceMinutes": 15,
+    "coldSourceCadenceMinutes": 60,
     "circuitBreakerFailures": 3,
     "circuitBreakerCooldownMinutes": 180,
     "ignoreCircuitBreaker": false,
-    "selectedSourceCount": 21
+    "selectedSourceCount": 12
   },
   "summary": {
-    "inputCount": 34110,
-    "mergedCount": 711,
-    "outputCount": 33399,
-    "rawFetchedCount": 34110,
-    "uniqueOutputCount": 33399,
-    "sourceBundleCollisions": 418,
-    "targetRoleCount": 225,
+    "inputCount": 33505,
+    "mergedCount": 485,
+    "outputCount": 33020,
+    "rawFetchedCount": 33505,
+    "uniqueOutputCount": 33020,
+    "sourceBundleCollisions": 212,
+    "targetRoleCount": 203,
     "netherlandsCount": 311,
-    "remoteCount": 5849,
+    "remoteCount": 5868,
     "targetRoleNetherlandsCount": 0,
-    "targetRoleRemoteCount": 35,
+    "targetRoleRemoteCount": 37,
     "preservedPreviousOutput": false,
-    "sourceCount": 22,
-    "successfulSources": 21,
-    "failedSources": 0,
+    "sourceCount": 13,
+    "successfulSources": 11,
+    "failedSources": 1,
     "excludedSources": 1,
-    "activeSourceCount": 36,
-    "pendingSourceCount": 69,
+    "activeSourceCount": 15,
+    "pendingSourceCount": 0,
     "newlyApprovedSinceLastRun": 0,
-    "jsonBytes": 35565562,
-    "csvBytes": 19394533,
-    "lightJsonBytes": 16725158,
+    "jsonBytes": 40227490,
+    "csvBytes": 21475839,
+    "lightJsonBytes": 19152068,
     "sizeGuardrailExceeded": false,
-    "recordGuardrailExceeded": false
+    "recordGuardrailExceeded": false,
+    "lifecycleActiveCount": 33020,
+    "lifecycleLikelyRemovedCount": 0,
+    "lifecycleArchivedCount": 0,
+    "lifecycleTrackedCount": 33020
   },
   "sources": [
     {
       "name": "remote_ok",
       "status": "ok",
       "adapter": "api",
+      "fetchStrategy": "http",
       "studio": "remote_ok",
-      "fetchedCount": 48,
-      "keptCount": 48,
+      "fetchedCount": 49,
+      "keptCount": 49,
       "error": "",
-      "durationMs": 223
+      "durationMs": 159
     },
     {
       "name": "gamesindustry",
       "status": "ok",
       "adapter": "html",
+      "fetchStrategy": "http",
       "studio": "gamesindustry",
       "fetchedCount": 24,
       "keptCount": 24,
       "error": "",
-      "durationMs": 429
-    },
-    {
-      "name": "smartrecruiters_sources",
-      "status": "ok",
-      "adapter": "smartrecruiters",
-      "studio": "multiple",
-      "fetchedCount": 103,
-      "keptCount": 103,
-      "error": "",
-      "durationMs": 517,
-      "details": [
-        {
-          "adapter": "smartrecruiters",
-          "studio": "CD PROJEKT RED",
-          "name": "CD PROJEKT RED (SmartRecruiters)",
-          "status": "ok",
-          "fetchedCount": 99,
-          "keptCount": 28,
-          "error": ""
-        },
-        {
-          "adapter": "smartrecruiters",
-          "studio": "Gameloft",
-          "name": "Gameloft (SmartRecruiters)",
-          "status": "ok",
-          "fetchedCount": 67,
-          "keptCount": 67,
-          "error": ""
-        },
-        {
-          "adapter": "smartrecruiters",
-          "studio": "People Can Fly",
-          "name": "People Can Fly (SmartRecruiters)",
-          "status": "ok",
-          "fetchedCount": 19,
-          "keptCount": 8,
-          "error": ""
-        }
-      ]
+      "durationMs": 270
     },
     {
       "name": "greenhouse_boards",
       "status": "ok",
       "adapter": "greenhouse",
+      "fetchStrategy": "http",
       "studio": "multiple",
-      "fetchedCount": 402,
-      "keptCount": 402,
+      "fetchedCount": 206,
+      "keptCount": 206,
       "error": "",
-      "durationMs": 1872,
+      "durationMs": 664,
       "details": [
-        {
-          "adapter": "greenhouse",
-          "studio": "Guerrilla Games",
-          "name": "Guerrilla Games",
-          "status": "ok",
-          "fetchedCount": 9,
-          "keptCount": 9,
-          "error": ""
-        },
-        {
-          "adapter": "greenhouse",
-          "studio": "PlayStation Global",
-          "name": "PlayStation Global",
-          "status": "ok",
-          "fetchedCount": 196,
-          "keptCount": 196,
-          "error": ""
-        },
-        {
-          "adapter": "greenhouse",
-          "studio": "Rockstar Games",
-          "name": "Rockstar Games (Greenhouse)",
-          "status": "ok",
-          "fetchedCount": 74,
-          "keptCount": 74,
-          "error": ""
-        },
-        {
-          "adapter": "greenhouse",
-          "studio": "Take-Two Interactive",
-          "name": "Take-Two Interactive (Greenhouse)",
-          "status": "ok",
-          "fetchedCount": 39,
-          "keptCount": 39,
-          "error": ""
-        },
-        {
-          "adapter": "greenhouse",
-          "studio": "Penn Interactive",
-          "name": "Penn Interactive (Greenhouse)",
-          "status": "ok",
-          "fetchedCount": 36,
-          "keptCount": 36,
-          "error": ""
-        },
-        {
-          "adapter": "greenhouse",
-          "studio": "Wildlife Studios",
-          "name": "Wildlife Studios (Greenhouse)",
-          "status": "ok",
-          "fetchedCount": 23,
-          "keptCount": 23,
-          "error": ""
-        },
-        {
-          "adapter": "greenhouse",
-          "studio": "Hangar 13",
-          "name": "Hangar 13 (Greenhouse)",
-          "status": "ok",
-          "fetchedCount": 16,
-          "keptCount": 16,
-          "error": ""
-        },
-        {
-          "adapter": "greenhouse",
-          "studio": "Haven Studios",
-          "name": "Haven Studios (Greenhouse)",
-          "status": "ok",
-          "fetchedCount": 9,
-          "keptCount": 9,
-          "error": ""
-        }
+        "{'adapter': 'greenhouse', 'studio': 'Guerrilla Games', 'name': 'Guerrilla Games', 'status': 'ok', 'fetchedCount': 9, 'keptCount': 9, 'error': ''}",
+        "{'adapter': 'greenhouse', 'studio': 'PlayStation Global', 'name': 'PlayStation Global', 'status': 'ok', 'fetchedCount': 197, 'keptCount': 197, 'error': ''}"
+      ]
+    },
+    {
+      "name": "smartrecruiters_sources",
+      "status": "ok",
+      "adapter": "smartrecruiters",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 95,
+      "keptCount": 95,
+      "error": "",
+      "durationMs": 480,
+      "details": [
+        "{'adapter': 'smartrecruiters', 'studio': 'CD PROJEKT RED', 'name': 'CD PROJEKT RED (SmartRecruiters)', 'status': 'ok', 'fetchedCount': 99, 'keptCount': 28, 'error': ''}",
+        "{'adapter': 'smartrecruiters', 'studio': 'Gameloft', 'name': 'Gameloft (SmartRecruiters)', 'status': 'ok', 'fetchedCount': 67, 'keptCount': 67, 'error': ''}"
+      ]
+    },
+    {
+      "name": "workable_sources",
+      "status": "ok",
+      "adapter": "workable",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 8,
+      "keptCount": 8,
+      "error": "",
+      "durationMs": 456,
+      "details": [
+        "{'adapter': 'workable', 'studio': 'Hutch', 'name': 'Hutch (Workable)', 'status': 'ok', 'fetchedCount': 8, 'keptCount': 8, 'error': ''}",
+        "{'adapter': 'workable', 'studio': 'Wargaming', 'name': 'Wargaming (Workable)', 'status': 'ok', 'fetchedCount': 0, 'keptCount': 0, 'error': ''}"
       ]
     },
     {
       "name": "ashby_sources",
       "status": "ok",
       "adapter": "ashby",
+      "fetchStrategy": "http",
       "studio": "multiple",
       "fetchedCount": 0,
       "keptCount": 0,
       "error": "",
-      "durationMs": 0
-    },
-    {
-      "name": "personio_sources",
-      "status": "ok",
-      "adapter": "personio",
-      "studio": "multiple",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "error": "",
-      "durationMs": 0
-    },
-    {
-      "name": "workable_sources",
-      "status": "ok",
-      "adapter": "workable",
-      "studio": "multiple",
-      "fetchedCount": 87,
-      "keptCount": 87,
-      "error": "",
-      "durationMs": 1152,
+      "durationMs": 528,
       "details": [
-        {
-          "adapter": "workable",
-          "studio": "Hutch",
-          "name": "Hutch (Workable)",
-          "status": "ok",
-          "fetchedCount": 8,
-          "keptCount": 8,
-          "error": ""
-        },
-        {
-          "adapter": "workable",
-          "studio": "Wargaming",
-          "name": "Wargaming (Workable)",
-          "status": "ok",
-          "fetchedCount": 0,
-          "keptCount": 0,
-          "error": ""
-        },
-        {
-          "adapter": "workable",
-          "studio": "Vertigo Games",
-          "name": "Vertigo Games (Workable)",
-          "status": "ok",
-          "fetchedCount": 15,
-          "keptCount": 15,
-          "error": ""
-        },
-        {
-          "adapter": "workable",
-          "studio": "Lighthouse Games",
-          "name": "Lighthouse Games (Workable)",
-          "status": "ok",
-          "fetchedCount": 25,
-          "keptCount": 25,
-          "error": ""
-        },
-        {
-          "adapter": "workable",
-          "studio": "Climax Studios",
-          "name": "Climax Studios (Workable)",
-          "status": "ok",
-          "fetchedCount": 30,
-          "keptCount": 30,
-          "error": ""
-        },
-        {
-          "adapter": "workable",
-          "studio": "Velan Studios",
-          "name": "Velan Studios (Workable)",
-          "status": "ok",
-          "fetchedCount": 9,
-          "keptCount": 9,
-          "error": ""
-        }
+        "{'adapter': 'ashby', 'studio': 'Jagex', 'name': 'Jagex (Ashby)', 'status': 'error', 'fetchedCount': 0, 'keptCount': 0, 'error': 'no jobs extracted from ashby board html'}",
+        "{'adapter': 'ashby', 'studio': 'Scopely', 'name': 'Scopely (Ashby)', 'status': 'error', 'fetchedCount': 0, 'keptCount': 0, 'error': 'no jobs extracted from ashby board html'}"
       ]
     },
     {
-      "name": "google_sheets",
-      "status": "ok",
-      "adapter": "csv",
-      "studio": "community_sheet",
-      "fetchedCount": 32811,
-      "keptCount": 32811,
-      "error": "",
-      "durationMs": 4099
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.nixxes.com/jobs",
+      "name": "static_source::auto:00fb61a6597b",
       "status": "ok",
       "adapter": "static",
-      "studio": "Nixxes",
-      "fetchedCount": 2,
-      "keptCount": 2,
-      "error": "",
-      "durationMs": 3492,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Nixxes",
-          "name": "Nixxes (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 2,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "epic_games_careers",
-      "status": "ok",
-      "adapter": "api",
-      "studio": "epic_games",
-      "fetchedCount": 256,
-      "keptCount": 256,
-      "error": "",
-      "durationMs": 6842
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.cdprojekt.com/en/careers",
-      "status": "ok",
-      "adapter": "static",
-      "studio": "Cdprojekt",
-      "fetchedCount": 1,
-      "keptCount": 1,
-      "error": "",
-      "durationMs": 2915,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Cdprojekt",
-          "name": "Cdprojekt (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 1,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.ioi.dk/careers",
-      "status": "ok",
-      "adapter": "static",
-      "studio": "Ioi",
-      "fetchedCount": 1,
-      "keptCount": 1,
-      "error": "",
-      "durationMs": 2217,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Ioi",
-          "name": "Ioi (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 1,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.fingersoft.com/careers",
-      "status": "ok",
-      "adapter": "static",
-      "studio": "Fingersoft",
-      "fetchedCount": 1,
-      "keptCount": 1,
-      "error": "",
-      "durationMs": 1823,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Fingersoft",
-          "name": "Fingersoft (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 1,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:name:little chicken",
-      "status": "ok",
-      "adapter": "static",
+      "fetchStrategy": "auto",
       "studio": "Little Chicken",
       "fetchedCount": 10,
       "keptCount": 10,
       "error": "",
-      "durationMs": 8701,
+      "durationMs": 3206,
       "details": [
-        {
-          "adapter": "static",
-          "studio": "Little Chicken",
-          "name": "Little Chicken",
-          "status": "ok",
-          "fetchedCount": 2,
-          "keptCount": 10,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://career.paradoxplaza.com",
-      "status": "ok",
-      "adapter": "static",
-      "studio": "Paradoxplaza",
-      "fetchedCount": 5,
-      "keptCount": 5,
-      "error": "",
-      "durationMs": 3886,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Paradoxplaza",
-          "name": "Paradoxplaza (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 5,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "teamtailor_sources",
-      "status": "ok",
-      "adapter": "teamtailor",
-      "studio": "multiple",
-      "fetchedCount": 33,
-      "keptCount": 33,
-      "error": "",
-      "durationMs": 12442,
-      "details": [
-        {
-          "adapter": "teamtailor",
-          "studio": "Paradox Interactive",
-          "name": "Paradox Careers",
-          "status": "ok",
-          "fetchedCount": 20,
-          "keptCount": 20,
-          "error": ""
-        },
-        {
-          "adapter": "teamtailor",
-          "studio": "Push Gaming",
-          "name": "Push Gaming (Teamtailor)",
-          "status": "ok",
-          "fetchedCount": 13,
-          "keptCount": 13,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.activision.com",
-      "status": "ok",
-      "adapter": "static",
-      "studio": "Activision Blizzard",
-      "fetchedCount": 10,
-      "keptCount": 10,
-      "error": "",
-      "durationMs": 7366,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Activision Blizzard",
-          "name": "Activision Blizzard (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 10,
-          "error": ""
-        }
+        "{'adapter': 'static', 'studio': 'Little Chicken', 'name': 'Little Chicken', 'status': 'ok', 'fetchedCount': 2, 'keptCount': 10, 'error': ''}"
       ]
     },
     {
       "name": "lever_sources",
       "status": "ok",
       "adapter": "lever",
+      "fetchStrategy": "http",
       "studio": "multiple",
-      "fetchedCount": 111,
-      "keptCount": 111,
+      "fetchedCount": 26,
+      "keptCount": 26,
       "error": "",
-      "durationMs": 20369,
+      "durationMs": 5243,
       "details": [
-        {
-          "adapter": "lever",
-          "studio": "Jagex",
-          "name": "Jagex (Lever)",
-          "status": "ok",
-          "fetchedCount": 0,
-          "keptCount": 0,
-          "error": ""
-        },
-        {
-          "adapter": "lever",
-          "studio": "Sandbox VR",
-          "name": "Sandbox VR (Lever)",
-          "status": "ok",
-          "fetchedCount": 31,
-          "keptCount": 0,
-          "error": ""
-        },
-        {
-          "adapter": "lever",
-          "studio": "Voodoo",
-          "name": "Voodoo (Lever)",
-          "status": "ok",
-          "fetchedCount": 34,
-          "keptCount": 26,
-          "error": ""
-        },
-        {
-          "adapter": "lever",
-          "studio": "Behaviour Interactive",
-          "name": "Behaviour Interactive (Lever)",
-          "status": "ok",
-          "fetchedCount": 28,
-          "keptCount": 28,
-          "error": ""
-        },
-        {
-          "adapter": "lever",
-          "studio": "Kabam",
-          "name": "Kabam (Lever)",
-          "status": "ok",
-          "fetchedCount": 26,
-          "keptCount": 25,
-          "error": ""
-        },
-        {
-          "adapter": "lever",
-          "studio": "Blackbird Interactive",
-          "name": "Blackbird Interactive (Lever)",
-          "status": "ok",
-          "fetchedCount": 18,
-          "keptCount": 18,
-          "error": ""
-        },
-        {
-          "adapter": "lever",
-          "studio": "Quantic Dream",
-          "name": "Quantic Dream (Lever EU)",
-          "status": "ok",
-          "fetchedCount": 23,
-          "keptCount": 14,
-          "error": ""
-        }
+        "{'adapter': 'lever', 'studio': 'Jagex', 'name': 'Jagex (Lever)', 'status': 'ok', 'fetchedCount': 0, 'keptCount': 0, 'error': ''}",
+        "{'adapter': 'lever', 'studio': 'Sandbox VR', 'name': 'Sandbox VR (Lever)', 'status': 'ok', 'fetchedCount': 31, 'keptCount': 0, 'error': ''}",
+        "{'adapter': 'lever', 'studio': 'Voodoo', 'name': 'Voodoo (Lever)', 'status': 'ok', 'fetchedCount': 34, 'keptCount': 26, 'error': ''}"
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs",
+      "name": "epic_games_careers",
       "status": "ok",
-      "adapter": "static",
-      "studio": "Valve Software",
-      "fetchedCount": 31,
-      "keptCount": 31,
+      "adapter": "api",
+      "fetchStrategy": "http",
+      "studio": "epic_games",
+      "fetchedCount": 256,
+      "keptCount": 256,
       "error": "",
-      "durationMs": 11762,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Valve Software",
-          "name": "Valve Software (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 31,
-          "error": ""
-        }
-      ]
+      "durationMs": 6444
     },
     {
-      "name": "static_source::static:listing_url:https://ea.gr8people.com",
+      "name": "google_sheets",
       "status": "ok",
-      "adapter": "static",
-      "studio": "Electronic Arts",
+      "adapter": "csv",
+      "fetchStrategy": "http",
+      "studio": "community_sheet",
+      "fetchedCount": 32811,
+      "keptCount": 32811,
+      "error": "",
+      "durationMs": 7092
+    },
+    {
+      "name": "teamtailor_sources",
+      "status": "ok",
+      "adapter": "teamtailor",
+      "fetchStrategy": "http",
+      "studio": "multiple",
       "fetchedCount": 20,
       "keptCount": 20,
       "error": "",
-      "durationMs": 38769,
+      "durationMs": 12265,
       "details": [
-        {
-          "adapter": "static",
-          "studio": "Electronic Arts",
-          "name": "Electronic Arts (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 20,
-          "error": ""
-        }
+        "{'adapter': 'teamtailor', 'studio': 'Paradox Interactive', 'name': 'Paradox Careers', 'status': 'ok', 'fetchedCount': 20, 'keptCount': 20, 'error': ''}"
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.riotgames.com/en/work-with-us/jobs",
-      "status": "ok",
-      "adapter": "static",
-      "studio": "Riot Games",
-      "fetchedCount": 154,
-      "keptCount": 154,
-      "error": "",
-      "durationMs": 95226,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Riot Games",
-          "name": "Riot Games (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 154,
-          "error": ""
-        }
-      ]
+      "name": "personio_sources",
+      "status": "error",
+      "adapter": "personio",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "error": "personio_sources: personio:InnoGames (Personio): HTTP 429 for https://innogames.jobs.personio.de/xml; personio:Travian (Personio): HTTP 429 for https://travian.jobs.personio.de/xml",
+      "durationMs": 12580
     },
     {
       "name": "wellfound",
       "status": "excluded",
       "adapter": "html",
+      "fetchStrategy": "browser",
       "studio": "wellfound",
       "fetchedCount": 0,
       "keptCount": 0,
@@ -615,10 +221,11 @@
     }
   ],
   "outputs": {
-    "json": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-unified.json",
-    "csv": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-unified.csv",
-    "lightJson": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-unified-light.json",
-    "report": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-fetch-report.json",
+    "json": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-unified.json",
+    "csv": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-unified.csv",
+    "lightJson": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-unified-light.json",
+    "report": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-fetch-report.json",
+    "lifecycleState": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-lifecycle-state.json",
     "changed": {
       "json": true,
       "csv": true,

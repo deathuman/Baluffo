@@ -18,6 +18,7 @@ import {
   renderAdminOpsAlerts,
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
+  renderAdminOpsFetcherMetrics,
   renderAdminOpsTrends,
   renderAdminOpsHistory
 } from "./render.js";
@@ -82,9 +83,14 @@ let adminDiscoveryLogDetailsEl;
 let adminBridgeStatusBadgeEl;
 let adminShowZeroJobsToggleEl;
 let adminRefreshOpsBtnEl;
+let adminSyncPullBtnEl;
+let adminSyncPushBtnEl;
+let adminSyncRefreshBtnEl;
+let adminSyncStatusEl;
 let adminOpsAlertsEl;
 let adminOpsKpisEl;
 let adminOpsScheduleEl;
+let adminOpsFetcherMetricsEl;
 let adminOpsTrendsEl;
 let adminOpsHistoryEl;
 let adminFetcherProgressBadgeEl;
@@ -190,6 +196,7 @@ let bridgeStatusPollTimer = null;
 let opsHealthPollTimer = null;
 let latestFetcherReportCache = null;
 let latestOpsHealthCache = null;
+let latestSyncStatusCache = null;
 let discoveryLogDetailsSyncing = false;
 let discoveryLogUserToggled = false;
 let discoveryLogPreferredOpen = true;
@@ -201,6 +208,7 @@ const adminBusyState = {
   fetcherRun: false,
   fetcherWatch: false,
   fetcherReportLoad: false,
+  syncRun: false,
   discoveryRun: false,
   discoveryWatch: false,
   discoveryLoad: false,
@@ -209,7 +217,8 @@ const adminBusyState = {
   manualCheck: false,
   opsLoad: false,
   liveFetchRunning: false,
-  liveDiscoveryRunning: false
+  liveDiscoveryRunning: false,
+  liveSyncRunning: false
 };
 const adminDispatch = createAdminDispatcher();
 let activeSourceFilter = adminPageState.activeSourceFilter;
@@ -247,6 +256,10 @@ function isOpsBusy() {
   return Boolean(adminBusyState.opsLoad);
 }
 
+function isSyncBusy() {
+  return Boolean(adminBusyState.syncRun || adminBusyState.liveSyncRunning);
+}
+
 function setBusyBadge(el, state, text) {
   if (!el) return;
   const normalized = String(state || "idle").toLowerCase();
@@ -273,6 +286,7 @@ function syncAdminBusyUi() {
   const fetcherBusy = isFetcherBusy();
   const discoveryBusy = isDiscoveryBusy();
   const opsBusy = isOpsBusy();
+  const syncBusy = isSyncBusy();
 
   setButtonBusy(adminRunFetcherBtnEl, fetcherBusy, FETCHER_PRESET_META.default.busyLabel);
   setButtonBusy(adminRunFetcherIncrementalBtnEl, fetcherBusy, FETCHER_PRESET_META.incremental.busyLabel);
@@ -281,6 +295,9 @@ function syncAdminBusyUi() {
   setButtonBusy(adminRefreshReportBtnEl, Boolean(adminBusyState.fetcherReportLoad), "Loading Report...");
   setButtonBusy(adminRefreshBtnEl, false);
   setButtonBusy(adminRefreshOpsBtnEl, opsBusy, "Refreshing...");
+  setButtonBusy(adminSyncPullBtnEl, syncBusy, "Pull Running...");
+  setButtonBusy(adminSyncPushBtnEl, syncBusy, "Push Running...");
+  setButtonBusy(adminSyncRefreshBtnEl, syncBusy, "Sync Running...");
 
   setButtonBusy(adminRunDiscoveryBtnEl, discoveryBusy, "Discovery Running...");
   setButtonBusy(adminLoadDiscoveryBtnEl, discoveryBusy, "Loading...");
@@ -428,9 +445,14 @@ function cacheDom() {
   adminBridgeStatusBadgeEl = document.getElementById("admin-bridge-status-badge");
   adminShowZeroJobsToggleEl = document.getElementById("admin-show-zero-jobs-toggle");
   adminRefreshOpsBtnEl = document.getElementById("admin-refresh-ops-btn");
+  adminSyncPullBtnEl = document.getElementById("admin-sync-pull-btn");
+  adminSyncPushBtnEl = document.getElementById("admin-sync-push-btn");
+  adminSyncRefreshBtnEl = document.getElementById("admin-sync-refresh-btn");
+  adminSyncStatusEl = document.getElementById("admin-sync-status");
   adminOpsAlertsEl = document.getElementById("admin-ops-alerts");
   adminOpsKpisEl = document.getElementById("admin-ops-kpis");
   adminOpsScheduleEl = document.getElementById("admin-ops-schedule");
+  adminOpsFetcherMetricsEl = document.getElementById("admin-ops-fetcher-metrics");
   adminOpsTrendsEl = document.getElementById("admin-ops-trends");
   adminOpsHistoryEl = document.getElementById("admin-ops-history");
   adminFetcherProgressBadgeEl = document.getElementById("admin-fetcher-progress-badge");
@@ -509,6 +531,9 @@ function bindEvents() {
   }
 
   bindAsyncClick(adminRefreshOpsBtnEl, loadOpsHealthData);
+  bindAsyncClick(adminSyncRefreshBtnEl, () => loadSyncStatus({ silent: false }));
+  bindAsyncClick(adminSyncPullBtnEl, pullSourcesSync);
+  bindAsyncClick(adminSyncPushBtnEl, pushSourcesSync);
 
   adminSourceFilterBtnEls.forEach(btn => {
     btn.addEventListener("click", () => {
@@ -569,6 +594,7 @@ function unlockAdmin() {
   setDiscoveryLogPlaceholder("Loading source discovery data...");
   setManualSourceFeedback("", "muted");
   setOpsPlaceholders("Loading operations health...");
+  if (adminSyncStatusEl) adminSyncStatusEl.textContent = "Loading sync status...";
   startBridgeStatusWatch();
   scheduleOpsHealthPolling(900);
   refreshOverview().catch(err => {
@@ -583,10 +609,14 @@ function unlockAdmin() {
   loadOpsHealthData().catch(err => {
     logAdminError("Failed to load ops health data", err);
   });
+  loadSyncStatus({ silent: true }).catch(err => {
+    logAdminError("Failed to load sync status", err);
+  });
 }
 
 function lockAdmin() {
   adminPin = "";
+  latestSyncStatusCache = null;
   resetBusyFlags();
   adminDispatch.dispatch({ type: ADMIN_ACTIONS.LOCKED });
   if (adminPinGateEl) adminPinGateEl.classList.remove("hidden");
@@ -795,6 +825,9 @@ function setManualSourceFeedback(message, level = "muted") {
 }
 
 function setOpsPlaceholders(message = "Unlock admin to view operations health.") {
+  if (adminSyncStatusEl) {
+    adminSyncStatusEl.textContent = message;
+  }
   if (adminOpsAlertsEl) {
     adminOpsAlertsEl.innerHTML = `<div class="muted">${escapeHtml(message)}</div>`;
   }
@@ -804,11 +837,109 @@ function setOpsPlaceholders(message = "Unlock admin to view operations health.")
   if (adminOpsScheduleEl) {
     adminOpsScheduleEl.innerHTML = "";
   }
+  if (adminOpsFetcherMetricsEl) {
+    adminOpsFetcherMetricsEl.innerHTML = "";
+  }
   if (adminOpsTrendsEl) {
     adminOpsTrendsEl.textContent = message;
   }
   if (adminOpsHistoryEl) {
     adminOpsHistoryEl.innerHTML = `<div class="no-results">${escapeHtml(message)}</div>`;
+  }
+}
+
+function renderSyncStatus(statusPayload) {
+  if (!adminSyncStatusEl) return;
+  const config = statusPayload?.config || {};
+  const runtime = statusPayload?.runtime || {};
+  const state = String(config?.state || "disabled");
+  const missing = Array.isArray(config?.missing) ? config.missing : [];
+  if (state === "disabled") {
+    adminSyncStatusEl.textContent = "Source sync is disabled.";
+    return;
+  }
+  if (state === "misconfigured") {
+    const missingText = missing.length ? ` Missing: ${missing.join(", ")}.` : "";
+    adminSyncStatusEl.textContent = `Source sync misconfigured.${missingText}`;
+    return;
+  }
+  const repo = String(config?.repo || "unknown");
+  const branch = String(config?.branch || "main");
+  const path = String(config?.path || "baluffo/source-sync.json");
+  const lastPullAt = String(runtime?.lastPullAt || "");
+  const lastPushAt = String(runtime?.lastPushAt || "");
+  const lastError = String(runtime?.lastError || "");
+  const base = `Source sync ready (${repo} @ ${branch}:${path}).`;
+  const pullText = lastPullAt ? ` Last pull: ${toLocalTime(new Date(lastPullAt))}.` : " Last pull: never.";
+  const pushText = lastPushAt ? ` Last push: ${toLocalTime(new Date(lastPushAt))}.` : " Last push: never.";
+  const errorText = lastError ? ` Last error: ${lastError}` : "";
+  adminSyncStatusEl.textContent = `${base}${pullText}${pushText}${errorText}`;
+}
+
+async function loadSyncStatus(options = {}) {
+  if (!adminPin) return null;
+  const silent = Boolean(options?.silent);
+  try {
+    const payload = await getBridge("/sync/status");
+    latestSyncStatusCache = payload || null;
+    renderSyncStatus(payload || {});
+    return payload || null;
+  } catch (err) {
+    if (adminSyncStatusEl) adminSyncStatusEl.textContent = `Sync status unavailable: ${getErrorMessage(err)}`;
+    if (!silent) showToast(`Could not load sync status: ${getErrorMessage(err)}`, "error");
+    throw err;
+  }
+}
+
+async function pullSourcesSync() {
+  if (!adminPin) {
+    showToast("Unlock admin to pull source sync.", "error");
+    return;
+  }
+  if (isSyncBusy()) {
+    showToast("Sync task is already running.", "info");
+    return;
+  }
+  setBusyFlag("syncRun", true);
+  try {
+    const result = await postBridge("/tasks/run-sync-pull", {});
+    if (result?.started) {
+      showToast("Sources sync pull started.", "success");
+      await loadOpsHealthData();
+      scheduleOpsHealthPolling(900);
+      return;
+    }
+    showToast(`Sources sync pull failed: ${String(result?.error || "unknown error")}`, "error");
+  } catch (err) {
+    showToast(`Sources sync pull failed: ${getErrorMessage(err)}`, "error");
+  } finally {
+    setBusyFlag("syncRun", false);
+  }
+}
+
+async function pushSourcesSync() {
+  if (!adminPin) {
+    showToast("Unlock admin to push source sync.", "error");
+    return;
+  }
+  if (isSyncBusy()) {
+    showToast("Sync task is already running.", "info");
+    return;
+  }
+  setBusyFlag("syncRun", true);
+  try {
+    const result = await postBridge("/tasks/run-sync-push", {});
+    if (result?.started) {
+      showToast("Sources sync push started.", "success");
+      await loadOpsHealthData();
+      scheduleOpsHealthPolling(900);
+      return;
+    }
+    showToast(`Sources sync push failed: ${String(result?.error || "unknown error")}`, "error");
+  } catch (err) {
+    showToast(`Sources sync push failed: ${getErrorMessage(err)}`, "error");
+  } finally {
+    setBusyFlag("syncRun", false);
   }
 }
 
@@ -841,11 +972,18 @@ async function loadOpsHealthData(options = {}) {
       getBridge("/ops/health"),
       getBridge("/ops/history?limit=80")
     ]);
+    let fetcherMetrics = null;
+    try {
+      fetcherMetrics = await getBridge("/ops/fetcher-metrics?windowRuns=80");
+    } catch {
+      fetcherMetrics = null;
+    }
     latestOpsHealthCache = health || null;
     const runModel = normalizeOpsRuns(historyPayload?.runs || [], Date.now());
     const liveTypes = new Set(Array.isArray(runModel?.liveTypes) ? runModel.liveTypes : []);
     setBusyFlag("liveFetchRunning", liveTypes.has("fetch"));
     setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
+    setBusyFlag("liveSyncRunning", liveTypes.has("sync"));
 
     renderAdminOpsAlerts(adminOpsAlertsEl, health?.alerts || [], {
       onAck: async alertId => {
@@ -860,14 +998,17 @@ async function loadOpsHealthData(options = {}) {
     });
     renderAdminOpsKpis(adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
     renderAdminOpsSchedule(adminOpsScheduleEl, health?.schedule || {}, latestOpsHealthCache);
+    renderAdminOpsFetcherMetrics(adminOpsFetcherMetricsEl, fetcherMetrics || {});
     renderAdminOpsHistory(adminOpsHistoryEl, runModel);
     renderAdminOpsTrends(adminOpsTrendsEl, historyPayload?.runs || []);
+    loadSyncStatus({ silent: true }).catch(() => {});
     adminDispatch.dispatch({ type: ADMIN_ACTIONS.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
     scheduleOpsHealthPolling(getOpsPollIntervalMs(Boolean(runModel?.hasLiveRuns)));
   } catch (err) {
     setOpsPlaceholders(`Ops health unavailable: ${getErrorMessage(err)}`);
     setBusyFlag("liveFetchRunning", false);
     setBusyFlag("liveDiscoveryRunning", false);
+    setBusyFlag("liveSyncRunning", false);
     scheduleOpsHealthPolling(OPS_POLL_IDLE_INTERVAL_MS);
   } finally {
     setBusyFlag("opsLoad", false);
@@ -1261,9 +1402,9 @@ function emitJobsAutoRefreshSignal(report) {
   }
 }
 
-async function getBridge(path) {
+async function callBridge(request) {
   try {
-    const data = await getBridgeFromData(ADMIN_BRIDGE_BASE, path);
+    const data = await request();
     setBridgeStatusBadge("online", "Bridge Online");
     return data;
   } catch (error) {
@@ -1272,15 +1413,12 @@ async function getBridge(path) {
   }
 }
 
+async function getBridge(path) {
+  return callBridge(() => getBridgeFromData(ADMIN_BRIDGE_BASE, path));
+}
+
 async function postBridge(path, payload) {
-  try {
-    const data = await postBridgeFromData(ADMIN_BRIDGE_BASE, path, payload);
-    setBridgeStatusBadge("online", "Bridge Online");
-    return data;
-  } catch (error) {
-    setBridgeStatusBadge("offline", "Bridge Offline");
-    throw error;
-  }
+  return callBridge(() => postBridgeFromData(ADMIN_BRIDGE_BASE, path, payload));
 }
 
 async function runDiscoveryTask() {
@@ -1295,7 +1433,7 @@ async function runDiscoveryTask() {
   setBusyFlag("discoveryRun", true);
   appendDiscoveryLog("Triggering source discovery task...");
   try {
-    await postBridge("/tasks/run-discovery-full", {});
+    await postBridge("/tasks/run-discovery", {});
     appendDiscoveryLog("Source discovery task started.", "success");
     showToast("Source discovery started.", "success");
     startDiscoveryCompletionWatch();

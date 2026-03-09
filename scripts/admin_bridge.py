@@ -30,7 +30,9 @@ from scripts.jobs_fetcher import (
     parse_jobpostings_from_html,
 )
 from scripts import source_discovery as discovery
+from scripts import fetcher_metrics as fetcher_metrics_module
 from scripts import source_registry as source_registry_module
+from scripts import source_sync as source_sync_module
 from scripts.source_registry import (
     ACTIVE_PATH,
     APPROVAL_STATE_PATH,
@@ -60,6 +62,15 @@ OUTPUT_DROP_RATIO = 0.40
 OPS_SCHEMA_VERSION = 1
 OPS_STATE_LOCK = threading.RLock()
 LOG_LEVEL_ORDER = {"debug": 10, "info": 20, "warn": 30, "error": 40}
+SYNC_STATE_LOCK = threading.RLock()
+SYNC_STATUS: Dict[str, Any] = {
+    "lastPullAt": "",
+    "lastPushAt": "",
+    "lastError": "",
+    "lastAction": "",
+    "lastResult": "",
+}
+SYNC_CONFIG = source_sync_module.resolve_sync_config()
 
 
 @dataclass
@@ -204,9 +215,10 @@ def startup_banner(config: RuntimeConfig) -> None:
     bridge_log(
         "info",
         "admin_bridge_endpoints",
-        ops="GET /ops/health, GET /ops/history, POST /ops/alerts/ack",
+        ops="GET /ops/health, GET /ops/history, GET /ops/fetcher-metrics, POST /ops/alerts/ack",
         registry="GET /registry/*, POST /registry/*",
-        tasks="POST /tasks/run-fetcher, POST /tasks/run-discovery*",
+        sync="GET /sync/status, POST /sync/pull, POST /sync/push",
+        tasks="POST /tasks/run-fetcher, POST /tasks/run-discovery, POST /tasks/run-sync-pull, POST /tasks/run-sync-push",
     )
 
 
@@ -1460,7 +1472,13 @@ def build_fetcher_args_from_payload(payload: Dict[str, Any]) -> Tuple[List[str],
     # Optional explicit overrides.
     max_workers = _safe_int(data.get("maxWorkers"), 6, 1, 16)
     max_per_domain = _safe_int(data.get("maxPerDomain"), 2, 1, 6)
+    fetch_strategy = str(data.get("fetchStrategy") or "auto").strip().lower()
+    if fetch_strategy not in {"auto", "http", "browser"}:
+        fetch_strategy = "auto"
+    adapter_http_concurrency = _safe_int(data.get("adapterHttpConcurrency"), 24, 1, 128)
     source_ttl = _safe_int(data.get("sourceTtlMinutes"), 360, 0, 1440)
+    hot_cadence = _safe_int(data.get("hotSourceCadenceMinutes"), 15, 1, 240)
+    cold_cadence = _safe_int(data.get("coldSourceCadenceMinutes"), 60, 1, 1440)
     circuit_failures = _safe_int(data.get("circuitBreakerFailures"), 3, 0, 20)
     circuit_cooldown = _safe_int(data.get("circuitBreakerCooldownMinutes"), 180, 0, 24 * 60)
 
@@ -1479,12 +1497,16 @@ def build_fetcher_args_from_payload(payload: Dict[str, Any]) -> Tuple[List[str],
 
     # Apply common overrides (including defaults) so runtime is explicit.
     args.extend(["--max-workers", str(max_workers), "--max-per-domain", str(max_per_domain)])
+    args.extend(["--fetch-strategy", fetch_strategy, "--adapter-http-concurrency", str(adapter_http_concurrency)])
     args.extend(["--circuit-breaker-failures", str(circuit_failures)])
     args.extend(["--circuit-breaker-cooldown-minutes", str(circuit_cooldown)])
+    args.extend(["--hot-source-cadence-minutes", str(hot_cadence), "--cold-source-cadence-minutes", str(cold_cadence)])
 
     if bool(data.get("skipSuccessfulSources")) and "--skip-successful-sources" not in args:
         args.append("--skip-successful-sources")
         args.extend(["--source-ttl-minutes", str(source_ttl)])
+    if bool(data.get("respectSourceCadence")) and "--respect-source-cadence" not in args:
+        args.append("--respect-source-cadence")
     if bool(data.get("ignoreCircuitBreaker")) and "--ignore-circuit-breaker" not in args:
         args.append("--ignore-circuit-breaker")
     if bool(data.get("quiet")) and "--quiet" not in args:
@@ -2026,6 +2048,250 @@ def compute_ops_health() -> Dict[str, Any]:
     }
 
 
+def compute_fetcher_metrics(window_runs: int = 20) -> Dict[str, Any]:
+    latest_fetch_report = normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {}))
+    history = sync_history_from_reports()
+    return fetcher_metrics_module.build_metrics(
+        latest_fetch_report,
+        history,
+        window=max(1, int(window_runs or 1)),
+    )
+
+
+def _set_sync_status(*, action: str = "", result: str = "", error: str = "", pulled: bool = False, pushed: bool = False) -> None:
+    with SYNC_STATE_LOCK:
+        if action:
+            SYNC_STATUS["lastAction"] = str(action)
+        if result:
+            SYNC_STATUS["lastResult"] = str(result)
+        if error:
+            SYNC_STATUS["lastError"] = str(error)
+        elif action:
+            SYNC_STATUS["lastError"] = ""
+        stamp = now_iso()
+        if pulled:
+            SYNC_STATUS["lastPullAt"] = stamp
+        if pushed:
+            SYNC_STATUS["lastPushAt"] = stamp
+
+
+def get_sync_status_payload() -> Dict[str, Any]:
+    cfg = source_sync_module.config_status(SYNC_CONFIG)
+    with SYNC_STATE_LOCK:
+        runtime_state = dict(SYNC_STATUS)
+    return {
+        "ok": True,
+        "config": cfg,
+        "runtime": runtime_state,
+    }
+
+
+def _sync_guard() -> Optional[Dict[str, Any]]:
+    cfg = source_sync_module.config_status(SYNC_CONFIG)
+    if not cfg.get("enabled"):
+        return {"ok": False, "error": "Sync is disabled", "config": cfg}
+    if not cfg.get("ready"):
+        return {"ok": False, "error": "Sync is not configured", "config": cfg}
+    return None
+
+
+def sync_pull_sources() -> Dict[str, Any]:
+    guard = _sync_guard()
+    if guard:
+        return guard
+    local_state = load_state()
+    result = source_sync_module.pull_and_merge_sources(SYNC_CONFIG, local_state)
+    merged_state = result.get("mergedState") if isinstance(result.get("mergedState"), dict) else local_state
+    if bool(result.get("changed")):
+        persist_state(merged_state)
+    _set_sync_status(
+        action="pull",
+        result="ok",
+        pulled=True,
+        error="",
+    )
+    summary = summarize_state(load_state())
+    return {
+        "ok": True,
+        "changed": bool(result.get("changed")),
+        "remoteFound": bool(result.get("remoteFound")),
+        "remoteSha": str(result.get("remoteSha") or ""),
+        "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
+        "summary": summary,
+    }
+
+
+def sync_push_sources() -> Dict[str, Any]:
+    guard = _sync_guard()
+    if guard:
+        return guard
+    state = load_state()
+    result = source_sync_module.push_sources_snapshot(SYNC_CONFIG, state)
+    snapshot = result.get("snapshot") if isinstance(result.get("snapshot"), dict) else {}
+    _set_sync_status(
+        action="push",
+        result="ok",
+        pushed=True,
+        error="",
+    )
+    return {
+        "ok": True,
+        "remoteSha": str(result.get("remoteSha") or ""),
+        "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
+        "counts": {
+            "active": len(snapshot.get("active") or []),
+            "pending": len(snapshot.get("pending") or []),
+            "rejected": len(snapshot.get("rejected") or []),
+        },
+    }
+
+
+def startup_sync_pull() -> None:
+    cfg = source_sync_module.config_status(SYNC_CONFIG)
+    if not cfg.get("enabled"):
+        return
+    if not cfg.get("ready"):
+        missing = ",".join(cfg.get("missing") or [])
+        bridge_log("warn", "sync_startup_skipped", reason="misconfigured", missing=missing)
+        return
+    try:
+        result = sync_pull_sources()
+        bridge_log(
+            "info",
+            "sync_startup_pull_done",
+            changed=bool(result.get("changed")),
+            remoteFound=bool(result.get("remoteFound")),
+            active=int((result.get("summary") or {}).get("activeCount") or 0),
+            pending=int((result.get("summary") or {}).get("pendingCount") or 0),
+            rejected=int((result.get("summary") or {}).get("rejectedCount") or 0),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
+        bridge_log("warn", "sync_startup_pull_failed", error=str(exc))
+
+
+def sync_task_running() -> bool:
+    with OPS_STATE_LOCK:
+        history = load_run_history()
+        return any(
+            str(row.get("type") or "").strip().lower() == "sync"
+            and str(row.get("status") or "").strip().lower() == "started"
+            and not str(row.get("finishedAt") or "").strip()
+            for row in history
+        )
+
+
+def _run_sync_task_worker(run_id: str, action: str, started_at: str) -> None:
+    started_dt = parse_iso(started_at) or now_utc()
+    status = "ok"
+    summary: Dict[str, Any] = {"action": action}
+    try:
+        if action == "pull":
+            result = sync_pull_sources()
+            if not bool(result.get("ok")):
+                status = "warning"
+                summary["error"] = str(result.get("error") or "sync pull not executed")
+            summary.update({
+                "changed": bool(result.get("changed")),
+                "remoteFound": bool(result.get("remoteFound")),
+                "remoteSha": str(result.get("remoteSha") or ""),
+                "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
+            })
+            state_summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+            summary.update({
+                "activeCount": int(state_summary.get("activeCount") or 0),
+                "pendingCount": int(state_summary.get("pendingCount") or 0),
+                "rejectedCount": int(state_summary.get("rejectedCount") or 0),
+            })
+        else:
+            result = sync_push_sources()
+            if not bool(result.get("ok")):
+                status = "warning"
+                summary["error"] = str(result.get("error") or "sync push not executed")
+            summary.update({
+                "remoteSha": str(result.get("remoteSha") or ""),
+                "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
+            })
+            counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+            summary.update({
+                "activeCount": int(counts.get("active") or 0),
+                "pendingCount": int(counts.get("pending") or 0),
+                "rejectedCount": int(counts.get("rejected") or 0),
+            })
+    except Exception as exc:  # noqa: BLE001
+        status = "error"
+        summary["error"] = str(exc)
+        _set_sync_status(action=action, result="error", error=str(exc))
+    finished_dt = now_utc()
+    duration_ms = int(max(0.0, (finished_dt - started_dt).total_seconds() * 1000))
+    prune_started_rows_for_type("sync", finished_at=finished_dt.isoformat())
+    upsert_run_history({
+        "id": run_id,
+        "type": "sync",
+        "status": status,
+        "startedAt": started_at,
+        "finishedAt": finished_dt.isoformat(),
+        "durationMs": duration_ms,
+        "summary": summary,
+    }, dedupe_fields=("type", "finishedAt"))
+    bridge_log(
+        "info" if status != "error" else "error",
+        "sync_task_finished",
+        runId=run_id,
+        action=action,
+        status=status,
+        durationMs=duration_ms,
+        error=str(summary.get("error") or ""),
+    )
+
+
+def start_sync_task(action: str) -> Dict[str, Any]:
+    normalized_action = str(action or "").strip().lower()
+    if normalized_action not in {"pull", "push"}:
+        raise ValueError("Invalid sync action")
+    if sync_task_running():
+        return {"started": False, "task": "source_sync", "action": normalized_action, "error": "Sync task already running"}
+    run_id = f"sync_{uuid.uuid4().hex[:10]}"
+    started_at = now_iso()
+    append_run_history({
+        "id": run_id,
+        "type": "sync",
+        "status": "started",
+        "startedAt": started_at,
+        "finishedAt": "",
+        "durationMs": 0,
+        "summary": {"action": normalized_action},
+    })
+    worker = threading.Thread(
+        target=_run_sync_task_worker,
+        args=(run_id, normalized_action, started_at),
+        name=f"sync-task-{normalized_action}-{run_id}",
+        daemon=True,
+    )
+    worker.start()
+    bridge_log("info", "sync_task_started", runId=run_id, action=normalized_action)
+    return {"started": True, "runId": run_id, "task": "source_sync", "action": normalized_action}
+
+
+def trigger_discovery_task(*, route_name: str) -> Tuple[int, Dict[str, Any]]:
+    run_id = f"discovery_{uuid.uuid4().hex[:10]}"
+    append_run_history({
+        "type": "discovery",
+        "status": "started",
+        "startedAt": now_iso(),
+        "finishedAt": "",
+        "durationMs": 0,
+        "summary": {},
+    })
+    try:
+        pid = run_background_script("source_discovery.py", ["--mode", "dynamic"])
+    except Exception as exc:  # noqa: BLE001
+        bridge_log("error", "task_start_failed", runId=run_id, task="source_discovery", mode="dynamic", route=route_name, error=str(exc))
+        return 500, {"started": False, "task": "source_discovery", "mode": "dynamic", "route": route_name, "error": str(exc)}
+    bridge_log("info", "task_started", runId=run_id, task="source_discovery", mode="dynamic", route=route_name, pid=pid)
+    return 200, {"started": True, "runId": run_id, "task": "source_discovery", "mode": "dynamic", "route": route_name}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _route_path(self) -> str:
         return urlparse(self.path).path
@@ -2091,6 +2357,17 @@ class Handler(BaseHTTPRequestHandler):
                 limit = 30
             rows = sync_history_from_reports()
             self._send_json({"runs": rows[-limit:], "count": len(rows)})
+            return
+        if path == "/ops/fetcher-metrics":
+            window_raw = (query.get("windowRuns") or ["20"])[0]
+            try:
+                window_runs = max(1, min(200, int(window_raw)))
+            except ValueError:
+                window_runs = 20
+            self._send_json(compute_fetcher_metrics(window_runs=window_runs))
+            return
+        if path == "/sync/status":
+            self._send_json(get_sync_status_payload())
             return
         self._send_json({"error": "Not found"}, status=404)
 
@@ -2201,43 +2478,26 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/tasks/run-discovery":
-            run_id = f"discovery_{uuid.uuid4().hex[:10]}"
-            append_run_history({
-                "type": "discovery",
-                "status": "started",
-                "startedAt": now_iso(),
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {},
-            })
-            try:
-                pid = run_background_script("source_discovery.py", ["--mode", "dynamic"])
-            except Exception as exc:  # noqa: BLE001
-                bridge_log("error", "task_start_failed", runId=run_id, task="source_discovery", mode="dynamic", error=str(exc))
-                self._send_json({"started": False, "task": "source_discovery", "mode": "dynamic", "error": str(exc)}, status=500)
-                return
-            bridge_log("info", "task_started", runId=run_id, task="source_discovery", mode="dynamic", pid=pid)
-            self._send_json({"started": True, "runId": run_id, "task": "source_discovery", "mode": "dynamic"})
+            status_code, result = trigger_discovery_task(route_name=path)
+            self._send_json(result, status=status_code)
             return
 
-        if path == "/tasks/run-discovery-full":
-            run_id = f"discovery_{uuid.uuid4().hex[:10]}"
-            append_run_history({
-                "type": "discovery",
-                "status": "started",
-                "startedAt": now_iso(),
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {},
-            })
+        if path == "/tasks/run-sync-pull":
             try:
-                pid = run_background_script("source_discovery.py", ["--mode", "dynamic"])
+                result = start_sync_task("pull")
+                status_code = 200 if bool(result.get("started")) else 409
+                self._send_json(result, status=status_code)
             except Exception as exc:  # noqa: BLE001
-                bridge_log("error", "task_start_failed", runId=run_id, task="source_discovery", mode="dynamic", error=str(exc))
-                self._send_json({"started": False, "task": "source_discovery", "mode": "dynamic", "error": str(exc)}, status=500)
-                return
-            bridge_log("info", "task_started", runId=run_id, task="source_discovery", mode="dynamic", pid=pid)
-            self._send_json({"started": True, "runId": run_id, "task": "source_discovery", "mode": "dynamic"})
+                self._send_json({"started": False, "task": "source_sync", "action": "pull", "error": str(exc)}, status=500)
+            return
+
+        if path == "/tasks/run-sync-push":
+            try:
+                result = start_sync_task("push")
+                status_code = 200 if bool(result.get("started")) else 409
+                self._send_json(result, status=status_code)
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"started": False, "task": "source_sync", "action": "push", "error": str(exc)}, status=500)
             return
 
         if path == "/tasks/run-fetcher":
@@ -2287,6 +2547,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"acked": alert_id, "ok": True})
             return
 
+        if path == "/sync/pull":
+            try:
+                self._send_json(sync_pull_sources())
+            except Exception as exc:  # noqa: BLE001
+                _set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
+                self._send_json({"ok": False, "error": str(exc), "config": source_sync_module.config_status(SYNC_CONFIG)}, status=500)
+            return
+
+        if path == "/sync/push":
+            try:
+                self._send_json(sync_push_sources())
+            except Exception as exc:  # noqa: BLE001
+                _set_sync_status(action="push", result="error", error=str(exc), pushed=False)
+                self._send_json({"ok": False, "error": str(exc), "config": source_sync_module.config_status(SYNC_CONFIG)}, status=500)
+            return
+
         self._send_json({"error": "Not found"}, status=404)
 
 
@@ -2297,7 +2573,10 @@ def parse_args(argv: Optional[List[str]] = None) -> RuntimeConfig:
 def main() -> int:
     config = parse_args()
     configure_runtime_paths(config)
+    global SYNC_CONFIG
+    SYNC_CONFIG = source_sync_module.resolve_sync_config()
     ensure_active_registry()
+    startup_sync_pull()
     try:
         server = ThreadingHTTPServer((config.host, config.port), Handler)
     except OSError as exc:

@@ -68,12 +68,12 @@ test("admin domain normalizes ops runs into current + collapsed completed groups
     { id: "x3", type: "fetch", status: "ok", startedAt: "2026-03-08T05:00:00.000Z", finishedAt: "2026-03-08T05:01:00.000Z", durationMs: 60000 }
   ], Date.parse("2026-03-08T10:01:00.000Z"));
 
-  assert.equal(model.currentRows.length, 2);
+  assert.equal(model.currentRows.length, 1);
   assert.equal(model.currentRows[0].displayStatus, "running");
   assert.equal(model.currentRows[0].isLive, true);
   assert.equal(model.hasLiveRuns, true);
   assert.equal(model.visibleCompletedRows.length, 3);
-  assert.equal(model.olderCompletedRows.length, 1);
+  assert.equal(model.olderCompletedRows.length, 2);
 });
 
 test("admin domain derives adaptive ops polling interval", () => {

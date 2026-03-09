@@ -64,8 +64,11 @@ Saved job record fields:
   - `GET /discovery/report`
   - `GET /registry/pending`
   - `GET /registry/active`
+  - `GET /sync/status`
   - `POST /registry/approve`, `POST /registry/reject`, `POST /registry/rollback`
-  - `POST /tasks/run-discovery`, `POST /tasks/run-discovery-full`, `POST /tasks/run-fetcher`
+  - `POST /sync/pull`, `POST /sync/push`
+  - `POST /tasks/run-discovery`, `POST /tasks/run-fetcher`
+  - `POST /tasks/run-sync-pull`, `POST /tasks/run-sync-push` (preferred for UI task/history tracking)
 - If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback and shows a manual command fallback (`python scripts/jobs_fetcher.py`).
 
 - Optional bridge runtime options:
@@ -73,7 +76,23 @@ Saved job record fields:
     - `--host`, `--port`, `--data-dir`, `--log-format (human|jsonl)`, `--log-level (info|debug)`, `--quiet-requests`
   - env:
     - `BALUFFO_BRIDGE_HOST`, `BALUFFO_BRIDGE_PORT`, `BALUFFO_DATA_DIR`, `BALUFFO_BRIDGE_LOG_FORMAT`, `BALUFFO_BRIDGE_LOG_LEVEL`
+    - `BALUFFO_SYNC_ENABLED` (default `true`; set `false` to disable), `BALUFFO_SYNC_GITHUB_TOKEN`, `BALUFFO_SYNC_REPO`, `BALUFFO_SYNC_BRANCH`, `BALUFFO_SYNC_PATH`
   - precedence: `CLI > env > defaults`
+
+### GitHub source sync (multi-PC)
+- Recommended: dedicated private repo for source sync state.
+- Configure per machine:
+  - `BALUFFO_SYNC_GITHUB_TOKEN=<PAT with repo contents write access>`
+  - `BALUFFO_SYNC_REPO=<owner/repo>`
+  - optional `BALUFFO_SYNC_BRANCH` (default `main`)
+  - optional `BALUFFO_SYNC_PATH` (default `baluffo/source-sync.json`)
+- One-time migration for your current local custom sources:
+  - on your current machine: start bridge, click `Push Sources Sync`
+  - on each other machine: set token+repo env vars, start bridge (startup pull runs), or click `Pull Sources Sync`
+- Behavior:
+  - bridge does a best-effort pull on startup (non-fatal on failure)
+  - admin UI includes manual pull/push actions
+  - sync payload includes `active`, `pending`, `rejected`
 
 ## Suggested local schedules
 - Windows Task Scheduler action:

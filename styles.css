@@ -1709,6 +1709,10 @@ h1 {
   font-size: 0.85rem;
 }
 
+.admin-ops-full-row {
+  grid-column: 1 / -1;
+}
+
 .admin-ops-history-header,
 .admin-ops-history-row {
   grid-template-columns: 0.9fr 1fr 0.9fr 1fr 0.8fr 1.25fr;

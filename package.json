@@ -10,7 +10,7 @@
     "test:frontend:unit": "node --test tests/frontend/unit/*.test.mjs",
     "test:frontend:headed": "playwright test --headed",
     "test:frontend:ci": "playwright test --reporter=line",
-    "test:py": "python -m unittest -v tests/test_jobs_fetcher.py tests/test_source_discovery.py tests/test_source_registry.py tests/test_admin_bridge_ops.py tests/test_ship_update_manager.py"
+    "test:py": "scripts\\run_py_tests.cmd"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0"

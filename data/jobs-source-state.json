@@ -1,5 +1,6 @@
 {
-  "updatedAt": "2026-03-08T19:46:26.567493+00:00",
+  "schemaVersion": "1.0",
+  "updatedAt": "2026-03-09T09:20:18.745313+00:00",
   "sources": {
     "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs": {
       "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
@@ -12,100 +13,103 @@
       "consecutiveFailures": 0
     },
     "lever_sources": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
       "lastStatus": "ok",
-      "lastDurationMs": 20369,
-      "lastFetchedCount": 111,
-      "lastKeptCount": 111,
-      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
-      "lastFingerprint": "2e6dfff4063d02eac75c992f0c9379668098df92",
+      "lastDurationMs": 5243,
+      "lastFetchedCount": 26,
+      "lastKeptCount": 26,
+      "lastSuccessAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastFingerprint": "8dae2c379483efac4f9b076f805cf9ada93c5741",
       "consecutiveFailures": 0
     },
     "remote_ok": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
       "lastStatus": "ok",
-      "lastDurationMs": 223,
-      "lastFetchedCount": 48,
-      "lastKeptCount": 48,
-      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
-      "lastFingerprint": "999be625a99151fa1d0b2d2f6b07155d82d66a81",
+      "lastDurationMs": 159,
+      "lastFetchedCount": 49,
+      "lastKeptCount": 49,
+      "lastSuccessAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastFingerprint": "b43adc4aa0a10cc5000a0542c06d62eeaa26679b",
       "consecutiveFailures": 0
     },
     "gamesindustry": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
       "lastStatus": "ok",
-      "lastDurationMs": 429,
+      "lastDurationMs": 270,
       "lastFetchedCount": 24,
       "lastKeptCount": 24,
-      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
-      "lastFingerprint": "a5558d303f1ba7e8cc8ad5bb3b4afd8cd6d19244",
+      "lastSuccessAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastFingerprint": "a7e9a353f9ead3b0365a29b69b6e368ae1c6e431",
       "consecutiveFailures": 0
     },
     "smartrecruiters_sources": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
       "lastStatus": "ok",
-      "lastDurationMs": 517,
-      "lastFetchedCount": 103,
-      "lastKeptCount": 103,
-      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
-      "lastFingerprint": "209670f0d5c379bef9fb9894379179842d8ab175",
+      "lastDurationMs": 480,
+      "lastFetchedCount": 95,
+      "lastKeptCount": 95,
+      "lastSuccessAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastFingerprint": "6c186c297c89c99cc18818df4252786bb734878c",
       "consecutiveFailures": 0
     },
     "google_sheets": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
       "lastStatus": "ok",
-      "lastDurationMs": 4099,
+      "lastDurationMs": 7092,
       "lastFetchedCount": 32811,
       "lastKeptCount": 32811,
-      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastSuccessAt": "2026-03-09T09:20:16.165568+00:00",
       "lastFingerprint": "fd46db29ba494f4f3b2194585e3f5941194f6e40",
       "consecutiveFailures": 0
     },
     "ashby_sources": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
       "lastStatus": "ok",
-      "lastDurationMs": 0,
+      "lastDurationMs": 528,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
-      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastSuccessAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
       "consecutiveFailures": 0
     },
     "personio_sources": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 0,
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastStatus": "error",
+      "lastDurationMs": 12580,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
-      "consecutiveFailures": 0
+      "consecutiveFailures": 1,
+      "lastFailureAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastError": "personio_sources: personio:InnoGames (Personio): HTTP 429 for https://innogames.jobs.personio.de/xml; personio:Travian (Personio): HTTP 429 for https://travian.jobs.personio.de/xml"
     },
     "greenhouse_boards": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
       "lastStatus": "ok",
-      "lastDurationMs": 1872,
-      "lastFetchedCount": 402,
-      "lastKeptCount": 402,
-      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
-      "lastFingerprint": "88b09c790d36af153bd1414bbb8c359210f5c665",
+      "lastDurationMs": 664,
+      "lastFetchedCount": 206,
+      "lastKeptCount": 206,
+      "lastSuccessAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastFingerprint": "00fd4c13c67e7c33100d068b4b5b04852a410c21",
       "consecutiveFailures": 0
     },
     "workable_sources": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
       "lastStatus": "ok",
-      "lastDurationMs": 1152,
-      "lastFetchedCount": 87,
-      "lastKeptCount": 87,
-      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
-      "lastFingerprint": "9e14d0be67fc14240acddea87b0c709bd720592b",
+      "lastDurationMs": 456,
+      "lastFetchedCount": 8,
+      "lastKeptCount": 8,
+      "lastSuccessAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastFingerprint": "68bc43dea826e85e1330c6042d71894fb5617c2e",
       "consecutiveFailures": 0
     },
     "epic_games_careers": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
       "lastStatus": "ok",
-      "lastDurationMs": 6842,
+      "lastDurationMs": 6444,
       "lastFetchedCount": 256,
       "lastKeptCount": 256,
-      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastSuccessAt": "2026-03-09T09:20:16.165568+00:00",
       "lastFingerprint": "e405e8c6019d49ad1fe17094af0c37c795f6eb09",
       "consecutiveFailures": 0
     },
@@ -180,13 +184,13 @@
       "consecutiveFailures": 0
     },
     "teamtailor_sources": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
       "lastStatus": "ok",
-      "lastDurationMs": 12442,
-      "lastFetchedCount": 33,
-      "lastKeptCount": 33,
-      "lastSuccessAt": "2026-03-08T19:46:26.183269+00:00",
-      "lastFingerprint": "b02bc166a85dedca2a51bf84973319a4fbdcd6ec",
+      "lastDurationMs": 12265,
+      "lastFetchedCount": 20,
+      "lastKeptCount": 20,
+      "lastSuccessAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastFingerprint": "fa424d433198d2822ae968af2a9122b5df845ae5",
       "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://ea.gr8people.com": {
@@ -210,11 +214,22 @@
       "consecutiveFailures": 0
     },
     "wellfound": {
-      "lastRunAt": "2026-03-08T19:46:26.183269+00:00",
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
-      "lastKeptCount": 0
+      "lastKeptCount": 0,
+      "consecutiveFailures": 0
+    },
+    "static_source::auto:00fb61a6597b": {
+      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 3206,
+      "lastFetchedCount": 10,
+      "lastKeptCount": 10,
+      "lastSuccessAt": "2026-03-09T09:20:16.165568+00:00",
+      "lastFingerprint": "25b594c2c89e6cf3914f4126c3962658a2eb3ecd",
+      "consecutiveFailures": 0
     }
   }
 }

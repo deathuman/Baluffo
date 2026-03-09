@@ -217,6 +217,16 @@ function formatScheduleCell(entry) {
   return "unknown";
 }
 
+function sanitizeSlowSourceName(value, maxLen = 64) {
+  const text = String(value || "")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "unknown-source";
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, Math.max(1, maxLen - 3)).trim()}...`;
+}
+
 function formatLastRunCell(lastRun) {
   const type = String(lastRun?.type || "");
   const status = String(lastRun?.status || "");
@@ -377,6 +387,72 @@ export function renderAdminOpsSchedule(scheduleEl, schedule, latestOpsHealthCach
   `;
 }
 
+export function renderAdminOpsFetcherMetrics(metricsEl, metrics) {
+  if (!metricsEl) return;
+  const latest = metrics?.latestRun || {};
+  const history = metrics?.history || {};
+  const signature = stableOpsSignature({
+    latestRun: {
+      inputCount: Number(latest?.inputCount || 0),
+      outputCount: Number(latest?.outputCount || 0),
+      duplicateRate: Number(latest?.duplicateRate || 0),
+      sourceFailureRate: Number(latest?.sourceFailureRate || 0),
+      failedSources: Number(latest?.failedSources || 0),
+      sourceCount: Number(latest?.sourceCount || 0)
+    },
+    history: {
+      windowRuns: Number(history?.windowRuns || 0),
+      medianDurationMs: Number(history?.medianDurationMs || 0),
+      averageDurationMs: Number(history?.averageDurationMs || 0)
+    },
+    slowestSources: Array.isArray(latest?.slowestSources) ? latest.slowestSources : []
+  });
+  if (metricsEl.dataset.opsFetcherMetricsSig === signature) return;
+  metricsEl.dataset.opsFetcherMetricsSig = signature;
+
+  const failed = Number(latest?.failedSources || 0);
+  const sourceCount = Math.max(0, Number(latest?.sourceCount || 0));
+  const duplicateRate = Math.max(0, Number(latest?.duplicateRate || 0));
+  const outputYieldRate = Math.max(0, Number(latest?.outputYieldRate || 0));
+  const failureRate = Math.max(0, Number(latest?.sourceFailureRate || 0));
+  const slowest = Array.isArray(latest?.slowestSources) ? latest.slowestSources : [];
+  const slowestSummary = slowest.length
+    ? slowest
+      .slice(0, 3)
+      .map(row => `${sanitizeSlowSourceName(row?.name)} (${formatDuration(Number(row?.durationMs || 0))})`)
+      .filter(Boolean)
+      .join(" | ")
+    : "No source timing data yet.";
+
+  metricsEl.innerHTML = `
+    <div class="admin-total-card">
+      <div class="admin-total-label">Median Runtime</div>
+      <div class="admin-total-value">${formatDuration(Number(history?.medianDurationMs || 0))}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Average Runtime</div>
+      <div class="admin-total-value">${formatDuration(Number(history?.averageDurationMs || 0))}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Window Runs</div>
+      <div class="admin-total-value">${Number(history?.windowRuns || 0).toLocaleString()}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Duplicate Rate</div>
+      <div class="admin-total-value">${(duplicateRate * 100).toFixed(1)}%</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Output Yield</div>
+      <div class="admin-total-value">${(outputYieldRate * 100).toFixed(1)}%</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Source Failures</div>
+      <div class="admin-total-value">${failed.toLocaleString()} / ${sourceCount.toLocaleString()} (${(failureRate * 100).toFixed(1)}%)</div>
+    </div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest sources</strong>: ${escapeHtml(slowestSummary)}</div>
+  `;
+}
+
 export function renderAdminOpsTrends(trendsEl, runs) {
   if (!trendsEl) return;
   const canPatchInPlace = Boolean(trendsEl && trendsEl.dataset);
@@ -518,6 +594,12 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     const statusToken = rawStatus.toLowerCase();
     const summary = row?.summary || {};
     const type = String(row?.type || "unknown");
+    const syncAction = String(summary?.action || "").trim().toLowerCase();
+    const syncLabel = syncAction ? `Sync ${syncAction}` : "Sync";
+    const syncCounts = [summary?.activeCount, summary?.pendingCount, summary?.rejectedCount]
+      .map(value => Number(value || 0))
+      .map(value => value.toLocaleString())
+      .join("/");
     const key = [
       rowArea,
       String(row?.id || ""),
@@ -537,10 +619,14 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       durationText: formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),
       outputOrQueuedText: row?.type === "discovery"
         ? `Queued (new): ${Number(summary?.queuedCandidateCount || 0).toLocaleString()}`
-        : Number(summary?.outputCount || 0).toLocaleString(),
+        : row?.type === "sync"
+          ? `${syncLabel} (${syncCounts})`
+          : Number(summary?.outputCount || 0).toLocaleString(),
       failedText: (row?.type === "discovery"
         ? Number(summary?.failedProbeCount || 0)
-        : Number(summary?.failedSources || 0)).toLocaleString(),
+        : row?.type === "sync"
+          ? Number(String(summary?.error || "").trim().length > 0 ? 1 : 0)
+          : Number(summary?.failedSources || 0)).toLocaleString(),
       finishedText: formatDateTime(row?.finishedAt || row?.startedAt || "")
     };
   };

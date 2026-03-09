@@ -172,23 +172,19 @@ function toOpsRunRow(row, nowMs) {
 export function normalizeOpsRuns(runs, nowMs = Date.now()) {
   const rows = Array.isArray(runs) ? runs.filter(row => row && typeof row === "object") : [];
   const sorted = [...rows].sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a));
-  const latestByType = new Map();
+  const latestLiveByType = new Map();
   sorted.forEach(row => {
+    if (!isRunLive(row)) return;
     const type = String(row?.type || "").trim().toLowerCase();
-    if (!type || latestByType.has(type)) return;
-    latestByType.set(type, toOpsRunRow(row, nowMs));
+    if (!type || latestLiveByType.has(type)) return;
+    latestLiveByType.set(type, toOpsRunRow(row, nowMs));
   });
 
-  const currentRows = Array.from(latestByType.values())
+  const currentRows = Array.from(latestLiveByType.values())
     .sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a));
 
-  const currentIds = new Set(currentRows.map(row => String(row?.id || "")));
   const completedRows = sorted
     .filter(row => !isRunLive(row))
-    .filter(row => {
-      const id = String(row?.id || "");
-      return !id || !currentIds.has(id);
-    })
     .map(row => toOpsRunRow(row, nowMs));
 
   const visibleCompletedRows = completedRows.slice(0, 3);

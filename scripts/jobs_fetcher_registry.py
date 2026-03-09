@@ -20,22 +20,22 @@ DEFAULT_SOURCE_LOADER_NAMES: List[str] = [
 ]
 
 SOURCE_REPORT_META: Dict[str, Dict[str, str]] = {
-    "google_sheets": {"adapter": "csv", "studio": "community_sheet"},
-    "remote_ok": {"adapter": "api", "studio": "remote_ok"},
-    "gamesindustry": {"adapter": "html", "studio": "gamesindustry"},
-    "epic_games_careers": {"adapter": "api", "studio": "epic_games"},
-    "greenhouse_boards": {"adapter": "greenhouse", "studio": "multiple"},
-    "teamtailor_sources": {"adapter": "teamtailor", "studio": "multiple"},
-    "lever_sources": {"adapter": "lever", "studio": "multiple"},
-    "smartrecruiters_sources": {"adapter": "smartrecruiters", "studio": "multiple"},
-    "workable_sources": {"adapter": "workable", "studio": "multiple"},
-    "ashby_sources": {"adapter": "ashby", "studio": "multiple"},
-    "personio_sources": {"adapter": "personio", "studio": "multiple"},
-    "static_studio_pages_a_i": {"adapter": "static", "studio": "multiple"},
-    "static_studio_pages_j_r": {"adapter": "static", "studio": "multiple"},
-    "static_studio_pages_s_z": {"adapter": "static", "studio": "multiple"},
-    "static_studio_pages": {"adapter": "static", "studio": "multiple"},
-    "wellfound": {"adapter": "html", "studio": "wellfound"},
+    "google_sheets": {"adapter": "csv", "studio": "community_sheet", "fetchStrategy": "http"},
+    "remote_ok": {"adapter": "api", "studio": "remote_ok", "fetchStrategy": "http"},
+    "gamesindustry": {"adapter": "html", "studio": "gamesindustry", "fetchStrategy": "http"},
+    "epic_games_careers": {"adapter": "api", "studio": "epic_games", "fetchStrategy": "http"},
+    "greenhouse_boards": {"adapter": "greenhouse", "studio": "multiple", "fetchStrategy": "http"},
+    "teamtailor_sources": {"adapter": "teamtailor", "studio": "multiple", "fetchStrategy": "http"},
+    "lever_sources": {"adapter": "lever", "studio": "multiple", "fetchStrategy": "http"},
+    "smartrecruiters_sources": {"adapter": "smartrecruiters", "studio": "multiple", "fetchStrategy": "http"},
+    "workable_sources": {"adapter": "workable", "studio": "multiple", "fetchStrategy": "http"},
+    "ashby_sources": {"adapter": "ashby", "studio": "multiple", "fetchStrategy": "http"},
+    "personio_sources": {"adapter": "personio", "studio": "multiple", "fetchStrategy": "http"},
+    "static_studio_pages_a_i": {"adapter": "static", "studio": "multiple", "fetchStrategy": "auto"},
+    "static_studio_pages_j_r": {"adapter": "static", "studio": "multiple", "fetchStrategy": "auto"},
+    "static_studio_pages_s_z": {"adapter": "static", "studio": "multiple", "fetchStrategy": "auto"},
+    "static_studio_pages": {"adapter": "static", "studio": "multiple", "fetchStrategy": "auto"},
+    "wellfound": {"adapter": "html", "studio": "wellfound", "fetchStrategy": "browser"},
 }
 
 EXCLUDED_DEFAULT_SOURCES = {

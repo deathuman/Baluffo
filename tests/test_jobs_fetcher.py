@@ -577,9 +577,13 @@ class JobsFetcherTests(unittest.TestCase):
             runtime = report.get("runtime") or {}
             self.assertEqual(int(runtime.get("maxWorkers") or 0), 2)
             self.assertEqual(int(runtime.get("maxPerDomain") or 0), 2)
+            self.assertEqual(str(runtime.get("fetchStrategy") or ""), "auto")
+            self.assertIn(str(runtime.get("fetchClient") or ""), {"urllib", "httpx_async"})
+            self.assertEqual(int(runtime.get("adapterHttpConcurrency") or 0), jf.DEFAULT_ADAPTER_HTTP_CONCURRENCY)
             self.assertEqual(int(runtime.get("selectedSourceCount") or 0), 1)
             self.assertIn("summary", report)
             self.assertIn("sources", report)
+            self.assertEqual(str(report["sources"][0].get("fetchStrategy") or ""), "auto")
 
             task_payload = json.loads((out / "jobs-fetch-tasks.json").read_text(encoding="utf-8"))
             self.assertEqual(str(task_payload.get("schemaVersion") or ""), str(jf.SCHEMA_VERSION))
@@ -601,6 +605,28 @@ class JobsFetcherTests(unittest.TestCase):
 
         rows["source_a"]["consecutiveFailures"] = 2
         self.assertFalse(jf.should_skip_source_by_ttl("source_a", rows, ttl_minutes=360))
+
+    def test_should_skip_source_by_cadence_uses_hot_and_cold_windows(self) -> None:
+        now = jf.datetime.now(jf.timezone.utc)
+        rows = {
+            "hot_source": {
+                "lastSuccessAt": (now - jf.timedelta(minutes=10)).isoformat(),
+                "lastChangedAt": (now - jf.timedelta(minutes=30)).isoformat(),
+                "consecutiveFailures": 0,
+            },
+            "cold_source": {
+                "lastSuccessAt": (now - jf.timedelta(minutes=20)).isoformat(),
+                "lastChangedAt": (now - jf.timedelta(days=2)).isoformat(),
+                "consecutiveFailures": 0,
+            },
+        }
+        self.assertTrue(jf.should_skip_source_by_cadence("hot_source", rows, hot_minutes=15, cold_minutes=60))
+        self.assertTrue(jf.should_skip_source_by_cadence("cold_source", rows, hot_minutes=15, cold_minutes=60))
+
+        rows["hot_source"]["lastSuccessAt"] = (now - jf.timedelta(minutes=20)).isoformat()
+        rows["cold_source"]["lastSuccessAt"] = (now - jf.timedelta(minutes=70)).isoformat()
+        self.assertFalse(jf.should_skip_source_by_cadence("hot_source", rows, hot_minutes=15, cold_minutes=60))
+        self.assertFalse(jf.should_skip_source_by_cadence("cold_source", rows, hot_minutes=15, cold_minutes=60))
 
     def test_run_pipeline_excludes_quarantined_source_unless_ignored(self) -> None:
         calls = {"count": 0}
