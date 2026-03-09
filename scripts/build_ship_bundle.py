@@ -22,6 +22,8 @@ APP_RUNTIME_FILES = (
     "styles.css",
     "theme.js",
     "admin-config.js",
+    "app-local-data-client.js",
+    "desktop-local-data-client.js",
     "local-data-client.js",
     "jobs-parsing-utils.js",
     "jobs-state.js",
@@ -39,6 +41,7 @@ APP_RUNTIME_SCRIPTS = (
     "source_discovery.py",
     "source_registry.py",
     "source_sync.py",
+    "local_data_store.py",
     "discovery_seed_catalog.json",
 )
 PACKAGING_FILES = (

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
+import runpy
 import subprocess
 import sys
 import webbrowser
@@ -21,10 +22,11 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.ship.runtime_launcher import find_free_port, wait_for_url
+from scripts.ship.runtime_launcher import wait_for_url
 
 WINDOW_TITLE = "Baluffo"
 DEFAULT_OPEN_PATH = "jobs.html"
+DEFAULT_SITE_PORT = 8080
 DEFAULT_BRIDGE_PORT = 8877
 READY_TIMEOUT_S = 25.0
 WEBVIEW2_INSTALL_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
@@ -71,14 +73,18 @@ def build_child_command(
     port: int,
     bridge_host: str = "127.0.0.1",
     data_dir: Path | None = None,
+    desktop_runtime: bool = False,
 ) -> list[str]:
     normalized = str(mode or "").strip().lower()
     if normalized not in {"site", "bridge"}:
         raise ValueError("Invalid child mode")
     command = _entry_command()
     if normalized == "site":
-        return command + ["__child_site__", "--root", str(root), "--port", str(port)]
-    return command + [
+        child_command = command + ["__child_site__", "--root", str(root), "--port", str(port)]
+        if desktop_runtime:
+            child_command.append("--desktop-runtime")
+        return child_command
+    child_command = command + [
         "__child_bridge__",
         "--root",
         str(root),
@@ -89,6 +95,9 @@ def build_child_command(
         "--data-dir",
         str(data_dir or (root / "data")),
     ]
+    if desktop_runtime:
+        child_command.append("--desktop-runtime")
+    return child_command
 
 
 def start_child_process(command: Sequence[str]) -> subprocess.Popen[str]:
@@ -113,9 +122,47 @@ def terminate_process(process: subprocess.Popen[str] | None) -> None:
         process.kill()
 
 
+@contextlib.contextmanager
+def _pushd(path: Path):
+    previous = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
+
+
+@contextlib.contextmanager
+def _patched_syspath(path: Path):
+    token = str(path)
+    inserted = token not in sys.path
+    if inserted:
+        sys.path.insert(0, token)
+    try:
+        yield
+    finally:
+        if inserted:
+            with contextlib.suppress(ValueError):
+                sys.path.remove(token)
+
+
+@contextlib.contextmanager
+def _isolated_scripts_package():
+    saved = {name: module for name, module in sys.modules.items() if name == "scripts" or name.startswith("scripts.")}
+    for name in list(saved):
+        sys.modules.pop(name, None)
+    try:
+        yield
+    finally:
+        for name in list(sys.modules):
+            if name == "scripts" or name.startswith("scripts."):
+                sys.modules.pop(name, None)
+        sys.modules.update(saved)
+
+
 def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
     ship_root = resolve_ship_root(args.root or None)
-    site_port = int(args.site_port) if int(args.site_port) > 0 else find_free_port()
+    site_port = int(args.site_port) if int(args.site_port) > 0 else DEFAULT_SITE_PORT
     bridge_port = int(args.bridge_port) if int(args.bridge_port) > 0 else DEFAULT_BRIDGE_PORT
     data_dir = Path(args.data_dir).expanduser().resolve() if str(args.data_dir or "").strip() else ship_root / "data"
     return DesktopRuntimeConfig(
@@ -127,6 +174,34 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
         open_path=str(args.open_path or DEFAULT_OPEN_PATH).lstrip("/") or DEFAULT_OPEN_PATH,
         title=str(args.title or WINDOW_TITLE).strip() or WINDOW_TITLE,
     )
+
+
+def _port_is_available(host: str, port: int) -> bool:
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, int(port)))
+            return True
+        except OSError:
+            return False
+
+
+def ensure_runtime_ports(config: DesktopRuntimeConfig) -> None:
+    if not _port_is_available("127.0.0.1", config.site_port):
+        raise RuntimeError(
+            f"Baluffo desktop site port {config.site_port} is already in use. Close the other process or choose a different --site-port."
+        )
+    if not _port_is_available(config.bridge_host, config.bridge_port):
+        raise RuntimeError(
+            f"Baluffo desktop bridge port {config.bridge_port} is already in use. Close the other process or choose a different --bridge-port."
+        )
+
+
+def build_open_url(config: DesktopRuntimeConfig) -> str:
+    separator = "&" if "?" in config.open_path else "?"
+    return f"http://127.0.0.1:{config.site_port}/{config.open_path}{separator}desktop=1"
 
 
 def is_webview2_available() -> bool:
@@ -218,8 +293,9 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
     site_process: subprocess.Popen[str] | None = None
     bridge_process: subprocess.Popen[str] | None = None
     try:
+        ensure_runtime_ports(config)
         site_process = start_child_process(
-            build_child_command("site", root=config.ship_root, port=config.site_port)
+            build_child_command("site", root=config.ship_root, port=config.site_port, desktop_runtime=True)
         )
         bridge_process = start_child_process(
             build_child_command(
@@ -228,14 +304,16 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 port=config.bridge_port,
                 bridge_host=config.bridge_host,
                 data_dir=config.data_dir,
+                desktop_runtime=True,
             )
         )
-        wait_for_url(f"http://127.0.0.1:{config.site_port}/{config.open_path}", timeout_s=READY_TIMEOUT_S)
+        open_url = build_open_url(config)
+        wait_for_url(open_url, timeout_s=READY_TIMEOUT_S)
         wait_for_url(f"http://{config.bridge_host}:{config.bridge_port}/ops/health", timeout_s=READY_TIMEOUT_S)
         import webview  # type: ignore
         window = webview.create_window(
             config.title,
-            f"http://127.0.0.1:{config.site_port}/{config.open_path}",
+            open_url,
             min_size=(1100, 720),
         )
         webview.start()
@@ -258,7 +336,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--title", default=WINDOW_TITLE)
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--bind-host", default="127.0.0.1")
-    return parser.parse_args(argv)
+    parser.add_argument("--script", default="")
+    parser.add_argument("--desktop-runtime", action="store_true")
+    args, extra = parser.parse_known_args(argv)
+    if str(getattr(args, "child_mode", "") or "") == "__child_script__":
+        args.script_args = list(extra)
+        return args
+    if extra:
+        parser.error(f"unrecognized arguments: {' '.join(extra)}")
+    args.script_args = []
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -276,8 +363,28 @@ def main(argv: list[str] | None = None) -> int:
             bind_host=str(args.bind_host),
             port=int(args.port),
             data_dir=args.data_dir or None,
+            desktop_mode=bool(args.desktop_runtime),
         )
         return 0
+    if args.child_mode == "__child_script__":
+        runtime_root = Path(args.root).expanduser().resolve() if str(args.root or "").strip() else ROOT
+        script_name = str(args.script or "").strip()
+        if not script_name:
+            raise RuntimeError("Missing --script for __child_script__ mode.")
+        script_path = runtime_root / "scripts" / script_name
+        if not script_path.exists():
+            raise RuntimeError(f"Child script not found: {script_path}")
+        script_argv = list(args.script_args or [])
+        if script_argv and script_argv[0] == "--":
+            script_argv = script_argv[1:]
+        original_argv = list(sys.argv)
+        try:
+            sys.argv = [str(script_path), *script_argv]
+            with _pushd(runtime_root), _patched_syspath(runtime_root), _isolated_scripts_package():
+                runpy.run_path(str(script_path), run_name="__main__")
+            return 0
+        finally:
+            sys.argv = original_argv
     config = create_runtime_config(args)
     try:
         ensure_desktop_prerequisites()

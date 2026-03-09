@@ -1324,11 +1324,11 @@ async function loadLatestFetcherReport(options = {}) {
       appendFetcherLog("Loading latest jobs fetch report...");
     }
 
-    const report = await fetchJobsFetchReportJson();
+    const report = await fetchJobsFetchReportJsonWithRetry();
     if (!report) {
-      appendFetcherLog("Could not load fetch report: unavailable or not yet generated.", "error");
+      appendFetcherLog("Fetch report is not available yet. It may still be generating.", "warn");
       if (!silent) {
-        showToast("Could not load jobs fetch report.", "error");
+        showToast("Fetch report not available yet. Retry in a few seconds.", "info");
       }
       return;
     }
@@ -1379,7 +1379,32 @@ async function loadLatestFetcherReport(options = {}) {
 }
 
 async function fetchJobsFetchReportJson() {
+  try {
+    const bridgeReport = await getBridge("/ops/fetch-report");
+    if (bridgeReport && typeof bridgeReport === "object") {
+      return bridgeReport;
+    }
+  } catch {
+    // Fall back to static report URL when bridge endpoint is unavailable.
+  }
   return fetchJobsFetchReportJsonFromData(JOBS_FETCH_REPORT_URL);
+}
+
+async function fetchJobsFetchReportJsonWithRetry(maxAttempts = 3, delayMs = 850) {
+  let attempt = 0;
+  while (attempt < Math.max(1, Number(maxAttempts) || 1)) {
+    attempt += 1;
+    const report = await fetchJobsFetchReportJson();
+    if (report) {
+      return report;
+    }
+    if (attempt < maxAttempts) {
+      await new Promise(resolve => {
+        window.setTimeout(resolve, Math.max(100, Number(delayMs) || 850));
+      });
+    }
+  }
+  return null;
 }
 
 async function copyLatestFailureSummary() {

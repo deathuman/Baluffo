@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import hmac
 import json
 import os
 import shutil
 import sys
+import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,18 +42,31 @@ def read_json(path: Path, fallback: Dict[str, Any] | None = None) -> Dict[str, A
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def write_json_atomic(path: Path, payload: Dict[str, Any]) -> None:
+def _write_atomic(path: Path, payload: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    tmp.write_text(payload, encoding="utf-8")
+    try:
+        for attempt in range(6):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt >= 5:
+                    raise
+                time.sleep(0.03 * (attempt + 1))
+    finally:
+        if tmp.exists():
+            with contextlib.suppress(OSError):
+                tmp.unlink()
+
+
+def write_json_atomic(path: Path, payload: Dict[str, Any]) -> None:
+    _write_atomic(path, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
 def write_text_atomic(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    _write_atomic(path, text)
 
 
 def compute_sha256(path: Path) -> str:

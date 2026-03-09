@@ -1,6 +1,7 @@
 import json
 import unittest
 from pathlib import Path
+from unittest import mock
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from scripts.ship import update_manager as um
@@ -52,6 +53,24 @@ def _build_update_zip(work: Path, version: str) -> Path:
 
 
 class ShipUpdateManagerTests(unittest.TestCase):
+    def test_write_json_atomic_retries_transient_permission_error(self) -> None:
+        with workspace_tmpdir("ship-update") as tmp:
+            target = Path(tmp) / "ship" / "app" / "update-state.json"
+            calls = {"count": 0}
+            original_replace = um.os.replace
+
+            def flaky_replace(src, dst):  # noqa: ANN001
+                calls["count"] += 1
+                if calls["count"] == 1:
+                    raise PermissionError(32, "sharing violation")
+                return original_replace(src, dst)
+
+            with mock.patch.object(um.os, "replace", side_effect=flaky_replace):
+                um.write_json_atomic(target, {"ok": True})
+
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["ok"], True)
+            self.assertEqual(calls["count"], 2)
+
     def test_startup_check_rejects_data_dir_inside_versions(self) -> None:
         with workspace_tmpdir("ship-update") as tmp:
             root = Path(tmp) / "ship"

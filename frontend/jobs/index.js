@@ -1,4 +1,4 @@
-import "../../local-data-client.js";
+import "../../app-local-data-client.js";
 import "../../jobs-state.js";
 import "../../jobs-parsing-utils.js";
 import { boot as bootJobsPage } from "./app.js";

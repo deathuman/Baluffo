@@ -7,6 +7,7 @@ import json
 import uuid
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from scripts import admin_bridge
 
@@ -324,6 +325,28 @@ class AdminBridgeOpsTests(unittest.TestCase):
     def test_add_manual_source_rejects_invalid_url(self):
         invalid = admin_bridge.add_manual_source("not-a-url")
         self.assertEqual(invalid["status"], "invalid")
+
+    def test_run_background_script_uses_child_script_mode_when_frozen(self):
+        cfg = admin_bridge.RuntimeConfig(
+            root=self.test_root,
+            data_dir=self.test_root,
+            host="127.0.0.1",
+            port=8877,
+            log_format="human",
+            log_level="info",
+            quiet_requests=True,
+            desktop_mode=True,
+        )
+        admin_bridge.configure_runtime_paths(cfg)
+        fake_proc = type("FakeProc", (), {"pid": 12345})()
+        with mock.patch.object(admin_bridge.sys, "frozen", True, create=True), mock.patch.object(
+            admin_bridge.sys, "executable", "C:/tmp/Baluffo.exe"
+        ), mock.patch.object(admin_bridge.subprocess, "Popen", return_value=fake_proc) as popen_mock:
+            admin_bridge.run_background_script("source_discovery.py", ["--mode", "dynamic"])
+        command = popen_mock.call_args.args[0]
+        self.assertEqual(command[:5], ["C:/tmp/Baluffo.exe", "__child_script__", "--root", str(self.test_root), "--script"])
+        self.assertIn("source_discovery.py", command)
+        self.assertEqual(command[-2:], ["--mode", "dynamic"])
 
     def test_add_manual_source_uses_static_fallback_for_unsupported_provider(self):
         added = admin_bridge.add_manual_source("https://milestone.it/careers/")

@@ -35,6 +35,7 @@ from scripts import fetcher_metrics as fetcher_metrics_module
 from scripts import source_registry as source_registry_module
 from scripts import source_sync as source_sync_module
 from scripts.contracts import SCHEMA_VERSION
+from scripts.local_data_store import LocalDataPaths, LocalDataStore
 from scripts.source_registry import (
     ACTIVE_PATH,
     APPROVAL_STATE_PATH,
@@ -80,6 +81,7 @@ SYNC_STATUS: Dict[str, Any] = {
 }
 SYNC_CONFIG = source_sync_module.resolve_sync_config()
 SYNC_CONFIG_LOCK = threading.RLock()
+DESKTOP_LOCAL_DATA_STORE: LocalDataStore | None = None
 
 
 @dataclass
@@ -91,6 +93,7 @@ class RuntimeConfig:
     log_format: str
     log_level: str
     quiet_requests: bool
+    desktop_mode: bool = False
 
 
 RUNTIME_CONFIG = RuntimeConfig(
@@ -101,6 +104,7 @@ RUNTIME_CONFIG = RuntimeConfig(
     log_format="human",
     log_level="info",
     quiet_requests=False,
+    desktop_mode=False,
 )
 
 
@@ -144,6 +148,7 @@ def resolve_runtime_config(
     log_format = _normalize_log_format(args.log_format or env_map.get("BALUFFO_BRIDGE_LOG_FORMAT") or "human")
     log_level = _normalize_log_level(args.log_level or env_map.get("BALUFFO_BRIDGE_LOG_LEVEL") or "info")
     quiet_requests = bool(args.quiet_requests)
+    desktop_mode = str(env_map.get("BALUFFO_DESKTOP_MODE") or "").strip().lower() in {"1", "true", "yes", "on"}
     return RuntimeConfig(
         root=ROOT,
         data_dir=data_dir,
@@ -152,6 +157,7 @@ def resolve_runtime_config(
         log_format=log_format,
         log_level=log_level,
         quiet_requests=quiet_requests,
+        desktop_mode=desktop_mode,
     )
 
 
@@ -186,6 +192,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     global OPS_HISTORY_PATH, OPS_ALERT_STATE_PATH, JOBS_FETCH_REPORT_PATH, TASK_STATE_PATH, DISCOVERY_LOG_PATH
     global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
     global TASKS_CONFIG_PATH, SYNC_CONFIG_PATH, SYNC_RUNTIME_PATH
+    global DESKTOP_LOCAL_DATA_STORE
 
     RUNTIME_CONFIG = config
     data_dir = Path(config.data_dir).resolve()
@@ -211,6 +218,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     source_registry_module.REJECTED_PATH = REJECTED_PATH
     source_registry_module.DISCOVERY_REPORT_PATH = DISCOVERY_REPORT_PATH
     source_registry_module.APPROVAL_STATE_PATH = APPROVAL_STATE_PATH
+    DESKTOP_LOCAL_DATA_STORE = LocalDataStore(LocalDataPaths.from_data_dir(data_dir)) if config.desktop_mode else None
 
 
 def startup_banner(config: RuntimeConfig) -> None:
@@ -1526,8 +1534,20 @@ def trigger_source_check(source_id: str, timeout_s: int = 12) -> Dict[str, Any]:
 
 
 def run_background_script(script_name: str, args: List[str] | None = None) -> int:
-    command = [sys.executable, str(Path(RUNTIME_CONFIG.root) / "scripts" / script_name)]
-    command.extend(args or [])
+    if getattr(sys, "frozen", False):
+        command = [
+            sys.executable,
+            "__child_script__",
+            "--root",
+            str(Path(RUNTIME_CONFIG.root)),
+            "--script",
+            str(script_name),
+            "--",
+        ]
+        command.extend(args or [])
+    else:
+        command = [sys.executable, str(Path(RUNTIME_CONFIG.root) / "scripts" / script_name)]
+        command.extend(args or [])
     script = Path(script_name).name.lower()
     task_type = "discovery" if "discovery" in script else ("fetch" if "fetcher" in script else script)
     child_env = os.environ.copy()
@@ -2644,6 +2664,12 @@ def trigger_discovery_task(*, route_name: str) -> Tuple[int, Dict[str, Any]]:
     return 200, {"started": True, "runId": run_id, "task": "source_discovery", "mode": "dynamic", "route": route_name}
 
 
+def desktop_local_data_store() -> LocalDataStore:
+    if not RUNTIME_CONFIG.desktop_mode or DESKTOP_LOCAL_DATA_STORE is None:
+        raise RuntimeError("Desktop local data API is unavailable.")
+    return DESKTOP_LOCAL_DATA_STORE
+
+
 class Handler(BaseHTTPRequestHandler):
     def _route_path(self) -> str:
         return urlparse(self.path).path
@@ -2663,6 +2689,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_bytes(self, body: bytes, *, content_type: str, filename: str = "", status: int = 200) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        if filename:
+            self.send_header("Content-Disposition", f'inline; filename="{filename}"')
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
         if RUNTIME_CONFIG.quiet_requests:
             return
@@ -2678,6 +2715,52 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         path = self._route_path()
         query = self._route_query()
+        if path == "/desktop-local-data/session":
+            try:
+                self._send_json({"ok": True, "user": desktop_local_data_store().get_current_user()})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/saved-jobs":
+            try:
+                uid = (query.get("uid") or [""])[0]
+                self._send_json({"ok": True, "rows": desktop_local_data_store().list_saved_jobs(uid)})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/saved-job-keys":
+            try:
+                uid = (query.get("uid") or [""])[0]
+                self._send_json({"ok": True, "keys": desktop_local_data_store().get_saved_job_keys(uid)})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/attachments":
+            try:
+                uid = (query.get("uid") or [""])[0]
+                job_key = (query.get("jobKey") or [""])[0]
+                self._send_json({"ok": True, "rows": desktop_local_data_store().list_attachments_for_job(uid, job_key)})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/attachments/content":
+            try:
+                uid = (query.get("uid") or [""])[0]
+                job_key = (query.get("jobKey") or [""])[0]
+                attachment_id = (query.get("attachmentId") or [""])[0]
+                body, content_type, filename = desktop_local_data_store().get_attachment_blob(uid, job_key, attachment_id)
+                self._send_bytes(body, content_type=content_type, filename=filename)
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/activity":
+            try:
+                uid = (query.get("uid") or [""])[0]
+                limit = int((query.get("limit") or ["300"])[0])
+                self._send_json({"ok": True, "rows": desktop_local_data_store().list_activity_for_user(uid, limit)})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
         if path == "/registry/active":
             state = load_state()
             self._send_json({"sources": state["active"], "summary": summarize_state(state)})
@@ -2733,6 +2816,9 @@ class Handler(BaseHTTPRequestHandler):
                 window_runs = 20
             self._send_json(compute_fetcher_metrics(window_runs=window_runs))
             return
+        if path == "/ops/fetch-report":
+            self._send_json(normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {})))
+            return
         if path == "/sync/status":
             self._send_json(get_sync_status_payload())
             return
@@ -2741,6 +2827,103 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         path = self._route_path()
         payload = read_json_from_request(self)
+        if path == "/desktop-local-data/sign-in":
+            try:
+                user = desktop_local_data_store().sign_in(str(payload.get("name") or ""))
+                self._send_json({"ok": True, "user": user})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/sign-out":
+            try:
+                desktop_local_data_store().sign_out()
+                self._send_json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/saved-jobs/save":
+            try:
+                job_key = desktop_local_data_store().save_job_for_user(
+                    str(payload.get("uid") or ""),
+                    payload.get("job") if isinstance(payload.get("job"), dict) else {},
+                    payload.get("options") if isinstance(payload.get("options"), dict) else {},
+                )
+                self._send_json({"ok": True, "jobKey": job_key})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/saved-jobs/remove":
+            try:
+                desktop_local_data_store().remove_saved_job_for_user(str(payload.get("uid") or ""), str(payload.get("jobKey") or ""))
+                self._send_json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/saved-jobs/status":
+            try:
+                desktop_local_data_store().update_application_status(
+                    str(payload.get("uid") or ""),
+                    str(payload.get("jobKey") or ""),
+                    str(payload.get("status") or ""),
+                    payload.get("options") if isinstance(payload.get("options"), dict) else {},
+                )
+                self._send_json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/saved-jobs/notes":
+            try:
+                desktop_local_data_store().update_job_notes(str(payload.get("uid") or ""), str(payload.get("jobKey") or ""), str(payload.get("notes") or ""))
+                self._send_json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/attachments/add":
+            try:
+                attachment_id = desktop_local_data_store().add_attachment_for_job(
+                    str(payload.get("uid") or ""),
+                    str(payload.get("jobKey") or ""),
+                    payload.get("fileMeta") if isinstance(payload.get("fileMeta"), dict) else {},
+                    str(payload.get("blobDataUrl") or ""),
+                )
+                self._send_json({"ok": True, "attachmentId": attachment_id})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/attachments/delete":
+            try:
+                desktop_local_data_store().delete_attachment_for_job(str(payload.get("uid") or ""), str(payload.get("jobKey") or ""), str(payload.get("attachmentId") or ""))
+                self._send_json({"ok": True})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/backup/export":
+            try:
+                result = desktop_local_data_store().export_profile_data(str(payload.get("uid") or ""), bool((payload.get("options") or {}).get("includeFiles")))
+                self._send_json({"ok": True, "payload": result})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/backup/import":
+            try:
+                result = desktop_local_data_store().import_profile_data(str(payload.get("uid") or ""), payload.get("payload") if isinstance(payload.get("payload"), dict) else {})
+                self._send_json({"ok": True, "result": result})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/admin/overview":
+            try:
+                self._send_json({"ok": True, "overview": desktop_local_data_store().get_admin_overview(str(payload.get("pin") or ""))})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/admin/wipe":
+            try:
+                desktop_local_data_store().wipe_account_admin(str(payload.get("pin") or ""), str(payload.get("uid") or ""))
+                self._send_json({"ok": True, "user": desktop_local_data_store().get_current_user()})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
         state = load_state()
 
         if path == "/sources/manual":

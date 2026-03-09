@@ -1,4 +1,4 @@
-import "../../local-data-client.js";
+import "../../app-local-data-client.js";
 import "../../admin-config.js";
 import { boot as bootAdminPage } from "./app.js";
 

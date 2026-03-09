@@ -206,8 +206,10 @@ Portable layout:
 - `Baluffo.exe`: dedicated desktop app window
 - `ship\`: embedded zip-first runtime bundle
 - `ship\data\`: portable runtime/user data
+- `ship\data\local-user-data\`: desktop-only profiles, saved jobs, notes, activity, and attachment metadata/files
 
 The executable starts the local site and bridge internally, waits for readiness, then opens Baluffo in a dedicated window.
+Desktop mode now uses a fixed site origin so theme/quick-filter browser state stays stable, while core user data is stored under `ship\data\local-user-data\` instead of WebView-local IndexedDB/localStorage.
 
 If no custom icon is provided, the build generates and embeds a branded default `.ico`.
 On Windows, the packaged app now checks for Microsoft Edge WebView2 Runtime at startup and shows an installer prompt if it is missing.

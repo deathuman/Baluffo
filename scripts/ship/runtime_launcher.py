@@ -160,6 +160,7 @@ def run_bridge_server(
     bind_host: str = "127.0.0.1",
     port: int = 8877,
     data_dir: str | Path | None = None,
+    desktop_mode: bool = False,
 ) -> None:
     layout = resolve_runtime_layout(root, data_dir=data_dir)
     update_manager.startup_check(layout.root, layout.data_dir)
@@ -167,6 +168,10 @@ def run_bridge_server(
     if not bridge_script.exists():
         raise RuntimeError(f"Admin bridge entrypoint not found: {bridge_script}")
     os.environ["BALUFFO_DATA_DIR"] = str(layout.data_dir)
+    if desktop_mode:
+        os.environ["BALUFFO_DESKTOP_MODE"] = "1"
+    else:
+        os.environ.pop("BALUFFO_DESKTOP_MODE", None)
     with _pushd(layout.active_root), _patched_syspath(layout.active_root), _isolated_scripts_package(), _patched_argv(
         [
             str(bridge_script),
@@ -210,12 +215,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "bridge":
             run_bridge_server(
-                args.root or None,
-                bind_host=str(args.bind_host),
-                port=int(args.port),
-                data_dir=args.data_dir or None,
-            )
-            return 0
+            args.root or None,
+            bind_host=str(args.bind_host),
+            port=int(args.port),
+            data_dir=args.data_dir or None,
+            desktop_mode=str(os.environ.get("BALUFFO_DESKTOP_MODE") or "").strip().lower() in {"1", "true", "yes", "on"},
+        )
+        return 0
     except KeyboardInterrupt:
         return 0
     except Exception as exc:  # noqa: BLE001

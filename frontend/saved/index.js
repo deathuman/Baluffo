@@ -1,4 +1,4 @@
-import "../../local-data-client.js";
+import "../../app-local-data-client.js";
 import "../../saved-zip-utils.js";
 import { boot as bootSavedPage } from "./app.js";
 
