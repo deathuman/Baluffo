@@ -38,7 +38,8 @@ export async function fetchFromGoogleSheets(options = {}) {
     sheetsFallbackSource,
     setSourceStatus,
     parseCSV,
-    fetcher = fetchWithTimeout
+    fetcher = fetchWithTimeout,
+    timeoutMs = 20000
   } = options;
   const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetsFallbackSource.sheetId}/export?format=csv&gid=${sheetsFallbackSource.gid}`;
   const sources = [
@@ -49,7 +50,7 @@ export async function fetchFromGoogleSheets(options = {}) {
   for (const source of sources) {
     try {
       if (typeof setSourceStatus === "function") setSourceStatus(`Fetching from ${source.name}...`);
-      const response = await fetcher(source.url, 20000);
+      const response = await fetcher(source.url, Number(timeoutMs) > 0 ? Number(timeoutMs) : 20000);
       if (!response.ok) continue;
       const csv = await response.text();
       if (!csv || csv.length < 100) continue;
@@ -75,13 +76,15 @@ export async function fetchUnifiedJobs(options = {}) {
     setSourceStatus,
     parseUnifiedPayload,
     parseCSV,
-    fetcher = fetchWithTimeout
+    fetcher = fetchWithTimeout,
+    timeoutMs = 20000
   } = options;
+  const requestTimeoutMs = Number(timeoutMs) > 0 ? Number(timeoutMs) : 20000;
 
   for (const source of unifiedJsonSources || []) {
     try {
       if (typeof setSourceStatus === "function") setSourceStatus(`Fetching from ${source.name}...`);
-      const response = await fetcher(source.url, 20000, { headers: { Accept: "application/json" } });
+      const response = await fetcher(source.url, requestTimeoutMs, { headers: { Accept: "application/json" } });
       if (!response.ok) continue;
       const payload = await response.json();
       const jobs = parseUnifiedPayload(payload);
@@ -94,7 +97,7 @@ export async function fetchUnifiedJobs(options = {}) {
   for (const source of unifiedCsvSources || []) {
     try {
       if (typeof setSourceStatus === "function") setSourceStatus(`Fetching from ${source.name}...`);
-      const response = await fetcher(source.url, 20000, { headers: { Accept: "text/csv,*/*" } });
+      const response = await fetcher(source.url, requestTimeoutMs, { headers: { Accept: "text/csv,*/*" } });
       if (!response.ok) continue;
       const csv = await response.text();
       if (!csv || csv.length < 100) continue;
@@ -109,7 +112,8 @@ export async function fetchUnifiedJobs(options = {}) {
     sheetsFallbackSource,
     setSourceStatus,
     parseCSV,
-    fetcher
+    fetcher,
+    timeoutMs: requestTimeoutMs
   });
   if (sheetsFallback.jobs && sheetsFallback.jobs.length > 0) return sheetsFallback;
   return {
@@ -121,9 +125,10 @@ export async function fetchUnifiedJobs(options = {}) {
 
 export async function fetchJsonFromCandidates(urls, options = {}) {
   const fetcher = options.fetcher || fetchWithTimeout;
+  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 12000;
   for (const url of urls || []) {
     try {
-      const response = await fetcher(`${url}?t=${Date.now()}`, 12000, { cache: "no-store" });
+      const response = await fetcher(`${url}?t=${Date.now()}`, timeoutMs, { cache: "no-store" });
       if (!response.ok) continue;
       return await response.json();
     } catch {

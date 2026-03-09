@@ -158,8 +158,13 @@ const JOBS_AUTO_REFRESH_SIGNAL_KEY = "baluffo_jobs_auto_refresh_signal";
 const JOBS_AUTO_REFRESH_APPLIED_KEY = "baluffo_jobs_auto_refresh_applied";
 const QUICK_FILTER_PREFS_KEY = "baluffo_quick_filter_prefs";
 const UNIFIED_JSON_SOURCES = [
+  { name: "Unified JSON light (local data)", url: "data/jobs-unified-light.json" },
   { name: "Unified JSON (local data)", url: "data/jobs-unified.json" },
   { name: "Unified JSON (root)", url: "jobs-unified.json" }
+];
+const STARTUP_PREVIEW_JSON_URLS = [
+  "data/jobs-unified-startup.json",
+  "jobs-unified-startup.json"
 ];
 const UNIFIED_CSV_SOURCES = [
   { name: "Unified CSV (local data)", url: "data/jobs-unified.csv" },
@@ -180,6 +185,8 @@ const JOBS_FETCH_REPORT_URLS = [
 const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
 const JOBS_PIPELINE_STATUS_POLL_MS = 1500;
 const JOBS_PIPELINE_STATUS_IDLE_POLL_MS = 5000;
+const JOBS_BRIDGE_REQUEST_TIMEOUT_MS = 1800;
+const JOBS_FIRST_LOAD_REQUEST_TIMEOUT_MS = 4500;
 
 const QUICK_FILTERS = Array.isArray(jobsStateModule.QUICK_FILTERS) ? jobsStateModule.QUICK_FILTERS : [];
 const COUNTRY_DISPLAY_NAMES = (typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function")
@@ -329,6 +336,7 @@ let hasInitializedJobsFeed = false;
 let pendingAutoRefreshSignal = null;
 let lastHandledAutoRefreshSignalId = readAppliedAutoRefreshId();
 let lastFilterOptionsSignature = "";
+let startupRenderMetricSent = false;
 const jobsPipelineUiState = {
   pollingTimer: null,
   runId: "",
@@ -394,6 +402,39 @@ function cacheDom() {
   dataSourcesCaptionEl = document.getElementById("data-sources-caption");
   jobsPipelineRunBtn = document.getElementById("jobs-pipeline-run-btn");
   jobsPipelineProgressEl = document.getElementById("jobs-pipeline-progress");
+}
+
+function isDesktopRuntimeMode() {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("desktop") === "1") return true;
+  } catch {
+    // Ignore parse failures.
+  }
+  return false;
+}
+
+function emitDesktopStartupMetric(event, payload = {}) {
+  if (!isDesktopRuntimeMode()) return;
+  fetch(`${ADMIN_BRIDGE_BASE}/desktop-local-data/startup-metric?t=${Date.now()}`, {
+    method: "POST",
+    cache: "no-store",
+    keepalive: true,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event: String(event || "").trim() || "unknown",
+      payload: payload && typeof payload === "object" ? payload : {}
+    })
+  }).catch(() => {});
+}
+
+function markStartupRendered(stage, rowCount) {
+  if (startupRenderMetricSent) return;
+  startupRenderMetricSent = true;
+  emitDesktopStartupMetric("jobs_first_render", {
+    stage: String(stage || ""),
+    rowCount: Number(rowCount || 0)
+  });
 }
 
 function bindEvents() {
@@ -525,12 +566,17 @@ function bindEvents() {
 
 async function init() {
   if (!jobsList) return;
+  emitDesktopStartupMetric("jobs_init_start");
   renderDataSources().catch(() => {});
   ensureJobsPipelineStatusWatch();
 
   initAuth();
 
-  const cached = await readCachedJobs();
+  const cached = isDesktopRuntimeMode() ? null : await readCachedJobs();
+  emitDesktopStartupMetric("jobs_cache_checked", {
+    desktopMode: isDesktopRuntimeMode(),
+    hasCache: Boolean(cached?.jobs && cached.jobs.length > 0)
+  });
   if (cached?.jobs && cached.jobs.length > 0) {
     allJobs = normalizeJobs(cached.jobs, {
       professionLabels: PROFESSION_LABELS,
@@ -540,6 +586,7 @@ async function init() {
     updateFilterOptions();
     applyStateToFilters();
     applyFiltersAndRender({ resetPage: false });
+    markStartupRendered("cache", allJobs.length);
 
     if (isCacheStale(cached.savedAt)) {
       setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs from cache. Updating stale cache...`);
@@ -552,6 +599,17 @@ async function init() {
     updateLastUpdatedText(cached.savedAt);
     hasInitializedJobsFeed = true;
     await applyPendingAutoRefreshSignal();
+    return;
+  }
+
+  const previewLoaded = await loadStartupPreviewJobs();
+  if (previewLoaded) {
+    setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs from startup snapshot. Syncing full feed...`);
+    hasInitializedJobsFeed = true;
+    await applyPendingAutoRefreshSignal();
+    refreshJobsNow({ manual: false }).catch(() => {
+      // Silent background refresh failure; startup snapshot remains usable.
+    });
     return;
   }
 
@@ -596,19 +654,27 @@ function scheduleJobsPipelineStatusPoll(delayMs) {
 }
 
 async function callJobsBridge(path, options = {}) {
-  const response = await fetch(`${ADMIN_BRIDGE_BASE}${path}?t=${Date.now()}`, {
-    method: options.method || "GET",
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
-  if (!response.ok) {
-    throw new Error(`Bridge ${options.method || "GET"} ${path} failed with HTTP ${response.status}`);
+  const controller = new AbortController();
+  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : JOBS_BRIDGE_REQUEST_TIMEOUT_MS;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${ADMIN_BRIDGE_BASE}${path}?t=${Date.now()}`, {
+      method: options.method || "GET",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`Bridge ${options.method || "GET"} ${path} failed with HTTP ${response.status}`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return await response.json();
 }
 
 function getPipelineProgressLabel(payload) {
@@ -1041,7 +1107,13 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
   if (manual) setSourceStatus("Refreshing jobs from unified feed...");
 
   try {
-    const result = await fetchUnifiedJobs();
+    const refreshStartedAt = Date.now();
+    if (firstLoad) {
+      emitDesktopStartupMetric("jobs_first_load_refresh_start");
+    }
+    const result = await fetchUnifiedJobs({
+      timeoutMs: firstLoad ? JOBS_FIRST_LOAD_REQUEST_TIMEOUT_MS : 20000
+    });
     if (!result.jobs || result.jobs.length === 0) {
       if (manual) showToast(result.error || "Could not refresh jobs.", "error");
       jobsDispatch.dispatch({
@@ -1057,12 +1129,22 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
       sanitizeUrl
     });
     setRefreshJobsNeedsAttention(false);
-    await writeCachedJobs(allJobs);
+    if (!isDesktopRuntimeMode()) {
+      await writeCachedJobs(allJobs);
+    }
     updateLastUpdatedText(Date.now());
     recalculateItemsPerPage();
     updateFilterOptions();
     applyStateToFilters();
     applyFiltersAndRender({ resetPage: false });
+    if (firstLoad) {
+      markStartupRendered("first_load_refresh", allJobs.length);
+      emitDesktopStartupMetric("jobs_first_load_refresh_done", {
+        ok: true,
+        durationMs: Math.max(0, Date.now() - refreshStartedAt),
+        rowCount: allJobs.length
+      });
+    }
 
     if (manual) {
       showToast("Jobs refreshed.", "success");
@@ -1080,6 +1162,12 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
     return true;
   } catch (err) {
     logJobsError("Refresh failed", err);
+    if (firstLoad) {
+      emitDesktopStartupMetric("jobs_first_load_refresh_done", {
+        ok: false,
+        error: String(err?.message || "unknown error")
+      });
+    }
     if (manual) showToast("Could not refresh jobs.", "error");
     jobsDispatch.dispatch({
       type: JOBS_ACTIONS.REFRESH_FAILED,
@@ -1114,6 +1202,33 @@ async function writeCachedJobs(jobs) {
     });
   } catch {
     // Ignore cache write failures.
+  }
+}
+
+async function loadStartupPreviewJobs() {
+  try {
+    const startedAt = Date.now();
+    const payload = await fetchJsonFromCandidates(STARTUP_PREVIEW_JSON_URLS, { timeoutMs: 3000 });
+    const rows = parseUnifiedJobsPayload(payload, jobsParsing);
+    if (!Array.isArray(rows) || rows.length === 0) return false;
+    allJobs = normalizeJobs(rows, {
+      professionLabels: PROFESSION_LABELS,
+      sanitizeUrl
+    });
+    updateLastUpdatedText(Date.now());
+    recalculateItemsPerPage();
+    updateFilterOptions();
+    applyStateToFilters();
+    applyFiltersAndRender({ resetPage: false });
+    markStartupRendered("startup_preview", allJobs.length);
+    emitDesktopStartupMetric("jobs_startup_preview_loaded", {
+      rowCount: allJobs.length,
+      durationMs: Math.max(0, Date.now() - startedAt)
+    });
+    return true;
+  } catch {
+    emitDesktopStartupMetric("jobs_startup_preview_miss");
+    return false;
   }
 }
 

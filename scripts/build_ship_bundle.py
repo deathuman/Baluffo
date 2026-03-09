@@ -48,6 +48,15 @@ PACKAGING_FILES = (
     "README.md",
     "github-app-sync-config.template.json",
 )
+APP_RUNTIME_DATA_FILES = (
+    "jobs-unified-startup.json",
+    "jobs-unified-light.json",
+    "jobs-unified.json",
+    "jobs-unified.csv",
+    "jobs-fetch-report.json",
+    "source-registry-active.json",
+)
+STARTUP_PREVIEW_LIMIT = 1400
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -141,6 +150,27 @@ def _copy_app_version(version_dir: Path) -> None:
     packaged_sync_config = ROOT / "packaging" / "github-app-sync-config.json"
     if packaged_sync_config.exists():
         _copy_file(packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json")
+
+    for rel in APP_RUNTIME_DATA_FILES:
+        src = ROOT / "data" / rel
+        if not src.exists():
+            continue
+        _copy_file(src, version_dir / "data" / rel)
+    _generate_startup_preview(version_dir / "data")
+
+
+def _generate_startup_preview(data_dir: Path) -> None:
+    light_path = data_dir / "jobs-unified-light.json"
+    startup_path = data_dir / "jobs-unified-startup.json"
+    if not light_path.exists():
+        return
+    try:
+        payload = json.loads(light_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    rows = payload if isinstance(payload, list) else []
+    startup_rows = rows[:STARTUP_PREVIEW_LIMIT]
+    _write_text(startup_path, json.dumps(startup_rows, ensure_ascii=False))
 
 
 def build_bundle(output_dir: Path, version: str) -> Path:

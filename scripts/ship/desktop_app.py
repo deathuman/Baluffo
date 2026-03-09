@@ -5,14 +5,18 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import html
 import os
 import runpy
 import subprocess
 import sys
+import time
 import webbrowser
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
+import json
 
 if os.name == "nt":
     import ctypes
@@ -45,6 +49,21 @@ class DesktopRuntimeConfig:
     data_dir: Path
     open_path: str
     title: str
+
+
+def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
+    row = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "event": str(event or "").strip() or "unknown",
+        "fields": {key: value for key, value in fields.items()},
+    }
+    path = Path(data_dir) / "desktop-startup-metrics.jsonl"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except OSError:
+        return
 
 
 def _default_ship_root() -> Path:
@@ -204,6 +223,99 @@ def build_open_url(config: DesktopRuntimeConfig) -> str:
     return f"http://127.0.0.1:{config.site_port}/{config.open_path}{separator}desktop=1"
 
 
+def build_loading_html(title: str) -> str:
+    safe_title = html.escape(str(title or WINDOW_TITLE))
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{safe_title}</title>
+  <style>
+    :root {{
+      color-scheme: dark;
+    }}
+    html, body {{
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: radial-gradient(circle at 20% 20%, #2f3b57 0%, #0f131d 58%, #0b0e15 100%);
+      color: #e9eefc;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }}
+    .shell {{
+      height: 100%;
+      display: grid;
+      place-items: center;
+    }}
+    .card {{
+      display: grid;
+      gap: 10px;
+      justify-items: center;
+      text-align: center;
+      padding: 22px 26px;
+      border: 1px solid rgba(193, 210, 255, 0.26);
+      border-radius: 14px;
+      background: rgba(13, 18, 28, 0.64);
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(2px);
+    }}
+    .spinner {{
+      width: 28px;
+      height: 28px;
+      border: 3px solid rgba(193, 210, 255, 0.26);
+      border-top-color: #8eb5ff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }}
+    .title {{
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }}
+    .hint {{
+      color: #b8c6e9;
+      font-size: 13px;
+    }}
+    @keyframes spin {{
+      to {{
+        transform: rotate(360deg);
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="card" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="title">Starting {safe_title}</div>
+      <div class="hint">Loading interface...</div>
+    </section>
+  </main>
+</body>
+</html>
+"""
+
+
+def _load_window_url(window: object, url: str) -> None:
+    try:
+        load_url = getattr(window, "load_url", None)
+        if callable(load_url):
+            load_url(url)
+    except Exception:
+        # Best effort only; startup fallback remains the initial html shell.
+        return
+
+
+def _load_window_url_with_trace(data_dir: Path, started_mono: float, window: object, url: str) -> None:
+    _append_startup_trace(
+        data_dir,
+        "desktop_window_load_url",
+        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+        url=str(url),
+    )
+    _load_window_url(window, url)
+
+
 def is_webview2_available() -> bool:
     if os.name != "nt":
         return True
@@ -292,10 +404,25 @@ def ensure_desktop_prerequisites() -> None:
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
     site_process: subprocess.Popen[str] | None = None
     bridge_process: subprocess.Popen[str] | None = None
+    started_mono = time.perf_counter()
+    _append_startup_trace(
+        config.data_dir,
+        "desktop_launch_start",
+        sitePort=int(config.site_port),
+        bridgePort=int(config.bridge_port),
+        shipRoot=str(config.ship_root),
+    )
     try:
         ensure_runtime_ports(config)
+        _append_startup_trace(config.data_dir, "desktop_ports_available", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
         site_process = start_child_process(
             build_child_command("site", root=config.ship_root, port=config.site_port, desktop_runtime=True)
+        )
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_site_spawned",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            pid=int(site_process.pid) if site_process else 0,
         )
         bridge_process = start_child_process(
             build_child_command(
@@ -307,18 +434,39 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 desktop_runtime=True,
             )
         )
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_bridge_spawned",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            pid=int(bridge_process.pid) if bridge_process else 0,
+        )
         open_url = build_open_url(config)
         wait_for_url(open_url, timeout_s=READY_TIMEOUT_S)
-        wait_for_url(f"http://{config.bridge_host}:{config.bridge_port}/ops/health", timeout_s=READY_TIMEOUT_S)
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_site_ready",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            url=str(open_url),
+        )
         import webview  # type: ignore
         window = webview.create_window(
             config.title,
-            open_url,
+            html=build_loading_html(config.title),
             min_size=(1100, 720),
         )
-        webview.start()
+        _append_startup_trace(config.data_dir, "desktop_window_created", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
+        webview.start(_load_window_url_with_trace, (config.data_dir, started_mono, window, open_url))
+        _append_startup_trace(config.data_dir, "desktop_window_closed", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
         if window is None:
             raise RuntimeError("Failed to create desktop window.")
+    except Exception as exc:
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_launch_error",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            error=str(exc),
+        )
+        raise
     finally:
         terminate_process(bridge_process)
         terminate_process(site_process)

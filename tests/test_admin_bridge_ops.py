@@ -1397,6 +1397,48 @@ class AdminBridgeOpsTests(unittest.TestCase):
         finally:
             admin_bridge.sync_push_sources = original_push
 
+    def test_wait_for_report_completion_ignores_stale_flag_until_report_finishes(self):
+        started_at = admin_bridge.now_iso()
+        finished_at = admin_bridge.now_iso()
+        reports = [
+            {"startedAt": started_at, "finishedAt": ""},
+            {"startedAt": started_at, "finishedAt": finished_at},
+        ]
+
+        class _NoWaitEvent:
+            def wait(self, _seconds):  # noqa: ANN001
+                return None
+
+        with (
+            mock.patch.object(admin_bridge, "load_json_object", side_effect=reports),
+            mock.patch.object(admin_bridge, "report_is_stale_in_progress", return_value=True),
+            mock.patch.object(admin_bridge.threading, "Event", return_value=_NoWaitEvent()),
+        ):
+            result = admin_bridge._wait_for_report_completion(  # noqa: SLF001
+                report_path=self.test_root / "source-discovery-report.json",
+                started_at=started_at,
+                timeout_s=10.0,
+                report_name="discovery report",
+            )
+        self.assertEqual(str(result.get("finishedAt") or ""), finished_at)
+
+    def test_wait_for_report_completion_can_fail_fast_when_stale_guard_enabled(self):
+        started_at = admin_bridge.now_iso()
+        reports = [{"startedAt": started_at, "finishedAt": ""}]
+
+        with (
+            mock.patch.object(admin_bridge, "load_json_object", side_effect=reports),
+            mock.patch.object(admin_bridge, "report_is_stale_in_progress", return_value=True),
+        ):
+            with self.assertRaises(RuntimeError):
+                admin_bridge._wait_for_report_completion(  # noqa: SLF001
+                    report_path=self.test_root / "jobs-fetch-report.json",
+                    started_at=started_at,
+                    timeout_s=10.0,
+                    report_name="fetch report",
+                    fail_on_stale=True,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

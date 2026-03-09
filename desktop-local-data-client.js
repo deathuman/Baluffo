@@ -238,6 +238,9 @@ const desktopApi = {
   getAttachmentDownloadUrl(uid, jobKey, attachmentId) {
     return buildAttachmentContentUrl(uid, jobKey, attachmentId, { download: true });
   },
+  getAttachmentOpenUrl(uid, jobKey, attachmentId) {
+    return buildAttachmentContentUrl(uid, jobKey, attachmentId);
+  },
   async deleteAttachmentForJob(uid, jobKey, attachmentId) {
     await requestJson("/attachments/delete", {
       method: "POST",
@@ -255,6 +258,13 @@ const desktopApi = {
       body: JSON.stringify({ uid, options })
     });
     return payload.payload || {};
+  },
+  getBackupExportUrl(uid, options = {}) {
+    const query = new URLSearchParams({
+      uid: String(uid || ""),
+      includeFiles: options?.includeFiles ? "1" : "0"
+    });
+    return `${BASE_URL}/backup/export-file?${query.toString()}`;
   },
   async importProfileData(uid, payload) {
     const response = await requestJson("/backup/import", {
@@ -292,8 +302,12 @@ async function bootstrapDesktopApi() {
     console.error("[desktop-local-data] bootstrap failed:", toErrorMessage(error, "bootstrap failed"));
     currentUser = null;
   }
-  window.JobAppLocalData = desktopApi;
   notifyAuthChanged();
 }
 
-await bootstrapDesktopApi();
+// Expose API immediately so page boot is never blocked by bridge/session fetch latency.
+window.JobAppLocalData = desktopApi;
+notifyAuthChanged();
+bootstrapDesktopApi().catch(() => {
+  // Startup fetch errors are already logged in bootstrapDesktopApi.
+});

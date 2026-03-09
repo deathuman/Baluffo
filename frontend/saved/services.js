@@ -122,6 +122,11 @@ export const savedPageService = {
       return toResult(null, err?.message || "Could not read attachment.");
     }
   },
+  getAttachmentOpenUrl(uid, jobKey, attachmentId) {
+    const api = getLocalDataApi();
+    if (!api || typeof api.getAttachmentOpenUrl !== "function") return "";
+    return String(api.getAttachmentOpenUrl(uid, jobKey, attachmentId) || "");
+  },
   getAttachmentDownloadUrl(uid, jobKey, attachmentId) {
     const api = getLocalDataApi();
     if (!api || typeof api.getAttachmentDownloadUrl !== "function") return "";
@@ -162,6 +167,11 @@ export const savedPageService = {
     } catch (err) {
       return toResult(null, err?.message || "Could not export backup.");
     }
+  },
+  getBackupExportUrl(uid, options = {}) {
+    const api = getLocalDataApi();
+    if (!api || typeof api.getBackupExportUrl !== "function") return "";
+    return String(api.getBackupExportUrl(uid, options) || "");
   },
   async importProfileData(uid, payload) {
     try {

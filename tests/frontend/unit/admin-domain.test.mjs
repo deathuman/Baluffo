@@ -73,6 +73,31 @@ test("admin domain parses stringified detail rows when merging statuses", () => 
   assert.equal(rows[0]._lastKeptCount, 2);
 });
 
+test("admin domain matches static source rows by source id from loader name", () => {
+  const rows = mergeSourceStatusFromReport(
+    [
+      {
+        id: "static:listing_url:https://www.naconstudiomilan.com/careers",
+        name: "Nacon Studio Milan (Manual Website)",
+        studio: "Nacon Studio Milan"
+      }
+    ],
+    {
+      sources: [
+        {
+          name: "static_source::static:listing_url:https://www.naconstudiomilan.com/careers",
+          status: "ok",
+          fetchedCount: 1,
+          keptCount: 1
+        }
+      ]
+    },
+    "active"
+  );
+  assert.equal(rows[0]._lastStatus, "ok");
+  assert.equal(rows[0]._lastKeptCount, 1);
+});
+
 test("admin domain resolves jobs found from merged kept/fetched counters", () => {
   assert.equal(getSourceJobsFoundCount({ _lastKeptCount: 7 }), 7);
   assert.equal(getSourceJobsFoundCount({ _lastFetchedCount: 12 }), 12);

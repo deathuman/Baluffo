@@ -1223,6 +1223,11 @@ async function uploadAttachments(jobKey, files) {
 async function openAttachment(jobKey, attachmentId) {
   if (!currentUser) return;
   try {
+    const directUrl = savedPageService.getAttachmentOpenUrl(currentUser.uid, jobKey, attachmentId);
+    if (directUrl) {
+      window.open(directUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
     const blobResult = await savedPageService.getAttachmentBlob(currentUser.uid, jobKey, attachmentId);
     if (!blobResult.ok) throw new Error(blobResult.error || "Could not read attachment.");
     const blob = blobResult.data?.blob;
@@ -1244,13 +1249,7 @@ async function downloadAttachment(jobKey, attachmentId, filename) {
   try {
     const directUrl = savedPageService.getAttachmentDownloadUrl(currentUser.uid, jobKey, attachmentId);
     if (directUrl) {
-      const a = document.createElement("a");
-      a.href = directUrl;
-      a.download = filename || "attachment";
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      window.open(directUrl, "_blank", "noopener,noreferrer");
       return;
     }
 
@@ -2038,6 +2037,12 @@ async function exportBackup() {
 
   try {
     const includeFiles = Boolean(exportIncludeFilesEl?.checked);
+    const directExportUrl = savedPageService.getBackupExportUrl(currentUser.uid, { includeFiles });
+    if (directExportUrl) {
+      window.open(directExportUrl, "_blank", "noopener,noreferrer");
+      showToast("Backup export started.", "success", { durationMs: 2600 });
+      return;
+    }
     const payloadResult = await savedPageService.exportProfileData(currentUser.uid, {
       includeFiles
     });

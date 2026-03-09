@@ -91,12 +91,25 @@ function coerceReportDetailRow(detail) {
   return null;
 }
 
+function extractSourceIdFromLoaderName(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw.startsWith("static_source::")) {
+    return raw.slice("static_source::".length).trim();
+  }
+  return "";
+}
+
 function toSourceMatchKeys(row) {
   const out = new Set();
   const studio = String(row?.studio || "").trim().toLowerCase();
   const name = String(row?.name || "").trim().toLowerCase();
+  const id = String(row?.id || "").trim().toLowerCase();
+  const loaderSourceId = extractSourceIdFromLoaderName(name);
+  if (id) out.add(id);
   if (studio) out.add(studio);
   if (name) out.add(name);
+  if (loaderSourceId) out.add(loaderSourceId);
   if (studio && name) out.add(`${studio}|${name}`);
   return Array.from(out);
 }

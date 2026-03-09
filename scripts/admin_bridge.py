@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 import html as html_module
+import io
 import json
 import os
 import re
@@ -13,6 +14,7 @@ import subprocess
 import sys
 import uuid
 import threading
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -62,6 +64,7 @@ TASK_STATE_PATH = ROOT / "data" / "admin-task-state.json"
 DISCOVERY_LOG_PATH = ROOT / "data" / "source-discovery.log"
 SYNC_CONFIG_PATH = ROOT / "data" / "source-sync-config.json"
 SYNC_RUNTIME_PATH = ROOT / "data" / "source-sync-runtime.json"
+STARTUP_METRICS_PATH = ROOT / "data" / "desktop-startup-metrics.jsonl"
 
 MAX_HISTORY_ROWS = 240
 STALE_FETCH_HOURS = 12
@@ -103,6 +106,7 @@ SYNC_STATUS: Dict[str, Any] = {
 SYNC_CONFIG = source_sync_module.resolve_sync_config()
 SYNC_CONFIG_LOCK = threading.RLock()
 DESKTOP_LOCAL_DATA_STORE: LocalDataStore | None = None
+STARTUP_METRICS_LOCK = threading.RLock()
 
 
 @dataclass
@@ -212,7 +216,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     global RUNTIME_CONFIG
     global OPS_HISTORY_PATH, OPS_ALERT_STATE_PATH, JOBS_FETCH_REPORT_PATH, TASK_STATE_PATH, DISCOVERY_LOG_PATH
     global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
-    global TASKS_CONFIG_PATH, SYNC_CONFIG_PATH, SYNC_RUNTIME_PATH
+    global TASKS_CONFIG_PATH, SYNC_CONFIG_PATH, SYNC_RUNTIME_PATH, STARTUP_METRICS_PATH
     global DESKTOP_LOCAL_DATA_STORE
 
     RUNTIME_CONFIG = config
@@ -226,6 +230,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     DISCOVERY_LOG_PATH = data_dir / "source-discovery.log"
     SYNC_CONFIG_PATH = data_dir / "source-sync-config.json"
     SYNC_RUNTIME_PATH = data_dir / "source-sync-runtime.json"
+    STARTUP_METRICS_PATH = data_dir / "desktop-startup-metrics.jsonl"
     ACTIVE_PATH = data_dir / "source-registry-active.json"
     PENDING_PATH = data_dir / "source-registry-pending.json"
     REJECTED_PATH = data_dir / "source-registry-rejected.json"
@@ -276,6 +281,41 @@ def _normalize_sync_settings(payload: Optional[Dict[str, Any]] = None) -> Dict[s
 def load_saved_sync_settings() -> Dict[str, Any]:
     raw = load_json_object(SYNC_CONFIG_PATH, {})
     return _normalize_sync_settings(raw if isinstance(raw, dict) else {})
+
+
+def append_startup_metric(event: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    row = {
+        "ts": now_iso(),
+        "event": str(event or "").strip() or "unknown",
+        "payload": payload if isinstance(payload, dict) else {},
+    }
+    with STARTUP_METRICS_LOCK:
+        try:
+            STARTUP_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with STARTUP_METRICS_PATH.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except OSError:
+            return
+
+
+def read_startup_metrics(limit: int = 200) -> List[Dict[str, Any]]:
+    max_rows = max(1, min(1000, int(limit or 200)))
+    try:
+        text = STARTUP_METRICS_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    rows: List[Dict[str, Any]] = []
+    for line in text.splitlines():
+        line = str(line or "").strip()
+        if not line:
+            continue
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            rows.append(parsed)
+    return rows[-max_rows:]
 
 
 def resolve_effective_sync_config() -> source_sync_module.SyncConfig:
@@ -2850,7 +2890,14 @@ def get_jobs_pipeline_status_payload() -> Dict[str, Any]:
         return payload
 
 
-def _wait_for_report_completion(*, report_path: Path, started_at: str, timeout_s: float, report_name: str) -> Dict[str, Any]:
+def _wait_for_report_completion(
+    *,
+    report_path: Path,
+    started_at: str,
+    timeout_s: float,
+    report_name: str,
+    fail_on_stale: bool = False,
+) -> Dict[str, Any]:
     deadline = datetime.now(timezone.utc) + timedelta(seconds=max(10.0, float(timeout_s)))
     started_dt = parse_iso(started_at)
     while datetime.now(timezone.utc) < deadline:
@@ -2860,7 +2907,11 @@ def _wait_for_report_completion(*, report_path: Path, started_at: str, timeout_s
         if started_dt and report_started and report_started >= (started_dt - timedelta(seconds=1)):
             if report_finished and report_finished >= report_started:
                 return report if isinstance(report, dict) else {}
-        if report_is_stale_in_progress("fetch" if "fetch" in report_name else "discovery", report_path, report if isinstance(report, dict) else {}):
+        if fail_on_stale and report_is_stale_in_progress(
+            "fetch" if "fetch" in report_name else "discovery",
+            report_path,
+            report if isinstance(report, dict) else {},
+        ):
             raise RuntimeError(f"{report_name} became stale before completion")
         threading.Event().wait(1.0)
     raise TimeoutError(f"{report_name} did not finish within timeout")
@@ -3138,11 +3189,45 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:  # noqa: BLE001
                 self._send_json({"ok": False, "error": str(exc)}, status=400)
             return
+        if path == "/desktop-local-data/backup/export-file":
+            try:
+                uid = (query.get("uid") or [""])[0]
+                include_files_raw = str((query.get("includeFiles") or ["0"])[0]).strip().lower()
+                include_files = include_files_raw in {"1", "true", "yes", "on"}
+                payload = desktop_local_data_store().export_profile_data(uid, include_files=include_files)
+                date_token = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                safe_uid = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(uid or "profile")).strip("_") or "profile"
+                if include_files:
+                    backup_json = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+                    buffer = io.BytesIO()
+                    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_STORED) as zf:
+                        zf.writestr("backup.json", backup_json)
+                    body = buffer.getvalue()
+                    filename = f"baluffo-backup-{safe_uid}-{date_token}.zip"
+                    self._send_bytes(body, content_type="application/zip", filename=filename, disposition="attachment")
+                else:
+                    body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+                    filename = f"baluffo-backup-{safe_uid}-{date_token}.json"
+                    self._send_bytes(body, content_type="application/json; charset=utf-8", filename=filename, disposition="attachment")
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
         if path == "/desktop-local-data/activity":
             try:
                 uid = (query.get("uid") or [""])[0]
                 limit = int((query.get("limit") or ["300"])[0])
                 self._send_json({"ok": True, "rows": desktop_local_data_store().list_activity_for_user(uid, limit)})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/startup-metrics":
+            try:
+                limit_raw = (query.get("limit") or ["200"])[0]
+                try:
+                    limit = int(limit_raw)
+                except ValueError:
+                    limit = 200
+                self._send_json({"ok": True, "rows": read_startup_metrics(limit)})
             except Exception as exc:  # noqa: BLE001
                 self._send_json({"ok": False, "error": str(exc)}, status=400)
             return
@@ -3309,6 +3394,15 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 desktop_local_data_store().wipe_account_admin(str(payload.get("pin") or ""), str(payload.get("uid") or ""))
                 self._send_json({"ok": True, "user": desktop_local_data_store().get_current_user()})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+        if path == "/desktop-local-data/startup-metric":
+            try:
+                event = str(payload.get("event") or "").strip() or "unknown"
+                details = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+                append_startup_metric(event, details)
+                self._send_json({"ok": True})
             except Exception as exc:  # noqa: BLE001
                 self._send_json({"ok": False, "error": str(exc)}, status=400)
             return

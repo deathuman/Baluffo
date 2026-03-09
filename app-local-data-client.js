@@ -15,7 +15,11 @@ function resolveDesktopMode() {
 }
 
 if (resolveDesktopMode()) {
-  await import("./desktop-local-data-client.js");
+  import("./desktop-local-data-client.js").catch(error => {
+    console.error("[app-local-data-client] failed to load desktop adapter:", error);
+  });
 } else {
-  await import("./local-data-client.js");
+  import("./local-data-client.js").catch(error => {
+    console.error("[app-local-data-client] failed to load browser adapter:", error);
+  });
 }

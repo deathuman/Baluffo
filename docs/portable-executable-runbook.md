@@ -24,6 +24,7 @@ Current baseline:
 
 - build with Python 3.13 on Windows
 - keep the normal ship bundle on `py -3`
+- do not build desktop EXE with Python 3.14 in this environment: `pywebview` install fails because `pythonnet` wheel build fails, which produces an EXE without desktop webview support
 
 Outputs:
 

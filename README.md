@@ -194,7 +194,7 @@ Optional custom icon override:
 py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3 --icon C:\path\to\Baluffo.ico
 ```
 
-The desktop executable build currently targets Python 3.13 on Windows because the `pywebview` Windows dependency chain is not yet stable on Python 3.14 in this project environment.
+The desktop executable build currently targets Python 3.13 on Windows. In this project environment, Python 3.14 fails to install `pywebview` because `pythonnet` wheel build fails; that leads to an EXE that starts but cannot launch the desktop webview.
 
 Output:
 
