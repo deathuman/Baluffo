@@ -46,7 +46,7 @@ Write-Host "[baluffo-ship] Bridge: http://$BridgeHost`:$BridgePort" -ForegroundC
 Write-Host "[baluffo-ship] Data:   $DataDir" -ForegroundColor Gray
 
 Start-Process powershell -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$SiteScript`"", "-Port", "$SitePort"
-Start-Process powershell -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$BridgeScript`"", "-Host", "$BridgeHost", "-Port", "$BridgePort", "-DataDir", "`"$DataDir`""
+Start-Process powershell -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$BridgeScript`"", "-BindHost", "$BridgeHost", "-Port", "$BridgePort", "-DataDir", "`"$DataDir`""
 
 Write-Host "[baluffo-ship] Started. Use Task Manager or PowerShell Stop-Process to stop spawned windows." -ForegroundColor Yellow
 Write-Host "[baluffo-ship] Recovery: .\run-all.ps1 -RecoverPrevious" -ForegroundColor DarkYellow

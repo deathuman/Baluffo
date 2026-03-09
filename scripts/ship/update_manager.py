@@ -9,11 +9,16 @@ import hmac
 import json
 import os
 import shutil
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 from zipfile import ZIP_DEFLATED, ZipFile
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from scripts.ship.migrations import resolve_migrations
 

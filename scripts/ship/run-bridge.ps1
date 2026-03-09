@@ -1,5 +1,5 @@
 param(
-  [string]$Host = "127.0.0.1",
+  [string]$BindHost = "127.0.0.1",
   [int]$Port = 8877,
   [string]$DataDir = ""
 )
@@ -21,8 +21,12 @@ if ([string]::IsNullOrWhiteSpace($DataDir)) {
   $DataDir = Join-Path $Root "data"
 }
 $Manager = Join-Path $Root "scripts\ship\update_manager.py"
+$Launcher = Join-Path $Root "scripts\ship\runtime_launcher.py"
 if (-not (Test-Path $Manager)) {
   throw "Update manager not found: $Manager"
+}
+if (-not (Test-Path $Launcher)) {
+  throw "Runtime launcher not found: $Launcher"
 }
 
 & $PythonCommand @PythonArgs $Manager startup-check --root $Root --data-dir $DataDir
@@ -39,14 +43,14 @@ if (-not (Test-Path $ActiveRoot)) {
 
 $env:BALUFFO_DATA_DIR = $DataDir
 Write-Host "[baluffo-ship] Starting admin bridge..." -ForegroundColor Cyan
-Write-Host "[baluffo-ship] URL: http://$Host`:$Port" -ForegroundColor Gray
+Write-Host "[baluffo-ship] URL: http://$BindHost`:$Port" -ForegroundColor Gray
 Write-Host "[baluffo-ship] Data dir: $DataDir" -ForegroundColor Gray
 Write-Host "[baluffo-ship] Version: $CurrentVersion" -ForegroundColor Gray
 Write-Host "[baluffo-ship] Python: $PythonCommand $($PythonArgs -join ' ')" -ForegroundColor Gray
 
 Push-Location $ActiveRoot
 try {
-  & $PythonCommand @PythonArgs scripts/admin_bridge.py --host $Host --port $Port --data-dir $DataDir --log-format human --log-level info
+  & $PythonCommand @PythonArgs $Launcher bridge --root $Root --bind-host $BindHost --port $Port --data-dir $DataDir
 }
 finally {
   Pop-Location

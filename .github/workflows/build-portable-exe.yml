@@ -1,0 +1,59 @@
+name: build-portable-exe
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_version:
+        description: Bundle version override
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  windows-portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Python desktop dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-desktop.txt
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: |
+          npm run test:frontend:unit
+          npm run test:py
+
+      - name: Resolve bundle version
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.bundle_version }}"
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            if ("${{ github.ref_type }}" -eq "tag") {
+              $version = "${{ github.ref_name }}".TrimStart("v")
+            } else {
+              $version = "0.0.0-ci.${{ github.run_number }}"
+            }
+          }
+          "BALUFFO_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build portable executable
+        run: python scripts/build_portable_exe.py --bundle-version ${{ env.BALUFFO_VERSION }}
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: baluffo-portable-${{ env.BALUFFO_VERSION }}
+          path: dist/baluffo-portable-${{ env.BALUFFO_VERSION }}.zip

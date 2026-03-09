@@ -3,27 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Test Page</title>
+  <title>Baluffo Jobs</title>
+  <meta http-equiv="refresh" content="0; url=jobs.html">
   <script src="theme.js"></script>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="home-page">
+<body class="jobs-entry-page">
   <button class="btn back-btn theme-toggle-btn global-theme-toggle" type="button" aria-label="Switch theme">Theme</button>
   <div class="jobs-container">
     <main class="container">
-      <h1>test page</h1>
-      <button id="learn-more-btn" class="btn">Learn more...</button>
-      <button id="game-dev-jobs-btn" class="btn">Game Dev Jobs</button>
+      <h1>Opening Jobs...</h1>
+      <p>If you are not redirected automatically, continue to <a href="jobs.html">the jobs page</a>.</p>
+      <noscript>
+        <p>JavaScript is disabled, so automatic redirect is unavailable. Open <a href="jobs.html">jobs.html</a>.</p>
+      </noscript>
     </main>
   </div>
-
-  <div id="popup-overlay" class="popup-overlay hidden">
-    <div class="popup">
-      <p id="popup-description" class="popup-description"></p>
-      <button id="popup-close-btn" class="btn btn-close">Close</button>
-    </div>
-  </div>
-
-  <script type="module" src="frontend/home/index.js"></script>
+  <script>
+    window.location.replace("jobs.html");
+  </script>
 </body>
 </html>

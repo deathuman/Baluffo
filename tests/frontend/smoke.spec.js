@@ -6,6 +6,12 @@ async function stubPrompt(page, value = "Smoke User") {
   }, value);
 }
 
+test("index compatibility entry redirects to jobs", async ({ page }) => {
+  await page.goto("/index.html");
+  await page.waitForURL("**/jobs.html");
+  await expect(page.locator("#jobs-list")).toBeVisible();
+});
+
 test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning", async ({ page }) => {
   await stubPrompt(page);
   await page.goto("/jobs.html");

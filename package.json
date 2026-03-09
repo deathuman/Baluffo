@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build:ship-bundle": "py -3 scripts/build_ship_bundle.py",
+    "build:portable-exe": "py -3.13 scripts/build_portable_exe.py",
     "test:unit": "npm run test:frontend:unit",
     "test:smoke": "npm run test:frontend",
     "test:frontend": "playwright test",

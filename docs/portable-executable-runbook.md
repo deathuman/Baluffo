@@ -1,0 +1,57 @@
+# Portable Executable Runbook (Windows)
+
+Baluffo supports a Windows-first portable executable wrapper built with `pywebview` and `PyInstaller`.
+
+## Build prerequisites
+
+```powershell
+py -3.13 -m pip install -r requirements-desktop.txt
+```
+
+## Build
+
+```powershell
+py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3
+```
+
+Optional custom icon:
+
+```powershell
+py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3 --icon C:\path\to\Baluffo.ico
+```
+
+Current baseline:
+
+- build with Python 3.13 on Windows
+- keep the normal ship bundle on `py -3`
+
+Outputs:
+
+- `dist\baluffo-portable`
+- `dist\baluffo-portable-1.2.3.zip`
+
+By default the build now generates a branded `.ico` automatically and embeds it into `Baluffo.exe`.
+
+## Portable layout
+
+- `Baluffo.exe`: desktop window entrypoint
+- `ship\`: embedded versioned runtime bundle
+- `ship\data\`: local persistent runtime/user data
+
+## Runtime behavior
+
+- the executable starts the local static site in the background
+- the executable starts the local admin bridge in the background
+- readiness checks:
+  - site: `jobs.html`
+  - bridge: `/ops/health`
+- after both are ready, the app opens in a dedicated window
+- child processes stop when the desktop window closes
+- on Windows, startup checks for Microsoft Edge WebView2 Runtime and offers to open the installer if it is missing
+
+## Notes
+
+- v1 executable packaging is Windows-only
+- the underlying ship/update model remains zip-first
+- PowerShell launchers remain available for operator/debug usage
+- future macOS/Linux support requires replacing remaining Windows-specific update/launcher assumptions

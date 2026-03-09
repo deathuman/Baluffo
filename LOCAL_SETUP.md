@@ -119,3 +119,17 @@ Saved job record fields:
 - Detailed runbook:
   - `docs/ship-bundle-runbook.md`
 - The ship bundle seeds clean runtime files under `data\`; it does not package the repo's local runtime JSON/CSV state.
+
+## Portable executable (Windows)
+
+- Install dependencies:
+  - `py -3.13 -m pip install -r requirements-desktop.txt`
+- Build:
+  - `py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3`
+- Output:
+  - `dist/baluffo-portable`
+  - `dist/baluffo-portable-1.2.3.zip`
+- Dedicated desktop entrypoint:
+  - `Baluffo.exe`
+- Runbook:
+  - `docs/portable-executable-runbook.md`

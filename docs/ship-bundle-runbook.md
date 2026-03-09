@@ -31,7 +31,7 @@ From bundle root:
 
 ```powershell
 .\run-site.ps1 -Port 8080
-.\run-bridge.ps1 -Host 127.0.0.1 -Port 8877
+.\run-bridge.ps1 -BindHost 127.0.0.1 -Port 8877
 ```
 
 Or launch both:

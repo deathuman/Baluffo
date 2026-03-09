@@ -941,81 +941,7 @@ h1 {
   margin: 0 0 0.9rem;
 }
 
-/* Home + Jobs modern-neutral polish (scoped, behavior-preserving) */
-
-.home-page {
-  background:
-    radial-gradient(1200px 500px at 20% -15%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 60%),
-    radial-gradient(900px 500px at 95% 5%, color-mix(in srgb, var(--surface-14) 42%, transparent), transparent 60%),
-    var(--bg-page);
-}
-
-.home-page .jobs-container {
-  width: min(980px, 100%);
-  padding-top: 2.2rem;
-}
-
-.home-page .container {
-  margin: 5.5rem auto 0;
-  padding: 2.3rem 1.8rem 2rem;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--border-default) 90%, transparent);
-  background:
-    radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--accent-soft-bg) 56%, transparent), transparent 45%),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-4) 92%, transparent), color-mix(in srgb, var(--surface-2) 92%, transparent));
-  box-shadow: 0 22px 42px rgba(0, 0, 0, 0.26);
-}
-
-.home-page h1 {
-  margin-bottom: 0.9rem;
-  font-family: "Avenir Next", "Segoe UI Variable", "Segoe UI", sans-serif;
-  font-size: clamp(2rem, 4vw, 2.9rem);
-  letter-spacing: 0.01em;
-}
-
-.home-page #learn-more-btn,
-.home-page #game-dev-jobs-btn {
-  margin: 0.35rem;
-  min-width: 10.8rem;
-  min-height: 2.6rem;
-  border: 1px solid var(--border-default);
-  border-radius: 12px;
-  background: linear-gradient(180deg, var(--surface-10), var(--surface-7));
-  color: var(--text-primary);
-  font-weight: 600;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
-}
-
-.home-page #learn-more-btn:hover,
-.home-page #game-dev-jobs-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
-  background: linear-gradient(180deg, var(--surface-15), var(--surface-10));
-}
-
-.home-page #game-dev-jobs-btn {
-  border-color: color-mix(in srgb, var(--accent) 65%, var(--border-default));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 32%, var(--surface-9)), color-mix(in srgb, var(--accent-hover) 20%, var(--surface-7)));
-}
-
-.home-page .popup-overlay {
-  backdrop-filter: blur(2px);
-}
-
-.home-page .popup {
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border-default));
-  border-radius: 16px;
-  padding: 1.65rem 1.45rem 1.35rem;
-  background:
-    radial-gradient(circle at 90% 12%, color-mix(in srgb, var(--accent-soft-bg) 45%, transparent), transparent 52%),
-    linear-gradient(180deg, var(--surface-4), var(--surface-2));
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.33);
-}
-
-.home-page .popup-description {
-  font-size: 1.02rem;
-  line-height: 1.55;
-}
+/* Jobs page polish */
 
 .jobs-page .jobs-container {
   width: min(1260px, 100%);
@@ -1230,7 +1156,7 @@ h1 {
   font-size: 0.85rem;
 }
 
-.home-page :focus-visible,
+.jobs-entry-page :focus-visible,
 .jobs-page :focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 86%, #ffffff);
   outline-offset: 2px;
@@ -1247,15 +1173,6 @@ h1 {
 }
 
 @media (max-width: 900px) {
-  .home-page .jobs-container {
-    padding-top: 1.3rem;
-  }
-
-  .home-page .container {
-    margin-top: 4.6rem;
-    padding: 1.65rem 1.05rem 1.4rem;
-  }
-
   .jobs-page .jobs-container {
     padding: 0.95rem 0.9rem 1.3rem;
   }
@@ -1275,11 +1192,6 @@ h1 {
 }
 
 @media (max-width: 760px) {
-  .home-page #learn-more-btn,
-  .home-page #game-dev-jobs-btn {
-    width: 100%;
-  }
-
   .jobs-page .jobs-header h1 {
     font-size: 1.45rem;
   }
@@ -1291,10 +1203,6 @@ h1 {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .home-page .container {
-    animation: homeIntro 0.55s ease-out both;
-  }
-
   .jobs-page .jobs-header {
     animation: jobsIntro 0.42s ease-out both;
   }
@@ -1306,21 +1214,9 @@ h1 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home-page .container,
   .jobs-page .jobs-header,
   .jobs-page .filters {
     animation: none !important;
-  }
-}
-
-@keyframes homeIntro {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 

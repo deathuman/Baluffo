@@ -159,6 +159,7 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     _copy_app_version(version_dir)
     _copy_file(ROOT / "scripts" / "ship" / "update_manager.py", tooling_dir / "update_manager.py")
     _copy_file(ROOT / "scripts" / "ship" / "migrations.py", tooling_dir / "migrations.py")
+    _copy_file(ROOT / "scripts" / "ship" / "runtime_launcher.py", tooling_dir / "runtime_launcher.py")
 
     # Launcher scripts + ship runbook.
     _copy_file(ROOT / "scripts" / "ship" / "run-bridge.ps1", output_dir / "run-bridge.ps1")

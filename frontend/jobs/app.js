@@ -101,7 +101,6 @@ const jobsDispatch = createJobsDispatcher();
 const PROFESSION_LABELS = jobsStateModule.PROFESSION_LABELS || {};
 
 let jobsList;
-let backBtn;
 let workTypeFilter;
 let lifecycleStatusFilter;
 let countryFilter;
@@ -339,7 +338,6 @@ function bootJobsPage() {
 
 function cacheDom() {
   jobsList = document.getElementById("jobs-list");
-  backBtn = document.getElementById("back-btn");
   workTypeFilter = document.getElementById("work-type-filter");
   lifecycleStatusFilter = document.getElementById("lifecycle-status-filter");
   countryFilter = document.getElementById("country-filter");
@@ -380,7 +378,6 @@ function cacheDom() {
 function bindEvents() {
 
   const clickHandlers = new Map([
-    [backBtn, () => { window.location.href = "index.html"; }],
     [savedJobsBtn, () => {
       rememberCurrentJobsUrl();
       window.location.href = "saved.html";

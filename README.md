@@ -41,26 +41,24 @@ It combines:
 
 ```text
 .
-├─ index.html                 # Landing page
-├─ jobs.html                  # Jobs page
-├─ saved.html                 # Saved jobs page
-├─ admin.html                 # Admin page
-├─ frontend/                  # ES module entrypoints + page architecture layers
-│  └─ home/                   # Landing page module entrypoint + app
-├─ local-data-client.js       # Local auth/storage provider
-├─ jobs-state.js              # Shared filter labels/config
-├─ data/                      # Feed outputs, source registries, reports
-├─ scripts/
-│  ├─ jobs_fetcher.py         # Build unified jobs feed
-│  ├─ source_discovery.py     # Discover candidate sources
-│  └─ admin_bridge.py         # Local admin HTTP bridge
-└─ tests/                     # Python test suite
+|- index.html                 # Compatibility redirect to jobs.html
+|- jobs.html                  # Canonical jobs app entry
+|- saved.html                 # Saved jobs page
+|- admin.html                 # Admin page
+|- frontend/                  # ES module entrypoints + page architecture layers
+|- local-data-client.js       # Local auth/storage provider
+|- jobs-state.js              # Shared filter labels/config
+|- data/                      # Feed outputs, source registries, reports
+|- scripts/
+|  |- jobs_fetcher.py         # Build unified jobs feed
+|  |- source_discovery.py     # Discover candidate sources
+|  `- admin_bridge.py         # Local admin HTTP bridge
+`- tests/                     # Python test suite
 ```
 
 ## Architecture Map
 
 - `frontend/*/app.js`: page orchestration (events, state flow, service calls)
-- `frontend/home/app.js`: landing page behavior orchestration
 - `frontend/*/domain.js`: pure transformation/business rules
 - `frontend/*/data-source.js`: async fetch/read envelopes
 - `frontend/*/render.js`: HTML/DOM composition
@@ -82,8 +80,8 @@ py -3 -m http.server 8080 --directory .
 ```
 
 Open:
-- `http://localhost:8080/index.html`
 - `http://localhost:8080/jobs.html`
+- `http://localhost:8080/index.html` (compatibility redirect)
 - `http://localhost:8080/saved.html`
 - `http://localhost:8080/admin.html`
 
@@ -174,6 +172,46 @@ Versioning policy + release checklist: `docs/versioning-policy-and-release-check
 - Export/import available from Saved Jobs page
 - Admin panel is protected by a local PIN (`1234` by default in current local setup)
 
+## Portable Executable (Windows)
+
+Baluffo can also be wrapped as a portable Windows desktop executable using `pywebview` + `PyInstaller`.
+
+Install desktop build dependencies:
+
+```powershell
+py -3.13 -m pip install -r requirements-desktop.txt
+```
+
+Build:
+
+```powershell
+py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3
+```
+
+Optional custom icon override:
+
+```powershell
+py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3 --icon C:\path\to\Baluffo.ico
+```
+
+The desktop executable build currently targets Python 3.13 on Windows because the `pywebview` Windows dependency chain is not yet stable on Python 3.14 in this project environment.
+
+Output:
+
+- `dist/baluffo-portable`
+- `dist/baluffo-portable-1.2.3.zip`
+
+Portable layout:
+
+- `Baluffo.exe`: dedicated desktop app window
+- `ship\`: embedded zip-first runtime bundle
+- `ship\data\`: portable runtime/user data
+
+The executable starts the local site and bridge internally, waits for readiness, then opens Baluffo in a dedicated window.
+
+If no custom icon is provided, the build generates and embeds a branded default `.ico`.
+On Windows, the packaged app now checks for Microsoft Edge WebView2 Runtime at startup and shows an installer prompt if it is missing.
+
 ## Validation
 
 ### JavaScript syntax checks
@@ -184,7 +222,6 @@ node --check jobs-parsing-utils.js
 node --check saved-zip-utils.js
 node --check jobs-state.js
 node --check admin-config.js
-node --check frontend/home/index.js frontend/home/app.js
 node --check frontend/jobs/index.js frontend/jobs/app.js
 node --check frontend/saved/index.js frontend/saved/app.js
 node --check frontend/admin/index.js frontend/admin/app.js
