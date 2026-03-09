@@ -445,7 +445,6 @@ class LocalDataStore:
             if not target:
                 raise ValueError("Saved job not found.")
             target["notes"] = str(notes or "")
-            target["updatedAt"] = now_iso()
             self._save_saved_jobs(uid, rows)
 
     def list_attachments_for_job(self, uid: str, job_key: str) -> List[Dict[str, Any]]:
@@ -556,10 +555,18 @@ class LocalDataStore:
             for row in payload.get("savedJobs") or []:
                 if not isinstance(row, dict):
                     skipped_invalid += 1
+                    warnings.append("Skipped malformed saved job (non-object row).")
+                    continue
+                title = str(row.get("title") or "").strip()
+                company = str(row.get("company") or "").strip()
+                if not title or not company:
+                    skipped_invalid += 1
+                    warnings.append("Skipped malformed saved job (missing title/company).")
                     continue
                 normalized = self._normalize_saved_job(uid, row, saved_map.get(str(row.get("jobKey") or "")))
                 if not normalized.get("jobKey"):
                     skipped_invalid += 1
+                    warnings.append("Skipped malformed saved job (missing jobKey).")
                     continue
                 if normalized["jobKey"] in saved_map:
                     saved_map[normalized["jobKey"]] = self._merge_saved_job(uid, saved_map[normalized["jobKey"]], normalized)

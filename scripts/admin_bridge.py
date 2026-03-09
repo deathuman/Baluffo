@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import html as html_module
 import json
 import os
@@ -66,12 +67,32 @@ MAX_HISTORY_ROWS = 240
 STALE_FETCH_HOURS = 12
 DEGRADED_FAILURE_RATIO = 0.25
 OUTPUT_DROP_RATIO = 0.40
+SOCIAL_ZERO_MATCH_THRESHOLD = 2
+SOCIAL_FAILURE_THRESHOLD = 2
+SOCIAL_LOW_CONFIDENCE_SPIKE_THRESHOLD = 120
 OPS_SCHEMA_VERSION = 1
 OPS_STATE_LOCK = threading.RLock()
 LOG_LEVEL_ORDER = {"debug": 10, "info": 20, "warn": 30, "error": 40}
 SYNC_STATE_LOCK = threading.RLock()
 ACTIVE_SYNC_RUNS: set[str] = set()
 ACTIVE_SYNC_THREADS: Dict[str, threading.Thread] = {}
+PIPELINE_STATE_LOCK = threading.RLock()
+ACTIVE_PIPELINE_RUN_ID = ""
+ACTIVE_PIPELINE_THREAD: Optional[threading.Thread] = None
+PIPELINE_STATUS: Dict[str, Any] = {
+    "active": False,
+    "runId": "",
+    "stage": "idle",
+    "progress": {"currentStep": 0, "totalSteps": 3, "percent": 0, "label": "Idle"},
+    "startedAt": "",
+    "finishedAt": "",
+    "error": "",
+    "updatesFound": False,
+    "refreshRecommended": False,
+    "baselineOutputCount": 0,
+    "finalOutputCount": 0,
+    "jobsPageLoadedCount": 0,
+}
 SYNC_STATUS: Dict[str, Any] = {
     "lastPullAt": "",
     "lastPushAt": "",
@@ -238,7 +259,7 @@ def startup_banner(config: RuntimeConfig) -> None:
         ops="GET /ops/health, GET /ops/history, GET /ops/fetcher-metrics, POST /ops/alerts/ack",
         registry="GET /registry/*, POST /registry/*",
         sync="GET /sync/status, POST /sync/config, POST /sync/test, POST /sync/pull, POST /sync/push",
-        tasks="POST /tasks/run-fetcher, POST /tasks/run-discovery, POST /tasks/run-sync-pull, POST /tasks/run-sync-push",
+        tasks="POST /tasks/run-fetcher, POST /tasks/run-discovery, POST /tasks/run-sync-pull, POST /tasks/run-sync-push, POST /tasks/run-jobs-pipeline, GET /tasks/run-jobs-pipeline-status",
     )
 
 
@@ -1604,6 +1625,37 @@ def _safe_schema_version(value: Any) -> int:
     return max(1, parsed)
 
 
+def _coerce_fetch_report_detail_row(detail: Any) -> Dict[str, Any] | None:
+    candidate: Dict[str, Any] | None = None
+    if isinstance(detail, dict):
+        candidate = detail
+    elif isinstance(detail, str):
+        raw = str(detail).strip()
+        if raw.startswith("{") and raw.endswith("}"):
+            parsed: Any = None
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                try:
+                    parsed = ast.literal_eval(raw)
+                except Exception:  # noqa: BLE001
+                    parsed = None
+            if isinstance(parsed, dict):
+                candidate = parsed
+    if not isinstance(candidate, dict):
+        return None
+    return {
+        "name": str(candidate.get("name") or "").strip(),
+        "status": str(candidate.get("status") or "").strip().lower(),
+        "adapter": str(candidate.get("adapter") or "").strip().lower(),
+        "studio": str(candidate.get("studio") or "").strip(),
+        "fetchedCount": _safe_int(candidate.get("fetchedCount"), 0, 0, 1_000_000),
+        "keptCount": _safe_int(candidate.get("keptCount"), 0, 0, 1_000_000),
+        "lowConfidenceDropped": _safe_int(candidate.get("lowConfidenceDropped"), 0, 0, 1_000_000),
+        "error": str(candidate.get("error") or "").strip(),
+    }
+
+
 def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
@@ -1615,6 +1667,13 @@ def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
     for row in sources:
         if not isinstance(row, dict):
             continue
+        details_raw = row.get("details")
+        details = details_raw if isinstance(details_raw, list) else []
+        normalized_details: List[Dict[str, Any]] = []
+        for detail in details:
+            parsed_detail = _coerce_fetch_report_detail_row(detail)
+            if parsed_detail:
+                normalized_details.append(parsed_detail)
         normalized_sources.append({
             "name": str(row.get("name") or "").strip(),
             "status": str(row.get("status") or "").strip().lower(),
@@ -1622,8 +1681,10 @@ def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
             "studio": str(row.get("studio") or "").strip(),
             "fetchedCount": _safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
             "keptCount": _safe_int(row.get("keptCount"), 0, 0, 1_000_000),
+            "lowConfidenceDropped": _safe_int(row.get("lowConfidenceDropped"), 0, 0, 1_000_000),
             "error": str(row.get("error") or "").strip(),
             "durationMs": _safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+            "details": normalized_details,
         })
     return {
         "schemaVersion": _safe_schema_version(src.get("schemaVersion")),
@@ -2138,6 +2199,49 @@ def evaluate_alerts(*, history: List[Dict[str, Any]], latest_fetch_report: Dict[
                 "triggeredAt": now_iso(),
             })
 
+    source_rows = latest_fetch_report.get("sources") if isinstance(latest_fetch_report.get("sources"), list) else []
+    social_rows = [
+        row for row in source_rows
+        if isinstance(row, dict) and str(row.get("name") or "").strip().lower().startswith("social_")
+    ]
+    if social_rows:
+        social_failures = [
+            row for row in social_rows
+            if str(row.get("status") or "").strip().lower() == "error"
+        ]
+        if len(social_failures) >= SOCIAL_FAILURE_THRESHOLD:
+            active_conditions.append({
+                "id": "social_sources_failing",
+                "severity": "warning" if len(social_failures) < 3 else "critical",
+                "message": f"{len(social_failures)} social sources failed in the latest run.",
+                "value": int(len(social_failures)),
+                "triggeredAt": now_iso(),
+            })
+
+        zero_rows = [
+            row for row in social_rows
+            if str(row.get("status") or "").strip().lower() in {"ok", "error"}
+            and int(row.get("keptCount") or 0) == 0
+        ]
+        if len(zero_rows) >= SOCIAL_ZERO_MATCH_THRESHOLD:
+            active_conditions.append({
+                "id": "social_zero_matches",
+                "severity": "warning",
+                "message": f"{len(zero_rows)} social sources produced zero matches in the latest run.",
+                "value": int(len(zero_rows)),
+                "triggeredAt": now_iso(),
+            })
+
+        low_conf_dropped = sum(int(row.get("lowConfidenceDropped") or 0) for row in social_rows)
+        if low_conf_dropped >= SOCIAL_LOW_CONFIDENCE_SPIKE_THRESHOLD:
+            active_conditions.append({
+                "id": "social_low_confidence_spike",
+                "severity": "warning",
+                "message": "Social ingestion dropped an unusually high number of low-confidence posts.",
+                "value": int(low_conf_dropped),
+                "triggeredAt": now_iso(),
+            })
+
     # Clear ack for alerts no longer active.
     active_ids = {row["id"] for row in active_conditions}
     for key in list(acked.keys()):
@@ -2581,7 +2685,7 @@ def start_sync_task(action: str, *, reason: str = "", automatic: bool = False) -
     return {"started": True, "runId": run_id, "task": "source_sync", "action": normalized_action, "automatic": bool(automatic), "reason": str(reason or "")}
 
 
-def trigger_discovery_task(*, route_name: str) -> Tuple[int, Dict[str, Any]]:
+def trigger_discovery_task(*, route_name: str, enable_auto_sync_watch: bool = True) -> Tuple[int, Dict[str, Any]]:
     run_id = f"discovery_{uuid.uuid4().hex[:10]}"
     started_at = now_iso()
     save_json_atomic(
@@ -2653,15 +2757,280 @@ def trigger_discovery_task(*, route_name: str) -> Tuple[int, Dict[str, Any]]:
             pass
         bridge_log("error", "task_start_failed", runId=run_id, task="source_discovery", mode="dynamic", route=route_name, error=str(exc))
         return 500, {"started": False, "task": "source_discovery", "mode": "dynamic", "route": route_name, "error": str(exc)}
-    watcher = threading.Thread(
-        target=_watch_discovery_run_for_auto_sync,
-        args=(run_id, pid, started_at),
-        name=f"discovery-sync-watch-{run_id}",
-        daemon=True,
-    )
-    watcher.start()
+    if enable_auto_sync_watch:
+        watcher = threading.Thread(
+            target=_watch_discovery_run_for_auto_sync,
+            args=(run_id, pid, started_at),
+            name=f"discovery-sync-watch-{run_id}",
+            daemon=True,
+        )
+        watcher.start()
     bridge_log("info", "task_started", runId=run_id, task="source_discovery", mode="dynamic", route=route_name, pid=pid)
-    return 200, {"started": True, "runId": run_id, "task": "source_discovery", "mode": "dynamic", "route": route_name}
+    return 200, {
+        "started": True,
+        "runId": run_id,
+        "task": "source_discovery",
+        "mode": "dynamic",
+        "route": route_name,
+        "startedAt": started_at,
+        "pid": int(pid),
+    }
+
+
+def _current_fetch_output_count() -> int:
+    report = normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {}))
+    summary = summarize_fetch_report(report)
+    return int(summary.get("outputCount") or 0)
+
+
+def _pipeline_progress(current_step: int, total_steps: int, label: str) -> Dict[str, Any]:
+    safe_total = max(1, int(total_steps or 1))
+    safe_current = max(0, min(int(current_step or 0), safe_total))
+    return {
+        "currentStep": safe_current,
+        "totalSteps": safe_total,
+        "percent": int(round((safe_current / safe_total) * 100)),
+        "label": str(label or ""),
+    }
+
+
+def _pipeline_mark_stage(*, stage: str, current_step: int, total_steps: int, label: str, error: str = "") -> None:
+    with PIPELINE_STATE_LOCK:
+        PIPELINE_STATUS["stage"] = str(stage or "unknown")
+        PIPELINE_STATUS["progress"] = _pipeline_progress(current_step, total_steps, label)
+        if error:
+            PIPELINE_STATUS["error"] = str(error)
+
+
+def _pipeline_set_completed(*, status: str, final_output_count: int = 0, error: str = "") -> None:
+    with PIPELINE_STATE_LOCK:
+        run_id = str(PIPELINE_STATUS.get("runId") or "")
+        started_at = str(PIPELINE_STATUS.get("startedAt") or "")
+        baseline = int(PIPELINE_STATUS.get("baselineOutputCount") or 0)
+        loaded = int(PIPELINE_STATUS.get("jobsPageLoadedCount") or 0)
+        compare_base = max(baseline, loaded)
+        updates_found = int(final_output_count or 0) > compare_base
+        PIPELINE_STATUS.update({
+            "active": False,
+            "stage": "completed" if status != "error" else "error",
+            "progress": _pipeline_progress(3, 3, "Pipeline completed" if status != "error" else "Pipeline failed"),
+            "finishedAt": now_iso(),
+            "error": str(error or ""),
+            "finalOutputCount": int(final_output_count or 0),
+            "updatesFound": bool(updates_found),
+            "refreshRecommended": bool(updates_found),
+        })
+        finished_at = str(PIPELINE_STATUS.get("finishedAt") or "")
+        if run_id:
+            upsert_run_history({
+                "id": run_id,
+                "type": "pipeline",
+                "status": "error" if status == "error" else "ok",
+                "startedAt": started_at,
+                "finishedAt": finished_at,
+                "durationMs": int(max(0.0, (parse_iso(finished_at) - parse_iso(started_at)).total_seconds() * 1000)) if parse_iso(finished_at) and parse_iso(started_at) else 0,
+                "summary": {
+                    "error": str(error or ""),
+                    "baselineOutputCount": baseline,
+                    "jobsPageLoadedCount": loaded,
+                    "finalOutputCount": int(final_output_count or 0),
+                    "updatesFound": bool(updates_found),
+                },
+            }, dedupe_fields=("id",))
+        global ACTIVE_PIPELINE_RUN_ID
+        ACTIVE_PIPELINE_RUN_ID = ""
+
+
+def get_jobs_pipeline_status_payload() -> Dict[str, Any]:
+    with PIPELINE_STATE_LOCK:
+        payload = dict(PIPELINE_STATUS)
+        progress = payload.get("progress")
+        payload["progress"] = dict(progress) if isinstance(progress, dict) else _pipeline_progress(0, 3, "Idle")
+        payload["active"] = bool(payload.get("active"))
+        return payload
+
+
+def _wait_for_report_completion(*, report_path: Path, started_at: str, timeout_s: float, report_name: str) -> Dict[str, Any]:
+    deadline = datetime.now(timezone.utc) + timedelta(seconds=max(10.0, float(timeout_s)))
+    started_dt = parse_iso(started_at)
+    while datetime.now(timezone.utc) < deadline:
+        report = load_json_object(report_path, {})
+        report_started = parse_iso(report.get("startedAt"))
+        report_finished = parse_iso(report.get("finishedAt"))
+        if started_dt and report_started and report_started >= (started_dt - timedelta(seconds=1)):
+            if report_finished and report_finished >= report_started:
+                return report if isinstance(report, dict) else {}
+        if report_is_stale_in_progress("fetch" if "fetch" in report_name else "discovery", report_path, report if isinstance(report, dict) else {}):
+            raise RuntimeError(f"{report_name} became stale before completion")
+        threading.Event().wait(1.0)
+    raise TimeoutError(f"{report_name} did not finish within timeout")
+
+
+def _wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> Dict[str, Any]:
+    deadline = datetime.now(timezone.utc) + timedelta(seconds=max(10.0, float(timeout_s)))
+    while datetime.now(timezone.utc) < deadline:
+        history = sync_history_from_reports()
+        for row in reversed(history):
+            if str(row.get("id") or "") != str(run_id or ""):
+                continue
+            if str(row.get("type") or "").strip().lower() != "sync":
+                continue
+            status = str(row.get("status") or "").strip().lower()
+            if status in {"ok", "warning", "error"} and str(row.get("finishedAt") or "").strip():
+                return row
+        threading.Event().wait(1.0)
+    raise TimeoutError("sync task did not finish within timeout")
+
+
+def start_fetcher_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    run_id = f"fetch_{uuid.uuid4().hex[:10]}"
+    started_at = now_iso()
+    fetcher_args, preset = build_fetcher_args_from_payload(payload if isinstance(payload, dict) else {})
+    append_run_history({
+        "id": run_id,
+        "type": "fetch",
+        "status": "started",
+        "startedAt": started_at,
+        "finishedAt": "",
+        "durationMs": 0,
+        "summary": {},
+    })
+    spawn_args = list(fetcher_args)
+    if "--output-dir" not in spawn_args:
+        spawn_args.extend(["--output-dir", str(RUNTIME_CONFIG.data_dir)])
+    pid = run_background_script("jobs_fetcher.py", spawn_args)
+    approval = load_json_object(APPROVAL_STATE_PATH, {"approvedSinceLastRun": 0})
+    approval["approvedSinceLastRun"] = 0
+    save_json_atomic(APPROVAL_STATE_PATH, approval)
+    bridge_log(
+        "info",
+        "task_started",
+        runId=run_id,
+        task="jobs_fetcher",
+        preset=preset,
+        pid=pid,
+        args=" ".join(spawn_args),
+    )
+    return {
+        "started": True,
+        "runId": run_id,
+        "task": "jobs_fetcher",
+        "preset": preset,
+        "args": spawn_args,
+        "pid": int(pid),
+        "startedAt": started_at,
+    }
+
+
+def _run_jobs_pipeline_worker(run_id: str) -> None:
+    try:
+        _pipeline_mark_stage(stage="discovery", current_step=1, total_steps=3, label="Running discovery...")
+        discovery_status, discovery_result = trigger_discovery_task(
+            route_name="/tasks/run-jobs-pipeline",
+            enable_auto_sync_watch=False,
+        )
+        if int(discovery_status) >= 300 or not bool(discovery_result.get("started")):
+            raise RuntimeError(str(discovery_result.get("error") or "discovery start failed"))
+        discovery_started_at = str(discovery_result.get("startedAt") or now_iso())
+        _wait_for_report_completion(
+            report_path=DISCOVERY_REPORT_PATH,
+            started_at=discovery_started_at,
+            timeout_s=900.0,
+            report_name="discovery report",
+        )
+
+        _pipeline_mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
+        fetch_result = start_fetcher_task({"preset": "default"})
+        fetch_started_at = str(fetch_result.get("startedAt") or now_iso())
+        _wait_for_report_completion(
+            report_path=JOBS_FETCH_REPORT_PATH,
+            started_at=fetch_started_at,
+            timeout_s=1200.0,
+            report_name="fetch report",
+        )
+
+        _pipeline_mark_stage(stage="sync_push", current_step=3, total_steps=3, label="Running sync push...")
+        sync_result = start_sync_task("push", reason="jobs_pipeline", automatic=False)
+        if not bool(sync_result.get("started")):
+            raise RuntimeError(str(sync_result.get("error") or "sync push failed to start"))
+        sync_row = _wait_for_sync_completion(str(sync_result.get("runId") or ""), timeout_s=900.0)
+        sync_status = str(sync_row.get("status") or "").strip().lower()
+        if sync_status == "error":
+            sync_error = str((sync_row.get("summary") or {}).get("error") or "sync push failed")
+            raise RuntimeError(sync_error)
+
+        final_output_count = _current_fetch_output_count()
+        _pipeline_set_completed(status="ok", final_output_count=final_output_count)
+    except Exception as exc:  # noqa: BLE001
+        bridge_log("error", "jobs_pipeline_failed", runId=run_id, error=str(exc))
+        _pipeline_set_completed(status="error", final_output_count=_current_fetch_output_count(), error=str(exc))
+
+
+def start_jobs_pipeline_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    global ACTIVE_PIPELINE_RUN_ID, ACTIVE_PIPELINE_THREAD
+    with PIPELINE_STATE_LOCK:
+        if bool(PIPELINE_STATUS.get("active")) and str(PIPELINE_STATUS.get("runId") or ""):
+            return {
+                "started": False,
+                "error": "Jobs pipeline already running",
+                "runId": str(PIPELINE_STATUS.get("runId") or ""),
+                "stage": str(PIPELINE_STATUS.get("stage") or "running"),
+            }
+        if task_running_from_state("fetch") or task_running_from_state("discovery") or sync_task_running():
+            return {
+                "started": False,
+                "error": "Another fetch/discovery/sync task is already running",
+                "runId": "",
+                "stage": "blocked",
+            }
+
+        run_id = f"pipeline_{uuid.uuid4().hex[:10]}"
+        started_at = now_iso()
+        jobs_page_loaded_count = int((payload or {}).get("jobsPageLoadedCount") or 0)
+        baseline_output_count = _current_fetch_output_count()
+        PIPELINE_STATUS.update({
+            "active": True,
+            "runId": run_id,
+            "stage": "starting",
+            "progress": _pipeline_progress(0, 3, "Starting pipeline..."),
+            "startedAt": started_at,
+            "finishedAt": "",
+            "error": "",
+            "updatesFound": False,
+            "refreshRecommended": False,
+            "baselineOutputCount": int(baseline_output_count),
+            "finalOutputCount": 0,
+            "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
+        })
+        append_run_history({
+            "id": run_id,
+            "type": "pipeline",
+            "status": "started",
+            "startedAt": started_at,
+            "finishedAt": "",
+            "durationMs": 0,
+            "summary": {
+                "baselineOutputCount": int(baseline_output_count),
+                "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
+                "stage": "starting",
+            },
+        })
+        worker = threading.Thread(
+            target=_run_jobs_pipeline_worker,
+            args=(run_id,),
+            name=f"jobs-pipeline-{run_id}",
+            daemon=True,
+        )
+        ACTIVE_PIPELINE_RUN_ID = run_id
+        ACTIVE_PIPELINE_THREAD = worker
+        worker.start()
+        bridge_log("info", "jobs_pipeline_started", runId=run_id, baseline=baseline_output_count, jobsPageLoadedCount=jobs_page_loaded_count)
+        return {
+            "started": True,
+            "runId": run_id,
+            "stage": "starting",
+            "progress": dict(PIPELINE_STATUS.get("progress") or {}),
+        }
 
 
 def desktop_local_data_store() -> LocalDataStore:
@@ -2689,14 +3058,24 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_bytes(self, body: bytes, *, content_type: str, filename: str = "", status: int = 200) -> None:
+    def _send_bytes(
+        self,
+        body: bytes,
+        *,
+        content_type: str,
+        filename: str = "",
+        disposition: str = "inline",
+        status: int = 200,
+    ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(body)))
         if filename:
-            self.send_header("Content-Disposition", f'inline; filename="{filename}"')
+            safe_filename = str(filename).replace('"', "")
+            safe_disposition = "attachment" if str(disposition).lower() == "attachment" else "inline"
+            self.send_header("Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"')
         self.end_headers()
         self.wfile.write(body)
 
@@ -2748,8 +3127,14 @@ class Handler(BaseHTTPRequestHandler):
                 uid = (query.get("uid") or [""])[0]
                 job_key = (query.get("jobKey") or [""])[0]
                 attachment_id = (query.get("attachmentId") or [""])[0]
+                download_flag = str((query.get("download") or [""])[0]).strip().lower()
                 body, content_type, filename = desktop_local_data_store().get_attachment_blob(uid, job_key, attachment_id)
-                self._send_bytes(body, content_type=content_type, filename=filename)
+                self._send_bytes(
+                    body,
+                    content_type=content_type,
+                    filename=filename,
+                    disposition="attachment" if download_flag in {"1", "true", "yes"} else "inline",
+                )
             except Exception as exc:  # noqa: BLE001
                 self._send_json({"ok": False, "error": str(exc)}, status=400)
             return
@@ -2821,6 +3206,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/sync/status":
             self._send_json(get_sync_status_payload())
+            return
+        if path == "/tasks/run-jobs-pipeline-status":
+            self._send_json(get_jobs_pipeline_status_payload())
             return
         self._send_json({"error": "Not found"}, status=404)
 
@@ -3032,6 +3420,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(result, status=status_code)
             return
 
+        if path == "/tasks/run-jobs-pipeline":
+            result = start_jobs_pipeline_task(payload if isinstance(payload, dict) else {})
+            status_code = 200 if bool(result.get("started")) else 409
+            self._send_json(result, status=status_code)
+            return
+
         if path == "/tasks/run-sync-pull":
             try:
                 result = start_sync_task("pull", reason="manual_pull", automatic=False)
@@ -3051,38 +3445,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/tasks/run-fetcher":
-            run_id = f"fetch_{uuid.uuid4().hex[:10]}"
-            fetcher_args, preset = build_fetcher_args_from_payload(payload)
-            append_run_history({
-                "type": "fetch",
-                "status": "started",
-                "startedAt": now_iso(),
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {},
-            })
-            spawn_args = list(fetcher_args)
-            if "--output-dir" not in spawn_args:
-                spawn_args.extend(["--output-dir", str(RUNTIME_CONFIG.data_dir)])
             try:
-                pid = run_background_script("jobs_fetcher.py", spawn_args)
+                result = start_fetcher_task(payload if isinstance(payload, dict) else {})
+                self._send_json(result)
             except Exception as exc:  # noqa: BLE001
-                bridge_log("error", "task_start_failed", runId=run_id, task="jobs_fetcher", preset=preset, error=str(exc))
-                self._send_json({"started": False, "task": "jobs_fetcher", "preset": preset, "args": spawn_args, "error": str(exc)}, status=500)
-                return
-            approval = load_json_object(APPROVAL_STATE_PATH, {"approvedSinceLastRun": 0})
-            approval["approvedSinceLastRun"] = 0
-            save_json_atomic(APPROVAL_STATE_PATH, approval)
-            bridge_log(
-                "info",
-                "task_started",
-                runId=run_id,
-                task="jobs_fetcher",
-                preset=preset,
-                pid=pid,
-                args=" ".join(spawn_args),
-            )
-            self._send_json({"started": True, "runId": run_id, "task": "jobs_fetcher", "preset": preset, "args": spawn_args})
+                self._send_json({"started": False, "task": "jobs_fetcher", "error": str(exc)}, status=500)
             return
 
         if path == "/ops/alerts/ack":

@@ -334,8 +334,7 @@ export function createSavedJobsDomain(deps) {
         }
         const next = {
           ...current,
-          notes: String(notes || ""),
-          updatedAt: nowIso()
+          notes: String(notes || "")
         };
         const putReq = store.put(next);
         putReq.onsuccess = () => done();

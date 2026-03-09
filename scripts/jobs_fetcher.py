@@ -51,7 +51,10 @@ SHEET_ID = "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE"
 SHEET_GID = "1560329579"
 GOOGLE_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={SHEET_GID}"
 GOOGLE_ALL_ORIGINS_URL = f"https://api.allorigins.win/raw?url={quote(GOOGLE_CSV_URL, safe='')}"
-REMOTE_OK_URL = "https://remoteok.com/api"
+REMOTE_OK_URLS = [
+    "https://remoteok.com/api",
+    "https://remoteok.io/api",
+]
 GAMES_INDUSTRY_URLS = [
     "https://jobs.gamesindustry.biz",
     "https://jobs.gamesindustry.biz/jobs",
@@ -231,9 +234,60 @@ DEFAULT_ADAPTER_HTTP_CONCURRENCY = 24
 DEFAULT_HOT_SOURCE_CADENCE_MINUTES = 15
 DEFAULT_COLD_SOURCE_CADENCE_MINUTES = 60
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / "data"
+DEFAULT_SOCIAL_CONFIG_PATH = DEFAULT_OUTPUT_DIR / "social-sources-config.json"
+DEFAULT_SOCIAL_LOOKBACK_MINUTES = 30
+SOCIAL_SOURCE_NAMES = {"social_reddit", "social_x", "social_mastodon"}
+DEFAULT_SOCIAL_MIN_CONFIDENCE = 40
 SOURCE_REGISTRY_ACTIVE_PATH = DEFAULT_OUTPUT_DIR / "source-registry-active.json"
 SOURCE_REGISTRY_PENDING_PATH = DEFAULT_OUTPUT_DIR / "source-registry-pending.json"
 SOURCE_APPROVAL_STATE_PATH = DEFAULT_OUTPUT_DIR / "source-approval-state.json"
+
+DEFAULT_SOCIAL_CONFIG: Dict[str, Any] = {
+    "enabled": False,
+    "minConfidence": DEFAULT_SOCIAL_MIN_CONFIDENCE,
+    "rejectForHirePosts": True,
+    "reddit": {
+        "enabled": True,
+        "subreddits": ["gamedev", "gameDevClassifieds", "gamedevjobs"],
+        "maxPostsPerSubreddit": 50,
+        "rssFallback": True,
+        "htmlFallback": True,
+    },
+    "x": {
+        "enabled": True,
+        "minConfidence": 20,
+        "queries": [
+            "#gamedevjobs",
+            "#gamejobs",
+            "\"game designer\" \"we're hiring\"",
+            "\"gamedev\" \"hiring\"",
+        ],
+        "maxPostsPerQuery": 25,
+        "api": {
+            "enabled": True,
+            "endpoint": "https://api.x.com/2/tweets/search/recent",
+            "bearerTokenEnv": "BALUFFO_X_BEARER_TOKEN",
+        },
+        "scraperFallback": {
+            "enabled": False,
+            "endpoint": "",
+        },
+        "rssFallback": {
+            "enabled": True,
+            "instances": [
+                "https://xcancel.com",
+                "https://nitter.net",
+                "https://nitter.poast.org",
+            ],
+        },
+    },
+    "mastodon": {
+        "enabled": True,
+        "instances": ["https://mastodon.gamedev.place"],
+        "hashtags": ["gamedevjobs", "gamejobs", "hiring", "unityjobs", "unrealjobs"],
+        "maxPostsPerTag": 40,
+    },
+}
 
 
 def load_registry_from_file(path: Path, fallback: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -339,6 +393,26 @@ GAME_KEYWORDS = {
     "engine programmer",
     "graphics programmer",
 }
+SOCIAL_HIRING_KEYWORDS = {
+    "hiring",
+    "we're hiring",
+    "we are hiring",
+    "job opening",
+    "open role",
+    "join our team",
+    "looking for",
+    "vacancy",
+    "position",
+    "apply now",
+    "paid",
+}
+SOCIAL_FOR_HIRE_KEYWORDS = {
+    "for hire",
+    "available for work",
+    "looking for work",
+    "hire me",
+    "open to work",
+}
 
 COUNTRY_NAME_TO_CODE = {
     "united states": "US",
@@ -403,6 +477,38 @@ def clean_text(value: Any) -> str:
 
 def norm_text(value: Any) -> str:
     return re.sub(r"\s+", " ", clean_text(value)).strip().lower()
+
+
+def _deep_merge_dicts(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
+    merged: Dict[str, Any] = {key: value for key, value in base.items()}
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_dicts(dict(merged[key]), value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_social_config(
+    *,
+    config_path: Path,
+    enabled: bool = False,
+    lookback_minutes: int = DEFAULT_SOCIAL_LOOKBACK_MINUTES,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {}
+    try:
+        if config_path.exists():
+            parsed = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                payload = parsed
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    merged = _deep_merge_dicts(DEFAULT_SOCIAL_CONFIG, payload)
+    merged["enabled"] = bool(enabled)
+    merged["lookbackMinutes"] = max(1, int(lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES))
+    merged["minConfidence"] = max(0, min(100, int(merged.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE)))
+    merged["rejectForHirePosts"] = bool(merged.get("rejectForHirePosts", True))
+    return merged
 
 
 def parse_datetime(value: Any) -> Optional[datetime]:
@@ -754,6 +860,389 @@ def parse_remote_ok_payload(payload: Any) -> List[RawJob]:
     return jobs
 
 
+def social_extract_urls(text: str) -> List[str]:
+    return [normalize_url(url) for url in re.findall(r"https?://[^\s<>()\"']+", clean_text(text)) if normalize_url(url)]
+
+
+def social_extract_apply_url(*texts: Any) -> str:
+    blocked_hosts = {
+        "reddit.com",
+        "www.reddit.com",
+        "x.com",
+        "www.x.com",
+        "twitter.com",
+        "www.twitter.com",
+        "t.co",
+        "mastodon.gamedev.place",
+        "xcancel.com",
+        "rss.xcancel.com",
+    }
+    for text in texts:
+        for url in social_extract_urls(clean_text(text)):
+            host = clean_text(urlparse(url).netloc).lower()
+            if host in blocked_hosts:
+                continue
+            return url
+    return ""
+
+
+def social_infer_company(*texts: Any, fallback: str = "") -> str:
+    corpus = " ".join(clean_text(text) for text in texts if clean_text(text))
+    patterns = (
+        r"\bat\s+([A-Z][A-Za-z0-9& .'\-]{2,})",
+        r"\bjoin\s+([A-Z][A-Za-z0-9& .'\-]{2,})",
+        r"\b([A-Z][A-Za-z0-9& .'\-]{2,})\s+is\s+hiring",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, corpus)
+        if match:
+            candidate = clean_text(match.group(1)).strip(" .,:;")
+            candidate = re.split(r"\b(remote|apply|role|position|job)\b", candidate, maxsplit=1, flags=re.IGNORECASE)[0].strip(" .,:;-")
+            words = [part for part in candidate.split() if part]
+            if len(words) > 6:
+                candidate = " ".join(words[:6])
+            if candidate:
+                return candidate
+    return clean_text(fallback) or "Unknown Studio"
+
+
+def social_compute_confidence(*values: Any, has_apply_url: bool = False, has_remote_hint: bool = False) -> int:
+    text = " ".join(norm_text(value) for value in values if value is not None)
+    score = 0
+    if any(token in text for token in SOCIAL_HIRING_KEYWORDS):
+        score += 35
+    if looks_like_game_job(text):
+        score += 30
+    if "job" in text or "role" in text or "position" in text:
+        score += 10
+    if has_apply_url:
+        score += 20
+    if has_remote_hint:
+        score += 5
+    if any(token in text for token in SOCIAL_FOR_HIRE_KEYWORDS):
+        score -= 40
+    return max(0, min(100, score))
+
+
+def social_should_keep_post(
+    *,
+    title: str,
+    text: str,
+    min_confidence: int,
+    reject_for_hire_posts: bool,
+    has_apply_url: bool,
+) -> Tuple[bool, int]:
+    normalized = f"{norm_text(title)} {norm_text(text)}"
+    if reject_for_hire_posts and any(token in normalized for token in SOCIAL_FOR_HIRE_KEYWORDS):
+        return False, 0
+    confidence = social_compute_confidence(title, text, has_apply_url=has_apply_url, has_remote_hint=("remote" in normalized))
+    return confidence >= max(0, min(100, int(min_confidence or 0))), confidence
+
+
+def parse_reddit_json_payload(
+    payload: Any,
+    *,
+    subreddit: str,
+    min_confidence: int,
+    reject_for_hire_posts: bool,
+) -> Tuple[List[RawJob], int]:
+    rows: List[Dict[str, Any]] = []
+    if isinstance(payload, dict):
+        children = (((payload.get("data") or {}).get("children")) if isinstance(payload.get("data"), dict) else [])
+        if isinstance(children, list):
+            for child in children:
+                if isinstance(child, dict) and isinstance(child.get("data"), dict):
+                    rows.append(child["data"])
+    out: List[RawJob] = []
+    low_conf_count = 0
+    for item in rows:
+        title = clean_text(item.get("title"))
+        body = clean_text(item.get("selftext"))
+        flair = clean_text(item.get("link_flair_text"))
+        post_id = clean_text(item.get("id"))
+        permalink = normalize_url(f"https://www.reddit.com{clean_text(item.get('permalink'))}") if clean_text(item.get("permalink")) else ""
+        external_url = normalize_url(item.get("url"))
+        apply_url = social_extract_apply_url(body, external_url)
+        keep, confidence = social_should_keep_post(
+            title=title,
+            text=f"{body} {flair}",
+            min_confidence=min_confidence,
+            reject_for_hire_posts=reject_for_hire_posts,
+            has_apply_url=bool(apply_url),
+        )
+        if not keep:
+            low_conf_count += 1
+            continue
+        job_link = apply_url or permalink or external_url
+        if not title or not job_link:
+            continue
+        company = social_infer_company(title, body, fallback=clean_text(item.get("author")))
+        post_source_id = f"reddit:{clean_text(subreddit)}:{post_id or hashlib.sha1(job_link.encode('utf-8')).hexdigest()[:12]}"
+        out.append({
+            "sourceJobId": post_source_id,
+            "title": title,
+            "company": company,
+            "city": "Remote" if "remote" in norm_text(f"{title} {body}") else "",
+            "country": "Remote" if "remote" in norm_text(f"{title} {body}") else "Unknown",
+            "workType": "Remote" if "remote" in norm_text(f"{title} {body}") else "",
+            "contractType": clean_text(flair),
+            "jobLink": job_link,
+            "sector": "Game",
+            "postedAt": item.get("created_utc"),
+            "adapter": "social",
+            "studio": f"reddit/{clean_text(subreddit)}",
+            "sourceBundle": [{
+                "source": "social_reddit",
+                "sourceJobId": post_source_id,
+                "jobLink": permalink or job_link,
+                "postedAt": item.get("created_utc"),
+                "adapter": "social",
+                "studio": clean_text(subreddit),
+            }],
+        })
+    return out, low_conf_count
+
+
+def parse_reddit_rss_payload(
+    rss_text: str,
+    *,
+    subreddit: str,
+    min_confidence: int,
+    reject_for_hire_posts: bool,
+) -> Tuple[List[RawJob], int]:
+    try:
+        root = ET.fromstring(clean_text(rss_text).lstrip())
+    except ET.ParseError:
+        return [], 0
+    items = root.findall(".//item")
+    out: List[RawJob] = []
+    low_conf_count = 0
+    for item in items:
+        title = clean_text(item.findtext("title"))
+        link = normalize_url(item.findtext("link"))
+        description = strip_html_text(unescape(clean_text(item.findtext("description"))))
+        apply_url = social_extract_apply_url(description, link)
+        keep, confidence = social_should_keep_post(
+            title=title,
+            text=description,
+            min_confidence=min_confidence,
+            reject_for_hire_posts=reject_for_hire_posts,
+            has_apply_url=bool(apply_url),
+        )
+        if not keep:
+            low_conf_count += 1
+            continue
+        if not title or not link:
+            continue
+        company = social_infer_company(title, description, fallback=clean_text(subreddit))
+        post_source_id = f"reddit:{clean_text(subreddit)}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:12]}"
+        out.append({
+            "sourceJobId": post_source_id,
+            "title": title,
+            "company": company,
+            "city": "Remote" if "remote" in norm_text(f"{title} {description}") else "",
+            "country": "Remote" if "remote" in norm_text(f"{title} {description}") else "Unknown",
+            "workType": "Remote" if "remote" in norm_text(f"{title} {description}") else "",
+            "contractType": "Unknown",
+            "jobLink": apply_url or link,
+            "sector": "Game",
+            "postedAt": clean_text(item.findtext("pubDate")),
+            "adapter": "social",
+            "studio": f"reddit/{clean_text(subreddit)}",
+            "sourceBundle": [{
+                "source": "social_reddit",
+                "sourceJobId": post_source_id,
+                "jobLink": link,
+                "postedAt": clean_text(item.findtext("pubDate")),
+                "adapter": "social",
+                "studio": clean_text(subreddit),
+            }],
+        })
+    return out, low_conf_count
+
+
+def parse_x_payload(
+    payload: Any,
+    *,
+    query_label: str,
+    min_confidence: int,
+    reject_for_hire_posts: bool,
+) -> Tuple[List[RawJob], int]:
+    rows = payload.get("data") if isinstance(payload, dict) and isinstance(payload.get("data"), list) else []
+    out: List[RawJob] = []
+    low_conf_count = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        text = clean_text(row.get("text"))
+        post_id = clean_text(row.get("id"))
+        entities = row.get("entities") if isinstance(row.get("entities"), dict) else {}
+        entity_urls = entities.get("urls") if isinstance(entities.get("urls"), list) else []
+        expanded_urls = [clean_text(item.get("expanded_url")) for item in entity_urls if isinstance(item, dict)]
+        apply_url = social_extract_apply_url(text, " ".join(expanded_urls))
+        keep, confidence = social_should_keep_post(
+            title=text,
+            text=text,
+            min_confidence=min_confidence,
+            reject_for_hire_posts=reject_for_hire_posts,
+            has_apply_url=bool(apply_url),
+        )
+        if not keep:
+            low_conf_count += 1
+            continue
+        permalink = normalize_url(f"https://x.com/i/web/status/{post_id}") if post_id else ""
+        company = social_infer_company(text, fallback="Unknown Studio")
+        post_source_id = f"x:{post_id or hashlib.sha1(text.encode('utf-8')).hexdigest()[:12]}"
+        out.append({
+            "sourceJobId": post_source_id,
+            "title": clean_text(text[:180]),
+            "company": company,
+            "city": "Remote" if "remote" in norm_text(text) else "",
+            "country": "Remote" if "remote" in norm_text(text) else "Unknown",
+            "workType": "Remote" if "remote" in norm_text(text) else "",
+            "contractType": clean_text(query_label),
+            "jobLink": apply_url or permalink,
+            "sector": "Game",
+            "postedAt": clean_text(row.get("created_at")),
+            "adapter": "social",
+            "studio": "x",
+            "sourceBundle": [{
+                "source": "social_x",
+                "sourceJobId": post_source_id,
+                "jobLink": permalink or apply_url,
+                "postedAt": clean_text(row.get("created_at")),
+                "adapter": "social",
+                "studio": "x",
+            }],
+        })
+    return out, low_conf_count
+
+
+def parse_x_rss_payload(
+    rss_text: str,
+    *,
+    query_label: str,
+    min_confidence: int,
+    reject_for_hire_posts: bool,
+) -> Tuple[List[RawJob], int]:
+    raw_text = clean_text(rss_text).lstrip()
+    safe_text = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#\d+;)", "&amp;", raw_text)
+    try:
+        root = ET.fromstring(safe_text)
+    except ET.ParseError:
+        return [], 0
+    items = root.findall(".//item")
+    out: List[RawJob] = []
+    low_conf_count = 0
+    for item in items:
+        title = clean_text(item.findtext("title"))
+        link = normalize_url(item.findtext("link"))
+        description = strip_html_text(unescape(clean_text(item.findtext("description"))))
+        banner_text = norm_text(f"{title} {description}")
+        if "not yet whitelisted" in banner_text or "rss reader" in banner_text:
+            low_conf_count += 1
+            continue
+        text = f"{title} {description}"
+        apply_url = social_extract_apply_url(text, link)
+        keep, confidence = social_should_keep_post(
+            title=title,
+            text=text,
+            min_confidence=min_confidence,
+            reject_for_hire_posts=reject_for_hire_posts,
+            has_apply_url=bool(apply_url),
+        )
+        if not keep:
+            low_conf_count += 1
+            continue
+        if not title or not link:
+            continue
+        post_id = hashlib.sha1(link.encode("utf-8")).hexdigest()[:12]
+        company = social_infer_company(title, description, fallback="Unknown Studio")
+        source_job_id = f"x:{post_id}"
+        out.append({
+            "sourceJobId": source_job_id,
+            "title": clean_text(title[:180]),
+            "company": company,
+            "city": "Remote" if "remote" in norm_text(text) else "",
+            "country": "Remote" if "remote" in norm_text(text) else "Unknown",
+            "workType": "Remote" if "remote" in norm_text(text) else "",
+            "contractType": clean_text(query_label),
+            "jobLink": apply_url or link,
+            "sector": "Game",
+            "postedAt": clean_text(item.findtext("pubDate")),
+            "adapter": "social",
+            "studio": "x",
+            "sourceBundle": [{
+                "source": "social_x",
+                "sourceJobId": source_job_id,
+                "jobLink": link,
+                "postedAt": clean_text(item.findtext("pubDate")),
+                "adapter": "social",
+                "studio": "x",
+            }],
+        })
+    return out, low_conf_count
+
+
+def parse_mastodon_payload(
+    payload: Any,
+    *,
+    instance: str,
+    tag: str,
+    min_confidence: int,
+    reject_for_hire_posts: bool,
+) -> Tuple[List[RawJob], int]:
+    rows = payload if isinstance(payload, list) else []
+    out: List[RawJob] = []
+    low_conf_count = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        html_text = clean_text(row.get("content"))
+        text = strip_html_text(unescape(html_text))
+        post_url = normalize_url(row.get("url"))
+        card = row.get("card") if isinstance(row.get("card"), dict) else {}
+        apply_url = social_extract_apply_url(text, clean_text(card.get("url")))
+        keep, confidence = social_should_keep_post(
+            title=text,
+            text=text,
+            min_confidence=min_confidence,
+            reject_for_hire_posts=reject_for_hire_posts,
+            has_apply_url=bool(apply_url),
+        )
+        if not keep:
+            low_conf_count += 1
+            continue
+        post_id = clean_text(row.get("id"))
+        account = row.get("account") if isinstance(row.get("account"), dict) else {}
+        account_name = clean_text(account.get("display_name") or account.get("acct"))
+        company = social_infer_company(text, fallback=account_name)
+        post_source_id = f"mastodon:{clean_text(urlparse(instance).netloc)}:{post_id or hashlib.sha1((post_url or text).encode('utf-8')).hexdigest()[:12]}"
+        out.append({
+            "sourceJobId": post_source_id,
+            "title": clean_text(text[:180]),
+            "company": company,
+            "city": "Remote" if "remote" in norm_text(text) else "",
+            "country": "Remote" if "remote" in norm_text(text) else "Unknown",
+            "workType": "Remote" if "remote" in norm_text(text) else "",
+            "contractType": clean_text(tag),
+            "jobLink": apply_url or post_url,
+            "sector": "Game",
+            "postedAt": clean_text(row.get("created_at")),
+            "adapter": "social",
+            "studio": f"mastodon/{clean_text(urlparse(instance).netloc)}",
+            "sourceBundle": [{
+                "source": "social_mastodon",
+                "sourceJobId": post_source_id,
+                "jobLink": post_url or apply_url,
+                "postedAt": clean_text(row.get("created_at")),
+                "adapter": "social",
+                "studio": clean_text(urlparse(instance).netloc),
+            }],
+        })
+    return out, low_conf_count
+
+
 def extract_json_ld_blocks(html_text: str) -> List[str]:
     return re.findall(r"(?is)<script[^>]+type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>", html_text)
 
@@ -877,6 +1366,65 @@ def parse_jobpostings_from_html(
                 }
             )
     return jobs
+
+
+def maybe_fetch_kojima_job_listing_html(
+    *,
+    page_url: str,
+    page_html: str,
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+) -> str:
+    """Kojima careers renders the full listing via /kjpviewloader/load POST."""
+    if "kojimaproductions.jp" not in (urlparse(page_url).netloc or "").lower():
+        return ""
+    if "kjp_job_listing" not in page_html and "data-viewref=\"kjp_job_listing\"" not in page_html:
+        return ""
+
+    parsed = urlparse(page_url)
+    path_parts = [part for part in (parsed.path or "").split("/") if part]
+    lang_code = path_parts[0] if path_parts else "en"
+    endpoint = f"{parsed.scheme or 'https'}://{parsed.netloc}/kjpviewloader/load"
+    payload = {
+        "viewName": "kjp_view_job_listing",
+        "viewDisplayBase": "kjp_view_job_listing__",
+        "langCode": clean_text(lang_code) or "en",
+        "inputs": [
+            {"name": "jobDiscipline", "value": "All"},
+            {"name": "jobLocation", "value": "All"},
+        ],
+        "page": 0,
+    }
+
+    attempt = 0
+    last_error: Exception | None = None
+    while attempt <= max(0, retries):
+        try:
+            req = Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0",
+                },
+                method="POST",
+            )
+            with urlopen(req, timeout=timeout_s) as response:
+                text = response.read().decode("utf-8", errors="ignore")
+            return text if clean_text(text) else ""
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if attempt >= max(0, retries):
+                break
+            sleep_s = max(0.0, float(backoff_s)) * (attempt + 1)
+            if sleep_s > 0:
+                time.sleep(sleep_s)
+            attempt += 1
+            continue
+    if last_error:
+        raise last_error
+    return ""
 
 
 def parse_teamtailor_listing_links(html_text: str, base_url: str) -> List[str]:
@@ -1234,8 +1782,273 @@ def run_google_sheets_source(*, fetch_text: Callable[[str, int], str], timeout_s
 
 
 def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
-    text = fetch_with_retries(REMOTE_OK_URL, fetch_text, timeout_s, retries, backoff_s)
-    return parse_remote_ok_payload(json.loads(text))
+    errors: List[str] = []
+    for url in REMOTE_OK_URLS:
+        try:
+            text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            parsed = parse_remote_ok_payload(json.loads(text))
+            if parsed:
+                return parsed
+            errors.append(f"{url}: empty/invalid payload")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{url}: {exc}")
+    raise RuntimeError("; ".join(errors) if errors else "Remote OK source failed")
+
+
+def _request_json_with_headers(url: str, *, timeout_s: int, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    req = Request(url=url, headers=headers or {})
+    with urlopen(req, timeout=timeout_s) as resp:
+        raw = resp.read().decode(resp.headers.get_content_charset() or "utf-8", errors="replace")
+        parsed = json.loads(raw) if raw else {}
+        return parsed if isinstance(parsed, dict) else {}
+
+
+def run_social_reddit_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    social_config: Dict[str, Any],
+) -> List[RawJob]:
+    cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
+    if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
+        set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
+        return []
+    subs = [clean_text(item) for item in (cfg.get("subreddits") or []) if clean_text(item)]
+    max_posts = max(1, int(cfg.get("maxPostsPerSubreddit") or 50))
+    min_conf = max(0, min(100, int(social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE)))
+    reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
+    details: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    jobs: List[RawJob] = []
+    low_conf_total = 0
+
+    for sub in subs:
+        source_name = f"reddit:r/{sub}"
+        json_url = f"https://www.reddit.com/r/{quote(sub, safe='')}/new.json?limit={max_posts}"
+        rss_url = f"https://www.reddit.com/r/{quote(sub, safe='')}/new.rss"
+        entry = {"adapter": "social", "studio": f"reddit/{sub}", "name": source_name, "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
+        parsed_rows: List[RawJob] = []
+        low_conf_sub = 0
+        try:
+            text = fetch_with_retries(json_url, fetch_text, timeout_s, retries, backoff_s)
+            payload = json.loads(text)
+            parsed_rows, low_conf_sub = parse_reddit_json_payload(
+                payload,
+                subreddit=sub,
+                min_confidence=min_conf,
+                reject_for_hire_posts=reject_for_hire,
+            )
+            entry["fetchedCount"] = len((((payload.get("data") or {}).get("children")) if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else []) or [])
+        except Exception as exc:  # noqa: BLE001
+            if bool(cfg.get("rssFallback", True)):
+                try:
+                    rss_text = fetch_with_retries(rss_url, fetch_text, timeout_s, retries, backoff_s)
+                    parsed_rows, low_conf_sub = parse_reddit_rss_payload(
+                        rss_text,
+                        subreddit=sub,
+                        min_confidence=min_conf,
+                        reject_for_hire_posts=reject_for_hire,
+                    )
+                    entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
+                except Exception as rss_exc:  # noqa: BLE001
+                    entry["status"] = "error"
+                    entry["error"] = f"{exc}; {rss_exc}"
+                    errors.append(f"reddit:{sub}: {exc}; {rss_exc}")
+            else:
+                entry["status"] = "error"
+                entry["error"] = str(exc)
+                errors.append(f"reddit:{sub}: {exc}")
+        entry["keptCount"] = len(parsed_rows)
+        low_conf_total += int(low_conf_sub)
+        jobs.extend(parsed_rows)
+        details.append(entry)
+
+    set_source_diagnostics(
+        "social_reddit",
+        adapter="social",
+        studio="reddit",
+        details=details,
+        partial_errors=errors,
+    )
+    SOURCE_DIAGNOSTICS["social_reddit"]["lowConfidenceDropped"] = int(low_conf_total)
+    if jobs:
+        return jobs
+    if errors:
+        raise RuntimeError("; ".join(errors))
+    return []
+
+
+def run_social_x_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    social_config: Dict[str, Any],
+) -> List[RawJob]:
+    cfg = social_config.get("x") if isinstance(social_config.get("x"), dict) else {}
+    if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
+        set_source_diagnostics("social_x", adapter="social", studio="x", details=[], partial_errors=[])
+        return []
+    queries = [clean_text(item) for item in (cfg.get("queries") or []) if clean_text(item)]
+    if not queries:
+        return []
+    max_posts = max(1, int(cfg.get("maxPostsPerQuery") or 25))
+    min_conf = max(0, min(100, int(cfg.get("minConfidence") or social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE)))
+    reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
+    api_cfg = cfg.get("api") if isinstance(cfg.get("api"), dict) else {}
+    scraper_cfg = cfg.get("scraperFallback") if isinstance(cfg.get("scraperFallback"), dict) else {}
+    rss_cfg = cfg.get("rssFallback") if isinstance(cfg.get("rssFallback"), dict) else {}
+    bearer_env = clean_text(api_cfg.get("bearerTokenEnv") or "BALUFFO_X_BEARER_TOKEN")
+    bearer = clean_text(__import__("os").environ.get(bearer_env))
+    endpoint = clean_text(api_cfg.get("endpoint"))
+    scraper_endpoint = clean_text(scraper_cfg.get("endpoint"))
+    rss_instances = [clean_text(item).rstrip("/") for item in (rss_cfg.get("instances") or []) if clean_text(item)]
+
+    details: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    jobs: List[RawJob] = []
+    low_conf_total = 0
+
+    for query in queries:
+        entry = {"adapter": "social", "studio": "x", "name": f"x:{query}", "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
+        parsed_rows: List[RawJob] = []
+        low_conf_query = 0
+        try:
+            payload: Any = {}
+            if bool(api_cfg.get("enabled", True)) and bearer and endpoint:
+                url = f"{endpoint}?query={quote(query, safe='')}&max_results={max_posts}&tweet.fields=created_at,entities"
+                payload = _request_json_with_headers(
+                    url,
+                    timeout_s=timeout_s,
+                    headers={"Authorization": f"Bearer {bearer}", "Accept": "application/json"},
+                )
+            elif bool(scraper_cfg.get("enabled")) and scraper_endpoint:
+                url = f"{scraper_endpoint}?q={quote(query, safe='')}&limit={max_posts}"
+                text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+                payload = json.loads(text)
+            elif bool(rss_cfg.get("enabled", True)) and rss_instances:
+                rss_errors: List[str] = []
+                rss_payload_text = ""
+                for instance in rss_instances:
+                    rss_url = f"{instance}/search/rss?f=tweets&q={quote(query, safe='')}"
+                    try:
+                        rss_payload_text = fetch_with_retries(rss_url, fetch_text, timeout_s, retries, backoff_s)
+                        break
+                    except Exception as rss_exc:  # noqa: BLE001
+                        rss_errors.append(f"{instance}: {rss_exc}")
+                if not rss_payload_text:
+                    raise RuntimeError("; ".join(rss_errors) if rss_errors else "x rss fallback failed")
+                parsed_rows, low_conf_query = parse_x_rss_payload(
+                    rss_payload_text,
+                    query_label=query,
+                    min_confidence=min_conf,
+                    reject_for_hire_posts=reject_for_hire,
+                )
+                entry["fetchedCount"] = len(parsed_rows) + int(low_conf_query)
+                entry["keptCount"] = len(parsed_rows)
+                low_conf_total += int(low_conf_query)
+                jobs.extend(parsed_rows)
+                details.append(entry)
+                continue
+            else:
+                entry["status"] = "error"
+                entry["error"] = "missing x api credentials and fallbacks disabled"
+                errors.append(f"x:{query}: {entry['error']}")
+                details.append(entry)
+                continue
+
+            parsed_rows, low_conf_query = parse_x_payload(
+                payload,
+                query_label=query,
+                min_confidence=min_conf,
+                reject_for_hire_posts=reject_for_hire,
+            )
+            if isinstance(payload, dict) and isinstance(payload.get("data"), list):
+                entry["fetchedCount"] = len(payload.get("data") or [])
+            else:
+                entry["fetchedCount"] = len(parsed_rows) + int(low_conf_query)
+        except Exception as exc:  # noqa: BLE001
+            entry["status"] = "error"
+            entry["error"] = str(exc)
+            errors.append(f"x:{query}: {exc}")
+        entry["keptCount"] = len(parsed_rows)
+        low_conf_total += int(low_conf_query)
+        jobs.extend(parsed_rows)
+        details.append(entry)
+
+    set_source_diagnostics("social_x", adapter="social", studio="x", details=details, partial_errors=errors)
+    SOURCE_DIAGNOSTICS["social_x"]["lowConfidenceDropped"] = int(low_conf_total)
+    if jobs:
+        return jobs
+    if errors:
+        raise RuntimeError("; ".join(errors))
+    return []
+
+
+def run_social_mastodon_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    social_config: Dict[str, Any],
+) -> List[RawJob]:
+    cfg = social_config.get("mastodon") if isinstance(social_config.get("mastodon"), dict) else {}
+    if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
+        set_source_diagnostics("social_mastodon", adapter="social", studio="mastodon", details=[], partial_errors=[])
+        return []
+    instances = [clean_text(item).rstrip("/") for item in (cfg.get("instances") or []) if clean_text(item)]
+    tags = [clean_text(item).lstrip("#") for item in (cfg.get("hashtags") or []) if clean_text(item)]
+    max_posts = max(1, int(cfg.get("maxPostsPerTag") or 40))
+    min_conf = max(0, min(100, int(social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE)))
+    reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
+    details: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    jobs: List[RawJob] = []
+    low_conf_total = 0
+
+    for instance in instances:
+        for tag in tags:
+            entry = {
+                "adapter": "social",
+                "studio": f"mastodon/{clean_text(urlparse(instance).netloc)}",
+                "name": f"mastodon:{clean_text(urlparse(instance).netloc)}:#{tag}",
+                "status": "ok",
+                "fetchedCount": 0,
+                "keptCount": 0,
+                "error": "",
+            }
+            try:
+                url = f"{instance}/api/v1/timelines/tag/{quote(tag, safe='')}?limit={max_posts}"
+                text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+                payload = json.loads(text)
+                parsed_rows, low_conf_tag = parse_mastodon_payload(
+                    payload,
+                    instance=instance,
+                    tag=tag,
+                    min_confidence=min_conf,
+                    reject_for_hire_posts=reject_for_hire,
+                )
+                entry["fetchedCount"] = len(payload) if isinstance(payload, list) else len(parsed_rows) + int(low_conf_tag)
+                entry["keptCount"] = len(parsed_rows)
+                low_conf_total += int(low_conf_tag)
+                jobs.extend(parsed_rows)
+            except Exception as exc:  # noqa: BLE001
+                entry["status"] = "error"
+                entry["error"] = str(exc)
+                errors.append(f"mastodon:{instance}:#{tag}: {exc}")
+            details.append(entry)
+
+    set_source_diagnostics("social_mastodon", adapter="social", studio="mastodon", details=details, partial_errors=errors)
+    SOURCE_DIAGNOSTICS["social_mastodon"]["lowConfidenceDropped"] = int(low_conf_total)
+    if jobs:
+        return jobs
+    if errors:
+        raise RuntimeError("; ".join(errors))
+    return []
 
 
 def run_gamesindustry_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
@@ -1882,43 +2695,76 @@ def run_static_studio_pages_source(
                 continue
             try:
                 html = fetch_with_retries(page_url, fetch_text, timeout_s, retries, backoff_s)
-                parsed = parse_jobpostings_from_html(
-                    html,
-                    base_url=page_url,
-                    fallback_company=company,
-                    fallback_source_id_prefix=f"static:{source_name}",
-                )
-                for row in parsed:
-                    link = normalize_url(row.get("jobLink"))
-                    if not link or link in seen_links:
-                        continue
-                    seen_links.add(link)
-                    row["adapter"] = "static"
-                    row["studio"] = clean_text(source.get("studio")) or company or source_name
-                    jobs.append(row)
-
                 detail_links: List[Tuple[str, str]] = []
                 detail_seen = set()
-                for match in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html):
-                    href = clean_text(match.group(1))
-                    anchor_inner = match.group(2) or ""
-                    anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner))
-                    absolute = urljoin(page_url, clean_text(href))
-                    if not is_probable_job_detail_url(absolute):
-                        continue
-                    if absolute in detail_seen:
-                        continue
-                    detail_seen.add(absolute)
-                    detail_links.append((absolute, anchor_text))
-                # Some career sites embed job links in JSON payloads instead of anchor hrefs.
-                for raw in re.findall(r'https?://[^\s"\'<>]+', html, flags=re.I):
-                    absolute = clean_text(raw)
-                    if not is_probable_job_detail_url(absolute):
-                        continue
-                    if absolute in detail_seen:
-                        continue
-                    detail_seen.add(absolute)
-                    detail_links.append((absolute, ""))
+                listing_htmls = [html]
+                try:
+                    dynamic_listing_html = maybe_fetch_kojima_job_listing_html(
+                        page_url=page_url,
+                        page_html=html,
+                        timeout_s=timeout_s,
+                        retries=retries,
+                        backoff_s=backoff_s,
+                    )
+                    if dynamic_listing_html and dynamic_listing_html not in listing_htmls:
+                        listing_htmls.append(dynamic_listing_html)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"static:{source_name}:{page_url}: dynamic-listing-fetch failed: {exc}")
+
+                for listing_html in listing_htmls:
+                    parsed = parse_jobpostings_from_html(
+                        listing_html,
+                        base_url=page_url,
+                        fallback_company=company,
+                        fallback_source_id_prefix=f"static:{source_name}",
+                    )
+                    for row in parsed:
+                        link = normalize_url(row.get("jobLink"))
+                        if not link or link in seen_links:
+                            continue
+                        seen_links.add(link)
+                        row["adapter"] = "static"
+                        row["studio"] = clean_text(source.get("studio")) or company or source_name
+                        jobs.append(row)
+
+                    # Some custom listing tables expose role links in rows, but URLs do not
+                    # match generic /job(s)/ path heuristics (e.g. /en/ai-programmer).
+                    for row_match in re.finditer(
+                        r'(?is)<(?:div|tr)[^>]*class=["\'][^"\']*job-listing-item[^"\']*["\'][^>]*>(.*?)</(?:div|tr)>',
+                        listing_html,
+                    ):
+                        row_html = row_match.group(1) or ""
+                        link_match = re.search(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', row_html)
+                        if not link_match:
+                            continue
+                        href = clean_text(link_match.group(1))
+                        anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", link_match.group(2) or ""))
+                        absolute = urljoin(page_url, clean_text(href))
+                        if absolute in detail_seen:
+                            continue
+                        detail_seen.add(absolute)
+                        detail_links.append((absolute, anchor_text))
+
+                    for match in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', listing_html):
+                        href = clean_text(match.group(1))
+                        anchor_inner = match.group(2) or ""
+                        anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner))
+                        absolute = urljoin(page_url, clean_text(href))
+                        if not is_probable_job_detail_url(absolute):
+                            continue
+                        if absolute in detail_seen:
+                            continue
+                        detail_seen.add(absolute)
+                        detail_links.append((absolute, anchor_text))
+                    # Some career sites embed job links in JSON payloads instead of anchor hrefs.
+                    for raw in re.findall(r'https?://[^\s"\'<>]+', listing_html, flags=re.I):
+                        absolute = clean_text(raw)
+                        if not is_probable_job_detail_url(absolute):
+                            continue
+                        if absolute in detail_seen:
+                            continue
+                        detail_seen.add(absolute)
+                        detail_links.append((absolute, ""))
 
                 for detail, detail_title in detail_links:
                     if detail in seen_links:
@@ -2605,21 +3451,34 @@ def deduplicate_jobs(rows: Sequence[RawJob]) -> Tuple[List[RawJob], Dict[str, in
     merged_rows: List[RawJob] = []
     by_primary: Dict[str, int] = {}
     by_secondary: Dict[str, int] = {}
+    by_social: Dict[str, int] = {}
     merges = 0
 
     for row in rows:
         primary = fingerprint_url(row.get("jobLink"))
         secondary = dedup_secondary_key(row)
+        social_key = ""
+        if clean_text(row.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(row.get("sourceJobId")):
+            social_key = f"{clean_text(row.get('source'))}|{clean_text(row.get('sourceJobId'))}"
 
         target_idx: Optional[int] = None
         if primary and primary in by_primary:
             target_idx = by_primary[primary]
         elif secondary and secondary in by_secondary:
             target_idx = by_secondary[secondary]
+        elif social_key and social_key in by_social:
+            target_idx = by_social[social_key]
 
         if target_idx is None:
             item = dict(row)
-            item["dedupKey"] = f"url:{primary}" if primary else f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
+            if primary:
+                item["dedupKey"] = f"url:{primary}"
+            elif secondary:
+                item["dedupKey"] = f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
+            elif social_key:
+                item["dedupKey"] = f"social:{hashlib.sha1(social_key.encode('utf-8')).hexdigest()}"
+            else:
+                item["dedupKey"] = f"secondary:{hashlib.sha1('|'.join([norm_text(item.get('company')), norm_text(item.get('title'))]).encode('utf-8')).hexdigest()}"
             item["qualityScore"] = compute_quality_score(item)
             item["focusScore"] = compute_focus_score(item)
             merged_rows.append(item)
@@ -2628,18 +3487,30 @@ def deduplicate_jobs(rows: Sequence[RawJob]) -> Tuple[List[RawJob], Dict[str, in
                 by_primary[primary] = idx
             if secondary:
                 by_secondary[secondary] = idx
+            if social_key:
+                by_social[social_key] = idx
             continue
 
         merges += 1
         merged = merge_records(merged_rows[target_idx], row)
         primary = fingerprint_url(merged.get("jobLink"))
         secondary = dedup_secondary_key(merged)
-        merged["dedupKey"] = f"url:{primary}" if primary else f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
+        merged_social_key = ""
+        if clean_text(merged.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(merged.get("sourceJobId")):
+            merged_social_key = f"{clean_text(merged.get('source'))}|{clean_text(merged.get('sourceJobId'))}"
+        if primary:
+            merged["dedupKey"] = f"url:{primary}"
+        elif secondary:
+            merged["dedupKey"] = f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
+        elif merged_social_key:
+            merged["dedupKey"] = f"social:{hashlib.sha1(merged_social_key.encode('utf-8')).hexdigest()}"
         merged_rows[target_idx] = merged
         if primary:
             by_primary[primary] = target_idx
         if secondary:
             by_secondary[secondary] = target_idx
+        if merged_social_key:
+            by_social[merged_social_key] = target_idx
 
     merged_rows.sort(
         key=lambda item: (
@@ -2654,7 +3525,16 @@ def deduplicate_jobs(rows: Sequence[RawJob]) -> Tuple[List[RawJob], Dict[str, in
     return merged_rows, {"inputCount": len(rows), "mergedCount": merges, "outputCount": len(merged_rows)}
 
 
-def default_source_loaders() -> List[Tuple[str, SourceLoader]]:
+def default_source_loaders(
+    *,
+    social_enabled: bool = False,
+    social_config: Optional[Dict[str, Any]] = None,
+) -> List[Tuple[str, SourceLoader]]:
+    social_cfg = social_config if isinstance(social_config, dict) else load_social_config(
+        config_path=DEFAULT_SOCIAL_CONFIG_PATH,
+        enabled=bool(social_enabled),
+        lookback_minutes=DEFAULT_SOCIAL_LOOKBACK_MINUTES,
+    )
     available = {
         "google_sheets": run_google_sheets_source,
         "remote_ok": run_remote_ok_source,
@@ -2667,6 +3547,9 @@ def default_source_loaders() -> List[Tuple[str, SourceLoader]]:
         "workable_sources": run_workable_sources_source,
         "ashby_sources": run_ashby_sources_source,
         "personio_sources": run_personio_sources_source,
+        "social_reddit": lambda **kwargs: run_social_reddit_source(**kwargs, social_config=social_cfg),
+        "social_x": lambda **kwargs: run_social_x_source(**kwargs, social_config=social_cfg),
+        "social_mastodon": lambda **kwargs: run_social_mastodon_source(**kwargs, social_config=social_cfg),
         "static_studio_pages_a_i": run_static_studio_pages_a_i_source,
         "static_studio_pages_j_r": run_static_studio_pages_j_r_source,
         "static_studio_pages_s_z": run_static_studio_pages_s_z_source,
@@ -2678,6 +3561,8 @@ def default_source_loaders() -> List[Tuple[str, SourceLoader]]:
         for name, loader in base_loaders
         if name not in {"static_studio_pages", "static_studio_pages_a_i", "static_studio_pages_j_r", "static_studio_pages_s_z"}
     ]
+    if not bool(social_cfg.get("enabled")):
+        base_loaders = [(name, loader) for name, loader in base_loaders if name not in SOCIAL_SOURCE_NAMES]
     return base_loaders + build_static_source_loaders()
 
 
@@ -3032,6 +3917,10 @@ def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count:
         "circuitBreakerFailures": _clamped_int(src.get("circuitBreakerFailures"), 0, 0),
         "circuitBreakerCooldownMinutes": _clamped_int(src.get("circuitBreakerCooldownMinutes"), 0, 0),
         "ignoreCircuitBreaker": bool(src.get("ignoreCircuitBreaker")),
+        "socialEnabled": bool(src.get("socialEnabled")),
+        "socialConfigPath": clean_text(src.get("socialConfigPath")),
+        "socialLookbackMinutes": _clamped_int(src.get("socialLookbackMinutes"), DEFAULT_SOCIAL_LOOKBACK_MINUTES, 1),
+        "socialMinConfidence": _clamped_int(src.get("socialMinConfidence"), DEFAULT_SOCIAL_MIN_CONFIDENCE, 0),
         "selectedSourceCount": _clamped_int(src.get("selectedSourceCount"), selected_source_count, 0),
     }
 
@@ -3046,12 +3935,28 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "studio": clean_text(src.get("studio")),
         "fetchedCount": _clamped_int(src.get("fetchedCount"), 0, 0),
         "keptCount": _clamped_int(src.get("keptCount"), 0, 0),
+        "lowConfidenceDropped": _clamped_int(src.get("lowConfidenceDropped"), 0, 0),
         "error": clean_text(src.get("error")),
         "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
     }
     details = src.get("details")
     if isinstance(details, list):
-        clean_details = [clean_text(item) for item in details if clean_text(item)]
+        clean_details: List[Any] = []
+        for item in details:
+            if isinstance(item, dict):
+                clean_details.append({
+                    "adapter": clean_text(item.get("adapter")),
+                    "studio": clean_text(item.get("studio")),
+                    "name": clean_text(item.get("name")),
+                    "status": norm_text(item.get("status")) or "error",
+                    "fetchedCount": _clamped_int(item.get("fetchedCount"), 0, 0),
+                    "keptCount": _clamped_int(item.get("keptCount"), 0, 0),
+                    "error": clean_text(item.get("error")),
+                })
+                continue
+            text = clean_text(item)
+            if text:
+                clean_details.append(text)
         if clean_details:
             normalized["details"] = clean_details
     return normalized
@@ -3290,6 +4195,9 @@ def run_pipeline(
     circuit_breaker_failures: int = 3,
     circuit_breaker_cooldown_minutes: int = 180,
     ignore_circuit_breaker: bool = False,
+    social_enabled: bool = False,
+    social_config_path: Optional[Path] = None,
+    social_lookback_minutes: int = DEFAULT_SOCIAL_LOOKBACK_MINUTES,
     show_progress: bool = True,
 ) -> Dict[str, Any]:
     output_dir = Path(output_dir)
@@ -3367,7 +4275,23 @@ def run_pipeline(
         })
         write_text_if_changed(report_path, json.dumps(progress_payload, indent=2, ensure_ascii=False))
 
-    selected_loaders = default_source_loaders() if source_loaders is None else list(source_loaders)
+    effective_social_config_path = Path(social_config_path) if social_config_path else (output_dir / "social-sources-config.json")
+    social_config = load_social_config(
+        config_path=effective_social_config_path,
+        enabled=bool(social_enabled),
+        lookback_minutes=social_lookback_minutes,
+    )
+
+    if source_loaders is None:
+        try:
+            selected_loaders = default_source_loaders(
+                social_enabled=bool(social_enabled),
+                social_config=social_config,
+            )
+        except TypeError:
+            selected_loaders = default_source_loaders()
+    else:
+        selected_loaders = list(source_loaders)
     using_default_loaders = source_loaders is None
     runtime_payload = normalize_runtime_payload({
         "maxWorkers": max_workers,
@@ -3383,6 +4307,10 @@ def run_pipeline(
         "circuitBreakerFailures": int(circuit_breaker_failures or 0),
         "circuitBreakerCooldownMinutes": int(circuit_breaker_cooldown_minutes or 0),
         "ignoreCircuitBreaker": bool(ignore_circuit_breaker),
+        "socialEnabled": bool(social_enabled),
+        "socialConfigPath": str(effective_social_config_path),
+        "socialLookbackMinutes": int(social_config.get("lookbackMinutes") or DEFAULT_SOCIAL_LOOKBACK_MINUTES),
+        "socialMinConfidence": int(social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE),
         "selectedSourceCount": len(selected_loaders),
     }, selected_source_count=len(selected_loaders))
 
@@ -3487,6 +4415,7 @@ def run_pipeline(
             "studio": clean_text(base_meta.get("studio")) or "",
             "fetchedCount": 0,
             "keptCount": 0,
+            "lowConfidenceDropped": 0,
             "error": "",
             "durationMs": 0,
         }
@@ -3517,6 +4446,7 @@ def run_pipeline(
             partial_errors = [clean_text(err) for err in (diag.get("partialErrors") or []) if clean_text(err)]
             if partial_errors:
                 report["error"] = "; ".join(format_source_error(name, err) for err in partial_errors[:6])
+            report["lowConfidenceDropped"] = int(diag.get("lowConfidenceDropped") or 0)
         except Exception as exc:  # noqa: BLE001
             report["status"] = "error"
             report["error"] = format_source_error(name, exc)
@@ -3786,6 +4716,22 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Force execution of sources even if currently quarantined.",
     )
+    parser.add_argument(
+        "--social-enabled",
+        action="store_true",
+        help="Enable social sources (Reddit, X, Mastodon) in the fetch run.",
+    )
+    parser.add_argument(
+        "--social-config-path",
+        default=str(DEFAULT_SOCIAL_CONFIG_PATH),
+        help="Path to social source config JSON file.",
+    )
+    parser.add_argument(
+        "--social-lookback-minutes",
+        type=int,
+        default=DEFAULT_SOCIAL_LOOKBACK_MINUTES,
+        help="Lookback window for social source polling.",
+    )
     return parser.parse_args()
 
 
@@ -3793,7 +4739,18 @@ def main() -> int:
     args = parse_args()
     source_loaders: Optional[List[Tuple[str, SourceLoader]]] = None
     seed_from_existing_output = False
-    default_loaders = default_source_loaders()
+    social_config = load_social_config(
+        config_path=Path(args.social_config_path),
+        enabled=bool(args.social_enabled),
+        lookback_minutes=int(args.social_lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES),
+    )
+    try:
+        default_loaders = default_source_loaders(
+            social_enabled=bool(args.social_enabled),
+            social_config=social_config,
+        )
+    except TypeError:
+        default_loaders = default_source_loaders()
 
     only_sources = [clean_text(part) for part in str(args.only_sources or "").split(",") if clean_text(part)]
     if only_sources:
@@ -3849,6 +4806,9 @@ def main() -> int:
         hot_source_cadence_minutes=args.hot_source_cadence_minutes,
         cold_source_cadence_minutes=args.cold_source_cadence_minutes,
         ignore_circuit_breaker=bool(args.ignore_circuit_breaker or forced_only_sources),
+        social_enabled=bool(args.social_enabled),
+        social_config_path=Path(args.social_config_path),
+        social_lookback_minutes=int(args.social_lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES),
         show_progress=not args.quiet,
     )
     summary = report.get("summary", {})

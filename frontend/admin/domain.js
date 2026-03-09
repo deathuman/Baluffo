@@ -54,9 +54,41 @@ export function getSourceJobsFoundCount(row) {
 function normalizeSourceStatusToken(value) {
   const token = String(value || "").trim().toLowerCase();
   if (!token) return "";
+  if (token === "n/a" || token === "na" || token === "unknown" || token === "not_run" || token === "not run yet") {
+    return "not_run";
+  }
   if (token === "success" || token === "healthy") return "ok";
   if (token === "failed" || token === "failure") return "error";
   return token;
+}
+
+function coerceReportDetailRow(detail) {
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    return detail;
+  }
+  if (typeof detail !== "string") return null;
+  const raw = detail.trim();
+  if (!raw.startsWith("{") || !raw.endsWith("}")) return null;
+
+  const candidates = [raw];
+  const pyLike = raw
+    .replace(/\bNone\b/g, "null")
+    .replace(/\bTrue\b/g, "true")
+    .replace(/\bFalse\b/g, "false");
+  if (pyLike !== raw) candidates.push(pyLike);
+  if (!raw.includes("\"")) candidates.push(pyLike.replace(/'/g, "\""));
+
+  for (const attempt of candidates) {
+    try {
+      const parsed = JSON.parse(attempt);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Continue trying fallbacks.
+    }
+  }
+  return null;
 }
 
 function toSourceMatchKeys(row) {
@@ -90,7 +122,7 @@ export function deriveSourceStatus(row) {
   const jobsFound = getSourceJobsFoundCount(row);
   if (Number.isFinite(jobsFound) && jobsFound > 0) return "ok";
   if (String(row?.lastProbedAt || "").trim()) return "warning";
-  return "n/a";
+  return "not_run";
 }
 
 export function mergeSourceStatusFromReport(rows, report, mode) {
@@ -102,7 +134,8 @@ export function mergeSourceStatusFromReport(rows, report, mode) {
     candidates.push(group);
     const details = Array.isArray(group?.details) ? group.details : [];
     details.forEach(detail => {
-      if (detail && typeof detail === "object") candidates.push(detail);
+      const parsed = coerceReportDetailRow(detail);
+      if (parsed) candidates.push(parsed);
     });
   });
   const byKey = new Map();

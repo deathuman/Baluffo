@@ -17,6 +17,9 @@ DEFAULT_SOURCE_LOADER_NAMES: List[str] = [
     "workable_sources",
     "ashby_sources",
     "personio_sources",
+    "social_reddit",
+    "social_x",
+    "social_mastodon",
 ]
 
 SOURCE_REPORT_META: Dict[str, Dict[str, str]] = {
@@ -31,6 +34,9 @@ SOURCE_REPORT_META: Dict[str, Dict[str, str]] = {
     "workable_sources": {"adapter": "workable", "studio": "multiple", "fetchStrategy": "http"},
     "ashby_sources": {"adapter": "ashby", "studio": "multiple", "fetchStrategy": "http"},
     "personio_sources": {"adapter": "personio", "studio": "multiple", "fetchStrategy": "http"},
+    "social_reddit": {"adapter": "social", "studio": "reddit", "fetchStrategy": "http"},
+    "social_x": {"adapter": "social", "studio": "x", "fetchStrategy": "http"},
+    "social_mastodon": {"adapter": "social", "studio": "mastodon", "fetchStrategy": "http"},
     "static_studio_pages_a_i": {"adapter": "static", "studio": "multiple", "fetchStrategy": "auto"},
     "static_studio_pages_j_r": {"adapter": "static", "studio": "multiple", "fetchStrategy": "auto"},
     "static_studio_pages_s_z": {"adapter": "static", "studio": "multiple", "fetchStrategy": "auto"},

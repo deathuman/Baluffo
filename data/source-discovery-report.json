@@ -1,8 +1,8 @@
 {
   "schemaVersion": "1.0",
   "mode": "dynamic",
-  "startedAt": "2026-03-09T12:52:43.049230+00:00",
-  "finishedAt": "2026-03-09T12:53:32.808678+00:00",
+  "startedAt": "2026-03-09T20:38:45.831461+00:00",
+  "finishedAt": "2026-03-09T20:40:07.046404+00:00",
   "summary": {
     "probedCount": 2,
     "healthyCount": 0,
@@ -16,9 +16,9 @@
     "probedCandidateCount": 2,
     "queuedCandidateCount": 0,
     "discoverableButDeferredCount": 0,
-    "skippedDuplicateCount": 44,
+    "skippedDuplicateCount": 41,
     "skippedInvalidCount": 0,
-    "skippedLowEvidenceProbeCount": 9,
+    "skippedLowEvidenceProbeCount": 12,
     "adapterCounts": {},
     "methodCounts": {},
     "generatedCountByStage": {
@@ -29,7 +29,7 @@
     },
     "survivedDedupeCountByStage": {
       "curated_seed": 0,
-      "provider_pattern": 11,
+      "provider_pattern": 14,
       "web_provider": 0,
       "generic_static": 0
     },
@@ -46,7 +46,7 @@
       "generic_static": 0
     },
     "duplicateReasons": {
-      "existing_id": 44
+      "existing_id": 41
     },
     "deferredReasons": {}
   },
@@ -61,7 +61,7 @@
     {
       "name": "https://vertigo-games.com/careers",
       "adapter": "seed_careers_page",
-      "error": "HTTP Error 404: Not Found",
+      "error": "<urlopen error timed out>",
       "stage": "page_fetch"
     },
     {
@@ -112,6 +112,27 @@
       "name": "Guerrilla Games (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
+    },
+    {
+      "name": "Vertigo Games (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
+    },
+    {
+      "name": "Vertigo Games (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "pattern evidence score 24 below probe threshold 30",
+      "stage": "probe_skipped"
+    },
+    {
+      "name": "Vertigo Games (SmartRecruiters)",
+      "adapter": "smartrecruiters",
+      "domain": "api.smartrecruiters.com",
       "error": "pattern evidence score 24 below probe threshold 30",
       "stage": "probe_skipped"
     },
@@ -180,6 +201,10 @@
     {
       "key": "seed_careers_page",
       "count": 7
+    },
+    {
+      "key": "workable:apply.workable.com",
+      "count": 2
     },
     {
       "key": "lever:api.lever.co",

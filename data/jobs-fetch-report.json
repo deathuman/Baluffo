@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
-  "startedAt": "2026-03-09T11:10:25.049048+00:00",
-  "finishedAt": "2026-03-09T11:12:27.299648+00:00",
+  "startedAt": "2026-03-09T20:40:07.857616+00:00",
+  "finishedAt": "2026-03-09T20:41:41.063725+00:00",
   "runtime": {
     "maxWorkers": 6,
     "maxPerDomain": 2,
@@ -16,50 +16,43 @@
     "circuitBreakerFailures": 3,
     "circuitBreakerCooldownMinutes": 180,
     "ignoreCircuitBreaker": false,
-    "selectedSourceCount": 21
+    "socialEnabled": false,
+    "socialConfigPath": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\social-sources-config.json",
+    "socialLookbackMinutes": 30,
+    "socialMinConfidence": 40,
+    "selectedSourceCount": 28
   },
   "summary": {
-    "inputCount": 34116,
-    "mergedCount": 710,
-    "outputCount": 33406,
-    "rawFetchedCount": 34116,
-    "uniqueOutputCount": 33406,
-    "sourceBundleCollisions": 417,
-    "targetRoleCount": 227,
+    "inputCount": 33603,
+    "mergedCount": 495,
+    "outputCount": 33108,
+    "rawFetchedCount": 33603,
+    "uniqueOutputCount": 33108,
+    "sourceBundleCollisions": 212,
+    "targetRoleCount": 207,
     "netherlandsCount": 311,
-    "remoteCount": 5848,
+    "remoteCount": 5869,
     "targetRoleNetherlandsCount": 0,
-    "targetRoleRemoteCount": 35,
+    "targetRoleRemoteCount": 37,
     "preservedPreviousOutput": false,
-    "sourceCount": 22,
-    "successfulSources": 20,
-    "failedSources": 1,
+    "sourceCount": 29,
+    "successfulSources": 28,
+    "failedSources": 0,
     "excludedSources": 1,
-    "activeSourceCount": 40,
-    "pendingSourceCount": 66,
+    "activeSourceCount": 33,
+    "pendingSourceCount": 1,
     "newlyApprovedSinceLastRun": 0,
-    "jsonBytes": 40851513,
-    "csvBytes": 21871084,
-    "lightJsonBytes": 19401126,
+    "jsonBytes": 40353039,
+    "csvBytes": 21551130,
+    "lightJsonBytes": 19209217,
     "sizeGuardrailExceeded": false,
     "recordGuardrailExceeded": false,
-    "lifecycleActiveCount": 33407,
-    "lifecycleLikelyRemovedCount": 0,
+    "lifecycleActiveCount": 33108,
+    "lifecycleLikelyRemovedCount": 390,
     "lifecycleArchivedCount": 0,
-    "lifecycleTrackedCount": 33407
+    "lifecycleTrackedCount": 33498
   },
   "sources": [
-    {
-      "name": "remote_ok",
-      "status": "ok",
-      "adapter": "api",
-      "fetchStrategy": "http",
-      "studio": "remote_ok",
-      "fetchedCount": 49,
-      "keptCount": 49,
-      "error": "",
-      "durationMs": 128
-    },
     {
       "name": "gamesindustry",
       "status": "ok",
@@ -68,8 +61,21 @@
       "studio": "gamesindustry",
       "fetchedCount": 24,
       "keptCount": 24,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 274
+      "durationMs": 247
+    },
+    {
+      "name": "remote_ok",
+      "status": "ok",
+      "adapter": "api",
+      "fetchStrategy": "http",
+      "studio": "remote_ok",
+      "fetchedCount": 49,
+      "keptCount": 49,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 122
     },
     {
       "name": "smartrecruiters_sources",
@@ -77,33 +83,30 @@
       "adapter": "smartrecruiters",
       "fetchStrategy": "http",
       "studio": "multiple",
-      "fetchedCount": 103,
-      "keptCount": 103,
+      "fetchedCount": 93,
+      "keptCount": 93,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 683,
+      "durationMs": 440,
       "details": [
-        "{'adapter': 'smartrecruiters', 'studio': 'CD PROJEKT RED', 'name': 'CD PROJEKT RED (SmartRecruiters)', 'status': 'ok', 'fetchedCount': 99, 'keptCount': 28, 'error': ''}",
-        "{'adapter': 'smartrecruiters', 'studio': 'Gameloft', 'name': 'Gameloft (SmartRecruiters)', 'status': 'ok', 'fetchedCount': 67, 'keptCount': 67, 'error': ''}",
-        "{'adapter': 'smartrecruiters', 'studio': 'People Can Fly', 'name': 'People Can Fly (SmartRecruiters)', 'status': 'ok', 'fetchedCount': 19, 'keptCount': 8, 'error': ''}"
-      ]
-    },
-    {
-      "name": "workable_sources",
-      "status": "ok",
-      "adapter": "workable",
-      "fetchStrategy": "http",
-      "studio": "multiple",
-      "fetchedCount": 90,
-      "keptCount": 90,
-      "error": "",
-      "durationMs": 1402,
-      "details": [
-        "{'adapter': 'workable', 'studio': 'Hutch', 'name': 'Hutch (Workable)', 'status': 'ok', 'fetchedCount': 8, 'keptCount': 8, 'error': ''}",
-        "{'adapter': 'workable', 'studio': 'Wargaming', 'name': 'Wargaming (Workable)', 'status': 'ok', 'fetchedCount': 0, 'keptCount': 0, 'error': ''}",
-        "{'adapter': 'workable', 'studio': 'Vertigo Games', 'name': 'Vertigo Games (Workable)', 'status': 'ok', 'fetchedCount': 15, 'keptCount': 15, 'error': ''}",
-        "{'adapter': 'workable', 'studio': 'Lighthouse Games', 'name': 'Lighthouse Games (Workable)', 'status': 'ok', 'fetchedCount': 28, 'keptCount': 28, 'error': ''}",
-        "{'adapter': 'workable', 'studio': 'Climax Studios', 'name': 'Climax Studios (Workable)', 'status': 'ok', 'fetchedCount': 30, 'keptCount': 30, 'error': ''}",
-        "{'adapter': 'workable', 'studio': 'Velan Studios', 'name': 'Velan Studios (Workable)', 'status': 'ok', 'fetchedCount': 9, 'keptCount': 9, 'error': ''}"
+        {
+          "adapter": "smartrecruiters",
+          "studio": "CD PROJEKT RED",
+          "name": "CD PROJEKT RED (SmartRecruiters)",
+          "status": "ok",
+          "fetchedCount": 97,
+          "keptCount": 26,
+          "error": ""
+        },
+        {
+          "adapter": "smartrecruiters",
+          "studio": "Gameloft",
+          "name": "Gameloft (SmartRecruiters)",
+          "status": "ok",
+          "fetchedCount": 67,
+          "keptCount": 67,
+          "error": ""
+        }
       ]
     },
     {
@@ -112,19 +115,62 @@
       "adapter": "greenhouse",
       "fetchStrategy": "http",
       "studio": "multiple",
-      "fetchedCount": 403,
-      "keptCount": 403,
+      "fetchedCount": 209,
+      "keptCount": 209,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 2937,
+      "durationMs": 832,
       "details": [
-        "{'adapter': 'greenhouse', 'studio': 'Guerrilla Games', 'name': 'Guerrilla Games', 'status': 'ok', 'fetchedCount': 9, 'keptCount': 9, 'error': ''}",
-        "{'adapter': 'greenhouse', 'studio': 'PlayStation Global', 'name': 'PlayStation Global', 'status': 'ok', 'fetchedCount': 199, 'keptCount': 199, 'error': ''}",
-        "{'adapter': 'greenhouse', 'studio': 'Rockstar Games', 'name': 'Rockstar Games (Greenhouse)', 'status': 'ok', 'fetchedCount': 72, 'keptCount': 72, 'error': ''}",
-        "{'adapter': 'greenhouse', 'studio': 'Take-Two Interactive', 'name': 'Take-Two Interactive (Greenhouse)', 'status': 'ok', 'fetchedCount': 39, 'keptCount': 39, 'error': ''}",
-        "{'adapter': 'greenhouse', 'studio': 'Penn Interactive', 'name': 'Penn Interactive (Greenhouse)', 'status': 'ok', 'fetchedCount': 36, 'keptCount': 36, 'error': ''}",
-        "{'adapter': 'greenhouse', 'studio': 'Wildlife Studios', 'name': 'Wildlife Studios (Greenhouse)', 'status': 'ok', 'fetchedCount': 23, 'keptCount': 23, 'error': ''}",
-        "{'adapter': 'greenhouse', 'studio': 'Hangar 13', 'name': 'Hangar 13 (Greenhouse)', 'status': 'ok', 'fetchedCount': 16, 'keptCount': 16, 'error': ''}",
-        "{'adapter': 'greenhouse', 'studio': 'Haven Studios', 'name': 'Haven Studios (Greenhouse)', 'status': 'ok', 'fetchedCount': 9, 'keptCount': 9, 'error': ''}"
+        {
+          "adapter": "greenhouse",
+          "studio": "Guerrilla Games",
+          "name": "Guerrilla Games",
+          "status": "ok",
+          "fetchedCount": 9,
+          "keptCount": 9,
+          "error": ""
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "PlayStation Global",
+          "name": "PlayStation Global",
+          "status": "ok",
+          "fetchedCount": 200,
+          "keptCount": 200,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "workable_sources",
+      "status": "ok",
+      "adapter": "workable",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 10,
+      "keptCount": 10,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 426,
+      "details": [
+        {
+          "adapter": "workable",
+          "studio": "Hutch",
+          "name": "Hutch (Workable)",
+          "status": "ok",
+          "fetchedCount": 10,
+          "keptCount": 10,
+          "error": ""
+        },
+        {
+          "adapter": "workable",
+          "studio": "Wargaming",
+          "name": "Wargaming (Workable)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": ""
+        }
       ]
     },
     {
@@ -135,23 +181,102 @@
       "studio": "multiple",
       "fetchedCount": 0,
       "keptCount": 0,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 670,
+      "durationMs": 341,
       "details": [
-        "{'adapter': 'ashby', 'studio': 'Jagex', 'name': 'Jagex (Ashby)', 'status': 'error', 'fetchedCount': 0, 'keptCount': 0, 'error': 'no jobs extracted from ashby board html'}",
-        "{'adapter': 'ashby', 'studio': 'Scopely', 'name': 'Scopely (Ashby)', 'status': 'error', 'fetchedCount': 0, 'keptCount': 0, 'error': 'no jobs extracted from ashby board html'}"
+        {
+          "adapter": "ashby",
+          "studio": "Jagex",
+          "name": "Jagex (Ashby)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "no jobs extracted from ashby board html"
+        },
+        {
+          "adapter": "ashby",
+          "studio": "Scopely",
+          "name": "Scopely (Ashby)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "no jobs extracted from ashby board html"
+        }
       ]
     },
     {
-      "name": "epic_games_careers",
+      "name": "lever_sources",
       "status": "ok",
-      "adapter": "api",
+      "adapter": "lever",
       "fetchStrategy": "http",
-      "studio": "epic_games",
-      "fetchedCount": 256,
-      "keptCount": 256,
+      "studio": "multiple",
+      "fetchedCount": 26,
+      "keptCount": 26,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 6435
+      "durationMs": 4264,
+      "details": [
+        {
+          "adapter": "lever",
+          "studio": "Jagex",
+          "name": "Jagex (Lever)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": ""
+        },
+        {
+          "adapter": "lever",
+          "studio": "Sandbox VR",
+          "name": "Sandbox VR (Lever)",
+          "status": "ok",
+          "fetchedCount": 31,
+          "keptCount": 0,
+          "error": ""
+        },
+        {
+          "adapter": "lever",
+          "studio": "Voodoo",
+          "name": "Voodoo (Lever)",
+          "status": "ok",
+          "fetchedCount": 34,
+          "keptCount": 26,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "teamtailor_sources",
+      "status": "ok",
+      "adapter": "teamtailor",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 20,
+      "keptCount": 20,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 4910,
+      "details": [
+        {
+          "adapter": "teamtailor",
+          "studio": "Paradox Interactive",
+          "name": "Paradox Careers",
+          "status": "ok",
+          "fetchedCount": 20,
+          "keptCount": 20,
+          "error": ""
+        },
+        {
+          "adapter": "teamtailor",
+          "studio": "Paradox Interactive",
+          "name": "Paradox Interactive (Teamtailor)",
+          "status": "ok",
+          "fetchedCount": 20,
+          "keptCount": 0,
+          "error": ""
+        }
+      ]
     },
     {
       "name": "google_sheets",
@@ -161,21 +286,31 @@
       "studio": "community_sheet",
       "fetchedCount": 32811,
       "keptCount": 32811,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 6795
+      "durationMs": 5044
     },
     {
-      "name": "static_source::static:listing_url:https://www.cdprojekt.com/en/careers",
+      "name": "static_source::static:listing_url:https://www.naconstudiomilan.com/careers",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Cdprojekt",
-      "fetchedCount": 1,
-      "keptCount": 1,
+      "studio": "Nacon Studio Milan",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 2515,
+      "durationMs": 1756,
       "details": [
-        "{'adapter': 'static', 'studio': 'Cdprojekt', 'name': 'Cdprojekt (Manual Website)', 'status': 'ok', 'fetchedCount': 1, 'keptCount': 1, 'error': ''}"
+        {
+          "adapter": "static",
+          "studio": "Nacon Studio Milan",
+          "name": "Nacon Studio Milan (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages"
+        }
       ]
     },
     {
@@ -184,170 +319,419 @@
       "adapter": "static",
       "fetchStrategy": "auto",
       "studio": "Little Chicken",
-      "fetchedCount": 10,
-      "keptCount": 10,
+      "fetchedCount": 9,
+      "keptCount": 9,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 7931,
+      "durationMs": 6177,
       "details": [
-        "{'adapter': 'static', 'studio': 'Little Chicken', 'name': 'Little Chicken', 'status': 'ok', 'fetchedCount': 2, 'keptCount': 10, 'error': ''}"
+        {
+          "adapter": "static",
+          "studio": "Little Chicken",
+          "name": "Little Chicken",
+          "status": "ok",
+          "fetchedCount": 2,
+          "keptCount": 9,
+          "error": ""
+        }
       ]
     },
     {
-      "name": "teamtailor_sources",
+      "name": "epic_games_careers",
       "status": "ok",
-      "adapter": "teamtailor",
+      "adapter": "api",
       "fetchStrategy": "http",
-      "studio": "multiple",
-      "fetchedCount": 33,
-      "keptCount": 33,
+      "studio": "epic_games",
+      "fetchedCount": 258,
+      "keptCount": 258,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 11065,
-      "details": [
-        "{'adapter': 'teamtailor', 'studio': 'Paradox Interactive', 'name': 'Paradox Careers', 'status': 'ok', 'fetchedCount': 20, 'keptCount': 20, 'error': ''}",
-        "{'adapter': 'teamtailor', 'studio': 'Push Gaming', 'name': 'Push Gaming (Teamtailor)', 'status': 'ok', 'fetchedCount': 13, 'keptCount': 13, 'error': ''}"
-      ]
+      "durationMs": 7736
     },
     {
-      "name": "static_source::static:listing_url:https://www.nixxes.com/jobs",
+      "name": "static_source::static:listing_url:https://supercell.com/en/careers/",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Nixxes",
-      "fetchedCount": 2,
-      "keptCount": 2,
+      "studio": "Supercell",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 5011,
+      "durationMs": 5648,
       "details": [
-        "{'adapter': 'static', 'studio': 'Nixxes', 'name': 'Nixxes (Manual Website)', 'status': 'ok', 'fetchedCount': 1, 'keptCount': 2, 'error': ''}"
+        {
+          "adapter": "static",
+          "studio": "Supercell",
+          "name": "Supercell (Manual Website)",
+          "status": "error",
+          "fetchedCount": 7,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages"
+        }
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.ioi.dk/careers",
+      "name": "static_source::static:listing_url:https://milestone.it/careers",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Ioi",
-      "fetchedCount": 1,
-      "keptCount": 1,
+      "studio": "Milestone",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 3400,
+      "durationMs": 4416,
       "details": [
-        "{'adapter': 'static', 'studio': 'Ioi', 'name': 'Ioi (Manual Website)', 'status': 'ok', 'fetchedCount': 1, 'keptCount': 1, 'error': ''}"
+        {
+          "adapter": "static",
+          "studio": "Milestone",
+          "name": "Milestone (Manual Website)",
+          "status": "error",
+          "fetchedCount": 4,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages"
+        }
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.fingersoft.com/careers",
+      "name": "static_source::static:listing_url:https://jobs.zenimax.com",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Fingersoft",
-      "fetchedCount": 1,
-      "keptCount": 1,
+      "studio": "Zenimax",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 2796,
+      "durationMs": 663,
       "details": [
-        "{'adapter': 'static', 'studio': 'Fingersoft', 'name': 'Fingersoft (Manual Website)', 'status': 'ok', 'fetchedCount': 1, 'keptCount': 1, 'error': ''}"
+        {
+          "adapter": "static",
+          "studio": "Zenimax",
+          "name": "Zenimax (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages"
+        }
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://career.paradoxplaza.com",
+      "name": "static_source::static:listing_url:https://www.remedygames.com/careers",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Paradoxplaza",
-      "fetchedCount": 5,
-      "keptCount": 5,
+      "studio": "Remedy Entertainment",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 5414,
+      "durationMs": 1572,
       "details": [
-        "{'adapter': 'static', 'studio': 'Paradoxplaza', 'name': 'Paradoxplaza (Manual Website)', 'status': 'ok', 'fetchedCount': 1, 'keptCount': 5, 'error': ''}"
+        {
+          "adapter": "static",
+          "studio": "Remedy Entertainment",
+          "name": "Remedy Entertainment (Manual Website)",
+          "status": "error",
+          "fetchedCount": 2,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages"
+        }
       ]
     },
     {
       "name": "personio_sources",
-      "status": "error",
+      "status": "ok",
       "adapter": "personio",
       "fetchStrategy": "http",
       "studio": "multiple",
+      "fetchedCount": 1,
+      "keptCount": 1,
+      "lowConfidenceDropped": 0,
+      "error": "personio_sources: personio:InnoGames (Personio): HTTP 429 for https://innogames.jobs.personio.de/xml; personio_sources: personio:Travian (Personio): HTTP 429 for https://travian.jobs.personio.de/xml",
+      "durationMs": 14641,
+      "details": [
+        {
+          "adapter": "personio",
+          "studio": "InnoGames",
+          "name": "InnoGames (Personio)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "HTTP 429 for https://innogames.jobs.personio.de/xml"
+        },
+        {
+          "adapter": "personio",
+          "studio": "Travian",
+          "name": "Travian (Personio)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "HTTP 429 for https://travian.jobs.personio.de/xml"
+        },
+        {
+          "adapter": "personio",
+          "studio": "Yager",
+          "name": "Yager (Personio)",
+          "status": "ok",
+          "fetchedCount": 1,
+          "keptCount": 1,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.littlechicken.nl/about-us/jobs/",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Little Chicken",
+      "fetchedCount": 12,
+      "keptCount": 12,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 11473,
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Little Chicken",
+          "name": "Little Chicken (Manual Website)",
+          "status": "ok",
+          "fetchedCount": 7,
+          "keptCount": 12,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.kojimaproductions.jp/en/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Kojimaproductions",
       "fetchedCount": 0,
       "keptCount": 0,
-      "error": "personio_sources: personio:InnoGames (Personio): HTTP 429 for https://innogames.jobs.personio.de/xml; personio:Travian (Personio): HTTP 429 for https://travian.jobs.personio.de/xml",
-      "durationMs": 13584
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.activision.com",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Activision Blizzard",
-      "fetchedCount": 10,
-      "keptCount": 10,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 9453,
+      "durationMs": 3984,
       "details": [
-        "{'adapter': 'static', 'studio': 'Activision Blizzard', 'name': 'Activision Blizzard (Manual Website)', 'status': 'ok', 'fetchedCount': 1, 'keptCount': 10, 'error': ''}"
+        {
+          "adapter": "static",
+          "studio": "Kojimaproductions",
+          "name": "Kojimaproductions (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages"
+        }
       ]
     },
     {
-      "name": "lever_sources",
-      "status": "ok",
-      "adapter": "lever",
-      "fetchStrategy": "http",
-      "studio": "multiple",
-      "fetchedCount": 111,
-      "keptCount": 111,
-      "error": "",
-      "durationMs": 21760,
-      "details": [
-        "{'adapter': 'lever', 'studio': 'Jagex', 'name': 'Jagex (Lever)', 'status': 'ok', 'fetchedCount': 0, 'keptCount': 0, 'error': ''}",
-        "{'adapter': 'lever', 'studio': 'Sandbox VR', 'name': 'Sandbox VR (Lever)', 'status': 'ok', 'fetchedCount': 31, 'keptCount': 0, 'error': ''}",
-        "{'adapter': 'lever', 'studio': 'Voodoo', 'name': 'Voodoo (Lever)', 'status': 'ok', 'fetchedCount': 34, 'keptCount': 26, 'error': ''}",
-        "{'adapter': 'lever', 'studio': 'Behaviour Interactive', 'name': 'Behaviour Interactive (Lever)', 'status': 'ok', 'fetchedCount': 28, 'keptCount': 28, 'error': ''}",
-        "{'adapter': 'lever', 'studio': 'Kabam', 'name': 'Kabam (Lever)', 'status': 'ok', 'fetchedCount': 26, 'keptCount': 25, 'error': ''}",
-        "{'adapter': 'lever', 'studio': 'Blackbird Interactive', 'name': 'Blackbird Interactive (Lever)', 'status': 'ok', 'fetchedCount': 18, 'keptCount': 18, 'error': ''}",
-        "{'adapter': 'lever', 'studio': 'Quantic Dream', 'name': 'Quantic Dream (Lever EU)', 'status': 'ok', 'fetchedCount': 23, 'keptCount': 14, 'error': ''}"
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs",
+      "name": "static_source::static:listing_url:https://www.aweinteractive.com/careers",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Valve Software",
-      "fetchedCount": 31,
-      "keptCount": 31,
+      "studio": "Awe Interactive",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 14796,
+      "durationMs": 662,
       "details": [
-        "{'adapter': 'static', 'studio': 'Valve Software', 'name': 'Valve Software (Manual Website)', 'status': 'ok', 'fetchedCount': 1, 'keptCount': 31, 'error': ''}"
+        {
+          "adapter": "static",
+          "studio": "Awe Interactive",
+          "name": "Awe Interactive (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages"
+        }
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://ea.gr8people.com",
+      "name": "static_source::static:listing_url:https://gamejobs.work/category/environment-artist",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Electronic Arts",
-      "fetchedCount": 20,
-      "keptCount": 20,
+      "studio": "Game Jobs",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 43509,
+      "durationMs": 1928,
       "details": [
-        "{'adapter': 'static', 'studio': 'Electronic Arts', 'name': 'Electronic Arts (Manual Website)', 'status': 'ok', 'fetchedCount': 1, 'keptCount': 20, 'error': ''}"
+        {
+          "adapter": "static",
+          "studio": "Game Jobs",
+          "name": "Game Jobs (Manual Website)",
+          "status": "error",
+          "fetchedCount": 2,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages"
+        }
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.riotgames.com/en/work-with-us/jobs",
+      "name": "static_source::static:listing_url:https://www.workwithindies.com/careers/angry-mob-games-stylized-environment-artist",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Riot Games",
-      "fetchedCount": 155,
-      "keptCount": 155,
+      "studio": "Workwithindies",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 100404,
+      "durationMs": 1288,
       "details": [
-        "{'adapter': 'static', 'studio': 'Riot Games', 'name': 'Riot Games (Manual Website)', 'status': 'ok', 'fetchedCount': 1, 'keptCount': 155, 'error': ''}"
+        {
+          "adapter": "static",
+          "studio": "Workwithindies",
+          "name": "Workwithindies (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages"
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://careers.wbd.com/global/en/job/r000087820/lead-environment-artist",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Wbd",
+      "fetchedCount": 2,
+      "keptCount": 2,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 3247,
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Wbd",
+          "name": "Wbd (Manual Website)",
+          "status": "ok",
+          "fetchedCount": 1,
+          "keptCount": 2,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.pixelmafia.com/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Pixelmafia",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 1646,
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Pixelmafia",
+          "name": "Pixelmafia (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages"
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://larian.com/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Larian Studios",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 16418,
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Larian Studios",
+          "name": "Larian Studios (Manual Website)",
+          "status": "error",
+          "fetchedCount": 7,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages"
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://ioi.dk/careers/",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "IO Interactive",
+      "fetchedCount": 1,
+      "keptCount": 1,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 15780,
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "IO Interactive",
+          "name": "IO Interactive (Manual Website)",
+          "status": "ok",
+          "fetchedCount": 7,
+          "keptCount": 1,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Lazyapply",
+      "fetchedCount": 23,
+      "keptCount": 23,
+      "lowConfidenceDropped": 0,
+      "error": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/2k-games/jobs/senior-environment-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/2k-games/jobs/senior-environment-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1077); static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/kabam/jobs/senior-2d-character-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/kabam/jobs/senior-2d-character-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1077); static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/2k-games/jobs/expert-environment-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/2k-games/jobs/expert-environment-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1077)",
+      "durationMs": 55148,
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Lazyapply",
+          "name": "Lazyapply (Manual Website)",
+          "status": "ok",
+          "fetchedCount": 1,
+          "keptCount": 23,
+          "error": ""
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://careers.nintendo.com/jobs",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Nintendo",
+      "fetchedCount": 55,
+      "keptCount": 55,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 70502,
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Nintendo",
+          "name": "Nintendo (Manual Website)",
+          "status": "ok",
+          "fetchedCount": 1,
+          "keptCount": 55,
+          "error": ""
+        }
       ]
     },
     {
@@ -358,6 +742,7 @@
       "studio": "wellfound",
       "fetchedCount": 0,
       "keptCount": 0,
+      "lowConfidenceDropped": 0,
       "error": "disabled_by_default: blocked by anti-bot restrictions in non-browser fetch mode",
       "durationMs": 0
     }

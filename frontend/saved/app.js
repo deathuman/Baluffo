@@ -87,6 +87,10 @@ let savedSortBarEl;
 let savedSortBtnEls = [];
 let savedReminderCounterEl;
 let historyPanelToggleBtnEl;
+let savedWorkspaceLayoutEl;
+let savedMetricTotalEl;
+let savedMetricRemindersEl;
+let savedMetricActivityEl;
 let exportBackupBtnEl;
 let exportIncludeFilesEl;
 let importBackupBtnEl;
@@ -96,7 +100,8 @@ let activityPanelEl;
 let activityPanelBodyEl;
 let activityPanelStatusEl;
 let activityRefreshBtnEl;
-let activityCollapseBtnEl;
+let activityScopeBtnEls = [];
+let activitySelectedJobEl;
 
 let currentUser = null;
 let unsubscribeSavedJobs = () => {};
@@ -110,7 +115,11 @@ let activeSavedSort = "updated";
 let jobDetailTabByKey = new Map();
 let cachedActivityEntries = [];
 let lastSavedJobsByKey = new Map();
+let selectedJobKey = "";
+let timelineScope = "all";
+let lastActivityPulse = null;
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
+const TIMELINE_PREF_PREFIX = "baluffo_saved_timeline_prefs";
 const CUSTOM_SOURCE_LABEL = "Custom";
 const SAVED_FILTER_ALL = "all";
 const SAVED_FILTER_CUSTOM = "custom";
@@ -121,7 +130,13 @@ const SORT_SAVED = "saved";
 const SORT_REMINDER = "reminder";
 const SORT_PERSONAL = "personal";
 const REMINDER_SOON_HOURS = 72;
+const ACTIVITY_HIGHLIGHT_MS = 2600;
 let activeSavedFilter = DEFAULT_SAVED_FILTER;
+const TIMELINE_SCOPE_ALL = "all";
+const TIMELINE_SCOPE_SELECTED = "selected";
+const TIMELINE_SCOPE_PHASE = "phase";
+const TIMELINE_SCOPE_NOTES = "notes";
+const TIMELINE_SCOPE_ATTACHMENTS = "attachments";
 
 const PHASE_OPTIONS = ["bookmark", "applied", "interview_1", "interview_2", "offer", "rejected"];
 const PHASE_LABELS = {
@@ -129,20 +144,22 @@ const PHASE_LABELS = {
   applied: "Applied",
   interview_1: "Interview 1",
   interview_2: "Interview 2",
-  offer: "Offer",
+  offer: "Final Round",
   rejected: "Rejected"
 };
 
 const MAX_ATTACHMENTS_PER_JOB = 20;
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const NOTE_AUTOSAVE_MS = 600;
+const NOTES_RERENDER_SETTLE_MS = 1200;
 const ALLOWED_EXTENSIONS = new Set(["pdf", "doc", "docx", "txt", "png", "jpg", "jpeg"]);
 
 const pageState = {
   noteSaveState: {
     timers: new Map(),
     inFlight: new Map(),
-    pendingValues: new Map()
+    pendingValues: new Map(),
+    lastInteractionAt: 0
   },
   attachmentPreviewUrls: new Map()
 };
@@ -192,6 +209,10 @@ function cacheDom() {
   savedSortBtnEls = Array.from(document.querySelectorAll(".saved-sort-btn"));
   savedReminderCounterEl = document.getElementById("saved-reminder-counter");
   historyPanelToggleBtnEl = document.getElementById("history-panel-toggle-btn");
+  savedWorkspaceLayoutEl = document.getElementById("saved-workspace-layout");
+  savedMetricTotalEl = document.getElementById("saved-metric-total");
+  savedMetricRemindersEl = document.getElementById("saved-metric-reminders");
+  savedMetricActivityEl = document.getElementById("saved-metric-activity");
   exportBackupBtnEl = document.getElementById("export-backup-btn");
   exportIncludeFilesEl = document.getElementById("export-include-files");
   importBackupBtnEl = document.getElementById("import-backup-btn");
@@ -201,7 +222,8 @@ function cacheDom() {
   activityPanelBodyEl = document.getElementById("activity-panel-body");
   activityPanelStatusEl = document.getElementById("activity-panel-status");
   activityRefreshBtnEl = document.getElementById("activity-refresh-btn");
-  activityCollapseBtnEl = document.getElementById("activity-collapse-btn");
+  activityScopeBtnEls = Array.from(document.querySelectorAll(".activity-scope-btn"));
+  activitySelectedJobEl = document.getElementById("activity-selected-job");
 }
 
 function bindEvents() {
@@ -255,9 +277,6 @@ function bindEvents() {
   bindUi(historyPanelToggleBtnEl, "click", () => {
     setActivityPanelOpen(!activityPanelOpen);
   });
-  bindUi(activityCollapseBtnEl, "click", () => {
-    setActivityPanelOpen(false);
-  });
   bindAsyncClick(activityRefreshBtnEl, refreshActivityLog);
   bindAsyncClick(signInBtnEl, signInUser);
   bindAsyncClick(signOutBtnEl, signOutUser);
@@ -289,12 +308,26 @@ function bindEvents() {
       renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
     });
   }
+
+  activityScopeBtnEls.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const scope = String(btn.dataset.timelineScope || TIMELINE_SCOPE_ALL);
+      if (scope === TIMELINE_SCOPE_SELECTED && !selectedJobKey) {
+        showToast("Select or expand a job first.", "info");
+        return;
+      }
+      setTimelineScope(scope);
+      renderTimeline();
+    });
+  });
 }
 
 function initSavedJobsPage() {
   setActivityPanelOpen(false);
   setCustomJobPanelOpen(false);
   setCustomJobAvailability(false);
+  updateTimelineScopeButtons();
+  renderWorkspaceStats();
   if (!savedPageService.isAvailable() || !isSavedApiReady()) {
     setAuthStatus("Browsing as guest");
     setSourceStatus("Local storage provider unavailable.");
@@ -303,7 +336,7 @@ function initSavedJobsPage() {
     setCustomJobAvailability(false);
     setSavedSortBarVisible(false);
     renderAuthRequired("Local auth provider is unavailable.");
-    renderActivityEntries([]);
+    renderTimeline();
     return;
   }
 
@@ -321,8 +354,14 @@ function initSavedJobsPage() {
     jobDetailTabByKey = new Map();
     cachedActivityEntries = [];
     lastSavedJobsByKey = new Map();
+    selectedJobKey = "";
+    timelineScope = TIMELINE_SCOPE_ALL;
+    lastActivityPulse = null;
     setSavedFilter(DEFAULT_SAVED_FILTER);
     setSavedSort(SORT_UPDATED);
+    updateTimelineScopeButtons();
+    renderSelectedJobHint();
+    renderWorkspaceStats();
 
     if (!currentUser) {
       setAuthStatus("Browsing as guest");
@@ -335,7 +374,7 @@ function initSavedJobsPage() {
       setSavedFilterBarVisible(false);
       setSavedSortBarVisible(false);
       renderAuthRequired("Sign in to access your custom saved jobs table.");
-      renderActivityEntries([]);
+      renderTimeline();
       return;
     }
 
@@ -345,6 +384,11 @@ function initSavedJobsPage() {
     toggleAuthButtons(true);
     setBackupButtonsEnabled(true);
     setCustomJobAvailability(true);
+    const timelinePrefs = loadTimelinePreferences(currentUser.uid);
+    timelineScope = timelinePrefs.scope;
+    setActivityPanelOpen(Boolean(timelinePrefs.visible), { persist: false });
+    updateTimelineScopeButtons();
+    renderSelectedJobHint();
     subscribeToSavedJobs(currentUser.uid);
     refreshActivityLog().catch(err => {
       console.error("Failed to load activity:", err);
@@ -358,9 +402,23 @@ function subscribeToSavedJobs(uid) {
     uid,
     jobs => {
       setSourceStatus(`Loaded ${jobs.length} saved jobs.`);
+      const isEditingNotes = isEditingNotesField();
       lastSavedJobsByKey = new Map(
-        (jobs || []).map(job => [String(job.jobKey || job.id || ""), job])
+        (jobs || [])
+          .map(job => [String(job?.jobKey || "").trim(), job])
+          .filter(([jobKey]) => Boolean(jobKey))
       );
+      if (shouldDeferSavedJobsRerender({
+        isEditingNotes,
+        inFlightCount: noteSaveState.inFlight.size,
+        pendingCount: noteSaveState.pendingValues.size,
+        lastInteractionAt: noteSaveState.lastInteractionAt
+      })) {
+        renderWorkspaceStats(jobs);
+        renderSelectedJobHint();
+        renderTimeline();
+        return;
+      }
       renderSavedJobs(jobs);
       refreshActivityLog().catch(() => {
         // Best-effort refresh.
@@ -382,24 +440,39 @@ function renderAuthRequired(message) {
 
 function renderSavedJobs(jobs) {
   if (!savedJobsListEl) return;
+  const renderContext = captureRenderContext();
   const allJobs = Array.isArray(jobs) ? jobs : [];
   const filteredJobs = sortSavedJobs(filterSavedJobs(allJobs, activeSavedFilter), activeSavedSort);
   setSavedFilterBarVisible(allJobs.length > 0 && Boolean(currentUser));
   setSavedSortBarVisible(allJobs.length > 0 && Boolean(currentUser));
   renderSavedFilterMeta(allJobs.length, filteredJobs.length);
   renderReminderCounter(allJobs);
+  renderWorkspaceStats(allJobs);
 
   if (!allJobs || allJobs.length === 0) {
     expandedJobKey = null;
+    selectedJobKey = "";
+    renderSelectedJobHint();
     savedJobsListEl.innerHTML = '<div class="no-results">No saved jobs yet.</div>';
+    renderTimeline();
     return;
   }
-  if (!filteredJobs.some(job => String(job.jobKey || job.id || "") === expandedJobKey)) {
+  if (!allJobs.some(job => String(job?.jobKey || "").trim() === selectedJobKey)) {
+    selectedJobKey = "";
+    renderSelectedJobHint();
+    updateTimelineScopeButtons();
+    if (timelineScope === TIMELINE_SCOPE_SELECTED) {
+      timelineScope = TIMELINE_SCOPE_ALL;
+      updateTimelineScopeButtons();
+    }
+  }
+  if (!filteredJobs.some(job => String(job?.jobKey || "").trim() === expandedJobKey)) {
     expandedJobKey = null;
   }
 
   if (filteredJobs.length === 0) {
     savedJobsListEl.innerHTML = '<div class="no-results">No saved jobs match this filter.</div>';
+    renderTimeline();
     return;
   }
 
@@ -423,6 +496,7 @@ function renderSavedJobs(jobs) {
 
   savedJobsListEl.querySelectorAll(".remove-saved-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
+      setSelectedJobKey(btn.dataset.jobKey || "", { rerenderTimeline: false });
       await removeSavedJob(btn.dataset.jobKey || "");
     });
   });
@@ -431,6 +505,7 @@ function renderSavedJobs(jobs) {
     btn.addEventListener("click", async () => {
       const jobKey = btn.dataset.jobKey || "";
       const phase = btn.dataset.phase || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
       await updatePhase(jobKey, phase);
     });
   });
@@ -438,19 +513,24 @@ function renderSavedJobs(jobs) {
   savedJobsListEl.querySelectorAll(".details-toggle-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const jobKey = btn.dataset.jobKey || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
       toggleDetailsForJob(jobKey);
     });
   });
 
   savedJobsListEl.querySelectorAll(".personal-edit-btn").forEach(btn => {
     btn.addEventListener("click", () => {
-      openCustomJobEditor(btn.dataset.jobKey || "", false);
+      const jobKey = btn.dataset.jobKey || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      openCustomJobEditor(jobKey, false);
     });
   });
 
   savedJobsListEl.querySelectorAll(".personal-duplicate-btn").forEach(btn => {
     btn.addEventListener("click", () => {
-      openCustomJobEditor(btn.dataset.jobKey || "", true);
+      const jobKey = btn.dataset.jobKey || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      openCustomJobEditor(jobKey, true);
     });
   });
 
@@ -458,13 +538,15 @@ function renderSavedJobs(jobs) {
     btn.addEventListener("click", () => {
       const jobKey = btn.dataset.jobKey || "";
       const tab = btn.dataset.detailsTab || "notes";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
       setJobDetailsTab(jobKey, tab);
-      renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
+      applyJobDetailsTab(jobKey, tab);
     });
   });
 
   savedJobsListEl.querySelectorAll(".job-history-refresh-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
+      setSelectedJobKey(btn.dataset.jobKey || "", { rerenderTimeline: false });
       await refreshActivityLog();
       renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
     });
@@ -472,9 +554,11 @@ function renderSavedJobs(jobs) {
 
   savedJobsListEl.querySelectorAll(".job-notes-input").forEach(textarea => {
     textarea.addEventListener("input", () => {
+      setSelectedJobKey(textarea.dataset.jobKey || "", { rerenderTimeline: false });
       queueNotesSave(textarea.dataset.jobKey || "", textarea.value);
     });
     textarea.addEventListener("blur", async () => {
+      setSelectedJobKey(textarea.dataset.jobKey || "", { rerenderTimeline: false });
       await flushNotesSave(textarea.dataset.jobKey || "", textarea.value);
     });
   });
@@ -482,6 +566,7 @@ function renderSavedJobs(jobs) {
   savedJobsListEl.querySelectorAll(".attach-upload-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const key = btn.dataset.jobKey || "";
+      setSelectedJobKey(key, { rerenderTimeline: false });
       const input = savedJobsListEl.querySelector(`.attach-file-input[data-job-key="${cssEscape(key)}"]`);
       if (input) input.click();
     });
@@ -491,17 +576,153 @@ function renderSavedJobs(jobs) {
     input.addEventListener("change", async () => {
       const files = input.files ? Array.from(input.files) : [];
       if (files.length === 0) return;
+      setSelectedJobKey(input.dataset.jobKey || "", { rerenderTimeline: false });
       await uploadAttachments(input.dataset.jobKey || "", files);
       input.value = "";
     });
   });
 
+  savedJobsListEl.querySelectorAll(".saved-job-block").forEach(block => {
+    block.addEventListener("click", event => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("button,a,input,textarea,select,label")) return;
+      setSelectedJobKey(block.dataset.jobKey || "", { rerenderTimeline: false });
+    });
+  });
+
   bindAttachmentActionButtons();
   applyDetailsAccordion();
+  renderTimeline();
+  restoreRenderContext(renderContext);
 
   hydrateAttachmentLists(filteredJobs).catch(err => {
     console.error("Could not load attachment lists:", err);
   });
+}
+
+function isEditingNotesField() {
+  if (typeof document === "undefined") return false;
+  return isEditingNotesFieldFromElement(document.activeElement);
+}
+
+function isEditingNotesFieldFromElement(activeElement) {
+  const active = activeElement;
+  if (!active || typeof active !== "object") return false;
+  const tagName = String(active.tagName || "").toUpperCase();
+  const classList = active.classList;
+  return (
+    tagName === "TEXTAREA" &&
+    Boolean(classList && typeof classList.contains === "function" && classList.contains("job-notes-input"))
+  );
+}
+
+function shouldDeferSavedJobsRerender(options = {}) {
+  const nowMs = Number(options.nowMs) || Date.now();
+  const isEditingNotes = Boolean(options.isEditingNotes);
+  const inFlightCount = Math.max(0, Number(options.inFlightCount) || 0);
+  const pendingCount = Math.max(0, Number(options.pendingCount) || 0);
+  const lastInteractionAt = Math.max(0, Number(options.lastInteractionAt) || 0);
+  if (isEditingNotes) return true;
+  if (inFlightCount > 0 || pendingCount > 0) return true;
+  if (lastInteractionAt > 0 && nowMs - lastInteractionAt < NOTES_RERENDER_SETTLE_MS) return true;
+  return false;
+}
+
+function captureActiveNotesContext() {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLTextAreaElement)) return null;
+  if (!active.classList.contains("job-notes-input")) return null;
+  const jobKey = String(active.dataset.jobKey || "").trim();
+  if (!jobKey) return null;
+  return {
+    jobKey,
+    selectionStart: Number(active.selectionStart) || 0,
+    selectionEnd: Number(active.selectionEnd) || 0,
+    scrollTop: Number(active.scrollTop) || 0,
+    pageScrollX: Number(window.scrollX) || 0,
+    pageScrollY: Number(window.scrollY) || 0
+  };
+}
+
+function restoreActiveNotesContext(context, options = {}) {
+  const { restorePage = true } = options;
+  if (!context || !savedJobsListEl) return;
+  const selector = `.job-notes-input[data-job-key="${cssEscape(context.jobKey)}"]`;
+  const textarea = savedJobsListEl.querySelector(selector);
+  if (!(textarea instanceof HTMLTextAreaElement)) return;
+  try {
+    textarea.focus({ preventScroll: true });
+  } catch {
+    textarea.focus();
+  }
+  try {
+    textarea.setSelectionRange(context.selectionStart, context.selectionEnd);
+  } catch {
+    // Ignore selection restore issues.
+  }
+  textarea.scrollTop = context.scrollTop;
+  if (restorePage) {
+    window.scrollTo(context.pageScrollX, context.pageScrollY);
+  }
+}
+
+function captureRenderContext() {
+  const notesContext = captureActiveNotesContext();
+  const anchorKey = String(notesContext?.jobKey || selectedJobKey || expandedJobKey || "").trim();
+  let anchorTop = NaN;
+  let listScrollTop = 0;
+  if (savedJobsListEl) {
+    listScrollTop = Number(savedJobsListEl.scrollTop) || 0;
+    if (anchorKey) {
+      const anchorSelector = `.saved-job-block[data-job-key="${cssEscape(anchorKey)}"]`;
+      const anchorEl = savedJobsListEl.querySelector(anchorSelector);
+      if (anchorEl instanceof HTMLElement) {
+        anchorTop = Number(anchorEl.getBoundingClientRect().top);
+      }
+    }
+  }
+  return {
+    notesContext,
+    anchorKey,
+    anchorTop,
+    listScrollTop,
+    pageScrollX: Number(window.scrollX) || 0,
+    pageScrollY: Number(window.scrollY) || 0
+  };
+}
+
+function computeAnchorScrollDelta(beforeTop, afterTop) {
+  const start = Number(beforeTop);
+  const end = Number(afterTop);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+  return end - start;
+}
+
+function restoreRenderContext(context) {
+  if (!context || !savedJobsListEl) return;
+  const notesContext = context.notesContext || null;
+  if (notesContext) {
+    restoreActiveNotesContext(notesContext, { restorePage: false });
+  }
+
+  savedJobsListEl.scrollTop = Number(context.listScrollTop) || 0;
+
+  const anchorKey = String(context.anchorKey || "").trim();
+  if (anchorKey) {
+    const anchorSelector = `.saved-job-block[data-job-key="${cssEscape(anchorKey)}"]`;
+    const anchorEl = savedJobsListEl.querySelector(anchorSelector);
+    if (anchorEl instanceof HTMLElement) {
+      const delta = computeAnchorScrollDelta(context.anchorTop, anchorEl.getBoundingClientRect().top);
+      if (Math.abs(delta) > 1) {
+        window.scrollBy(0, delta);
+      }
+    }
+  }
+
+  if (!notesContext) {
+    window.scrollTo(Number(context.pageScrollX) || 0, Number(context.pageScrollY) || 0);
+  }
 }
 
 function renderSavedJobBlock(job) {
@@ -514,6 +735,7 @@ function renderSavedJobBlock(job) {
     toContractClass,
     normalizePhase,
     expandedJobKey,
+    selectedJobKey,
     getJobDetailsTab,
     renderDetailsSummary,
     getReminderMeta: reminderAt => getReminderMeta(reminderAt, { reminderSoonHours: REMINDER_SOON_HOURS }),
@@ -645,7 +867,16 @@ async function updatePhase(jobKey, phase) {
     return;
   }
 
-  const row = lastSavedJobsByKey.get(String(jobKey || ""));
+  const safeJobKey = String(jobKey || "").trim();
+  if (!safeJobKey) {
+    showToast("Invalid saved job key.", "error");
+    return;
+  }
+  const row = lastSavedJobsByKey.get(safeJobKey);
+  if (!row) {
+    showToast("Saved job not found. Refresh and retry.", "error");
+    return;
+  }
   const currentPhase = normalizePhase(row?.applicationStatus);
   const normalized = normalizePhase(phase);
   const regularAllowed = canTransition(currentPhase, normalized);
@@ -663,10 +894,25 @@ async function updatePhase(jobKey, phase) {
   }
 
   try {
+    const interviewTimestamp = needsInterviewTimestamp(normalized)
+      ? requestInterviewTimestamp(normalized, row?.phaseTimestamps?.[normalized] || "")
+      : "";
+    if (needsInterviewTimestamp(normalized) && !interviewTimestamp) {
+      return;
+    }
     const previousPhaseTimestamp = String(row?.phaseTimestamps?.[currentPhase] || "").trim();
-    const updateResult = await savedPageService.updateApplicationStatus(currentUser.uid, jobKey, normalized, {
+    const updateOptions = {
       override: !regularAllowed && overrideArmed
-    });
+    };
+    if (interviewTimestamp) {
+      updateOptions.preserveTimestamp = interviewTimestamp;
+    }
+    const updateResult = await savedPageService.updateApplicationStatus(
+      currentUser.uid,
+      safeJobKey,
+      normalized,
+      updateOptions
+    );
     if (!updateResult.ok) throw new Error(updateResult.error || "Could not update phase.");
     if (overrideArmed) {
       phaseOverrideArmedGlobal = false;
@@ -679,7 +925,7 @@ async function updatePhase(jobKey, phase) {
       onAction: async () => {
         if (!currentUser) return;
         try {
-          const revertResult = await savedPageService.updateApplicationStatus(currentUser.uid, jobKey, previousPhase, {
+          const revertResult = await savedPageService.updateApplicationStatus(currentUser.uid, safeJobKey, previousPhase, {
             override: true,
             cleanupPhase: normalized,
             preserveTimestamp: previousPhaseTimestamp
@@ -694,6 +940,7 @@ async function updatePhase(jobKey, phase) {
         }
       }
     });
+    queueActivityPulse(safeJobKey, TIMELINE_SCOPE_PHASE);
     await refreshActivityLog();
   } catch (err) {
     console.error("Could not update phase:", err);
@@ -705,6 +952,7 @@ async function updatePhase(jobKey, phase) {
 
 function queueNotesSave(jobKey, value) {
   if (!jobKey) return;
+  noteSaveState.lastInteractionAt = Date.now();
   savedDispatch.dispatch({ type: SAVED_ACTIONS.NOTES_QUEUED, payload: { jobKey } });
   noteSaveState.pendingValues.set(jobKey, String(value || ""));
   setNoteSaveState(jobKey, "saving");
@@ -721,6 +969,7 @@ function queueNotesSave(jobKey, value) {
 
 async function flushNotesSave(jobKey, value) {
   if (!jobKey || !currentUser) return;
+  noteSaveState.lastInteractionAt = Date.now();
   if (typeof value === "string") {
     noteSaveState.pendingValues.set(jobKey, value);
   }
@@ -741,6 +990,7 @@ async function flushNotesSave(jobKey, value) {
       noteSaveState.pendingValues.delete(jobKey);
       setNoteSaveState(jobKey, "saved");
       savedDispatch.dispatch({ type: SAVED_ACTIONS.NOTES_SAVED, payload: { jobKey } });
+      queueActivityPulse(jobKey, TIMELINE_SCOPE_NOTES);
     } else {
       setNoteSaveState(jobKey, "saving");
     }
@@ -752,6 +1002,7 @@ async function flushNotesSave(jobKey, value) {
       payload: { jobKey, error: err?.message || "Could not save notes." }
     });
   } finally {
+    noteSaveState.lastInteractionAt = Date.now();
     noteSaveState.inFlight.delete(jobKey);
     if (noteSaveState.pendingValues.has(jobKey) && currentUser) {
       setTimeout(() => {
@@ -768,10 +1019,82 @@ function clearNoteSaveQueues() {
   noteSaveState.timers.clear();
   noteSaveState.inFlight.clear();
   noteSaveState.pendingValues.clear();
+  noteSaveState.lastInteractionAt = 0;
+}
+
+function setSelectedJobKey(jobKey, options = {}) {
+  const { rerenderTimeline = true } = options;
+  const nextKey = String(jobKey || "").trim();
+  if (nextKey === selectedJobKey) return;
+  selectedJobKey = nextKey;
+  renderSelectedJobHint();
+  updateTimelineScopeButtons();
+  if (timelineScope === TIMELINE_SCOPE_SELECTED && !selectedJobKey) {
+    timelineScope = TIMELINE_SCOPE_ALL;
+    updateTimelineScopeButtons();
+  }
+  if (rerenderTimeline) {
+    renderTimeline();
+  }
+  if (savedJobsListEl) {
+    savedJobsListEl.querySelectorAll(".saved-job-block").forEach(block => {
+      block.classList.toggle("selected", String(block.dataset.jobKey || "") === selectedJobKey);
+    });
+  }
+}
+
+function needsInterviewTimestamp(phase) {
+  const safe = normalizePhase(phase);
+  return safe === "interview_1" || safe === "interview_2";
+}
+
+function toPromptLocalDateTime(value) {
+  const parsed = parseIsoDate(value) || new Date();
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  const hh = String(parsed.getHours()).padStart(2, "0");
+  const min = String(parsed.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+}
+
+function parseScheduledTimestampInput(rawValue) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return "";
+
+  const compact = raw.replace(/\s+/g, " ");
+  if (/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}$/.test(compact)) {
+    const parsed = new Date(compact.replace(" ", "T") + ":00");
+    return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+  }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(compact)) {
+    const parsed = new Date(`${compact}:00`);
+    return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+  }
+
+  const parsed = new Date(compact);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+}
+
+function requestInterviewTimestamp(phase, previousTimestamp = "") {
+  const phaseLabel = PHASE_LABELS[normalizePhase(phase)] || "Interview";
+  const promptDefault = toPromptLocalDateTime(previousTimestamp);
+  const raw = window.prompt(
+    `${phaseLabel} time (YYYY-MM-DD HH:MM).`,
+    promptDefault
+  );
+  if (raw == null) return "";
+  const parsed = parseScheduledTimestampInput(raw);
+  if (!parsed) {
+    showToast("Invalid interview time. Use YYYY-MM-DD HH:MM.", "error");
+    return "";
+  }
+  return parsed;
 }
 
 function toggleDetailsForJob(jobKey) {
   if (!jobKey) return;
+  setSelectedJobKey(jobKey, { rerenderTimeline: false });
   const nextKey = expandedJobKey === jobKey ? null : jobKey;
   if (nextKey && !jobDetailTabByKey.has(nextKey)) {
     jobDetailTabByKey.set(nextKey, "notes");
@@ -891,6 +1214,7 @@ async function uploadAttachments(jobKey, files) {
     renderAttachmentList(jobKey, nextResult.data);
     showToast("Attachments updated.", "success");
     savedDispatch.dispatch({ type: SAVED_ACTIONS.ATTACHMENT_MUTATED, payload: { jobKey } });
+    queueActivityPulse(jobKey, TIMELINE_SCOPE_ATTACHMENTS);
   } catch {
     showToast("Could not refresh attachments.", "error");
   }
@@ -901,7 +1225,7 @@ async function openAttachment(jobKey, attachmentId) {
   try {
     const blobResult = await savedPageService.getAttachmentBlob(currentUser.uid, jobKey, attachmentId);
     if (!blobResult.ok) throw new Error(blobResult.error || "Could not read attachment.");
-    const blob = blobResult.data;
+    const blob = blobResult.data?.blob;
     if (!blob) {
       showToast("Attachment data not available.", "error");
       return;
@@ -918,9 +1242,21 @@ async function openAttachment(jobKey, attachmentId) {
 async function downloadAttachment(jobKey, attachmentId, filename) {
   if (!currentUser) return;
   try {
+    const directUrl = savedPageService.getAttachmentDownloadUrl(currentUser.uid, jobKey, attachmentId);
+    if (directUrl) {
+      const a = document.createElement("a");
+      a.href = directUrl;
+      a.download = filename || "attachment";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
+
     const blobResult = await savedPageService.getAttachmentBlob(currentUser.uid, jobKey, attachmentId);
     if (!blobResult.ok) throw new Error(blobResult.error || "Could not read attachment.");
-    const blob = blobResult.data;
+    const blob = blobResult.data?.blob;
     if (!blob) {
       showToast("Attachment data not available.", "error");
       return;
@@ -928,7 +1264,7 @@ async function downloadAttachment(jobKey, attachmentId, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename || "attachment";
+    a.download = blobResult.data?.filename || filename || "attachment";
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -949,6 +1285,7 @@ async function deleteAttachment(jobKey, attachmentId) {
     renderAttachmentList(jobKey, nextResult.data);
     showToast("Attachment removed.", "success");
     savedDispatch.dispatch({ type: SAVED_ACTIONS.ATTACHMENT_MUTATED, payload: { jobKey } });
+    queueActivityPulse(jobKey, TIMELINE_SCOPE_ATTACHMENTS);
   } catch (err) {
     console.error("Could not delete attachment:", err);
     showToast("Could not delete attachment.", "error");
@@ -996,12 +1333,15 @@ function bindAttachmentActionButtons() {
 
   savedJobsListEl.querySelectorAll(".att-open-btn").forEach(btn => {
     btn.onclick = async () => {
-      await openAttachment(btn.dataset.jobKey || "", btn.dataset.attachmentId || "");
+      const jobKey = btn.dataset.jobKey || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      await openAttachment(jobKey, btn.dataset.attachmentId || "");
     };
   });
 
   savedJobsListEl.querySelectorAll(".att-download-btn").forEach(btn => {
     btn.onclick = async () => {
+      setSelectedJobKey(btn.dataset.jobKey || "", { rerenderTimeline: false });
       await downloadAttachment(
         btn.dataset.jobKey || "",
         btn.dataset.attachmentId || "",
@@ -1012,8 +1352,28 @@ function bindAttachmentActionButtons() {
 
   savedJobsListEl.querySelectorAll(".att-delete-btn").forEach(btn => {
     btn.onclick = async () => {
-      await deleteAttachment(btn.dataset.jobKey || "", btn.dataset.attachmentId || "");
+      const jobKey = btn.dataset.jobKey || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      await deleteAttachment(jobKey, btn.dataset.attachmentId || "");
     };
+  });
+}
+
+function applyJobDetailsTab(jobKey, tab) {
+  if (!savedJobsListEl || !jobKey) return;
+  const safeTab = tab === "attachments" || tab === "history" ? tab : "notes";
+  const block = savedJobsListEl.querySelector(`.saved-job-block[data-job-key="${cssEscape(jobKey)}"]`);
+  if (!(block instanceof HTMLElement)) return;
+  const buttons = Array.from(block.querySelectorAll(".saved-details-tab-btn"));
+  const panels = Array.from(block.querySelectorAll(".saved-details-panel"));
+  buttons.forEach(btn => {
+    const active = String(btn.dataset.detailsTab || "") === safeTab;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  panels.forEach(panel => {
+    const active = String(panel.getAttribute("data-tab-panel") || "") === safeTab;
+    panel.classList.toggle("hidden", !active);
   });
 }
 
@@ -1158,18 +1518,19 @@ function setSavedSortBarVisible(visible) {
 
 function sortSavedJobs(jobs, mode) {
   const rows = Array.isArray(jobs) ? [...jobs] : [];
+  const byKey = (a, b) => String(a?.jobKey || "").localeCompare(String(b?.jobKey || ""));
   const byUpdated = (a, b) => String(b.updatedAt || b.savedAt || "").localeCompare(String(a.updatedAt || a.savedAt || ""));
   const bySaved = (a, b) => String(b.savedAt || "").localeCompare(String(a.savedAt || ""));
   const byTitle = (a, b) => String(a.title || "").localeCompare(String(b.title || ""));
   if (mode === SORT_SAVED) {
-    return rows.sort((a, b) => bySaved(a, b) || byTitle(a, b));
+    return rows.sort((a, b) => bySaved(a, b) || byTitle(a, b) || byKey(a, b));
   }
   if (mode === SORT_PERSONAL) {
     return rows.sort((a, b) => {
       const customA = isCustomJob(a) ? 0 : 1;
       const customB = isCustomJob(b) ? 0 : 1;
       if (customA !== customB) return customA - customB;
-      return byUpdated(a, b) || byTitle(a, b);
+      return byUpdated(a, b) || byTitle(a, b) || byKey(a, b);
     });
   }
   if (mode === SORT_REMINDER) {
@@ -1177,10 +1538,10 @@ function sortSavedJobs(jobs, mode) {
       const reminderA = getReminderWeight(a.reminderAt);
       const reminderB = getReminderWeight(b.reminderAt);
       if (reminderA !== reminderB) return reminderA - reminderB;
-      return byUpdated(a, b) || byTitle(a, b);
+      return byUpdated(a, b) || byTitle(a, b) || byKey(a, b);
     });
   }
-  return rows.sort((a, b) => byUpdated(a, b) || byTitle(a, b));
+  return rows.sort((a, b) => byUpdated(a, b) || byTitle(a, b) || byKey(a, b));
 }
 
 function getReminderWeight(reminderAt) {
@@ -1356,6 +1717,7 @@ async function createCustomJob() {
       payload: { at: new Date().toISOString() }
     });
     setCustomJobPanelOpen(false);
+    queueActivityPulse(String(saveResult?.data?.jobKey || normalized.jobKey || customJobTargetKey || ""), TIMELINE_SCOPE_ALL);
     await refreshActivityLog();
   } catch (err) {
     console.error("Could not save custom job:", err);
@@ -1372,14 +1734,162 @@ function setActivityStatus(text) {
   activityPanelStatusEl.textContent = text;
 }
 
-function setActivityPanelOpen(open) {
+function setActivityPanelOpen(open, options = {}) {
+  const { persist = true } = options;
   activityPanelOpen = Boolean(open);
   if (!activityPanelEl) return;
   activityPanelEl.classList.toggle("collapsed", !activityPanelOpen);
   activityPanelEl.setAttribute("aria-hidden", activityPanelOpen ? "false" : "true");
   if (historyPanelToggleBtnEl) {
-    historyPanelToggleBtnEl.classList.toggle("hidden", activityPanelOpen);
     historyPanelToggleBtnEl.classList.toggle("active", activityPanelOpen);
+    historyPanelToggleBtnEl.setAttribute("aria-expanded", activityPanelOpen ? "true" : "false");
+    historyPanelToggleBtnEl.textContent = activityPanelOpen ? "Hide Activity" : "Show Activity";
+  }
+  if (persist && currentUser) {
+    persistTimelinePreferences(currentUser.uid);
+  }
+}
+
+function normalizeTimelineScope(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (
+    raw === TIMELINE_SCOPE_ALL ||
+    raw === TIMELINE_SCOPE_SELECTED ||
+    raw === TIMELINE_SCOPE_PHASE ||
+    raw === TIMELINE_SCOPE_NOTES ||
+    raw === TIMELINE_SCOPE_ATTACHMENTS
+  ) {
+    return raw;
+  }
+  return TIMELINE_SCOPE_ALL;
+}
+
+function buildTimelinePrefsKey(uid) {
+  return `${TIMELINE_PREF_PREFIX}:${String(uid || "")}`;
+}
+
+function loadTimelinePreferences(uid) {
+  const fallback = { visible: false, scope: TIMELINE_SCOPE_ALL };
+  if (!uid) return fallback;
+  try {
+    const raw = localStorage.getItem(buildTimelinePrefsKey(uid));
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return {
+      visible: Boolean(parsed?.visible),
+      scope: normalizeTimelineScope(parsed?.scope)
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function persistTimelinePreferences(uid) {
+  if (!uid) return;
+  const payload = {
+    visible: Boolean(activityPanelOpen),
+    scope: normalizeTimelineScope(timelineScope)
+  };
+  try {
+    localStorage.setItem(buildTimelinePrefsKey(uid), JSON.stringify(payload));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function setTimelineScope(nextScope) {
+  const normalized = normalizeTimelineScope(nextScope);
+  if (normalized === TIMELINE_SCOPE_SELECTED && !selectedJobKey) {
+    timelineScope = TIMELINE_SCOPE_ALL;
+  } else {
+    timelineScope = normalized;
+  }
+  updateTimelineScopeButtons();
+  if (currentUser) {
+    persistTimelinePreferences(currentUser.uid);
+  }
+}
+
+function updateTimelineScopeButtons() {
+  activityScopeBtnEls.forEach(btn => {
+    const scope = normalizeTimelineScope(btn.dataset.timelineScope || TIMELINE_SCOPE_ALL);
+    const isDisabled = scope === TIMELINE_SCOPE_SELECTED && !selectedJobKey;
+    const isActive = scope === timelineScope;
+    btn.disabled = isDisabled;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function queueActivityPulse(jobKey, category) {
+  const safeKey = String(jobKey || "").trim();
+  const safeCategory = normalizeTimelineScope(category);
+  lastActivityPulse = {
+    jobKey: safeKey,
+    category: safeCategory,
+    expiresAt: Date.now() + ACTIVITY_HIGHLIGHT_MS
+  };
+}
+
+function clearExpiredPulse() {
+  if (!lastActivityPulse) return;
+  if (Date.now() > lastActivityPulse.expiresAt) {
+    lastActivityPulse = null;
+  }
+}
+
+function timelineTypeForEntry(entry) {
+  const type = String(entry?.type || "").toLowerCase();
+  if (type.includes("phase")) return TIMELINE_SCOPE_PHASE;
+  if (type.includes("note")) return TIMELINE_SCOPE_NOTES;
+  if (type.includes("attach")) return TIMELINE_SCOPE_ATTACHMENTS;
+  return TIMELINE_SCOPE_ALL;
+}
+
+function filterActivityEntriesForScope(entries, scope, currentSelectedJobKey = "") {
+  const rows = Array.isArray(entries) ? entries : [];
+  const safeScope = normalizeTimelineScope(scope);
+  const selectedKey = String(currentSelectedJobKey || "").trim();
+  return rows.filter(entry => {
+    const entryJobKey = String(entry?.jobKey || "").trim();
+    if (safeScope === TIMELINE_SCOPE_SELECTED) {
+      return selectedKey && entryJobKey === selectedKey;
+    }
+    if (safeScope === TIMELINE_SCOPE_PHASE) return timelineTypeForEntry(entry) === TIMELINE_SCOPE_PHASE;
+    if (safeScope === TIMELINE_SCOPE_NOTES) return timelineTypeForEntry(entry) === TIMELINE_SCOPE_NOTES;
+    if (safeScope === TIMELINE_SCOPE_ATTACHMENTS) return timelineTypeForEntry(entry) === TIMELINE_SCOPE_ATTACHMENTS;
+    return true;
+  });
+}
+
+function countRecentActivityEntries(entries, withinHours = 24) {
+  const threshold = Date.now() - Math.max(1, Number(withinHours) || 24) * 60 * 60 * 1000;
+  return (Array.isArray(entries) ? entries : []).filter(entry => {
+    const parsed = parseIsoDate(entry?.createdAt);
+    return parsed && parsed.getTime() >= threshold;
+  }).length;
+}
+
+function renderSelectedJobHint() {
+  if (!activitySelectedJobEl) return;
+  if (!selectedJobKey) {
+    activitySelectedJobEl.textContent = "Selected: none";
+    return;
+  }
+  const row = lastSavedJobsByKey.get(selectedJobKey);
+  const label = row ? `${row.title || "Untitled"} @ ${row.company || "Unknown"}` : selectedJobKey;
+  activitySelectedJobEl.textContent = `Selected: ${label}`;
+}
+
+function renderWorkspaceStats(jobs = null) {
+  const rows = Array.isArray(jobs) ? jobs : Array.from(lastSavedJobsByKey.values());
+  if (savedMetricTotalEl) savedMetricTotalEl.textContent = String(rows.length);
+  if (savedMetricRemindersEl) {
+    const dueSoon = rows.filter(job => getReminderMeta(job?.reminderAt).isSoon).length;
+    savedMetricRemindersEl.textContent = String(dueSoon);
+  }
+  if (savedMetricActivityEl) {
+    savedMetricActivityEl.textContent = String(countRecentActivityEntries(cachedActivityEntries, 24));
   }
 }
 
@@ -1408,7 +1918,8 @@ async function refreshActivityLog() {
   if (!activityPanelBodyEl) return;
   if (!currentUser || !savedPageService.isAvailable()) {
     setActivityStatus("Sign in to view history.");
-    renderActivityEntries([]);
+    renderTimeline();
+    renderWorkspaceStats();
     return;
   }
 
@@ -1418,14 +1929,39 @@ async function refreshActivityLog() {
     if (!entriesResult.ok) throw new Error(entriesResult.error || "Could not load history.");
     const entries = Array.isArray(entriesResult.data) ? entriesResult.data : [];
     cachedActivityEntries = entries;
-    renderActivityEntries(entries);
-    setActivityStatus(`Showing ${entries.length} recent events.`);
+    renderTimeline();
+    renderWorkspaceStats();
   } catch (err) {
     console.error("Could not load activity log:", err);
     cachedActivityEntries = [];
     setActivityStatus("Could not load history.");
-    renderActivityEntries([]);
+    renderTimeline();
+    renderWorkspaceStats();
   }
+}
+
+function renderTimeline() {
+  const entries = filterActivityEntriesForScope(cachedActivityEntries, timelineScope, selectedJobKey);
+  if (!currentUser) {
+    setActivityStatus("Sign in to view history.");
+  } else {
+    const scopeLabel = timelineScope === TIMELINE_SCOPE_ALL
+      ? "all activity"
+      : timelineScope === TIMELINE_SCOPE_SELECTED
+        ? "selected job activity"
+        : `${timelineScope} activity`;
+    setActivityStatus(`Showing ${entries.length} ${scopeLabel}.`);
+  }
+  renderActivityEntries(entries);
+}
+
+function shouldPulseEntry(entry) {
+  clearExpiredPulse();
+  if (!lastActivityPulse) return false;
+  const matchesJob = !lastActivityPulse.jobKey || String(entry?.jobKey || "").trim() === lastActivityPulse.jobKey;
+  if (!matchesJob) return false;
+  if (lastActivityPulse.category === TIMELINE_SCOPE_ALL) return true;
+  return timelineTypeForEntry(entry) === lastActivityPulse.category;
 }
 
 function renderActivityEntries(entries) {
@@ -1434,7 +1970,20 @@ function renderActivityEntries(entries) {
     activityPanelBodyEl.innerHTML = '<div class="muted">No activity yet.</div>';
     return;
   }
-  activityPanelBodyEl.innerHTML = entries.map(renderActivityEntry).join("");
+  activityPanelBodyEl.innerHTML = entries.map(entry => {
+    const pulseClass = shouldPulseEntry(entry) ? "activity-pulse" : "";
+    return `
+      <div class="activity-entry-wrap ${pulseClass}">
+        ${renderActivityEntry(entry)}
+      </div>
+    `;
+  }).join("");
+  if (lastActivityPulse) {
+    setTimeout(() => {
+      clearExpiredPulse();
+      renderTimeline();
+    }, ACTIVITY_HIGHLIGHT_MS + 80);
+  }
 }
 
 function renderActivityEntry(entry) {
@@ -1583,7 +2132,21 @@ async function readBackupPayloadFromZip(file) {
   });
 }
 
-export { bootSavedPage as boot };
+export {
+  bootSavedPage as boot,
+  needsInterviewTimestamp,
+  toPromptLocalDateTime,
+  parseScheduledTimestampInput,
+  isEditingNotesField,
+  isEditingNotesFieldFromElement,
+  shouldDeferSavedJobsRerender,
+  computeAnchorScrollDelta,
+  normalizeTimelineScope,
+  timelineTypeForEntry,
+  filterActivityEntriesForScope,
+  countRecentActivityEntries,
+  buildTimelinePrefsKey
+};
 
 
 

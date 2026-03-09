@@ -104,7 +104,7 @@ def _manifest_payload(version: str, sha256: str) -> dict:
 
 
 def _seed_runtime_data(data_dir: Path) -> None:
-    from scripts.jobs_fetcher import DEFAULT_STUDIO_SOURCE_REGISTRY  # local import to keep script lightweight
+    from scripts.jobs_fetcher import DEFAULT_SOCIAL_CONFIG, DEFAULT_STUDIO_SOURCE_REGISTRY  # local import to keep script lightweight
 
     data_dir.mkdir(parents=True, exist_ok=True)
     payloads = {
@@ -118,6 +118,7 @@ def _seed_runtime_data(data_dir: Path) -> None:
         "jobs-fetch-tasks.json": {"summary": {}, "tasks": [], "outputs": {}},
         "jobs-source-state.json": {"schemaVersion": 1, "updatedAt": "", "sources": {}},
         "jobs-success-cache.json": {"updatedAt": "", "successfulSources": []},
+        "social-sources-config.json": DEFAULT_SOCIAL_CONFIG,
         "admin-task-state.json": {},
         "admin-alert-state.json": {"schemaVersion": 1, "acked": {}, "updatedAt": ""},
         "admin-run-history.json": [],

@@ -13,6 +13,36 @@ function toErrorMessage(error, fallback) {
   return error?.message || String(error || "") || fallback;
 }
 
+function buildAttachmentContentUrl(uid, jobKey, attachmentId, options = {}) {
+  const includeDownload = Boolean(options.download);
+  const query = new URLSearchParams({
+    uid: String(uid || ""),
+    jobKey: String(jobKey || ""),
+    attachmentId: String(attachmentId || "")
+  });
+  if (includeDownload) {
+    query.set("download", "1");
+  }
+  return `${BASE_URL}/attachments/content?${query.toString()}`;
+}
+
+function parseFilenameFromContentDisposition(value) {
+  const text = String(value || "");
+  if (!text) return "";
+  const utfMatch = text.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (utfMatch && utfMatch[1]) {
+    try {
+      return decodeURIComponent(String(utfMatch[1]).trim());
+    } catch {
+      return String(utfMatch[1]).trim();
+    }
+  }
+  const quotedMatch = text.match(/filename\s*=\s*"([^"]+)"/i);
+  if (quotedMatch && quotedMatch[1]) return String(quotedMatch[1]).trim();
+  const plainMatch = text.match(/filename\s*=\s*([^;]+)/i);
+  return plainMatch && plainMatch[1] ? String(plainMatch[1]).trim() : "";
+}
+
 async function requestJson(path, options = {}) {
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
@@ -186,9 +216,7 @@ const desktopApi = {
     return String(payload.attachmentId || "");
   },
   async getAttachmentBlob(uid, jobKey, attachmentId) {
-    const response = await fetch(
-      `${BASE_URL}/attachments/content?uid=${encodeURIComponent(String(uid || ""))}&jobKey=${encodeURIComponent(String(jobKey || ""))}&attachmentId=${encodeURIComponent(String(attachmentId || ""))}`
-    );
+    const response = await fetch(buildAttachmentContentUrl(uid, jobKey, attachmentId));
     if (!response.ok) {
       let errorMessage = "Could not read attachment.";
       try {
@@ -199,7 +227,16 @@ const desktopApi = {
       }
       throw new Error(errorMessage);
     }
-    return response.blob();
+    const blob = await response.blob();
+    const headerName = parseFilenameFromContentDisposition(response.headers.get("Content-Disposition"));
+    return {
+      blob,
+      filename: headerName,
+      contentType: response.headers.get("Content-Type") || blob.type || ""
+    };
+  },
+  getAttachmentDownloadUrl(uid, jobKey, attachmentId) {
+    return buildAttachmentContentUrl(uid, jobKey, attachmentId, { download: true });
   },
   async deleteAttachmentForJob(uid, jobKey, attachmentId) {
     await requestJson("/attachments/delete", {

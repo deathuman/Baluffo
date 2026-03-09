@@ -23,6 +23,7 @@ const QUICK_FILTERS = [
   { key: "remote", label: "Remote Only", type: "workType", value: "Remote", defaultVisible: true },
   { key: "hybrid", label: "Hybrid Only", type: "workType", value: "Hybrid", defaultVisible: false },
   { key: "onsite", label: "On-Site Only", type: "workType", value: "Onsite", defaultVisible: false },
+  { key: "new-only", label: "New Only", type: "flag", value: "newOnly", defaultVisible: true },
   { key: "exclude-internship", label: "Exclude Internship", type: "flag", value: "excludeInternship", defaultVisible: true },
   { key: "sector-game", label: "Game Sector", type: "sector", value: "Game", defaultVisible: false },
   { key: "sector-tech", label: "Tech Sector", type: "sector", value: "Tech", defaultVisible: false },
@@ -56,6 +57,7 @@ const DEFAULT_FILTERS = {
   city: "",
   sector: "",
   profession: "",
+  newOnly: false,
   excludeInternship: false,
   search: "",
   sort: "relevance"

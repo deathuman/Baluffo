@@ -15,6 +15,9 @@
 - `--circuit-breaker-failures` (default `3`): consecutive failures to trigger quarantine.
 - `--circuit-breaker-cooldown-minutes` (default `180`): quarantine duration.
 - `--ignore-circuit-breaker`: force run quarantined sources.
+- `--social-enabled`: include social-source loaders (Reddit/X/Mastodon) in this run.
+- `--social-config-path`: path to social source config JSON.
+- `--social-lookback-minutes` (default `30`): recency window used by social source polling.
 - `--quiet`: suppress per-source progress logs.
 
 ## Admin presets (`/tasks/run-fetcher`)
@@ -38,6 +41,9 @@ Optional overrides:
 - `circuitBreakerCooldownMinutes`
 - `skipSuccessfulSources`
 - `ignoreCircuitBreaker`
+- `socialEnabled`
+- `socialConfigPath`
+- `socialLookbackMinutes`
 - `quiet`
 - `onlySources` (array)
 

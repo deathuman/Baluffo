@@ -123,7 +123,15 @@ export function createIndexedDbAdapter({ dbName, dbVersion }) {
       const request = index.getAll(IDBKeyRange.only(uid));
       request.onsuccess = () => {
         const rows = (request.result || []).map(stripPk);
-        rows.sort((a, b) => (b.savedAt || "").localeCompare(a.savedAt || ""));
+        rows.sort((a, b) => {
+          const bySaved = String(b?.savedAt || "").localeCompare(String(a?.savedAt || ""));
+          if (bySaved !== 0) return bySaved;
+          const byUpdated = String(b?.updatedAt || "").localeCompare(String(a?.updatedAt || ""));
+          if (byUpdated !== 0) return byUpdated;
+          const byTitle = String(a?.title || "").localeCompare(String(b?.title || ""));
+          if (byTitle !== 0) return byTitle;
+          return String(a?.jobKey || "").localeCompare(String(b?.jobKey || ""));
+        });
         done(rows);
       };
       request.onerror = () => fail(request.error || new Error("Could not list saved jobs."));

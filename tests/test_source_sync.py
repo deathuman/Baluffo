@@ -276,6 +276,70 @@ class SourceSyncTests(unittest.TestCase):
         self.assertIn("pending", decoded)
         self.assertIn("rejected", decoded)
 
+    def test_push_sources_snapshot_preserves_remote_active_and_pending(self):
+        self.write_packaged_config()
+        remote_snapshot = {
+            "schemaVersion": 1,
+            "generatedAt": "2026-03-09T10:00:00+00:00",
+            "active": [{"adapter": "static", "listing_url": "https://remote-active.example/jobs"}],
+            "pending": [{"adapter": "teamtailor", "name": "Remote Pending"}],
+            "rejected": [],
+        }
+        encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
+        opener = _Recorder([
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2026-03-10T10:00:00Z"}),
+            _FakeResponse(200, {"sha": "s1", "content": encoded}),
+            _FakeResponse(201, {"content": {"sha": "newsha"}}),
+        ])
+        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=self.env)
+        local = {"active": [], "pending": [], "rejected": []}
+        original_build_jwt = sync.build_app_jwt
+        try:
+            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+            result = sync.push_sources_snapshot(cfg, local, opener=opener)
+        finally:
+            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        self.assertTrue(result["pushed"])
+        put_call = opener.calls[2]
+        body = json.loads(put_call["body"])
+        decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
+        self.assertEqual(len(decoded["active"]), 1)
+        self.assertEqual(len(decoded["pending"]), 1)
+
+    def test_push_sources_snapshot_allows_local_rejected_to_remove_remote_source(self):
+        self.write_packaged_config()
+        remote_snapshot = {
+            "schemaVersion": 1,
+            "generatedAt": "2026-03-09T10:00:00+00:00",
+            "active": [{"adapter": "static", "listing_url": "https://remove-me.example/jobs"}],
+            "pending": [],
+            "rejected": [],
+        }
+        encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
+        opener = _Recorder([
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2026-03-10T10:00:00Z"}),
+            _FakeResponse(200, {"sha": "s1", "content": encoded}),
+            _FakeResponse(201, {"content": {"sha": "newsha"}}),
+        ])
+        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=self.env)
+        local = {
+            "active": [],
+            "pending": [],
+            "rejected": [{"adapter": "static", "listing_url": "https://remove-me.example/jobs"}],
+        }
+        original_build_jwt = sync.build_app_jwt
+        try:
+            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+            result = sync.push_sources_snapshot(cfg, local, opener=opener)
+        finally:
+            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        self.assertTrue(result["pushed"])
+        put_call = opener.calls[2]
+        body = json.loads(put_call["body"])
+        decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
+        self.assertEqual(len(decoded["active"]), 0)
+        self.assertEqual(len(decoded["rejected"]), 1)
+
     def test_401_triggers_installation_token_refresh(self):
         self.write_packaged_config()
         snapshot = {"schemaVersion": 1, "generatedAt": "2026-03-09T10:00:00+00:00", "source": {}, "active": [], "pending": [], "rejected": []}

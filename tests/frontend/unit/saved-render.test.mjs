@@ -52,6 +52,7 @@ test("saved render: phase bar and history rows render expected markup", () => {
   assert.match(phaseHtml, /phase-bar/);
   assert.match(phaseHtml, /override-enabled/);
   assert.match(phaseHtml, /Set phase to Applied/);
+  assert.match(phaseHtml, /data-job-key="job-1"/);
 
   const historyHtml = getJobHistoryEntries("job-1", {
     cachedActivityEntries: [

@@ -222,7 +222,8 @@ const adminBusyState = {
   opsLoad: false,
   liveFetchRunning: false,
   liveDiscoveryRunning: false,
-  liveSyncRunning: false
+  liveSyncRunning: false,
+  livePipelineRunning: false
 };
 const adminDispatch = createAdminDispatcher();
 let activeSourceFilter = adminPageState.activeSourceFilter;
@@ -264,6 +265,10 @@ function isSyncBusy() {
   return Boolean(adminBusyState.syncRun || adminBusyState.liveSyncRunning);
 }
 
+function isPipelineBusy() {
+  return Boolean(adminBusyState.livePipelineRunning);
+}
+
 function setBusyBadge(el, state, text) {
   if (!el) return;
   const normalized = String(state || "idle").toLowerCase();
@@ -291,37 +296,39 @@ function syncAdminBusyUi() {
   const discoveryBusy = isDiscoveryBusy();
   const opsBusy = isOpsBusy();
   const syncBusy = isSyncBusy();
+  const pipelineBusy = isPipelineBusy();
+  const lockBusy = pipelineBusy;
 
-  setButtonBusy(adminRunFetcherBtnEl, fetcherBusy, FETCHER_PRESET_META.default.busyLabel);
-  setButtonBusy(adminRunFetcherIncrementalBtnEl, fetcherBusy, FETCHER_PRESET_META.incremental.busyLabel);
-  setButtonBusy(adminRunFetcherForceBtnEl, fetcherBusy, FETCHER_PRESET_META.force_full.busyLabel);
-  setButtonBusy(adminRetryFailedBtnEl, fetcherBusy, FETCHER_PRESET_META.retry_failed.busyLabel);
+  setButtonBusy(adminRunFetcherBtnEl, fetcherBusy || lockBusy, FETCHER_PRESET_META.default.busyLabel);
+  setButtonBusy(adminRunFetcherIncrementalBtnEl, fetcherBusy || lockBusy, FETCHER_PRESET_META.incremental.busyLabel);
+  setButtonBusy(adminRunFetcherForceBtnEl, fetcherBusy || lockBusy, FETCHER_PRESET_META.force_full.busyLabel);
+  setButtonBusy(adminRetryFailedBtnEl, fetcherBusy || lockBusy, FETCHER_PRESET_META.retry_failed.busyLabel);
   setButtonBusy(adminRefreshReportBtnEl, Boolean(adminBusyState.fetcherReportLoad), "Loading Report...");
   setButtonBusy(adminRefreshBtnEl, false);
   setButtonBusy(adminRefreshOpsBtnEl, opsBusy, "Refreshing...");
-  setButtonBusy(adminSyncTestBtnEl, syncBusy, "Testing...");
-  setButtonBusy(adminSyncPullBtnEl, syncBusy, "Pull Running...");
-  setButtonBusy(adminSyncPushBtnEl, syncBusy, "Push Running...");
+  setButtonBusy(adminSyncTestBtnEl, syncBusy || lockBusy, "Testing...");
+  setButtonBusy(adminSyncPullBtnEl, syncBusy || lockBusy, "Pull Running...");
+  setButtonBusy(adminSyncPushBtnEl, syncBusy || lockBusy, "Push Running...");
   [adminSyncEnabledEl].forEach(el => {
     if (!el) return;
-    el.disabled = syncBusy;
-    el.setAttribute("aria-disabled", syncBusy ? "true" : "false");
+    el.disabled = syncBusy || lockBusy;
+    el.setAttribute("aria-disabled", (syncBusy || lockBusy) ? "true" : "false");
   });
 
-  setButtonBusy(adminRunDiscoveryBtnEl, discoveryBusy, "Discovery Running...");
-  setButtonBusy(adminLoadDiscoveryBtnEl, discoveryBusy, "Loading...");
-  setButtonBusy(adminApproveSourcesBtnEl, discoveryBusy, "Working...");
-  setButtonBusy(adminRejectSourcesBtnEl, discoveryBusy, "Working...");
-  setButtonBusy(adminDeleteSourcesBtnEl, discoveryBusy, "Working...");
-  setButtonBusy(adminRestoreRejectedBtnEl, discoveryBusy, "Working...");
-  setButtonBusy(adminAddManualSourceBtnEl, discoveryBusy, "Adding...");
+  setButtonBusy(adminRunDiscoveryBtnEl, discoveryBusy || lockBusy, "Discovery Running...");
+  setButtonBusy(adminLoadDiscoveryBtnEl, discoveryBusy || lockBusy, "Loading...");
+  setButtonBusy(adminApproveSourcesBtnEl, discoveryBusy || lockBusy, "Working...");
+  setButtonBusy(adminRejectSourcesBtnEl, discoveryBusy || lockBusy, "Working...");
+  setButtonBusy(adminDeleteSourcesBtnEl, discoveryBusy || lockBusy, "Working...");
+  setButtonBusy(adminRestoreRejectedBtnEl, discoveryBusy || lockBusy, "Working...");
+  setButtonBusy(adminAddManualSourceBtnEl, discoveryBusy || lockBusy, "Adding...");
   if (adminManualSourceUrlEl) {
-    adminManualSourceUrlEl.disabled = discoveryBusy;
-    adminManualSourceUrlEl.setAttribute("aria-disabled", discoveryBusy ? "true" : "false");
+    adminManualSourceUrlEl.disabled = discoveryBusy || lockBusy;
+    adminManualSourceUrlEl.setAttribute("aria-disabled", (discoveryBusy || lockBusy) ? "true" : "false");
   }
   adminSourceFilterBtnEls.forEach(btn => {
-    btn.disabled = discoveryBusy;
-    btn.setAttribute("aria-disabled", discoveryBusy ? "true" : "false");
+    btn.disabled = discoveryBusy || lockBusy;
+    btn.setAttribute("aria-disabled", (discoveryBusy || lockBusy) ? "true" : "false");
   });
 
   const fetcherLabel = adminBusyState.fetcherWatch
@@ -332,10 +339,13 @@ function syncAdminBusyUi() {
       ? "Loading Report"
       : "Fetcher Idle";
   const discoveryLabel = adminBusyState.liveDiscoveryRunning ? "Discovery Running" : (discoveryBusy ? "Discovery Busy" : "Discovery Idle");
-  const opsLabel = opsBusy ? "Ops Refreshing" : "Ops Idle";
+  const opsLabel = pipelineBusy ? "Pipeline Running" : (opsBusy ? "Ops Refreshing" : "Ops Idle");
   setBusyBadge(adminFetcherProgressBadgeEl, fetcherBusy ? "running" : "idle", fetcherLabel);
   setBusyBadge(adminDiscoveryProgressBadgeEl, discoveryBusy ? "running" : "idle", discoveryLabel);
-  setBusyBadge(adminOpsProgressBadgeEl, opsBusy ? "running" : "idle", opsLabel);
+  setBusyBadge(adminOpsProgressBadgeEl, (opsBusy || pipelineBusy) ? "running" : "idle", opsLabel);
+  if (adminContentEl) {
+    adminContentEl.classList.toggle("admin-pipeline-locked", pipelineBusy);
+  }
   syncDiscoveryLogDisclosure();
 }
 
@@ -1110,6 +1120,7 @@ async function loadOpsHealthData(options = {}) {
     setBusyFlag("liveFetchRunning", liveTypes.has("fetch"));
     setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
     setBusyFlag("liveSyncRunning", liveTypes.has("sync"));
+    setBusyFlag("livePipelineRunning", liveTypes.has("pipeline"));
 
     renderAdminOpsAlerts(adminOpsAlertsEl, health?.alerts || [], {
       onAck: async alertId => {
@@ -1135,6 +1146,7 @@ async function loadOpsHealthData(options = {}) {
     setBusyFlag("liveFetchRunning", false);
     setBusyFlag("liveDiscoveryRunning", false);
     setBusyFlag("liveSyncRunning", false);
+    setBusyFlag("livePipelineRunning", false);
     scheduleOpsHealthPolling(OPS_POLL_IDLE_INTERVAL_MS);
   } finally {
     setBusyFlag("opsLoad", false);

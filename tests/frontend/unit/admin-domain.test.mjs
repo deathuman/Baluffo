@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   normalizeLogLevel,
   createLogEvent,
+  deriveSourceStatus,
   mergeSourceStatusFromReport,
   applySourceFilter,
   getSourceJobsFoundCount,
@@ -52,14 +53,40 @@ test("admin domain maps grouped adapter errors to matching source names", () => 
   assert.match(String(rows[0]._lastError || ""), /HTTP 429/i);
 });
 
+test("admin domain parses stringified detail rows when merging statuses", () => {
+  const rows = mergeSourceStatusFromReport(
+    [{ name: "Jagex (Lever)", studio: "Jagex" }],
+    {
+      sources: [
+        {
+          name: "lever_sources",
+          status: "ok",
+          details: [
+            "{'adapter': 'lever', 'studio': 'Jagex', 'name': 'Jagex (Lever)', 'status': 'ok', 'fetchedCount': 2, 'keptCount': 2, 'error': ''}"
+          ]
+        }
+      ]
+    },
+    "active"
+  );
+  assert.equal(rows[0]._lastStatus, "ok");
+  assert.equal(rows[0]._lastKeptCount, 2);
+});
+
 test("admin domain resolves jobs found from merged kept/fetched counters", () => {
   assert.equal(getSourceJobsFoundCount({ _lastKeptCount: 7 }), 7);
   assert.equal(getSourceJobsFoundCount({ _lastFetchedCount: 12 }), 12);
   assert.equal(getSourceJobsFoundCount({ keptCount: 3 }), 3);
 });
 
+test("admin domain derives not_run status when no probe/report data exists", () => {
+  assert.equal(deriveSourceStatus({ name: "Unknown Source" }), "not_run");
+  assert.equal(deriveSourceStatus({ status: "n/a" }), "not_run");
+});
+
 test("admin domain normalizes ops runs into current + collapsed completed groups", () => {
   const model = normalizeOpsRuns([
+    { id: "p1", type: "pipeline", status: "started", startedAt: "2026-03-08T10:01:00.000Z", finishedAt: "", durationMs: 0 },
     { id: "f1", type: "fetch", status: "started", startedAt: "2026-03-08T10:00:00.000Z", finishedAt: "", durationMs: 0 },
     { id: "f0", type: "fetch", status: "ok", startedAt: "2026-03-08T09:00:00.000Z", finishedAt: "2026-03-08T09:02:00.000Z", durationMs: 120000 },
     { id: "d0", type: "discovery", status: "warning", startedAt: "2026-03-08T08:00:00.000Z", finishedAt: "2026-03-08T08:01:00.000Z", durationMs: 60000 },
@@ -68,10 +95,11 @@ test("admin domain normalizes ops runs into current + collapsed completed groups
     { id: "x3", type: "fetch", status: "ok", startedAt: "2026-03-08T05:00:00.000Z", finishedAt: "2026-03-08T05:01:00.000Z", durationMs: 60000 }
   ], Date.parse("2026-03-08T10:01:00.000Z"));
 
-  assert.equal(model.currentRows.length, 1);
+  assert.equal(model.currentRows.length, 2);
   assert.equal(model.currentRows[0].displayStatus, "running");
   assert.equal(model.currentRows[0].isLive, true);
   assert.equal(model.hasLiveRuns, true);
+  assert.ok(model.liveTypes.includes("pipeline"));
   assert.equal(model.visibleCompletedRows.length, 2);
   assert.equal(model.olderCompletedRows.length, 3);
 });

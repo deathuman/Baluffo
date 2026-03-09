@@ -34,7 +34,7 @@ export function normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackS
 
   const activeRows = Array.isArray(activeRegistry) ? activeRegistry : [];
   activeRows
-    .filter(row => row && typeof row === "object" && Boolean(row.enabledByDefault))
+    .filter(row => row && typeof row === "object")
     .forEach(row => {
       const name = String(row.name || row.studio || row.adapter || "Source").trim();
       const url = sourceUrlFromRegistry(row);

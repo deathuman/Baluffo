@@ -65,16 +65,18 @@ function formatDateForStatus(value) {
 
 function renderLifecycleBadge(job) {
   const status = String(job?.status || "active").trim().toLowerCase() || "active";
-  let label = "Active";
-  let cssClass = "active";
+  let label = "";
+  let cssClass = "";
   if (status === "likely_removed") {
     label = "Likely removed";
     cssClass = "likely-removed";
   } else if (status === "archived") {
     label = "Archived";
     cssClass = "archived";
+  } else {
+    return "";
   }
-  const removedDate = status !== "active" ? formatDateForStatus(job?.removedAt) : "";
+  const removedDate = formatDateForStatus(job?.removedAt);
   const title = removedDate ? `${label} since ${removedDate}` : label;
   return `<span class="job-lifecycle-badge ${cssClass}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
 }
@@ -85,6 +87,8 @@ export function renderJobRowHtml(job, options = {}) {
     sanitizeUrl,
     getJobKeyForJob,
     savedJobKeys,
+    isSeen = false,
+    isNew = false,
     isJobsApiReady,
     toContractClass,
     capitalizeFirst
@@ -97,6 +101,13 @@ export function renderJobRowHtml(job, options = {}) {
   const safeJobLink = sanitizeUrl(job.jobLink);
   const jobKey = getJobKeyForJob(job);
   const isSaved = savedJobKeys.has(jobKey);
+  const rowClasses = [
+    "job-row",
+    safeJobLink ? "job-row-link" : "",
+    isSeen ? "job-row-seen" : "",
+    isNew ? "job-row-new" : ""
+  ].filter(Boolean).join(" ");
+  const newBadge = isNew ? '<span class="job-new-badge">New</span>' : "";
   const content = `
     <button
       class="save-job-btn job-inline-save-btn ${isSaved ? "saved" : ""}"
@@ -111,6 +122,7 @@ export function renderJobRowHtml(job, options = {}) {
     <div class="col-title job-cell" data-label="Position">
       <div class="job-title-wrap">
         <div class="job-title-compact">${safeTitle}</div>
+        ${newBadge}
         ${renderLifecycleBadge(job)}
       </div>
     </div>
@@ -133,7 +145,7 @@ export function renderJobRowHtml(job, options = {}) {
       <span class="job-tag ${job.workType.toLowerCase()}">${capitalizeFirst(job.workType)}</span>
     </div>
   `;
-  return `<div class="job-row ${safeJobLink ? "job-row-link" : ""}" data-job-link="${safeJobLink}">${content}</div>`;
+  return `<div class="${rowClasses}" data-job-link="${safeJobLink}" data-job-key="${escapeHtml(jobKey)}">${content}</div>`;
 }
 
 export function showJobsLoading(jobsListEl, text) {

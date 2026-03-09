@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { renderJobRowHtml } from "../../../frontend/jobs/render.js";
 
-function render(job) {
+function render(job, options = {}) {
   return renderJobRowHtml(job, {
     fullCountryName: value => value,
     sanitizeUrl: value => value || "",
@@ -10,7 +10,8 @@ function render(job) {
     savedJobKeys: new Set(),
     isJobsApiReady: () => true,
     toContractClass: () => "unknown",
-    capitalizeFirst: value => String(value || "")
+    capitalizeFirst: value => String(value || ""),
+    ...options
   });
 }
 
@@ -31,7 +32,7 @@ test("jobs render outputs freshness ping with correct class and tooltip", () => 
   });
   assert.match(postedHtml, /job-freshness-ping stale/);
   assert.match(postedHtml, /title="Posted 33d ago \(Feb 3, 2026\)"/);
-  assert.match(postedHtml, /job-lifecycle-badge active/);
+  assert.doesNotMatch(postedHtml, /job-lifecycle-badge/);
 
   const fetchedHtml = render({
     id: "2",
@@ -87,4 +88,33 @@ test("jobs render shows lifecycle badge with removed date tooltip", () => {
   });
   assert.match(html, /job-lifecycle-badge likely-removed/);
   assert.match(html, /title="Likely removed since Mar 7, 2026"/);
+});
+
+test("jobs render marks unseen rows with New badge and seen rows with class", () => {
+  const newHtml = render({
+    id: "5",
+    title: "UI Artist",
+    company: "Studio",
+    sector: "Game",
+    city: "Rome",
+    country: "Italy",
+    workType: "Remote",
+    contractType: "Full-time"
+  }, { isNew: true, isSeen: false });
+  assert.match(newHtml, /class="job-row[^"]*job-row-new/);
+  assert.match(newHtml, />New<\/span>/);
+  assert.match(newHtml, /data-job-key="job_key"/);
+
+  const seenHtml = render({
+    id: "6",
+    title: "Producer",
+    company: "Studio",
+    sector: "Game",
+    city: "Rome",
+    country: "Italy",
+    workType: "Hybrid",
+    contractType: "Full-time"
+  }, { isSeen: true, isNew: false });
+  assert.match(seenHtml, /class="job-row[^"]*job-row-seen/);
+  assert.doesNotMatch(seenHtml, />New<\/span>/);
 });

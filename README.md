@@ -253,6 +253,37 @@ Compute current performance metrics (latest run + rolling history median):
 py -3 scripts/fetcher_metrics.py --data-dir data --window-runs 20
 ```
 
+### Backup E2E validation runbook
+
+Run deterministic desktop backup validation (isolated profile, no real-user data wipe):
+
+```powershell
+py -3 scripts/backup_e2e_validate.py
+```
+
+Report output:
+
+- `data/backup-validation-report.json`
+
+What it validates:
+
+- Scenario A: JSON export/import (`includeFiles=false`)
+- Scenario B: file-inclusive export/import (`includeFiles=true`) with attachment byte hash checks
+- Scenario C: duplicate/malformed import handling with warnings
+
+Success criteria:
+
+- top-level report `ok` is `true`
+- scenarios A/B have zero mismatches
+- scenario B has no attachment hash mismatches
+- script exits with code `0`
+
+Troubleshooting hints:
+
+- if `ok=false`, inspect each scenario `mismatches[]` entry for exact key + before/after values
+- verify desktop runtime backup contract is still `schemaVersion: 2`
+- re-run after cleaning validator temp data dir: `data/.backup-validation-tmp`
+
 ## Data and Registry Files
 
 - Unified outputs:

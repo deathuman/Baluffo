@@ -1,4 +1,5 @@
 import { JobsStateModule as jobsStateModule } from "../../jobs-state.js";
+import { AdminConfig as adminConfig } from "../../admin-config.js";
 import {
   escapeHtml,
   showToast,
@@ -65,6 +66,7 @@ const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
   city: "",
   sector: "",
   profession: "",
+  newOnly: false,
   excludeInternship: false,
   search: "",
   sort: "relevance"
@@ -78,6 +80,7 @@ const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
  * @property {string} city
  * @property {string} sector
  * @property {string} profession
+ * @property {boolean} newOnly
  * @property {boolean} excludeInternship
  * @property {string} search
  * @property {string} sort
@@ -121,6 +124,7 @@ let sourceStatus;
 let fetchProgress;
 let pagination;
 let refreshJobsBtn;
+let refreshJobsNeededBadgeEl;
 let jobsLastUpdatedEl;
 let authStatus;
 let authStatusHint;
@@ -136,12 +140,17 @@ let quickFiltersOptionsEl;
 let quickFiltersResetBtn;
 let dataSourcesListEl;
 let dataSourcesCaptionEl;
+let jobsPipelineRunBtn;
+let jobsPipelineProgressEl;
 
 let currentUser = null;
 let savedJobKeys = new Set();
+let seenJobKeys = new Set();
 
 const JOBS_CACHE_DB = "baluffo_jobs_cache";
+const JOBS_CACHE_DB_VERSION = 2;
 const JOBS_CACHE_STORE = "jobs_feed";
+const JOBS_SEEN_STORE = "jobs_seen";
 const JOBS_CACHE_KEY = "latest";
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const JOBS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
@@ -168,6 +177,9 @@ const JOBS_FETCH_REPORT_URLS = [
   "data/jobs-fetch-report.json",
   "jobs-fetch-report.json"
 ];
+const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
+const JOBS_PIPELINE_STATUS_POLL_MS = 1500;
+const JOBS_PIPELINE_STATUS_IDLE_POLL_MS = 5000;
 
 const QUICK_FILTERS = Array.isArray(jobsStateModule.QUICK_FILTERS) ? jobsStateModule.QUICK_FILTERS : [];
 const COUNTRY_DISPLAY_NAMES = (typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function")
@@ -317,6 +329,12 @@ let hasInitializedJobsFeed = false;
 let pendingAutoRefreshSignal = null;
 let lastHandledAutoRefreshSignalId = readAppliedAutoRefreshId();
 let lastFilterOptionsSignature = "";
+const jobsPipelineUiState = {
+  pollingTimer: null,
+  runId: "",
+  active: false,
+  bridgeOnline: false
+};
 
 function logJobsInfo(message, ...args) {
   console.info(`[${JOBS_LOG_SCOPE}] ${message}`, ...args);
@@ -358,6 +376,7 @@ function cacheDom() {
   fetchProgress = document.getElementById("fetch-progress");
   pagination = document.getElementById("pagination");
   refreshJobsBtn = document.getElementById("refresh-jobs-btn");
+  refreshJobsNeededBadgeEl = document.getElementById("refresh-jobs-needed-badge");
   jobsLastUpdatedEl = document.getElementById("jobs-last-updated");
   authStatus = document.getElementById("auth-status");
   authStatusHint = document.getElementById("auth-status-hint");
@@ -373,6 +392,8 @@ function cacheDom() {
   quickFiltersResetBtn = document.getElementById("quick-filters-reset-btn");
   dataSourcesListEl = document.getElementById("data-sources-list");
   dataSourcesCaptionEl = document.getElementById("data-sources-caption");
+  jobsPipelineRunBtn = document.getElementById("jobs-pipeline-run-btn");
+  jobsPipelineProgressEl = document.getElementById("jobs-pipeline-progress");
 }
 
 function bindEvents() {
@@ -396,6 +417,7 @@ function bindEvents() {
   bindAsyncClick(authSignInBtn, signInUser);
   bindAsyncClick(authSignOutBtn, signOutUser);
   bindAsyncClick(refreshJobsBtn, () => refreshJobsNow({ manual: true }));
+  bindAsyncClick(jobsPipelineRunBtn, triggerJobsPipelineRun);
 
   [
     workTypeFilter,
@@ -504,6 +526,7 @@ function bindEvents() {
 async function init() {
   if (!jobsList) return;
   renderDataSources().catch(() => {});
+  ensureJobsPipelineStatusWatch();
 
   initAuth();
 
@@ -537,6 +560,185 @@ async function init() {
   await applyPendingAutoRefreshSignal();
   if (!ok) {
     showError("Unable to load job listings right now.");
+  }
+}
+
+function updateJobsPipelineUi({ running = false, disabled = false, buttonLabel = "", progressLabel = "", isError = false } = {}) {
+  if (jobsPipelineRunBtn) {
+    if (!jobsPipelineRunBtn.dataset.idleLabel) {
+      jobsPipelineRunBtn.dataset.idleLabel = String(jobsPipelineRunBtn.textContent || "Run Discovery + Fetch + Sync");
+    }
+    const idleLabel = String(jobsPipelineRunBtn.dataset.idleLabel || "Run Discovery + Fetch + Sync");
+    jobsPipelineRunBtn.textContent = buttonLabel || (running ? "Pipeline Running..." : idleLabel);
+    jobsPipelineRunBtn.disabled = Boolean(disabled);
+    jobsPipelineRunBtn.setAttribute("aria-disabled", jobsPipelineRunBtn.disabled ? "true" : "false");
+    jobsPipelineRunBtn.classList.toggle("running", Boolean(running));
+  }
+  if (jobsPipelineProgressEl) {
+    jobsPipelineProgressEl.textContent = String(progressLabel || "");
+    jobsPipelineProgressEl.classList.toggle("running", Boolean(running));
+    jobsPipelineProgressEl.classList.toggle("log-error", Boolean(isError));
+  }
+}
+
+function clearJobsPipelinePolling() {
+  if (jobsPipelineUiState.pollingTimer) {
+    clearTimeout(jobsPipelineUiState.pollingTimer);
+    jobsPipelineUiState.pollingTimer = null;
+  }
+}
+
+function scheduleJobsPipelineStatusPoll(delayMs) {
+  clearJobsPipelinePolling();
+  jobsPipelineUiState.pollingTimer = setTimeout(() => {
+    pollJobsPipelineStatus().catch(() => {});
+  }, Math.max(600, Number(delayMs) || JOBS_PIPELINE_STATUS_POLL_MS));
+}
+
+async function callJobsBridge(path, options = {}) {
+  const response = await fetch(`${ADMIN_BRIDGE_BASE}${path}?t=${Date.now()}`, {
+    method: options.method || "GET",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+  if (!response.ok) {
+    throw new Error(`Bridge ${options.method || "GET"} ${path} failed with HTTP ${response.status}`);
+  }
+  return await response.json();
+}
+
+function getPipelineProgressLabel(payload) {
+  const progress = payload?.progress;
+  if (progress && typeof progress === "object") {
+    const label = String(progress.label || "").trim();
+    if (label) return label;
+    const current = Number(progress.currentStep || 0);
+    const total = Number(progress.totalSteps || 0);
+    if (current > 0 && total > 0) return `Step ${current}/${total}`;
+  }
+  const stage = String(payload?.stage || "").trim();
+  if (stage) return `Stage: ${stage}`;
+  return "Running pipeline...";
+}
+
+function handlePipelineCompletionStatus(payload) {
+  const updatesFound = Boolean(payload?.updatesFound || payload?.refreshRecommended);
+  setRefreshJobsNeedsAttention(updatesFound);
+  jobsPipelineUiState.active = false;
+  jobsPipelineUiState.runId = "";
+  updateJobsPipelineUi({
+    running: false,
+    disabled: !jobsPipelineUiState.bridgeOnline,
+    progressLabel: updatesFound ? "Pipeline complete. Updates found." : "Pipeline complete."
+  });
+  if (updatesFound) {
+    showToast("Pipeline completed. Refresh jobs to load new updates.", "success");
+  } else if (payload?.error) {
+    showToast(`Pipeline failed: ${String(payload.error)}`, "error");
+  }
+}
+
+async function pollJobsPipelineStatus() {
+  try {
+    const payload = await callJobsBridge("/tasks/run-jobs-pipeline-status");
+    jobsPipelineUiState.bridgeOnline = true;
+
+    const active = Boolean(payload?.active);
+    const runId = String(payload?.runId || "");
+    if (active) {
+      jobsPipelineUiState.active = true;
+      jobsPipelineUiState.runId = runId || jobsPipelineUiState.runId;
+      updateJobsPipelineUi({
+        running: true,
+        disabled: true,
+        buttonLabel: "Pipeline Running...",
+        progressLabel: getPipelineProgressLabel(payload)
+      });
+      scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_POLL_MS);
+      return;
+    }
+
+    const trackedRunId = String(jobsPipelineUiState.runId || "");
+    if ((trackedRunId && trackedRunId === runId) || jobsPipelineUiState.active) {
+      handlePipelineCompletionStatus(payload);
+    } else {
+      updateJobsPipelineUi({
+        running: false,
+        disabled: false,
+        progressLabel: "Ready"
+      });
+    }
+    scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_IDLE_POLL_MS);
+  } catch {
+    jobsPipelineUiState.bridgeOnline = false;
+    jobsPipelineUiState.active = false;
+    jobsPipelineUiState.runId = "";
+    updateJobsPipelineUi({
+      running: false,
+      disabled: true,
+      progressLabel: "Bridge offline (desktop runtime required)",
+      isError: true
+    });
+    scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_IDLE_POLL_MS);
+  }
+}
+
+function ensureJobsPipelineStatusWatch() {
+  updateJobsPipelineUi({
+    running: false,
+    disabled: true,
+    progressLabel: "Checking bridge..."
+  });
+  pollJobsPipelineStatus().catch(() => {});
+}
+
+async function triggerJobsPipelineRun() {
+  if (!jobsPipelineRunBtn || jobsPipelineRunBtn.disabled || jobsPipelineUiState.active) return;
+
+  updateJobsPipelineUi({
+    running: true,
+    disabled: true,
+    buttonLabel: "Starting Pipeline...",
+    progressLabel: "Requesting pipeline start..."
+  });
+  try {
+    const payload = await callJobsBridge("/tasks/run-jobs-pipeline", {
+      method: "POST",
+      body: {
+        jobsPageLoadedCount: Array.isArray(allJobs) ? allJobs.length : 0
+      }
+    });
+    const started = Boolean(payload?.started);
+    if (!started) {
+      throw new Error(String(payload?.error || "pipeline did not start"));
+    }
+    jobsPipelineUiState.bridgeOnline = true;
+    jobsPipelineUiState.active = true;
+    jobsPipelineUiState.runId = String(payload?.runId || "");
+    updateJobsPipelineUi({
+      running: true,
+      disabled: true,
+      buttonLabel: "Pipeline Running...",
+      progressLabel: getPipelineProgressLabel(payload)
+    });
+    showToast("Jobs pipeline started.", "success");
+    scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_POLL_MS);
+  } catch (err) {
+    const message = String(err?.message || "Could not start jobs pipeline.");
+    jobsPipelineUiState.active = false;
+    jobsPipelineUiState.runId = "";
+    updateJobsPipelineUi({
+      running: false,
+      disabled: true,
+      progressLabel: "Bridge offline (desktop runtime required)",
+      isError: true
+    });
+    showToast(message.toLowerCase().includes("409") ? "Pipeline already running." : "Could not start jobs pipeline.", "error");
+    scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_IDLE_POLL_MS);
   }
 }
 
@@ -628,6 +830,7 @@ function initAuth() {
     });
     if (!currentUser) {
       savedJobKeys = new Set();
+      seenJobKeys = new Set();
       setAuthStatus("Browsing as guest");
       toggleAuthButtons(false);
       if (allJobs.length) applyFiltersAndRender({ resetPage: false });
@@ -638,12 +841,17 @@ function initAuth() {
     toggleAuthButtons(true);
 
     try {
-      const keysResult = await jobsSavedJobsService.getSavedJobKeys(currentUser.uid);
-      savedJobKeys = new Set(keysResult.data || []);
+      const [savedKeysResult, loadedSeenJobKeys] = await Promise.all([
+        jobsSavedJobsService.getSavedJobKeys(currentUser.uid),
+        loadSeenJobKeys(currentUser.uid)
+      ]);
+      savedJobKeys = new Set(savedKeysResult.data || []);
+      seenJobKeys = loadedSeenJobKeys;
     } catch (err) {
       logJobsError("Failed to load saved jobs", err);
-      showToast("Could not load saved jobs.", "error");
+      showToast("Could not load profile job state.", "error");
       savedJobKeys = new Set();
+      seenJobKeys = new Set();
     }
 
     if (allJobs.length) applyFiltersAndRender({ resetPage: false });
@@ -717,6 +925,7 @@ function readStateFromUrl() {
   state.filters.city = params.get("city") || "";
   state.filters.sector = params.get("sector") || "";
   state.filters.profession = params.get("profession") || "";
+  state.filters.newOnly = params.get("newOnly") === "1";
   state.filters.excludeInternship = params.get("excludeInternship") === "1";
   state.filters.search = params.get("search") || "";
   state.filters.sort = params.get("sort") || "relevance";
@@ -734,6 +943,7 @@ function writeStateToUrl() {
   if (state.filters.city) params.set("city", state.filters.city);
   if (state.filters.sector) params.set("sector", state.filters.sector);
   if (state.filters.profession) params.set("profession", state.filters.profession);
+  if (state.filters.newOnly) params.set("newOnly", "1");
   if (state.filters.excludeInternship) params.set("excludeInternship", "1");
   if (state.filters.search) params.set("search", state.filters.search);
   if (state.filters.sort && state.filters.sort !== "relevance") params.set("sort", state.filters.sort);
@@ -756,12 +966,16 @@ function openJobsCacheDb() {
       return;
     }
 
-    const request = indexedDB.open(JOBS_CACHE_DB, 1);
+    const request = indexedDB.open(JOBS_CACHE_DB, JOBS_CACHE_DB_VERSION);
 
     request.onupgradeneeded = event => {
       const db = event.target.result;
       if (!db.objectStoreNames.contains(JOBS_CACHE_STORE)) {
         db.createObjectStore(JOBS_CACHE_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(JOBS_SEEN_STORE)) {
+        const seenStore = db.createObjectStore(JOBS_SEEN_STORE, { keyPath: "pk" });
+        seenStore.createIndex("profileId", "profileId", { unique: false });
       }
     };
 
@@ -842,6 +1056,7 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
       professionLabels: PROFESSION_LABELS,
       sanitizeUrl
     });
+    setRefreshJobsNeedsAttention(false);
     await writeCachedJobs(allJobs);
     updateLastUpdatedText(Date.now());
     recalculateItemsPerPage();
@@ -900,6 +1115,114 @@ async function writeCachedJobs(jobs) {
   } catch {
     // Ignore cache write failures.
   }
+}
+
+function setRefreshJobsNeedsAttention(needsRefresh) {
+  const needs = Boolean(needsRefresh);
+  if (refreshJobsBtn) {
+    refreshJobsBtn.classList.toggle("needs-refresh", needs);
+    refreshJobsBtn.setAttribute("aria-live", "polite");
+  }
+  if (refreshJobsNeededBadgeEl) {
+    refreshJobsNeededBadgeEl.classList.toggle("hidden", !needs);
+  }
+}
+
+function buildSeenRowKey(profileId, jobKey) {
+  return `${String(profileId || "").trim()}::${String(jobKey || "").trim()}`;
+}
+
+async function loadSeenJobKeys(profileId) {
+  const safeProfileId = String(profileId || "").trim();
+  if (!safeProfileId) return new Set();
+
+  try {
+    const db = await openJobsCacheDb();
+    if (!db || !db.objectStoreNames.contains(JOBS_SEEN_STORE)) return new Set();
+
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(JOBS_SEEN_STORE, "readonly");
+      const store = tx.objectStore(JOBS_SEEN_STORE);
+      const index = store.index("profileId");
+      const request = index.getAll(safeProfileId);
+
+      request.onsuccess = () => {
+        const rows = Array.isArray(request.result) ? request.result : [];
+        resolve(new Set(rows.map(row => String(row?.jobKey || "").trim()).filter(Boolean)));
+      };
+      request.onerror = () => reject(request.error || new Error("Could not read seen jobs."));
+    });
+  } catch {
+    return new Set();
+  }
+}
+
+async function markJobSeen(profileId, jobKey, seenAt = Date.now()) {
+  const safeProfileId = String(profileId || "").trim();
+  const safeJobKey = String(jobKey || "").trim();
+  if (!safeProfileId || !safeJobKey) return;
+
+  try {
+    const db = await openJobsCacheDb();
+    if (!db || !db.objectStoreNames.contains(JOBS_SEEN_STORE)) return;
+
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(JOBS_SEEN_STORE, "readwrite");
+      const store = tx.objectStore(JOBS_SEEN_STORE);
+      const request = store.put({
+        pk: buildSeenRowKey(safeProfileId, safeJobKey),
+        profileId: safeProfileId,
+        jobKey: safeJobKey,
+        seenAt: Number(seenAt) || Date.now()
+      });
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error || new Error("Could not persist seen job."));
+    });
+  } catch {
+    // Ignore seen-state write failures.
+  }
+}
+
+async function markJobsSeenBulk(profileId, jobKeys, seenAt = Date.now()) {
+  const safeProfileId = String(profileId || "").trim();
+  if (!safeProfileId || !Array.isArray(jobKeys) || jobKeys.length === 0) return;
+
+  const uniqueKeys = Array.from(new Set(jobKeys.map(key => String(key || "").trim()).filter(Boolean)));
+  if (uniqueKeys.length === 0) return;
+
+  try {
+    const db = await openJobsCacheDb();
+    if (!db || !db.objectStoreNames.contains(JOBS_SEEN_STORE)) return;
+
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(JOBS_SEEN_STORE, "readwrite");
+      const store = tx.objectStore(JOBS_SEEN_STORE);
+      uniqueKeys.forEach(key => {
+        store.put({
+          pk: buildSeenRowKey(safeProfileId, key),
+          profileId: safeProfileId,
+          jobKey: key,
+          seenAt: Number(seenAt) || Date.now()
+        });
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error("Could not persist seen jobs."));
+      tx.onabort = () => reject(tx.error || new Error("Seen jobs write transaction aborted."));
+    });
+  } catch {
+    // Ignore seen-state write failures.
+  }
+}
+
+async function markJobSeenFromInteraction(jobKey) {
+  const safeJobKey = String(jobKey || "").trim();
+  if (!currentUser?.uid || !safeJobKey) return;
+  if (seenJobKeys.has(safeJobKey)) return;
+
+  seenJobKeys.add(safeJobKey);
+  await markJobSeen(currentUser.uid, safeJobKey, Date.now());
+  if (allJobs.length) applyFiltersAndRender({ resetPage: false });
 }
 
 function applyStateToStaticFilters() {
@@ -974,6 +1297,7 @@ function syncStateFromFilters() {
   state.filters.city = cityFilter ? cityFilter.value : "";
   state.filters.sector = sectorFilter ? sectorFilter.value : "";
   state.filters.profession = professionFilter ? professionFilter.value : "";
+  state.filters.newOnly = Boolean(state.filters.newOnly);
   state.filters.excludeInternship = Boolean(state.filters.excludeInternship);
   state.filters.search = searchFilter ? searchFilter.value.trim() : "";
   state.filters.sort = sortFilter ? sortFilter.value : "relevance";
@@ -1012,6 +1336,8 @@ function applyFiltersAndRender({ resetPage }) {
     const matchesCity = !state.filters.city || job.city === state.filters.city;
     const matchesSector = !state.filters.sector || job.sector === state.filters.sector;
     const matchesProfession = !state.filters.profession || job.profession === state.filters.profession;
+    const jobKey = getJobKeyForJobWithService(job);
+    const matchesNewOnly = !state.filters.newOnly || !currentUser || !seenJobKeys.has(jobKey);
     const matchesInternship = !state.filters.excludeInternship || !isInternshipJob(job);
     const matchesSearch =
       !searchTerm ||
@@ -1020,7 +1346,15 @@ function applyFiltersAndRender({ resetPage }) {
       (job.city || "").toLowerCase().includes(searchTerm) ||
       (job.sector || "").toLowerCase().includes(searchTerm);
 
-    return matchesWorkType && matchesLifecycle && matchesCountry && matchesCity && matchesSector && matchesProfession && matchesInternship && matchesSearch;
+    return matchesWorkType
+      && matchesLifecycle
+      && matchesCountry
+      && matchesCity
+      && matchesSector
+      && matchesProfession
+      && matchesNewOnly
+      && matchesInternship
+      && matchesSearch;
   });
 
   sortJobs(filteredJobs, state.filters.sort);
@@ -1094,11 +1428,15 @@ function displayJobs(jobs) {
 }
 
 function renderJobRow(job) {
+  const jobKey = getJobKeyForJobWithService(job);
+  const isSeen = Boolean(currentUser && seenJobKeys.has(jobKey));
   return renderJobRowHtml(job, {
     fullCountryName: value => fullCountryNameFromDomainLayer(value, COUNTRY_NAME_OPTIONS),
     sanitizeUrl,
     getJobKeyForJob: getJobKeyForJobWithService,
     savedJobKeys,
+    isSeen,
+    isNew: Boolean(currentUser && !isSeen),
     isJobsApiReady,
     toContractClass,
     capitalizeFirst
@@ -1112,17 +1450,20 @@ function bindRenderedJobEvents(pageJobs) {
   jobsList.querySelectorAll(".job-row[data-job-link]").forEach(row => {
     const link = row.dataset.jobLink;
     if (!link) return;
+    const jobKey = String(row.dataset.jobKey || "").trim();
 
     row.tabIndex = 0;
     row.setAttribute("role", "link");
     row.addEventListener("click", e => {
       if (e.target.closest(".save-job-btn")) return;
       window.open(link, "_blank", "noopener,noreferrer");
+      markJobSeenFromInteraction(jobKey).catch(() => {});
     });
     row.addEventListener("keydown", e => {
       if (e.key !== "Enter") return;
       if (e.target.closest(".save-job-btn")) return;
       window.open(link, "_blank", "noopener,noreferrer");
+      markJobSeenFromInteraction(jobKey).catch(() => {});
     });
   });
 
@@ -1622,8 +1963,8 @@ function applyQuickFilter(quick) {
     toggleCountrySelection(item.value);
     return;
   }
-  if (item.type === "flag" && item.value === "excludeInternship") {
-    state.filters.excludeInternship = !state.filters.excludeInternship;
+  if (item.type === "flag" && typeof item.value === "string" && item.value in state.filters) {
+    state.filters[item.value] = !Boolean(state.filters[item.value]);
   }
 }
 
@@ -1643,7 +1984,7 @@ function updateQuickChipStates() {
     if (item.type === "workType") active = state.filters.workType === item.value;
     else if (item.type === "profession") active = state.filters.profession === item.value;
     else if (item.type === "sector") active = state.filters.sector === item.value;
-    else if (item.type === "flag" && item.value === "excludeInternship") active = Boolean(state.filters.excludeInternship);
+    else if (item.type === "flag" && typeof item.value === "string") active = Boolean(state.filters[item.value]);
     else if (item.type === "country") {
       const mapped = resolveCountryCode(item.value);
       active = Boolean(mapped) && state.filters.countries.includes(mapped);
@@ -1664,6 +2005,7 @@ function updateActiveFiltersSummary() {
   if (state.filters.city) active.push(`City: ${state.filters.city}`);
   if (state.filters.sector) active.push(`Sector: ${state.filters.sector}`);
   if (state.filters.profession) active.push(PROFESSION_LABELS[state.filters.profession] || state.filters.profession);
+  if (state.filters.newOnly) active.push("New Only");
   if (state.filters.excludeInternship) active.push("Exclude Internship");
   if (state.filters.search) active.push(`Search: "${state.filters.search}"`);
   activeFiltersSummaryEl.textContent = active.length ? `Active filters: ${active.join(" • ")}` : "No active filters";

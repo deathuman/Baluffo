@@ -121,13 +121,23 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
         const studio = escapeHtml(String(row.studio || ""));
         const resolvedStatus = typeof resolveSourceStatus === "function"
           ? resolveSourceStatus(row)
-          : String(row._lastStatus || row.status || "n/a");
-        const status = escapeHtml(String(resolvedStatus || "n/a"));
+          : String(row._lastStatus || row.status || "not_run");
         const normalizedStatus = String(resolvedStatus || "").toLowerCase();
+        const statusLabel = normalizedStatus === "not_run" || normalizedStatus === "n/a"
+          ? "not run yet"
+          : String(resolvedStatus || "not run yet");
+        const status = escapeHtml(statusLabel);
         const statusErrorDetail = String(row?._lastError || row?.lastProbeError || row?.error || "").trim();
         const statusTitle = normalizedStatus === "error" && statusErrorDetail
           ? ` title="${escapeHtml(`Error: ${statusErrorDetail}`)}"`
           : "";
+        const statusClass = normalizedStatus === "error"
+          ? "critical"
+          : normalizedStatus === "excluded"
+            ? "warning"
+            : normalizedStatus === "warning" || normalizedStatus === "not_run" || normalizedStatus === "n/a"
+              ? "warning"
+              : "healthy";
         const jobsFound = formatSourceJobsFound(row);
         const remote = row.remoteFriendly ? "Yes" : "No";
         const sourceUrl = escapeHtml(String(
@@ -154,7 +164,7 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
             <div class="admin-cell" data-label="Name">${name}</div>
             <div class="admin-cell" data-label="Adapter">${adapter}</div>
             <div class="admin-cell" data-label="Studio">${studio}</div>
-            <div class="admin-cell" data-label="Status"><span class="admin-status-chip ${status === "error" ? "critical" : status === "excluded" ? "warning" : "healthy"}"${statusTitle}>${status}</span></div>
+            <div class="admin-cell" data-label="Status"><span class="admin-status-chip ${statusClass}"${statusTitle}>${status}</span></div>
             <div class="admin-cell" data-label="Jobs">${jobsFound}</div>
             <div class="admin-cell" data-label="Remote">${remote}</div>
           </div>

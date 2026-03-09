@@ -188,6 +188,23 @@ class AdminBridgeOpsTests(unittest.TestCase):
         self.assertGreaterEqual(len(health["alerts"]), 1)
         self.assertTrue(any(alert["id"] == "degraded_reliability" for alert in health["alerts"]))
 
+    def test_compute_ops_health_includes_social_alerts(self):
+        admin_bridge.save_json_atomic(admin_bridge.JOBS_FETCH_REPORT_PATH, {
+            "startedAt": "2026-03-01T00:00:00+00:00",
+            "finishedAt": "2026-03-01T00:10:00+00:00",
+            "summary": {"outputCount": 20, "failedSources": 0, "sourceCount": 3},
+            "sources": [
+                {"name": "social_reddit", "status": "error", "fetchedCount": 30, "keptCount": 0, "lowConfidenceDropped": 70},
+                {"name": "social_x", "status": "error", "fetchedCount": 20, "keptCount": 0, "lowConfidenceDropped": 60},
+                {"name": "social_mastodon", "status": "ok", "fetchedCount": 20, "keptCount": 0, "lowConfidenceDropped": 20},
+            ],
+        })
+        health = admin_bridge.compute_ops_health()
+        ids = {str(row.get("id") or "") for row in health.get("alerts", [])}
+        self.assertIn("social_sources_failing", ids)
+        self.assertIn("social_zero_matches", ids)
+        self.assertIn("social_low_confidence_spike", ids)
+
     def test_normalize_fetch_report_contract_sanitizes_minimal_payload(self):
         payload = admin_bridge.normalize_fetch_report_contract({
             "schemaVersion": "1.0",
@@ -205,6 +222,26 @@ class AdminBridgeOpsTests(unittest.TestCase):
         row = payload["sources"][0]
         self.assertEqual(str(row.get("status") or ""), "ok")
         self.assertEqual(int(row.get("durationMs") or 0), 17)
+
+    def test_normalize_fetch_report_contract_parses_stringified_detail_rows(self):
+        payload = admin_bridge.normalize_fetch_report_contract({
+            "sources": [
+                {
+                    "name": "lever_sources",
+                    "status": "ok",
+                    "details": [
+                        "{'adapter': 'lever', 'studio': 'Jagex', 'name': 'Jagex (Lever)', 'status': 'ok', 'fetchedCount': 2, 'keptCount': 2, 'error': ''}"
+                    ],
+                }
+            ]
+        })
+        self.assertEqual(len(payload.get("sources") or []), 1)
+        row = payload["sources"][0]
+        details = row.get("details") or []
+        self.assertEqual(len(details), 1)
+        self.assertEqual(str(details[0].get("name") or ""), "Jagex (Lever)")
+        self.assertEqual(str(details[0].get("status") or ""), "ok")
+        self.assertEqual(int(details[0].get("keptCount") or 0), 2)
 
     def test_build_fetcher_args_retry_failed_is_deterministic_and_filters_unknown(self):
         admin_bridge.save_json_atomic(admin_bridge.JOBS_FETCH_REPORT_PATH, {

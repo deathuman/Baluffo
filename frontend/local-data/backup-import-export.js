@@ -50,10 +50,14 @@ export function parseBackupPayload(payload) {
 export function buildProfileBackupPayload(uid, context) {
   const includeFiles = Boolean(context.includeFiles);
   const exportedAt = context.nowIso();
-  const savedJobs = context.savedJobs.map(row => context.normalizeSavedJobRecord(uid, row));
+  const savedJobs = context.savedJobs
+    .map(row => context.normalizeSavedJobRecord(uid, row))
+    .sort(compareSavedJobRows);
+  const attachments = [...context.attachments].sort(compareAttachmentRows);
+  const activityLog = [...context.activityLog].sort(compareActivityRows);
   const customJobs = savedJobs.filter(row => row.isCustom).length;
-  const attachmentsCount = context.attachments.length;
-  const historyEvents = context.activityLog.length;
+  const attachmentsCount = attachments.length;
+  const historyEvents = activityLog.length;
   return {
     version: context.backupSchemaVersion,
     schemaVersion: context.backupSchemaVersion,
@@ -67,9 +71,37 @@ export function buildProfileBackupPayload(uid, context) {
     },
     profile: context.profile,
     savedJobs,
-    attachments: context.attachments,
-    activityLog: context.activityLog
+    attachments,
+    activityLog
   };
+}
+
+function compareSavedJobRows(a, b) {
+  const byKey = String(a?.jobKey || "").localeCompare(String(b?.jobKey || ""));
+  if (byKey !== 0) return byKey;
+  const bySavedAt = String(a?.savedAt || "").localeCompare(String(b?.savedAt || ""));
+  if (bySavedAt !== 0) return bySavedAt;
+  return String(a?.updatedAt || "").localeCompare(String(b?.updatedAt || ""));
+}
+
+function compareAttachmentRows(a, b) {
+  const byJobKey = String(a?.jobKey || "").localeCompare(String(b?.jobKey || ""));
+  if (byJobKey !== 0) return byJobKey;
+  const byId = String(a?.id || "").localeCompare(String(b?.id || ""));
+  if (byId !== 0) return byId;
+  const byCreatedAt = String(a?.createdAt || "").localeCompare(String(b?.createdAt || ""));
+  if (byCreatedAt !== 0) return byCreatedAt;
+  return String(a?.name || "").localeCompare(String(b?.name || ""));
+}
+
+function compareActivityRows(a, b) {
+  const byCreatedAt = String(a?.createdAt || "").localeCompare(String(b?.createdAt || ""));
+  if (byCreatedAt !== 0) return byCreatedAt;
+  const byType = String(a?.type || "").localeCompare(String(b?.type || ""));
+  if (byType !== 0) return byType;
+  const byJobKey = String(a?.jobKey || "").localeCompare(String(b?.jobKey || ""));
+  if (byJobKey !== 0) return byJobKey;
+  return String(a?.id || "").localeCompare(String(b?.id || ""));
 }
 
 export function stripAttachmentBlob(row, stripAttachmentPk) {

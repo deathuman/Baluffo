@@ -16,7 +16,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-from scripts.source_registry import ensure_source_id
+from scripts.source_registry import ensure_source_id, source_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 SYNC_SCHEMA_VERSION = 1
@@ -546,6 +546,41 @@ def build_snapshot(local_state: Dict[str, Any], *, source_label: str = "admin_br
     }
 
 
+def _merge_without_losing_active_pending(local_snapshot: Dict[str, Any], remote_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    local = normalize_snapshot(local_snapshot)
+    remote = normalize_snapshot(remote_snapshot)
+    rejected_ids = {
+        source_identity(row)
+        for row in (local.get("rejected") or [])
+        if isinstance(row, dict)
+    }
+
+    merged: Dict[str, Any] = {
+        "schemaVersion": int(local.get("schemaVersion") or SYNC_SCHEMA_VERSION),
+        "generatedAt": str(local.get("generatedAt") or now_iso()),
+        "source": dict(local.get("source") or {}),
+        "active": [ensure_source_id(row) for row in (local.get("active") or []) if isinstance(row, dict)],
+        "pending": [ensure_source_id(row) for row in (local.get("pending") or []) if isinstance(row, dict)],
+        "rejected": [ensure_source_id(row) for row in (local.get("rejected") or []) if isinstance(row, dict)],
+    }
+
+    seen = {
+        source_identity(row)
+        for row in [*merged["active"], *merged["pending"]]
+        if isinstance(row, dict)
+    }
+    for bucket in ("active", "pending"):
+        for row in (remote.get(bucket) or []):
+            if not isinstance(row, dict):
+                continue
+            key = source_identity(row)
+            if key in seen or key in rejected_ids:
+                continue
+            merged[bucket].append(ensure_source_id(row))
+            seen.add(key)
+    return merged
+
+
 def write_remote_snapshot(
     config: SyncConfig,
     snapshot: Dict[str, Any],
@@ -615,6 +650,9 @@ def push_sources_snapshot(
 ) -> Dict[str, Any]:
     remote = read_remote_snapshot(config, opener=opener)
     snapshot = build_snapshot(local_state)
+    remote_snapshot = remote.get("snapshot") if isinstance(remote.get("snapshot"), dict) else {}
+    if remote_snapshot:
+        snapshot = _merge_without_losing_active_pending(snapshot, remote_snapshot)
     write_result = write_remote_snapshot(
         config,
         snapshot,

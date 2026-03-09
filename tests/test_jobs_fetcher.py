@@ -1,6 +1,7 @@
 import json
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts import jobs_fetcher as jf
 from tests.temp_paths import workspace_tmpdir
@@ -26,6 +27,285 @@ class JobsFetcherTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["sourceJobId"], "101")
         self.assertEqual(rows[0]["company"], "Nebula Games")
+
+    def test_run_remote_ok_source_falls_back_to_secondary_endpoint(self) -> None:
+        payload = self.fixture("remoteok.json")
+        calls = []
+
+        def fake_fetch(url: str, _: int) -> str:
+            calls.append(url)
+            if "remoteok.com/api" in url:
+                raise RuntimeError("primary endpoint failed")
+            if "remoteok.io/api" in url:
+                return payload
+            raise RuntimeError(f"Unhandled URL: {url}")
+
+        rows = jf.run_remote_ok_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(len(calls), 2)
+        self.assertIn("remoteok.com/api", calls[0])
+        self.assertIn("remoteok.io/api", calls[1])
+
+    def test_parse_reddit_json_payload_filters_and_normalizes(self) -> None:
+        payload = {
+            "data": {
+                "children": [
+                    {
+                        "data": {
+                            "id": "abc123",
+                            "title": "We're hiring a Unity Technical Artist at Nebula Games",
+                            "selftext": "Remote role. Apply https://jobs.nebula.dev/ta",
+                            "link_flair_text": "Hiring",
+                            "permalink": "/r/gamedev/comments/abc123/test/",
+                            "url": "https://www.reddit.com/r/gamedev/comments/abc123/test/",
+                            "created_utc": 1700000000,
+                            "author": "nebula_hr",
+                        }
+                    },
+                    {
+                        "data": {
+                            "id": "zzz999",
+                            "title": "For hire - Unity dev available",
+                            "selftext": "Open to work",
+                            "link_flair_text": "For Hire",
+                            "permalink": "/r/gamedev/comments/zzz999/test/",
+                            "url": "https://www.reddit.com/r/gamedev/comments/zzz999/test/",
+                            "created_utc": 1700000000,
+                            "author": "someone",
+                        }
+                    },
+                ]
+            }
+        }
+        rows, dropped = jf.parse_reddit_json_payload(
+            payload,
+            subreddit="gamedev",
+            min_confidence=20,
+            reject_for_hire_posts=True,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertGreaterEqual(dropped, 1)
+        self.assertEqual(rows[0]["company"], "Nebula Games")
+        self.assertIn("jobs.nebula.dev", rows[0]["jobLink"])
+
+    def test_parse_x_payload_and_mastodon_payload(self) -> None:
+        x_rows, x_dropped = jf.parse_x_payload(
+            {
+                "data": [
+                    {
+                        "id": "987",
+                        "text": "We're hiring an Unreal Programmer at Pixel Forge. Apply https://jobs.pixelforge.dev/u",
+                        "created_at": "2026-03-09T11:00:00Z",
+                    }
+                ]
+            },
+            query_label="#gamedevjobs",
+            min_confidence=20,
+            reject_for_hire_posts=True,
+        )
+        self.assertEqual(len(x_rows), 1)
+        self.assertEqual(x_dropped, 0)
+        self.assertIn("pixelforge", x_rows[0]["jobLink"].lower())
+
+        mastodon_rows, mastodon_dropped = jf.parse_mastodon_payload(
+            [
+                {
+                    "id": "m1",
+                    "content": "<p>We are hiring technical artists at Aurora Games. Apply https://careers.aurora.dev/ta</p>",
+                    "created_at": "2026-03-09T11:05:00Z",
+                    "url": "https://mastodon.gamedev.place/@aurora/111",
+                    "account": {"display_name": "Aurora Games"},
+                }
+            ],
+            instance="https://mastodon.gamedev.place",
+            tag="gamedevjobs",
+            min_confidence=20,
+            reject_for_hire_posts=True,
+        )
+        self.assertEqual(len(mastodon_rows), 1)
+        self.assertEqual(mastodon_dropped, 0)
+        self.assertIn("aurora.dev", mastodon_rows[0]["jobLink"])
+
+    def test_parse_x_rss_payload(self) -> None:
+        rss = """<?xml version="1.0" encoding="UTF-8"?>
+<rss><channel>
+  <item>
+    <title>We're hiring a Unity Engineer at Orbit Games</title>
+    <link>https://nitter.net/orbit/status/123</link>
+    <description>Apply here https://jobs.orbit.dev/unity</description>
+    <pubDate>Mon, 09 Mar 2026 11:00:00 GMT</pubDate>
+  </item>
+</channel></rss>"""
+        rows, dropped = jf.parse_x_rss_payload(
+            rss,
+            query_label="#gamedevjobs",
+            min_confidence=20,
+            reject_for_hire_posts=True,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(dropped, 0)
+        self.assertIn("jobs.orbit.dev", rows[0]["jobLink"])
+
+    def test_run_social_x_source_uses_rss_fallback_without_credentials(self) -> None:
+        social_cfg = {
+            "enabled": True,
+            "minConfidence": 20,
+            "rejectForHirePosts": True,
+            "x": {
+                "enabled": True,
+                "queries": ["#gamedevjobs"],
+                "maxPostsPerQuery": 5,
+                "api": {"enabled": True, "endpoint": "https://api.x.com/2/tweets/search/recent", "bearerTokenEnv": "BALUFFO_X_BEARER_TOKEN"},
+                "scraperFallback": {"enabled": False, "endpoint": ""},
+                "rssFallback": {"enabled": True, "instances": ["https://nitter.net"]},
+            },
+        }
+        rss = """<?xml version="1.0" encoding="UTF-8"?>
+<rss><channel>
+  <item>
+    <title>Hiring Technical Artist at Nova Studio</title>
+    <link>https://nitter.net/nova/status/42</link>
+    <description>Apply https://careers.nova.dev/ta</description>
+    <pubDate>Mon, 09 Mar 2026 11:05:00 GMT</pubDate>
+  </item>
+</channel></rss>"""
+
+        def fake_fetch(url: str, _: int) -> str:
+            if "nitter.net/search/rss" in url:
+                return rss
+            raise RuntimeError(f"Unhandled URL: {url}")
+
+        rows = jf.run_social_x_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            social_config=social_cfg,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertIn("careers.nova.dev", rows[0]["jobLink"])
+
+    def test_deduplicate_jobs_uses_social_source_id_fallback(self) -> None:
+        row_a = {
+            "id": "",
+            "title": "Technical Artist",
+            "company": "Nebula Games",
+            "city": "",
+            "country": "Unknown",
+            "workType": "",
+            "contractType": "Unknown",
+            "jobLink": "",
+            "sector": "Game",
+            "profession": "technical-artist",
+            "companyType": "Game",
+            "description": "Technical Artist at Nebula Games",
+            "source": "social_reddit",
+            "sourceJobId": "reddit:gamedev:abc",
+            "fetchedAt": "2026-03-09T11:00:00Z",
+            "postedAt": "2026-03-09T10:00:00Z",
+            "status": "active",
+            "sourceBundleCount": 1,
+            "sourceBundle": [{"source": "social_reddit", "sourceJobId": "reddit:gamedev:abc", "jobLink": "", "postedAt": "", "adapter": "social", "studio": "gamedev"}],
+            "adapter": "social",
+            "studio": "reddit/gamedev",
+        }
+        row_b = dict(row_a)
+        row_b["jobLink"] = "https://www.reddit.com/r/gamedev/comments/abc"
+        deduped, stats = jf.deduplicate_jobs([row_a, row_b])
+        self.assertEqual(len(deduped), 1)
+        self.assertEqual(stats["mergedCount"], 1)
+
+    def test_run_pipeline_social_sources_report_and_output(self) -> None:
+        social_cfg = {
+            "enabled": True,
+            "minConfidence": 20,
+            "rejectForHirePosts": True,
+            "reddit": {"enabled": True, "subreddits": ["gamedev"], "maxPostsPerSubreddit": 5, "rssFallback": True, "htmlFallback": False},
+            "x": {
+                "enabled": True,
+                "queries": ["#gamedevjobs"],
+                "maxPostsPerQuery": 5,
+                "api": {"enabled": False, "endpoint": "", "bearerTokenEnv": "BALUFFO_X_BEARER_TOKEN"},
+                "scraperFallback": {"enabled": True, "endpoint": "https://example.local/x-search"},
+            },
+            "mastodon": {"enabled": True, "instances": ["https://mastodon.gamedev.place"], "hashtags": ["gamedevjobs"], "maxPostsPerTag": 5},
+        }
+
+        def social_reddit_loader(**kwargs):
+            return jf.run_social_reddit_source(**kwargs, social_config=social_cfg)
+
+        def social_x_loader(**kwargs):
+            return jf.run_social_x_source(**kwargs, social_config=social_cfg)
+
+        def social_mastodon_loader(**kwargs):
+            return jf.run_social_mastodon_source(**kwargs, social_config=social_cfg)
+
+        reddit_payload = {
+            "data": {
+                "children": [
+                    {
+                        "data": {
+                            "id": "abc123",
+                            "title": "We're hiring a Technical Artist at Nebula Games",
+                            "selftext": "Apply https://jobs.nebula.dev/ta",
+                            "link_flair_text": "Hiring",
+                            "permalink": "/r/gamedev/comments/abc123/test/",
+                            "url": "https://www.reddit.com/r/gamedev/comments/abc123/test/",
+                            "created_utc": 1700000000,
+                            "author": "nebula_hr",
+                        }
+                    }
+                ]
+            }
+        }
+        x_payload = {
+            "data": [
+                {
+                    "id": "x1",
+                    "text": "We are hiring an Environment Artist at Pixel Forge. Apply https://jobs.pixelforge.dev/ea",
+                    "created_at": "2026-03-09T11:00:00Z",
+                }
+            ]
+        }
+        mastodon_payload = [
+            {
+                "id": "m1",
+                "content": "<p>Hiring gameplay programmer at Aurora Games https://careers.aurora.dev/gp</p>",
+                "created_at": "2026-03-09T11:05:00Z",
+                "url": "https://mastodon.gamedev.place/@aurora/111",
+                "account": {"display_name": "Aurora Games"},
+            }
+        ]
+
+        def fake_fetch(url: str, _: int) -> str:
+            if "reddit.com/r/gamedev/new.json" in url:
+                return json.dumps(reddit_payload)
+            if "example.local/x-search" in url:
+                return json.dumps(x_payload)
+            if "mastodon.gamedev.place/api/v1/timelines/tag/gamedevjobs" in url:
+                return json.dumps(mastodon_payload)
+            raise RuntimeError(f"Unhandled URL in fake fetch: {url}")
+
+        with workspace_tmpdir("jobs-fetcher-social") as tmp:
+            report = jf.run_pipeline(
+                output_dir=Path(tmp),
+                fetch_text=fake_fetch,
+                source_loaders=[
+                    ("social_reddit", social_reddit_loader),
+                    ("social_x", social_x_loader),
+                    ("social_mastodon", social_mastodon_loader),
+                ],
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+            )
+            sources = {row["name"]: row for row in report["sources"]}
+            self.assertEqual(sources["social_reddit"]["status"], "ok")
+            self.assertEqual(sources["social_x"]["status"], "ok")
+            self.assertEqual(sources["social_mastodon"]["status"], "ok")
+            self.assertGreaterEqual(sources["social_reddit"]["keptCount"], 1)
+            rows = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
+            self.assertTrue(any(str(row.get("source") or "").startswith("social_") for row in rows))
 
     def test_parse_gamesindustry_html_fixture(self) -> None:
         rows = jf.parse_gamesindustry_html(self.fixture("gamesindustry_jobs.html"), base_url="https://jobs.gamesindustry.biz")
@@ -103,6 +383,28 @@ class JobsFetcherTests(unittest.TestCase):
         self.assertGreaterEqual(len(rows), 1)
         self.assertTrue(any(row["title"] == "Environment Artist" for row in rows))
 
+    def test_normalize_source_report_row_preserves_structured_details(self) -> None:
+        row = jf.normalize_source_report_row({
+            "name": "lever_sources",
+            "status": "ok",
+            "details": [
+                {
+                    "adapter": "lever",
+                    "studio": "Jagex",
+                    "name": "Jagex (Lever)",
+                    "status": "ok",
+                    "fetchedCount": 3,
+                    "keptCount": 2,
+                    "error": "",
+                }
+            ],
+        })
+        details = row.get("details")
+        self.assertIsInstance(details, list)
+        self.assertIsInstance(details[0], dict)
+        self.assertEqual(details[0]["name"], "Jagex (Lever)")
+        self.assertEqual(int(details[0]["keptCount"]), 2)
+
     def test_run_greenhouse_boards_source_with_fixture(self) -> None:
         payload = self.fixture("greenhouse_guerrilla_jobs.json")
         previous = list(jf.STUDIO_SOURCE_REGISTRY)
@@ -169,6 +471,71 @@ class JobsFetcherTests(unittest.TestCase):
             rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
             self.assertGreaterEqual(len(rows), 2)
             self.assertTrue(any("littlechicken.nl/job/" in row["jobLink"] for row in rows))
+        finally:
+            jf.STUDIO_SOURCE_REGISTRY = prev
+
+    def test_run_static_studio_pages_source_loads_kojima_dynamic_listing(self) -> None:
+        prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        jf.STUDIO_SOURCE_REGISTRY = [
+            {
+                "name": "Kojima Productions (Manual Website)",
+                "studio": "Kojima Productions",
+                "adapter": "static",
+                "company": "Kojima Productions",
+                "pages": ["https://www.kojimaproductions.jp/en/careers"],
+                "enabledByDefault": True,
+            }
+        ]
+
+        base_html = '<section class="job-listings"><div class="views-container" data-viewref="kjp_job_listing"></div></section>'
+        dynamic_html = """
+        <table>
+          <tr class="job-listing-item"><td><a href="/en/game-programmer">Game Programmer</a></td></tr>
+          <tr class="job-listing-item"><td><a href="/en/ai-programmer">AI Programmer</a></td></tr>
+        </table>
+        """
+
+        class _FakeResponse:
+            def __init__(self, body: str) -> None:
+                self._body = body
+
+            def read(self) -> bytes:
+                return self._body.encode("utf-8")
+
+            def __enter__(self):  # noqa: ANN204
+                return self
+
+            def __exit__(self, exc_type, exc, tb):  # noqa: ANN001, ANN204
+                return False
+
+        def fake_urlopen(request_obj, timeout=0):  # noqa: ANN001
+            full_url = getattr(request_obj, "full_url", str(request_obj))
+            if str(full_url).endswith("/kjpviewloader/load"):
+                return _FakeResponse(dynamic_html)
+            raise RuntimeError(f"Unexpected urlopen URL: {full_url}")
+
+        def fake_fetch(url: str, _: int) -> str:
+            if url == "https://www.kojimaproductions.jp/en/careers":
+                return base_html
+            if url in {
+                "https://www.kojimaproductions.jp/en/game-programmer",
+                "https://www.kojimaproductions.jp/en/ai-programmer",
+            }:
+                return "<html><body><h1>job</h1></body></html>"
+            raise RuntimeError(f"Unexpected URL: {url}")
+
+        try:
+            with mock.patch.object(jf, "urlopen", side_effect=fake_urlopen):
+                rows = jf.run_static_studio_pages_source(
+                    fetch_text=fake_fetch,
+                    timeout_s=5,
+                    retries=0,
+                    backoff_s=0,
+                )
+            titles = {str(row.get("title") or "") for row in rows}
+            self.assertIn("Game Programmer", titles)
+            self.assertIn("Ai Programmer", titles)
+            self.assertGreaterEqual(len(rows), 2)
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 

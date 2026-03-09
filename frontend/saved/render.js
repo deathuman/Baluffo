@@ -22,6 +22,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
     toContractClass,
     normalizePhase,
     expandedJobKey,
+    selectedJobKey,
     getJobDetailsTab,
     renderDetailsSummary,
     getReminderMeta,
@@ -51,6 +52,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   const jobKey = escapeHtml(rawJobKey);
   const normalizedPhase = normalizePhase(job.applicationStatus);
   const isExpanded = expandedJobKey === rawJobKey;
+  const isSelected = selectedJobKey === rawJobKey;
   const activeTab = getJobDetailsTab(rawJobKey);
   const detailsSummary = renderDetailsSummary(job);
   const reminderMeta = getReminderMeta(job.reminderAt);
@@ -65,7 +67,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
     : "";
 
   return `
-    <div class="saved-job-block" data-job-key="${jobKey}">
+    <div class="saved-job-block ${isExpanded ? "expanded" : ""} ${isSelected ? "selected" : ""}" data-job-key="${jobKey}">
       <div class="saved-job-row">
         <button class="remove-saved-btn remove-inline-btn" data-job-key="${jobKey}" aria-label="Remove saved job">X</button>
         <div class="col-title job-cell" data-label="Position" title="${safeTitle}">
@@ -102,7 +104,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
       <div class="saved-phase-row">
         <div class="phase-label">Application Phase</div>
         <div class="phase-value">
-          ${renderPhaseBar(jobKey, normalizedPhase, job.phaseTimestamps, job.savedAt)}
+          ${renderPhaseBar(rawJobKey, normalizedPhase, job.phaseTimestamps, job.savedAt)}
         </div>
       </div>
       <div class="saved-details-toggle-row">
@@ -254,6 +256,7 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
     phaseOverrideArmedGlobal = false
   } = options;
   const activeIndex = phaseOptions.indexOf(activePhase);
+  const safeJobKey = escapeHtml(String(jobKey || ""));
   const timestamps = phaseTimestamps && typeof phaseTimestamps === "object" ? phaseTimestamps : {};
   const segments = phaseOptions.map((phase, idx) => {
     const isActive = idx === activeIndex;
@@ -273,7 +276,7 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
     return `
       <button
         class="${classes}"
-        data-job-key="${jobKey}"
+        data-job-key="${safeJobKey}"
         data-phase="${phase}"
         data-current-phase="${escapeHtml(activePhase)}"
         ${canClick ? "" : "disabled"}

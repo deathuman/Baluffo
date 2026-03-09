@@ -106,10 +106,26 @@ export const savedPageService = {
         throw new Error("Local data API unavailable for getAttachmentBlob.");
       }
       const data = await api.getAttachmentBlob(uid, jobKey, attachmentId);
-      return toResult(data);
+      if (data && typeof data === "object" && data.blob instanceof Blob) {
+        return toResult({
+          blob: data.blob,
+          filename: String(data.filename || ""),
+          contentType: String(data.contentType || data.blob?.type || "")
+        });
+      }
+      return toResult({
+        blob: data instanceof Blob ? data : null,
+        filename: "",
+        contentType: data instanceof Blob ? String(data.type || "") : ""
+      });
     } catch (err) {
       return toResult(null, err?.message || "Could not read attachment.");
     }
+  },
+  getAttachmentDownloadUrl(uid, jobKey, attachmentId) {
+    const api = getLocalDataApi();
+    if (!api || typeof api.getAttachmentDownloadUrl !== "function") return "";
+    return String(api.getAttachmentDownloadUrl(uid, jobKey, attachmentId) || "");
   },
   async deleteAttachmentForJob(uid, jobKey, attachmentId) {
     try {
