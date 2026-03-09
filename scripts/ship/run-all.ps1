@@ -1,7 +1,7 @@
 param(
   [int]$SitePort = 8080,
   [string]$BridgeHost = "127.0.0.1",
-  [int]$BridgePort = 8878,
+  [int]$BridgePort = 8877,
   [string]$DataDir = "",
   [switch]$RecoverPrevious,
   [switch]$CreateSupportBundle
