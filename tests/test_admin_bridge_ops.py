@@ -35,6 +35,7 @@ class AdminBridgeOpsTests(unittest.TestCase):
             "SYNC_CONFIG": admin_bridge.SYNC_CONFIG,
             "SYNC_STATUS": dict(admin_bridge.SYNC_STATUS),
             "ACTIVE_SYNC_RUNS": set(admin_bridge.ACTIVE_SYNC_RUNS),
+            "ACTIVE_SYNC_THREADS": dict(admin_bridge.ACTIVE_SYNC_THREADS),
             "SOURCE_REGISTRY_DATA_DIR": admin_bridge.source_registry_module.DATA_DIR,
             "MAX_HISTORY_ROWS": admin_bridge.MAX_HISTORY_ROWS,
         }
@@ -68,6 +69,7 @@ class AdminBridgeOpsTests(unittest.TestCase):
         admin_bridge.refresh_sync_config()
 
     def tearDown(self):
+        admin_bridge.wait_for_sync_tasks(timeout_s=2.0)
         for key, value in self._orig.items():
             if key == "SOURCE_REGISTRY_DATA_DIR":
                 admin_bridge.source_registry_module.DATA_DIR = value
@@ -77,6 +79,9 @@ class AdminBridgeOpsTests(unittest.TestCase):
                 continue
             if key == "ACTIVE_SYNC_RUNS":
                 admin_bridge.ACTIVE_SYNC_RUNS = set(value)
+                continue
+            if key == "ACTIVE_SYNC_THREADS":
+                admin_bridge.ACTIVE_SYNC_THREADS = dict(value)
                 continue
             setattr(admin_bridge, key, value)
         if self._orig_sync_env is None:

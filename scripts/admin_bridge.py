@@ -70,6 +70,7 @@ OPS_STATE_LOCK = threading.RLock()
 LOG_LEVEL_ORDER = {"debug": 10, "info": 20, "warn": 30, "error": 40}
 SYNC_STATE_LOCK = threading.RLock()
 ACTIVE_SYNC_RUNS: set[str] = set()
+ACTIVE_SYNC_THREADS: Dict[str, threading.Thread] = {}
 SYNC_STATUS: Dict[str, Any] = {
     "lastPullAt": "",
     "lastPushAt": "",
@@ -2394,6 +2395,29 @@ def sync_task_running() -> bool:
         )
 
 
+def wait_for_sync_tasks(timeout_s: float = 5.0) -> None:
+    deadline = datetime.now(timezone.utc).timestamp() + max(0.0, float(timeout_s))
+    while True:
+        with OPS_STATE_LOCK:
+            items = list(ACTIVE_SYNC_THREADS.items())
+        pending = False
+        for run_id, worker in items:
+            remaining = max(0.0, deadline - datetime.now(timezone.utc).timestamp())
+            is_alive = getattr(worker, "is_alive", None)
+            join = getattr(worker, "join", None)
+            alive = bool(is_alive()) if callable(is_alive) else False
+            if alive and callable(join) and remaining > 0.0:
+                join(timeout=min(0.2, remaining))
+                alive = bool(is_alive()) if callable(is_alive) else False
+            if alive:
+                pending = True
+                continue
+            with OPS_STATE_LOCK:
+                ACTIVE_SYNC_THREADS.pop(run_id, None)
+        if not pending or datetime.now(timezone.utc).timestamp() >= deadline:
+            return
+
+
 def _mark_discovery_sync_finished(finished_at: str) -> None:
     with SYNC_STATE_LOCK:
         save_sync_runtime_state({"lastDiscoverySyncFinishedAt": str(finished_at or "")})
@@ -2478,6 +2502,7 @@ def _run_sync_task_worker(run_id: str, action: str, started_at: str, *, reason: 
     finally:
         with OPS_STATE_LOCK:
             ACTIVE_SYNC_RUNS.discard(str(run_id or ""))
+            ACTIVE_SYNC_THREADS.pop(str(run_id or ""), None)
     finished_dt = now_utc()
     duration_ms = int(max(0.0, (finished_dt - started_dt).total_seconds() * 1000))
     prune_started_rows_for_type("sync", finished_at=finished_dt.isoformat())
@@ -2529,6 +2554,8 @@ def start_sync_task(action: str, *, reason: str = "", automatic: bool = False) -
         name=f"sync-task-{normalized_action}-{run_id}",
         daemon=True,
     )
+    with OPS_STATE_LOCK:
+        ACTIVE_SYNC_THREADS[run_id] = worker
     worker.start()
     bridge_log("info", "sync_task_started", runId=run_id, action=normalized_action, reason=reason, automatic=automatic)
     return {"started": True, "runId": run_id, "task": "source_sync", "action": normalized_action, "automatic": bool(automatic), "reason": str(reason or "")}
