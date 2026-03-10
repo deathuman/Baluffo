@@ -903,6 +903,7 @@ async function triggerAutoRefreshFromSignal(signal) {
 
 function initAuth() {
   if (!isJobsApiReady() || !jobsPageService.isAvailable()) {
+    emitDesktopStartupMetric("jobs_auth_waiting");
     setAuthStatus("Local auth starting...");
     toggleAuthButtons(false);
     setAuthControlsReady(false);
@@ -910,6 +911,7 @@ function initAuth() {
     return;
   }
   stopAuthReadyPoll();
+  emitDesktopStartupMetric("jobs_auth_ready");
   setAuthControlsReady(true);
   if (authStateListenerBound) return;
   authStateListenerBound = true;

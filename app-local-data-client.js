@@ -1,4 +1,6 @@
 const RUNTIME_MODE_KEY = "baluffo_runtime_mode";
+import { initBrowserLocalDataClient } from "./local-data-client.js";
+import { initDesktopLocalDataClient } from "./desktop-local-data-client.js";
 
 function resolveDesktopMode() {
   try {
@@ -15,11 +17,7 @@ function resolveDesktopMode() {
 }
 
 if (resolveDesktopMode()) {
-  import("./desktop-local-data-client.js").catch(error => {
-    console.error("[app-local-data-client] failed to load desktop adapter:", error);
-  });
+  initDesktopLocalDataClient();
 } else {
-  import("./local-data-client.js").catch(error => {
-    console.error("[app-local-data-client] failed to load browser adapter:", error);
-  });
+  initBrowserLocalDataClient();
 }

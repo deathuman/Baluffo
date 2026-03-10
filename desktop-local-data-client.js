@@ -9,6 +9,7 @@ const SESSION_KEY = "baluffo_current_profile_id";
 let currentUser = null;
 let pollingStarted = false;
 let authStateRevision = 0;
+let desktopApiInitialized = false;
 
 function toErrorMessage(error, fallback) {
   return error?.message || String(error || "") || fallback;
@@ -323,9 +324,15 @@ async function bootstrapDesktopApi() {
   }
 }
 
-// Expose API immediately so page boot is never blocked by bridge/session fetch latency.
-window.JobAppLocalData = desktopApi;
-commitAuthState(null);
-bootstrapDesktopApi().catch(() => {
-  // Startup fetch errors are already logged in bootstrapDesktopApi.
-});
+export function initDesktopLocalDataClient() {
+  if (desktopApiInitialized) {
+    return desktopApi;
+  }
+  desktopApiInitialized = true;
+  window.JobAppLocalData = desktopApi;
+  commitAuthState(null);
+  bootstrapDesktopApi().catch(() => {
+    // Startup fetch errors are already logged in bootstrapDesktopApi.
+  });
+  return desktopApi;
+}

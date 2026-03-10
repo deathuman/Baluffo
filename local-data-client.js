@@ -43,7 +43,14 @@ import { createAttachmentsDomain } from "./frontend/local-data/attachments.js";
 import { createBackupDomain } from "./frontend/local-data/backup-service.js";
 import { createAdminDomain } from "./frontend/local-data/admin-service.js";
 
-(function () {
+let browserApiInitialized = false;
+let browserApi = null;
+
+export function initBrowserLocalDataClient() {
+  if (browserApiInitialized && browserApi) {
+    return browserApi;
+  }
+  browserApiInitialized = true;
   const listeners = new Set();
   let currentUser = null;
 
@@ -170,7 +177,7 @@ import { createAdminDomain } from "./frontend/local-data/admin-service.js";
   authDomain.bindStorageSync(getStoredSessionUser);
   currentUser = getStoredSessionUser();
 
-  window.JobAppLocalData = {
+  browserApi = {
     APPLICATION_STATUSES,
     isReady: () => hasIndexedDb,
     getCurrentUser: () => currentUser,
@@ -199,4 +206,6 @@ import { createAdminDomain } from "./frontend/local-data/admin-service.js";
     getAdminOverview: adminDomain.getAdminOverview,
     wipeAccountAdmin: adminDomain.wipeAccountAdmin
   };
-})();
+  window.JobAppLocalData = browserApi;
+  return browserApi;
+}

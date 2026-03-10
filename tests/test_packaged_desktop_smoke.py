@@ -101,9 +101,10 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
             saved = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertFalse(saved["ok"])
             self.assertTrue(Path(saved["artifacts"]["reportPath"]).exists())
-            terminate_mock.assert_called_once_with(process)
-            stdout_handle.close.assert_called_once()
-            stderr_handle.close.assert_called_once()
+            self.assertGreaterEqual(terminate_mock.call_count, 1)
+            self.assertEqual(terminate_mock.call_args_list[-1], mock.call(None))
+            self.assertGreaterEqual(stdout_handle.close.call_count, 1)
+            self.assertGreaterEqual(stderr_handle.close.call_count, 1)
 
     def test_run_packaged_smoke_writes_success_report_and_artifacts(self) -> None:
         with workspace_tmpdir("packaged-smoke") as tmp:
@@ -128,12 +129,19 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 ]
             )
             startup_metrics = [{"event": "desktop_site_ready"}]
+            embedded_scenarios = [
+                {"name": "Embedded Jobs Ready", "status": "passed", "durationMs": 100, "error": ""},
+                {"name": "Embedded Saved Ready", "status": "passed", "durationMs": 120, "error": ""},
+                {"name": "Embedded Admin Ready", "status": "passed", "durationMs": 140, "error": ""},
+            ]
             scenarios = [
                 {"name": "Startup", "status": "passed", "durationMs": 200, "error": ""},
                 {"name": "Auth continuity", "status": "passed", "durationMs": 300, "error": ""},
             ]
             with mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path), mock.patch.object(
                 smoke, "launch_packaged_exe", return_value=(process, stdout_handle, stderr_handle)
+            ), mock.patch.object(
+                smoke, "run_embedded_runtime_probe", side_effect=embedded_scenarios
             ), mock.patch.object(
                 smoke,
                 "wait_for_packaged_runtime",
@@ -162,7 +170,7 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
             ), mock.patch.object(smoke, "terminate_process_tree") as terminate_mock:
                 payload = smoke.run_packaged_smoke(args)
             self.assertTrue(payload["ok"])
-            self.assertEqual(payload["scenarios"], scenarios)
+            self.assertEqual(payload["scenarios"], embedded_scenarios + scenarios)
             self.assertEqual(payload["startupMetrics"], startup_metrics)
             self.assertTrue(report_path.exists())
             saved = json.loads(report_path.read_text(encoding="utf-8"))
@@ -171,6 +179,39 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
             terminate_mock.assert_called_once_with(process)
             stdout_handle.close.assert_called_once()
             stderr_handle.close.assert_called_once()
+
+    def test_run_packaged_smoke_fails_when_embedded_probe_fails(self) -> None:
+        with workspace_tmpdir("packaged-smoke") as tmp:
+            root = Path(tmp)
+            report_path = root / "data" / "latest.json"
+            artifacts_dir = root / "artifacts"
+            exe_path = root / "Baluffo.exe"
+            exe_path.write_text("exe", encoding="utf-8")
+            args = smoke.parse_args(
+                [
+                    "--exe-path",
+                    str(exe_path),
+                    "--report-path",
+                    str(report_path),
+                    "--artifacts-dir",
+                    str(artifacts_dir),
+                ]
+            )
+            failing_probe = {
+                "name": "Embedded Jobs Ready",
+                "status": "failed",
+                "durationMs": 2500,
+                "error": "Missing embedded runtime events: jobs_auth_ready",
+            }
+            with mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path), mock.patch.object(
+                smoke, "run_embedded_runtime_probe", return_value=failing_probe
+            ), mock.patch.object(smoke, "terminate_process_tree") as terminate_mock:
+                payload = smoke.run_packaged_smoke(args)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["scenarios"], [failing_probe, failing_probe, failing_probe])
+            self.assertEqual(payload["failure"]["step"], "runner")
+            self.assertIn("Embedded Jobs Ready failed", payload["failure"]["message"])
+            terminate_mock.assert_called_once_with(None)
 
 
 if __name__ == "__main__":

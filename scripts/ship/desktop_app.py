@@ -319,6 +319,35 @@ def _load_window_url_with_trace(data_dir: Path, started_mono: float, window: obj
     _load_window_url(window, url)
 
 
+def _show_window_on_first_load(window: object, data_dir: Path, started_mono: float) -> None:
+    shown = False
+
+    def handle_loaded(*_args: object) -> None:
+        nonlocal shown
+        if shown:
+            return
+        shown = True
+        try:
+            show = getattr(window, "show", None)
+            if callable(show):
+                show()
+            _append_startup_trace(
+                data_dir,
+                "desktop_window_shown",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            )
+        except Exception:
+            return
+
+    try:
+        events = getattr(window, "events", None)
+        loaded_event = getattr(events, "loaded", None)
+        if loaded_event is not None:
+            loaded_event += handle_loaded
+    except Exception:
+        return
+
+
 def is_webview2_available() -> bool:
     if os.name != "nt":
         return True
@@ -454,11 +483,20 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         import webview  # type: ignore
         window = webview.create_window(
             config.title,
-            html=build_loading_html(config.title),
+            url=open_url,
             min_size=(1100, 720),
+            hidden=True,
+            background_color="#0B0E15",
         )
         _append_startup_trace(config.data_dir, "desktop_window_created", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
-        webview.start(_load_window_url_with_trace, (config.data_dir, started_mono, window, open_url))
+        _show_window_on_first_load(window, config.data_dir, started_mono)
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_window_load_url",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            url=str(open_url),
+        )
+        webview.start()
         _append_startup_trace(config.data_dir, "desktop_window_closed", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
         if window is None:
             raise RuntimeError("Failed to create desktop window.")

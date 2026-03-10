@@ -226,6 +226,17 @@ const adminBusyState = {
   liveSyncRunning: false,
   livePipelineRunning: false
 };
+
+function emitAdminStartupMetric(event, payload = {}) {
+  fetch(`${ADMIN_BRIDGE_BASE}/desktop-local-data/startup-metric?t=${Date.now()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event,
+      payload
+    })
+  }).catch(() => {});
+}
 const adminDispatch = createAdminDispatcher();
 let activeSourceFilter = adminPageState.activeSourceFilter;
 
@@ -586,6 +597,7 @@ function initAdminPage() {
   setOpsPlaceholders();
   setBridgeStatusBadge("checking", "Bridge Checking");
   if (!adminPageService.isAvailable() || !isAdminApiReady()) {
+    emitAdminStartupMetric("admin_init_waiting");
     setSourceStatus("Local storage provider is starting...");
     if (adminPinGateEl) adminPinGateEl.classList.remove("hidden");
     if (adminContentEl) adminContentEl.classList.add("hidden");
@@ -599,11 +611,13 @@ function initAdminPage() {
     renderUsersEmpty("Admin view is starting. Wait a moment and unlock.");
     return;
   }
+  emitAdminStartupMetric("admin_init_ready");
   if (adminUnlockBtnEl) {
     adminUnlockBtnEl.disabled = false;
     adminUnlockBtnEl.setAttribute("aria-disabled", "false");
     adminUnlockBtnEl.title = "";
   }
+  emitAdminStartupMetric("admin_pin_gate_ready");
   stopAdminApiReadyPoll();
 }
 

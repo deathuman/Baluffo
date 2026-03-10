@@ -69,6 +69,13 @@ class DesktopAppTests(unittest.TestCase):
             "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1",
         )
 
+    def test_build_loading_html_contains_shell_markup(self) -> None:
+        html = desktop_app.build_loading_html("Baluffo")
+
+        self.assertIn("Starting Baluffo", html)
+        self.assertIn('class="shell"', html)
+        self.assertIn("Loading interface...", html)
+
     def test_ensure_runtime_ports_raises_when_site_port_busy(self) -> None:
         config = desktop_app.DesktopRuntimeConfig(
             ship_root=Path("C:/tmp/baluffo-ship"),

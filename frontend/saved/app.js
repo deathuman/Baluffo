@@ -1,3 +1,4 @@
+import { AdminConfig as adminConfig } from "../../admin-config.js";
 import {
   escapeHtml,
   showToast,
@@ -155,6 +156,7 @@ const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const NOTE_AUTOSAVE_MS = 600;
 const NOTES_RERENDER_SETTLE_MS = 1200;
 const ALLOWED_EXTENSIONS = new Set(["pdf", "doc", "docx", "txt", "png", "jpg", "jpeg"]);
+const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
 
 const pageState = {
   noteSaveState: {
@@ -173,6 +175,17 @@ function bootSavedPage() {
   cacheDom();
   bindEvents();
   initSavedJobsPage();
+}
+
+function emitSavedStartupMetric(event, payload = {}) {
+  fetch(`${ADMIN_BRIDGE_BASE}/desktop-local-data/startup-metric?t=${Date.now()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event,
+      payload
+    })
+  }).catch(() => {});
 }
 
 function cacheDom() {
@@ -331,6 +344,7 @@ function initSavedJobsPage() {
   updateTimelineScopeButtons();
   renderWorkspaceStats();
   if (!savedPageService.isAvailable() || !isSavedApiReady()) {
+    emitSavedStartupMetric("saved_auth_waiting");
     setAuthStatus("Local auth starting...");
     setSourceStatus("Local auth provider is starting...");
     setActivityStatus("Local provider is starting...");
@@ -344,6 +358,7 @@ function initSavedJobsPage() {
     return;
   }
   stopSavedAuthReadyPoll();
+  emitSavedStartupMetric("saved_auth_ready");
   setAuthControlsReady(true);
   if (savedAuthListenerBound) return;
   savedAuthListenerBound = true;
