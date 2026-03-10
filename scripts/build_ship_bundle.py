@@ -56,7 +56,7 @@ APP_RUNTIME_DATA_FILES = (
     "jobs-fetch-report.json",
     "source-registry-active.json",
 )
-STARTUP_PREVIEW_LIMIT = 1400
+STARTUP_PREVIEW_LIMIT = 240
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

@@ -339,6 +339,7 @@ let lastFilterOptionsSignature = "";
 let startupRenderMetricSent = false;
 let authReadyPollTimer = null;
 let authStateListenerBound = false;
+let nonCriticalStartupScheduled = false;
 const jobsPipelineUiState = {
   pollingTimer: null,
   runId: "",
@@ -361,6 +362,22 @@ function bootJobsPage() {
   readStateFromUrl();
   applyStateToStaticFilters();
   init().catch(err => logJobsError("Error initializing jobs", err));
+}
+
+function scheduleNonCriticalStartupWork() {
+  if (nonCriticalStartupScheduled) return;
+  nonCriticalStartupScheduled = true;
+  const run = () => {
+    window.setTimeout(() => {
+      renderDataSources().catch(() => {});
+      ensureJobsPipelineStatusWatch();
+    }, 0);
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(run, { timeout: 1500 });
+    return;
+  }
+  window.setTimeout(run, 900);
 }
 
 
@@ -569,8 +586,6 @@ function bindEvents() {
 async function init() {
   if (!jobsList) return;
   emitDesktopStartupMetric("jobs_init_start");
-  renderDataSources().catch(() => {});
-  ensureJobsPipelineStatusWatch();
 
   initAuth();
 
@@ -600,6 +615,7 @@ async function init() {
     }
     updateLastUpdatedText(cached.savedAt);
     hasInitializedJobsFeed = true;
+    scheduleNonCriticalStartupWork();
     await applyPendingAutoRefreshSignal();
     return;
   }
@@ -608,6 +624,7 @@ async function init() {
   if (previewLoaded) {
     setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs from startup snapshot. Syncing full feed...`);
     hasInitializedJobsFeed = true;
+    scheduleNonCriticalStartupWork();
     await applyPendingAutoRefreshSignal();
     refreshJobsNow({ manual: false }).catch(() => {
       // Silent background refresh failure; startup snapshot remains usable.
@@ -617,6 +634,7 @@ async function init() {
 
   const ok = await refreshJobsNow({ manual: false, firstLoad: true });
   hasInitializedJobsFeed = true;
+  scheduleNonCriticalStartupWork();
   await applyPendingAutoRefreshSignal();
   if (!ok) {
     showError("Unable to load job listings right now.");

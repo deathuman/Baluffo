@@ -2,7 +2,7 @@ import json
 import unittest
 from pathlib import Path
 
-from scripts.build_ship_bundle import build_bundle
+from scripts.build_ship_bundle import STARTUP_PREVIEW_LIMIT, build_bundle
 from tests.temp_paths import workspace_tmpdir
 
 
@@ -31,6 +31,14 @@ class BuildShipBundleTests(unittest.TestCase):
 
             seeded_report = json.loads((output / "data" / "jobs-fetch-report.json").read_text(encoding="utf-8"))
             self.assertEqual(seeded_report, {"summary": {}, "sources": [], "runtime": {}, "outputs": {}})
+
+    def test_bundle_generates_capped_startup_preview(self) -> None:
+        with workspace_tmpdir("build-ship-bundle") as tmp:
+            output = build_bundle(Path(tmp) / "dist" / "baluffo-ship", "1.2.3")
+            startup_rows = json.loads((output / "app" / "versions" / "1.2.3" / "data" / "jobs-unified-startup.json").read_text(encoding="utf-8"))
+            self.assertIsInstance(startup_rows, list)
+            self.assertLessEqual(len(startup_rows), STARTUP_PREVIEW_LIMIT)
+            self.assertGreater(len(startup_rows), 0)
 
 
 if __name__ == "__main__":
