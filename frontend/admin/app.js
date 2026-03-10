@@ -6,8 +6,7 @@ import {
   bindUi,
   bindAsyncClick
 } from "../shared/ui/index.js";
-import { getLastJobsUrl as getLastJobsUrlFromData } from "../shared/data/index.js";
-import { isAdminApiReady, adminService, adminPageService } from "./services.js";
+import { adminService, adminPageService } from "./services.js";
 import { createAdminDispatcher, ADMIN_ACTIONS } from "./actions.js";
 import {
   renderTotalsHtml,
@@ -36,6 +35,7 @@ import {
 } from "./domain.js";
 import {
   fetchJobsFetchReportJson as fetchJobsFetchReportJsonFromData,
+  emitAdminStartupMetric as emitAdminStartupMetricFromData,
   getBridge as getBridgeFromData,
   postBridge as postBridgeFromData
 } from "./data-source.js";
@@ -43,9 +43,10 @@ import {
   readSourceFilter,
   writeSourceFilter,
   readShowZeroJobs,
-  writeShowZeroJobs
+  writeShowZeroJobs,
+  readAdminLastJobsUrl,
+  writeJobsAutoRefreshSignal
 } from "./state-sync/index.js";
-import { safeWriteJsonLocal } from "../local-data/storage-gateway.js";
 let adminSourceStatusEl;
 let adminPinGateEl;
 let adminContentEl;
@@ -129,6 +130,25 @@ let adminPin = "";
  * @property {boolean} [browserFallbackAttempted]
  * @property {boolean} [browserFallbackUsed]
  */
+/**
+ * @typedef {Object} AdminFilterState
+ * @property {"all"|"error"|"excluded"|"zero"|"healthy"} activeSourceFilter
+ * @property {boolean} showZeroJobs
+ */
+/**
+ * @typedef {Object} AdminViewState
+ * @property {boolean} isUnlocked
+ * @property {boolean} pipelineBusy
+ * @property {boolean} fetcherBusy
+ * @property {boolean} discoveryBusy
+ * @property {boolean} syncBusy
+ */
+/**
+ * @typedef {Object} AdminSessionViewModel
+ * @property {boolean} isUnlocked
+ * @property {boolean} apiReady
+ * @property {string} bridgeStatus
+ */
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";
 const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python scripts/jobs_fetcher.py";
 const JOBS_FETCHER_TASK_LABEL = adminConfig.JOBS_FETCHER_TASK_LABEL || "Run jobs fetcher";
@@ -206,7 +226,7 @@ let discoveryLogUserToggled = false;
 let discoveryLogPreferredOpen = true;
 let syncConfigDirty = false;
 const adminPageState = {
-  activeSourceFilter: readSourceFilterPreference(),
+  activeSourceFilter: "all",
   selectedSourceIds: new Set()
 };
 const adminBusyState = {
@@ -229,14 +249,7 @@ const adminBusyState = {
 let adminInteractiveMetricSent = false;
 
 function emitAdminStartupMetric(event, payload = {}) {
-  fetch(`${ADMIN_BRIDGE_BASE}/desktop-local-data/startup-metric?t=${Date.now()}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      event,
-      payload
-    })
-  }).catch(() => {});
+  emitAdminStartupMetricFromData(ADMIN_BRIDGE_BASE, event, payload);
 }
 
 function markAdminFirstInteractive(reason) {
@@ -313,12 +326,13 @@ function setButtonBusy(el, busy, busyText) {
 }
 
 function syncAdminBusyUi() {
-  const fetcherBusy = isFetcherBusy();
-  const discoveryBusy = isDiscoveryBusy();
+  const viewState = toAdminViewState();
+  const fetcherBusy = viewState.fetcherBusy;
+  const discoveryBusy = viewState.discoveryBusy;
   const opsBusy = isOpsBusy();
-  const syncBusy = isSyncBusy();
-  const pipelineBusy = isPipelineBusy();
-  const lockBusy = pipelineBusy;
+  const syncBusy = viewState.syncBusy;
+  const pipelineBusy = viewState.pipelineBusy;
+  const lockBusy = viewState.pipelineBusy;
 
   setButtonBusy(adminRunFetcherBtnEl, fetcherBusy || lockBusy, FETCHER_PRESET_META.default.busyLabel);
   setButtonBusy(adminRunFetcherIncrementalBtnEl, fetcherBusy || lockBusy, FETCHER_PRESET_META.incremental.busyLabel);
@@ -364,9 +378,7 @@ function syncAdminBusyUi() {
   setBusyBadge(adminFetcherProgressBadgeEl, fetcherBusy ? "running" : "idle", fetcherLabel);
   setBusyBadge(adminDiscoveryProgressBadgeEl, discoveryBusy ? "running" : "idle", discoveryLabel);
   setBusyBadge(adminOpsProgressBadgeEl, (opsBusy || pipelineBusy) ? "running" : "idle", opsLabel);
-  if (adminContentEl) {
-    adminContentEl.classList.toggle("admin-pipeline-locked", pipelineBusy);
-  }
+  if (adminContentEl) adminContentEl.classList.toggle("admin-pipeline-locked", viewState.pipelineBusy);
   syncDiscoveryLogDisclosure();
 }
 
@@ -415,6 +427,8 @@ function resetBusyFlags() {
 }
 
 function bootAdminPage() {
+  adminPageState.activeSourceFilter = normalizeSourceFilter(readSourceFilter(ADMIN_SOURCE_FILTER_KEY, "all"));
+  activeSourceFilter = adminPageState.activeSourceFilter;
   cacheDom();
   applyFetcherPresetMetadata();
   bindEvents();
@@ -565,9 +579,9 @@ function bindEvents() {
   }
 
   if (adminShowZeroJobsToggleEl) {
-    adminShowZeroJobsToggleEl.checked = readShowZeroJobsPreference();
+    adminShowZeroJobsToggleEl.checked = readShowZeroJobs(ADMIN_SHOW_ZERO_JOBS_KEY);
     adminShowZeroJobsToggleEl.addEventListener("change", () => {
-      writeShowZeroJobsPreference(Boolean(adminShowZeroJobsToggleEl.checked));
+      writeShowZeroJobs(ADMIN_SHOW_ZERO_JOBS_KEY, Boolean(adminShowZeroJobsToggleEl.checked));
       loadDiscoveryData().catch(() => {});
     });
   }
@@ -605,7 +619,7 @@ function initAdminPage() {
   setManualSourceFeedback("Unlock admin to add a manual source.", "muted");
   setOpsPlaceholders();
   setBridgeStatusBadge("checking", "Bridge Checking");
-  if (!adminPageService.isAvailable() || !isAdminApiReady()) {
+  if (!adminPageService.isAvailable()) {
     emitAdminStartupMetric("admin_init_waiting");
     setSourceStatus("Local storage provider is starting...");
     if (adminPinGateEl) adminPinGateEl.classList.remove("hidden");
@@ -632,7 +646,7 @@ function initAdminPage() {
 }
 
 function getLastJobsUrl() {
-  return getLastJobsUrlFromData(JOBS_LAST_URL_KEY, "jobs.html");
+  return readAdminLastJobsUrl(JOBS_LAST_URL_KEY, "jobs.html");
 }
 
 function setSourceStatus(text) {
@@ -640,7 +654,7 @@ function setSourceStatus(text) {
 }
 
 function unlockAdmin() {
-  if (!adminPageService.isAvailable() || !isAdminApiReady()) {
+  if (!adminPageService.isAvailable()) {
     setSourceStatus("Local storage provider is starting...");
     showToast("Admin service is still starting. Try again in a moment.", "info");
     scheduleAdminApiReadyPoll();
@@ -712,7 +726,7 @@ function scheduleAdminApiReadyPoll(delayMs = 600) {
   adminApiReadyPollTimer = setTimeout(() => {
     adminApiReadyPollTimer = null;
     if (adminPin) return;
-    if (adminPageService.isAvailable() && isAdminApiReady()) {
+    if (adminPageService.isAvailable()) {
       if (adminUnlockBtnEl) {
         adminUnlockBtnEl.disabled = false;
         adminUnlockBtnEl.setAttribute("aria-disabled", "false");
@@ -1237,23 +1251,18 @@ function isValidSourceFilter(value) {
   return ["all", "error", "excluded", "zero", "healthy"].includes(String(value || "").toLowerCase());
 }
 
+function normalizeSourceFilter(value) {
+  return isValidSourceFilter(value) ? String(value || "").toLowerCase() : "all";
+}
+
 function setSourceFilter(value) {
-  const next = isValidSourceFilter(value) ? String(value).toLowerCase() : "all";
+  const next = normalizeSourceFilter(value);
   activeSourceFilter = next;
-  writeSourceFilterPreference(next);
+  writeSourceFilter(ADMIN_SOURCE_FILTER_KEY, next);
   adminSourceFilterBtnEls.forEach(btn => {
     const key = String(btn.dataset.sourceFilter || "").toLowerCase();
     btn.classList.toggle("active", key === next);
   });
-}
-
-function readSourceFilterPreference() {
-  const value = readSourceFilter(ADMIN_SOURCE_FILTER_KEY, "all");
-  return isValidSourceFilter(value) ? value : "all";
-}
-
-function writeSourceFilterPreference(value) {
-  writeSourceFilter(ADMIN_SOURCE_FILTER_KEY, isValidSourceFilter(value) ? value : "all");
 }
 
 function mergeSourceStatusFromReport(rows, report, mode) {
@@ -1261,7 +1270,7 @@ function mergeSourceStatusFromReport(rows, report, mode) {
 }
 
 function applySourceFilter(rows) {
-  return applySourceFilterFromDomain(rows, activeSourceFilter);
+  return applySourceFilterFromDomain(rows, toAdminFilterState().activeSourceFilter);
 }
 
 function createLogEvent(scope, messageOrEvent, level = "info") {
@@ -1677,7 +1686,7 @@ function emitJobsAutoRefreshSignal(report) {
   };
 
   try {
-    safeWriteJsonLocal(JOBS_AUTO_REFRESH_SIGNAL_KEY, signal);
+    writeJobsAutoRefreshSignal(JOBS_AUTO_REFRESH_SIGNAL_KEY, signal);
     appendFetcherLog("Signaled jobs page to auto-refresh from unified feed.", "success");
   } catch {
     appendFetcherLog("Could not write auto-refresh signal to localStorage.", "warn");
@@ -2145,9 +2154,9 @@ async function loadDiscoveryData() {
     const pendingRows = mergeSourceStatusFromReport(Array.isArray(pending?.sources) ? pending.sources : [], latestFetchReport, "pending");
     const activeRows = mergeSourceStatusFromReport(Array.isArray(active?.sources) ? active.sources : [], latestFetchReport, "active");
     const rejectedRows = mergeSourceStatusFromReport(Array.isArray(rejected?.sources) ? rejected.sources : [], latestFetchReport, "rejected");
+    const filterState = toAdminFilterState();
     const hiddenZeroJobsCount = pendingRows.filter(row => getSourceJobsFoundCount(row) === 0).length;
-    const showZeroJobs = readShowZeroJobsPreference();
-    const visiblePendingRowsPreFilter = showZeroJobs
+    const visiblePendingRowsPreFilter = filterState.showZeroJobs
       ? pendingRows
       : pendingRows.filter(row => getSourceJobsFoundCount(row) !== 0);
     const visiblePendingRows = applySourceFilter(visiblePendingRowsPreFilter);
@@ -2185,12 +2194,33 @@ async function loadDiscoveryData() {
   }
 }
 
-function readShowZeroJobsPreference() {
-  return readShowZeroJobs(ADMIN_SHOW_ZERO_JOBS_KEY);
+function toAdminFilterState() {
+  return {
+    activeSourceFilter: normalizeSourceFilter(activeSourceFilter),
+    showZeroJobs: readShowZeroJobs(ADMIN_SHOW_ZERO_JOBS_KEY)
+  };
 }
 
-function writeShowZeroJobsPreference(enabled) {
-  writeShowZeroJobs(ADMIN_SHOW_ZERO_JOBS_KEY, Boolean(enabled));
+function toAdminViewState() {
+  return {
+    isUnlocked: Boolean(adminPin),
+    pipelineBusy: isPipelineBusy(),
+    fetcherBusy: isFetcherBusy(),
+    discoveryBusy: isDiscoveryBusy(),
+    syncBusy: isSyncBusy()
+  };
+}
+
+function toAdminSessionViewModel() {
+  return {
+    isUnlocked: Boolean(adminPin),
+    apiReady: Boolean(adminPageService.isAvailable()),
+    bridgeStatus: adminBridgeStatusBadgeEl?.classList.contains("online")
+      ? "online"
+      : adminBridgeStatusBadgeEl?.classList.contains("offline")
+        ? "offline"
+        : "checking"
+  };
 }
 
 function setBridgeStatusBadge(state, label) {

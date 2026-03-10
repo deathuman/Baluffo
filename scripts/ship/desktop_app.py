@@ -546,6 +546,44 @@ def ensure_desktop_prerequisites() -> None:
         )
 
 
+def _install_winforms_shutdown_exception_guard(data_dir: Path) -> None:
+    if os.name != "nt":
+        return
+    try:
+        import System  # type: ignore
+        from System.Windows.Forms import Application, UnhandledExceptionMode  # type: ignore
+    except Exception:
+        return
+
+    # pywebview on WinForms can throw a late shutdown exception when the WebView host
+    # is already torn down: "'NoneType' object has no attribute 'BrowserProcessId'".
+    # Swallow only this known shutdown race so normal runtime errors still surface.
+    def _thread_exception_handler(_sender, args) -> None:  # type: ignore
+        try:
+            exc = getattr(args, "Exception", None)
+            message = str(exc or "")
+            if "BrowserProcessId" in message and "NoneType" in message:
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_winforms_shutdown_exception_ignored",
+                    message=message,
+                )
+                return
+            _append_startup_trace(
+                data_dir,
+                "desktop_winforms_thread_exception",
+                message=message,
+            )
+        except Exception:
+            return
+
+    try:
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException)
+        Application.ThreadException += _thread_exception_handler
+    except Exception:
+        return
+
+
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
     site_process: subprocess.Popen[str] | None = None
     bridge_process: subprocess.Popen[str] | None = None
@@ -599,6 +637,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             url=str(open_url),
         )
         import webview  # type: ignore
+        _install_winforms_shutdown_exception_guard(config.data_dir)
         window = webview.create_window(
             config.title,
             html=build_loading_html(config.title),

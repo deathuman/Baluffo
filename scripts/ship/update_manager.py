@@ -137,30 +137,50 @@ def ensure_state(paths: ShipPaths) -> Dict[str, Any]:
     current_version = paths.current.read_text(encoding="utf-8").strip()
     if not current_version:
         raise RuntimeError("Current pointer is empty.")
-    state = read_json(
-        paths.state,
-        {
-            "current_version": current_version,
-            "previous_version": "",
-            "last_update_status": "ready",
-            "last_error_code": "",
-            "updated_at": iso_now(),
-        },
-    )
+    fallback_state = {
+        "current_version": current_version,
+        "previous_version": "",
+        "last_update_status": "ready",
+        "last_error_code": "",
+        "updated_at": iso_now(),
+    }
+    preferred_state_path = paths.state
+    fallback_state_path = paths.data / STATE_NAME
+    state_path = preferred_state_path
+    state: Dict[str, Any] = {}
+    try:
+        state = read_json(preferred_state_path, fallback_state)
+    except OSError:
+        state_path = fallback_state_path
+        state = read_json(fallback_state_path, fallback_state)
     state.setdefault("current_version", current_version)
     state.setdefault("previous_version", "")
     state.setdefault("last_update_status", "ready")
     state.setdefault("last_error_code", "")
     state.setdefault("updated_at", iso_now())
-    write_json_atomic(paths.state, state)
+    try:
+        write_json_atomic(state_path, state)
+    except OSError:
+        state_path = fallback_state_path
+        write_json_atomic(state_path, state)
+    state["__state_path"] = str(state_path)
     return state
 
 
 def write_state(paths: ShipPaths, state: Dict[str, Any], *, status: str, error: str = "") -> None:
+    state_path_raw = str(state.get("__state_path") or "")
+    state_path = Path(state_path_raw).expanduser().resolve() if state_path_raw else paths.state
+    transient_keys = [key for key in state.keys() if str(key).startswith("__")]
     state["last_update_status"] = status
     state["last_error_code"] = error
     state["updated_at"] = iso_now()
-    write_json_atomic(paths.state, state)
+    payload = {key: value for key, value in state.items() if key not in transient_keys}
+    try:
+        write_json_atomic(state_path, payload)
+    except OSError:
+        fallback_state_path = paths.data / STATE_NAME
+        write_json_atomic(fallback_state_path, payload)
+        state["__state_path"] = str(fallback_state_path)
 
 
 def log_event(paths: ShipPaths, event: str, payload: Dict[str, Any]) -> None:
@@ -376,12 +396,13 @@ def startup_check(root: Path, data_dir: Path) -> Dict[str, Any]:
 
 def create_support_bundle(root: Path, output: Path | None = None) -> Path:
     paths = ShipPaths.from_root(root.resolve())
-    ensure_state(paths)
+    state = ensure_state(paths)
+    state_path = Path(str(state.get("__state_path") or paths.state))
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     out = output or (paths.root / "support" / f"support-bundle-{timestamp}.zip")
     out.parent.mkdir(parents=True, exist_ok=True)
     targets = [
-        paths.app / STATE_NAME,
+        state_path,
         paths.app / CURRENT_NAME,
         paths.logs / LOG_NAME,
         paths.data / "admin-run-history.json",

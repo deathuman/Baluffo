@@ -47,14 +47,3 @@ export function toContractClass(contractType) {
   if (normalized === "temporary") return "temporary";
   return "unknown";
 }
-
-export function getLastJobsUrl(storageKey, fallback = "jobs.html") {
-  try {
-    const url = sessionStorage.getItem(storageKey);
-    if (!url) return fallback;
-    if (!url.startsWith("/") && !url.startsWith("jobs.html")) return fallback;
-    return url;
-  } catch {
-    return fallback;
-  }
-}

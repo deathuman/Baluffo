@@ -9,19 +9,8 @@ import {
 import {
   sanitizeUrl,
   toContractClass,
-  fullCountryName,
-  getLastJobsUrl as getLastJobsUrlFromData
+  fullCountryName
 } from "../shared/data/index.js";
-import {
-  sanitizeBackupFileName,
-  parseDataUrl,
-  toDataUrl,
-  utf8Encode,
-  utf8Decode,
-  getCrc32,
-  buildZipStoreOnly,
-  parseZipStoreOnly
-} from "../../saved-zip-utils.js";
 import {
   toCanonicalCountry as toCanonicalCountryFromDomain,
   normalizeCustomJobInput as normalizeCustomJobInputFromDomain,
@@ -31,9 +20,8 @@ import {
   formatActivityDetail as formatActivityDetailFromDomain
 } from "./domain.js";
 import {
-  parseBackupInputFile as parseBackupInputFileFromData,
-  buildBackupZipBlob as buildBackupZipBlobFromData,
-  readBackupPayloadFromZip as readBackupPayloadFromZipFromData
+  parseBackupInputFile,
+  buildBackupZipBlob
 } from "./data-source.js";
 import {
   isSavedApiReady,
@@ -53,6 +41,12 @@ import {
   renderDetailsSummary
 } from "./render.js";
 import { createSavedDispatcher, SAVED_ACTIONS } from "./actions.js";
+import {
+  buildSavedTimelinePrefsKey,
+  loadSavedTimelinePreferences,
+  persistSavedTimelinePreferences,
+  readSavedLastJobsUrl
+} from "./state-sync/index.js";
 let savedJobsListEl;
 let savedSourceStatusEl;
 let savedAuthStatusEl;
@@ -158,6 +152,28 @@ const NOTE_AUTOSAVE_MS = 600;
 const NOTES_RERENDER_SETTLE_MS = 1200;
 const ALLOWED_EXTENSIONS = new Set(["pdf", "doc", "docx", "txt", "png", "jpg", "jpeg"]);
 const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
+
+/**
+ * @typedef {Object} SavedFilterState
+ * @property {string} activeFilter
+ * @property {string} activeSort
+ * @property {string} timelineScope
+ */
+
+/**
+ * @typedef {Object} SavedViewState
+ * @property {string|null} expandedJobKey
+ * @property {string} selectedJobKey
+ * @property {boolean} activityPanelOpen
+ * @property {boolean} customJobPanelOpen
+ */
+
+/**
+ * @typedef {Object} SavedAuthViewModel
+ * @property {boolean} isSignedIn
+ * @property {string} uid
+ * @property {string} label
+ */
 
 const pageState = {
   noteSaveState: {
@@ -1815,36 +1831,23 @@ function normalizeTimelineScope(value) {
 }
 
 function buildTimelinePrefsKey(uid) {
-  return `${TIMELINE_PREF_PREFIX}:${String(uid || "")}`;
+  return buildSavedTimelinePrefsKey(TIMELINE_PREF_PREFIX, uid);
 }
 
 function loadTimelinePreferences(uid) {
-  const fallback = { visible: false, scope: TIMELINE_SCOPE_ALL };
-  if (!uid) return fallback;
-  try {
-    const raw = localStorage.getItem(buildTimelinePrefsKey(uid));
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    return {
-      visible: Boolean(parsed?.visible),
-      scope: normalizeTimelineScope(parsed?.scope)
-    };
-  } catch {
-    return fallback;
-  }
+  return loadSavedTimelinePreferences(
+    TIMELINE_PREF_PREFIX,
+    uid,
+    normalizeTimelineScope,
+    TIMELINE_SCOPE_ALL
+  );
 }
 
 function persistTimelinePreferences(uid) {
-  if (!uid) return;
-  const payload = {
+  persistSavedTimelinePreferences(TIMELINE_PREF_PREFIX, uid, normalizeTimelineScope, {
     visible: Boolean(activityPanelOpen),
     scope: normalizeTimelineScope(timelineScope)
-  };
-  try {
-    localStorage.setItem(buildTimelinePrefsKey(uid), JSON.stringify(payload));
-  } catch {
-    // Ignore storage failures.
-  }
+  });
 }
 
 function setTimelineScope(nextScope) {
@@ -2068,7 +2071,7 @@ function formatActivityDetail(entry) {
 }
 
 function getLastJobsUrl() {
-  return getLastJobsUrlFromData(JOBS_LAST_URL_KEY, "jobs.html");
+  return readSavedLastJobsUrl(JOBS_LAST_URL_KEY, "jobs.html");
 }
 
 async function signInUser() {
@@ -2077,6 +2080,9 @@ async function signInUser() {
     scheduleSavedAuthReadyPoll();
     showToast("Local auth provider is starting. Try again in a moment.", "info");
     return;
+  }
+  if (!savedAuthListenerBound) {
+    initSavedJobsPage();
   }
   setAuthControlsReady(true);
   const result = await savedAuthService.signIn();
@@ -2092,6 +2098,9 @@ async function signOutUser() {
     setAuthControlsReady(false);
     scheduleSavedAuthReadyPoll();
     return;
+  }
+  if (!savedAuthListenerBound) {
+    initSavedJobsPage();
   }
   setAuthControlsReady(true);
   const result = await savedAuthService.signOut();
@@ -2180,30 +2189,6 @@ async function importBackup(file) {
     console.error("Backup import failed:", err);
     showToast("Could not import backup file.", "error");
   }
-}
-
-async function parseBackupInputFile(file) {
-  const direct = await parseBackupInputFileFromData(file);
-  if (direct) return direct;
-  return readBackupPayloadFromZip(file);
-}
-
-async function buildBackupZipBlob(payload) {
-  return buildBackupZipBlobFromData(payload, {
-    parseDataUrl,
-    sanitizeBackupFileName,
-    getCrc32,
-    utf8Encode,
-    buildZipStoreOnly
-  });
-}
-
-async function readBackupPayloadFromZip(file) {
-  return readBackupPayloadFromZipFromData(file, {
-    parseZipStoreOnly,
-    utf8Decode,
-    toDataUrl
-  });
 }
 
 export {

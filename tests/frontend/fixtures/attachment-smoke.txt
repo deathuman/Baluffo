@@ -1,0 +1,2 @@
+Packaged smoke attachment fixture.
+This file validates upload/list/delete flow in the Saved page.

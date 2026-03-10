@@ -77,7 +77,8 @@ export async function fetchUnifiedJobs(options = {}) {
     parseUnifiedPayload,
     parseCSV,
     fetcher = fetchWithTimeout,
-    timeoutMs = 20000
+    timeoutMs = 20000,
+    allowSheetsFallback = true
   } = options;
   const requestTimeoutMs = Number(timeoutMs) > 0 ? Number(timeoutMs) : 20000;
 
@@ -108,17 +109,21 @@ export async function fetchUnifiedJobs(options = {}) {
     }
   }
 
-  const sheetsFallback = await fetchFromGoogleSheets({
-    sheetsFallbackSource,
-    setSourceStatus,
-    parseCSV,
-    fetcher,
-    timeoutMs: requestTimeoutMs
-  });
-  if (sheetsFallback.jobs && sheetsFallback.jobs.length > 0) return sheetsFallback;
+  if (allowSheetsFallback) {
+    const sheetsFallback = await fetchFromGoogleSheets({
+      sheetsFallbackSource,
+      setSourceStatus,
+      parseCSV,
+      fetcher,
+      timeoutMs: requestTimeoutMs
+    });
+    if (sheetsFallback.jobs && sheetsFallback.jobs.length > 0) return sheetsFallback;
+  }
   return {
     jobs: null,
-    error: "Could not fetch listings from unified feeds or Sheets fallback source.",
+    error: allowSheetsFallback
+      ? "Could not fetch listings from unified feeds or Sheets fallback source."
+      : "Could not fetch listings from local unified feeds.",
     sourceName: ""
   };
 }

@@ -92,3 +92,28 @@ test("jobs data-source fetchUnifiedJobs returns final error contract when all so
   assert.equal(result.sourceName, "");
   assert.equal(result.error, "Could not fetch listings from unified feeds or Sheets fallback source.");
 });
+
+test("jobs data-source fetchUnifiedJobs can skip sheets fallback for fast first-load", async () => {
+  const calls = [];
+  const result = await fetchUnifiedJobs({
+    unifiedJsonSources: [{ name: "Unified JSON", url: "json-a" }],
+    unifiedCsvSources: [{ name: "Unified CSV", url: "csv-a" }],
+    sheetsFallbackSource: { sheetId: "sheet123", gid: "42" },
+    allowSheetsFallback: false,
+    parseUnifiedPayload: () => [],
+    parseCSV: () => [{ id: "sheet-job" }],
+    fetcher: async url => {
+      calls.push(url);
+      return {
+        ok: false,
+        json: async () => ({}),
+        text: async () => ""
+      };
+    }
+  });
+
+  assert.equal(result.jobs, null);
+  assert.equal(result.sourceName, "");
+  assert.equal(result.error, "Could not fetch listings from local unified feeds.");
+  assert.deepEqual(calls, ["json-a", "csv-a"]);
+});

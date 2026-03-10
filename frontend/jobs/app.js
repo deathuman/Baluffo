@@ -34,8 +34,7 @@ import {
 } from "./data-source.js";
 import { isJobsApiReady, jobsAuthService, jobsSavedJobsService, jobsPageService } from "./services.js";
 import { createJobsDispatcher, JOBS_ACTIONS } from "./actions.js";
-import { renderDataSourcesPanel } from "./source-metadata.js";
-import { renderJobRowHtml, showJobsLoading, showJobsError } from "./render.js";
+import { renderDataSourcesPanel, renderJobRowHtml, showJobsLoading, showJobsError } from "./render.js";
 import {
   readAutoRefreshAppliedId,
   readAutoRefreshSignal,
@@ -92,6 +91,12 @@ const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
  * @property {number} currentPage
  * @property {number} itemsPerPage
  * @property {JobsFilterState} filters
+ */
+
+/**
+ * @typedef {Object} JobsAuthViewModel
+ * @property {string} label
+ * @property {string} hint
  */
 
 /** @type {JobsPageState} */
@@ -1006,18 +1011,7 @@ function setAuthControlsReady(ready) {
 
 function setAuthStatus(text) {
   if (!authStatus) return;
-  const raw = String(text || "").trim();
-  let label = raw || "Guest";
-  let hint = "";
-  const signedInMatch = raw.match(/^signed\s+in\s+as\s+(.+)$/i);
-
-  if (!raw || /^browsing\s+as\s+guest$/i.test(raw) || /^guest$/i.test(raw)) {
-    label = "Guest";
-    hint = "Browsing as guest";
-  } else if (signedInMatch) {
-    label = String(signedInMatch[1] || "").trim() || "User";
-    hint = "Signed in";
-  }
+  const { label, hint } = toJobsAuthViewModel(text);
 
   authStatus.textContent = label;
   if (authStatusHint) {
@@ -1027,6 +1021,23 @@ function setAuthStatus(text) {
     const initial = label.charAt(0).toUpperCase();
     authAvatar.textContent = initial && /[A-Z0-9]/.test(initial) ? initial : "U";
   }
+}
+
+function toJobsAuthViewModel(text) {
+  const raw = String(text || "").trim();
+  /** @type {JobsAuthViewModel} */
+  const model = { label: raw || "Guest", hint: "" };
+  const signedInMatch = raw.match(/^signed\s+in\s+as\s+(.+)$/i);
+  if (!raw || /^browsing\s+as\s+guest$/i.test(raw) || /^guest$/i.test(raw)) {
+    model.label = "Guest";
+    model.hint = "Browsing as guest";
+    return model;
+  }
+  if (signedInMatch) {
+    model.label = String(signedInMatch[1] || "").trim() || "User";
+    model.hint = "Signed in";
+  }
+  return model;
 }
 
 function toggleAuthButtons(isSignedIn) {
@@ -1042,6 +1053,9 @@ async function signInUser() {
     showToast("Local auth provider is starting. Try again in a moment.", "info");
     return;
   }
+  if (!authStateListenerBound) {
+    initAuth();
+  }
   setAuthControlsReady(true);
   const result = await jobsAuthService.signIn();
   if (!result.ok) {
@@ -1056,6 +1070,9 @@ async function signOutUser() {
     setAuthControlsReady(false);
     scheduleAuthReadyPoll();
     return;
+  }
+  if (!authStateListenerBound) {
+    initAuth();
   }
   setAuthControlsReady(true);
   const result = await jobsAuthService.signOut();
@@ -1244,9 +1261,13 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
       emitDesktopStartupMetric("jobs_first_load_refresh_start");
     }
     const result = await fetchUnifiedJobs({
-      timeoutMs: firstLoad ? JOBS_FIRST_LOAD_REQUEST_TIMEOUT_MS : 20000
+      timeoutMs: firstLoad ? JOBS_FIRST_LOAD_REQUEST_TIMEOUT_MS : 20000,
+      allowSheetsFallback: !firstLoad
     });
     if (!result.jobs || result.jobs.length === 0) {
+      if (firstLoad) {
+        setSourceStatus(result.error || "Could not fetch listings from local unified feeds.");
+      }
       if (manual) showToast(result.error || "Could not refresh jobs.", "error");
       jobsDispatch.dispatch({
         type: JOBS_ACTIONS.REFRESH_FAILED,

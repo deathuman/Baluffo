@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeSourceRows, renderDataSourcesPanel } from "../../../frontend/jobs/source-metadata.js";
+import { normalizeSourceRows, renderDataSourcesPanel } from "../../../frontend/jobs/render.js";
 
 test("jobs source metadata keeps Google Sheets as a core source", () => {
   const result = normalizeSourceRows([], null, { sheetId: "sheet123", gid: "77" });

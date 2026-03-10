@@ -10,6 +10,18 @@ export async function fetchJobsFetchReportJson(jobsFetchReportUrl) {
   }
 }
 
+// Admin data-source owns bridge/http IO concerns used by admin app orchestration.
+export function emitAdminStartupMetric(adminBridgeBase, event, payload = {}) {
+  fetch(`${adminBridgeBase}/desktop-local-data/startup-metric?t=${Date.now()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event,
+      payload
+    })
+  }).catch(() => {});
+}
+
 export async function getBridge(adminBridgeBase, path) {
   const response = await fetch(`${adminBridgeBase}${path}?t=${Date.now()}`, {
     method: "GET",

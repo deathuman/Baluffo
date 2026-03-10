@@ -4,6 +4,7 @@ import {
   savedJobsService
 } from "../local-data/services.js";
 
+// Jobs services are IO adapters only. Keep business rules in domain and UI state in app.
 export function isJobsApiReady() {
   return authService.isReady();
 }

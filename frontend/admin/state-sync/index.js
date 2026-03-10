@@ -1,4 +1,11 @@
-import { safeReadLocal, safeWriteLocal } from "../../local-data/storage-gateway.js";
+import {
+  safeReadLocal,
+  safeWriteLocal,
+  safeReadSession,
+  safeWriteJsonLocal
+} from "../../local-data/storage-gateway.js";
+
+// Admin state-sync helpers own local/session persistence used by app orchestration.
 
 export function readSourceFilter(storageKey, fallback = "all") {
   return String(safeReadLocal(storageKey, fallback) || fallback).toLowerCase();
@@ -14,4 +21,15 @@ export function readShowZeroJobs(storageKey) {
 
 export function writeShowZeroJobs(storageKey, enabled) {
   return safeWriteLocal(storageKey, enabled ? "1" : "0");
+}
+
+export function readAdminLastJobsUrl(storageKey, fallback = "jobs.html") {
+  const url = String(safeReadSession(storageKey, "") || "");
+  if (!url) return fallback;
+  if (!url.startsWith("/") && !url.startsWith("jobs.html")) return fallback;
+  return url;
+}
+
+export function writeJobsAutoRefreshSignal(storageKey, signal) {
+  return safeWriteJsonLocal(storageKey, signal);
 }
