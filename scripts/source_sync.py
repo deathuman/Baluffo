@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import ctypes
 import json
 import os
 import platform
@@ -25,6 +26,10 @@ DEFAULT_PATH = "baluffo/source-sync.json"
 DEFAULT_TIMEOUT_S = 20
 PACKAGED_SYNC_CONFIG_ENV = "BALUFFO_SYNC_APP_CONFIG_PATH"
 PACKAGED_SYNC_PASSPHRASE_ENV = "BALUFFO_SYNC_KEY_PASSPHRASE"
+SYNC_DISABLE_ENV = "BALUFFO_SYNC_DISABLE"
+SYNC_ALLOWED_REPO_ENV = "BALUFFO_SYNC_ALLOWED_REPO"
+SYNC_ALLOWED_BRANCH_ENV = "BALUFFO_SYNC_ALLOWED_BRANCH"
+SYNC_ALLOWED_PATH_PREFIX_ENV = "BALUFFO_SYNC_ALLOWED_PATH_PREFIX"
 DEFAULT_PACKAGED_SYNC_CONFIG_PATH = ROOT / "packaging" / "github-app-sync-config.json"
 MACHINE_SCOPE = "baluffo-github-app-sync"
 JWT_TTL_SECONDS = 9 * 60
@@ -32,6 +37,72 @@ INSTALLATION_TOKEN_REFRESH_SKEW_SECONDS = 10 * 60
 SHA256_DIGEST_INFO_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")
 KEY_DERIVATION_MACHINE = "machine"
 KEY_DERIVATION_PASSPHRASE = "passphrase"
+KEY_DERIVATION_EMBEDDED = "embedded"
+KEY_DERIVATION_PLAINTEXT = "plaintext"
+RUNTIME_STATE_READY = "ready"
+RUNTIME_STATE_RATE_LIMITED = "rate_limited"
+RUNTIME_STATE_REMOTE_CONFLICT = "remote_conflict"
+RATE_LIMIT_WINDOW_S = 60
+RATE_LIMIT_MAX_REQUESTS = 45
+RATE_LIMIT_BACKOFF_BASE_S = 6
+RATE_LIMIT_BACKOFF_MAX_S = 180
+EMBEDDED_KEY_VERSION_DEFAULT = "v1"
+_EMBEDDED_SECRET_PARTS = (
+    "bA1uFf0",
+    "o.Sync",
+    ".Emb3d",
+    "ded.KeY",
+)
+
+
+class SyncOperationError(RuntimeError):
+    def __init__(self, code: str, message: str):
+        super().__init__(str(message or code or "sync error"))
+        self.code = str(code or "").strip().lower() or "sync_error"
+
+
+_RUNTIME_STATE_LOCK = threading.RLock()
+_RUNTIME_STATE: Dict[str, Any] = {"code": "", "message": "", "until": "", "updatedAt": ""}
+_RATE_LIMIT_LOCK = threading.RLock()
+_RATE_LIMIT_STATE: Dict[str, Any] = {"calls": [], "strike": 0, "until": None}
+
+
+class _DPAPI_BLOB(ctypes.Structure):
+    _fields_ = [("cbData", ctypes.c_uint32), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+
+if os.name == "nt":
+    _crypt32 = ctypes.windll.crypt32
+    _kernel32 = ctypes.windll.kernel32
+    _crypt_protect_data = _crypt32.CryptProtectData
+    _crypt_protect_data.argtypes = [
+        ctypes.POINTER(_DPAPI_BLOB),
+        ctypes.c_wchar_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.POINTER(_DPAPI_BLOB),
+    ]
+    _crypt_protect_data.restype = ctypes.c_bool
+    _crypt_unprotect_data = _crypt32.CryptUnprotectData
+    _crypt_unprotect_data.argtypes = [
+        ctypes.POINTER(_DPAPI_BLOB),
+        ctypes.POINTER(ctypes.c_wchar_p),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.POINTER(_DPAPI_BLOB),
+    ]
+    _crypt_unprotect_data.restype = ctypes.c_bool
+    _local_free = _kernel32.LocalFree
+    _local_free.argtypes = [ctypes.c_void_p]
+    _local_free.restype = ctypes.c_void_p
+else:
+    _crypt_protect_data = None
+    _crypt_unprotect_data = None
+    _local_free = lambda _x: None  # type: ignore[assignment]
 
 
 @dataclass
@@ -45,6 +116,10 @@ class PackagedGitHubAppConfig:
     config_path: str
     key_derivation: str = KEY_DERIVATION_MACHINE
     decryption_error: str = ""
+    policy_error: str = ""
+    allowed_repo: str = ""
+    allowed_branch: str = ""
+    allowed_path_prefix: str = ""
 
 
 @dataclass
@@ -56,6 +131,7 @@ class SyncConfig:
     auth_mode: str
     packaged_config: Optional[PackagedGitHubAppConfig]
     timeout_s: int = DEFAULT_TIMEOUT_S
+    disabled_reason: str = ""
 
 
 def now_iso() -> str:
@@ -64,6 +140,42 @@ def now_iso() -> str:
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _truthy(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "yes", "on"}
+
+
+def _set_runtime_state(code: str = "", message: str = "", *, until: Optional[datetime] = None) -> None:
+    with _RUNTIME_STATE_LOCK:
+        _RUNTIME_STATE["code"] = str(code or "").strip().lower()
+        _RUNTIME_STATE["message"] = str(message or "").strip()
+        _RUNTIME_STATE["until"] = until.isoformat() if isinstance(until, datetime) else ""
+        _RUNTIME_STATE["updatedAt"] = now_iso()
+
+
+def _clear_runtime_state(*codes: str) -> None:
+    normalized = {str(item or "").strip().lower() for item in codes if str(item or "").strip()}
+    with _RUNTIME_STATE_LOCK:
+        current = str(_RUNTIME_STATE.get("code") or "").strip().lower()
+        if normalized and current not in normalized:
+            return
+        _RUNTIME_STATE.update({"code": "", "message": "", "until": "", "updatedAt": now_iso()})
+
+
+def _runtime_state_payload() -> Dict[str, str]:
+    with _RUNTIME_STATE_LOCK:
+        code = str(_RUNTIME_STATE.get("code") or "").strip().lower()
+        message = str(_RUNTIME_STATE.get("message") or "").strip()
+        until = str(_RUNTIME_STATE.get("until") or "").strip()
+        updated = str(_RUNTIME_STATE.get("updatedAt") or "").strip()
+    if code == RUNTIME_STATE_RATE_LIMITED and until:
+        until_dt = _parse_iso(until)
+        if until_dt and until_dt <= now_utc():
+            _clear_runtime_state(RUNTIME_STATE_RATE_LIMITED)
+            return {"code": "", "message": "", "until": "", "updatedAt": ""}
+    return {"code": code, "message": message, "until": until, "updatedAt": updated}
 
 
 def _machine_fingerprint() -> str:
@@ -171,6 +283,118 @@ def decrypt_private_key_pem_with_passphrase(
     return decrypted.decode("utf-8")
 
 
+def build_embedded_passphrase(*, hint: str, version: str = EMBEDDED_KEY_VERSION_DEFAULT) -> str:
+    seed = "|".join([
+        MACHINE_SCOPE,
+        KEY_DERIVATION_EMBEDDED,
+        str(version or EMBEDDED_KEY_VERSION_DEFAULT).strip(),
+        str(hint or "").strip(),
+        "".join(_EMBEDDED_SECRET_PARTS),
+    ]).encode("utf-8")
+    d1 = __import__("hashlib").sha256(seed).hexdigest()
+    d2 = __import__("hashlib").sha256((d1 + "|" + str(hint or "").strip()).encode("utf-8")).hexdigest()
+    return f"{d1[:24]}{d2[8:40]}"
+
+
+def _local_key_cache_fingerprint(normalized: Dict[str, str]) -> str:
+    material = "|".join([
+        str(normalized.get("appId") or "").strip(),
+        str(normalized.get("installationId") or "").strip(),
+        str(normalized.get("repo") or "").strip().lower(),
+        str(normalized.get("branch") or "").strip(),
+        str(normalized.get("path") or "").strip(),
+        str(normalized.get("keyDerivation") or "").strip().lower(),
+        str(normalized.get("keySalt") or "").strip(),
+        str(normalized.get("privateKeyPemEnc") or "").strip(),
+        str(normalized.get("embeddedKeyHint") or "").strip(),
+        str(normalized.get("embeddedKeyVersion") or "").strip(),
+    ]).encode("utf-8")
+    return __import__("hashlib").sha256(material).hexdigest()
+
+
+def _dpapi_protect(raw: bytes) -> str:
+    if os.name != "nt":
+        raise RuntimeError("DPAPI unavailable")
+    data_in = ctypes.create_string_buffer(raw)
+    blob_in = _DPAPI_BLOB(len(raw), ctypes.cast(data_in, ctypes.POINTER(ctypes.c_byte)))
+    blob_out = _DPAPI_BLOB()
+    ok = _crypt_protect_data(ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out))
+    if not ok:
+        raise RuntimeError("CryptProtectData failed")
+    try:
+        encrypted = ctypes.string_at(blob_out.pbData, blob_out.cbData)
+        return _base64url_encode(encrypted)
+    finally:
+        _local_free(blob_out.pbData)
+
+
+def _dpapi_unprotect(encoded: str) -> bytes:
+    if os.name != "nt":
+        raise RuntimeError("DPAPI unavailable")
+    raw = _base64url_decode(encoded)
+    data_in = ctypes.create_string_buffer(raw)
+    blob_in = _DPAPI_BLOB(len(raw), ctypes.cast(data_in, ctypes.POINTER(ctypes.c_byte)))
+    blob_out = _DPAPI_BLOB()
+    ok = _crypt_unprotect_data(ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out))
+    if not ok:
+        raise RuntimeError("CryptUnprotectData failed")
+    try:
+        decrypted = ctypes.string_at(blob_out.pbData, blob_out.cbData)
+        return decrypted
+    finally:
+        _local_free(blob_out.pbData)
+
+
+def _local_key_cache_path(config_path: Path) -> Path:
+    return config_path.with_suffix(".localkey.json")
+
+
+def _read_local_wrapped_key(config_path: Path, fingerprint: str) -> str:
+    cache_path = _local_key_cache_path(config_path)
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    if str(payload.get("fingerprint") or "").strip() != str(fingerprint or "").strip():
+        return ""
+    wrapped = str(payload.get("dpapi") or "").strip()
+    if not wrapped:
+        return ""
+    try:
+        return _dpapi_unprotect(wrapped).decode("utf-8")
+    except Exception:
+        return ""
+
+
+def _write_local_wrapped_key(config_path: Path, fingerprint: str, private_key_pem: str) -> None:
+    if os.name != "nt":
+        return
+    wrapped = _dpapi_protect(str(private_key_pem or "").encode("utf-8"))
+    payload = {
+        "schemaVersion": 1,
+        "fingerprint": str(fingerprint or ""),
+        "dpapi": wrapped,
+        "updatedAt": now_iso(),
+    }
+    cache_path = _local_key_cache_path(config_path)
+    cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _allowlist_error(*, repo: str, branch: str, path: str, normalized: Dict[str, str], env_map: Dict[str, str]) -> str:
+    allowed_repo = str(env_map.get(SYNC_ALLOWED_REPO_ENV) or normalized.get("allowedRepo") or "").strip()
+    allowed_branch = str(env_map.get(SYNC_ALLOWED_BRANCH_ENV) or normalized.get("allowedBranch") or "").strip()
+    allowed_prefix = str(env_map.get(SYNC_ALLOWED_PATH_PREFIX_ENV) or normalized.get("allowedPathPrefix") or "").strip()
+    if allowed_repo and str(repo or "").strip().lower() != allowed_repo.lower():
+        return f"Blocked by allowlist: repo must be {allowed_repo}."
+    if allowed_branch and str(branch or "").strip() != allowed_branch:
+        return f"Blocked by allowlist: branch must be {allowed_branch}."
+    if allowed_prefix and not str(path or "").strip().startswith(allowed_prefix):
+        return f"Blocked by allowlist: path must start with {allowed_prefix}."
+    return ""
+
+
 def _normalize_packaged_payload(payload: Dict[str, Any]) -> Dict[str, str]:
     data = payload if isinstance(payload, dict) else {}
     return {
@@ -183,6 +407,11 @@ def _normalize_packaged_payload(payload: Dict[str, Any]) -> Dict[str, str]:
         "privateKeyPem": str(data.get("privateKeyPem") or "").strip(),
         "keySalt": str(data.get("keySalt") or "").strip(),
         "keyDerivation": str(data.get("keyDerivation") or KEY_DERIVATION_MACHINE).strip().lower() or KEY_DERIVATION_MACHINE,
+        "embeddedKeyHint": str(data.get("embeddedKeyHint") or "").strip(),
+        "embeddedKeyVersion": str(data.get("embeddedKeyVersion") or EMBEDDED_KEY_VERSION_DEFAULT).strip() or EMBEDDED_KEY_VERSION_DEFAULT,
+        "allowedRepo": str(data.get("allowedRepo") or "").strip(),
+        "allowedBranch": str(data.get("allowedBranch") or "").strip(),
+        "allowedPathPrefix": str(data.get("allowedPathPrefix") or "").strip(),
     }
 
 
@@ -200,12 +429,36 @@ def load_packaged_sync_config(*, env: Optional[Dict[str, str]] = None) -> Option
     private_key_pem = normalized["privateKeyPem"]
     key_derivation = normalized["keyDerivation"]
     decryption_error = ""
+    policy_error = _allowlist_error(
+        repo=normalized["repo"],
+        branch=normalized["branch"],
+        path=normalized["path"],
+        normalized=normalized,
+        env_map=env_map,
+    )
+    fingerprint = _local_key_cache_fingerprint(normalized)
+    if not private_key_pem:
+        private_key_pem = _read_local_wrapped_key(config_path, fingerprint)
     if not private_key_pem and normalized["privateKeyPemEnc"] and normalized["keySalt"]:
         try:
             if key_derivation == KEY_DERIVATION_PASSPHRASE:
                 passphrase = str(env_map.get(PACKAGED_SYNC_PASSPHRASE_ENV) or "").strip()
                 if not passphrase:
                     raise RuntimeError(f"Missing {PACKAGED_SYNC_PASSPHRASE_ENV} for passphrase-encrypted sync key.")
+                private_key_pem = decrypt_private_key_pem_with_passphrase(
+                    normalized["privateKeyPemEnc"],
+                    salt_b64=normalized["keySalt"],
+                    app_id=normalized["appId"],
+                    installation_id=normalized["installationId"],
+                    passphrase=passphrase,
+                )
+            elif key_derivation == KEY_DERIVATION_EMBEDDED:
+                passphrase = str(env_map.get(PACKAGED_SYNC_PASSPHRASE_ENV) or "").strip()
+                if not passphrase:
+                    passphrase = build_embedded_passphrase(
+                        hint=normalized["embeddedKeyHint"],
+                        version=normalized["embeddedKeyVersion"],
+                    )
                 private_key_pem = decrypt_private_key_pem_with_passphrase(
                     normalized["privateKeyPemEnc"],
                     salt_b64=normalized["keySalt"],
@@ -221,10 +474,17 @@ def load_packaged_sync_config(*, env: Optional[Dict[str, str]] = None) -> Option
                     app_id=normalized["appId"],
                     installation_id=normalized["installationId"],
                 )
+            elif key_derivation == KEY_DERIVATION_PLAINTEXT:
+                private_key_pem = normalized["privateKeyPem"]
             else:
                 raise RuntimeError(f"Unsupported keyDerivation mode: {key_derivation}")
         except Exception as exc:  # noqa: BLE001
             decryption_error = str(exc)
+    if private_key_pem:
+        try:
+            _write_local_wrapped_key(config_path, fingerprint, private_key_pem)
+        except Exception:
+            pass
     return PackagedGitHubAppConfig(
         app_id=normalized["appId"],
         installation_id=normalized["installationId"],
@@ -235,6 +495,10 @@ def load_packaged_sync_config(*, env: Optional[Dict[str, str]] = None) -> Option
         config_path=str(config_path),
         key_derivation=key_derivation,
         decryption_error=decryption_error,
+        policy_error=policy_error,
+        allowed_repo=str(normalized.get("allowedRepo") or ""),
+        allowed_branch=str(normalized.get("allowedBranch") or ""),
+        allowed_path_prefix=str(normalized.get("allowedPathPrefix") or ""),
     )
 
 
@@ -243,6 +507,10 @@ def resolve_sync_config(*, settings: Optional[Dict[str, Any]] = None, env: Optio
     env_map = env if isinstance(env, dict) else os.environ
     enabled_raw = settings_map.get("enabled")
     enabled = True if enabled_raw is None else bool(enabled_raw)
+    disabled_reason = ""
+    if _truthy(env_map.get(SYNC_DISABLE_ENV)):
+        enabled = False
+        disabled_reason = f"Sync disabled by {SYNC_DISABLE_ENV}."
     packaged_config = load_packaged_sync_config(env=env_map)
     repo = packaged_config.repo if packaged_config else ""
     branch = packaged_config.branch if packaged_config else DEFAULT_BRANCH
@@ -255,15 +523,19 @@ def resolve_sync_config(*, settings: Optional[Dict[str, Any]] = None, env: Optio
         auth_mode="github_app",
         packaged_config=packaged_config,
         timeout_s=DEFAULT_TIMEOUT_S,
+        disabled_reason=disabled_reason,
     )
 
 
 def config_status(config: SyncConfig) -> Dict[str, Any]:
     missing: List[str] = []
-    message = ""
+    message = str(config.disabled_reason or "")
     if not config.packaged_config:
         missing.append("packaged_github_app_config")
     else:
+        if config.packaged_config.policy_error:
+            missing.append("allowlist")
+            message = str(config.packaged_config.policy_error)
         if config.packaged_config.decryption_error:
             missing.append("privateKeyPemEnc")
             message = f"Could not decrypt packaged GitHub App key: {config.packaged_config.decryption_error}"
@@ -285,6 +557,15 @@ def config_status(config: SyncConfig) -> Dict[str, Any]:
             )
         else:
             message = "Packaged GitHub App config is incomplete."
+    runtime_state = _runtime_state_payload()
+    runtime_code = str(runtime_state.get("code") or "").strip().lower()
+    if ready and runtime_code in {RUNTIME_STATE_RATE_LIMITED, RUNTIME_STATE_REMOTE_CONFLICT}:
+        ready = False
+        state = runtime_code
+        if not message:
+            message = str(runtime_state.get("message") or "")
+    else:
+        state = "ready" if ready else ("disabled" if not config.enabled else "misconfigured")
     return {
         "enabled": bool(config.enabled),
         "state": state,
@@ -297,13 +578,20 @@ def config_status(config: SyncConfig) -> Dict[str, Any]:
         "authMode": str(config.auth_mode or "github_app"),
         "credentialsPackaged": bool(config.packaged_config),
         "configPath": str(config.packaged_config.config_path if config.packaged_config else ""),
+        "runtimeState": runtime_state,
+        "keyDerivation": str(config.packaged_config.key_derivation if config.packaged_config else ""),
+        "allowlist": {
+            "repo": str(config.packaged_config.allowed_repo if config.packaged_config else ""),
+            "branch": str(config.packaged_config.allowed_branch if config.packaged_config else ""),
+            "pathPrefix": str(config.packaged_config.allowed_path_prefix if config.packaged_config else ""),
+        },
     }
 
 
 def validate_sync_config(config: SyncConfig) -> None:
     status = config_status(config)
     if not status["ready"]:
-        raise RuntimeError(str(status["message"] or "Sync is not configured"))
+        raise SyncOperationError(str(status.get("state") or "misconfigured"), str(status["message"] or "Sync is not configured"))
 
 
 def _content_api_url(config: SyncConfig, *, with_ref: bool = False) -> str:
@@ -526,6 +814,75 @@ def _get_auth_manager(config: SyncConfig) -> GitHubAppAuth:
         return manager
 
 
+def _rate_limit_retry_after_seconds(headers: Dict[str, str], payload: Dict[str, Any]) -> int:
+    retry_after = str((headers or {}).get("retry-after") or "").strip()
+    if retry_after.isdigit():
+        return max(1, min(RATE_LIMIT_BACKOFF_MAX_S, int(retry_after)))
+    reset_raw = str((headers or {}).get("x-ratelimit-reset") or "").strip()
+    if reset_raw.isdigit():
+        reset_at = int(reset_raw)
+        delta = reset_at - int(now_utc().timestamp())
+        if delta > 0:
+            return max(1, min(RATE_LIMIT_BACKOFF_MAX_S, delta))
+    msg = str((payload or {}).get("message") or "").lower()
+    if "secondary rate limit" in msg:
+        return min(RATE_LIMIT_BACKOFF_MAX_S, RATE_LIMIT_BACKOFF_BASE_S * 5)
+    return RATE_LIMIT_BACKOFF_BASE_S
+
+
+def _rate_limit_preflight() -> None:
+    with _RATE_LIMIT_LOCK:
+        now = now_utc()
+        until = _RATE_LIMIT_STATE.get("until")
+        if isinstance(until, datetime) and now < until:
+            _set_runtime_state(
+                RUNTIME_STATE_RATE_LIMITED,
+                f"Sync rate limited locally until {until.isoformat()}",
+                until=until,
+            )
+            raise SyncOperationError(RUNTIME_STATE_RATE_LIMITED, "Sync temporarily rate limited.")
+        calls = [item for item in (_RATE_LIMIT_STATE.get("calls") or []) if isinstance(item, datetime) and (now - item).total_seconds() < RATE_LIMIT_WINDOW_S]
+        if len(calls) >= RATE_LIMIT_MAX_REQUESTS:
+            strike = int(_RATE_LIMIT_STATE.get("strike") or 0) + 1
+            wait_s = min(RATE_LIMIT_BACKOFF_MAX_S, RATE_LIMIT_BACKOFF_BASE_S * (2 ** max(0, strike - 1)))
+            cooldown = now + timedelta(seconds=wait_s)
+            _RATE_LIMIT_STATE.update({"calls": calls, "strike": strike, "until": cooldown})
+            _set_runtime_state(
+                RUNTIME_STATE_RATE_LIMITED,
+                f"Sync rate limited locally for {wait_s}s",
+                until=cooldown,
+            )
+            raise SyncOperationError(RUNTIME_STATE_RATE_LIMITED, "Sync temporarily rate limited.")
+        calls.append(now)
+        _RATE_LIMIT_STATE["calls"] = calls
+
+
+def _rate_limit_note_response(status: int, headers: Dict[str, str], payload: Dict[str, Any]) -> None:
+    if int(status or 0) in {429, 403}:
+        message = str((payload or {}).get("message") or "").lower()
+        if int(status or 0) == 429 or "rate limit" in message:
+            retry_s = _rate_limit_retry_after_seconds(headers, payload)
+            until = now_utc() + timedelta(seconds=retry_s)
+            with _RATE_LIMIT_LOCK:
+                strike = int(_RATE_LIMIT_STATE.get("strike") or 0) + 1
+                _RATE_LIMIT_STATE["strike"] = strike
+                _RATE_LIMIT_STATE["until"] = until
+            _set_runtime_state(
+                RUNTIME_STATE_RATE_LIMITED,
+                f"GitHub API rate limited sync for {retry_s}s",
+                until=until,
+            )
+            raise SyncOperationError(RUNTIME_STATE_RATE_LIMITED, "GitHub rate limit reached for sync.")
+    with _RATE_LIMIT_LOCK:
+        strike = int(_RATE_LIMIT_STATE.get("strike") or 0)
+        if strike > 0:
+            _RATE_LIMIT_STATE["strike"] = max(0, strike - 1)
+        until = _RATE_LIMIT_STATE.get("until")
+        if isinstance(until, datetime) and now_utc() >= until:
+            _RATE_LIMIT_STATE["until"] = None
+    _clear_runtime_state(RUNTIME_STATE_RATE_LIMITED)
+
+
 def _request_json(
     *,
     method: str,
@@ -536,6 +893,7 @@ def _request_json(
     opener: Callable[..., Any] = urlopen,
     allow_retry_401: bool = True,
 ) -> Tuple[int, Dict[str, Any], Dict[str, str]]:
+    _rate_limit_preflight()
     manager = _get_auth_manager(config)
     token = manager.get_installation_token(opener=opener)
     status, body, headers = _request_raw_json(
@@ -546,9 +904,10 @@ def _request_json(
         payload=payload,
         opener=opener,
     )
+    _rate_limit_note_response(status, headers, body)
     if status == 401 and allow_retry_401:
         token = manager.get_installation_token(opener=opener, force_refresh=True)
-        return _request_raw_json(
+        status, body, headers = _request_raw_json(
             method=method,
             url=url,
             headers=_github_json_headers(f"Bearer {token}"),
@@ -556,6 +915,8 @@ def _request_json(
             payload=payload,
             opener=opener,
         )
+        _rate_limit_note_response(status, headers, body)
+        return status, body, headers
     return status, body, headers
 
 
@@ -595,6 +956,7 @@ def read_remote_snapshot(
         opener=opener,
     )
     if status == 404:
+        _clear_runtime_state(RUNTIME_STATE_REMOTE_CONFLICT)
         return {"exists": False, "sha": "", "snapshot": None}
     if status >= 400:
         message = str(payload.get("message") or f"GitHub GET failed with HTTP {status}")
@@ -609,6 +971,7 @@ def read_remote_snapshot(
     except (ValueError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Invalid remote sync snapshot payload: {exc}") from exc
     snapshot = normalize_snapshot(parsed if isinstance(parsed, dict) else {})
+    _clear_runtime_state(RUNTIME_STATE_REMOTE_CONFLICT)
     return {"exists": True, "sha": str(payload.get("sha") or ""), "snapshot": snapshot}
 
 
@@ -685,8 +1048,12 @@ def write_remote_snapshot(
     )
     if status >= 400:
         msg = str(body.get("message") or f"GitHub PUT failed with HTTP {status}")
+        if int(status or 0) == 409:
+            _set_runtime_state(RUNTIME_STATE_REMOTE_CONFLICT, msg)
+            raise SyncOperationError(RUNTIME_STATE_REMOTE_CONFLICT, msg)
         raise RuntimeError(msg)
     content = body.get("content") if isinstance(body.get("content"), dict) else {}
+    _clear_runtime_state(RUNTIME_STATE_REMOTE_CONFLICT)
     return {"ok": True, "sha": str(content.get("sha") or "")}
 
 

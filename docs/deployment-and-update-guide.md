@@ -136,3 +136,22 @@ After releasing:
 1. Confirm updater status is `ready` in `app\update-state.json`.
 2. Confirm user data remained intact.
 3. Keep previous version available for rollback.
+
+## 8) Sync credential incident response (desktop packaged mode)
+
+Baluffo desktop sync packaging is deterrence-oriented. If package extraction is suspected:
+
+1. Immediately disable sync on affected machines:
+
+```powershell
+$env:BALUFFO_SYNC_DISABLE="1"
+```
+
+2. Revoke/rotate GitHub App private key.
+3. Verify dedicated sync repo integrity (`baluffo/source-sync.json` path only).
+4. Build and ship a new package with refreshed sync credentials.
+5. Re-enable sync only after rollout completes.
+
+Risk note:
+
+- Out-of-box embedded sync credentials are not strong protection against determined reverse engineering on client-owned devices.

@@ -60,6 +60,11 @@ class SourceSyncTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(self.test_root, ignore_errors=True))
         self.config_path = self.test_root / "github-app-sync-config.json"
         self.env = {sync.PACKAGED_SYNC_CONFIG_ENV: str(self.config_path)}
+        sync._clear_runtime_state()  # noqa: SLF001
+        with sync._RATE_LIMIT_LOCK:  # noqa: SLF001
+            sync._RATE_LIMIT_STATE["calls"] = []  # noqa: SLF001
+            sync._RATE_LIMIT_STATE["strike"] = 0  # noqa: SLF001
+            sync._RATE_LIMIT_STATE["until"] = None  # noqa: SLF001
 
     def write_packaged_config(self, payload: dict | None = None) -> None:
         base = {
@@ -166,6 +171,58 @@ class SourceSyncTests(unittest.TestCase):
         status = sync.config_status(cfg)
         self.assertTrue(status["ready"])
         self.assertEqual(status["state"], "ready")
+
+    def test_config_status_ready_for_embedded_derivation(self):
+        salt_b64 = sync._base64url_encode(b"unit-test-salt-013")  # noqa: SLF001
+        hint = "embedded-hint-01"
+        version = "v1"
+        private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
+        passphrase = sync.build_embedded_passphrase(hint=hint, version=version)
+        encrypted = sync.encrypt_private_key_pem_with_passphrase(
+            private_key,
+            salt_b64=salt_b64,
+            app_id="123456",
+            installation_id="999999",
+            passphrase=passphrase,
+        )
+        self.write_packaged_config(
+            {
+                "keyDerivation": "embedded",
+                "embeddedKeyHint": hint,
+                "embeddedKeyVersion": version,
+                "keySalt": salt_b64,
+                "privateKeyPemEnc": encrypted,
+                "privateKeyPem": "",
+            }
+        )
+        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=self.env)
+        status = sync.config_status(cfg)
+        self.assertTrue(status["ready"])
+        self.assertEqual(status["state"], "ready")
+
+    def test_allowlist_mismatch_marks_misconfigured(self):
+        self.write_packaged_config(
+            {
+                "allowedRepo": "other/repo",
+                "allowedBranch": "main",
+                "allowedPathPrefix": "baluffo/source-sync.json",
+            }
+        )
+        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=self.env)
+        status = sync.config_status(cfg)
+        self.assertFalse(status["ready"])
+        self.assertEqual(status["state"], "misconfigured")
+        self.assertIn("allowlist", status["missing"])
+
+    def test_sync_disable_env_forces_disabled_state(self):
+        self.write_packaged_config()
+        env = dict(self.env)
+        env[sync.SYNC_DISABLE_ENV] = "1"
+        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=env)
+        status = sync.config_status(cfg)
+        self.assertFalse(status["ready"])
+        self.assertEqual(status["state"], "disabled")
+        self.assertIn(sync.SYNC_DISABLE_ENV, status["message"])
 
     def test_build_app_jwt_has_rs256_shape(self):
         original_sign = sync._rsa_pkcs1_sign_sha256  # noqa: SLF001
@@ -429,6 +486,55 @@ class SourceSyncTests(unittest.TestCase):
         self.assertTrue(result["exists"])
         post_calls = [call for call in opener.calls if call["method"] == "POST"]
         self.assertEqual(len(post_calls), 2)
+
+    def test_rate_limited_error_sets_runtime_state(self):
+        self.write_packaged_config()
+        opener = _Recorder([
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(url="https://api.github.com/test", code=429, msg="Too Many Requests", hdrs={}, fp=None),
+        ])
+        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=self.env)
+        original_build_jwt = sync.build_app_jwt
+        try:
+            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+            with self.assertRaises(sync.SyncOperationError) as ctx:
+                sync.read_remote_snapshot(cfg, opener=opener)
+        finally:
+            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        self.assertEqual(ctx.exception.code, sync.RUNTIME_STATE_RATE_LIMITED)
+        status = sync.config_status(cfg)
+        self.assertEqual(status["state"], sync.RUNTIME_STATE_RATE_LIMITED)
+
+    def test_remote_conflict_error_sets_runtime_state(self):
+        self.write_packaged_config()
+        opener = _Recorder([
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json",
+                code=409,
+                msg="Conflict",
+                hdrs={},
+                fp=None,
+            ),
+        ])
+        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=self.env)
+        original_build_jwt = sync.build_app_jwt
+        try:
+            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+            with self.assertRaises(sync.SyncOperationError) as ctx:
+                sync.push_sources_snapshot(cfg, {"active": [], "pending": [], "rejected": []}, opener=opener)
+        finally:
+            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+        self.assertEqual(ctx.exception.code, sync.RUNTIME_STATE_REMOTE_CONFLICT)
+        status = sync.config_status(cfg)
+        self.assertEqual(status["state"], sync.RUNTIME_STATE_REMOTE_CONFLICT)
 
 
 if __name__ == "__main__":

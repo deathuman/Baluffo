@@ -16,7 +16,12 @@ Expected JSON shape:
   "repo": "your-org/job-sources-backup",
   "branch": "main",
   "path": "baluffo/source-sync.json",
-  "keyDerivation": "passphrase",
+  "allowedRepo": "your-org/job-sources-backup",
+  "allowedBranch": "main",
+  "allowedPathPrefix": "baluffo/source-sync.json",
+  "keyDerivation": "embedded",
+  "embeddedKeyHint": "build-generated-hint",
+  "embeddedKeyVersion": "v1",
   "keySalt": "base64url-random-salt",
   "privateKeyPemEnc": "base64url-encrypted-private-key"
 }
@@ -25,15 +30,18 @@ Expected JSON shape:
 Runtime requirement for passphrase mode:
 
 - set `BALUFFO_SYNC_KEY_PASSPHRASE` on machines that should use sync
+- optional emergency kill switch: set `BALUFFO_SYNC_DISABLE=1`
 
 ## Encryption format
 
-The encrypted key supports two derivation modes implemented in `scripts/source_sync.py`:
+The encrypted key supports three derivation modes implemented in `scripts/source_sync.py`:
 
 - `machine`: key material is derived from machine identity, app id, installation id, and `keySalt`
 - `passphrase`: key material is derived from app id, installation id, `keySalt`, and `BALUFFO_SYNC_KEY_PASSPHRASE`
+- `embedded`: key material is derived from `embeddedKeyHint` + embedded runtime constants (deterrence only)
 - the private key PEM is XOR-encrypted with a SHA-256 keystream
 - plaintext private keys should not be shipped in production bundles
+- on Windows, decrypted key material is re-wrapped into a local DPAPI cache for subsequent launches
 
 For local tests only, `privateKeyPem` may be supplied instead of `privateKeyPemEnc`.
 
@@ -53,8 +61,23 @@ py -3 scripts/build_sync_app_config.py `
   --app-id 123456 `
   --installation-id 98765432 `
   --repo owner/repo `
+  --allowed-repo owner/repo `
+  --allowed-branch main `
+  --allowed-path-prefix baluffo/source-sync.json `
+  --key-derivation embedded `
   --private-key C:\path\to\github-app-private-key.pem `
-  --portable-passphrase-env BALUFFO_SYNC_KEY_PASSPHRASE
+  --embedded-key-version v1
+```
+
+For portable passphrase mode instead of embedded mode, set:
+
+```powershell
+$env:BALUFFO_SYNC_KEY_PASSPHRASE="replace-with-strong-passphrase"
+py -3 scripts/build_sync_app_config.py --key-derivation passphrase --portable-passphrase-env BALUFFO_SYNC_KEY_PASSPHRASE ...
 ```
 
 For local-only testing, add `--plaintext` to write `privateKeyPem` directly instead of the encrypted form.
+
+## Security note
+
+Embedded mode is obfuscation and blast-radius reduction, not strong secret protection on client-owned machines.

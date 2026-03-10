@@ -5,7 +5,12 @@
   "repo": "your-org/job-sources-backup",
   "branch": "main",
   "path": "baluffo/source-sync.json",
-  "keyDerivation": "passphrase",
+  "allowedRepo": "your-org/job-sources-backup",
+  "allowedBranch": "main",
+  "allowedPathPrefix": "baluffo/source-sync.json",
+  "keyDerivation": "embedded",
+  "embeddedKeyHint": "replace-with-build-generated-hint",
+  "embeddedKeyVersion": "v1",
   "keySalt": "replace-with-base64url-random-salt",
   "privateKeyPemEnc": "replace-with-base64url-encrypted-private-key"
 }

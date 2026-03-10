@@ -1016,11 +1016,19 @@ function renderSyncStatus(statusPayload, options = {}) {
   const lastAction = String(runtime?.lastAction || "");
   const badgeLabel = state === "ready"
     ? "Ready"
+    : state === "rate_limited"
+      ? "Rate Limited"
+      : state === "remote_conflict"
+        ? "Remote Conflict"
     : state === "misconfigured"
       ? "Needs Attention"
       : "Disabled";
   const summaryText = state === "disabled"
     ? "Source sync is disabled on this machine. Remote state remains untouched until you enable it again."
+    : state === "rate_limited"
+      ? `Source sync is temporarily rate limited.${configMessage ? ` ${configMessage}` : ""}`
+      : state === "remote_conflict"
+        ? `Source sync detected a remote write conflict.${configMessage ? ` ${configMessage}` : ""}`
     : state === "misconfigured"
       ? `Source sync cannot run yet.${missing.length ? ` Missing: ${missing.join(", ")}.` : ""}${configMessage ? ` ${configMessage}` : ""}`
       : `Connected to ${repo} and ready to keep the shared source registry in sync.`;
