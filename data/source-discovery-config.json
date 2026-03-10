@@ -1,0 +1,33 @@
+{
+  "gamesmap": {
+    "enabled": true,
+    "baseUrl": "https://www.gamesmap.de",
+    "indexUrls": [
+      "https://www.gamesmap.de/en"
+    ],
+    "preferEnglish": true,
+    "websiteOnlyFallback": false,
+    "maxDetailPages": 60,
+    "allowedCategoryTokens": [
+      "developer",
+      "publisher",
+      "developer and publisher",
+      "pc",
+      "console",
+      "mobile",
+      "browser",
+      "online",
+      "vr",
+      "ar",
+      "serious games"
+    ],
+    "blockedCategoryTokens": [
+      "association",
+      "university",
+      "education",
+      "public institution",
+      "government",
+      "service provider"
+    ]
+  }
+}

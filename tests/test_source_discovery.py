@@ -22,6 +22,10 @@ class SourceDiscoveryTests(unittest.TestCase):
         path = Path(__file__).parent / "fixtures" / name
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def fixture_text(self, name: str) -> str:
+        path = Path(__file__).parent / "fixtures" / name
+        return path.read_text(encoding="utf-8")
+
     def test_build_pattern_candidates_respects_likely_providers(self) -> None:
         previous = list(sd.STUDIO_SEEDS)
         sd.STUDIO_SEEDS = [
@@ -258,6 +262,211 @@ class SourceDiscoveryTests(unittest.TestCase):
         )
         self.assertIsNone(row)
 
+    def test_parse_gamesmap_detail_page_extracts_careers_and_provenance(self) -> None:
+        row = sd.parse_gamesmap_detail_page(
+            "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh",
+            self.fixture_text("gamesmap_detail_careers.html"),
+        )
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(str(row.get("studio") or ""), "Example Studio GmbH")
+        self.assertEqual(str(row.get("careersUrl") or ""), "https://boards.greenhouse.io/examplestudio")
+        self.assertEqual(str(row.get("websiteUrl") or ""), "https://www.example-studio.com")
+        self.assertIn("Developer and Publisher", row.get("categories") or [])
+
+    def test_parse_gamesmap_detail_page_supports_website_only_entries(self) -> None:
+        row = sd.parse_gamesmap_detail_page(
+            "https://www.gamesmap.de/en/detail/industry/example-publisher",
+            self.fixture_text("gamesmap_detail_website_only.html"),
+        )
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(str(row.get("careersUrl") or ""), "")
+        self.assertEqual(str(row.get("websiteUrl") or ""), "https://www.example-publisher.com")
+        self.assertIn("Publisher", row.get("categories") or [])
+
+    def test_parse_gamesmap_detail_page_ignores_directory_and_social_links_for_website_fallback(self) -> None:
+        html = """
+        <html><body>
+          <h1>Example Studio</h1>
+          <h3>Categories</h3>
+          <div><span class="view-detail-category">Developer</span></div>
+          <a href="https://www.game.de/datenschutz/">Data protection</a>
+          <a href="https://www.facebook.com/example">Facebook</a>
+          <a href="https://example-studio.com/">https://example-studio.com/</a>
+        </body></html>
+        """
+        row = sd.parse_gamesmap_detail_page(
+            "https://www.gamesmap.de/en/detail/industry/example-studio",
+            html,
+        )
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(str(row.get("websiteUrl") or ""), "https://example-studio.com/")
+        self.assertEqual(str(row.get("careersUrl") or ""), "")
+
+    def test_parse_gamesmap_index_entries_extracts_industry_rows_from_js_payload(self) -> None:
+        rows = sd.parse_gamesmap_index_entries(
+            self.fixture_text("gamesmap_index.html"),
+            "https://www.gamesmap.de",
+            prefer_english=True,
+        )
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(str(rows[0].get("detailUrl") or ""), "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh")
+        self.assertEqual(str(rows[0].get("studio") or ""), "Example Studio GmbH")
+        self.assertEqual(str(rows[0].get("location") or ""), "Hamburg")
+
+    def test_gamesmap_category_filter_rejects_blocked_entries(self) -> None:
+        row = sd.parse_gamesmap_detail_page(
+            "https://www.gamesmap.de/detail/industry/tooling-association",
+            self.fixture_text("gamesmap_detail_blocked.html"),
+        )
+        assert row is not None
+        config = {
+            "gamesmap": {
+                "allowedCategoryTokens": ["developer", "publisher"],
+                "blockedCategoryTokens": ["association", "education"],
+            }
+        }
+        self.assertFalse(
+            sd.gamesmap_matches_category(
+                row.get("categories") or [],
+                config["gamesmap"]["allowedCategoryTokens"],
+                config["gamesmap"]["blockedCategoryTokens"],
+            )
+        )
+
+    def test_discover_gamesmap_candidates_emits_provider_and_static_rows(self) -> None:
+        config = {
+            "gamesmap": {
+                "enabled": True,
+                "baseUrl": "https://www.gamesmap.de",
+                "indexUrls": ["https://www.gamesmap.de/en"],
+                "websiteOnlyFallback": True,
+                "maxDetailPages": 10,
+                "allowedCategoryTokens": ["developer", "publisher", "mobile", "pc", "console"],
+                "blockedCategoryTokens": ["association", "education"],
+            }
+        }
+
+        payloads = {
+            "https://www.gamesmap.de/en": self.fixture_text("gamesmap_index.html"),
+            "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": self.fixture_text("gamesmap_detail_careers.html"),
+            "https://www.gamesmap.de/en/detail/industry/tooling-association": self.fixture_text("gamesmap_detail_blocked.html"),
+            "https://www.gamesmap.de/en/detail/industry/example-publisher": self.fixture_text("gamesmap_detail_website_only.html"),
+        }
+
+        def fake_fetch(url: str, _: int) -> str:
+            if url not in payloads:
+                raise RuntimeError(f"unexpected URL: {url}")
+            return payloads[url]
+
+        provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(5, config=config, fetcher=fake_fetch)
+        self.assertEqual(len(failures), 0)
+        self.assertEqual(len(provider_rows), 1)
+        self.assertEqual(str(provider_rows[0].get("adapter") or ""), "greenhouse")
+        self.assertEqual(str(provider_rows[0].get("discoveryMethod") or ""), "gamesmap")
+        self.assertEqual(str(provider_rows[0].get("sourceDirectory") or ""), "gamesmap")
+        self.assertEqual(len(static_rows), 1)
+        self.assertEqual(str(static_rows[0].get("adapter") or ""), "static")
+        self.assertTrue(bool(static_rows[0].get("weakSignal")))
+        self.assertEqual(str(static_rows[0].get("sourceDirectoryEntryUrl") or ""), "https://www.gamesmap.de/en/detail/industry/example-publisher")
+
+    def test_discover_gamesmap_candidates_dedupes_repeated_directory_entries(self) -> None:
+        html = """
+        <a href="/en/detail/industry/example-studio-gmbh">Example Studio</a>
+        <a href="/detail/industry/example-studio-gmbh">Example Studio duplicate</a>
+        """
+        config = {
+            "gamesmap": {
+                "enabled": True,
+                "baseUrl": "https://www.gamesmap.de",
+                "indexUrls": ["https://www.gamesmap.de/en"],
+                "websiteOnlyFallback": False,
+                "maxDetailPages": 10,
+                "allowedCategoryTokens": ["developer"],
+                "blockedCategoryTokens": [],
+            }
+        }
+
+        def fake_fetch(url: str, _: int) -> str:
+            if url == "https://www.gamesmap.de/en":
+                return html
+            return self.fixture_text("gamesmap_detail_careers.html")
+
+        provider_rows, static_rows, _failures = sd.discover_gamesmap_candidates(5, config=config, fetcher=fake_fetch)
+        self.assertEqual(len(provider_rows), 1)
+        self.assertEqual(len(static_rows), 0)
+
+    def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue(self) -> None:
+        with self.workspace_tmpdir() as root:
+            prev_paths = (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+            )
+            prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+            prev_seeds = list(sd.STUDIO_SEEDS)
+            try:
+                sd.ACTIVE_PATH = root / "active.json"
+                sd.PENDING_PATH = root / "pending.json"
+                sd.REJECTED_PATH = root / "rejected.json"
+                sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+                sd.DISCOVERY_REPORT_PATH = root / "report.json"
+                sd.STUDIO_SEEDS = []
+                sd.STATIC_DISCOVERY_CANDIDATES = []
+
+                config = {
+                    "gamesmap": {
+                        "enabled": True,
+                        "baseUrl": "https://www.gamesmap.de",
+                        "indexUrls": ["https://www.gamesmap.de/en"],
+                        "websiteOnlyFallback": False,
+                        "maxDetailPages": 10,
+                        "allowedCategoryTokens": ["developer", "publisher", "pc", "console"],
+                        "blockedCategoryTokens": ["association", "education"],
+                    }
+                }
+                payloads = {
+                    "https://www.gamesmap.de/en": self.fixture_text("gamesmap_index.html"),
+                    "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": self.fixture_text("gamesmap_detail_careers.html"),
+                    "https://www.gamesmap.de/en/detail/industry/tooling-association": self.fixture_text("gamesmap_detail_blocked.html"),
+                    "https://www.gamesmap.de/en/detail/industry/example-publisher": self.fixture_text("gamesmap_detail_website_only.html"),
+                    "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true": json.dumps({"jobs": [{}, {}]}),
+                }
+
+                def fake_fetch(url: str, _: int) -> str:
+                    if url not in payloads:
+                        raise RuntimeError(f"unexpected URL: {url}")
+                    return payloads[url]
+
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config=config,
+                    fetcher=fake_fetch,
+                )
+                self.assertEqual(int(report["summary"].get("queuedCandidateCount") or 0), 1)
+                self.assertEqual(int((report["summary"].get("generatedCountByStage") or {}).get("web_provider") or 0), 1)
+                queued = json.loads(sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8"))
+                self.assertEqual(len(queued), 1)
+                self.assertEqual(str(queued[0].get("discoveryMethod") or ""), "gamesmap")
+                self.assertEqual(str(queued[0].get("sourceDirectory") or ""), "gamesmap")
+            finally:
+                (
+                    sd.ACTIVE_PATH,
+                    sd.PENDING_PATH,
+                    sd.REJECTED_PATH,
+                    sd.DISCOVERY_CANDIDATES_PATH,
+                    sd.DISCOVERY_REPORT_PATH,
+                ) = prev_paths
+                sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+                sd.STUDIO_SEEDS = prev_seeds
+
     def test_run_discovery_dynamic_tracks_stage_metrics_and_queue_contract(self) -> None:
         with self.workspace_tmpdir() as root:
             prev_paths = (
@@ -304,7 +513,14 @@ class SourceDiscoveryTests(unittest.TestCase):
                         return json.dumps({"jobs": [{}, {}]})
                     raise RuntimeError(f"unexpected URL: {url}")
 
-                report = sd.run_discovery(timeout_s=5, top_n=0, mode="dynamic", include_web_search=False, fetcher=fake_fetch)
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config={"gamesmap": {"enabled": False}},
+                    fetcher=fake_fetch,
+                )
                 summary = report["summary"]
                 self.assertEqual(int(summary.get("foundEndpointCount") or 0), 2)
                 self.assertEqual(int(summary.get("probedCandidateCount") or 0), 2)
@@ -477,7 +693,14 @@ class SourceDiscoveryTests(unittest.TestCase):
                 sd.STATIC_DISCOVERY_CANDIDATES = [
                     {"name": "Demo Lever", "studio": "Demo", "adapter": "lever", "account": "demo", "api_url": "https://api.lever.co/v0/postings/demo?mode=json"}
                 ]
-                report = sd.run_discovery(timeout_s=5, top_n=0, mode="dynamic", include_web_search=False, fetcher=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("HTTP Error 404: Not Found")))
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config={"gamesmap": {"enabled": False}},
+                    fetcher=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("HTTP Error 404: Not Found")),
+                )
                 self.assertEqual(int(report["summary"].get("probedCandidateCount") or 0), 1)
                 self.assertEqual(int(report["summary"].get("failedProbeCount") or 0), 0)
                 self.assertEqual(int(report["summary"].get("probeMissCount") or 0), 1)
@@ -529,7 +752,14 @@ class SourceDiscoveryTests(unittest.TestCase):
                         return json.dumps({"jobs": [{}, {}]})
                     raise RuntimeError(f"unexpected URL: {url}")
 
-                report = sd.run_discovery(timeout_s=5, top_n=0, mode="dynamic", include_web_search=False, fetcher=fake_fetch)
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config={"gamesmap": {"enabled": False}},
+                    fetcher=fake_fetch,
+                )
                 self.assertEqual(int(report["summary"].get("queuedCandidateCount") or 0), 1)
                 self.assertEqual(int((report["summary"].get("queuedCountByStage") or {}).get("web_provider") or 0), 1)
                 self.assertEqual(int((report["summary"].get("generatedCountByStage") or {}).get("web_provider") or 0), 1)
@@ -578,7 +808,14 @@ class SourceDiscoveryTests(unittest.TestCase):
                         return json.dumps({"jobs": [{}]})
                     raise RuntimeError(f"unexpected URL: {url}")
 
-                report = sd.run_discovery(timeout_s=5, top_n=0, mode="dynamic", include_web_search=False, fetcher=fake_fetch)
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config={"gamesmap": {"enabled": False}},
+                    fetcher=fake_fetch,
+                )
                 snapshot = {
                     "schemaVersion": report.get("schemaVersion"),
                     "mode": str(report.get("mode")),

@@ -60,6 +60,7 @@ APP_RUNTIME_DATA_FILES = (
     "jobs-unified.csv",
     "jobs-fetch-report.json",
     "source-registry-active.json",
+    "source-discovery-config.json",
 )
 STARTUP_PREVIEW_LIMIT = 240
 if str(ROOT) not in sys.path:
@@ -127,6 +128,7 @@ def _seed_runtime_data(data_dir: Path) -> None:
         "source-registry-rejected.json": [],
         "source-discovery-candidates.json": [],
         "source-discovery-report.json": {"summary": {}, "candidates": [], "failures": []},
+        "source-discovery-config.json": __import__("scripts.source_discovery", fromlist=["DEFAULT_DISCOVERY_CONFIG"]).DEFAULT_DISCOVERY_CONFIG,
         "source-approval-state.json": {"approvedSinceLastRun": 0},
         "jobs-fetch-report.json": {"summary": {}, "sources": [], "runtime": {}, "outputs": {}},
         "jobs-fetch-tasks.json": {"summary": {}, "tasks": [], "outputs": {}},
