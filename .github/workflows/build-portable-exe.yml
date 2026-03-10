@@ -11,6 +11,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   windows-portable:
     runs-on: windows-latest
@@ -31,10 +34,11 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      - name: Run unit tests
+      - name: Run release gates
         run: |
           npm run test:frontend:unit
           npm run test:py
+          py -3.13 scripts/packaged_desktop_smoke.py
 
       - name: Resolve bundle version
         shell: pwsh
@@ -52,8 +56,55 @@ jobs:
       - name: Build portable executable
         run: python scripts/build_portable_exe.py --bundle-version ${{ env.BALUFFO_VERSION }}
 
+      - name: Build ship bundle
+        run: py -3 scripts/build_ship_bundle.py --bundle-version ${{ env.BALUFFO_VERSION }}
+
+      - name: Create ship bundle zip
+        shell: pwsh
+        run: |
+          $shipZip = "dist/baluffo-ship-${{ env.BALUFFO_VERSION }}.zip"
+          if (Test-Path $shipZip) {
+            Remove-Item $shipZip -Force
+          }
+          Compress-Archive -Path dist/baluffo-ship -DestinationPath $shipZip -Force
+
+      - name: Extract release notes
+        shell: pwsh
+        run: |
+          $lines = Get-Content SHIP_PACKAGE.md
+          $start = $lines.IndexOf("## Release Notes")
+          $end = $lines.IndexOf("## PR Description")
+          if ($start -lt 0) {
+            throw "Could not find '## Release Notes' in SHIP_PACKAGE.md"
+          }
+          if ($end -lt 0) {
+            $end = $lines.Count
+          }
+          if ($end -le $start) {
+            throw "Invalid release notes section bounds in SHIP_PACKAGE.md"
+          }
+          $notes = $lines[$start..($end - 1)]
+          Set-Content -Path release-notes.md -Value $notes
+
       - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
           name: baluffo-portable-${{ env.BALUFFO_VERSION }}
           path: dist/baluffo-portable-${{ env.BALUFFO_VERSION }}.zip
+
+      - name: Upload ship artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: baluffo-ship-${{ env.BALUFFO_VERSION }}
+          path: dist/baluffo-ship-${{ env.BALUFFO_VERSION }}.zip
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Baluffo ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: |
+            dist/baluffo-portable-${{ env.BALUFFO_VERSION }}.zip
+            dist/baluffo-ship-${{ env.BALUFFO_VERSION }}.zip
