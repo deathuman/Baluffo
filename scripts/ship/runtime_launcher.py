@@ -39,6 +39,51 @@ class QuietSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
         return
 
 
+def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
+    row = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int((time.time() % 1) * 1_000_000):06d}+00:00",
+        "event": str(event or "").strip() or "unknown",
+        "fields": {key: value for key, value in fields.items()},
+    }
+    path = Path(data_dir) / "desktop-startup-metrics.jsonl"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except OSError:
+        return
+
+
+def build_site_request_handler(directory: Path, *, data_dir: Path | None = None, startup_probe: bool = False):
+    class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=str(directory), **kwargs)
+
+        def do_GET(self):  # noqa: N802
+            trace_enabled = bool(startup_probe and data_dir)
+            path_only = str(getattr(self, "path", "") or "").split("?", 1)[0]
+            trace_path = path_only.lstrip("/")
+            request_started = time.perf_counter()
+            if trace_enabled and trace_path in {"jobs.html", "saved.html", "admin.html"}:
+                _append_startup_trace(
+                    Path(data_dir),
+                    "desktop_site_request_start",
+                    path=trace_path,
+                )
+            try:
+                return super().do_GET()
+            finally:
+                if trace_enabled and trace_path in {"jobs.html", "saved.html", "admin.html"}:
+                    _append_startup_trace(
+                        Path(data_dir),
+                        "desktop_site_request_complete",
+                        path=trace_path,
+                        durationMs=int((time.perf_counter() - request_started) * 1000),
+                    )
+
+    return ProbeAwareSimpleHTTPRequestHandler
+
+
 def resolve_root(root: str | Path | None = None) -> Path:
     return Path(root).expanduser().resolve() if root else ROOT
 
@@ -148,7 +193,11 @@ def run_site_server(root: str | Path | None = None, *, port: int = 8080) -> None
             }
         )
     )
-    handler = functools.partial(QuietSimpleHTTPRequestHandler, directory=str(layout.active_root))
+    handler = build_site_request_handler(
+        layout.active_root,
+        data_dir=Path(str(os.environ.get("BALUFFO_DATA_DIR") or "")).expanduser().resolve() if str(os.environ.get("BALUFFO_DATA_DIR") or "").strip() else None,
+        startup_probe=str(os.environ.get("BALUFFO_STARTUP_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"},
+    )
     server = ThreadingHTTPServer(("127.0.0.1", int(port)), handler)
     with server:
         server.serve_forever()

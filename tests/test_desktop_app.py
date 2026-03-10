@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 import types
+from types import SimpleNamespace
 
 from scripts.ship import desktop_app
 
@@ -22,6 +23,7 @@ class DesktopAppTests(unittest.TestCase):
             bind_host="127.0.0.1",
             child_mode="",
             desktop_runtime=False,
+            startup_probe=False,
         )
         with mock.patch.object(desktop_app, "resolve_ship_root", return_value=root):
             config = desktop_app.create_runtime_config(args)
@@ -47,6 +49,7 @@ class DesktopAppTests(unittest.TestCase):
             bind_host="127.0.0.1",
             child_mode="",
             desktop_runtime=False,
+            startup_probe=False,
         )
         with mock.patch.object(desktop_app, "resolve_ship_root", return_value=root):
             config = desktop_app.create_runtime_config(args)
@@ -62,11 +65,29 @@ class DesktopAppTests(unittest.TestCase):
             data_dir=Path("C:/tmp/baluffo-ship/data"),
             open_path="jobs.html",
             title="Baluffo",
+            startup_probe=False,
         )
 
         self.assertEqual(
             desktop_app.build_open_url(config),
             "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1",
+        )
+
+    def test_build_open_url_marks_startup_probe_when_enabled(self) -> None:
+        config = desktop_app.DesktopRuntimeConfig(
+            ship_root=Path("C:/tmp/baluffo-ship"),
+            site_port=8080,
+            bridge_port=8877,
+            bridge_host="127.0.0.1",
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+            open_path="jobs.html",
+            title="Baluffo",
+            startup_probe=True,
+        )
+
+        self.assertEqual(
+            desktop_app.build_open_url(config),
+            "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1&startupProbe=1",
         )
 
     def test_build_loading_html_contains_shell_markup(self) -> None:
@@ -75,6 +96,82 @@ class DesktopAppTests(unittest.TestCase):
         self.assertIn("Starting Baluffo", html)
         self.assertIn('class="shell"', html)
         self.assertIn("Loading interface...", html)
+
+    def test_begin_window_app_bootstrap_traces_shell_and_stashes_url(self) -> None:
+        window = SimpleNamespace()
+        with mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock:
+            desktop_app._begin_window_app_bootstrap(Path("C:/tmp/data"), 10.0, window, "http://127.0.0.1:8080/jobs.html")
+
+        event_names = [call.args[1] for call in trace_mock.call_args_list]
+        self.assertEqual(event_names, ["desktop_shell_window_shown"])
+        self.assertEqual(window._baluffo_pending_app_url, "http://127.0.0.1:8080/jobs.html")
+
+    def test_schedule_window_app_navigation_traces_and_loads_url(self) -> None:
+        window = mock.Mock()
+        with mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock, mock.patch.object(
+            desktop_app.threading, "Thread"
+        ) as thread_ctor:
+            holder = {}
+
+            def capture_thread(*, target, name, daemon):
+                holder["target"] = target
+                holder["name"] = name
+                holder["daemon"] = daemon
+                return mock.Mock(start=mock.Mock(side_effect=target))
+
+            thread_ctor.side_effect = capture_thread
+            desktop_app._schedule_window_app_navigation(Path("C:/tmp/data"), 10.0, window, "http://127.0.0.1:8080/jobs.html", delay_ms=0)
+
+        event_names = [call.args[1] for call in trace_mock.call_args_list]
+        self.assertEqual(event_names, ["desktop_shell_navigation_scheduled", "desktop_shell_navigation_start", "desktop_window_load_url"])
+        self.assertEqual(holder["name"], "baluffo-shell-handoff")
+        self.assertTrue(holder["daemon"])
+        window.load_url.assert_called_once_with("http://127.0.0.1:8080/jobs.html")
+
+    def test_track_window_loaded_events_distinguishes_shell_and_app_load(self) -> None:
+        loaded_event = []
+        before_load_event = []
+        shown_event = []
+
+        class EventHook:
+            def __init__(self, bucket):
+                self.bucket = bucket
+
+            def __iadd__(self, handler):
+                self.bucket.append(handler)
+                return self
+
+        window = SimpleNamespace(
+            events=SimpleNamespace(
+                loaded=EventHook(loaded_event),
+                before_load=EventHook(before_load_event),
+                shown=EventHook(shown_event),
+            ),
+            show=mock.Mock(),
+            _baluffo_pending_app_url="http://127.0.0.1:8080/jobs.html",
+        )
+        with mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock, mock.patch.object(
+            desktop_app, "_schedule_window_app_navigation"
+        ) as schedule_mock:
+            desktop_app._track_window_loaded_events(window, Path("C:/tmp/data"), 10.0)
+            self.assertEqual(len(loaded_event), 1)
+            self.assertEqual(len(before_load_event), 1)
+            self.assertEqual(len(shown_event), 1)
+            shown_event[0]()
+            before_load_event[0]()
+            loaded_event[0]()
+            before_load_event[0]()
+            loaded_event[0]()
+
+        event_names = [call.args[1] for call in trace_mock.call_args_list]
+        self.assertIn("desktop_window_event_shown", event_names)
+        self.assertIn("desktop_shell_before_load", event_names)
+        self.assertIn("desktop_page_before_load", event_names)
+        self.assertIn("desktop_shell_loaded", event_names)
+        self.assertIn("desktop_page_loaded", event_names)
+        self.assertIn("desktop_window_shown", event_names)
+        schedule_mock.assert_called_once_with(Path("C:/tmp/data"), 10.0, window, "http://127.0.0.1:8080/jobs.html")
+        window.show.assert_called_once()
 
     def test_ensure_runtime_ports_raises_when_site_port_busy(self) -> None:
         config = desktop_app.DesktopRuntimeConfig(
@@ -85,6 +182,7 @@ class DesktopAppTests(unittest.TestCase):
             data_dir=Path("C:/tmp/baluffo-ship/data"),
             open_path="jobs.html",
             title="Baluffo",
+            startup_probe=False,
         )
 
         with mock.patch.object(desktop_app, "_port_is_available", side_effect=[False, True]):

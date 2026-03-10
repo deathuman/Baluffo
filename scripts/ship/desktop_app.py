@@ -11,6 +11,7 @@ import runpy
 import subprocess
 import sys
 import time
+import threading
 import webbrowser
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -27,6 +28,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.ship.runtime_launcher import wait_for_url
+from scripts.ship.startup_profile import summarize_startup_metrics, write_startup_summary
 
 WINDOW_TITLE = "Baluffo"
 DEFAULT_OPEN_PATH = "jobs.html"
@@ -34,6 +36,7 @@ DEFAULT_SITE_PORT = 8080
 DEFAULT_BRIDGE_PORT = 8877
 READY_TIMEOUT_S = 25.0
 WEBVIEW2_INSTALL_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+SHELL_NAVIGATION_DELAY_MS = 350
 MB_OK = 0x00000000
 MB_ICONERROR = 0x00000010
 MB_YESNO = 0x00000004
@@ -49,6 +52,7 @@ class DesktopRuntimeConfig:
     data_dir: Path
     open_path: str
     title: str
+    startup_probe: bool
 
 
 def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
@@ -64,6 +68,25 @@ def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     except OSError:
         return
+
+
+def read_startup_metrics(data_dir: Path, limit: int = 500) -> list[dict[str, object]]:
+    path = Path(data_dir) / "desktop-startup-metrics.jsonl"
+    rows: list[dict[str, object]] = []
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(row, dict):
+                    rows.append(row)
+    except OSError:
+        return []
+    if limit > 0:
+        return rows[-limit:]
+    return rows
 
 
 def _default_ship_root() -> Path:
@@ -119,12 +142,16 @@ def build_child_command(
     return child_command
 
 
-def start_child_process(command: Sequence[str]) -> subprocess.Popen[str]:
+def start_child_process(command: Sequence[str], *, extra_env: dict[str, str] | None = None) -> subprocess.Popen[str]:
     popen_kwargs: dict[str, object] = {
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
         "text": True,
     }
+    if extra_env:
+        env = os.environ.copy()
+        env.update({key: str(value) for key, value in extra_env.items()})
+        popen_kwargs["env"] = env
     if os.name == "nt":
         popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
     return subprocess.Popen(list(command), **popen_kwargs)
@@ -192,6 +219,7 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
         data_dir=data_dir,
         open_path=str(args.open_path or DEFAULT_OPEN_PATH).lstrip("/") or DEFAULT_OPEN_PATH,
         title=str(args.title or WINDOW_TITLE).strip() or WINDOW_TITLE,
+        startup_probe=bool(args.startup_probe or str(os.environ.get("BALUFFO_STARTUP_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"}),
     )
 
 
@@ -220,9 +248,10 @@ def ensure_runtime_ports(config: DesktopRuntimeConfig) -> None:
 
 def build_open_url(config: DesktopRuntimeConfig) -> str:
     separator = "&" if "?" in config.open_path else "?"
+    extra = "&startupProbe=1" if bool(config.startup_probe) else ""
     return (
         f"http://127.0.0.1:{config.site_port}/{config.open_path}"
-        f"{separator}desktop=1&bridgePort={int(config.bridge_port)}&bridgeHost={config.bridge_host}"
+        f"{separator}desktop=1&bridgePort={int(config.bridge_port)}&bridgeHost={config.bridge_host}{extra}"
     )
 
 
@@ -319,15 +348,68 @@ def _load_window_url_with_trace(data_dir: Path, started_mono: float, window: obj
     _load_window_url(window, url)
 
 
-def _show_window_on_first_load(window: object, data_dir: Path, started_mono: float) -> None:
-    shown = False
+def _schedule_window_app_navigation(data_dir: Path, started_mono: float, window: object, url: str, delay_ms: int = SHELL_NAVIGATION_DELAY_MS) -> None:
+    wait_ms = max(0, int(delay_ms))
+    _append_startup_trace(
+        data_dir,
+        "desktop_shell_navigation_scheduled",
+        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+        delayMs=wait_ms,
+    )
+
+    def navigate() -> None:
+        if wait_ms > 0:
+            time.sleep(wait_ms / 1000.0)
+        _append_startup_trace(
+            data_dir,
+            "desktop_shell_navigation_start",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+        )
+        _load_window_url_with_trace(data_dir, started_mono, window, url)
+
+    threading.Thread(target=navigate, name="baluffo-shell-handoff", daemon=True).start()
+
+
+def _begin_window_app_bootstrap(data_dir: Path, started_mono: float, window: object, url: str) -> None:
+    _append_startup_trace(
+        data_dir,
+        "desktop_shell_window_shown",
+        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+    )
+    setattr(window, "_baluffo_pending_app_url", str(url))
+
+
+def _track_window_loaded_events(window: object, data_dir: Path, started_mono: float) -> None:
+    load_count = 0
+    before_load_count = 0
+    navigation_started = False
 
     def handle_loaded(*_args: object) -> None:
-        nonlocal shown
-        if shown:
-            return
-        shown = True
+        nonlocal load_count, navigation_started
+        load_count += 1
         try:
+            if load_count == 1:
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_shell_loaded",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                )
+                if not navigation_started:
+                    pending_url = str(getattr(window, "_baluffo_pending_app_url", "") or "").strip()
+                    if pending_url:
+                        navigation_started = True
+                        _schedule_window_app_navigation(data_dir, started_mono, window, pending_url)
+                return
+            _append_startup_trace(
+                data_dir,
+                "desktop_page_loaded",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            )
+            _append_startup_trace(
+                data_dir,
+                "desktop_window_show_requested",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            )
             show = getattr(window, "show", None)
             if callable(show):
                 show()
@@ -339,11 +421,42 @@ def _show_window_on_first_load(window: object, data_dir: Path, started_mono: flo
         except Exception:
             return
 
+    def handle_before_load(*_args: object) -> None:
+        nonlocal before_load_count
+        before_load_count += 1
+        try:
+            event_name = "desktop_shell_before_load" if before_load_count == 1 else "desktop_page_before_load"
+            if before_load_count > 2:
+                event_name = f"desktop_before_load_{before_load_count}"
+            _append_startup_trace(
+                data_dir,
+                event_name,
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            )
+        except Exception:
+            return
+
+    def handle_shown(*_args: object) -> None:
+        try:
+            _append_startup_trace(
+                data_dir,
+                "desktop_window_event_shown",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            )
+        except Exception:
+            return
+
     try:
         events = getattr(window, "events", None)
         loaded_event = getattr(events, "loaded", None)
+        before_load_event = getattr(events, "before_load", None)
+        shown_event = getattr(events, "shown", None)
+        if before_load_event is not None:
+            before_load_event += handle_before_load
         if loaded_event is not None:
             loaded_event += handle_loaded
+        if shown_event is not None:
+            shown_event += handle_shown
     except Exception:
         return
 
@@ -445,10 +558,14 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         shipRoot=str(config.ship_root),
     )
     try:
+        child_env = {"BALUFFO_DATA_DIR": str(config.data_dir)}
+        if bool(config.startup_probe):
+            child_env["BALUFFO_STARTUP_PROBE"] = "1"
         ensure_runtime_ports(config)
         _append_startup_trace(config.data_dir, "desktop_ports_available", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
         site_process = start_child_process(
-            build_child_command("site", root=config.ship_root, port=config.site_port, desktop_runtime=True)
+            build_child_command("site", root=config.ship_root, port=config.site_port, desktop_runtime=True),
+            extra_env=child_env,
         )
         _append_startup_trace(
             config.data_dir,
@@ -464,7 +581,8 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 bridge_host=config.bridge_host,
                 data_dir=config.data_dir,
                 desktop_runtime=True,
-            )
+            ),
+            extra_env=child_env,
         )
         _append_startup_trace(
             config.data_dir,
@@ -483,23 +601,20 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         import webview  # type: ignore
         window = webview.create_window(
             config.title,
-            url=open_url,
+            html=build_loading_html(config.title),
             min_size=(1100, 720),
-            hidden=True,
+            hidden=False,
             background_color="#0B0E15",
         )
         _append_startup_trace(config.data_dir, "desktop_window_created", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
-        _show_window_on_first_load(window, config.data_dir, started_mono)
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_window_load_url",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            url=str(open_url),
-        )
-        webview.start()
+        _track_window_loaded_events(window, config.data_dir, started_mono)
+        webview.start(_begin_window_app_bootstrap, args=(config.data_dir, started_mono, window, open_url))
         _append_startup_trace(config.data_dir, "desktop_window_closed", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
         if window is None:
             raise RuntimeError("Failed to create desktop window.")
+        if config.startup_probe:
+            summary = summarize_startup_metrics(read_startup_metrics(config.data_dir), page=Path(config.open_path).stem or "jobs", profile_mode="cold")
+            write_startup_summary(config.data_dir / "startup-probe-summary.json", summary)
     except Exception as exc:
         _append_startup_trace(
             config.data_dir,
@@ -527,6 +642,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--bind-host", default="127.0.0.1")
     parser.add_argument("--script", default="")
     parser.add_argument("--desktop-runtime", action="store_true")
+    parser.add_argument("--startup-probe", action="store_true")
     args, extra = parser.parse_known_args(argv)
     if str(getattr(args, "child_mode", "") or "") == "__child_script__":
         args.script_args = list(extra)

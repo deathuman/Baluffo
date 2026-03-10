@@ -82,6 +82,29 @@ class RuntimeLauncherTests(unittest.TestCase):
             rl.wait_for_url("http://127.0.0.1:9/nope", timeout_s=0.2, interval_s=0.05)
         self.assertLess(time.monotonic() - start, 2.0)
 
+    def test_build_site_request_handler_traces_probe_requests(self) -> None:
+        with workspace_tmpdir("runtime-launcher") as tmp:
+            root = Path(tmp) / "site"
+            root.mkdir(parents=True, exist_ok=True)
+            _write(root / "jobs.html", "<html>jobs</html>\n")
+            data_dir = Path(tmp) / "data"
+            handler = rl.build_site_request_handler(root, data_dir=data_dir, startup_probe=True)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                rl.wait_for_url(f"http://127.0.0.1:{server.server_address[1]}/jobs.html", timeout_s=2.0, interval_s=0.05)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+            metrics_path = data_dir / "desktop-startup-metrics.jsonl"
+            self.assertTrue(metrics_path.exists())
+            events = [json.loads(line)["event"] for line in metrics_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            self.assertIn("desktop_site_request_start", events)
+            self.assertIn("desktop_site_request_complete", events)
+
 
 if __name__ == "__main__":
     unittest.main()

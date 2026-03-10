@@ -1,5 +1,6 @@
 import { JobsStateModule as jobsStateModule } from "../../jobs-state.js";
 import { AdminConfig as adminConfig } from "../../admin-config.js";
+import { resolveStartupProbeEnabled } from "../../startup-probe.js";
 import {
   escapeHtml,
   showToast,
@@ -137,6 +138,9 @@ let quickActionsEl;
 let customizeQuickFiltersBtn;
 let quickFiltersPanel;
 let quickFiltersOptionsEl;
+let desktopUrlStateReady = false;
+let desktopPendingRememberJobsUrl = false;
+let desktopPendingJobsUrl = "";
 let quickFiltersResetBtn;
 let dataSourcesListEl;
 let dataSourcesCaptionEl;
@@ -337,6 +341,7 @@ let pendingAutoRefreshSignal = null;
 let lastHandledAutoRefreshSignalId = readAppliedAutoRefreshId();
 let lastFilterOptionsSignature = "";
 let startupRenderMetricSent = false;
+let startupInteractiveMetricSent = false;
 let authReadyPollTimer = null;
 let authStateListenerBound = false;
 let nonCriticalStartupScheduled = false;
@@ -454,6 +459,23 @@ function markStartupRendered(stage, rowCount) {
     stage: String(stage || ""),
     rowCount: Number(rowCount || 0)
   });
+}
+
+function markJobsFirstInteractive(reason) {
+  if (startupInteractiveMetricSent) return;
+  startupInteractiveMetricSent = true;
+  desktopUrlStateReady = true;
+  emitDesktopStartupMetric("jobs_first_interactive", {
+    reason: String(reason || "unknown")
+  });
+  if (desktopPendingRememberJobsUrl) {
+    desktopPendingRememberJobsUrl = false;
+    const pendingUrl = desktopPendingJobsUrl || `${window.location.pathname}${window.location.search}`;
+    desktopPendingJobsUrl = "";
+    window.setTimeout(() => {
+      persistDesktopJobsUrlState(pendingUrl);
+    }, 0);
+  }
 }
 
 function bindEvents() {
@@ -594,6 +616,7 @@ async function init() {
     desktopMode: isDesktopRuntimeMode(),
     hasCache: Boolean(cached?.jobs && cached.jobs.length > 0)
   });
+  emitDesktopStartupMetric(cached?.jobs && cached.jobs.length > 0 ? "jobs_cache_hit" : "jobs_cache_miss");
   if (cached?.jobs && cached.jobs.length > 0) {
     allJobs = normalizeJobs(cached.jobs, {
       professionLabels: PROFESSION_LABELS,
@@ -604,6 +627,7 @@ async function init() {
     applyStateToFilters();
     applyFiltersAndRender({ resetPage: false });
     markStartupRendered("cache", allJobs.length);
+    markJobsFirstInteractive("cache");
 
     if (isCacheStale(cached.savedAt)) {
       setSourceStatus(`Loaded ${allJobs.length.toLocaleString()} jobs from cache. Updating stale cache...`);
@@ -1062,6 +1086,7 @@ function readStateFromUrl() {
 }
 
 function writeStateToUrl() {
+  emitDesktopStartupMetric("jobs_write_state_params_start");
   const params = new URLSearchParams();
 
   if (state.currentPage > 1) params.set("page", String(state.currentPage));
@@ -1077,15 +1102,58 @@ function writeStateToUrl() {
   if (state.filters.excludeInternship) params.set("excludeInternship", "1");
   if (state.filters.search) params.set("search", state.filters.search);
   if (state.filters.sort && state.filters.sort !== "relevance") params.set("sort", state.filters.sort);
+  emitDesktopStartupMetric("jobs_write_state_params_complete");
 
   const query = params.toString();
   const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+  if (resolveStartupProbeEnabled()) {
+    emitDesktopStartupMetric("jobs_write_state_probe_skip", { url });
+    return;
+  }
+  if (isDesktopRuntimeMode()) {
+    if (!desktopUrlStateReady) {
+      desktopPendingRememberJobsUrl = true;
+      desktopPendingJobsUrl = url;
+      emitDesktopStartupMetric("jobs_write_state_desktop_deferred", { url });
+      return;
+    }
+    emitDesktopStartupMetric("jobs_write_state_desktop_flush", { url });
+    window.setTimeout(() => {
+      persistDesktopJobsUrlState(url);
+    }, 0);
+    return;
+  }
+  emitDesktopStartupMetric("jobs_write_state_replace_state_start", { url });
   window.history.replaceState({}, "", url);
+  emitDesktopStartupMetric("jobs_write_state_replace_state_complete");
+  emitDesktopStartupMetric("jobs_write_state_remember_url_start");
   rememberCurrentJobsUrl();
+  emitDesktopStartupMetric("jobs_write_state_remember_url_complete");
+}
+
+function persistDesktopJobsUrlState(url) {
+  try {
+    emitDesktopStartupMetric("jobs_write_state_remember_url_start");
+    rememberJobsUrl(JOBS_LAST_URL_KEY, String(url || ""));
+    emitDesktopStartupMetric("jobs_write_state_remember_url_complete");
+  } catch {
+    emitDesktopStartupMetric("jobs_write_state_remember_url_failed");
+  }
 }
 
 function rememberCurrentJobsUrl() {
   const url = `${window.location.pathname}${window.location.search}`;
+  if (isDesktopRuntimeMode()) {
+    if (!desktopUrlStateReady) {
+      desktopPendingRememberJobsUrl = true;
+      desktopPendingJobsUrl = url;
+      return;
+    }
+    window.setTimeout(() => {
+      persistDesktopJobsUrlState(url);
+    }, 0);
+    return;
+  }
   rememberJobsUrl(JOBS_LAST_URL_KEY, url);
 }
 
@@ -1203,6 +1271,7 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
     applyFiltersAndRender({ resetPage: false });
     if (firstLoad) {
       markStartupRendered("first_load_refresh", allJobs.length);
+      markJobsFirstInteractive("first_load_refresh");
       emitDesktopStartupMetric("jobs_first_load_refresh_done", {
         ok: true,
         durationMs: Math.max(0, Date.now() - refreshStartedAt),
@@ -1272,26 +1341,51 @@ async function writeCachedJobs(jobs) {
 async function loadStartupPreviewJobs() {
   try {
     const startedAt = Date.now();
+    emitDesktopStartupMetric("jobs_startup_preview_fetch_start");
     const payload = await fetchJsonFromCandidates(STARTUP_PREVIEW_JSON_URLS, { timeoutMs: 3000 });
+    emitDesktopStartupMetric("jobs_startup_preview_fetch_complete", {
+      durationMs: Math.max(0, Date.now() - startedAt),
+      hasPayload: Boolean(payload)
+    });
+    emitDesktopStartupMetric("jobs_startup_preview_parse_start");
     const rows = parseUnifiedJobsPayload(payload, jobsParsing);
+    emitDesktopStartupMetric("jobs_startup_preview_parse_complete", {
+      rowCount: Array.isArray(rows) ? rows.length : 0
+    });
     if (!Array.isArray(rows) || rows.length === 0) return false;
+    emitDesktopStartupMetric("jobs_startup_preview_normalize_start");
     allJobs = normalizeJobs(rows, {
       professionLabels: PROFESSION_LABELS,
       sanitizeUrl
+    });
+    emitDesktopStartupMetric("jobs_startup_preview_normalize_complete", {
+      rowCount: allJobs.length
     });
     updateLastUpdatedText(Date.now());
     recalculateItemsPerPage();
     updateFilterOptions();
     applyStateToFilters();
+    emitDesktopStartupMetric("jobs_startup_preview_render_start", {
+      rowCount: allJobs.length
+    });
     applyFiltersAndRender({ resetPage: false });
+    emitDesktopStartupMetric("jobs_startup_preview_render_returned", {
+      rowCount: allJobs.length
+    });
     markStartupRendered("startup_preview", allJobs.length);
+    markJobsFirstInteractive("startup_preview");
+    emitDesktopStartupMetric("jobs_startup_preview_render_complete", {
+      rowCount: allJobs.length
+    });
     emitDesktopStartupMetric("jobs_startup_preview_loaded", {
       rowCount: allJobs.length,
       durationMs: Math.max(0, Date.now() - startedAt)
     });
     return true;
-  } catch {
-    emitDesktopStartupMetric("jobs_startup_preview_miss");
+  } catch (error) {
+    emitDesktopStartupMetric("jobs_startup_preview_miss", {
+      message: String(error?.message || error || "unknown startup preview error")
+    });
     return false;
   }
 }
@@ -1502,6 +1596,10 @@ function applyFiltersAndRender({ resetPage }) {
     state.currentPage = 1;
   }
 
+  emitDesktopStartupMetric("jobs_apply_filters_start", {
+    resetPage: Boolean(resetPage),
+    totalJobs: allJobs.length
+  });
   syncStateFromFilters();
 
   const searchTerm = state.filters.search.toLowerCase();
@@ -1536,9 +1634,18 @@ function applyFiltersAndRender({ resetPage }) {
       && matchesSearch;
   });
 
+  emitDesktopStartupMetric("jobs_apply_filters_complete", {
+    filteredCount: filteredJobs.length
+  });
   sortJobs(filteredJobs, state.filters.sort);
+  emitDesktopStartupMetric("jobs_sort_complete", {
+    filteredCount: filteredJobs.length,
+    sortMode: String(state.filters.sort || "relevance")
+  });
   displayJobs(filteredJobs);
+  emitDesktopStartupMetric("jobs_write_state_start");
   writeStateToUrl();
+  emitDesktopStartupMetric("jobs_write_state_complete");
 }
 
 function sortJobs(jobs, sortMode) {
@@ -1569,11 +1676,16 @@ function sortJobs(jobs, sortMode) {
 
 function displayJobs(jobs) {
   if (!jobsList || !pagination) return;
+  emitDesktopStartupMetric("jobs_display_start", {
+    totalCount: jobs.length,
+    currentPage: state.currentPage
+  });
 
   if (jobs.length === 0) {
     jobsList.innerHTML = '<div class="no-results">No jobs found matching your filters.</div>';
     pagination.innerHTML = "";
     updateResultsSummary(0, 0, 0);
+    emitDesktopStartupMetric("jobs_display_empty");
     return;
   }
 
@@ -1582,6 +1694,10 @@ function displayJobs(jobs) {
 
   const startIndex = (state.currentPage - 1) * state.itemsPerPage;
   const pageJobs = jobs.slice(startIndex, startIndex + state.itemsPerPage);
+  emitDesktopStartupMetric("jobs_display_markup_start", {
+    pageJobs: pageJobs.length,
+    totalPages
+  });
 
   jobsList.innerHTML = `
     <div class="jobs-table-header">
@@ -1600,10 +1716,29 @@ function displayJobs(jobs) {
       ${pageJobs.map(renderJobRow).join("")}
     </div>
   `;
+  emitDesktopStartupMetric("jobs_display_dom_committed", {
+    pageJobs: pageJobs.length
+  });
 
   renderPagination(totalPages);
+  emitDesktopStartupMetric("jobs_display_pagination_complete", {
+    totalPages
+  });
   bindRenderedJobEvents(pageJobs);
+  emitDesktopStartupMetric("jobs_display_bind_complete", {
+    pageJobs: pageJobs.length
+  });
   updateResultsSummary(jobs.length, startIndex + 1, startIndex + pageJobs.length);
+  emitDesktopStartupMetric("jobs_display_complete", {
+    startIndex: startIndex + 1,
+    endIndex: startIndex + pageJobs.length,
+    totalCount: jobs.length
+  });
+  window.requestAnimationFrame(() => {
+    emitDesktopStartupMetric("jobs_display_frame_presented", {
+      pageJobs: pageJobs.length
+    });
+  });
 }
 
 function renderJobRow(job) {

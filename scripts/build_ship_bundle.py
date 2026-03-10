@@ -16,6 +16,10 @@ DIST_DIR = ROOT / "dist" / "baluffo-ship"
 DEFAULT_BUNDLE_VERSION = "1.0.0"
 APP_RUNTIME_FILES = (
     "admin.html",
+    "desktop-probe-css.html",
+    "desktop-probe.html",
+    "desktop-probe-head.html",
+    "desktop-probe-inline.html",
     "index.html",
     "jobs.html",
     "saved.html",
@@ -25,6 +29,7 @@ APP_RUNTIME_FILES = (
     "app-local-data-client.js",
     "desktop-local-data-client.js",
     "local-data-client.js",
+    "startup-probe.js",
     "jobs-parsing-utils.js",
     "jobs-state.js",
     "saved-zip-utils.js",

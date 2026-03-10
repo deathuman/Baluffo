@@ -226,6 +226,7 @@ const adminBusyState = {
   liveSyncRunning: false,
   livePipelineRunning: false
 };
+let adminInteractiveMetricSent = false;
 
 function emitAdminStartupMetric(event, payload = {}) {
   fetch(`${ADMIN_BRIDGE_BASE}/desktop-local-data/startup-metric?t=${Date.now()}`, {
@@ -236,6 +237,14 @@ function emitAdminStartupMetric(event, payload = {}) {
       payload
     })
   }).catch(() => {});
+}
+
+function markAdminFirstInteractive(reason) {
+  if (adminInteractiveMetricSent) return;
+  adminInteractiveMetricSent = true;
+  emitAdminStartupMetric("admin_first_interactive", {
+    reason: String(reason || "unknown")
+  });
 }
 const adminDispatch = createAdminDispatcher();
 let activeSourceFilter = adminPageState.activeSourceFilter;
@@ -618,6 +627,7 @@ function initAdminPage() {
     adminUnlockBtnEl.title = "";
   }
   emitAdminStartupMetric("admin_pin_gate_ready");
+  markAdminFirstInteractive("pin_gate_ready");
   stopAdminApiReadyPoll();
 }
 

@@ -1,6 +1,7 @@
 const RUNTIME_MODE_KEY = "baluffo_runtime_mode";
 import { initBrowserLocalDataClient } from "./local-data-client.js";
 import { initDesktopLocalDataClient } from "./desktop-local-data-client.js";
+import { bindStartupProbeErrorHandlers, emitStartupProbeMetric, resolveStartupProbePage } from "./startup-probe.js";
 
 function resolveDesktopMode() {
   try {
@@ -16,8 +17,14 @@ function resolveDesktopMode() {
   }
 }
 
+bindStartupProbeErrorHandlers();
+
 if (resolveDesktopMode()) {
+  const page = resolveStartupProbePage();
+  emitStartupProbeMetric(`${page}_page_boot_start`);
+  emitStartupProbeMetric(`${page}_local_data_init_start`);
   initDesktopLocalDataClient();
+  emitStartupProbeMetric(`${page}_local_data_init_ready`);
 } else {
   initBrowserLocalDataClient();
 }

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Baluffo Desktop Probe</title>
+  <script>
+    (function () {
+      try {
+        const url = new URL(window.location.href);
+        if (String(url.searchParams.get("startupProbe") || "").trim() !== "1") return;
+        const bridgePort = String(url.searchParams.get("bridgePort") || "").trim();
+        const bridgeHost = String(url.searchParams.get("bridgeHost") || "").trim() || "127.0.0.1";
+        if (!/^\d+$/.test(bridgePort)) return;
+        const bridgeBase = `http://${bridgeHost}:${bridgePort}`;
+        const emit = event => {
+          fetch(`${bridgeBase}/desktop-local-data/startup-metric?t=${Date.now()}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event, payload: {} })
+          }).catch(() => {});
+        };
+        emit("desktop_probe_html_parse_start");
+        window.addEventListener("DOMContentLoaded", () => {
+          emit("desktop_probe_ready");
+        }, { once: true });
+      } catch {
+        // Ignore probe-only failures.
+      }
+    })();
+  </script>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: #0b0e15;
+      color: #e6ecff;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+    body {
+      display: grid;
+      place-items: center;
+    }
+  </style>
+</head>
+<body>
+  <div>Desktop Probe</div>
+</body>
+</html>

@@ -10,6 +10,8 @@
     "test:smoke": "npm run test:frontend",
     "test:frontend:packaged": "py -3.13 scripts/packaged_desktop_smoke.py",
     "test:frontend:packaged:headed": "py -3.13 scripts/packaged_desktop_smoke.py --headed --pause-on-failure",
+    "probe:desktop:startup:cold": "py -3.13 scripts/packaged_desktop_smoke.py --rebuild --startup-probe --profile-only --profile-mode cold --runtime-timeout 60",
+    "probe:desktop:startup:warm": "py -3.13 scripts/packaged_desktop_smoke.py --rebuild --startup-probe --profile-only --profile-mode warm --runtime-timeout 60",
     "test:frontend": "playwright test",
     "test:frontend:unit": "node tests/frontend/unit/all.test.mjs",
     "test:frontend:headed": "playwright test --headed",

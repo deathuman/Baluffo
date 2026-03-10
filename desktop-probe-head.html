@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Baluffo Desktop Head Probe</title>
+  <script>
+    (function () {
+      const THEME_KEY = "baluffo_theme";
+      let theme = "dark";
+      const isDesktopRuntime = /(?:[?&])desktop=1(?:&|$)/.test(window.location.search);
+      try {
+        if (!isDesktopRuntime) {
+          const stored = localStorage.getItem(THEME_KEY);
+          if (stored === "dark" || stored === "light") {
+            theme = stored;
+          } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+            theme = "light";
+          }
+        }
+      } catch (_) {}
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
+  <script>
+    (function () {
+      try {
+        const url = new URL(window.location.href);
+        if (String(url.searchParams.get("startupProbe") || "").trim() !== "1") return;
+        const bridgePort = String(url.searchParams.get("bridgePort") || "").trim();
+        const bridgeHost = String(url.searchParams.get("bridgeHost") || "").trim() || "127.0.0.1";
+        if (!/^\d+$/.test(bridgePort)) return;
+        const bridgeBase = `http://${bridgeHost}:${bridgePort}`;
+        const emit = event => {
+          fetch(`${bridgeBase}/desktop-local-data/startup-metric?t=${Date.now()}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event, payload: {} })
+          }).catch(() => {});
+        };
+        emit("desktop_probe_head_html_parse_start");
+        window.addEventListener("DOMContentLoaded", () => {
+          emit("desktop_probe_head_ready");
+        }, { once: true });
+      } catch {
+        // Ignore probe-only failures.
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="jobs-page">
+  <div class="jobs-container">
+    <div class="jobs-header">
+      <h1>Desktop Head Probe</h1>
+    </div>
+  </div>
+  <script src="theme.js" defer></script>
+</body>
+</html>

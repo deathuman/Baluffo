@@ -121,6 +121,7 @@ let timelineScope = "all";
 let lastActivityPulse = null;
 let savedAuthReadyPollTimer = null;
 let savedAuthListenerBound = false;
+let savedInteractiveMetricSent = false;
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const TIMELINE_PREF_PREFIX = "baluffo_saved_timeline_prefs";
 const CUSTOM_SOURCE_LABEL = "Custom";
@@ -186,6 +187,14 @@ function emitSavedStartupMetric(event, payload = {}) {
       payload
     })
   }).catch(() => {});
+}
+
+function markSavedFirstInteractive(reason) {
+  if (savedInteractiveMetricSent) return;
+  savedInteractiveMetricSent = true;
+  emitSavedStartupMetric("saved_first_interactive", {
+    reason: String(reason || "unknown")
+  });
 }
 
 function cacheDom() {
@@ -360,6 +369,7 @@ function initSavedJobsPage() {
   stopSavedAuthReadyPoll();
   emitSavedStartupMetric("saved_auth_ready");
   setAuthControlsReady(true);
+  markSavedFirstInteractive("auth_ready");
   if (savedAuthListenerBound) return;
   savedAuthListenerBound = true;
 

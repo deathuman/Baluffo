@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Baluffo Desktop CSS Probe</title>
+  <script>
+    (function () {
+      try {
+        const url = new URL(window.location.href);
+        if (String(url.searchParams.get("startupProbe") || "").trim() !== "1") return;
+        const bridgePort = String(url.searchParams.get("bridgePort") || "").trim();
+        const bridgeHost = String(url.searchParams.get("bridgeHost") || "").trim() || "127.0.0.1";
+        if (!/^\d+$/.test(bridgePort)) return;
+        const bridgeBase = `http://${bridgeHost}:${bridgePort}`;
+        const emit = event => {
+          fetch(`${bridgeBase}/desktop-local-data/startup-metric?t=${Date.now()}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event, payload: {} })
+          }).catch(() => {});
+        };
+        emit("desktop_probe_css_html_parse_start");
+        window.addEventListener("DOMContentLoaded", () => {
+          emit("desktop_probe_css_ready");
+        }, { once: true });
+      } catch {
+        // Ignore probe-only failures.
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="jobs-page">
+  <div class="jobs-container">
+    <div class="jobs-header">
+      <h1>Desktop CSS Probe</h1>
+    </div>
+  </div>
+</body>
+</html>

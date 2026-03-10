@@ -5,7 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Baluffo Jobs</title>
   <meta http-equiv="refresh" content="0; url=jobs.html">
-  <script src="theme.js"></script>
+  <script>
+    (function () {
+      const THEME_KEY = "baluffo_theme";
+      let theme = "dark";
+      const isDesktopRuntime = /(?:[?&])desktop=1(?:&|$)/.test(window.location.search);
+      try {
+        if (!isDesktopRuntime) {
+          const stored = localStorage.getItem(THEME_KEY);
+          if (stored === "dark" || stored === "light") {
+            theme = stored;
+          } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+            theme = "light";
+          }
+        }
+      } catch (_) {}
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="jobs-entry-page">
@@ -19,6 +36,7 @@
       </noscript>
     </main>
   </div>
+  <script src="theme.js" defer></script>
   <script>
     window.location.replace("jobs.html");
   </script>
