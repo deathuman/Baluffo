@@ -118,6 +118,8 @@ let lastSavedJobsByKey = new Map();
 let selectedJobKey = "";
 let timelineScope = "all";
 let lastActivityPulse = null;
+let savedAuthReadyPollTimer = null;
+let savedAuthListenerBound = false;
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const TIMELINE_PREF_PREFIX = "baluffo_saved_timeline_prefs";
 const CUSTOM_SOURCE_LABEL = "Custom";
@@ -329,16 +331,22 @@ function initSavedJobsPage() {
   updateTimelineScopeButtons();
   renderWorkspaceStats();
   if (!savedPageService.isAvailable() || !isSavedApiReady()) {
-    setAuthStatus("Browsing as guest");
-    setSourceStatus("Local storage provider unavailable.");
-    setActivityStatus("Local provider unavailable.");
+    setAuthStatus("Local auth starting...");
+    setSourceStatus("Local auth provider is starting...");
+    setActivityStatus("Local provider is starting...");
     toggleAuthButtons(false);
+    setAuthControlsReady(false);
+    scheduleSavedAuthReadyPoll();
     setCustomJobAvailability(false);
     setSavedSortBarVisible(false);
-    renderAuthRequired("Local auth provider is unavailable.");
+    renderAuthRequired("Local auth provider is starting. Please wait...");
     renderTimeline();
     return;
   }
+  stopSavedAuthReadyPoll();
+  setAuthControlsReady(true);
+  if (savedAuthListenerBound) return;
+  savedAuthListenerBound = true;
 
   savedAuthService.onAuthStateChanged(user => {
     currentUser = user || null;
@@ -395,6 +403,24 @@ function initSavedJobsPage() {
       setActivityStatus("Could not load activity.");
     });
   });
+}
+
+function stopSavedAuthReadyPoll() {
+  if (!savedAuthReadyPollTimer) return;
+  clearTimeout(savedAuthReadyPollTimer);
+  savedAuthReadyPollTimer = null;
+}
+
+function scheduleSavedAuthReadyPoll(delayMs = 600) {
+  stopSavedAuthReadyPoll();
+  savedAuthReadyPollTimer = setTimeout(() => {
+    savedAuthReadyPollTimer = null;
+    if (savedPageService.isAvailable() && isSavedApiReady()) {
+      initSavedJobsPage();
+      return;
+    }
+    scheduleSavedAuthReadyPoll(delayMs);
+  }, Math.max(250, Number(delayMs) || 600));
 }
 
 function subscribeToSavedJobs(uid) {
@@ -1897,6 +1923,16 @@ function toggleAuthButtons(isSignedIn) {
   if (signOutBtnEl) signOutBtnEl.classList.toggle("hidden", !isSignedIn);
 }
 
+function setAuthControlsReady(ready) {
+  const isReady = Boolean(ready);
+  [signInBtnEl, signOutBtnEl].forEach(btn => {
+    if (!btn) return;
+    btn.disabled = !isReady;
+    btn.setAttribute("aria-disabled", isReady ? "false" : "true");
+    btn.title = isReady ? "" : "Local auth provider is starting.";
+  });
+}
+
 function setBackupButtonsEnabled(enabled) {
   if (exportBackupBtnEl) exportBackupBtnEl.disabled = !enabled;
   if (exportIncludeFilesEl) exportIncludeFilesEl.disabled = !enabled;
@@ -2011,10 +2047,13 @@ function getLastJobsUrl() {
 }
 
 async function signInUser() {
-  if (!isSavedApiReady()) {
-    showToast("Local auth provider unavailable.", "error");
+  if (!isSavedApiReady() || !savedPageService.isAvailable()) {
+    setAuthControlsReady(false);
+    scheduleSavedAuthReadyPoll();
+    showToast("Local auth provider is starting. Try again in a moment.", "info");
     return;
   }
+  setAuthControlsReady(true);
   const result = await savedAuthService.signIn();
   if (!result.ok) {
     if (String(result.error || "").toLowerCase().includes("cancel")) return;
@@ -2024,7 +2063,12 @@ async function signInUser() {
 }
 
 async function signOutUser() {
-  if (!isSavedApiReady()) return;
+  if (!isSavedApiReady() || !savedPageService.isAvailable()) {
+    setAuthControlsReady(false);
+    scheduleSavedAuthReadyPoll();
+    return;
+  }
+  setAuthControlsReady(true);
   const result = await savedAuthService.signOut();
   if (!result.ok) {
     console.error("Sign-out failed:", result.error);

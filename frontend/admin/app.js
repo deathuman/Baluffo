@@ -200,6 +200,7 @@ let opsHealthPollTimer = null;
 let latestFetcherReportCache = null;
 let latestOpsHealthCache = null;
 let latestSyncStatusCache = null;
+let adminApiReadyPollTimer = null;
 let discoveryLogDetailsSyncing = false;
 let discoveryLogUserToggled = false;
 let discoveryLogPreferredOpen = true;
@@ -585,11 +586,25 @@ function initAdminPage() {
   setOpsPlaceholders();
   setBridgeStatusBadge("checking", "Bridge Checking");
   if (!adminPageService.isAvailable() || !isAdminApiReady()) {
-    setSourceStatus("Local storage provider unavailable.");
-    if (adminPinGateEl) adminPinGateEl.classList.add("hidden");
-    renderUsersEmpty("Admin view is unavailable in this browser.");
+    setSourceStatus("Local storage provider is starting...");
+    if (adminPinGateEl) adminPinGateEl.classList.remove("hidden");
+    if (adminContentEl) adminContentEl.classList.add("hidden");
+    if (adminLockBtnEl) adminLockBtnEl.classList.add("hidden");
+    if (adminUnlockBtnEl) {
+      adminUnlockBtnEl.disabled = true;
+      adminUnlockBtnEl.setAttribute("aria-disabled", "true");
+      adminUnlockBtnEl.title = "Waiting for local storage provider to initialize.";
+    }
+    scheduleAdminApiReadyPoll();
+    renderUsersEmpty("Admin view is starting. Wait a moment and unlock.");
     return;
   }
+  if (adminUnlockBtnEl) {
+    adminUnlockBtnEl.disabled = false;
+    adminUnlockBtnEl.setAttribute("aria-disabled", "false");
+    adminUnlockBtnEl.title = "";
+  }
+  stopAdminApiReadyPoll();
 }
 
 function getLastJobsUrl() {
@@ -601,12 +616,28 @@ function setSourceStatus(text) {
 }
 
 function unlockAdmin() {
+  if (!adminPageService.isAvailable() || !isAdminApiReady()) {
+    setSourceStatus("Local storage provider is starting...");
+    showToast("Admin service is still starting. Try again in a moment.", "info");
+    scheduleAdminApiReadyPoll();
+    return;
+  }
   const nextPin = String(adminPinInputEl?.value || "").trim();
   if (!nextPin) {
     showToast("Enter admin PIN.", "error");
     return;
   }
-  if (!adminService.verifyAdminPin(nextPin)) {
+  let pinValid = false;
+  try {
+    pinValid = Boolean(adminService.verifyAdminPin(nextPin));
+  } catch (err) {
+    logAdminError("Admin PIN verification unavailable", err);
+    setSourceStatus("Local storage provider is starting...");
+    showToast("Admin service is still starting. Try again in a moment.", "info");
+    scheduleAdminApiReadyPoll();
+    return;
+  }
+  if (!pinValid) {
     showToast("Invalid admin PIN.", "error");
     setSourceStatus("Invalid PIN. Access denied.");
     return;
@@ -646,6 +677,30 @@ function unlockAdmin() {
   });
 }
 
+function stopAdminApiReadyPoll() {
+  if (!adminApiReadyPollTimer) return;
+  clearTimeout(adminApiReadyPollTimer);
+  adminApiReadyPollTimer = null;
+}
+
+function scheduleAdminApiReadyPoll(delayMs = 600) {
+  stopAdminApiReadyPoll();
+  adminApiReadyPollTimer = setTimeout(() => {
+    adminApiReadyPollTimer = null;
+    if (adminPin) return;
+    if (adminPageService.isAvailable() && isAdminApiReady()) {
+      if (adminUnlockBtnEl) {
+        adminUnlockBtnEl.disabled = false;
+        adminUnlockBtnEl.setAttribute("aria-disabled", "false");
+        adminUnlockBtnEl.title = "";
+      }
+      setSourceStatus("Enter admin PIN to access user overview.");
+      return;
+    }
+    scheduleAdminApiReadyPoll(delayMs);
+  }, Math.max(200, Number(delayMs) || 600));
+}
+
 function lockAdmin() {
   adminPin = "";
   syncConfigDirty = false;
@@ -660,6 +715,7 @@ function lockAdmin() {
   if (adminTotalsEl) adminTotalsEl.innerHTML = "";
   stopBridgeStatusWatch();
   stopOpsHealthPolling();
+  stopAdminApiReadyPoll();
   setBridgeStatusBadge("checking", "Bridge Locked");
   setFetcherLogPlaceholder("Unlock admin to view fetcher logs and latest report details.");
   setDiscoveryLogPlaceholder("Unlock admin to manage source discovery approvals.");

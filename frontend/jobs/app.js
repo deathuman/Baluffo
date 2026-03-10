@@ -337,6 +337,8 @@ let pendingAutoRefreshSignal = null;
 let lastHandledAutoRefreshSignalId = readAppliedAutoRefreshId();
 let lastFilterOptionsSignature = "";
 let startupRenderMetricSent = false;
+let authReadyPollTimer = null;
+let authStateListenerBound = false;
 const jobsPipelineUiState = {
   pollingTimer: null,
   runId: "",
@@ -883,10 +885,16 @@ async function triggerAutoRefreshFromSignal(signal) {
 
 function initAuth() {
   if (!isJobsApiReady() || !jobsPageService.isAvailable()) {
-    setAuthStatus("Browsing as guest");
+    setAuthStatus("Local auth starting...");
     toggleAuthButtons(false);
+    setAuthControlsReady(false);
+    scheduleAuthReadyPoll();
     return;
   }
+  stopAuthReadyPoll();
+  setAuthControlsReady(true);
+  if (authStateListenerBound) return;
+  authStateListenerBound = true;
 
   jobsAuthService.onAuthStateChanged(async user => {
     currentUser = user || null;
@@ -924,6 +932,34 @@ function initAuth() {
   });
 }
 
+function stopAuthReadyPoll() {
+  if (!authReadyPollTimer) return;
+  clearTimeout(authReadyPollTimer);
+  authReadyPollTimer = null;
+}
+
+function scheduleAuthReadyPoll(delayMs = 600) {
+  stopAuthReadyPoll();
+  authReadyPollTimer = setTimeout(() => {
+    authReadyPollTimer = null;
+    if (isJobsApiReady() && jobsPageService.isAvailable()) {
+      initAuth();
+      return;
+    }
+    scheduleAuthReadyPoll(delayMs);
+  }, Math.max(250, Number(delayMs) || 600));
+}
+
+function setAuthControlsReady(ready) {
+  const isReady = Boolean(ready);
+  [authSignInBtn, authSignOutBtn].forEach(btn => {
+    if (!btn) return;
+    btn.disabled = !isReady;
+    btn.setAttribute("aria-disabled", isReady ? "false" : "true");
+    btn.title = isReady ? "" : "Local auth provider is starting.";
+  });
+}
+
 function setAuthStatus(text) {
   if (!authStatus) return;
   const raw = String(text || "").trim();
@@ -956,10 +992,13 @@ function toggleAuthButtons(isSignedIn) {
 }
 
 async function signInUser() {
-  if (!isJobsApiReady()) {
-    showToast("Local auth provider unavailable.", "error");
+  if (!isJobsApiReady() || !jobsPageService.isAvailable()) {
+    setAuthControlsReady(false);
+    scheduleAuthReadyPoll();
+    showToast("Local auth provider is starting. Try again in a moment.", "info");
     return;
   }
+  setAuthControlsReady(true);
   const result = await jobsAuthService.signIn();
   if (!result.ok) {
     if (String(result.error || "").toLowerCase().includes("cancel")) return;
@@ -969,7 +1008,12 @@ async function signInUser() {
 }
 
 async function signOutUser() {
-  if (!isJobsApiReady()) return;
+  if (!isJobsApiReady() || !jobsPageService.isAvailable()) {
+    setAuthControlsReady(false);
+    scheduleAuthReadyPoll();
+    return;
+  }
+  setAuthControlsReady(true);
   const result = await jobsAuthService.signOut();
   if (!result.ok) {
     logJobsError("Sign-out failed", new Error(result.error));
