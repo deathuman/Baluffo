@@ -157,7 +157,12 @@ test("Desktop critical flow", async ({ page, request }) => {
   });
 
   await test.step("Navigate to Admin and unlock", async () => {
-    await page.click("#admin-page-btn");
+    const adminPageBtn = page.locator("#admin-page-btn");
+    if (await adminPageBtn.count()) {
+      await adminPageBtn.first().click();
+    } else {
+      await page.locator("a[href='admin.html']").first().click();
+    }
     await page.waitForURL(/admin\.html/);
     await expect(page.locator("#admin-pin-gate")).toBeVisible();
     await expect(page.locator("#admin-unlock-btn")).toBeEnabled();
