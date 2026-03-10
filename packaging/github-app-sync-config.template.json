@@ -5,6 +5,7 @@
   "repo": "your-org/job-sources-backup",
   "branch": "main",
   "path": "baluffo/source-sync.json",
+  "keyDerivation": "passphrase",
   "keySalt": "replace-with-base64url-random-salt",
   "privateKeyPemEnc": "replace-with-base64url-encrypted-private-key"
 }

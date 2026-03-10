@@ -16,16 +16,22 @@ Expected JSON shape:
   "repo": "your-org/job-sources-backup",
   "branch": "main",
   "path": "baluffo/source-sync.json",
+  "keyDerivation": "passphrase",
   "keySalt": "base64url-random-salt",
   "privateKeyPemEnc": "base64url-encrypted-private-key"
 }
 ```
 
+Runtime requirement for passphrase mode:
+
+- set `BALUFFO_SYNC_KEY_PASSPHRASE` on machines that should use sync
+
 ## Encryption format
 
-The encrypted key uses the same machine-bound derivation implemented in `scripts/source_sync.py`:
+The encrypted key supports two derivation modes implemented in `scripts/source_sync.py`:
 
-- key material is derived from machine identity, app id, installation id, and `keySalt`
+- `machine`: key material is derived from machine identity, app id, installation id, and `keySalt`
+- `passphrase`: key material is derived from app id, installation id, `keySalt`, and `BALUFFO_SYNC_KEY_PASSPHRASE`
 - the private key PEM is XOR-encrypted with a SHA-256 keystream
 - plaintext private keys should not be shipped in production bundles
 
@@ -47,7 +53,8 @@ py -3 scripts/build_sync_app_config.py `
   --app-id 123456 `
   --installation-id 98765432 `
   --repo owner/repo `
-  --private-key C:\path\to\github-app-private-key.pem
+  --private-key C:\path\to\github-app-private-key.pem `
+  --portable-passphrase-env BALUFFO_SYNC_KEY_PASSPHRASE
 ```
 
 For local-only testing, add `--plaintext` to write `privateKeyPem` directly instead of the encrypted form.

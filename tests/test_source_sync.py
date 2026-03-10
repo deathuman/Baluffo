@@ -98,6 +98,75 @@ class SourceSyncTests(unittest.TestCase):
         decrypted = sync.decrypt_private_key_pem(encrypted, salt_b64=salt_b64, app_id="1", installation_id="2")
         self.assertEqual(decrypted, private_key)
 
+    def test_passphrase_encrypt_and_decrypt_private_key_round_trip(self):
+        salt_b64 = sync._base64url_encode(b"unit-test-salt-456")  # noqa: SLF001
+        private_key = "-----BEGIN RSA PRIVATE KEY-----\nxyz789\n-----END RSA PRIVATE KEY-----"
+        encrypted = sync.encrypt_private_key_pem_with_passphrase(
+            private_key,
+            salt_b64=salt_b64,
+            app_id="1",
+            installation_id="2",
+            passphrase="unit-passphrase",
+        )
+        decrypted = sync.decrypt_private_key_pem_with_passphrase(
+            encrypted,
+            salt_b64=salt_b64,
+            app_id="1",
+            installation_id="2",
+            passphrase="unit-passphrase",
+        )
+        self.assertEqual(decrypted, private_key)
+
+    def test_config_status_reports_misconfigured_when_passphrase_missing(self):
+        salt_b64 = sync._base64url_encode(b"unit-test-salt-789")  # noqa: SLF001
+        private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
+        encrypted = sync.encrypt_private_key_pem_with_passphrase(
+            private_key,
+            salt_b64=salt_b64,
+            app_id="123456",
+            installation_id="999999",
+            passphrase="shared-secret",
+        )
+        self.write_packaged_config(
+            {
+                "keyDerivation": "passphrase",
+                "keySalt": salt_b64,
+                "privateKeyPemEnc": encrypted,
+                "privateKeyPem": "",
+            }
+        )
+        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=self.env)
+        status = sync.config_status(cfg)
+        self.assertFalse(status["ready"])
+        self.assertEqual(status["state"], "misconfigured")
+        self.assertIn("privateKeyPemEnc", status["missing"])
+        self.assertIn(sync.PACKAGED_SYNC_PASSPHRASE_ENV, status["message"])
+
+    def test_config_status_ready_when_passphrase_is_provided(self):
+        salt_b64 = sync._base64url_encode(b"unit-test-salt-012")  # noqa: SLF001
+        private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
+        encrypted = sync.encrypt_private_key_pem_with_passphrase(
+            private_key,
+            salt_b64=salt_b64,
+            app_id="123456",
+            installation_id="999999",
+            passphrase="shared-secret",
+        )
+        self.write_packaged_config(
+            {
+                "keyDerivation": "passphrase",
+                "keySalt": salt_b64,
+                "privateKeyPemEnc": encrypted,
+                "privateKeyPem": "",
+            }
+        )
+        env = dict(self.env)
+        env[sync.PACKAGED_SYNC_PASSPHRASE_ENV] = "shared-secret"
+        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=env)
+        status = sync.config_status(cfg)
+        self.assertTrue(status["ready"])
+        self.assertEqual(status["state"], "ready")
+
     def test_build_app_jwt_has_rs256_shape(self):
         original_sign = sync._rsa_pkcs1_sign_sha256  # noqa: SLF001
         try:
@@ -195,7 +264,7 @@ class SourceSyncTests(unittest.TestCase):
         }
         encoded = base64.b64encode(json.dumps(snapshot).encode("utf-8")).decode("ascii")
         opener = _Recorder([
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2026-03-10T10:00:00Z"}),
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             _FakeResponse(200, {"sha": "abc123", "content": encoded}),
         ])
         cfg = sync.resolve_sync_config(settings={"enabled": True}, env=self.env)
@@ -225,7 +294,7 @@ class SourceSyncTests(unittest.TestCase):
         }
         encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
         opener = _Recorder([
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2026-03-10T10:00:00Z"}),
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             _FakeResponse(200, {"sha": "s1", "content": encoded}),
         ])
         cfg = sync.resolve_sync_config(settings={"enabled": True}, env=self.env)
@@ -244,7 +313,7 @@ class SourceSyncTests(unittest.TestCase):
     def test_push_sources_snapshot_serializes_expected_payload(self):
         self.write_packaged_config()
         opener = _Recorder([
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2026-03-10T10:00:00Z"}),
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
                 code=404,
@@ -287,7 +356,7 @@ class SourceSyncTests(unittest.TestCase):
         }
         encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
         opener = _Recorder([
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2026-03-10T10:00:00Z"}),
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             _FakeResponse(200, {"sha": "s1", "content": encoded}),
             _FakeResponse(201, {"content": {"sha": "newsha"}}),
         ])
@@ -317,7 +386,7 @@ class SourceSyncTests(unittest.TestCase):
         }
         encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
         opener = _Recorder([
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2026-03-10T10:00:00Z"}),
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             _FakeResponse(200, {"sha": "s1", "content": encoded}),
             _FakeResponse(201, {"content": {"sha": "newsha"}}),
         ])
@@ -345,9 +414,9 @@ class SourceSyncTests(unittest.TestCase):
         snapshot = {"schemaVersion": 1, "generatedAt": "2026-03-09T10:00:00+00:00", "source": {}, "active": [], "pending": [], "rejected": []}
         encoded = base64.b64encode(json.dumps(snapshot).encode("utf-8")).decode("ascii")
         opener = _Recorder([
-            _FakeResponse(201, {"token": "token_a", "expires_at": "2026-03-10T10:00:00Z"}),
+            _FakeResponse(201, {"token": "token_a", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(url="https://api.github.com/test", code=401, msg="Unauthorized", hdrs={}, fp=None),
-            _FakeResponse(201, {"token": "token_b", "expires_at": "2026-03-10T11:00:00Z"}),
+            _FakeResponse(201, {"token": "token_b", "expires_at": "2099-03-10T11:00:00Z"}),
             _FakeResponse(200, {"sha": "abc", "content": encoded}),
         ])
         cfg = sync.resolve_sync_config(settings={"enabled": True}, env=self.env)

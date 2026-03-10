@@ -24,11 +24,14 @@ DEFAULT_BRANCH = "main"
 DEFAULT_PATH = "baluffo/source-sync.json"
 DEFAULT_TIMEOUT_S = 20
 PACKAGED_SYNC_CONFIG_ENV = "BALUFFO_SYNC_APP_CONFIG_PATH"
+PACKAGED_SYNC_PASSPHRASE_ENV = "BALUFFO_SYNC_KEY_PASSPHRASE"
 DEFAULT_PACKAGED_SYNC_CONFIG_PATH = ROOT / "packaging" / "github-app-sync-config.json"
 MACHINE_SCOPE = "baluffo-github-app-sync"
 JWT_TTL_SECONDS = 9 * 60
 INSTALLATION_TOKEN_REFRESH_SKEW_SECONDS = 10 * 60
 SHA256_DIGEST_INFO_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")
+KEY_DERIVATION_MACHINE = "machine"
+KEY_DERIVATION_PASSPHRASE = "passphrase"
 
 
 @dataclass
@@ -40,6 +43,8 @@ class PackagedGitHubAppConfig:
     path: str
     private_key_pem: str
     config_path: str
+    key_derivation: str = KEY_DERIVATION_MACHINE
+    decryption_error: str = ""
 
 
 @dataclass
@@ -117,6 +122,55 @@ def decrypt_private_key_pem(private_key_pem_enc: str, *, salt_b64: str, app_id: 
     return decrypted.decode("utf-8")
 
 
+def _derive_passphrase_key(*, salt_b64: str, app_id: str, installation_id: str, passphrase: str) -> bytes:
+    salt = _base64url_decode(salt_b64)
+    material = "|".join([
+        MACHINE_SCOPE,
+        KEY_DERIVATION_PASSPHRASE,
+        str(app_id or "").strip(),
+        str(installation_id or "").strip(),
+        _base64url_encode(salt),
+        str(passphrase or ""),
+    ]).encode("utf-8")
+    return __import__("hashlib").sha256(material).digest()
+
+
+def encrypt_private_key_pem_with_passphrase(
+    private_key_pem: str,
+    *,
+    salt_b64: str,
+    app_id: str,
+    installation_id: str,
+    passphrase: str,
+) -> str:
+    key = _derive_passphrase_key(
+        salt_b64=salt_b64,
+        app_id=app_id,
+        installation_id=installation_id,
+        passphrase=passphrase,
+    )
+    encrypted = _stream_encrypt(str(private_key_pem or "").encode("utf-8"), key)
+    return _base64url_encode(encrypted)
+
+
+def decrypt_private_key_pem_with_passphrase(
+    private_key_pem_enc: str,
+    *,
+    salt_b64: str,
+    app_id: str,
+    installation_id: str,
+    passphrase: str,
+) -> str:
+    key = _derive_passphrase_key(
+        salt_b64=salt_b64,
+        app_id=app_id,
+        installation_id=installation_id,
+        passphrase=passphrase,
+    )
+    decrypted = _stream_encrypt(_base64url_decode(private_key_pem_enc), key)
+    return decrypted.decode("utf-8")
+
+
 def _normalize_packaged_payload(payload: Dict[str, Any]) -> Dict[str, str]:
     data = payload if isinstance(payload, dict) else {}
     return {
@@ -128,6 +182,7 @@ def _normalize_packaged_payload(payload: Dict[str, Any]) -> Dict[str, str]:
         "privateKeyPemEnc": str(data.get("privateKeyPemEnc") or "").strip(),
         "privateKeyPem": str(data.get("privateKeyPem") or "").strip(),
         "keySalt": str(data.get("keySalt") or "").strip(),
+        "keyDerivation": str(data.get("keyDerivation") or KEY_DERIVATION_MACHINE).strip().lower() or KEY_DERIVATION_MACHINE,
     }
 
 
@@ -143,16 +198,33 @@ def load_packaged_sync_config(*, env: Optional[Dict[str, str]] = None) -> Option
         return None
     normalized = _normalize_packaged_payload(payload if isinstance(payload, dict) else {})
     private_key_pem = normalized["privateKeyPem"]
+    key_derivation = normalized["keyDerivation"]
+    decryption_error = ""
     if not private_key_pem and normalized["privateKeyPemEnc"] and normalized["keySalt"]:
         try:
-            private_key_pem = decrypt_private_key_pem(
-                normalized["privateKeyPemEnc"],
-                salt_b64=normalized["keySalt"],
-                app_id=normalized["appId"],
-                installation_id=normalized["installationId"],
-            )
+            if key_derivation == KEY_DERIVATION_PASSPHRASE:
+                passphrase = str(env_map.get(PACKAGED_SYNC_PASSPHRASE_ENV) or "").strip()
+                if not passphrase:
+                    raise RuntimeError(f"Missing {PACKAGED_SYNC_PASSPHRASE_ENV} for passphrase-encrypted sync key.")
+                private_key_pem = decrypt_private_key_pem_with_passphrase(
+                    normalized["privateKeyPemEnc"],
+                    salt_b64=normalized["keySalt"],
+                    app_id=normalized["appId"],
+                    installation_id=normalized["installationId"],
+                    passphrase=passphrase,
+                )
+            elif key_derivation in {"", KEY_DERIVATION_MACHINE}:
+                key_derivation = KEY_DERIVATION_MACHINE
+                private_key_pem = decrypt_private_key_pem(
+                    normalized["privateKeyPemEnc"],
+                    salt_b64=normalized["keySalt"],
+                    app_id=normalized["appId"],
+                    installation_id=normalized["installationId"],
+                )
+            else:
+                raise RuntimeError(f"Unsupported keyDerivation mode: {key_derivation}")
         except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"Could not decrypt packaged GitHub App key: {exc}") from exc
+            decryption_error = str(exc)
     return PackagedGitHubAppConfig(
         app_id=normalized["appId"],
         installation_id=normalized["installationId"],
@@ -161,6 +233,8 @@ def load_packaged_sync_config(*, env: Optional[Dict[str, str]] = None) -> Option
         path=normalized["path"],
         private_key_pem=private_key_pem,
         config_path=str(config_path),
+        key_derivation=key_derivation,
+        decryption_error=decryption_error,
     )
 
 
@@ -190,6 +264,9 @@ def config_status(config: SyncConfig) -> Dict[str, Any]:
     if not config.packaged_config:
         missing.append("packaged_github_app_config")
     else:
+        if config.packaged_config.decryption_error:
+            missing.append("privateKeyPemEnc")
+            message = f"Could not decrypt packaged GitHub App key: {config.packaged_config.decryption_error}"
         if not config.packaged_config.app_id:
             missing.append("appId")
         if not config.packaged_config.installation_id:

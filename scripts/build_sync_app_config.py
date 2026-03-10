@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import secrets
 import sys
 from pathlib import Path
@@ -39,6 +40,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Write privateKeyPem in plaintext for local testing only.",
     )
+    parser.add_argument(
+        "--portable-passphrase-env",
+        default="",
+        help=(
+            "Environment variable name containing passphrase for portable encryption mode "
+            f"(runtime also reads {source_sync.PACKAGED_SYNC_PASSPHRASE_ENV})."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -57,10 +66,30 @@ def main(argv: list[str] | None = None) -> int:
         "path": str(args.path).strip() or "baluffo/source-sync.json",
     }
 
+    portable_passphrase_env = str(args.portable_passphrase_env or "").strip()
+    if args.plaintext and portable_passphrase_env:
+        raise RuntimeError("--plaintext and --portable-passphrase-env are mutually exclusive.")
+
     if args.plaintext:
+        payload["keyDerivation"] = "plaintext"
         payload["privateKeyPem"] = private_key_pem
+    elif portable_passphrase_env:
+        passphrase = str(os.environ.get(portable_passphrase_env) or "")
+        if not passphrase:
+            raise RuntimeError(f"Missing passphrase value in environment variable: {portable_passphrase_env}")
+        salt_b64 = str(args.salt or "").strip() or source_sync._base64url_encode(secrets.token_bytes(18))  # noqa: SLF001
+        payload["keyDerivation"] = source_sync.KEY_DERIVATION_PASSPHRASE
+        payload["keySalt"] = salt_b64
+        payload["privateKeyPemEnc"] = source_sync.encrypt_private_key_pem_with_passphrase(
+            private_key_pem,
+            salt_b64=salt_b64,
+            app_id=payload["appId"],
+            installation_id=payload["installationId"],
+            passphrase=passphrase,
+        )
     else:
         salt_b64 = str(args.salt or "").strip() or source_sync._base64url_encode(secrets.token_bytes(18))  # noqa: SLF001
+        payload["keyDerivation"] = source_sync.KEY_DERIVATION_MACHINE
         payload["keySalt"] = salt_b64
         payload["privateKeyPemEnc"] = source_sync.encrypt_private_key_pem(
             private_key_pem,
