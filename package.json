@@ -5,8 +5,11 @@
   "scripts": {
     "build:ship-bundle": "py -3 scripts/build_ship_bundle.py",
     "build:portable-exe": "py -3.13 scripts/build_portable_exe.py",
+    "verify:portable": "py -3.13 scripts/build_portable_exe.py && py -3.13 scripts/packaged_desktop_smoke.py && npm run test:frontend",
     "test:unit": "npm run test:frontend:unit",
     "test:smoke": "npm run test:frontend",
+    "test:frontend:packaged": "py -3.13 scripts/packaged_desktop_smoke.py",
+    "test:frontend:packaged:headed": "py -3.13 scripts/packaged_desktop_smoke.py --headed --pause-on-failure",
     "test:frontend": "playwright test",
     "test:frontend:unit": "node tests/frontend/unit/all.test.mjs",
     "test:frontend:headed": "playwright test --headed",

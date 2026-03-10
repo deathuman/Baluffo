@@ -66,7 +66,7 @@ class DesktopAppTests(unittest.TestCase):
 
         self.assertEqual(
             desktop_app.build_open_url(config),
-            "http://127.0.0.1:8080/jobs.html?desktop=1",
+            "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1",
         )
 
     def test_ensure_runtime_ports_raises_when_site_port_busy(self) -> None:

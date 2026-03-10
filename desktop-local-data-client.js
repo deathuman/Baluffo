@@ -8,6 +8,7 @@ const SAVED_SUBSCRIPTIONS = new Set();
 const SESSION_KEY = "baluffo_current_profile_id";
 let currentUser = null;
 let pollingStarted = false;
+let authStateRevision = 0;
 
 function toErrorMessage(error, fallback) {
   return error?.message || String(error || "") || fallback;
@@ -69,10 +70,26 @@ function notifyAuthChanged() {
   });
 }
 
-async function refreshCurrentUser() {
+async function fetchCurrentUser() {
   const payload = await requestJson("/session");
-  currentUser = payload.user || null;
+  return payload.user || null;
+}
+
+function commitAuthState(user, revision = null) {
+  if (revision !== null && Number(revision) !== authStateRevision) {
+    return currentUser;
+  }
+  currentUser = user || null;
+  notifyAuthChanged();
   return currentUser;
+}
+
+async function refreshCurrentUser(options = {}) {
+  const revision = Object.prototype.hasOwnProperty.call(options, "revision")
+    ? Number(options.revision)
+    : null;
+  const user = await fetchCurrentUser();
+  return commitAuthState(user, revision);
 }
 
 async function listSavedJobs(uid) {
@@ -138,14 +155,14 @@ const desktopApi = {
       method: "POST",
       body: JSON.stringify({ name })
     });
-    currentUser = payload.user || null;
-    notifyAuthChanged();
-    return { user: currentUser };
+    authStateRevision += 1;
+    const user = commitAuthState(payload.user || null);
+    return { user };
   },
   async signOut() {
     await requestJson("/sign-out", { method: "POST", body: "{}" });
-    currentUser = null;
-    notifyAuthChanged();
+    authStateRevision += 1;
+    commitAuthState(null);
   },
   async saveJobForUser(uid, job, options = {}) {
     const payload = await requestJson("/saved-jobs/save", {
@@ -289,25 +306,26 @@ const desktopApi = {
       method: "POST",
       body: JSON.stringify({ pin, uid })
     });
-    currentUser = payload.user || null;
-    notifyAuthChanged();
+    authStateRevision += 1;
+    commitAuthState(payload.user || null);
     await pollSavedSubscriptions();
   }
 };
 
 async function bootstrapDesktopApi() {
+  const bootstrapRevision = authStateRevision;
   try {
-    await refreshCurrentUser();
+    await refreshCurrentUser({ revision: bootstrapRevision });
   } catch (error) {
     console.error("[desktop-local-data] bootstrap failed:", toErrorMessage(error, "bootstrap failed"));
-    currentUser = null;
+    commitAuthState(null, bootstrapRevision);
+    return;
   }
-  notifyAuthChanged();
 }
 
 // Expose API immediately so page boot is never blocked by bridge/session fetch latency.
 window.JobAppLocalData = desktopApi;
-notifyAuthChanged();
+commitAuthState(null);
 bootstrapDesktopApi().catch(() => {
   // Startup fetch errors are already logged in bootstrapDesktopApi.
 });

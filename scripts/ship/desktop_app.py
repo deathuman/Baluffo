@@ -220,7 +220,10 @@ def ensure_runtime_ports(config: DesktopRuntimeConfig) -> None:
 
 def build_open_url(config: DesktopRuntimeConfig) -> str:
     separator = "&" if "?" in config.open_path else "?"
-    return f"http://127.0.0.1:{config.site_port}/{config.open_path}{separator}desktop=1"
+    return (
+        f"http://127.0.0.1:{config.site_port}/{config.open_path}"
+        f"{separator}desktop=1&bridgePort={int(config.bridge_port)}&bridgeHost={config.bridge_host}"
+    )
 
 
 def build_loading_html(title: str) -> str:
