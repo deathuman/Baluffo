@@ -1,5 +1,6 @@
 import json
 import shutil
+import sys
 import unittest
 import uuid
 from contextlib import contextmanager
@@ -371,6 +372,39 @@ class SourceDiscoveryTests(unittest.TestCase):
         self.assertEqual(str(static_rows[0].get("adapter") or ""), "static")
         self.assertTrue(bool(static_rows[0].get("weakSignal")))
         self.assertEqual(str(static_rows[0].get("sourceDirectoryEntryUrl") or ""), "https://www.gamesmap.de/en/detail/industry/example-publisher")
+        self.assertFalse(bool(static_rows[0].get("manualOnly")))
+
+    def test_discover_gamesmap_candidates_marks_manual_website_only_rows(self) -> None:
+        config = {
+            "gamesmap": {
+                "enabled": True,
+                "baseUrl": "https://www.gamesmap.de",
+                "indexUrls": ["https://www.gamesmap.de/en"],
+                "websiteOnlyFallback": True,
+                "websiteOnlyManualOnly": True,
+                "maxDetailPages": 10,
+                "allowedCategoryTokens": ["publisher"],
+                "blockedCategoryTokens": ["association", "education"],
+            }
+        }
+        payloads = {
+            "https://www.gamesmap.de/en": self.fixture_text("gamesmap_index.html"),
+            "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": self.fixture_text("gamesmap_detail_careers.html"),
+            "https://www.gamesmap.de/en/detail/industry/tooling-association": self.fixture_text("gamesmap_detail_blocked.html"),
+            "https://www.gamesmap.de/en/detail/industry/example-publisher": self.fixture_text("gamesmap_detail_website_only.html"),
+        }
+
+        def fake_fetch(url: str, _: int) -> str:
+            if url not in payloads:
+                raise RuntimeError(f"unexpected URL: {url}")
+            return payloads[url]
+
+        _provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(5, config=config, fetcher=fake_fetch)
+        self.assertEqual(len(failures), 0)
+        self.assertEqual(len(static_rows), 1)
+        self.assertTrue(bool(static_rows[0].get("weakSignal")))
+        self.assertTrue(bool(static_rows[0].get("manualOnly")))
+        self.assertIn("gamesmap_manual_website_only", static_rows[0].get("evidenceTypes") or [])
 
     def test_discover_gamesmap_candidates_dedupes_repeated_directory_entries(self) -> None:
         html = """
@@ -845,6 +879,21 @@ class SourceDiscoveryTests(unittest.TestCase):
                 ) = prev_paths
                 sd.STATIC_DISCOVERY_CANDIDATES = prev_static
                 sd.STUDIO_SEEDS = prev_seeds
+
+    def test_parse_args_supports_manual_gamesmap_mode(self) -> None:
+        prev_argv = list(sys.argv)
+        try:
+            sys.argv = [
+                "source_discovery.py",
+                "--gamesmap-website-only-fallback",
+                "--gamesmap-max-detail-pages",
+                "25",
+            ]
+            args = sd.parse_args()
+        finally:
+            sys.argv = prev_argv
+        self.assertTrue(bool(args.gamesmap_website_only_fallback))
+        self.assertEqual(int(args.gamesmap_max_detail_pages or 0), 25)
 
 
 if __name__ == "__main__":

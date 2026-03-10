@@ -728,12 +728,15 @@ def build_gamesmap_static_candidate(
     detail_url: str,
     categories: List[str],
     location: str,
+    manual_only: bool = False,
 ) -> Dict[str, Any]:
     evidence_types = ["gamesmap_directory", "gamesmap_category_match"]
     evidence_score = 24
     if website_only:
         evidence_types.append("gamesmap_website")
         evidence_types.append("gamesmap_website_only")
+        if manual_only:
+            evidence_types.append("gamesmap_manual_website_only")
     else:
         evidence_types.append("gamesmap_careers_url")
         evidence_score = 40
@@ -761,6 +764,7 @@ def build_gamesmap_static_candidate(
         "sourceDirectoryEntryUrl": detail_url,
         "sourceDirectoryCategories": unique_string_list(categories),
         "sourceDirectoryLocation": str(location or "").strip(),
+        "manualOnly": bool(manual_only),
     }
 
 
@@ -774,6 +778,7 @@ def discover_gamesmap_candidates(timeout_s: int, *, config: Optional[Dict[str, A
     allowed_tokens = list(cfg.get("allowedCategoryTokens") or [])
     blocked_tokens = list(cfg.get("blockedCategoryTokens") or [])
     website_only_fallback = bool(cfg.get("websiteOnlyFallback", True))
+    website_only_manual_only = bool(cfg.get("websiteOnlyManualOnly", False))
     max_detail_pages = max(0, int(cfg.get("maxDetailPages") or 0))
 
     provider_candidates: List[Dict[str, Any]] = []
@@ -846,6 +851,7 @@ def discover_gamesmap_candidates(timeout_s: int, *, config: Optional[Dict[str, A
                         detail_url=detail_url,
                         categories=categories,
                         location=location,
+                        manual_only=False,
                     )
                 )
             continue
@@ -861,6 +867,7 @@ def discover_gamesmap_candidates(timeout_s: int, *, config: Optional[Dict[str, A
                     detail_url=detail_url,
                     categories=categories,
                     location=location,
+                    manual_only=website_only_manual_only,
                 )
             )
 
@@ -1630,12 +1637,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top", type=int, default=0, help="Limit new candidates written this run; 0 = no limit.")
     parser.add_argument("--mode", choices=("dynamic", "static"), default="dynamic")
     parser.add_argument("--no-web-search", action="store_true", help="Disable lightweight web search phase.")
+    parser.add_argument("--gamesmap-website-only-fallback", action="store_true", help="Manual-only mode: include Gamesmap homepage-only candidates in this run.")
+    parser.add_argument("--gamesmap-max-detail-pages", type=int, default=0, help="Optional Gamesmap crawl cap override for this run; 0 = config default.")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    report = run_discovery(timeout_s=args.timeout, top_n=args.top, mode=args.mode, include_web_search=not bool(args.no_web_search))
+    discovery_config = load_discovery_config()
+    if bool(args.gamesmap_website_only_fallback):
+        gamesmap_cfg = dict(discovery_config.get("gamesmap") or {})
+        gamesmap_cfg["websiteOnlyFallback"] = True
+        gamesmap_cfg["websiteOnlyManualOnly"] = True
+        discovery_config["gamesmap"] = gamesmap_cfg
+    if int(args.gamesmap_max_detail_pages or 0) > 0:
+        gamesmap_cfg = dict(discovery_config.get("gamesmap") or {})
+        gamesmap_cfg["maxDetailPages"] = int(args.gamesmap_max_detail_pages)
+        discovery_config["gamesmap"] = gamesmap_cfg
+    report = run_discovery(
+        timeout_s=args.timeout,
+        top_n=args.top,
+        mode=args.mode,
+        include_web_search=not bool(args.no_web_search),
+        discovery_config=discovery_config,
+    )
     emit_log(
         "Source discovery completed. "
         f"Found endpoints: {report['summary']['foundEndpointCount']}. "
