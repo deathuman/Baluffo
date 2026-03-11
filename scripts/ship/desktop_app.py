@@ -46,6 +46,7 @@ CHROMIUM_PROCESS_READY_TIMEOUT_S = 2.0
 DETACHED_BROWSER_GRACE_TIMEOUT_S = 35.0
 INSTANCE_LOCK_WAIT_S = 3.0
 SESSION_REUSE_WAIT_S = 12.0
+ALREADY_RUNNING_ERROR = "Baluffo is already running. Close the existing desktop session before starting a new one."
 MB_OK = 0x00000000
 MB_ICONERROR = 0x00000010
 APP_PATH_REGISTRY_SUBKEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths"
@@ -553,13 +554,6 @@ def launch_browser_for_url(url: str, *, preferred_browser_path: str = "", env: d
     }
 
 
-def reopen_existing_session(state: dict[str, object]) -> None:
-    url = str(state.get("url") or "").strip()
-    if not url:
-        raise RuntimeError("Baluffo desktop session metadata is missing the session URL.")
-    launch_browser_for_url(url, preferred_browser_path=str(state.get("browserPath") or ""))
-
-
 def reopen_default_browser(url: str) -> bool:
     return bool(webbrowser.open(url))
 
@@ -694,8 +688,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 bridgePort=int(existing_session.get("bridgePort") or 0),
                 reason="instance_lock_contended",
             )
-            reopen_existing_session(existing_session)
-            return
+            raise RuntimeError(ALREADY_RUNNING_ERROR)
         raise RuntimeError("Baluffo is already starting in another process. Please retry in a few seconds.")
 
     site_process: subprocess.Popen[str] | None = None
@@ -713,8 +706,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         existing_session = get_valid_session_state()
         if existing_session:
             _append_startup_trace(config.data_dir, "desktop_session_reused", bridgePort=int(existing_session.get("bridgePort") or 0))
-            reopen_existing_session(existing_session)
-            return
+            raise RuntimeError(ALREADY_RUNNING_ERROR)
         child_env = {"BALUFFO_DATA_DIR": str(config.data_dir)}
         if bool(config.startup_probe):
             child_env["BALUFFO_STARTUP_PROBE"] = "1"

@@ -63,8 +63,10 @@ test("cleanup structure: canonical app runtime modules exist for each slice", ()
   for (const slice of slices) {
     const runtimePath = repoPath("frontend", slice, "app", "runtime.js");
     const domPath = repoPath("frontend", slice, "app", "dom.js");
+    const runtimeDir = repoPath("frontend", slice, "app", "runtime");
     assert.equal(fs.existsSync(runtimePath), true, `Missing runtime module for ${slice}`);
     assert.equal(fs.existsSync(domPath), true, `Missing DOM module for ${slice}`);
+    assert.equal(fs.existsSync(runtimeDir), true, `Missing runtime helper directory for ${slice}`);
   }
 });
 
@@ -137,7 +139,7 @@ test("cleanup structure: app modules import only canonical local layers", () => 
 });
 
 test("cleanup structure: app runtime modules import only canonical layers and local app helpers", () => {
-  const runtimeLocalPattern = /^(\.\.\/(actions|domain|data-source|render|services|state-sync\/index)\.js|\.\/[A-Za-z0-9-]+\.js)$/;
+  const runtimeLocalPattern = /^(\.\.\/(actions|domain|data-source|render|services|state-sync\/index)\.js|\.\/[A-Za-z0-9-]+\.js|\.\/runtime\/[A-Za-z0-9-]+\.js)$/;
   const sharedPattern = /^(\.\.\/shared\/|(\.\.\/){2,3}|\/)/;
   const slices = ["jobs", "saved", "admin"];
 
@@ -149,6 +151,33 @@ test("cleanup structure: app runtime modules import only canonical layers and lo
         true,
         `Unexpected import specifier in frontend/${slice}/app/runtime.js: ${specifier}`
       );
+    }
+  }
+});
+
+test("cleanup structure: app runtime helper modules stay slice-local", () => {
+  const slices = ["jobs", "saved", "admin"];
+  const allowedImportPattern = /^(\.\.\/[A-Za-z0-9-]+\.js|\.\/[A-Za-z0-9-]+\.js)$/;
+  const blockedCrossSlicePattern = /^(\.\.\/)+(jobs|saved|admin)\//;
+
+  for (const slice of slices) {
+    const runtimeDir = repoPath("frontend", slice, "app", "runtime");
+    const files = fs.readdirSync(runtimeDir).filter(name => name.endsWith(".js"));
+    for (const fileName of files) {
+      const rel = path.join("frontend", slice, "app", "runtime", fileName);
+      const imports = readImports(rel);
+      for (const specifier of imports) {
+        assert.equal(
+          blockedCrossSlicePattern.test(specifier),
+          false,
+          `Runtime helper must not import cross-slice modules: ${rel} -> ${specifier}`
+        );
+        assert.equal(
+          allowedImportPattern.test(specifier) || specifier.startsWith("/"),
+          true,
+          `Unexpected runtime helper import in ${rel}: ${specifier}`
+        );
+      }
     }
   }
 });

@@ -50,7 +50,7 @@ Saved job record fields:
 `local-data-client.js` intentionally keeps a compatibility boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
 
 ## Unified jobs feed generation
-- Run `py -3 scripts/jobs_fetcher.py` to aggregate listings into:
+- Run `python scripts/jobs_fetcher.py` to aggregate listings into:
   - `data/jobs-unified.json` (primary feed used by Jobs page modules)
   - `data/jobs-unified.csv` (CSV fallback + inspection)
   - `data/jobs-fetch-report.json` (per-source diagnostics)
@@ -66,14 +66,14 @@ Saved job record fields:
 - If the current run yields zero jobs, the runner keeps the previous `jobs-unified.json` output by default.
 
 ## Source discovery and approval
-- Run `py -3 scripts/source_discovery.py` (dynamic mode by default) to discover new candidate sources into:
+- Run `python scripts/source_discovery.py` (dynamic mode by default) to discover new candidate sources into:
   - `data/source-discovery-report.json`
   - `data/source-discovery-candidates.json`
   - `data/source-registry-pending.json` (report-only, no auto-enable)
 - Optional flags:
   - `--mode static` to probe only static seed list
   - `--no-web-search` to skip lightweight web search expansion
-- Run `py -3 scripts/admin_bridge.py` to expose localhost admin endpoints used by `admin.html`:
+- Run `python scripts/admin_bridge.py` to expose localhost admin endpoints used by `admin.html`:
   - `GET /discovery/report`
   - `GET /registry/pending`
   - `GET /registry/active`
@@ -82,7 +82,7 @@ Saved job record fields:
   - `POST /sync/pull`, `POST /sync/push`
   - `POST /tasks/run-discovery`, `POST /tasks/run-fetcher`
   - `POST /tasks/run-sync-pull`, `POST /tasks/run-sync-push` (preferred for UI task/history tracking)
-- If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback and shows a manual command fallback (`py -3 scripts/jobs_fetcher.py`).
+- If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback and shows a manual command fallback (`python scripts/jobs_fetcher.py`).
 
 - Optional bridge runtime options:
   - CLI:
@@ -113,19 +113,19 @@ Saved job record fields:
 
 ## Suggested local schedules
 - Windows Task Scheduler action:
-  - Program/script: `py`
-  - Arguments: `-3 scripts/jobs_fetcher.py`
+  - Program/script: `python`
+  - Arguments: `scripts/jobs_fetcher.py`
   - Start in: repository root (`Baluffo`)
 - Discovery (daily):
-  - Program/script: `py`
-  - Arguments: `-3 scripts/source_discovery.py --mode dynamic`
+  - Program/script: `python`
+  - Arguments: `scripts/source_discovery.py --mode dynamic`
   - Start in: repository root (`Baluffo`)
 
 ## Ship bundle (zip-first)
 
 - Build:
   - `npm run build:ship-bundle`
-  - direct Python entrypoint: `py -3 scripts/build_ship_bundle.py --bundle-version 1.2.3`
+  - direct Python entrypoint: `python scripts/build_ship_bundle.py --bundle-version 1.2.3`
 - Output:
   - `dist/baluffo-ship`
 - Launchers in bundle root:
@@ -142,10 +142,10 @@ Saved job record fields:
 ## Portable executable (Windows)
 
 - Install dependencies:
-  - `py -3.13 -m pip install -r requirements-desktop.txt`
+  - `python -m pip install -r requirements-desktop.txt`
 - Build:
   - `npm run build:portable-exe -- --bundle-version 1.2.3`
-  - direct Python entrypoint: `py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3`
+  - direct Python entrypoint: `python scripts/build_portable_exe.py --bundle-version 1.2.3`
 - Output:
   - `dist/baluffo-portable`
   - `dist/baluffo-portable-1.2.3.zip`

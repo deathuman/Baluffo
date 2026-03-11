@@ -1,7 +1,9 @@
 import unittest
 from pathlib import Path
+from unittest import mock
 from zipfile import ZipFile
 
+from scripts import build_ship_bundle
 from scripts.build_portable_exe import (
     build_portable_layout,
     create_zip,
@@ -14,7 +16,12 @@ from tests.temp_paths import workspace_tmpdir
 class BuildPortableExeTests(unittest.TestCase):
     def test_portable_layout_wraps_ship_bundle_in_ship_folder(self) -> None:
         with workspace_tmpdir("build-portable-exe") as tmp:
-            output = build_portable_layout(Path(tmp) / "dist" / "baluffo-portable", "9.9.9")
+            with mock.patch.object(
+                build_ship_bundle,
+                "_require_packaged_sync_config",
+                return_value=build_ship_bundle.PACKAGED_SYNC_CONFIG_TEMPLATE_PATH,
+            ):
+                output = build_portable_layout(Path(tmp) / "dist" / "baluffo-portable", "9.9.9")
             self.assertTrue((output / "ship" / "app" / "current.txt").exists())
             self.assertTrue((output / "ship" / "run-site.ps1").exists())
             self.assertTrue((output / "ship" / "scripts" / "ship" / "runtime_launcher.py").exists())

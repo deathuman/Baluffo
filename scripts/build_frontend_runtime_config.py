@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.baluffo_config import get_bridge_defaults, get_security_defaults
+from scripts.python_version_guard import ensure_required_python
 
 
 def build_frontend_runtime_config_payload() -> Dict[str, Dict[str, Any]]:
@@ -51,6 +52,7 @@ def write_frontend_runtime_config(output_path: Path = DEFAULT_OUTPUT_PATH) -> Pa
 
 
 def main() -> int:
+    ensure_required_python()
     write_frontend_runtime_config()
     print(str(DEFAULT_OUTPUT_PATH))
     return 0

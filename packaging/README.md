@@ -76,7 +76,7 @@ and default build key derivation. `BALUFFO_SYNC_BUILD_*` env vars still override
 You can generate the packaged config locally with:
 
 ```powershell
-py -3 scripts/build_sync_app_config.py `
+python scripts/build_sync_app_config.py `
   --app-id 123456 `
   --installation-id 98765432 `
   --repo owner/repo `
@@ -92,7 +92,7 @@ For portable passphrase mode instead of embedded mode, set:
 
 ```powershell
 $env:BALUFFO_SYNC_KEY_PASSPHRASE="replace-with-strong-passphrase"
-py -3 scripts/build_sync_app_config.py --key-derivation passphrase --portable-passphrase-env BALUFFO_SYNC_KEY_PASSPHRASE ...
+python scripts/build_sync_app_config.py --key-derivation passphrase --portable-passphrase-env BALUFFO_SYNC_KEY_PASSPHRASE ...
 ```
 
 ## Automatic build generation

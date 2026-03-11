@@ -64,25 +64,26 @@ It combines:
 
 ## Architecture Map
 
-- `frontend/*/app.js`: page orchestration (events, state flow, service calls)
-- `frontend/*/domain.js`: pure transformation/business rules
-- `frontend/*/data-source.js`: async fetch/read envelopes
-- `frontend/*/render.js`: HTML/DOM composition
-- `frontend/shared/ui` and `frontend/shared/data`: reusable cross-page helpers
+- Start here for AI-assisted scanning: `docs/architecture-ai-map.md`
+- `frontend/*/app.js`: page entrypoint that re-exports `frontend/*/app/runtime.js`
+- `frontend/*/app/runtime.js`: orchestration root for page flow, state transitions, and service calls
+- `frontend/*/app/*.js`: focused modules for feature logic (`feed`, `filters`, `notes`, `attachments`, `auth`, `ops`, etc.)
+- `frontend/*/{render,domain,data-source,services,state-sync,actions}.js`: shared page-layer primitives still composed by runtime
+- Desktop runtime launcher and contracts: `scripts/ship/desktop_app.py`
 
 ## Getting Started
 
 ### 1) Requirements
 
-- Python 3.10+ (recommended)
+- Python 3.13.x (required for project build/test workflows)
 - Node.js (only needed for JS syntax checks in validation)
 
-Windows commands below use `py -3` so the project does not accidentally resolve to Python 2. On non-Windows shells, use `python3` instead.
+Project commands below use `python` and expect that executable to resolve to Python 3.13.x.
 
 ### 2) Serve the site locally
 
 ```powershell
-py -3 -m http.server 8080 --directory .
+python -m http.server 8080 --directory .
 ```
 
 Open:
@@ -94,26 +95,26 @@ Open:
 ### 3) Generate or refresh jobs feed
 
 ```powershell
-py -3 scripts/jobs_fetcher.py
+python scripts/jobs_fetcher.py
 ```
 
 ### 4) Run source discovery (optional)
 
 ```powershell
-py -3 scripts/source_discovery.py --mode dynamic
+python scripts/source_discovery.py --mode dynamic
 ```
 
 ### 5) Run admin bridge (for Admin discovery actions)
 
 ```powershell
-py -3 scripts/admin_bridge.py
+python scripts/admin_bridge.py
 ```
 
 Optional runtime overrides:
 
 ```powershell
 $env:BALUFFO_DATA_DIR = "C:\baluffo\data"
-py -3 scripts/admin_bridge.py --host 127.0.0.1 --port 8877 --log-format human --log-level info
+python scripts/admin_bridge.py --host 127.0.0.1 --port 8877 --log-format human --log-level info
 ```
 
 Runtime config precedence:
@@ -175,7 +176,7 @@ npm run build:ship-bundle
 Optional version:
 
 ```powershell
-py -3 scripts/build_ship_bundle.py --bundle-version 1.2.3
+python scripts/build_ship_bundle.py --bundle-version 1.2.3
 ```
 
 Bundle output: `dist/baluffo-ship` with launcher scripts:
@@ -199,12 +200,12 @@ Release guide: `docs/RELEASE.md`.
 
 ## Portable Executable (Windows)
 
-Baluffo can also be wrapped as a portable Windows desktop executable using `pywebview` + `PyInstaller`.
+Baluffo can also be wrapped as a portable Windows desktop executable using `PyInstaller` and the desktop launcher runtime.
 
 Install desktop build dependencies:
 
 ```powershell
-py -3.13 -m pip install -r requirements-desktop.txt
+python -m pip install -r requirements-desktop.txt
 ```
 
 Build:
@@ -222,10 +223,10 @@ unless overridden by CLI or env.
 Optional custom icon override:
 
 ```powershell
-py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3 --icon C:\path\to\Baluffo.ico
+python scripts/build_portable_exe.py --bundle-version 1.2.3 --icon C:\path\to\Baluffo.ico
 ```
 
-The desktop executable build currently targets Python 3.13 on Windows. In this project environment, Python 3.14 fails to install `pywebview` because `pythonnet` wheel build fails; that leads to an EXE that starts but cannot launch the desktop webview.
+Build/test workflows are standardized on Python 3.13.x for deterministic local and CI behavior.
 
 Output:
 
@@ -240,10 +241,10 @@ Portable layout:
 - `ship\data\local-user-data\`: desktop-only profiles, saved jobs, notes, activity, and attachment metadata/files
 
 The executable starts the local site and bridge internally, waits for readiness, then opens Baluffo in a dedicated window.
-Desktop mode now uses a fixed site origin so theme/quick-filter browser state stays stable, while core user data is stored under `ship\data\local-user-data\` instead of WebView-local IndexedDB/localStorage.
+Desktop mode now uses a fixed site origin so theme/quick-filter browser state stays stable, while core user data is stored under `ship\data\local-user-data\` instead of browser-local IndexedDB/localStorage.
 
 If no custom icon is provided, the build generates and embeds a branded default `.ico`.
-On Windows, the packaged app now checks for Microsoft Edge WebView2 Runtime at startup and shows an installer prompt if it is missing.
+Packaged desktop launch prefers Chromium app mode (Edge/Chrome/Brave with an isolated profile) and falls back to default browser only when needed.
 
 ## Validation
 
@@ -281,7 +282,7 @@ npm run test:py
 Compute current performance metrics (latest run + rolling history median):
 
 ```powershell
-py -3 scripts/fetcher_metrics.py --data-dir data --window-runs 20
+python scripts/fetcher_metrics.py --data-dir data --window-runs 20
 ```
 
 ### Backup E2E validation runbook
@@ -289,7 +290,7 @@ py -3 scripts/fetcher_metrics.py --data-dir data --window-runs 20
 Run deterministic desktop file-store backup validation (isolated profile, no real-user data wipe):
 
 ```powershell
-py -3 scripts/backup_e2e_validate.py
+python scripts/backup_e2e_validate.py
 ```
 
 Report output:

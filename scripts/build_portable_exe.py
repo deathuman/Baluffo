@@ -39,6 +39,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.build_ship_bundle import DEFAULT_BUNDLE_VERSION, build_bundle
+from scripts.python_version_guard import ensure_required_python
 
 
 def _copy_tree_contents(src: Path, dst: Path) -> None:
@@ -376,6 +377,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    ensure_required_python()
     args = parse_args()
     output_dir = Path(args.output_dir).expanduser().resolve()
     version = str(args.bundle_version).strip() or DEFAULT_BUNDLE_VERSION

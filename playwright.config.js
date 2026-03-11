@@ -18,7 +18,7 @@ export default defineConfig({
     headless: true
   },
   webServer: {
-    command: "py -3 -m http.server 4173 --directory .",
+    command: "python -m http.server 4173 --directory .",
     url: "http://127.0.0.1:4173/jobs.html",
     timeout: 20_000,
     reuseExistingServer: !process.env.CI

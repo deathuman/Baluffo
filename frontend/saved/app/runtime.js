@@ -84,6 +84,11 @@ import {
   clearAttachmentPreviewUrls as clearAttachmentPreviewUrlsFromModule,
   renderAttachmentList as renderAttachmentListFromModule
 } from "./attachments.js";
+import { createSavedPageState } from "./runtime/state.js";
+import { createSavedStartupMetrics } from "./runtime/effects.js";
+import { setStatusText } from "./runtime/view.js";
+import { runSavedAction } from "./runtime/actions.js";
+import { bindDocumentKeydown } from "./runtime/events.js";
 let savedJobsListEl;
 let savedSourceStatusEl;
 let savedAuthStatusEl;
@@ -212,18 +217,32 @@ const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:887
  * @property {string} label
  */
 
-const pageState = {
-  noteSaveState: {
-    timers: new Map(),
-    inFlight: new Map(),
-    pendingValues: new Map(),
-    lastInteractionAt: 0
-  },
-  attachmentPreviewUrls: new Map()
-};
+const pageState = createSavedPageState();
 const savedDispatch = createSavedDispatcher();
 const noteSaveState = pageState.noteSaveState;
 const attachmentPreviewUrls = pageState.attachmentPreviewUrls;
+const startupMetrics = createSavedStartupMetrics({
+  emitMetric: (event, payload) => {
+    fetch(`${ADMIN_BRIDGE_BASE}/desktop-local-data/startup-metric?t=${Date.now()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event,
+        payload
+      })
+    }).catch(() => {});
+  }
+});
+
+/**
+ * Entry map (Saved runtime):
+ * - boot initializes refs, bindings, auth/session and initial render.
+ * - state concern: ./runtime/state.js
+ * - effects concern: ./runtime/effects.js
+ * - actions concern: ./runtime/actions.js
+ * - view concern: ./runtime/view.js
+ * - events concern: ./runtime/events.js
+ */
 
 function bootSavedPage() {
   cacheDom();
@@ -232,22 +251,12 @@ function bootSavedPage() {
 }
 
 function emitSavedStartupMetric(event, payload = {}) {
-  fetch(`${ADMIN_BRIDGE_BASE}/desktop-local-data/startup-metric?t=${Date.now()}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      event,
-      payload
-    })
-  }).catch(() => {});
+  startupMetrics.emit(event, payload);
 }
 
 function markSavedFirstInteractive(reason) {
-  if (savedInteractiveMetricSent) return;
+  startupMetrics.markFirstInteractive(reason);
   savedInteractiveMetricSent = true;
-  emitSavedStartupMetric("saved_first_interactive", {
-    reason: String(reason || "unknown")
-  });
 }
 
 function cacheDom() {
@@ -1598,7 +1607,7 @@ async function createCustomJob() {
 }
 
 function setSourceStatus(text) {
-  setText(savedSourceStatusEl, text);
+  setStatusText(setText, savedSourceStatusEl, text);
 }
 
 function setActivityStatus(text) {

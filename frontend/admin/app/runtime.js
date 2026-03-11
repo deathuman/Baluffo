@@ -73,6 +73,11 @@ import {
 } from "./fetcher.js";
 import { createAdminSyncController } from "./sync.js";
 import { createAdminRegistryController } from "./registry.js";
+import { createAdminRuntimeState } from "./runtime/state.js";
+import { createAdminStartupMetrics } from "./runtime/effects.js";
+import { createBridgeCaller } from "./runtime/actions.js";
+import { setStatusText, toLocalTime } from "./runtime/view.js";
+import { bindWindowResize } from "./runtime/events.js";
 
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";
 const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python scripts/jobs_fetcher.py";
@@ -92,49 +97,10 @@ const ADMIN_SOURCE_FILTER_KEY = "baluffo_admin_source_filter";
 const UNKNOWN_ERROR_TEXT = "unknown error";
 
 const adminDispatch = createAdminDispatcher();
-const state = {
-  adminPin: "",
-  activeSourceFilter: "all",
-  latestFetcherReportCache: null,
-  latestOpsHealthCache: null,
-  latestSyncStatusCache: null,
-  syncConfigDirty: false,
-  adminApiReadyPollTimer: null,
-  bridgeStatusPollTimer: null,
-  opsHealthPollTimer: null,
-  fetcherCompletionPollTimer: null,
-  fetcherCompletionPollDeadline: 0,
-  fetcherLaunchAtMs: 0,
-  fetcherLiveProgressState: null,
-  discoveryCompletionPollTimer: null,
-  discoveryCompletionPollDeadline: 0,
-  discoveryLaunchAtMs: 0,
-  discoveryLiveProgressState: null,
-  discoveryLogRemoteOffset: 0,
-  discoveryLogDetailsSyncing: false,
-  discoveryLogUserToggled: false,
-  discoveryLogPreferredOpen: true,
-  adminInteractiveMetricSent: false,
+const state = createAdminRuntimeState({
   discoveryReportPollIntervalMs: DISCOVERY_REPORT_POLL_INTERVAL_MS,
-  discoveryReportPollTimeoutMs: DISCOVERY_REPORT_POLL_TIMEOUT_MS,
-  adminBusyState: {
-    fetcherRun: false,
-    fetcherWatch: false,
-    fetcherReportLoad: false,
-    syncRun: false,
-    discoveryRun: false,
-    discoveryWatch: false,
-    discoveryLoad: false,
-    discoveryWrite: false,
-    manualAdd: false,
-    manualCheck: false,
-    opsLoad: false,
-    liveFetchRunning: false,
-    liveDiscoveryRunning: false,
-    liveSyncRunning: false,
-    livePipelineRunning: false
-  }
-};
+  discoveryReportPollTimeoutMs: DISCOVERY_REPORT_POLL_TIMEOUT_MS
+});
 
 let refs = {};
 let authController;
@@ -143,17 +109,30 @@ let opsController;
 let fetcherController;
 let discoveryController;
 let registryController;
+const startupMetrics = createAdminStartupMetrics({
+  emitStartupMetric: (event, payload) => emitAdminStartupMetricFromData(ADMIN_BRIDGE_BASE, event, payload)
+});
+const callBridge = createBridgeCaller({
+  setBridgeOnline: () => opsController?.setBridgeStatusBadge("online", "Bridge Online"),
+  setBridgeOffline: () => opsController?.setBridgeStatusBadge("offline", "Bridge Offline")
+});
+
+/**
+ * Entry map (Admin runtime):
+ * - boot initializes refs/controllers and binds events.
+ * - state: ./runtime/state.js
+ * - effects: ./runtime/effects.js
+ * - actions: ./runtime/actions.js
+ * - view: ./runtime/view.js
+ * - events: ./runtime/events.js
+ */
 
 function emitAdminStartupMetric(event, payload = {}) {
-  emitAdminStartupMetricFromData(ADMIN_BRIDGE_BASE, event, payload);
+  startupMetrics.emit(event, payload);
 }
 
 function markAdminFirstInteractive(reason) {
-  if (state.adminInteractiveMetricSent) return;
-  state.adminInteractiveMetricSent = true;
-  emitAdminStartupMetric("admin_first_interactive", {
-    reason: String(reason || "unknown")
-  });
+  startupMetrics.markFirstInteractive(reason);
 }
 
 function getErrorMessage(err) {
@@ -176,37 +155,12 @@ function formatLogEventText(event) {
   return formatLogEventTextFromDomain(event);
 }
 
-function toLocalTime(value) {
-  try {
-    return value.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false
-    });
-  } catch {
-    return "--:--:--";
-  }
-}
-
 function appendLogRow(container, event) {
   appendAdminLogRow(container, event, {
     normalizeLogLevel,
     toLocalTime,
     formatLogEventText
   });
-}
-
-function callBridge(request) {
-  return request()
-    .then(data => {
-      opsController?.setBridgeStatusBadge("online", "Bridge Online");
-      return data;
-    })
-    .catch(error => {
-      opsController?.setBridgeStatusBadge("offline", "Bridge Offline");
-      throw error;
-    });
 }
 
 function getBridge(path) {
@@ -234,7 +188,7 @@ function getLastJobsUrl() {
 }
 
 function setSourceStatus(text) {
-  setText(refs.adminSourceStatusEl, text);
+  setStatusText(setText, refs.adminSourceStatusEl, text);
 }
 
 function toAdminViewState() {
@@ -558,7 +512,7 @@ function bindEvents() {
     });
   }
 
-  window.addEventListener("resize", () => {
+  bindWindowResize(() => {
     syncDiscoveryLogDisclosure();
   });
 

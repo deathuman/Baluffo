@@ -107,6 +107,11 @@ import {
   applyPendingJobsAutoRefreshSignal,
   triggerJobsAutoRefreshFromSignal
 } from "./feed.js";
+import { createJobsPageState, createJobsPipelineUiState } from "./runtime/state.js";
+import { createJobsStartupMetrics } from "./runtime/effects.js";
+import { createJobsBridgeRequest } from "./runtime/actions.js";
+import { setProgressVisibility, setStatusText } from "./runtime/view.js";
+import { bindWindowResize } from "./runtime/events.js";
 let allJobs = [];
 let filteredJobs = [];
 const JOBS_LOG_SCOPE = "jobs";
@@ -163,11 +168,7 @@ const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
  */
 
 /** @type {JobsPageState} */
-const state = {
-  currentPage: 1,
-  itemsPerPage: 10,
-  filters: { ...defaultFilters, countries: Array.from(defaultFilters.countries || []) }
-};
+const state = createJobsPageState(defaultFilters);
 const jobsDispatch = createJobsDispatcher();
 
 const PROFESSION_LABELS = jobsStateModule.PROFESSION_LABELS || {};
@@ -408,17 +409,40 @@ let hasInitializedJobsFeed = false;
 let pendingAutoRefreshSignal = null;
 let lastHandledAutoRefreshSignalId = readAppliedAutoRefreshId();
 let lastFilterOptionsSignature = "";
-let startupRenderMetricSent = false;
-let startupInteractiveMetricSent = false;
 let authReadyPollTimer = null;
 let authStateListenerBound = false;
 let nonCriticalStartupScheduled = false;
-const jobsPipelineUiState = {
-  pollingTimer: null,
-  runId: "",
-  active: false,
-  bridgeOnline: false
-};
+const jobsPipelineUiState = createJobsPipelineUiState();
+const startupMetrics = createJobsStartupMetrics({
+  emitMetric: (event, payload) => {
+    if (!isDesktopRuntimeMode()) return;
+    fetch(`${ADMIN_BRIDGE_BASE}/desktop-local-data/startup-metric?t=${Date.now()}`, {
+      method: "POST",
+      cache: "no-store",
+      keepalive: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: String(event || "").trim() || "unknown",
+        payload: payload && typeof payload === "object" ? payload : {}
+      })
+    }).catch(() => {});
+  }
+});
+const callJobsBridge = createJobsBridgeRequest({
+  baseUrl: ADMIN_BRIDGE_BASE,
+  timeoutMs: JOBS_BRIDGE_REQUEST_TIMEOUT_MS,
+  request: callJobsBridgeFromModule
+});
+
+/**
+ * Entry map (Jobs runtime):
+ * - boot initializes DOM, URL state, event bindings, auth/feed startup.
+ * - state concern: ./runtime/state.js
+ * - events concern: ./runtime/events.js
+ * - actions concern: ./runtime/actions.js
+ * - view concern: ./runtime/view.js
+ * - effects concern: ./runtime/effects.js
+ */
 
 function logJobsInfo(message, ...args) {
   console.info(`[${JOBS_LOG_SCOPE}] ${message}`, ...args);
@@ -496,35 +520,16 @@ function isDesktopRuntimeMode() {
 }
 
 function emitDesktopStartupMetric(event, payload = {}) {
-  if (!isDesktopRuntimeMode()) return;
-  fetch(`${ADMIN_BRIDGE_BASE}/desktop-local-data/startup-metric?t=${Date.now()}`, {
-    method: "POST",
-    cache: "no-store",
-    keepalive: true,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      event: String(event || "").trim() || "unknown",
-      payload: payload && typeof payload === "object" ? payload : {}
-    })
-  }).catch(() => {});
+  startupMetrics.emit(event, payload);
 }
 
 function markStartupRendered(stage, rowCount) {
-  if (startupRenderMetricSent) return;
-  startupRenderMetricSent = true;
-  emitDesktopStartupMetric("jobs_first_render", {
-    stage: String(stage || ""),
-    rowCount: Number(rowCount || 0)
-  });
+  startupMetrics.markRendered(stage, rowCount);
 }
 
 function markJobsFirstInteractive(reason) {
-  if (startupInteractiveMetricSent) return;
-  startupInteractiveMetricSent = true;
+  startupMetrics.markInteractive(reason);
   desktopUrlStateReady = true;
-  emitDesktopStartupMetric("jobs_first_interactive", {
-    reason: String(reason || "unknown")
-  });
   if (desktopPendingRememberJobsUrl) {
     desktopPendingRememberJobsUrl = false;
     const pendingUrl = desktopPendingJobsUrl || `${window.location.pathname}${window.location.search}`;
@@ -628,7 +633,7 @@ function bindEvents() {
     }, 180));
   }
 
-  window.addEventListener("resize", debounce(() => {
+  bindWindowResize(debounce(() => {
     if (!allJobs.length) return;
     const changed = recalculateItemsPerPage();
     if (changed) {
@@ -728,13 +733,6 @@ function scheduleJobsPipelineStatusPoll(delayMs) {
     pollJobsPipelineStatus,
     JOBS_PIPELINE_STATUS_POLL_MS
   );
-}
-
-async function callJobsBridge(path, options = {}) {
-  return callJobsBridgeFromModule(ADMIN_BRIDGE_BASE, path, {
-    timeoutMs: JOBS_BRIDGE_REQUEST_TIMEOUT_MS,
-    ...options
-  });
 }
 
 function handlePipelineCompletionStatus(payload) {
@@ -1977,12 +1975,11 @@ function debounce(fn, waitMs) {
 }
 
 function setProgress(visible) {
-  if (!fetchProgress) return;
-  fetchProgress.classList.toggle("hidden", !visible);
+  setProgressVisibility(setText, fetchProgress, visible);
 }
 
 function setSourceStatus(text) {
-  setText(sourceStatus, text);
+  setStatusText(setText, sourceStatus, text);
 }
 
 function showLoading(text) {

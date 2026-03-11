@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.ship.startup_profile import render_startup_summary, summarize_startup_metrics, write_startup_summary
+from scripts.python_version_guard import ensure_required_python
 
 DEFAULT_EXE_PATH = ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
 DEFAULT_REPORT_PATH = ROOT / "data" / "packaged-desktop-smoke-report.json"
@@ -129,10 +130,7 @@ def choose_free_port() -> int:
 
 
 def run_portable_build(output_dir: Path | None = None) -> Path:
-    if shutil.which("py"):
-        command = ["py", "-3.13", str(ROOT / "scripts" / "build_portable_exe.py")]
-    else:
-        command = [sys.executable, str(ROOT / "scripts" / "build_portable_exe.py")]
+    command = [sys.executable, str(ROOT / "scripts" / "build_portable_exe.py")]
     target_dir = None
     if output_dir:
         target_dir = Path(output_dir).expanduser().resolve()
@@ -723,6 +721,7 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: List[str] | None = None) -> int:
+    ensure_required_python()
     args = parse_args(argv)
     report = run_packaged_smoke(args)
     if args.startup_probe or args.profile_only:

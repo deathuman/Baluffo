@@ -24,6 +24,7 @@ from scripts.build_frontend_runtime_config import (
     render_frontend_runtime_config_js,
     write_frontend_runtime_config,
 )
+from scripts.python_version_guard import ensure_required_python
 
 APP_RUNTIME_FILES = (
     "baluffo.config.json",
@@ -365,6 +366,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    ensure_required_python()
     args = parse_args()
     version = str(args.bundle_version).strip() or DEFAULT_BUNDLE_VERSION
     out = build_bundle(Path(args.output_dir).expanduser().resolve(), version)

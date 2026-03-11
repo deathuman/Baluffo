@@ -7,7 +7,7 @@ This is the authoritative release document for Baluffo.
 Baluffo ships through two distribution channels:
 
 - Ship bundle: the canonical zip-first release channel built around a versioned `app\versions\<version>` layout, PowerShell launchers, and the updater/recovery flow.
-- Portable EXE: a Windows desktop wrapper built with `pywebview` and `PyInstaller` that embeds the ship bundle under `ship\` and uses the ship bundle as its runtime payload.
+- Portable EXE: a Windows desktop wrapper built with `PyInstaller` and the desktop launcher runtime that embeds the ship bundle under `ship\` and uses the ship bundle as its runtime payload.
 
 Important rules:
 
@@ -59,7 +59,7 @@ npm run build:ship-bundle
 Direct Python entrypoint for operator/debug use:
 
 ```powershell
-py -3 scripts/build_ship_bundle.py --bundle-version 1.2.3
+python scripts/build_ship_bundle.py --bundle-version 1.2.3
 ```
 
 Default output:
@@ -86,7 +86,7 @@ Release preparation:
 
 ```powershell
 $env:BALUFFO_UPDATE_SIGNING_KEY="replace-with-release-key"
-py -3 scripts/ship/update_manager.py sign-manifest --version 1.2.4 --sha256 <artifact_sha256>
+python scripts/ship/update_manager.py sign-manifest --version 1.2.4 --sha256 <artifact_sha256>
 ```
 
 Ship-bundle update/apply path:
@@ -118,7 +118,7 @@ Recovery and diagnostics:
 Prerequisites:
 
 ```powershell
-py -3.13 -m pip install -r requirements-desktop.txt
+python -m pip install -r requirements-desktop.txt
 ```
 
 Preferred build command:
@@ -130,20 +130,19 @@ npm run build:portable-exe -- --bundle-version 1.2.3
 Direct Python entrypoint for operator/debug use:
 
 ```powershell
-py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3
+python scripts/build_portable_exe.py --bundle-version 1.2.3
 ```
 
 Optional icon override:
 
 ```powershell
-py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3 --icon C:\path\to\Baluffo.ico
+python scripts/build_portable_exe.py --bundle-version 1.2.3 --icon C:\path\to\Baluffo.ico
 ```
 
 Current environment baseline:
 
-- Build desktop EXEs with Python 3.13 on Windows in this repo.
-- Keep the ship bundle on `py -3`.
-- Do not standardize Python 3.14 for EXE builds in this environment because `pywebview` installation fails through `pythonnet` wheel build issues.
+- Use Python 3.13.x for ship bundle and portable EXE build/test workflows in this repo.
+- Use `python` commands consistently so shell/tooling behavior matches local and CI execution.
 
 Default outputs:
 
@@ -207,7 +206,7 @@ npm run test:frontend:packaged
 Optional rebuild-backed smoke validation:
 
 ```powershell
-py -3.13 scripts/packaged_desktop_smoke.py --rebuild
+python scripts/packaged_desktop_smoke.py --rebuild
 ```
 
 4. Confirm desktop startup, bridge readiness, and admin page readiness all pass in the smoke output.

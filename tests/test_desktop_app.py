@@ -222,18 +222,6 @@ class DesktopAppTests(unittest.TestCase):
 
         self.assertEqual(result, "heartbeat_timeout")
 
-    def test_reopen_existing_session_prefers_stored_browser_path(self) -> None:
-        with mock.patch.object(desktop_app, "launch_browser_for_url", return_value={"mode": "chromium-app"}) as launch_mock:
-            desktop_app.reopen_existing_session({
-                "url": "http://127.0.0.1:8080/jobs.html?desktop=1",
-                "browserPath": "C:/Edge/msedge.exe",
-            })
-
-        launch_mock.assert_called_once_with(
-            "http://127.0.0.1:8080/jobs.html?desktop=1",
-            preferred_browser_path="C:/Edge/msedge.exe",
-        )
-
     def test_main_surfaces_native_error_without_installer_prompt(self) -> None:
         with mock.patch.object(desktop_app, "create_runtime_config", return_value=object()), mock.patch.object(
             desktop_app,
@@ -267,7 +255,7 @@ class DesktopAppTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         runpy_mock.run_path.assert_called_once()
 
-    def test_launch_desktop_app_reuses_active_session_without_spawning_children(self) -> None:
+    def test_launch_desktop_app_fails_when_active_session_exists_without_spawning_children(self) -> None:
         config = desktop_app.DesktopRuntimeConfig(
             ship_root=Path("C:/tmp/baluffo-ship"),
             site_port=8080,
@@ -289,14 +277,12 @@ class DesktopAppTests(unittest.TestCase):
             desktop_app, "acquire_instance_lock", return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1)
         ), mock.patch.object(
             desktop_app, "release_instance_lock"
-        ), mock.patch.object(
-            desktop_app, "reopen_existing_session"
-        ) as reopen_mock, mock.patch.object(desktop_app, "start_child_process") as start_mock, mock.patch.object(
+        ), mock.patch.object(desktop_app, "start_child_process") as start_mock, mock.patch.object(
             desktop_app, "_append_startup_trace"
         ):
-            desktop_app.launch_desktop_app(config)
+            with self.assertRaisesRegex(RuntimeError, "Baluffo is already running"):
+                desktop_app.launch_desktop_app(config)
 
-        reopen_mock.assert_called_once_with(session)
         start_mock.assert_not_called()
 
     def test_launch_desktop_app_starts_children_saves_session_and_watches_browser(self) -> None:
@@ -397,7 +383,7 @@ class DesktopAppTests(unittest.TestCase):
         watch_mock.assert_any_call(data_dir, mock.ANY, bridge_port=8877, browser_process=None)
         recover_mock.assert_called_once()
 
-    def test_launch_desktop_app_reuses_session_when_instance_lock_is_contended(self) -> None:
+    def test_launch_desktop_app_fails_when_instance_lock_is_contended_and_session_exists(self) -> None:
         config = desktop_app.DesktopRuntimeConfig(
             ship_root=Path("C:/tmp/baluffo-ship"),
             site_port=8080,
@@ -417,16 +403,12 @@ class DesktopAppTests(unittest.TestCase):
 
         with mock.patch.object(desktop_app, "acquire_instance_lock", return_value=None), mock.patch.object(
             desktop_app, "wait_for_valid_session_state", return_value=session
-        ), mock.patch.object(
-            desktop_app, "reopen_existing_session"
-        ) as reopen_mock, mock.patch.object(
-            desktop_app, "start_child_process"
-        ) as start_mock, mock.patch.object(
+        ), mock.patch.object(desktop_app, "start_child_process") as start_mock, mock.patch.object(
             desktop_app, "_append_startup_trace"
         ):
-            desktop_app.launch_desktop_app(config)
+            with self.assertRaisesRegex(RuntimeError, "Baluffo is already running"):
+                desktop_app.launch_desktop_app(config)
 
-        reopen_mock.assert_called_once_with(session)
         start_mock.assert_not_called()
 
 
