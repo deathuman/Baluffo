@@ -69,7 +69,7 @@ test("cleanup structure: canonical app runtime modules exist for each slice", ()
 });
 
 test("cleanup structure: admin app defines centralized fetcher preset metadata", () => {
-  const source = fs.readFileSync(repoPath("frontend", "admin", "app", "runtime.js"), "utf8");
+  const source = fs.readFileSync(repoPath("frontend", "admin", "app", "fetcher.js"), "utf8");
   assert.match(source, /const FETCHER_PRESET_META\s*=\s*\{/);
   assert.match(source, /const FETCHER_FALLBACK_MESSAGES\s*=\s*\{/);
   assert.match(source, /\bdefault:\s*\{/);

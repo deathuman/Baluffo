@@ -1,4 +1,5 @@
 import "./actions.test.mjs";
+import "./admin-controllers.test.mjs";
 import "./admin-config.test.mjs";
 import "./admin-domain.test.mjs";
 import "./admin-render.test.mjs";
