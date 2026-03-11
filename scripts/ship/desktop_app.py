@@ -438,11 +438,24 @@ def _begin_window_app_bootstrap(data_dir: Path, started_mono: float, window: obj
 def _track_window_loaded_events(window: object, data_dir: Path, started_mono: float) -> None:
     load_count = 0
     before_load_count = 0
+    navigation_started = False
 
     def handle_loaded(*_args: object) -> None:
-        nonlocal load_count
+        nonlocal load_count, navigation_started
         load_count += 1
         try:
+            if load_count == 1:
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_shell_loaded",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                )
+                if not navigation_started:
+                    pending_url = str(getattr(window, "_baluffo_pending_app_url", "") or "").strip()
+                    if pending_url:
+                        navigation_started = True
+                        _schedule_window_app_navigation(data_dir, started_mono, window, pending_url)
+                return
             _append_startup_trace(
                 data_dir,
                 "desktop_page_loaded",
@@ -468,7 +481,7 @@ def _track_window_loaded_events(window: object, data_dir: Path, started_mono: fl
         nonlocal before_load_count
         before_load_count += 1
         try:
-            event_name = "desktop_page_before_load"
+            event_name = "desktop_shell_before_load" if before_load_count == 1 else "desktop_page_before_load"
             if before_load_count > 2:
                 event_name = f"desktop_before_load_{before_load_count}"
             _append_startup_trace(
@@ -701,25 +714,11 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 browserArguments=runtime_config["browserArguments"],
             )
         _install_winforms_shutdown_exception_guard(config.data_dir)
-        webview_storage_path = build_webview_storage_path(config.data_dir)
-        webview_storage_path.mkdir(parents=True, exist_ok=True)
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_webview_storage_ready",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            storagePath=str(webview_storage_path),
-        )
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_window_load_url",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            url=str(open_url),
-        )
         _append_startup_trace(config.data_dir, "desktop_window_create_started", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
         try:
             window = webview.create_window(
                 config.title,
-                url=open_url,
+                html=build_loading_html(config.title),
                 min_size=(1100, 720),
                 hidden=False,
                 background_color="#0B0E15",
@@ -739,11 +738,10 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             config.data_dir,
             "desktop_webview_starting",
             elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            storagePath=str(webview_storage_path),
-            privateMode=False,
+            callback="window_bootstrap",
         )
         try:
-            webview.start(private_mode=False, storage_path=str(webview_storage_path))
+            webview.start(_begin_window_app_bootstrap, args=(config.data_dir, started_mono, window, open_url))
         except Exception as exc:
             _append_startup_trace(
                 config.data_dir,

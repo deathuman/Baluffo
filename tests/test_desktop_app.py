@@ -201,11 +201,13 @@ class DesktopAppTests(unittest.TestCase):
         event_names = [call.args[1] for call in trace_mock.call_args_list]
         self.assertIn("desktop_shell_window_shown", event_names)
         self.assertIn("desktop_window_event_shown", event_names)
+        self.assertIn("desktop_shell_before_load", event_names)
         self.assertIn("desktop_page_before_load", event_names)
+        self.assertIn("desktop_shell_loaded", event_names)
         self.assertIn("desktop_page_loaded", event_names)
         self.assertIn("desktop_window_shown", event_names)
-        schedule_mock.assert_not_called()
-        self.assertGreaterEqual(window.show.call_count, 1)
+        schedule_mock.assert_called_once_with(Path("C:/tmp/data"), 10.0, window, "http://127.0.0.1:8080/jobs.html")
+        window.show.assert_called_once()
 
     def test_ensure_runtime_ports_raises_when_site_port_busy(self) -> None:
         config = desktop_app.DesktopRuntimeConfig(
@@ -278,7 +280,7 @@ class DesktopAppTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         runpy_mock.run_path.assert_called_once()
 
-    def test_launch_desktop_app_uses_stable_webview_storage_path(self) -> None:
+    def test_launch_desktop_app_uses_shell_handoff_with_runtime_overrides(self) -> None:
         data_dir = Path("C:/tmp/baluffo-ship/data")
         config = desktop_app.DesktopRuntimeConfig(
             ship_root=Path("C:/tmp/baluffo-ship"),
@@ -316,10 +318,18 @@ class DesktopAppTests(unittest.TestCase):
         fake_webview.start.assert_called_once()
         create_args, create_kwargs = fake_webview.create_window.call_args
         self.assertEqual(create_args[0], "Baluffo")
-        self.assertEqual(create_kwargs["url"], "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1")
-        _, kwargs = fake_webview.start.call_args
-        self.assertEqual(kwargs["private_mode"], False)
-        self.assertEqual(kwargs["storage_path"], str(data_dir / "local-user-data" / "webview"))
+        self.assertIn("Loading interface...", create_kwargs["html"])
+        start_args, start_kwargs = fake_webview.start.call_args
+        self.assertIs(start_args[0], desktop_app._begin_window_app_bootstrap)
+        self.assertEqual(
+            start_kwargs["args"],
+            (
+                data_dir,
+                mock.ANY,
+                fake_window,
+                "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1",
+            ),
+        )
         self.assertEqual(fake_webview.settings["WEBVIEW2_RUNTIME_PATH"], "C:/fixed-runtime")
 
 
