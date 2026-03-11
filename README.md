@@ -1,6 +1,12 @@
 # Baluffo
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Baluffo is a local-first web app for browsing, filtering, saving, and managing game development job listings.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 It combines:
 - A multi-source jobs feed pipeline (`scripts/jobs_fetcher.py`)
