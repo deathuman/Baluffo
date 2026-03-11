@@ -196,9 +196,9 @@ class DesktopAppTests(unittest.TestCase):
         self.assertEqual(result["mode"], "default-browser")
         open_mock.assert_called_once()
 
-    def test_launch_browser_for_url_switches_to_default_browser_when_chromium_exits_immediately(self) -> None:
+    def test_launch_browser_for_url_switches_to_default_browser_when_chromium_exits_with_error(self) -> None:
         fake_process = mock.Mock(spec=subprocess.Popen)
-        fake_process.poll.side_effect = [1]
+        fake_process.poll.return_value = 1
         with mock.patch.object(
             desktop_app, "resolve_chromium_browser_candidates", return_value=[{"name": "msedge", "path": "C:/Edge/msedge.exe"}]
         ), mock.patch.object(desktop_app, "launch_chromium_app", return_value=fake_process), mock.patch.object(
@@ -209,6 +209,22 @@ class DesktopAppTests(unittest.TestCase):
         self.assertEqual(result["mode"], "default-browser")
         terminate_mock.assert_called_once_with(fake_process)
         open_mock.assert_called_once()
+
+    def test_launch_browser_for_url_keeps_chromium_mode_when_launcher_exits_cleanly(self) -> None:
+        fake_process = mock.Mock(spec=subprocess.Popen)
+        fake_process.poll.return_value = 0
+        with mock.patch.object(
+            desktop_app, "resolve_chromium_browser_candidates", return_value=[{"name": "brave", "path": "C:/Brave/brave.exe"}]
+        ), mock.patch.object(desktop_app, "launch_chromium_app", return_value=fake_process), mock.patch.object(
+            desktop_app.webbrowser, "open", return_value=True
+        ) as open_mock, mock.patch.object(desktop_app, "terminate_process") as terminate_mock:
+            result = desktop_app.launch_browser_for_url("http://127.0.0.1:8080/jobs.html")
+
+        self.assertEqual(result["mode"], "chromium-app")
+        self.assertEqual(result["browserName"], "brave")
+        self.assertIsNone(result["process"])
+        terminate_mock.assert_not_called()
+        open_mock.assert_not_called()
 
     def test_watch_browser_session_uses_heartbeat_when_no_browser_process(self) -> None:
         with mock.patch.object(desktop_app, "wait_for_browser_heartbeat", return_value=True), mock.patch.object(

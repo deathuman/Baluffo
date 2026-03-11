@@ -84,6 +84,10 @@ if str(ROOT) not in sys.path:
 SYNC_DEFAULTS = get_sync_defaults()
 PACKAGED_SYNC_CONFIG_PATH = Path(SYNC_DEFAULTS["packaged_config_path"])
 PACKAGED_SYNC_CONFIG_TEMPLATE_PATH = ROOT / "packaging" / "github-app-sync-config.template.json"
+PACKAGED_SYNC_LOCAL_CONFIG_ENV = "BALUFFO_SYNC_BUILD_CONFIG_PATH"
+PACKAGED_SYNC_LOCAL_CANDIDATE_PATHS = (
+    ROOT / "packaging" / "github-app-sync-config.localkey.json",
+)
 PACKAGED_SYNC_BUILD_ENV = {
     "app_id": "BALUFFO_SYNC_BUILD_APP_ID",
     "installation_id": "BALUFFO_SYNC_BUILD_INSTALLATION_ID",
@@ -182,12 +186,17 @@ def _seed_runtime_data(data_dir: Path) -> None:
 def _require_packaged_sync_config() -> Path:
     if PACKAGED_SYNC_CONFIG_PATH.exists():
         return PACKAGED_SYNC_CONFIG_PATH
+    restored_path = _maybe_restore_packaged_sync_config_from_local()
+    if restored_path is not None and restored_path.exists():
+        return restored_path
     generated_path = _maybe_generate_packaged_sync_config()
     if generated_path is not None and generated_path.exists():
         return generated_path
+    searched_paths = ", ".join(str(path) for path in _candidate_local_packaged_sync_config_paths())
     raise RuntimeError(
         "Missing required packaged GitHub App sync config for packaged builds. "
         f"Expected {PACKAGED_SYNC_CONFIG_PATH}. "
+        f"Build also searched local secret paths ({PACKAGED_SYNC_LOCAL_CONFIG_ENV} + defaults): {searched_paths}. "
         "Provide either a prebuilt config file or these build-time inputs: "
         f"{PACKAGED_SYNC_BUILD_ENV['app_id']}, "
         f"{PACKAGED_SYNC_BUILD_ENV['installation_id']}, "
@@ -199,6 +208,42 @@ def _require_packaged_sync_config() -> Path:
 
 def _env_value(name: str) -> str:
     return str(os.environ.get(name) or "").strip()
+
+
+def _candidate_local_packaged_sync_config_paths() -> list[Path]:
+    candidates: list[Path] = []
+    env_path = _env_value(PACKAGED_SYNC_LOCAL_CONFIG_ENV)
+    if env_path:
+        candidates.append(Path(env_path).expanduser())
+    for path in PACKAGED_SYNC_LOCAL_CANDIDATE_PATHS:
+        candidates.append(path)
+    appdata = str(os.environ.get("APPDATA") or "").strip()
+    if appdata:
+        candidates.append(Path(appdata) / "Baluffo" / "github-app-sync-config.json")
+    local_appdata = str(os.environ.get("LOCALAPPDATA") or "").strip()
+    if local_appdata:
+        candidates.append(Path(local_appdata) / "Baluffo" / "github-app-sync-config.json")
+    candidates.append(Path.home() / ".baluffo" / "github-app-sync-config.json")
+
+    normalized: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path).strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        normalized.append(path)
+    return normalized
+
+
+def _maybe_restore_packaged_sync_config_from_local() -> Path | None:
+    for source_path in _candidate_local_packaged_sync_config_paths():
+        resolved_source = source_path.expanduser().resolve()
+        if not resolved_source.exists():
+            continue
+        _copy_file(resolved_source, PACKAGED_SYNC_CONFIG_PATH)
+        return PACKAGED_SYNC_CONFIG_PATH
+    return None
 
 
 def _maybe_generate_packaged_sync_config() -> Path | None:

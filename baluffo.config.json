@@ -31,9 +31,6 @@
     "bridge_port": 8877,
     "bridge_host": "127.0.0.1",
     "open_path": "jobs.html",
-    "title": "Baluffo",
-    "webview2_runtime_path": "",
-    "webview2_disable_gpu": false,
-    "webview2_additional_browser_arguments": ""
+    "title": "Baluffo"
   }
 }

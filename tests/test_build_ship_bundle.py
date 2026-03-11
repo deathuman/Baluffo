@@ -137,6 +137,43 @@ class BuildShipBundleTests(unittest.TestCase):
             self.assertEqual(packaged_config["allowedPathPrefix"], "baluffo/source-sync.json")
             self.assertEqual(packaged_config["keyDerivation"], "embedded")
 
+    def test_bundle_restores_packaged_sync_config_from_local_env_path(self) -> None:
+        with workspace_tmpdir("build-ship-bundle") as tmp:
+            source_config_path = Path(tmp) / "secrets" / "github-app-sync-config.json"
+            source_config_path.parent.mkdir(parents=True, exist_ok=True)
+            source_payload = {
+                "schemaVersion": 1,
+                "appId": "123456",
+                "installationId": "999999",
+                "repo": "owner/repo",
+                "branch": "main",
+                "path": "baluffo/source-sync.json",
+                "allowedRepo": "owner/repo",
+                "allowedBranch": "main",
+                "allowedPathPrefix": "baluffo/source-sync.json",
+                "keyDerivation": "embedded",
+                "embeddedKeyHint": "hint",
+                "embeddedKeyVersion": "v1",
+                "keySalt": "salt",
+                "privateKeyPemEnc": "ciphertext",
+            }
+            source_config_path.write_text(json.dumps(source_payload), encoding="utf-8")
+            output = self._build_with_temp_packaged_config(
+                tmp,
+                env={"BALUFFO_SYNC_BUILD_CONFIG_PATH": str(source_config_path)},
+            )
+            bundled_config_path = (
+                output
+                / "app"
+                / "versions"
+                / "1.2.3"
+                / "packaging"
+                / "github-app-sync-config.json"
+            )
+            bundled_config = json.loads(bundled_config_path.read_text(encoding="utf-8"))
+            self.assertEqual(bundled_config["appId"], source_payload["appId"])
+            self.assertEqual(bundled_config["installationId"], source_payload["installationId"])
+
 
 if __name__ == "__main__":
     unittest.main()

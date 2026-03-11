@@ -53,7 +53,7 @@ class BaluffoConfigTests(unittest.TestCase):
             base_path = root / "baluffo.config.json"
             local_path = root / "baluffo.config.local.json"
             base_path.write_text(
-                json.dumps({"desktop": {"site_port": "9100", "bridge_port": "9200", "webview2_disable_gpu": "true"}}),
+                json.dumps({"desktop": {"site_port": "9100", "bridge_port": "9200"}}),
                 encoding="utf-8",
             )
             with mock.patch.object(baluffo_config, "ROOT", root), mock.patch.object(
@@ -62,7 +62,6 @@ class BaluffoConfigTests(unittest.TestCase):
                 defaults = baluffo_config.get_desktop_defaults()
             self.assertEqual(int(defaults["site_port"]), 9100)
             self.assertEqual(int(defaults["bridge_port"]), 9200)
-            self.assertTrue(bool(defaults["webview2_disable_gpu"]))
 
     def test_get_storage_defaults_resolves_configured_paths(self) -> None:
         with workspace_tmpdir("baluffo-config") as tmp:

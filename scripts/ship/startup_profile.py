@@ -176,7 +176,7 @@ def summarize_startup_metrics(rows: List[Dict[str, Any]], *, page: str = "jobs",
         else:
             classification = {
                 "window_created_to_window_shown": "native reveal delayed",
-                "window_shown_to_page_loaded": "webview page load delayed",
+                "window_shown_to_page_loaded": "desktop page load delayed",
             }.get(ranked[0]["key"], "startup bottleneck unclear")
         stage_statuses = [stage["status"] for stage in stages]
         return {
@@ -278,7 +278,7 @@ def summarize_startup_metrics(rows: List[Dict[str, Any]], *, page: str = "jobs",
         top = ranked[0]["key"]
         classification_map = {
             "window_created_to_window_shown": "native reveal delayed",
-            "window_shown_to_page_loaded": "webview page load delayed",
+            "window_shown_to_page_loaded": "desktop page load delayed",
             "page_loaded_to_local_data_ready": "local data init delayed",
             "local_data_ready_to_auth_ready": "local auth bootstrap delayed",
             "auth_ready_to_first_render": f"{safe_page} render delayed",

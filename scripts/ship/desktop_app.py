@@ -543,6 +543,18 @@ def launch_browser_for_url(url: str, *, preferred_browser_path: str = "", env: d
                 "browserPath": browser_path,
                 "process": process,
             }
+        # Some Chromium builds (notably Brave) can exit the launcher process
+        # immediately after handing off the app window to another process.
+        # Treat clean exit as successful detached launch to avoid duplicate
+        # fallback opening in the default browser.
+        return_code = process.poll()
+        if int(return_code or 0) == 0:
+            return {
+                "mode": "chromium-app",
+                "browserName": str(candidate.get("name") or ""),
+                "browserPath": browser_path,
+                "process": None,
+            }
         terminate_process(process)
     if not webbrowser.open(url):
         raise RuntimeError("Baluffo could not launch a browser window for the desktop session.")

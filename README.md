@@ -217,7 +217,7 @@ npm run build:portable-exe -- --bundle-version 1.2.3
 If `packaging/github-app-sync-config.json` is not already present, the build will generate it from the
 same `BALUFFO_SYNC_BUILD_*` env vars used by `scripts/build_ship_bundle.py`.
 
-Desktop defaults like bridge/site ports, title, and WebView2 flags now come from `baluffo.config.json`
+Desktop defaults like bridge/site ports and title now come from `baluffo.config.json`
 unless overridden by CLI or env.
 
 Optional custom icon override:

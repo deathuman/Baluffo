@@ -94,7 +94,7 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
             {"ts": "2026-03-10T12:00:08.050000+00:00", "event": "desktop_probe_ready", "payload": {"elapsedMs": 8050}},
         ]
         summary = summarize_startup_metrics(rows, page="desktop-probe", profile_mode="cold")
-        self.assertEqual(summary["classification"], "webview page load delayed")
+        self.assertEqual(summary["classification"], "desktop page load delayed")
         self.assertEqual(summary["firstUsableMs"], 8050)
 
     def test_startup_profile_summary_supports_head_probe_page(self) -> None:

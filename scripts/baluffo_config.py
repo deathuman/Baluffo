@@ -48,9 +48,6 @@ CODE_FALLBACK_CONFIG: Dict[str, Any] = {
         "bridge_host": "127.0.0.1",
         "open_path": "jobs.html",
         "title": "Baluffo",
-        "webview2_runtime_path": "",
-        "webview2_disable_gpu": False,
-        "webview2_additional_browser_arguments": "",
     },
 }
 
@@ -199,12 +196,4 @@ def get_desktop_defaults() -> Dict[str, Any]:
         "bridge_host": _coerce_str(cfg.get("bridge_host"), CODE_FALLBACK_CONFIG["desktop"]["bridge_host"]),
         "open_path": _coerce_str(cfg.get("open_path"), CODE_FALLBACK_CONFIG["desktop"]["open_path"]).lstrip("/"),
         "title": _coerce_str(cfg.get("title"), CODE_FALLBACK_CONFIG["desktop"]["title"]),
-        "webview2_runtime_path": str(cfg.get("webview2_runtime_path") or "").strip(),
-        "webview2_disable_gpu": _coerce_bool(
-            cfg.get("webview2_disable_gpu"),
-            CODE_FALLBACK_CONFIG["desktop"]["webview2_disable_gpu"],
-        ),
-        "webview2_additional_browser_arguments": str(
-            cfg.get("webview2_additional_browser_arguments") or ""
-        ).strip(),
     }
