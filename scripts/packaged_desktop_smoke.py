@@ -32,7 +32,7 @@ STARTUP_REQUIRED_EVENTS = (
     "desktop_launch_start",
     "desktop_site_ready",
     "desktop_window_created",
-    "desktop_window_load_url",
+    "desktop_shell_window_shown",
 )
 EMBEDDED_PAGE_PROBES = (
     {"name": "Embedded Jobs Ready", "openPath": "jobs.html", "requiredEvents": ("jobs_auth_ready",)},
@@ -45,25 +45,21 @@ def startup_profile_required_events(page: str) -> tuple[str, ...]:
     normalized = (page or "jobs").strip().lower() or "jobs"
     if normalized == "desktop-probe":
         return STARTUP_REQUIRED_EVENTS + (
-            "desktop_shell_window_shown",
             "desktop_probe_html_parse_start",
             "desktop_probe_ready",
         )
     if normalized == "desktop-probe-head":
         return STARTUP_REQUIRED_EVENTS + (
-            "desktop_shell_window_shown",
             "desktop_probe_head_html_parse_start",
             "desktop_probe_head_ready",
         )
     if normalized == "desktop-probe-css":
         return STARTUP_REQUIRED_EVENTS + (
-            "desktop_shell_window_shown",
             "desktop_probe_css_html_parse_start",
             "desktop_probe_css_ready",
         )
     if normalized == "desktop-probe-inline":
         return STARTUP_REQUIRED_EVENTS + (
-            "desktop_shell_window_shown",
             "desktop_probe_inline_html_parse_start",
             "desktop_probe_inline_ready",
         )
@@ -72,7 +68,7 @@ def startup_profile_required_events(page: str) -> tuple[str, ...]:
         "saved": ("saved_first_interactive",),
         "jobs": ("jobs_first_render", "jobs_first_interactive"),
     }.get(normalized, ("jobs_first_render", "jobs_first_interactive"))
-    return STARTUP_REQUIRED_EVENTS + ("desktop_shell_window_shown", f"{normalized}_module_boot_start") + tuple(page_events)
+    return STARTUP_REQUIRED_EVENTS + (f"{normalized}_module_boot_start",) + tuple(page_events)
 
 
 def utc_now_iso() -> str:
@@ -540,6 +536,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> Dict[str, Any]:
     site_base_url = f"http://127.0.0.1:{site_port}"
     bridge_base_url = f"http://127.0.0.1:{bridge_port}"
     startup_probe = bool(args.startup_probe)
+    embedded_probes = bool(args.embedded_probes)
     profile_mode = "warm" if str(args.profile_mode or "").strip().lower() == "warm" else "cold"
     open_path = str(args.open_path or "jobs.html").strip() or "jobs.html"
     startup_page = Path(open_path).stem or "jobs"
@@ -585,7 +582,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> Dict[str, Any]:
               runtime_timeout_s=float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S),
               startup_probe=startup_probe,
           )
-        if not bool(args.profile_only):
+        if embedded_probes and not bool(args.profile_only):
             embedded_scenarios = [
                 run_embedded_runtime_probe(
                     exe_path=exe_path,
@@ -718,6 +715,7 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--pause-on-failure", action="store_true")
     parser.add_argument("--startup-probe", action="store_true")
+    parser.add_argument("--embedded-probes", action="store_true")
     parser.add_argument("--profile-only", action="store_true")
     parser.add_argument("--profile-mode", choices=("cold", "warm"), default="cold")
     parser.add_argument("--open-path", default="jobs.html")

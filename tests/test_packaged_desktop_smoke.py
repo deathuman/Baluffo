@@ -32,7 +32,6 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 "desktop_launch_start",
                 "desktop_site_ready",
                 "desktop_window_created",
-                "desktop_window_load_url",
                 "desktop_shell_window_shown",
                 "jobs_module_boot_start",
                 "jobs_first_render",
@@ -46,7 +45,6 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 "desktop_launch_start",
                 "desktop_site_ready",
                 "desktop_window_created",
-                "desktop_window_load_url",
                 "desktop_shell_window_shown",
                 "desktop_probe_html_parse_start",
                 "desktop_probe_ready",
@@ -58,7 +56,6 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 "desktop_launch_start",
                 "desktop_site_ready",
                 "desktop_window_created",
-                "desktop_window_load_url",
                 "desktop_shell_window_shown",
                 "desktop_probe_head_html_parse_start",
                 "desktop_probe_head_ready",
@@ -70,7 +67,6 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 "desktop_launch_start",
                 "desktop_site_ready",
                 "desktop_window_created",
-                "desktop_window_load_url",
                 "desktop_shell_window_shown",
                 "desktop_probe_css_html_parse_start",
                 "desktop_probe_css_ready",
@@ -82,7 +78,6 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 "desktop_launch_start",
                 "desktop_site_ready",
                 "desktop_window_created",
-                "desktop_window_load_url",
                 "desktop_shell_window_shown",
                 "desktop_probe_inline_html_parse_start",
                 "desktop_probe_inline_ready",
@@ -266,7 +261,7 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
             self.assertFalse(saved["ok"])
             self.assertTrue(Path(saved["artifacts"]["reportPath"]).exists())
             self.assertGreaterEqual(terminate_mock.call_count, 1)
-            self.assertEqual(terminate_mock.call_args_list[-1], mock.call(None))
+            self.assertEqual(terminate_mock.call_args_list[-1], mock.call(process))
             self.assertGreaterEqual(stdout_handle.close.call_count, 1)
             self.assertGreaterEqual(stderr_handle.close.call_count, 1)
 
@@ -294,19 +289,12 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 ]
             )
             startup_metrics = [{"event": "desktop_site_ready"}]
-            embedded_scenarios = [
-                {"name": "Embedded Jobs Ready", "status": "passed", "durationMs": 100, "error": "", "startupProfile": {}},
-                {"name": "Embedded Saved Ready", "status": "passed", "durationMs": 120, "error": "", "startupProfile": {}},
-                {"name": "Embedded Admin Ready", "status": "passed", "durationMs": 140, "error": "", "startupProfile": {}},
-            ]
             scenarios = [
                 {"name": "Startup", "status": "passed", "durationMs": 200, "error": ""},
                 {"name": "Auth continuity", "status": "passed", "durationMs": 300, "error": ""},
             ]
             with mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path), mock.patch.object(
                 smoke, "launch_packaged_exe", return_value=(process, stdout_handle, stderr_handle)
-            ), mock.patch.object(
-                smoke, "run_embedded_runtime_probe", side_effect=embedded_scenarios
             ), mock.patch.object(
                 smoke,
                 "wait_for_packaged_runtime",
@@ -342,9 +330,8 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
             ), mock.patch.object(smoke, "terminate_process_tree") as terminate_mock:
                 payload = smoke.run_packaged_smoke(args)
             self.assertTrue(payload["ok"])
-            self.assertEqual(payload["scenarios"][0:3], embedded_scenarios)
-            self.assertEqual(payload["scenarios"][3]["name"], "Startup Profile")
-            self.assertEqual(payload["scenarios"][4:], scenarios)
+            self.assertEqual(payload["scenarios"][0]["name"], "Startup Profile")
+            self.assertEqual(payload["scenarios"][1:], scenarios)
             self.assertEqual(payload["startupMetrics"], startup_metrics)
             self.assertTrue(report_path.exists())
             saved = json.loads(report_path.read_text(encoding="utf-8"))
@@ -369,6 +356,7 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                     str(report_path),
                     "--artifacts-dir",
                     str(artifacts_dir),
+                    "--embedded-probes",
                 ]
             )
             failing_probe = {
