@@ -1,4 +1,6 @@
 import { AdminConfig } from "./admin-config.js";
+import { APPLICATION_STATUSES } from "./frontend/local-data/constants.js";
+import { createLocalDataRuntime } from "./frontend/local-data/runtime-contract.js";
 import { buildAttachmentPath, generateJobKey } from "./frontend/local-data/job-utils.js";
 import { canTransitionPhase, normalizeApplicationStatus } from "./frontend/local-data/phase.js";
 
@@ -135,7 +137,8 @@ function fileToDataUrl(file) {
   });
 }
 
-const desktopApi = {
+const desktopApi = createLocalDataRuntime({
+  APPLICATION_STATUSES,
   isReady() {
     return true;
   },
@@ -311,7 +314,7 @@ const desktopApi = {
     commitAuthState(payload.user || null);
     await pollSavedSubscriptions();
   }
-};
+}, "desktop local data runtime");
 
 async function bootstrapDesktopApi() {
   const bootstrapRevision = authStateRevision;

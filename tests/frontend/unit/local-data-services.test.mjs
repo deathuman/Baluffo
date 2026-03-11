@@ -95,3 +95,11 @@ test("adminService overview returns fallback data on error", async () => {
   assert.deepEqual(result.data, { users: [], totals: {} });
   assert.match(result.error, /overview down/i);
 });
+
+test("authService.isReady fails loudly on invalid runtime contract", async () => {
+  setMockApi({
+    isReady: () => true
+  });
+  const { authService } = await import("../../../frontend/local-data/services.js");
+  assert.throws(() => authService.isReady(), /missing methods/i);
+});

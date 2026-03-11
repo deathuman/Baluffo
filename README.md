@@ -286,7 +286,7 @@ py -3 scripts/fetcher_metrics.py --data-dir data --window-runs 20
 
 ### Backup E2E validation runbook
 
-Run deterministic desktop backup validation (isolated profile, no real-user data wipe):
+Run deterministic desktop file-store backup validation (isolated profile, no real-user data wipe):
 
 ```powershell
 py -3 scripts/backup_e2e_validate.py

@@ -51,6 +51,7 @@ class BuildShipBundleTests(unittest.TestCase):
             self.assertTrue((output / "app" / "update-manifest.json").exists())
             self.assertTrue((version_root / "frontend" / "admin" / "app.js").exists())
             self.assertTrue((version_root / "scripts" / "admin_bridge.py").exists())
+            self.assertTrue((version_root / "scripts" / "baluffo_config.py").exists())
             self.assertTrue((version_root / "scripts" / "local_data_store.py").exists())
             self.assertTrue((version_root / "scripts" / "source_sync.py").exists())
             self.assertTrue((version_root / "scripts" / "discovery_seed_catalog.json").exists())

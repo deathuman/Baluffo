@@ -5,6 +5,7 @@ import {
   SESSION_KEY,
   APPLICATION_STATUSES
 } from "./frontend/local-data/constants.js";
+import { createLocalDataRuntime } from "./frontend/local-data/runtime-contract.js";
 import { createIndexedDbAdapter } from "./frontend/local-data/indexeddb-adapter.js";
 import { normalizeApplicationStatus, canTransitionPhase } from "./frontend/local-data/phase.js";
 import {
@@ -177,7 +178,7 @@ export function initBrowserLocalDataClient() {
   authDomain.bindStorageSync(getStoredSessionUser);
   currentUser = getStoredSessionUser();
 
-  browserApi = {
+  browserApi = createLocalDataRuntime({
     APPLICATION_STATUSES,
     isReady: () => hasIndexedDb,
     getCurrentUser: () => currentUser,
@@ -199,13 +200,16 @@ export function initBrowserLocalDataClient() {
     addAttachmentForJob: attachmentsDomain.addAttachmentForJob,
     deleteAttachmentForJob: attachmentsDomain.deleteAttachmentForJob,
     getAttachmentBlob: attachmentsDomain.getAttachmentBlob,
+    getAttachmentDownloadUrl: () => "",
+    getAttachmentOpenUrl: () => "",
     listActivityForUser: activityDomain.listActivityForUser,
     exportProfileData: backupDomain.exportProfileData,
+    getBackupExportUrl: () => "",
     importProfileData: backupDomain.importProfileData,
     verifyAdminPin,
     getAdminOverview: adminDomain.getAdminOverview,
     wipeAccountAdmin: adminDomain.wipeAccountAdmin
-  };
+  }, "browser local data runtime");
   window.JobAppLocalData = browserApi;
   return browserApi;
 }

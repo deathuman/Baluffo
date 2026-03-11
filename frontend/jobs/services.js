@@ -1,5 +1,6 @@
 import {
   getLocalDataApi,
+  getValidatedLocalDataApi,
   authService,
   savedJobsService
 } from "../local-data/services.js";
@@ -11,7 +12,7 @@ export function isJobsApiReady() {
 
 export const jobsPageService = {
   isAvailable() {
-    return Boolean(getLocalDataApi());
+    return Boolean(getValidatedLocalDataApi("jobs local data runtime"));
   },
   generateJobKey(job) {
     const api = getLocalDataApi();

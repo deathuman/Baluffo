@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Desktop backup end-to-end validator.
+"""Desktop file-store backup end-to-end validator.
 
-Runs isolated export/import validation scenarios and writes a machine-readable report.
+Runs isolated desktop export/import validation scenarios against LocalDataStore
+and writes a machine-readable report.
 """
 
 from __future__ import annotations
@@ -460,7 +461,7 @@ def run_validation(data_dir: Path) -> Dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate desktop backup export/import end-to-end.")
+    parser = argparse.ArgumentParser(description="Validate desktop file-store backup export/import end-to-end.")
     parser.add_argument(
         "--data-dir",
         default="data/.backup-validation-tmp",

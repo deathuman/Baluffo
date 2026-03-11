@@ -10,6 +10,7 @@ import "./jobs-state.test.mjs";
 import "./local-data-backup-domain.test.mjs";
 import "./local-data-backup-import-export.test.mjs";
 import "./local-data-domains.test.mjs";
+import "./local-data-runtime-contract.test.mjs";
 import "./local-data-services.test.mjs";
 import "./saved-data-source.test.mjs";
 import "./saved-domain.test.mjs";

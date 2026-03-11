@@ -1,3 +1,5 @@
+import { assertLocalDataRuntime } from "./runtime-contract.js";
+
 export function toResult(data, error = "") {
   const normalizedError = String(error || "");
   return {
@@ -12,6 +14,14 @@ export function getLocalDataApi() {
   return window.JobAppLocalData || null;
 }
 
+export function getValidatedLocalDataApi(label = "window.JobAppLocalData") {
+  const api = getLocalDataApi();
+  if (!api) {
+    return null;
+  }
+  return assertLocalDataRuntime(api, label);
+}
+
 function ensureApi(api, actionName) {
   if (!api) {
     throw new Error(`Local data API unavailable for ${actionName}.`);
@@ -20,7 +30,7 @@ function ensureApi(api, actionName) {
 
 export const authService = {
   isReady() {
-    const api = getLocalDataApi();
+    const api = getValidatedLocalDataApi("local data runtime");
     return Boolean(api && typeof api.isReady === "function" && api.isReady());
   },
   getCurrentUser() {

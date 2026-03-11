@@ -51,6 +51,7 @@ APP_RUNTIME_FILES = (
 APP_RUNTIME_SCRIPTS = (
     "__init__.py",
     "admin_bridge.py",
+    "baluffo_config.py",
     "contracts.py",
     "fetcher_metrics.py",
     "jobs_fetcher.py",

@@ -1,5 +1,5 @@
 import {
-  getLocalDataApi,
+  getValidatedLocalDataApi,
   authService,
   adminService
 } from "../local-data/services.js";
@@ -10,7 +10,7 @@ export function isAdminApiReady() {
 
 export const adminPageService = {
   isAvailable() {
-    return Boolean(getLocalDataApi());
+    return Boolean(getValidatedLocalDataApi("admin local data runtime"));
   }
 };
 
