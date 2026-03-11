@@ -2,7 +2,12 @@ import unittest
 from pathlib import Path
 from zipfile import ZipFile
 
-from scripts.build_portable_exe import build_portable_layout, create_zip, generate_icon_file, resolve_icon_path
+from scripts.build_portable_exe import (
+    build_portable_layout,
+    create_zip,
+    generate_icon_file,
+    resolve_icon_path,
+)
 from tests.temp_paths import workspace_tmpdir
 
 
@@ -39,7 +44,6 @@ class BuildPortableExeTests(unittest.TestCase):
             icon_path = resolve_icon_path(output, exe_name="Baluffo")
             self.assertTrue(icon_path.exists())
             self.assertEqual(icon_path.suffix.lower(), ".ico")
-
 
 if __name__ == "__main__":
     unittest.main()

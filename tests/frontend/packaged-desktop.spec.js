@@ -43,11 +43,12 @@ function firstEventIndex(rows, eventName) {
 async function assertFacadeStartupOrdering(request) {
   const rows = await fetchStartupMetricRows(request, 600);
   const hasEvent = eventName => firstEventIndex(rows, eventName) >= 0;
-  expect(hasEvent("desktop_shell_loaded")).toBeTruthy();
-  expect(hasEvent("desktop_window_load_url")).toBeTruthy();
+  expect(hasEvent("desktop_browser_launch_selected")).toBeTruthy();
+  expect(hasEvent("desktop_shell_window_shown")).toBeTruthy();
+  expect(hasEvent("desktop_browser_heartbeat")).toBeTruthy();
   expect(hasEvent("jobs_first_render")).toBeTruthy();
   expect(hasEvent("jobs_first_interactive")).toBeTruthy();
-  const shellLoadedIndex = firstEventIndex(rows, "desktop_shell_loaded");
+  const shellLoadedIndex = firstEventIndex(rows, "desktop_shell_window_shown");
   const firstInteractiveIndex = firstEventIndex(rows, "jobs_first_interactive");
   expect(shellLoadedIndex).toBeGreaterThanOrEqual(0);
   expect(firstInteractiveIndex).toBeGreaterThanOrEqual(0);

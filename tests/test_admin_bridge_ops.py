@@ -206,6 +206,7 @@ class AdminBridgeOpsTests(unittest.TestCase):
             "sources": [],
         })
         health = admin_bridge.compute_ops_health()
+        self.assertEqual(health["service"], "baluffo-bridge")
         self.assertIn("kpis", health)
         self.assertIn("alerts", health)
         self.assertGreaterEqual(len(health["alerts"]), 1)

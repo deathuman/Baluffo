@@ -108,6 +108,7 @@ SYNC_CONFIG = source_sync_module.resolve_sync_config()
 SYNC_CONFIG_LOCK = threading.RLock()
 DESKTOP_LOCAL_DATA_STORE: LocalDataStore | None = None
 STARTUP_METRICS_LOCK = threading.RLock()
+DESKTOP_SESSION_ACTIVITY_AT = ""
 
 
 @dataclass
@@ -226,7 +227,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     global OPS_HISTORY_PATH, OPS_ALERT_STATE_PATH, JOBS_FETCH_REPORT_PATH, TASK_STATE_PATH, DISCOVERY_LOG_PATH
     global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
     global TASKS_CONFIG_PATH, SYNC_CONFIG_PATH, SYNC_RUNTIME_PATH, STARTUP_METRICS_PATH
-    global DESKTOP_LOCAL_DATA_STORE
+    global DESKTOP_LOCAL_DATA_STORE, DESKTOP_SESSION_ACTIVITY_AT
 
     RUNTIME_CONFIG = config
     data_dir = Path(config.data_dir).resolve()
@@ -254,6 +255,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     source_registry_module.DISCOVERY_REPORT_PATH = DISCOVERY_REPORT_PATH
     source_registry_module.APPROVAL_STATE_PATH = APPROVAL_STATE_PATH
     DESKTOP_LOCAL_DATA_STORE = LocalDataStore(LocalDataPaths.from_data_dir(data_dir)) if config.desktop_mode else None
+    DESKTOP_SESSION_ACTIVITY_AT = now_iso() if config.desktop_mode else ""
 
 
 def startup_banner(config: RuntimeConfig) -> None:
@@ -1843,6 +1845,16 @@ def now_iso() -> str:
     return now_utc().isoformat()
 
 
+def mark_desktop_session_activity(path: str) -> None:
+    global DESKTOP_SESSION_ACTIVITY_AT
+    if not RUNTIME_CONFIG.desktop_mode:
+        return
+    normalized = str(path or "").strip()
+    if not normalized or normalized == "/ops/health":
+        return
+    DESKTOP_SESSION_ACTIVITY_AT = now_iso()
+
+
 def parse_iso(value: Any) -> datetime | None:
     text = str(value or "").strip()
     if not text:
@@ -2386,7 +2398,9 @@ def compute_ops_health() -> Dict[str, Any]:
     severity = _derive_ops_severity(alerts_meta["alerts"])
 
     return {
+        "service": "baluffo-bridge",
         "generatedAt": now_iso(),
+        "desktopLastActivityAt": str(DESKTOP_SESSION_ACTIVITY_AT or ""),
         "status": severity,
         "kpis": {
             "lastSuccessfulFetchAge": format_age(last_success.get("finishedAt") if last_success else ""),
@@ -3159,9 +3173,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         path = self._route_path()
         query = self._route_query()
+        mark_desktop_session_activity(path)
         if path == "/desktop-local-data/session":
             try:
-                self._send_json({"ok": True, "user": desktop_local_data_store().get_current_user()})
+                self._send_json({"ok": True, "user": desktop_local_data_store().get_current_user(), "lastActivityAt": str(DESKTOP_SESSION_ACTIVITY_AT or "")})
             except Exception as exc:  # noqa: BLE001
                 self._send_json({"ok": False, "error": str(exc)}, status=400)
             return
@@ -3314,6 +3329,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         path = self._route_path()
         payload = read_json_from_request(self)
+        mark_desktop_session_activity(path)
         if path == "/desktop-local-data/sign-in":
             try:
                 user = desktop_local_data_store().sign_in(str(payload.get("name") or ""))

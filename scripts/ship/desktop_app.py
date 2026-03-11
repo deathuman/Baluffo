@@ -5,20 +5,22 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import html
+import json
 import os
 import runpy
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
-import threading
 import traceback
+import urllib.error
+import urllib.request
 import webbrowser
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
-import json
+from typing import Any, Sequence
 
 if os.name == "nt":
     import ctypes
@@ -38,12 +40,20 @@ DEFAULT_OPEN_PATH = str(DESKTOP_DEFAULTS["open_path"])
 DEFAULT_SITE_PORT = int(DESKTOP_DEFAULTS["site_port"])
 DEFAULT_BRIDGE_PORT = int(DESKTOP_DEFAULTS["bridge_port"])
 READY_TIMEOUT_S = 25.0
-WEBVIEW2_INSTALL_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
-SHELL_NAVIGATION_DELAY_MS = 350
+HEARTBEAT_STARTUP_TIMEOUT_S = 45.0
+HEARTBEAT_IDLE_TIMEOUT_S = 30.0
+CHROMIUM_PROCESS_READY_TIMEOUT_S = 2.0
+DETACHED_BROWSER_GRACE_TIMEOUT_S = 35.0
+INSTANCE_LOCK_WAIT_S = 3.0
+SESSION_REUSE_WAIT_S = 12.0
 MB_OK = 0x00000000
 MB_ICONERROR = 0x00000010
-MB_YESNO = 0x00000004
-IDYES = 6
+APP_PATH_REGISTRY_SUBKEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths"
+CHROMIUM_BROWSER_CANDIDATES = (
+    ("msedge", "msedge.exe"),
+    ("chrome", "chrome.exe"),
+    ("brave", "brave.exe"),
+)
 
 
 @dataclass(frozen=True)
@@ -56,6 +66,12 @@ class DesktopRuntimeConfig:
     open_path: str
     title: str
     startup_probe: bool
+
+
+@dataclass(frozen=True)
+class InstanceLock:
+    path: Path
+    handle: int
 
 
 def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
@@ -103,44 +119,6 @@ def read_startup_metrics(data_dir: Path, limit: int = 500) -> list[dict[str, obj
 
 def _truthy_env(value: object) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def resolve_webview2_browser_arguments(env: dict[str, str] | None = None) -> str:
-    env_map = env if env is not None else os.environ
-    tokens: list[str] = []
-    explicit = str(env_map.get("BALUFFO_WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") or DESKTOP_DEFAULTS["webview2_additional_browser_arguments"] or "").strip()
-    if explicit:
-        tokens.append(explicit)
-    inherited = str(env_map.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") or "").strip()
-    if inherited:
-        tokens.append(inherited)
-    if _truthy_env(env_map.get("BALUFFO_WEBVIEW2_DISABLE_GPU")) or bool(DESKTOP_DEFAULTS["webview2_disable_gpu"]):
-        tokens.append("--disable-gpu")
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for token in " ".join(tokens).split():
-        normalized = str(token).strip()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        deduped.append(normalized)
-    return " ".join(deduped)
-
-
-def configure_webview_runtime(webview_module: object, *, env: dict[str, str] | None = None) -> dict[str, str]:
-    env_map = env if env is not None else os.environ
-    runtime_path = str(env_map.get("BALUFFO_WEBVIEW2_RUNTIME_PATH") or DESKTOP_DEFAULTS["webview2_runtime_path"] or "").strip()
-    if runtime_path:
-        getattr(webview_module, "settings")["WEBVIEW2_RUNTIME_PATH"] = runtime_path
-    browser_args = resolve_webview2_browser_arguments(env_map)
-    if browser_args:
-        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = browser_args
-    else:
-        os.environ.pop("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", None)
-    return {
-        "runtimePath": runtime_path,
-        "browserArguments": browser_args,
-    }
 
 
 def _default_ship_root() -> Path:
@@ -309,348 +287,421 @@ def build_open_url(config: DesktopRuntimeConfig) -> str:
     )
 
 
-def build_loading_html(title: str) -> str:
-    safe_title = html.escape(str(title or WINDOW_TITLE))
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{safe_title}</title>
-  <style>
-    :root {{
-      color-scheme: dark;
-    }}
-    html, body {{
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      background: radial-gradient(circle at 20% 20%, #2f3b57 0%, #0f131d 58%, #0b0e15 100%);
-      color: #e9eefc;
-      font-family: "Segoe UI", Arial, sans-serif;
-    }}
-    .shell {{
-      height: 100%;
-      display: grid;
-      place-items: center;
-    }}
-    .card {{
-      display: grid;
-      gap: 10px;
-      justify-items: center;
-      text-align: center;
-      padding: 22px 26px;
-      border: 1px solid rgba(193, 210, 255, 0.26);
-      border-radius: 14px;
-      background: rgba(13, 18, 28, 0.64);
-      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
-      backdrop-filter: blur(2px);
-    }}
-    .spinner {{
-      width: 28px;
-      height: 28px;
-      border: 3px solid rgba(193, 210, 255, 0.26);
-      border-top-color: #8eb5ff;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }}
-    .title {{
-      font-weight: 700;
-      letter-spacing: 0.2px;
-    }}
-    .hint {{
-      color: #b8c6e9;
-      font-size: 13px;
-    }}
-    @keyframes spin {{
-      to {{
-        transform: rotate(360deg);
-      }}
-    }}
-  </style>
-</head>
-<body>
-  <main class="shell">
-    <section class="card" aria-live="polite">
-      <div class="spinner" aria-hidden="true"></div>
-      <div class="title">Starting {safe_title}</div>
-      <div class="hint">Loading interface...</div>
-    </section>
-  </main>
-</body>
-</html>
-"""
+def resolve_browser_session_root(env: dict[str, str] | None = None) -> Path:
+    env_map = env if env is not None else os.environ
+    candidates: list[Path] = []
+    base = str(env_map.get("LOCALAPPDATA") or "").strip()
+    if base:
+        candidates.append(Path(base).expanduser().resolve() / "Baluffo")
+    candidates.append((Path.home() / "AppData" / "Local" / "Baluffo").resolve())
+    username = str(env_map.get("USERNAME") or env_map.get("USER") or "user").strip() or "user"
+    candidates.append((Path(tempfile.gettempdir()) / f"Baluffo-{username}").resolve())
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            return candidate
+        except OSError:
+            continue
+    raise RuntimeError("Baluffo could not resolve a writable local session directory.")
 
 
-def build_webview_storage_path(data_dir: Path) -> Path:
-    return Path(data_dir) / "local-user-data" / "webview"
+def resolve_browser_profile_dir(env: dict[str, str] | None = None) -> Path:
+    return resolve_browser_session_root(env) / "desktop-browser-profile"
 
 
-def _load_window_url(window: object, url: str) -> None:
+def resolve_session_state_path(env: dict[str, str] | None = None) -> Path:
+    return resolve_browser_session_root(env) / "desktop-session.json"
+
+
+def resolve_instance_lock_path(env: dict[str, str] | None = None) -> Path:
+    return resolve_browser_session_root(env) / "desktop-instance.lock"
+
+
+def resolve_registry_app_path(executable_name: str) -> str:
+    if os.name != "nt":
+        return ""
+    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            with winreg.OpenKey(root, f"{APP_PATH_REGISTRY_SUBKEY}\\{executable_name}") as key:
+                value, _ = winreg.QueryValueEx(key, None)
+            path = str(value or "").strip()
+            if path and Path(path).exists():
+                return str(Path(path).resolve())
+        except OSError:
+            continue
+    return ""
+
+
+def resolve_chromium_browser_candidates() -> list[dict[str, str]]:
+    candidates: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for browser_name, executable_name in CHROMIUM_BROWSER_CANDIDATES:
+        for candidate in (shutil.which(browser_name), shutil.which(executable_name), resolve_registry_app_path(executable_name)):
+            path = str(candidate or "").strip()
+            if not path:
+                continue
+            normalized = str(Path(path).resolve()).lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            candidates.append({
+                "name": browser_name,
+                "path": str(Path(path).resolve()),
+            })
+            break
+    return candidates
+
+
+def load_session_state(env: dict[str, str] | None = None) -> dict[str, object]:
+    path = resolve_session_state_path(env)
     try:
-        load_url = getattr(window, "load_url", None)
-        if callable(load_url):
-            load_url(url)
-    except Exception:
-        # Best effort only; startup fallback remains the initial html shell.
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def save_session_state(payload: dict[str, object], env: dict[str, str] | None = None) -> Path:
+    path = resolve_session_state_path(env)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def clear_session_state(env: dict[str, str] | None = None) -> None:
+    path = resolve_session_state_path(env)
+    with contextlib.suppress(OSError):
+        path.unlink()
+
+
+def _read_lock_pid(path: Path) -> int:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    try:
+        return int(str(text or "").strip())
+    except ValueError:
+        return 0
+
+
+def acquire_instance_lock(*, timeout_s: float = INSTANCE_LOCK_WAIT_S, env: dict[str, str] | None = None) -> InstanceLock | None:
+    path = resolve_instance_lock_path(env)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + max(0.2, float(timeout_s))
+    while time.monotonic() < deadline:
+        try:
+            handle = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+        except FileExistsError:
+            lock_pid = _read_lock_pid(path)
+            if lock_pid > 0 and not is_process_alive(lock_pid):
+                with contextlib.suppress(OSError):
+                    path.unlink()
+                continue
+            time.sleep(0.2)
+            continue
+        except OSError:
+            time.sleep(0.2)
+            continue
+        with contextlib.suppress(OSError):
+            os.write(handle, str(os.getpid()).encode("utf-8", errors="ignore"))
+        return InstanceLock(path=path, handle=handle)
+    return None
+
+
+def release_instance_lock(lock: InstanceLock | None) -> None:
+    if lock is None:
         return
+    with contextlib.suppress(OSError):
+        os.close(lock.handle)
+    with contextlib.suppress(OSError):
+        lock.path.unlink()
 
 
-def _load_window_url_with_trace(data_dir: Path, started_mono: float, window: object, url: str) -> None:
-    _append_startup_trace(
-        data_dir,
-        "desktop_window_load_url",
-        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-        url=str(url),
-    )
-    _load_window_url(window, url)
+def is_process_alive(pid: int) -> bool:
+    if int(pid or 0) <= 0:
+        return False
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except OSError:
+        if os.name != "nt":
+            return False
+    if os.name == "nt":
+        handle = ctypes.windll.kernel32.OpenProcess(0x00100000 | 0x1000, False, int(pid))
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    return False
 
 
-def _schedule_window_app_navigation(data_dir: Path, started_mono: float, window: object, url: str, delay_ms: int = SHELL_NAVIGATION_DELAY_MS) -> None:
-    wait_ms = max(0, int(delay_ms))
-    _append_startup_trace(
-        data_dir,
-        "desktop_shell_navigation_scheduled",
-        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-        delayMs=wait_ms,
-    )
+def fetch_json(url: str, timeout_s: float = 2.5) -> dict[str, object]:
+    with urllib.request.urlopen(url, timeout=timeout_s) as response:  # noqa: S310
+        payload = json.loads(response.read().decode("utf-8", errors="replace") or "{}")
+    return payload if isinstance(payload, dict) else {}
 
-    def navigate() -> None:
-        if wait_ms > 0:
-            time.sleep(wait_ms / 1000.0)
+
+def is_baluffo_bridge_healthy(bridge_port: int, *, timeout_s: float = 2.0) -> bool:
+    try:
+        payload = fetch_json(f"http://127.0.0.1:{int(bridge_port)}/ops/health", timeout_s=timeout_s)
+    except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
+        return False
+    return str(payload.get("service") or "") == "baluffo-bridge"
+
+
+def get_baluffo_bridge_health(bridge_port: int, *, timeout_s: float = 2.0) -> dict[str, object]:
+    try:
+        payload = fetch_json(f"http://127.0.0.1:{int(bridge_port)}/ops/health", timeout_s=timeout_s)
+    except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
+        return {}
+    return payload if str(payload.get("service") or "") == "baluffo-bridge" else {}
+
+
+def wait_for_baluffo_bridge(bridge_port: int, *, timeout_s: float = READY_TIMEOUT_S) -> None:
+    deadline = time.monotonic() + max(1.0, float(timeout_s))
+    while time.monotonic() < deadline:
+        if is_baluffo_bridge_healthy(bridge_port, timeout_s=1.5):
+            return
+        time.sleep(0.25)
+    raise RuntimeError("Baluffo bridge did not report a healthy desktop session.")
+
+
+def get_valid_session_state(env: dict[str, str] | None = None) -> dict[str, object]:
+    state = load_session_state(env)
+    launcher_pid = int(state.get("launcherPid") or 0)
+    bridge_port = int(state.get("bridgePort") or 0)
+    if not launcher_pid or not bridge_port:
+        return {}
+    if not is_process_alive(launcher_pid):
+        clear_session_state(env)
+        return {}
+    if not is_baluffo_bridge_healthy(bridge_port):
+        clear_session_state(env)
+        return {}
+    return state
+
+
+def wait_for_valid_session_state(*, timeout_s: float = SESSION_REUSE_WAIT_S, env: dict[str, str] | None = None) -> dict[str, object]:
+    deadline = time.monotonic() + max(0.5, float(timeout_s))
+    while time.monotonic() < deadline:
+        state = get_valid_session_state(env)
+        if state:
+            return state
+        time.sleep(0.25)
+    return {}
+
+
+def build_browser_launch_command(browser_path: str, url: str, profile_dir: Path) -> list[str]:
+    return [
+        str(browser_path),
+        f"--app={url}",
+        "--new-window",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-session-crashed-bubble",
+        f"--user-data-dir={profile_dir}",
+    ]
+
+
+def launch_chromium_app(url: str, browser_path: str, profile_dir: Path) -> subprocess.Popen[str]:
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    popen_kwargs: dict[str, object] = {"text": True}
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    return subprocess.Popen(build_browser_launch_command(browser_path, url, profile_dir), **popen_kwargs)
+
+
+def wait_for_browser_process_ready(process: subprocess.Popen[str], *, timeout_s: float = CHROMIUM_PROCESS_READY_TIMEOUT_S) -> bool:
+    deadline = time.monotonic() + max(0.2, float(timeout_s))
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            return False
+        time.sleep(0.1)
+    return process.poll() is None
+
+
+def launch_browser_for_url(url: str, *, preferred_browser_path: str = "", env: dict[str, str] | None = None) -> dict[str, object]:
+    profile_dir = resolve_browser_profile_dir(env)
+    candidates = resolve_chromium_browser_candidates()
+    if preferred_browser_path:
+        preferred = str(preferred_browser_path).strip().lower()
+        candidates = sorted(candidates, key=lambda item: 0 if str(item.get("path") or "").lower() == preferred else 1)
+    for candidate in candidates:
+        browser_path = str(candidate.get("path") or "").strip()
+        if not browser_path:
+            continue
+        try:
+            process = launch_chromium_app(url, browser_path, profile_dir)
+        except OSError:
+            continue
+        if wait_for_browser_process_ready(process):
+            return {
+                "mode": "chromium-app",
+                "browserName": str(candidate.get("name") or ""),
+                "browserPath": browser_path,
+                "process": process,
+            }
+        terminate_process(process)
+    if not webbrowser.open(url):
+        raise RuntimeError("Baluffo could not launch a browser window for the desktop session.")
+    return {
+        "mode": "default-browser",
+        "browserName": "",
+        "browserPath": "",
+        "process": None,
+    }
+
+
+def reopen_existing_session(state: dict[str, object]) -> None:
+    url = str(state.get("url") or "").strip()
+    if not url:
+        raise RuntimeError("Baluffo desktop session metadata is missing the session URL.")
+    launch_browser_for_url(url, preferred_browser_path=str(state.get("browserPath") or ""))
+
+
+def reopen_default_browser(url: str) -> bool:
+    return bool(webbrowser.open(url))
+
+
+def _parse_metric_ts(value: object) -> float:
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def bridge_last_activity_ts(bridge_port: int) -> float:
+    payload = get_baluffo_bridge_health(bridge_port, timeout_s=1.5)
+    return _parse_metric_ts(payload.get("desktopLastActivityAt")) if payload else 0.0
+
+
+def latest_browser_heartbeat_ts(data_dir: Path) -> float:
+    latest = 0.0
+    for row in read_startup_metrics(data_dir, limit=400):
+        if str(row.get("event") or "") != "desktop_browser_heartbeat":
+            continue
+        latest = max(latest, _parse_metric_ts(row.get("ts")))
+    return latest
+
+
+def wait_for_browser_heartbeat(data_dir: Path, *, timeout_s: float = HEARTBEAT_STARTUP_TIMEOUT_S) -> bool:
+    deadline = time.monotonic() + max(1.0, float(timeout_s))
+    while time.monotonic() < deadline:
+        if latest_browser_heartbeat_ts(data_dir) > 0.0:
+            return True
+        time.sleep(1.0)
+    return False
+
+
+def watch_browser_session(
+    data_dir: Path,
+    started_mono: float,
+    *,
+    bridge_port: int,
+    browser_process: subprocess.Popen[str] | None = None,
+    heartbeat_idle_timeout_s: float = HEARTBEAT_IDLE_TIMEOUT_S,
+) -> str:
+    def _watch_heartbeat_loop() -> str:
+        if not wait_for_browser_heartbeat(data_dir):
+            while True:
+                bridge_last_activity = bridge_last_activity_ts(bridge_port)
+                if bridge_last_activity <= 0.0:
+                    return "heartbeat_missing"
+                idle_for = time.time() - bridge_last_activity
+                if idle_for > float(heartbeat_idle_timeout_s):
+                    return "bridge_activity_timeout"
+                time.sleep(1.0)
+        while True:
+            last_heartbeat = max(latest_browser_heartbeat_ts(data_dir), bridge_last_activity_ts(bridge_port))
+            if last_heartbeat <= 0.0:
+                return "heartbeat_missing"
+            idle_for = time.time() - last_heartbeat
+            if idle_for > float(heartbeat_idle_timeout_s):
+                return "heartbeat_timeout"
+            time.sleep(1.0)
+
+    if browser_process is not None:
         _append_startup_trace(
             data_dir,
-            "desktop_shell_navigation_start",
+            "desktop_browser_watchdog_started",
             elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            mode="process",
         )
-        _load_window_url_with_trace(data_dir, started_mono, window, url)
-
-    threading.Thread(target=navigate, name="baluffo-shell-handoff", daemon=True).start()
-
-
-def _begin_window_app_bootstrap(data_dir: Path, started_mono: float, window: object, url: str) -> None:
-    _append_startup_trace(
-        data_dir,
-        "desktop_shell_window_shown",
-        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-    )
-    setattr(window, "_baluffo_pending_app_url", str(url))
-
-
-def _track_window_loaded_events(window: object, data_dir: Path, started_mono: float) -> None:
-    load_count = 0
-    before_load_count = 0
-    navigation_started = False
-
-    def handle_loaded(*_args: object) -> None:
-        nonlocal load_count, navigation_started
-        load_count += 1
-        try:
-            if load_count == 1:
+        while browser_process.poll() is None:
+            if latest_browser_heartbeat_ts(data_dir) > 0.0:
                 _append_startup_trace(
                     data_dir,
-                    "desktop_shell_loaded",
+                    "desktop_browser_watchdog_handoff",
                     elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    mode="heartbeat",
                 )
-                if not navigation_started:
-                    pending_url = str(getattr(window, "_baluffo_pending_app_url", "") or "").strip()
-                    if pending_url:
-                        navigation_started = True
-                        _schedule_window_app_navigation(data_dir, started_mono, window, pending_url)
-                return
+                return _watch_heartbeat_loop()
+            time.sleep(0.5)
+        if wait_for_browser_heartbeat(data_dir, timeout_s=10.0):
             _append_startup_trace(
                 data_dir,
-                "desktop_page_loaded",
+                "desktop_browser_watchdog_handoff",
                 elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                mode="heartbeat_after_exit",
             )
-            _append_startup_trace(
-                data_dir,
-                "desktop_window_show_requested",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            )
-            show = getattr(window, "show", None)
-            if callable(show):
-                show()
-            _append_startup_trace(
-                data_dir,
-                "desktop_window_shown",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            )
-        except Exception:
-            return
-
-    def handle_before_load(*_args: object) -> None:
-        nonlocal before_load_count
-        before_load_count += 1
-        try:
-            event_name = "desktop_shell_before_load" if before_load_count == 1 else "desktop_page_before_load"
-            if before_load_count > 2:
-                event_name = f"desktop_before_load_{before_load_count}"
-            _append_startup_trace(
-                data_dir,
-                event_name,
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            )
-        except Exception:
-            return
-
-    def handle_shown(*_args: object) -> None:
-        try:
-            _append_startup_trace(
-                data_dir,
-                "desktop_shell_window_shown",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            )
-            _append_startup_trace(
-                data_dir,
-                "desktop_window_event_shown",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            )
-        except Exception:
-            return
-
-    try:
-        events = getattr(window, "events", None)
-        loaded_event = getattr(events, "loaded", None)
-        before_load_event = getattr(events, "before_load", None)
-        shown_event = getattr(events, "shown", None)
-        if before_load_event is not None:
-            before_load_event += handle_before_load
-        if loaded_event is not None:
-            loaded_event += handle_loaded
-        if shown_event is not None:
-            shown_event += handle_shown
-    except Exception:
-        return
-
-
-def is_webview2_available() -> bool:
-    if os.name != "nt":
-        return True
-    if os.environ.get("BALUFFO_WEBVIEW2_RUNTIME_PATH"):
-        return Path(os.environ["BALUFFO_WEBVIEW2_RUNTIME_PATH"]).expanduser().exists()
-
-    def read_edge_build(root_name: str, key_guid: str) -> str:
-        base = getattr(winreg, root_name)
-        subkey = rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{key_guid}"
-        if root_name == "HKEY_LOCAL_MACHINE":
-            for candidate in (
-                rf"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{key_guid}",
-                subkey,
-            ):
-                with contextlib.suppress(OSError):
-                    with winreg.OpenKey(base, candidate) as key:
-                        value, _ = winreg.QueryValueEx(key, "pv")
-                        return str(value)
-            return "0"
-        with contextlib.suppress(OSError):
-            with winreg.OpenKey(base, subkey) as key:
-                value, _ = winreg.QueryValueEx(key, "pv")
-                return str(value)
-        return "0"
-
-    def version_at_least(current: str, minimum: str) -> bool:
-        try:
-            current_parts = [int(part) for part in current.split(".")]
-            minimum_parts = [int(part) for part in minimum.split(".")]
-        except ValueError:
-            return False
-        length = max(len(current_parts), len(minimum_parts))
-        current_parts.extend([0] * (length - len(current_parts)))
-        minimum_parts.extend([0] * (length - len(minimum_parts)))
-        return current_parts >= minimum_parts
-
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full"
-        ) as net_key:
-            release, _ = winreg.QueryValueEx(net_key, "Release")
-        if int(release) < 394802:
-            return False
-    except OSError:
-        return False
-
-    runtime_guids = (
-        "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
-        "{2CD8A007-E189-409D-A2C8-9AF4EF3C72AA}",
-        "{0D50BFEC-CD6A-4F9A-964C-C7416E3ACB10}",
-        "{65C35B14-6C1D-4122-AC46-7148CC9D6497}",
+            return _watch_heartbeat_loop()
+        detached_deadline = time.monotonic() + DETACHED_BROWSER_GRACE_TIMEOUT_S
+        _append_startup_trace(
+            data_dir,
+            "desktop_browser_watchdog_grace",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            timeoutSeconds=int(DETACHED_BROWSER_GRACE_TIMEOUT_S),
+        )
+        while time.monotonic() < detached_deadline:
+            if latest_browser_heartbeat_ts(data_dir) > 0.0:
+                return _watch_heartbeat_loop()
+            time.sleep(1.0)
+        return "process_exit"
+    _append_startup_trace(
+        data_dir,
+        "desktop_browser_watchdog_started",
+        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+        mode="heartbeat",
     )
-    for guid in runtime_guids:
-        for root_name in ("HKEY_CURRENT_USER", "HKEY_LOCAL_MACHINE"):
-            if version_at_least(read_edge_build(root_name, guid), "86.0.622.0"):
-                return True
-    return False
+    return _watch_heartbeat_loop()
 
 
 def show_native_message(title: str, message: str, *, ask_to_install: bool = False) -> bool:
     if os.name == "nt":
-        flags = MB_ICONERROR | (MB_YESNO if ask_to_install else MB_OK)
-        dialog_message = message
-        if ask_to_install:
-            dialog_message = f"{message}\n\nOpen the Microsoft WebView2 Runtime installer page now?"
-        result = ctypes.windll.user32.MessageBoxW(None, dialog_message, title, flags)
-        return bool(ask_to_install and result == IDYES)
+        flags = MB_ICONERROR | MB_OK
+        ctypes.windll.user32.MessageBoxW(None, str(message or ""), title, flags)
+        return False
     print(f"{title}: {message}", file=sys.stderr)
     return False
 
 
 def ensure_desktop_prerequisites() -> None:
-    try:
-        import webview  # type: ignore  # noqa: F401
-    except ImportError as exc:
-        raise RuntimeError(
-            "Baluffo desktop components are missing. Rebuild or reinstall the packaged executable."
-        ) from exc
-
-    if os.name == "nt" and not is_webview2_available():
-        raise RuntimeError(
-            "Microsoft Edge WebView2 Runtime is required to launch the Baluffo desktop app on Windows."
-        )
-
-
-def _install_winforms_shutdown_exception_guard(data_dir: Path) -> None:
-    if os.name != "nt":
-        return
-    try:
-        import System  # type: ignore
-        from System.Windows.Forms import Application, UnhandledExceptionMode  # type: ignore
-    except Exception:
-        return
-
-    # pywebview on WinForms can throw a late shutdown exception when the WebView host
-    # is already torn down: "'NoneType' object has no attribute 'BrowserProcessId'".
-    # Swallow only this known shutdown race so normal runtime errors still surface.
-    def _thread_exception_handler(_sender, args) -> None:  # type: ignore
-        try:
-            exc = getattr(args, "Exception", None)
-            message = str(exc or "")
-            if "BrowserProcessId" in message and "NoneType" in message:
-                _append_startup_trace(
-                    data_dir,
-                    "desktop_winforms_shutdown_exception_ignored",
-                    message=message,
-                )
-                return
-            _append_startup_trace(
-                data_dir,
-                "desktop_winforms_thread_exception",
-                message=message,
-            )
-        except Exception:
-            return
-
-    try:
-        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException)
-        Application.ThreadException += _thread_exception_handler
-    except Exception:
-        return
+    return None
 
 
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
+    instance_lock = acquire_instance_lock()
+    if instance_lock is None:
+        existing_session = wait_for_valid_session_state()
+        if existing_session:
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_session_reused",
+                bridgePort=int(existing_session.get("bridgePort") or 0),
+                reason="instance_lock_contended",
+            )
+            reopen_existing_session(existing_session)
+            return
+        raise RuntimeError("Baluffo is already starting in another process. Please retry in a few seconds.")
+
     site_process: subprocess.Popen[str] | None = None
     bridge_process: subprocess.Popen[str] | None = None
     started_mono = time.perf_counter()
+    session_state_written = False
     _append_startup_trace(
         config.data_dir,
         "desktop_launch_start",
@@ -659,6 +710,11 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         shipRoot=str(config.ship_root),
     )
     try:
+        existing_session = get_valid_session_state()
+        if existing_session:
+            _append_startup_trace(config.data_dir, "desktop_session_reused", bridgePort=int(existing_session.get("bridgePort") or 0))
+            reopen_existing_session(existing_session)
+            return
         child_env = {"BALUFFO_DATA_DIR": str(config.data_dir)}
         if bool(config.startup_probe):
             child_env["BALUFFO_STARTUP_PROBE"] = "1"
@@ -693,71 +749,92 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         )
         open_url = build_open_url(config)
         wait_for_url(open_url, timeout_s=READY_TIMEOUT_S)
+        try:
+            wait_for_baluffo_bridge(config.bridge_port, timeout_s=5.0)
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_bridge_ready",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                bridgePort=int(config.bridge_port),
+            )
+        except RuntimeError:
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_bridge_ready_deferred",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                bridgePort=int(config.bridge_port),
+            )
         _append_startup_trace(
             config.data_dir,
             "desktop_site_ready",
             elapsedMs=int((time.perf_counter() - started_mono) * 1000),
             url=str(open_url),
         )
-        import webview  # type: ignore
-        runtime_config = configure_webview_runtime(webview)
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_webview_imported",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            frozen=bool(getattr(sys, "frozen", False)),
-        )
-        if runtime_config["runtimePath"] or runtime_config["browserArguments"]:
-            _append_startup_trace(
-                config.data_dir,
-                "desktop_webview_runtime_configured",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                runtimePath=runtime_config["runtimePath"],
-                browserArguments=runtime_config["browserArguments"],
-            )
-        _install_winforms_shutdown_exception_guard(config.data_dir)
         _append_startup_trace(config.data_dir, "desktop_window_create_started", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
-        try:
-            window = webview.create_window(
-                config.title,
-                html=build_loading_html(config.title),
-                min_size=(1100, 720),
-                hidden=False,
-                background_color="#0B0E15",
-            )
-        except Exception as exc:
-            _append_startup_trace(
-                config.data_dir,
-                "desktop_window_create_error",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                error=str(exc),
-                errorType=type(exc).__name__,
-            )
-            raise
-        _append_startup_trace(config.data_dir, "desktop_window_created", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
-        _track_window_loaded_events(window, config.data_dir, started_mono)
+        launch_result = launch_browser_for_url(open_url)
+        launch_mode = str(launch_result.get("mode") or "default-browser")
+        browser_process = launch_result.get("process") if isinstance(launch_result.get("process"), subprocess.Popen) else None
         _append_startup_trace(
             config.data_dir,
-            "desktop_webview_starting",
+            "desktop_browser_launch_selected",
             elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            callback="window_bootstrap",
+            mode=launch_mode,
+            browser=str(launch_result.get("browserName") or ""),
+            browserPath=str(launch_result.get("browserPath") or ""),
         )
-        try:
-            webview.start(_begin_window_app_bootstrap, args=(config.data_dir, started_mono, window, open_url))
-        except Exception as exc:
+        save_session_state({
+            "launcherPid": os.getpid(),
+            "sitePort": int(config.site_port),
+            "bridgePort": int(config.bridge_port),
+            "bridgeHost": str(config.bridge_host),
+            "url": str(open_url),
+            "launchMode": launch_mode,
+            "browserPath": str(launch_result.get("browserPath") or ""),
+            "dataDir": str(config.data_dir),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        session_state_written = True
+        _append_startup_trace(config.data_dir, "desktop_window_created", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_shell_window_shown",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            mode=launch_mode,
+        )
+        stop_reason = watch_browser_session(config.data_dir, started_mono, bridge_port=config.bridge_port, browser_process=browser_process)
+        if stop_reason == "process_exit" and browser_process is not None:
             _append_startup_trace(
                 config.data_dir,
-                "desktop_webview_start_error",
+                "desktop_browser_recovery_started",
                 elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                error=str(exc),
-                errorType=type(exc).__name__,
+                mode="default-browser",
             )
-            _write_launch_diagnostics(config.data_dir, "desktop-launch-error.txt", traceback.format_exc())
-            raise
-        _append_startup_trace(config.data_dir, "desktop_webview_start_returned", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
-        _append_startup_trace(config.data_dir, "desktop_window_closed", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
-        if window is None:
-            raise RuntimeError("Failed to create desktop window.")
+            if reopen_default_browser(open_url):
+                _append_startup_trace(
+                    config.data_dir,
+                    "desktop_browser_recovery_opened",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    mode="default-browser",
+                )
+                stop_reason = watch_browser_session(
+                    config.data_dir,
+                    started_mono,
+                    bridge_port=config.bridge_port,
+                    browser_process=None,
+                )
+            else:
+                _append_startup_trace(
+                    config.data_dir,
+                    "desktop_browser_recovery_failed",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    mode="default-browser",
+                )
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_window_closed",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            reason=stop_reason,
+        )
         if config.startup_probe:
             summary = summarize_startup_metrics(read_startup_metrics(config.data_dir), page=Path(config.open_path).stem or "jobs", profile_mode="cold")
             write_startup_summary(config.data_dir / "startup-probe-summary.json", summary)
@@ -772,6 +849,9 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         _write_launch_diagnostics(config.data_dir, "desktop-launch-error.txt", traceback.format_exc())
         raise
     finally:
+        release_instance_lock(instance_lock)
+        if session_state_written:
+            clear_session_state()
         terminate_process(bridge_process)
         terminate_process(site_process)
 
@@ -845,10 +925,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except Exception as exc:  # noqa: BLE001
         message = str(exc).strip() or "The Baluffo desktop app could not start."
-        should_offer_install = "WebView2" in message
-        if show_native_message(WINDOW_TITLE, message, ask_to_install=should_offer_install):
-            with contextlib.suppress(Exception):  # noqa: BLE001
-                webbrowser.open(WEBVIEW2_INSTALL_URL)
+        show_native_message(WINDOW_TITLE, message)
         return 1
 
 

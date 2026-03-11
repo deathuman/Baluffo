@@ -10,6 +10,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
 import zlib
 from pathlib import Path
 
@@ -17,6 +18,23 @@ ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = ROOT / "dist" / "baluffo-portable"
 DEFAULT_EXE_NAME = "Baluffo"
 DEFAULT_ICON_SIZE = 256
+RUNTIME_HIDDEN_IMPORTS = (
+    "scripts.admin_bridge",
+    "scripts.baluffo_config",
+    "scripts.contracts",
+    "scripts.fetcher_metrics",
+    "scripts.jobs_fetcher",
+    "scripts.jobs_fetcher_registry",
+    "scripts.local_data_store",
+    "scripts.pipeline_io",
+    "scripts.ship.migrations",
+    "scripts.ship.runtime_launcher",
+    "scripts.ship.startup_profile",
+    "scripts.ship.update_manager",
+    "scripts.source_discovery",
+    "scripts.source_registry",
+    "scripts.source_sync",
+)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -280,11 +298,22 @@ def resolve_icon_path(output_dir: Path, *, exe_name: str, icon_arg: str = "") ->
 
 def build_portable_layout(output_dir: Path, version: str) -> Path:
     if output_dir.exists():
-        shutil.rmtree(output_dir)
+        last_error: Exception | None = None
+        for _ in range(10):
+            try:
+                shutil.rmtree(output_dir)
+                last_error = None
+                break
+            except PermissionError as exc:
+                last_error = exc
+                time.sleep(0.25)
+        if output_dir.exists():
+            raise RuntimeError(
+                f"Could not clear existing portable output directory due to a file lock: {output_dir}"
+            ) from last_error
     output_dir.mkdir(parents=True, exist_ok=True)
     build_bundle(output_dir / "ship", version)
     return output_dir
-
 
 def run_pyinstaller(output_dir: Path, *, exe_name: str, icon_path: Path) -> Path:
     pyinstaller_dist = output_dir.parent / ".pyinstaller-dist"
@@ -312,8 +341,10 @@ def run_pyinstaller(output_dir: Path, *, exe_name: str, icon_path: Path) -> Path
         str(pyinstaller_work),
         "--specpath",
         str(pyinstaller_spec),
-        str(ROOT / "scripts" / "ship" / "desktop_app.py"),
     ]
+    for module_name in RUNTIME_HIDDEN_IMPORTS:
+        command.extend(["--hidden-import", module_name])
+    command.append(str(ROOT / "scripts" / "ship" / "desktop_app.py"))
     subprocess.run(command, check=True, cwd=str(ROOT))
     built_dir = pyinstaller_dist / exe_name
     if not built_dir.exists():
