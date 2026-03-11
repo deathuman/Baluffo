@@ -58,8 +58,18 @@ test("cleanup structure: page indexes boot direct from sibling app modules", () 
   }
 });
 
+test("cleanup structure: canonical app runtime modules exist for each slice", () => {
+  const slices = ["jobs", "saved", "admin"];
+  for (const slice of slices) {
+    const runtimePath = repoPath("frontend", slice, "app", "runtime.js");
+    const domPath = repoPath("frontend", slice, "app", "dom.js");
+    assert.equal(fs.existsSync(runtimePath), true, `Missing runtime module for ${slice}`);
+    assert.equal(fs.existsSync(domPath), true, `Missing DOM module for ${slice}`);
+  }
+});
+
 test("cleanup structure: admin app defines centralized fetcher preset metadata", () => {
-  const source = fs.readFileSync(repoPath("frontend", "admin", "app.js"), "utf8");
+  const source = fs.readFileSync(repoPath("frontend", "admin", "app", "runtime.js"), "utf8");
   assert.match(source, /const FETCHER_PRESET_META\s*=\s*\{/);
   assert.match(source, /const FETCHER_FALLBACK_MESSAGES\s*=\s*\{/);
   assert.match(source, /\bdefault:\s*\{/);
@@ -102,7 +112,7 @@ test("cleanup structure: jobs and saved keep canonical slice file shape", () => 
 });
 
 test("cleanup structure: app modules import only canonical local layers", () => {
-  const localLayerPattern = /^\.\/(actions|domain|data-source|render|services|state-sync\/index)\.js$/;
+  const localLayerPattern = /^\.\/((actions|domain|data-source|render|services|state-sync\/index)\.js|app\/[A-Za-z0-9-]+\.js)$/;
   const sharedPattern = /^(\.\.\/shared\/|(\.\.\/){1,3}|\/)/;
   const slices = ["jobs", "saved", "admin"];
 
@@ -126,20 +136,40 @@ test("cleanup structure: app modules import only canonical local layers", () => 
   }
 });
 
+test("cleanup structure: app runtime modules import only canonical layers and local app helpers", () => {
+  const runtimeLocalPattern = /^(\.\.\/(actions|domain|data-source|render|services|state-sync\/index)\.js|\.\/[A-Za-z0-9-]+\.js)$/;
+  const sharedPattern = /^(\.\.\/shared\/|(\.\.\/){2,3}|\/)/;
+  const slices = ["jobs", "saved", "admin"];
+
+  for (const slice of slices) {
+    const imports = readImports(path.join("frontend", slice, "app", "runtime.js"));
+    for (const specifier of imports) {
+      assert.equal(
+        runtimeLocalPattern.test(specifier) || sharedPattern.test(specifier),
+        true,
+        `Unexpected import specifier in frontend/${slice}/app/runtime.js: ${specifier}`
+      );
+    }
+  }
+});
+
 test("cleanup structure: non-app modules never import slice app entry", () => {
   const featureFiles = [
+    path.join("frontend", "jobs", "app", "runtime.js"),
     path.join("frontend", "jobs", "actions.js"),
     path.join("frontend", "jobs", "domain.js"),
     path.join("frontend", "jobs", "data-source.js"),
     path.join("frontend", "jobs", "render.js"),
     path.join("frontend", "jobs", "services.js"),
     path.join("frontend", "jobs", "state-sync", "index.js"),
+    path.join("frontend", "saved", "app", "runtime.js"),
     path.join("frontend", "saved", "actions.js"),
     path.join("frontend", "saved", "domain.js"),
     path.join("frontend", "saved", "data-source.js"),
     path.join("frontend", "saved", "render.js"),
     path.join("frontend", "saved", "services.js"),
     path.join("frontend", "saved", "state-sync", "index.js"),
+    path.join("frontend", "admin", "app", "runtime.js"),
     path.join("frontend", "admin", "actions.js"),
     path.join("frontend", "admin", "domain.js"),
     path.join("frontend", "admin", "data-source.js"),

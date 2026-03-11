@@ -76,6 +76,46 @@ $env:BALUFFO_SYNC_KEY_PASSPHRASE="replace-with-strong-passphrase"
 py -3 scripts/build_sync_app_config.py --key-derivation passphrase --portable-passphrase-env BALUFFO_SYNC_KEY_PASSPHRASE ...
 ```
 
+## Automatic build generation
+
+`scripts/build_ship_bundle.py` and `scripts/build_portable_exe.py` now auto-generate
+`packaging/github-app-sync-config.json` during the build when a prebuilt config file is
+not already present.
+
+Supported build-time inputs:
+
+- `BALUFFO_SYNC_BUILD_APP_ID`
+- `BALUFFO_SYNC_BUILD_INSTALLATION_ID`
+- `BALUFFO_SYNC_BUILD_REPO`
+- `BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH` or `BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM`
+- optional: `BALUFFO_SYNC_BUILD_BRANCH`
+- optional: `BALUFFO_SYNC_BUILD_PATH`
+- optional: `BALUFFO_SYNC_BUILD_ALLOWED_REPO`
+- optional: `BALUFFO_SYNC_BUILD_ALLOWED_BRANCH`
+- optional: `BALUFFO_SYNC_BUILD_ALLOWED_PATH_PREFIX`
+- optional: `BALUFFO_SYNC_BUILD_KEY_DERIVATION` (`embedded` default, `machine`, `passphrase`, or `plaintext`)
+- optional: `BALUFFO_SYNC_BUILD_PASSPHRASE_ENV`
+- optional: `BALUFFO_SYNC_BUILD_EMBEDDED_KEY_HINT`
+- optional: `BALUFFO_SYNC_BUILD_EMBEDDED_KEY_VERSION`
+- optional: `BALUFFO_SYNC_BUILD_KEY_SALT`
+
+Defaults used by the build:
+
+- key derivation: `embedded`
+- branch: `main`
+- path: `baluffo/source-sync.json`
+- allowlist repo/branch/path-prefix: mirrors the target repo/branch/path unless explicitly overridden
+
+Example:
+
+```powershell
+$env:BALUFFO_SYNC_BUILD_APP_ID="123456"
+$env:BALUFFO_SYNC_BUILD_INSTALLATION_ID="98765432"
+$env:BALUFFO_SYNC_BUILD_REPO="your-org/job-sources-backup"
+$env:BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH="C:\secrets\github-app-private-key.pem"
+py -3 scripts/build_ship_bundle.py
+```
+
 For local-only testing, add `--plaintext` to write `privateKeyPem` directly instead of the encrypted form.
 
 ## Security note

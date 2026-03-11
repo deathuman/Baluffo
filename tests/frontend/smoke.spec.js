@@ -51,6 +51,9 @@ test("saved smoke: sign-in + custom job + notes autosave + export + guest warnin
   await page.goto("/saved.html");
 
   await page.click("#saved-auth-sign-in-btn");
+  await expect(page.locator("#add-custom-job-btn")).toBeEnabled();
+  await expect(page.locator("#saved-auth-status")).not.toContainText(/Guest/i);
+  await page.locator("#saved-utilities summary").click();
   await expect(page.locator("#export-backup-btn")).toBeEnabled();
 
   await page.click("#add-custom-job-btn");
@@ -66,6 +69,7 @@ test("saved smoke: sign-in + custom job + notes autosave + export + guest warnin
   await notesInput.fill("Smoke autosave note");
   await expect(notesInput).toHaveValue("Smoke autosave note");
 
+  await expect(page.locator("#export-backup-btn")).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
   await page.click("#export-backup-btn");
   const download = await downloadPromise;

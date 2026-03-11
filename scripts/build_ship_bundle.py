@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -65,6 +66,26 @@ APP_RUNTIME_DATA_FILES = (
 STARTUP_PREVIEW_LIMIT = 240
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+PACKAGED_SYNC_CONFIG_PATH = ROOT / "packaging" / "github-app-sync-config.json"
+PACKAGED_SYNC_CONFIG_TEMPLATE_PATH = ROOT / "packaging" / "github-app-sync-config.template.json"
+PACKAGED_SYNC_BUILD_ENV = {
+    "app_id": "BALUFFO_SYNC_BUILD_APP_ID",
+    "installation_id": "BALUFFO_SYNC_BUILD_INSTALLATION_ID",
+    "repo": "BALUFFO_SYNC_BUILD_REPO",
+    "branch": "BALUFFO_SYNC_BUILD_BRANCH",
+    "path": "BALUFFO_SYNC_BUILD_PATH",
+    "allowed_repo": "BALUFFO_SYNC_BUILD_ALLOWED_REPO",
+    "allowed_branch": "BALUFFO_SYNC_BUILD_ALLOWED_BRANCH",
+    "allowed_path_prefix": "BALUFFO_SYNC_BUILD_ALLOWED_PATH_PREFIX",
+    "private_key_path": "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH",
+    "private_key_pem": "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM",
+    "key_derivation": "BALUFFO_SYNC_BUILD_KEY_DERIVATION",
+    "portable_passphrase_env": "BALUFFO_SYNC_BUILD_PASSPHRASE_ENV",
+    "embedded_key_hint": "BALUFFO_SYNC_BUILD_EMBEDDED_KEY_HINT",
+    "embedded_key_version": "BALUFFO_SYNC_BUILD_EMBEDDED_KEY_VERSION",
+    "salt": "BALUFFO_SYNC_BUILD_KEY_SALT",
+}
 
 
 def _copy_file(src: Path, dst: Path) -> None:
@@ -143,7 +164,95 @@ def _seed_runtime_data(data_dir: Path) -> None:
         _write_text(data_dir / name, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
+def _require_packaged_sync_config() -> Path:
+    if PACKAGED_SYNC_CONFIG_PATH.exists():
+        return PACKAGED_SYNC_CONFIG_PATH
+    generated_path = _maybe_generate_packaged_sync_config()
+    if generated_path is not None and generated_path.exists():
+        return generated_path
+    raise RuntimeError(
+        "Missing required packaged GitHub App sync config for packaged builds. "
+        f"Expected {PACKAGED_SYNC_CONFIG_PATH}. "
+        "Provide either a prebuilt config file or these build-time inputs: "
+        f"{PACKAGED_SYNC_BUILD_ENV['app_id']}, "
+        f"{PACKAGED_SYNC_BUILD_ENV['installation_id']}, "
+        f"{PACKAGED_SYNC_BUILD_ENV['repo']}, and one of "
+        f"{PACKAGED_SYNC_BUILD_ENV['private_key_path']} or {PACKAGED_SYNC_BUILD_ENV['private_key_pem']}. "
+        f"See {PACKAGED_SYNC_CONFIG_TEMPLATE_PATH} and scripts/build_sync_app_config.py."
+    )
+
+
+def _env_value(name: str) -> str:
+    return str(os.environ.get(name) or "").strip()
+
+
+def _maybe_generate_packaged_sync_config() -> Path | None:
+    app_id = _env_value(PACKAGED_SYNC_BUILD_ENV["app_id"])
+    installation_id = _env_value(PACKAGED_SYNC_BUILD_ENV["installation_id"])
+    repo = _env_value(PACKAGED_SYNC_BUILD_ENV["repo"])
+    private_key_path_value = _env_value(PACKAGED_SYNC_BUILD_ENV["private_key_path"])
+    private_key_pem = str(os.environ.get(PACKAGED_SYNC_BUILD_ENV["private_key_pem"]) or "").strip()
+    has_private_key_input = bool(private_key_path_value or private_key_pem)
+    if not (app_id or installation_id or repo or has_private_key_input):
+        return None
+
+    missing = []
+    if not app_id:
+        missing.append(PACKAGED_SYNC_BUILD_ENV["app_id"])
+    if not installation_id:
+        missing.append(PACKAGED_SYNC_BUILD_ENV["installation_id"])
+    if not repo:
+        missing.append(PACKAGED_SYNC_BUILD_ENV["repo"])
+    if not has_private_key_input:
+        missing.append(
+            f"{PACKAGED_SYNC_BUILD_ENV['private_key_path']}|{PACKAGED_SYNC_BUILD_ENV['private_key_pem']}"
+        )
+    if missing:
+        raise RuntimeError(
+            "Incomplete packaged sync build configuration. Missing: " + ", ".join(missing)
+        )
+
+    if private_key_path_value:
+        private_key_path = Path(private_key_path_value).expanduser().resolve()
+        if not private_key_path.exists():
+            raise RuntimeError(f"Packaged sync private key file not found: {private_key_path}")
+        private_key_pem = private_key_path.read_text(encoding="utf-8")
+
+    if not private_key_pem:
+        raise RuntimeError(
+            "Packaged sync build configuration did not provide a usable private key PEM."
+        )
+
+    from scripts.build_sync_app_config import build_packaged_sync_payload, write_packaged_sync_config
+    from scripts import source_sync
+
+    branch = _env_value(PACKAGED_SYNC_BUILD_ENV["branch"]) or "main"
+    remote_path = _env_value(PACKAGED_SYNC_BUILD_ENV["path"]) or "baluffo/source-sync.json"
+    allowed_repo = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_repo"]) or repo
+    allowed_branch = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_branch"]) or branch
+    allowed_path_prefix = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_path_prefix"]) or remote_path
+    key_derivation = _env_value(PACKAGED_SYNC_BUILD_ENV["key_derivation"]) or source_sync.KEY_DERIVATION_EMBEDDED
+    payload = build_packaged_sync_payload(
+        app_id=app_id,
+        installation_id=installation_id,
+        repo=repo,
+        branch=branch,
+        path=remote_path,
+        allowed_repo=allowed_repo,
+        allowed_branch=allowed_branch,
+        allowed_path_prefix=allowed_path_prefix,
+        private_key_pem=private_key_pem,
+        salt=_env_value(PACKAGED_SYNC_BUILD_ENV["salt"]),
+        key_derivation=key_derivation,
+        portable_passphrase_env=_env_value(PACKAGED_SYNC_BUILD_ENV["portable_passphrase_env"]),
+        embedded_key_hint=_env_value(PACKAGED_SYNC_BUILD_ENV["embedded_key_hint"]),
+        embedded_key_version=_env_value(PACKAGED_SYNC_BUILD_ENV["embedded_key_version"]),
+    )
+    return write_packaged_sync_config(PACKAGED_SYNC_CONFIG_PATH, payload)
+
+
 def _copy_app_version(version_dir: Path) -> None:
+    packaged_sync_config = _require_packaged_sync_config()
     # Static frontend/runtime assets.
     for rel in APP_RUNTIME_FILES:
         _copy_file(ROOT / rel, version_dir / rel)
@@ -154,9 +263,7 @@ def _copy_app_version(version_dir: Path) -> None:
     _copy_file(ROOT / "scripts" / "ship" / "__init__.py", version_dir / "scripts" / "ship" / "__init__.py")
     for rel in PACKAGING_FILES:
         _copy_file(ROOT / "packaging" / rel, version_dir / "packaging" / rel)
-    packaged_sync_config = ROOT / "packaging" / "github-app-sync-config.json"
-    if packaged_sync_config.exists():
-        _copy_file(packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json")
+    _copy_file(packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json")
 
     for rel in APP_RUNTIME_DATA_FILES:
         src = ROOT / "data" / rel

@@ -133,6 +133,9 @@ Notes:
 - `/sync/pull` and `/sync/push` remain supported as direct synchronous APIs.
 - Task endpoints start async runs that appear in Ops Run History (`type: sync`).
 - Source sync now uses packaged GitHub App credentials plus a local enabled/disabled toggle; end users do not enter PATs.
+- Ship and portable builds can auto-generate `packaging/github-app-sync-config.json` when build-time env vars are set:
+  `BALUFFO_SYNC_BUILD_APP_ID`, `BALUFFO_SYNC_BUILD_INSTALLATION_ID`, `BALUFFO_SYNC_BUILD_REPO`,
+  and one of `BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH` or `BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM`.
 
 Snapshot schema (`source-sync.json`, v1):
 
@@ -187,6 +190,9 @@ Build:
 ```powershell
 py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3
 ```
+
+If `packaging/github-app-sync-config.json` is not already present, the build will generate it from the
+same `BALUFFO_SYNC_BUILD_*` env vars used by `scripts/build_ship_bundle.py`.
 
 Optional custom icon override:
 

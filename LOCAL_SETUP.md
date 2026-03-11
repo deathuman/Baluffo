@@ -82,6 +82,11 @@ Saved job record fields:
 ### GitHub source sync (multi-PC)
 - Source sync is now packaged GitHub App based.
 - Ship or local package the GitHub App config JSON as `packaging/github-app-sync-config.json`, or override with `BALUFFO_SYNC_APP_CONFIG_PATH`.
+- Packaged builds can generate that file automatically when these build-time env vars are set:
+  - required: `BALUFFO_SYNC_BUILD_APP_ID`, `BALUFFO_SYNC_BUILD_INSTALLATION_ID`, `BALUFFO_SYNC_BUILD_REPO`
+  - required: one of `BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH` or `BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM`
+  - optional defaults: `BALUFFO_SYNC_BUILD_BRANCH=main`, `BALUFFO_SYNC_BUILD_PATH=baluffo/source-sync.json`
+  - default key protection mode for packaged builds: `BALUFFO_SYNC_BUILD_KEY_DERIVATION=embedded`
 - Standard user flow:
   - start the bridge
   - keep Source Sync enabled in Admin
