@@ -97,6 +97,41 @@ class DesktopAppTests(unittest.TestCase):
         self.assertIn('class="shell"', html)
         self.assertIn("Loading interface...", html)
 
+    def test_build_webview_storage_path_uses_local_user_data_root(self) -> None:
+        data_dir = Path("C:/tmp/baluffo-ship/data")
+
+        self.assertEqual(
+            desktop_app.build_webview_storage_path(data_dir),
+            data_dir / "local-user-data" / "webview",
+        )
+
+    def test_resolve_webview2_browser_arguments_supports_disable_gpu_and_dedupes(self) -> None:
+        env = {
+            "BALUFFO_WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--foo=1 --disable-gpu",
+            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--bar=2",
+            "BALUFFO_WEBVIEW2_DISABLE_GPU": "1",
+        }
+
+        self.assertEqual(
+            desktop_app.resolve_webview2_browser_arguments(env),
+            "--foo=1 --disable-gpu --bar=2",
+        )
+
+    def test_configure_webview_runtime_applies_runtime_path_and_browser_args(self) -> None:
+        fake_webview = SimpleNamespace(settings={"WEBVIEW2_RUNTIME_PATH": None})
+        env = {
+            "BALUFFO_WEBVIEW2_RUNTIME_PATH": "C:/fixed-runtime",
+            "BALUFFO_WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--disable-gpu",
+        }
+
+        with mock.patch.dict(desktop_app.os.environ, {}, clear=True):
+            result = desktop_app.configure_webview_runtime(fake_webview, env=env)
+            self.assertEqual(desktop_app.os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"], "--disable-gpu")
+
+        self.assertEqual(fake_webview.settings["WEBVIEW2_RUNTIME_PATH"], "C:/fixed-runtime")
+        self.assertEqual(result["runtimePath"], "C:/fixed-runtime")
+        self.assertEqual(result["browserArguments"], "--disable-gpu")
+
     def test_begin_window_app_bootstrap_traces_shell_and_stashes_url(self) -> None:
         window = SimpleNamespace()
         with mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock:
@@ -164,14 +199,13 @@ class DesktopAppTests(unittest.TestCase):
             loaded_event[0]()
 
         event_names = [call.args[1] for call in trace_mock.call_args_list]
+        self.assertIn("desktop_shell_window_shown", event_names)
         self.assertIn("desktop_window_event_shown", event_names)
-        self.assertIn("desktop_shell_before_load", event_names)
         self.assertIn("desktop_page_before_load", event_names)
-        self.assertIn("desktop_shell_loaded", event_names)
         self.assertIn("desktop_page_loaded", event_names)
         self.assertIn("desktop_window_shown", event_names)
-        schedule_mock.assert_called_once_with(Path("C:/tmp/data"), 10.0, window, "http://127.0.0.1:8080/jobs.html")
-        window.show.assert_called_once()
+        schedule_mock.assert_not_called()
+        self.assertGreaterEqual(window.show.call_count, 1)
 
     def test_ensure_runtime_ports_raises_when_site_port_busy(self) -> None:
         config = desktop_app.DesktopRuntimeConfig(
@@ -243,6 +277,50 @@ class DesktopAppTests(unittest.TestCase):
             )
         self.assertEqual(exit_code, 0)
         runpy_mock.run_path.assert_called_once()
+
+    def test_launch_desktop_app_uses_stable_webview_storage_path(self) -> None:
+        data_dir = Path("C:/tmp/baluffo-ship/data")
+        config = desktop_app.DesktopRuntimeConfig(
+            ship_root=Path("C:/tmp/baluffo-ship"),
+            site_port=8080,
+            bridge_port=8877,
+            bridge_host="127.0.0.1",
+            data_dir=data_dir,
+            open_path="jobs.html",
+            title="Baluffo",
+            startup_probe=False,
+        )
+        fake_window = mock.Mock()
+        fake_webview = SimpleNamespace(
+            create_window=mock.Mock(return_value=fake_window),
+            start=mock.Mock(),
+            settings={"WEBVIEW2_RUNTIME_PATH": None},
+        )
+
+        with mock.patch.object(desktop_app, "ensure_runtime_ports"), mock.patch.object(
+            desktop_app, "start_child_process", side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)]
+        ), mock.patch.object(desktop_app, "wait_for_url"), mock.patch.dict(
+            "sys.modules", {"webview": fake_webview}
+        ), mock.patch.object(
+            desktop_app, "_install_winforms_shutdown_exception_guard"
+        ), mock.patch.object(desktop_app, "_track_window_loaded_events"), mock.patch.object(
+            desktop_app, "terminate_process"
+        ), mock.patch.object(desktop_app, "_append_startup_trace"), mock.patch.object(
+            desktop_app.Path, "mkdir"
+        ), mock.patch.dict(desktop_app.os.environ, {}, clear=True):
+            desktop_app.os.environ["BALUFFO_WEBVIEW2_DISABLE_GPU"] = "1"
+            desktop_app.os.environ["BALUFFO_WEBVIEW2_RUNTIME_PATH"] = "C:/fixed-runtime"
+            desktop_app.launch_desktop_app(config)
+            self.assertEqual(desktop_app.os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"], "--disable-gpu")
+
+        fake_webview.start.assert_called_once()
+        create_args, create_kwargs = fake_webview.create_window.call_args
+        self.assertEqual(create_args[0], "Baluffo")
+        self.assertEqual(create_kwargs["url"], "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1")
+        _, kwargs = fake_webview.start.call_args
+        self.assertEqual(kwargs["private_mode"], False)
+        self.assertEqual(kwargs["storage_path"], str(data_dir / "local-user-data" / "webview"))
+        self.assertEqual(fake_webview.settings["WEBVIEW2_RUNTIME_PATH"], "C:/fixed-runtime")
 
 
 if __name__ == "__main__":

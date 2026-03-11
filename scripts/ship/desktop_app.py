@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import threading
+import traceback
 import webbrowser
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -70,6 +71,15 @@ def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
         return
 
 
+def _write_launch_diagnostics(data_dir: Path, filename: str, content: str) -> None:
+    try:
+        path = Path(data_dir) / str(filename or "desktop-launch-diagnostics.txt")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(content or ""), encoding="utf-8")
+    except OSError:
+        return
+
+
 def read_startup_metrics(data_dir: Path, limit: int = 500) -> list[dict[str, object]]:
     path = Path(data_dir) / "desktop-startup-metrics.jsonl"
     rows: list[dict[str, object]] = []
@@ -87,6 +97,48 @@ def read_startup_metrics(data_dir: Path, limit: int = 500) -> list[dict[str, obj
     if limit > 0:
         return rows[-limit:]
     return rows
+
+
+def _truthy_env(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def resolve_webview2_browser_arguments(env: dict[str, str] | None = None) -> str:
+    env_map = env if env is not None else os.environ
+    tokens: list[str] = []
+    explicit = str(env_map.get("BALUFFO_WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") or "").strip()
+    if explicit:
+        tokens.append(explicit)
+    inherited = str(env_map.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") or "").strip()
+    if inherited:
+        tokens.append(inherited)
+    if _truthy_env(env_map.get("BALUFFO_WEBVIEW2_DISABLE_GPU")):
+        tokens.append("--disable-gpu")
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for token in " ".join(tokens).split():
+        normalized = str(token).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return " ".join(deduped)
+
+
+def configure_webview_runtime(webview_module: object, *, env: dict[str, str] | None = None) -> dict[str, str]:
+    env_map = env if env is not None else os.environ
+    runtime_path = str(env_map.get("BALUFFO_WEBVIEW2_RUNTIME_PATH") or "").strip()
+    if runtime_path:
+        getattr(webview_module, "settings")["WEBVIEW2_RUNTIME_PATH"] = runtime_path
+    browser_args = resolve_webview2_browser_arguments(env_map)
+    if browser_args:
+        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = browser_args
+    else:
+        os.environ.pop("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", None)
+    return {
+        "runtimePath": runtime_path,
+        "browserArguments": browser_args,
+    }
 
 
 def _default_ship_root() -> Path:
@@ -219,7 +271,7 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
         data_dir=data_dir,
         open_path=str(args.open_path or DEFAULT_OPEN_PATH).lstrip("/") or DEFAULT_OPEN_PATH,
         title=str(args.title or WINDOW_TITLE).strip() or WINDOW_TITLE,
-        startup_probe=bool(args.startup_probe or str(os.environ.get("BALUFFO_STARTUP_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"}),
+        startup_probe=bool(args.startup_probe or _truthy_env(os.environ.get("BALUFFO_STARTUP_PROBE"))),
     )
 
 
@@ -328,6 +380,10 @@ def build_loading_html(title: str) -> str:
 """
 
 
+def build_webview_storage_path(data_dir: Path) -> Path:
+    return Path(data_dir) / "local-user-data" / "webview"
+
+
 def _load_window_url(window: object, url: str) -> None:
     try:
         load_url = getattr(window, "load_url", None)
@@ -382,24 +438,11 @@ def _begin_window_app_bootstrap(data_dir: Path, started_mono: float, window: obj
 def _track_window_loaded_events(window: object, data_dir: Path, started_mono: float) -> None:
     load_count = 0
     before_load_count = 0
-    navigation_started = False
 
     def handle_loaded(*_args: object) -> None:
-        nonlocal load_count, navigation_started
+        nonlocal load_count
         load_count += 1
         try:
-            if load_count == 1:
-                _append_startup_trace(
-                    data_dir,
-                    "desktop_shell_loaded",
-                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                )
-                if not navigation_started:
-                    pending_url = str(getattr(window, "_baluffo_pending_app_url", "") or "").strip()
-                    if pending_url:
-                        navigation_started = True
-                        _schedule_window_app_navigation(data_dir, started_mono, window, pending_url)
-                return
             _append_startup_trace(
                 data_dir,
                 "desktop_page_loaded",
@@ -425,7 +468,7 @@ def _track_window_loaded_events(window: object, data_dir: Path, started_mono: fl
         nonlocal before_load_count
         before_load_count += 1
         try:
-            event_name = "desktop_shell_before_load" if before_load_count == 1 else "desktop_page_before_load"
+            event_name = "desktop_page_before_load"
             if before_load_count > 2:
                 event_name = f"desktop_before_load_{before_load_count}"
             _append_startup_trace(
@@ -438,6 +481,11 @@ def _track_window_loaded_events(window: object, data_dir: Path, started_mono: fl
 
     def handle_shown(*_args: object) -> None:
         try:
+            _append_startup_trace(
+                data_dir,
+                "desktop_shell_window_shown",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            )
             _append_startup_trace(
                 data_dir,
                 "desktop_window_event_shown",
@@ -637,17 +685,76 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             url=str(open_url),
         )
         import webview  # type: ignore
-        _install_winforms_shutdown_exception_guard(config.data_dir)
-        window = webview.create_window(
-            config.title,
-            html=build_loading_html(config.title),
-            min_size=(1100, 720),
-            hidden=False,
-            background_color="#0B0E15",
+        runtime_config = configure_webview_runtime(webview)
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_webview_imported",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            frozen=bool(getattr(sys, "frozen", False)),
         )
+        if runtime_config["runtimePath"] or runtime_config["browserArguments"]:
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_webview_runtime_configured",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                runtimePath=runtime_config["runtimePath"],
+                browserArguments=runtime_config["browserArguments"],
+            )
+        _install_winforms_shutdown_exception_guard(config.data_dir)
+        webview_storage_path = build_webview_storage_path(config.data_dir)
+        webview_storage_path.mkdir(parents=True, exist_ok=True)
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_webview_storage_ready",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            storagePath=str(webview_storage_path),
+        )
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_window_load_url",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            url=str(open_url),
+        )
+        _append_startup_trace(config.data_dir, "desktop_window_create_started", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
+        try:
+            window = webview.create_window(
+                config.title,
+                url=open_url,
+                min_size=(1100, 720),
+                hidden=False,
+                background_color="#0B0E15",
+            )
+        except Exception as exc:
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_window_create_error",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                error=str(exc),
+                errorType=type(exc).__name__,
+            )
+            raise
         _append_startup_trace(config.data_dir, "desktop_window_created", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
         _track_window_loaded_events(window, config.data_dir, started_mono)
-        webview.start(_begin_window_app_bootstrap, args=(config.data_dir, started_mono, window, open_url))
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_webview_starting",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            storagePath=str(webview_storage_path),
+            privateMode=False,
+        )
+        try:
+            webview.start(private_mode=False, storage_path=str(webview_storage_path))
+        except Exception as exc:
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_webview_start_error",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                error=str(exc),
+                errorType=type(exc).__name__,
+            )
+            _write_launch_diagnostics(config.data_dir, "desktop-launch-error.txt", traceback.format_exc())
+            raise
+        _append_startup_trace(config.data_dir, "desktop_webview_start_returned", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
         _append_startup_trace(config.data_dir, "desktop_window_closed", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
         if window is None:
             raise RuntimeError("Failed to create desktop window.")
@@ -660,7 +767,9 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             "desktop_launch_error",
             elapsedMs=int((time.perf_counter() - started_mono) * 1000),
             error=str(exc),
+            errorType=type(exc).__name__,
         )
+        _write_launch_diagnostics(config.data_dir, "desktop-launch-error.txt", traceback.format_exc())
         raise
     finally:
         terminate_process(bridge_process)
