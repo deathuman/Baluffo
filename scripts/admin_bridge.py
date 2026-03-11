@@ -37,6 +37,7 @@ from scripts import source_discovery as discovery
 from scripts import fetcher_metrics as fetcher_metrics_module
 from scripts import source_registry as source_registry_module
 from scripts import source_sync as source_sync_module
+from scripts.baluffo_config import get_bridge_defaults, get_security_defaults, get_storage_defaults
 from scripts.contracts import SCHEMA_VERSION
 from scripts.local_data_store import LocalDataPaths, LocalDataStore
 from scripts.source_registry import (
@@ -156,23 +157,31 @@ def resolve_runtime_config(
     *,
     env: Optional[Dict[str, str]] = None,
 ) -> RuntimeConfig:
+    bridge_defaults = get_bridge_defaults()
+    storage_defaults = get_storage_defaults()
     parser = argparse.ArgumentParser(description="Run local admin bridge API.")
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--data-dir", default=None)
     parser.add_argument("--log-format", choices=("human", "jsonl"), default=None)
     parser.add_argument("--log-level", choices=("info", "debug"), default=None)
-    parser.add_argument("--quiet-requests", action="store_true")
+    parser.add_argument("--quiet-requests", action="store_true", default=None)
     args = parser.parse_args(argv)
     env_map = env if isinstance(env, dict) else os.environ
 
-    host = str(args.host or env_map.get("BALUFFO_BRIDGE_HOST") or "127.0.0.1").strip() or "127.0.0.1"
-    port = _coerce_port(args.port if args.port is not None else env_map.get("BALUFFO_BRIDGE_PORT"), 8877)
-    data_dir_raw = str(args.data_dir or env_map.get("BALUFFO_DATA_DIR") or (ROOT / "data")).strip()
+    host = str(args.host or env_map.get("BALUFFO_BRIDGE_HOST") or bridge_defaults["host"]).strip() or str(bridge_defaults["host"])
+    port = _coerce_port(args.port if args.port is not None else env_map.get("BALUFFO_BRIDGE_PORT"), int(bridge_defaults["port"]))
+    data_dir_raw = str(args.data_dir or env_map.get("BALUFFO_DATA_DIR") or storage_defaults["data_dir"]).strip()
     data_dir = Path(data_dir_raw).expanduser().resolve()
-    log_format = _normalize_log_format(args.log_format or env_map.get("BALUFFO_BRIDGE_LOG_FORMAT") or "human")
-    log_level = _normalize_log_level(args.log_level or env_map.get("BALUFFO_BRIDGE_LOG_LEVEL") or "info")
-    quiet_requests = bool(args.quiet_requests)
+    log_format = _normalize_log_format(args.log_format or env_map.get("BALUFFO_BRIDGE_LOG_FORMAT") or bridge_defaults["log_format"])
+    log_level = _normalize_log_level(args.log_level or env_map.get("BALUFFO_BRIDGE_LOG_LEVEL") or bridge_defaults["log_level"])
+    quiet_requests = bool(
+        args.quiet_requests
+        if args.quiet_requests is not None
+        else str(env_map.get("BALUFFO_BRIDGE_QUIET_REQUESTS") or "").strip().lower() in {"1", "true", "yes", "on"}
+        if str(env_map.get("BALUFFO_BRIDGE_QUIET_REQUESTS") or "").strip()
+        else bridge_defaults["quiet_requests"]
+    )
     desktop_mode = str(env_map.get("BALUFFO_DESKTOP_MODE") or "").strip().lower() in {"1", "true", "yes", "on"}
     return RuntimeConfig(
         root=ROOT,
@@ -269,8 +278,9 @@ def startup_banner(config: RuntimeConfig) -> None:
 
 
 def _normalize_sync_settings(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    security_defaults = get_security_defaults()
     data = payload if isinstance(payload, dict) else {}
-    enabled_raw = data.get("enabled", True)
+    enabled_raw = data.get("enabled", bool(security_defaults["github_app_enabled_default"]))
     if isinstance(enabled_raw, bool):
         enabled = enabled_raw
     else:
@@ -280,7 +290,9 @@ def _normalize_sync_settings(payload: Optional[Dict[str, Any]] = None) -> Dict[s
 
 def load_saved_sync_settings() -> Dict[str, Any]:
     raw = load_json_object(SYNC_CONFIG_PATH, {})
-    return _normalize_sync_settings(raw if isinstance(raw, dict) else {})
+    if isinstance(raw, dict) and "enabled" in raw:
+        return _normalize_sync_settings(raw)
+    return {}
 
 
 def append_startup_metric(event: str, payload: Optional[Dict[str, Any]] = None) -> None:
@@ -338,7 +350,9 @@ def _mask_sync_token(token: str) -> str:
 
 def get_saved_sync_config_payload() -> Dict[str, Any]:
     settings = load_saved_sync_settings()
-    return {"enabled": bool(settings.get("enabled", True))}
+    if "enabled" in settings:
+        return {"enabled": bool(settings.get("enabled"))}
+    return {"enabled": bool(source_sync_module.config_status(refresh_sync_config()).get("enabled"))}
 
 
 def update_saved_sync_settings(payload: Dict[str, Any]) -> Dict[str, Any]:

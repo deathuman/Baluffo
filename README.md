@@ -116,6 +116,24 @@ $env:BALUFFO_DATA_DIR = "C:\baluffo\data"
 py -3 scripts/admin_bridge.py --host 127.0.0.1 --port 8877 --log-format human --log-level info
 ```
 
+Runtime config precedence:
+
+- CLI
+- env
+- `baluffo.config.local.json`
+- `baluffo.config.json`
+- code fallback
+
+The committed root `baluffo.config.json` is now the default source of truth for bridge, sync, storage, security, and desktop defaults. Use `baluffo.config.local.json` for machine-local overrides that must not be committed.
+
+Browser-safe frontend defaults are generated into `frontend-runtime-config.js`. If you change
+`bridge.host`, `bridge.port`, `security.admin_pin_default`, or `security.github_app_enabled_default`,
+regenerate that file with:
+
+```powershell
+npm run build:frontend-runtime-config
+```
+
 Supported env vars:
 
 - `BALUFFO_BRIDGE_HOST`
@@ -151,7 +169,7 @@ Snapshot schema (`source-sync.json`, v1):
 ### 6) Build ship bundle (zip-first)
 
 ```powershell
-py -3 scripts/build_ship_bundle.py
+npm run build:ship-bundle
 ```
 
 Optional version:
@@ -169,9 +187,7 @@ Bundle output: `dist/baluffo-ship` with launcher scripts:
 - `recover-previous.ps1`
 - `create-support-bundle.ps1`
 
-Detailed runbook: `docs/ship-bundle-runbook.md`.
-Deployment/update procedure: `docs/deployment-and-update-guide.md`.
-Versioning policy + release checklist: `docs/versioning-policy-and-release-checklist.md`.
+Release guide: `docs/RELEASE.md`.
 
 ## Local Auth and Storage Model
 
@@ -179,7 +195,7 @@ Versioning policy + release checklist: `docs/versioning-policy-and-release-check
 - Session key: `baluffo_current_profile_id` (localStorage)
 - IndexedDB database: `baluffo_jobs_local`
 - Export/import available from Saved Jobs page
-- Admin panel is protected by a local PIN (`1234` by default in current local setup)
+- Admin panel is protected by the configured local admin PIN (`1234` by default from `baluffo.config.json`)
 
 ## Portable Executable (Windows)
 
@@ -194,11 +210,14 @@ py -3.13 -m pip install -r requirements-desktop.txt
 Build:
 
 ```powershell
-py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3
+npm run build:portable-exe -- --bundle-version 1.2.3
 ```
 
 If `packaging/github-app-sync-config.json` is not already present, the build will generate it from the
 same `BALUFFO_SYNC_BUILD_*` env vars used by `scripts/build_ship_bundle.py`.
+
+Desktop defaults like bridge/site ports, title, and WebView2 flags now come from `baluffo.config.json`
+unless overridden by CLI or env.
 
 Optional custom icon override:
 

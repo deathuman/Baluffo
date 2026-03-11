@@ -35,11 +35,14 @@ from scripts.source_registry import (
     unique_sources,
 )
 from scripts.contracts import SCHEMA_VERSION
+from scripts.baluffo_config import get_storage_defaults
+
+_STORAGE_DEFAULTS = get_storage_defaults()
 
 SEED_CATALOG_PATH = ROOT / "scripts" / "discovery_seed_catalog.json"
 DISCOVERY_STAGES = ("curated_seed", "provider_pattern", "web_provider", "generic_static")
 SUPPORTED_PROVIDERS = ("greenhouse", "lever", "smartrecruiters", "workable", "teamtailor", "ashby", "personio")
-DISCOVERY_CONFIG_PATH = DATA_DIR / "source-discovery-config.json"
+DISCOVERY_CONFIG_PATH = _STORAGE_DEFAULTS["source_discovery_config_path"]
 CAREERS_URL_HINTS = ("careers", "career", "jobs", "join-us", "open-positions", "vacancies", "work-with-us")
 GENERIC_STATIC_BLOCKED_DOMAINS = (
     "linkedin.com",
@@ -76,7 +79,9 @@ ADAPTER_QUEUE_CAPS = {
     "static": 6,
 }
 
-DISCOVERY_LOG_PATH = str(os.getenv("BALUFFO_DISCOVERY_LOG_PATH") or "").strip()
+DISCOVERY_LOG_PATH = str(
+    os.getenv("BALUFFO_DISCOVERY_LOG_PATH") or _STORAGE_DEFAULTS["source_discovery_log_path"]
+).strip()
 
 STATIC_DISCOVERY_CANDIDATES: List[Dict[str, Any]] = [
     {"name": "Sandbox VR (Lever)", "studio": "Sandbox VR", "adapter": "lever", "account": "sandboxvr", "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json", "remoteFriendly": True, "nlPriority": False},

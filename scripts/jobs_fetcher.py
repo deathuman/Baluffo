@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.contracts import SCHEMA_VERSION
+from scripts.baluffo_config import get_storage_defaults
 from scripts.jobs_fetcher_registry import (
     DEFAULT_SOURCE_LOADER_NAMES,
     EXCLUDED_DEFAULT_SOURCES,
@@ -233,8 +234,9 @@ DEFAULT_FETCH_STRATEGY = "auto"
 DEFAULT_ADAPTER_HTTP_CONCURRENCY = 24
 DEFAULT_HOT_SOURCE_CADENCE_MINUTES = 15
 DEFAULT_COLD_SOURCE_CADENCE_MINUTES = 60
-DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / "data"
-DEFAULT_SOCIAL_CONFIG_PATH = DEFAULT_OUTPUT_DIR / "social-sources-config.json"
+_STORAGE_DEFAULTS = get_storage_defaults()
+DEFAULT_OUTPUT_DIR = _STORAGE_DEFAULTS["data_dir"]
+DEFAULT_SOCIAL_CONFIG_PATH = _STORAGE_DEFAULTS["social_sources_config_path"]
 DEFAULT_SOCIAL_LOOKBACK_MINUTES = 30
 SOCIAL_SOURCE_NAMES = {"social_reddit", "social_x", "social_mastodon"}
 DEFAULT_SOCIAL_MIN_CONFIDENCE = 40

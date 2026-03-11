@@ -1,0 +1,39 @@
+{
+  "bridge": {
+    "host": "127.0.0.1",
+    "port": 8877,
+    "log_format": "human",
+    "log_level": "info",
+    "quiet_requests": false
+  },
+  "storage": {
+    "data_dir": "data"
+  },
+  "security": {
+    "admin_pin_default": "1234",
+    "github_app_enabled_default": true
+  },
+  "sync": {
+    "packaged_config_path": "packaging/github-app-sync-config.json",
+    "local_enabled_default": true,
+    "default_repo": "",
+    "default_branch": "main",
+    "default_path": "baluffo/source-sync.json",
+    "default_allowed_repo": "",
+    "default_allowed_branch": "main",
+    "default_allowed_path_prefix": "baluffo/source-sync.json",
+    "build_key_derivation_default": "embedded",
+    "build_passphrase_env": "BALUFFO_SYNC_KEY_PASSPHRASE",
+    "build_embedded_key_version": "v1"
+  },
+  "desktop": {
+    "site_port": 8080,
+    "bridge_port": 8877,
+    "bridge_host": "127.0.0.1",
+    "open_path": "jobs.html",
+    "title": "Baluffo",
+    "webview2_runtime_path": "",
+    "webview2_disable_gpu": false,
+    "webview2_additional_browser_arguments": ""
+  }
+}

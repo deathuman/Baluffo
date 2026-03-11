@@ -24,7 +24,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.ship import update_manager
+from scripts.baluffo_config import get_bridge_defaults, get_desktop_defaults
 
+BRIDGE_DEFAULTS = get_bridge_defaults()
+DESKTOP_DEFAULTS = get_desktop_defaults()
 
 @dataclass(frozen=True)
 class RuntimeLayout:
@@ -179,7 +182,7 @@ def _isolated_scripts_package() -> Iterator[None]:
         sys.modules.update(saved)
 
 
-def run_site_server(root: str | Path | None = None, *, port: int = 8080) -> None:
+def run_site_server(root: str | Path | None = None, *, port: int = int(DESKTOP_DEFAULTS["site_port"])) -> None:
     layout = resolve_runtime_layout(root)
     print(
         json.dumps(
@@ -207,7 +210,7 @@ def run_bridge_server(
     root: str | Path | None = None,
     *,
     bind_host: str = "127.0.0.1",
-    port: int = 8877,
+    port: int = int(BRIDGE_DEFAULTS["port"]),
     data_dir: str | Path | None = None,
     desktop_mode: bool = False,
 ) -> None:
@@ -245,12 +248,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     site_parser = sub.add_parser("site", help="Run the static site from the active app version.")
     site_parser.add_argument("--root", default="")
-    site_parser.add_argument("--port", type=int, default=8080)
+    site_parser.add_argument("--port", type=int, default=int(DESKTOP_DEFAULTS["site_port"]))
 
     bridge_parser = sub.add_parser("bridge", help="Run the admin bridge from the active app version.")
     bridge_parser.add_argument("--root", default="")
-    bridge_parser.add_argument("--bind-host", default="127.0.0.1")
-    bridge_parser.add_argument("--port", type=int, default=8877)
+    bridge_parser.add_argument("--bind-host", default=str(BRIDGE_DEFAULTS["host"]))
+    bridge_parser.add_argument("--port", type=int, default=int(BRIDGE_DEFAULTS["port"]))
     bridge_parser.add_argument("--data-dir", default="")
 
     return parser.parse_args(argv)

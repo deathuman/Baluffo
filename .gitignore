@@ -18,3 +18,5 @@ data/*.log
 
 # Packaged/local secrets
 packaging/github-app-sync-config.json
+packaging/github-app-sync-config.localkey.json
+baluffo.config.local.json

@@ -47,6 +47,7 @@ class BuildShipBundleTests(unittest.TestCase):
 
             self.assertTrue((output / "run-site.ps1").exists())
             self.assertTrue((output / "run-bridge.ps1").exists())
+            self.assertTrue((output / "RELEASE_GUIDE.md").exists())
             self.assertTrue((output / "app" / "update-manifest.json").exists())
             self.assertTrue((version_root / "frontend" / "admin" / "app.js").exists())
             self.assertTrue((version_root / "scripts" / "admin_bridge.py").exists())
@@ -54,6 +55,8 @@ class BuildShipBundleTests(unittest.TestCase):
             self.assertTrue((version_root / "scripts" / "source_sync.py").exists())
             self.assertTrue((version_root / "scripts" / "discovery_seed_catalog.json").exists())
             self.assertTrue((version_root / "app-local-data-client.js").exists())
+            self.assertTrue((version_root / "baluffo.config.json").exists())
+            self.assertTrue((version_root / "frontend-runtime-config.js").exists())
             self.assertTrue((version_root / "desktop-local-data-client.js").exists())
             self.assertTrue((version_root / "desktop-probe-css.html").exists())
             self.assertTrue((version_root / "desktop-probe.html").exists())
@@ -66,7 +69,10 @@ class BuildShipBundleTests(unittest.TestCase):
             self.assertFalse((version_root / "LOCAL_SETUP.md").exists())
             self.assertFalse((version_root / "scripts" / "run_py_tests.cmd").exists())
             self.assertFalse((version_root / "scripts" / "build_sync_app_config.py").exists())
+            self.assertFalse((version_root / "baluffo.config.local.json").exists())
             self.assertTrue((version_root / "packaging" / "github-app-sync-config.json").exists())
+            bundled_release_guide = (output / "RELEASE_GUIDE.md").read_text(encoding="utf-8")
+            self.assertIn("# Release Guide", bundled_release_guide)
 
             seeded_report = json.loads((output / "data" / "jobs-fetch-report.json").read_text(encoding="utf-8"))
             self.assertEqual(seeded_report, {"summary": {}, "sources": [], "runtime": {}, "outputs": {}})

@@ -109,21 +109,44 @@ class AdminBridgeOpsTests(unittest.TestCase):
         self.assertEqual(cfg.log_level, "debug")
 
     def test_resolve_runtime_config_env_defaults_when_cli_missing(self):
-        cfg = admin_bridge.resolve_runtime_config(
-            [],
-            env={
-                "BALUFFO_BRIDGE_HOST": "0.0.0.0",
-                "BALUFFO_BRIDGE_PORT": "9911",
-                "BALUFFO_DATA_DIR": str(self.test_root),
-                "BALUFFO_BRIDGE_LOG_FORMAT": "jsonl",
-                "BALUFFO_BRIDGE_LOG_LEVEL": "debug",
-            },
-        )
+        with mock.patch.object(admin_bridge, "get_bridge_defaults", return_value={
+            "host": "127.0.0.2",
+            "port": 8878,
+            "log_format": "human",
+            "log_level": "info",
+            "quiet_requests": False,
+        }), mock.patch.object(admin_bridge, "get_storage_defaults", return_value={"data_dir": self.test_root / "from-file"}):
+            cfg = admin_bridge.resolve_runtime_config(
+                [],
+                env={
+                    "BALUFFO_BRIDGE_HOST": "0.0.0.0",
+                    "BALUFFO_BRIDGE_PORT": "9911",
+                    "BALUFFO_DATA_DIR": str(self.test_root),
+                    "BALUFFO_BRIDGE_LOG_FORMAT": "jsonl",
+                    "BALUFFO_BRIDGE_LOG_LEVEL": "debug",
+                },
+            )
         self.assertEqual(cfg.host, "0.0.0.0")
         self.assertEqual(cfg.port, 9911)
         self.assertEqual(str(cfg.data_dir), str(self.test_root.resolve()))
         self.assertEqual(cfg.log_format, "jsonl")
         self.assertEqual(cfg.log_level, "debug")
+
+    def test_resolve_runtime_config_uses_file_defaults_when_env_missing(self):
+        with mock.patch.object(admin_bridge, "get_bridge_defaults", return_value={
+            "host": "127.0.0.5",
+            "port": 9915,
+            "log_format": "jsonl",
+            "log_level": "debug",
+            "quiet_requests": True,
+        }), mock.patch.object(admin_bridge, "get_storage_defaults", return_value={"data_dir": self.test_root / "from-file"}):
+            cfg = admin_bridge.resolve_runtime_config([], env={})
+        self.assertEqual(cfg.host, "127.0.0.5")
+        self.assertEqual(cfg.port, 9915)
+        self.assertEqual(str(cfg.data_dir), str((self.test_root / "from-file").resolve()))
+        self.assertEqual(cfg.log_format, "jsonl")
+        self.assertEqual(cfg.log_level, "debug")
+        self.assertTrue(cfg.quiet_requests)
 
     def test_bridge_log_jsonl_output_is_valid_json(self):
         cfg = admin_bridge.RuntimeConfig(

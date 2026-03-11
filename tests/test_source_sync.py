@@ -96,6 +96,21 @@ class SourceSyncTests(unittest.TestCase):
         self.assertFalse(status["ready"])
         self.assertEqual(status["state"], "disabled")
 
+    def test_config_status_uses_root_feature_gate_default_when_saved_override_missing(self):
+        self.write_packaged_config()
+        original_security = dict(sync._SECURITY_DEFAULTS)  # noqa: SLF001
+        original_sync = dict(sync._SYNC_DEFAULTS)  # noqa: SLF001
+        try:
+            sync._SECURITY_DEFAULTS["github_app_enabled_default"] = False  # noqa: SLF001
+            sync._SYNC_DEFAULTS["local_enabled_default"] = True  # noqa: SLF001
+            cfg = sync.resolve_sync_config(settings={}, env=self.env)
+        finally:
+            sync._SECURITY_DEFAULTS = original_security  # type: ignore[assignment] # noqa: SLF001
+            sync._SYNC_DEFAULTS = original_sync  # type: ignore[assignment] # noqa: SLF001
+        status = sync.config_status(cfg)
+        self.assertFalse(status["enabled"])
+        self.assertEqual(status["state"], "disabled")
+
     def test_encrypt_and_decrypt_private_key_round_trip(self):
         salt_b64 = sync._base64url_encode(b"unit-test-salt-123")  # noqa: SLF001
         private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"

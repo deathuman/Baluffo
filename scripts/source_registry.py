@@ -11,7 +11,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 from urllib.parse import urlparse, urlunsplit
 
-_DEFAULT_DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+from scripts.baluffo_config import get_storage_defaults
+
+_STORAGE_DEFAULTS = get_storage_defaults()
+_DEFAULT_DATA_DIR = _STORAGE_DEFAULTS["data_dir"]
 DATA_DIR = Path(os.getenv("BALUFFO_DATA_DIR") or _DEFAULT_DATA_DIR).expanduser().resolve()
 ACTIVE_PATH = DATA_DIR / "source-registry-active.json"
 PENDING_PATH = DATA_DIR / "source-registry-pending.json"

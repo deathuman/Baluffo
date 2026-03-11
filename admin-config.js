@@ -1,11 +1,38 @@
+import { BALUFFO_FRONTEND_RUNTIME_CONFIG } from "./frontend-runtime-config.js";
+
 const RUNTIME_BRIDGE_BASE_KEY = "baluffo_runtime_bridge_base";
-const DEFAULT_ADMIN_BRIDGE_BASE = "http://127.0.0.1:8877";
+const DEFAULT_CONFIG = {
+  bridge: {
+    host: "127.0.0.1",
+    port: 8877
+  },
+  security: {
+    admin_pin_default: "1234",
+    github_app_enabled_default: true
+  }
+};
+
+const BALUFFO_RUNTIME_CONFIG = {
+  ...DEFAULT_CONFIG,
+  ...BALUFFO_FRONTEND_RUNTIME_CONFIG,
+  bridge: {
+    ...DEFAULT_CONFIG.bridge,
+    ...(BALUFFO_FRONTEND_RUNTIME_CONFIG?.bridge || {})
+  },
+  security: {
+    ...DEFAULT_CONFIG.security,
+    ...(BALUFFO_FRONTEND_RUNTIME_CONFIG?.security || {})
+  }
+};
 
 function resolveRuntimeBridgeBase() {
+  const defaultHost = String(BALUFFO_RUNTIME_CONFIG?.bridge?.host || DEFAULT_CONFIG.bridge.host).trim() || DEFAULT_CONFIG.bridge.host;
+  const defaultPort = Number(BALUFFO_RUNTIME_CONFIG?.bridge?.port || DEFAULT_CONFIG.bridge.port) || DEFAULT_CONFIG.bridge.port;
+  const defaultBase = `http://${defaultHost}:${defaultPort}`;
   try {
     const url = new URL(window.location.href);
     const bridgePort = String(url.searchParams.get("bridgePort") || "").trim();
-    const bridgeHost = String(url.searchParams.get("bridgeHost") || "").trim() || "127.0.0.1";
+    const bridgeHost = String(url.searchParams.get("bridgeHost") || "").trim() || defaultHost;
     if (/^\d+$/.test(bridgePort)) {
       const runtimeBase = `http://${bridgeHost}:${bridgePort}`;
       window.sessionStorage.setItem(RUNTIME_BRIDGE_BASE_KEY, runtimeBase);
@@ -18,7 +45,7 @@ function resolveRuntimeBridgeBase() {
   } catch {
     // Ignore URL/session parsing failures and fall back to the default bridge.
   }
-  return DEFAULT_ADMIN_BRIDGE_BASE;
+  return defaultBase;
 }
 
 export const AdminConfig = {
@@ -30,5 +57,9 @@ export const AdminConfig = {
   FETCH_REPORT_POLL_INTERVAL_MS: 5000,
   FETCH_REPORT_POLL_TIMEOUT_MS: 10 * 60 * 1000,
   ADMIN_BRIDGE_BASE: resolveRuntimeBridgeBase(),
-  BRIDGE_STATUS_POLL_INTERVAL_MS: 10000
+  BRIDGE_STATUS_POLL_INTERVAL_MS: 10000,
+  ADMIN_PIN_DEFAULT: String(BALUFFO_RUNTIME_CONFIG?.security?.admin_pin_default || DEFAULT_CONFIG.security.admin_pin_default),
+  GITHUB_APP_ENABLED_DEFAULT: Boolean(
+    BALUFFO_RUNTIME_CONFIG?.security?.github_app_enabled_default ?? DEFAULT_CONFIG.security.github_app_enabled_default
+  )
 };

@@ -1,4 +1,5 @@
 import json
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -20,6 +21,16 @@ class JobsFetcherTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["title"], "Gameplay Programmer")
         self.assertEqual(rows[0]["company"], "Pixel Forge")
+
+    def test_parse_args_uses_config_backed_output_and_social_defaults(self) -> None:
+        prev_argv = list(sys.argv)
+        try:
+            sys.argv = ["jobs_fetcher.py"]
+            args = jf.parse_args()
+        finally:
+            sys.argv = prev_argv
+        self.assertEqual(Path(args.output_dir), jf.DEFAULT_OUTPUT_DIR)
+        self.assertEqual(Path(args.social_config_path), jf.DEFAULT_SOCIAL_CONFIG_PATH)
 
     def test_parse_remote_ok_payload_filters_game_roles(self) -> None:
         payload = json.loads(self.fixture("remoteok.json"))

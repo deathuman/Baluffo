@@ -17,12 +17,15 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from scripts.baluffo_config import get_security_defaults, get_sync_defaults
 from scripts.source_registry import ensure_source_id, source_identity
 
 ROOT = Path(__file__).resolve().parents[1]
+_SYNC_DEFAULTS = get_sync_defaults()
+_SECURITY_DEFAULTS = get_security_defaults()
 SYNC_SCHEMA_VERSION = 1
-DEFAULT_BRANCH = "main"
-DEFAULT_PATH = "baluffo/source-sync.json"
+DEFAULT_BRANCH = str(_SYNC_DEFAULTS["default_branch"])
+DEFAULT_PATH = str(_SYNC_DEFAULTS["default_path"])
 DEFAULT_TIMEOUT_S = 20
 PACKAGED_SYNC_CONFIG_ENV = "BALUFFO_SYNC_APP_CONFIG_PATH"
 PACKAGED_SYNC_PASSPHRASE_ENV = "BALUFFO_SYNC_KEY_PASSPHRASE"
@@ -30,7 +33,7 @@ SYNC_DISABLE_ENV = "BALUFFO_SYNC_DISABLE"
 SYNC_ALLOWED_REPO_ENV = "BALUFFO_SYNC_ALLOWED_REPO"
 SYNC_ALLOWED_BRANCH_ENV = "BALUFFO_SYNC_ALLOWED_BRANCH"
 SYNC_ALLOWED_PATH_PREFIX_ENV = "BALUFFO_SYNC_ALLOWED_PATH_PREFIX"
-DEFAULT_PACKAGED_SYNC_CONFIG_PATH = ROOT / "packaging" / "github-app-sync-config.json"
+DEFAULT_PACKAGED_SYNC_CONFIG_PATH = Path(_SYNC_DEFAULTS["packaged_config_path"])
 MACHINE_SCOPE = "baluffo-github-app-sync"
 JWT_TTL_SECONDS = 9 * 60
 INSTALLATION_TOKEN_REFRESH_SKEW_SECONDS = 10 * 60
@@ -505,14 +508,17 @@ def load_packaged_sync_config(*, env: Optional[Dict[str, str]] = None) -> Option
 def resolve_sync_config(*, settings: Optional[Dict[str, Any]] = None, env: Optional[Dict[str, str]] = None) -> SyncConfig:
     settings_map = settings if isinstance(settings, dict) else {}
     env_map = env if isinstance(env, dict) else os.environ
+    default_enabled = bool(
+        _SECURITY_DEFAULTS["github_app_enabled_default"] and _SYNC_DEFAULTS["local_enabled_default"]
+    )
     enabled_raw = settings_map.get("enabled")
-    enabled = True if enabled_raw is None else bool(enabled_raw)
+    enabled = default_enabled if enabled_raw is None else bool(enabled_raw)
     disabled_reason = ""
     if _truthy(env_map.get(SYNC_DISABLE_ENV)):
         enabled = False
         disabled_reason = f"Sync disabled by {SYNC_DISABLE_ENV}."
     packaged_config = load_packaged_sync_config(env=env_map)
-    repo = packaged_config.repo if packaged_config else ""
+    repo = packaged_config.repo if packaged_config else str(_SYNC_DEFAULTS["default_repo"])
     branch = packaged_config.branch if packaged_config else DEFAULT_BRANCH
     path = packaged_config.path if packaged_config else DEFAULT_PATH
     return SyncConfig(

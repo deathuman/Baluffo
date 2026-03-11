@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:ship-bundle": "py -3 scripts/build_ship_bundle.py",
-    "build:portable-exe": "py -3.13 scripts/build_portable_exe.py",
+    "build:frontend-runtime-config": "py -3 scripts/build_frontend_runtime_config.py",
+    "build:ship-bundle": "npm run build:frontend-runtime-config && py -3 scripts/build_ship_bundle.py",
+    "build:portable-exe": "npm run build:frontend-runtime-config && py -3.13 scripts/build_portable_exe.py",
     "verify:portable": "py -3.13 scripts/build_portable_exe.py && py -3.13 scripts/packaged_desktop_smoke.py && npm run test:frontend",
     "test:unit": "npm run test:frontend:unit",
     "test:smoke": "npm run test:frontend",

@@ -15,8 +15,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = ROOT / "dist" / "baluffo-ship"
 DEFAULT_BUNDLE_VERSION = "1.0.0"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.baluffo_config import get_sync_defaults
+from scripts.build_frontend_runtime_config import (
+    build_frontend_runtime_config_payload,
+    render_frontend_runtime_config_js,
+    write_frontend_runtime_config,
+)
+
 APP_RUNTIME_FILES = (
+    "baluffo.config.json",
     "admin.html",
+    "frontend-runtime-config.js",
     "desktop-probe-css.html",
     "desktop-probe.html",
     "desktop-probe-head.html",
@@ -67,7 +79,8 @@ STARTUP_PREVIEW_LIMIT = 240
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-PACKAGED_SYNC_CONFIG_PATH = ROOT / "packaging" / "github-app-sync-config.json"
+SYNC_DEFAULTS = get_sync_defaults()
+PACKAGED_SYNC_CONFIG_PATH = Path(SYNC_DEFAULTS["packaged_config_path"])
 PACKAGED_SYNC_CONFIG_TEMPLATE_PATH = ROOT / "packaging" / "github-app-sync-config.template.json"
 PACKAGED_SYNC_BUILD_ENV = {
     "app_id": "BALUFFO_SYNC_BUILD_APP_ID",
@@ -226,12 +239,12 @@ def _maybe_generate_packaged_sync_config() -> Path | None:
     from scripts.build_sync_app_config import build_packaged_sync_payload, write_packaged_sync_config
     from scripts import source_sync
 
-    branch = _env_value(PACKAGED_SYNC_BUILD_ENV["branch"]) or "main"
-    remote_path = _env_value(PACKAGED_SYNC_BUILD_ENV["path"]) or "baluffo/source-sync.json"
-    allowed_repo = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_repo"]) or repo
-    allowed_branch = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_branch"]) or branch
-    allowed_path_prefix = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_path_prefix"]) or remote_path
-    key_derivation = _env_value(PACKAGED_SYNC_BUILD_ENV["key_derivation"]) or source_sync.KEY_DERIVATION_EMBEDDED
+    branch = _env_value(PACKAGED_SYNC_BUILD_ENV["branch"]) or str(SYNC_DEFAULTS["default_branch"])
+    remote_path = _env_value(PACKAGED_SYNC_BUILD_ENV["path"]) or str(SYNC_DEFAULTS["default_path"])
+    allowed_repo = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_repo"]) or str(SYNC_DEFAULTS["default_allowed_repo"] or repo)
+    allowed_branch = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_branch"]) or str(SYNC_DEFAULTS["default_allowed_branch"] or branch)
+    allowed_path_prefix = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_path_prefix"]) or str(SYNC_DEFAULTS["default_allowed_path_prefix"] or remote_path)
+    key_derivation = _env_value(PACKAGED_SYNC_BUILD_ENV["key_derivation"]) or str(SYNC_DEFAULTS["build_key_derivation_default"] or source_sync.KEY_DERIVATION_EMBEDDED)
     payload = build_packaged_sync_payload(
         app_id=app_id,
         installation_id=installation_id,
@@ -246,13 +259,17 @@ def _maybe_generate_packaged_sync_config() -> Path | None:
         key_derivation=key_derivation,
         portable_passphrase_env=_env_value(PACKAGED_SYNC_BUILD_ENV["portable_passphrase_env"]),
         embedded_key_hint=_env_value(PACKAGED_SYNC_BUILD_ENV["embedded_key_hint"]),
-        embedded_key_version=_env_value(PACKAGED_SYNC_BUILD_ENV["embedded_key_version"]),
+        embedded_key_version=_env_value(PACKAGED_SYNC_BUILD_ENV["embedded_key_version"]) or str(SYNC_DEFAULTS["build_embedded_key_version"]),
     )
     return write_packaged_sync_config(PACKAGED_SYNC_CONFIG_PATH, payload)
 
 
 def _copy_app_version(version_dir: Path) -> None:
     packaged_sync_config = _require_packaged_sync_config()
+    _write_text(
+        version_dir / "frontend-runtime-config.js",
+        render_frontend_runtime_config_js(build_frontend_runtime_config_payload()),
+    )
     # Static frontend/runtime assets.
     for rel in APP_RUNTIME_FILES:
         _copy_file(ROOT / rel, version_dir / rel)
@@ -288,6 +305,7 @@ def _generate_startup_preview(data_dir: Path) -> None:
 
 
 def build_bundle(output_dir: Path, version: str) -> Path:
+    write_frontend_runtime_config()
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -316,7 +334,7 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     _copy_file(ROOT / "scripts" / "ship" / "apply-update.ps1", output_dir / "apply-update.ps1")
     _copy_file(ROOT / "scripts" / "ship" / "recover-previous.ps1", output_dir / "recover-previous.ps1")
     _copy_file(ROOT / "scripts" / "ship" / "create-support-bundle.ps1", output_dir / "create-support-bundle.ps1")
-    _copy_file(ROOT / "docs" / "ship-bundle-runbook.md", output_dir / "SHIP_BUNDLE_RUNBOOK.md")
+    _copy_file(ROOT / "docs" / "RELEASE.md", output_dir / "RELEASE_GUIDE.md")
     _copy_file(ROOT / "docs" / "update-manifest.schema.json", output_dir / "UPDATE_MANIFEST_SCHEMA.json")
 
     data_dir = output_dir / "data"

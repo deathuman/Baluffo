@@ -293,7 +293,7 @@ const desktopApi = {
     return response.result || {};
   },
   verifyAdminPin(pin) {
-    return String(pin || "") === "1234";
+    return String(pin || "") === String(AdminConfig.ADMIN_PIN_DEFAULT || "");
   },
   async getAdminOverview(pin) {
     const payload = await requestJson("/admin/overview", {

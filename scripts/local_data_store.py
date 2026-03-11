@@ -16,7 +16,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-ADMIN_PIN = "1234"
+from scripts.baluffo_config import get_security_defaults
+
+ADMIN_PIN = str(get_security_defaults()["admin_pin_default"])
 APPLICATION_STATUSES = ["bookmark", "applied", "interview_1", "interview_2", "offer", "rejected"]
 LOCK = threading.RLock()
 

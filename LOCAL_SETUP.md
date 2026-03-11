@@ -30,8 +30,21 @@ Saved job record fields:
 
 ## Administration
 - `Admin` page (`admin.html`) shows local profiles and storage usage totals.
-- Access is protected by a local hardcoded PIN: `1234`.
+- Access is protected by the configured local admin PIN: `1234` by default in `baluffo.config.json`.
 - Wiping an account removes profile, saved jobs, notes, and attachments for that user.
+
+## Root config
+- Default runtime values now live in `baluffo.config.json`.
+- Local machine-only overrides should go in `baluffo.config.local.json`.
+- Effective precedence:
+  - CLI
+  - env
+  - `baluffo.config.local.json`
+  - `baluffo.config.json`
+  - code fallback
+- Browser-safe frontend defaults are generated into `frontend-runtime-config.js`.
+- If you change `bridge.host`, `bridge.port`, `security.admin_pin_default`, or `security.github_app_enabled_default`,
+  run `npm run build:frontend-runtime-config` before testing or packaging browser pages.
 
 ## Future migration note
 `local-data-client.js` intentionally keeps a compatibility boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
@@ -78,6 +91,7 @@ Saved job record fields:
     - `BALUFFO_BRIDGE_HOST`, `BALUFFO_BRIDGE_PORT`, `BALUFFO_DATA_DIR`, `BALUFFO_BRIDGE_LOG_FORMAT`, `BALUFFO_BRIDGE_LOG_LEVEL`
     - `BALUFFO_SYNC_APP_CONFIG_PATH` (optional override for the packaged GitHub App sync config)
   - precedence: `CLI > env > defaults`
+  - default file source: `baluffo.config.json` plus optional `baluffo.config.local.json`
 
 ### GitHub source sync (multi-PC)
 - Source sync is now packaged GitHub App based.
@@ -110,8 +124,8 @@ Saved job record fields:
 ## Ship bundle (zip-first)
 
 - Build:
-  - `py -3 scripts/build_ship_bundle.py`
-  - optional version: `py -3 scripts/build_ship_bundle.py --bundle-version 1.2.3`
+  - `npm run build:ship-bundle`
+  - direct Python entrypoint: `py -3 scripts/build_ship_bundle.py --bundle-version 1.2.3`
 - Output:
   - `dist/baluffo-ship`
 - Launchers in bundle root:
@@ -122,7 +136,7 @@ Saved job record fields:
   - `recover-previous.ps1`
   - `create-support-bundle.ps1`
 - Detailed runbook:
-  - `docs/ship-bundle-runbook.md`
+  - `docs/RELEASE.md`
 - The ship bundle seeds clean runtime files under `data\`; it does not package the repo's local runtime JSON/CSV state.
 
 ## Portable executable (Windows)
@@ -130,11 +144,12 @@ Saved job record fields:
 - Install dependencies:
   - `py -3.13 -m pip install -r requirements-desktop.txt`
 - Build:
-  - `py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3`
+  - `npm run build:portable-exe -- --bundle-version 1.2.3`
+  - direct Python entrypoint: `py -3.13 scripts/build_portable_exe.py --bundle-version 1.2.3`
 - Output:
   - `dist/baluffo-portable`
   - `dist/baluffo-portable-1.2.3.zip`
 - Dedicated desktop entrypoint:
   - `Baluffo.exe`
 - Runbook:
-  - `docs/portable-executable-runbook.md`
+  - `docs/RELEASE.md`

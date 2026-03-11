@@ -30,11 +30,13 @@ if str(ROOT) not in sys.path:
 
 from scripts.ship.runtime_launcher import wait_for_url
 from scripts.ship.startup_profile import summarize_startup_metrics, write_startup_summary
+from scripts.baluffo_config import get_desktop_defaults
 
+DESKTOP_DEFAULTS = get_desktop_defaults()
 WINDOW_TITLE = "Baluffo"
-DEFAULT_OPEN_PATH = "jobs.html"
-DEFAULT_SITE_PORT = 8080
-DEFAULT_BRIDGE_PORT = 8877
+DEFAULT_OPEN_PATH = str(DESKTOP_DEFAULTS["open_path"])
+DEFAULT_SITE_PORT = int(DESKTOP_DEFAULTS["site_port"])
+DEFAULT_BRIDGE_PORT = int(DESKTOP_DEFAULTS["bridge_port"])
 READY_TIMEOUT_S = 25.0
 WEBVIEW2_INSTALL_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
 SHELL_NAVIGATION_DELAY_MS = 350
@@ -106,13 +108,13 @@ def _truthy_env(value: object) -> bool:
 def resolve_webview2_browser_arguments(env: dict[str, str] | None = None) -> str:
     env_map = env if env is not None else os.environ
     tokens: list[str] = []
-    explicit = str(env_map.get("BALUFFO_WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") or "").strip()
+    explicit = str(env_map.get("BALUFFO_WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") or DESKTOP_DEFAULTS["webview2_additional_browser_arguments"] or "").strip()
     if explicit:
         tokens.append(explicit)
     inherited = str(env_map.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") or "").strip()
     if inherited:
         tokens.append(inherited)
-    if _truthy_env(env_map.get("BALUFFO_WEBVIEW2_DISABLE_GPU")):
+    if _truthy_env(env_map.get("BALUFFO_WEBVIEW2_DISABLE_GPU")) or bool(DESKTOP_DEFAULTS["webview2_disable_gpu"]):
         tokens.append("--disable-gpu")
     deduped: list[str] = []
     seen: set[str] = set()
@@ -127,7 +129,7 @@ def resolve_webview2_browser_arguments(env: dict[str, str] | None = None) -> str
 
 def configure_webview_runtime(webview_module: object, *, env: dict[str, str] | None = None) -> dict[str, str]:
     env_map = env if env is not None else os.environ
-    runtime_path = str(env_map.get("BALUFFO_WEBVIEW2_RUNTIME_PATH") or "").strip()
+    runtime_path = str(env_map.get("BALUFFO_WEBVIEW2_RUNTIME_PATH") or DESKTOP_DEFAULTS["webview2_runtime_path"] or "").strip()
     if runtime_path:
         getattr(webview_module, "settings")["WEBVIEW2_RUNTIME_PATH"] = runtime_path
     browser_args = resolve_webview2_browser_arguments(env_map)
@@ -267,10 +269,10 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
         ship_root=ship_root,
         site_port=site_port,
         bridge_port=bridge_port,
-        bridge_host=str(args.bridge_host or "127.0.0.1"),
+        bridge_host=str(args.bridge_host or DESKTOP_DEFAULTS["bridge_host"]),
         data_dir=data_dir,
         open_path=str(args.open_path or DEFAULT_OPEN_PATH).lstrip("/") or DEFAULT_OPEN_PATH,
-        title=str(args.title or WINDOW_TITLE).strip() or WINDOW_TITLE,
+        title=str(args.title or DESKTOP_DEFAULTS["title"] or WINDOW_TITLE).strip() or WINDOW_TITLE,
         startup_probe=bool(args.startup_probe or _truthy_env(os.environ.get("BALUFFO_STARTUP_PROBE"))),
     )
 
@@ -780,7 +782,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--root", default="")
     parser.add_argument("--site-port", type=int, default=0)
     parser.add_argument("--bridge-port", type=int, default=0)
-    parser.add_argument("--bridge-host", default="127.0.0.1")
+    parser.add_argument("--bridge-host", default=str(DESKTOP_DEFAULTS["bridge_host"]))
     parser.add_argument("--data-dir", default="")
     parser.add_argument("--open-path", default=DEFAULT_OPEN_PATH)
     parser.add_argument("--title", default=WINDOW_TITLE)

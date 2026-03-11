@@ -895,6 +895,22 @@ class SourceDiscoveryTests(unittest.TestCase):
         self.assertTrue(bool(args.gamesmap_website_only_fallback))
         self.assertEqual(int(args.gamesmap_max_detail_pages or 0), 25)
 
+    def test_load_discovery_config_uses_configured_path(self) -> None:
+        with self.workspace_tmpdir() as root:
+            previous_path = sd.DISCOVERY_CONFIG_PATH
+            try:
+                sd.DISCOVERY_CONFIG_PATH = root / "nested" / "discovery.json"
+                sd.DISCOVERY_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+                sd.DISCOVERY_CONFIG_PATH.write_text(
+                    json.dumps({"gamesmap": {"enabled": True, "maxDetailPages": 25}}),
+                    encoding="utf-8",
+                )
+                cfg = sd.load_discovery_config()
+            finally:
+                sd.DISCOVERY_CONFIG_PATH = previous_path
+            self.assertTrue(bool((cfg.get("gamesmap") or {}).get("enabled")))
+            self.assertEqual(int((cfg.get("gamesmap") or {}).get("maxDetailPages") or 0), 25)
+
 
 if __name__ == "__main__":
     unittest.main()

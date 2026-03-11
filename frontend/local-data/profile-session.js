@@ -1,4 +1,5 @@
-import { ADMIN_PIN, SESSION_KEY, PROFILE_KEY } from "./constants.js";
+import { AdminConfig } from "../../admin-config.js";
+import { SESSION_KEY, PROFILE_KEY } from "./constants.js";
 
 export function makeUser(profile) {
   return {
@@ -23,7 +24,7 @@ export function writeProfiles(profiles) {
 }
 
 export function verifyAdminPin(pin) {
-  return String(pin || "") === ADMIN_PIN;
+  return String(pin || "") === String(AdminConfig.ADMIN_PIN_DEFAULT || "");
 }
 
 export function ensureAdmin(pin) {

@@ -48,9 +48,28 @@ For local tests only, `privateKeyPem` may be supplied instead of `privateKeyPemE
 ## Build-time notes
 
 - Do not commit production `github-app-sync-config.json`
+- Do not commit generated `github-app-sync-config.localkey.json`
 - Generate a unique `keySalt` per distribution target
 - Encrypt the GitHub App private key PEM before bundling
 - Bundle the config next to the app or point `BALUFFO_SYNC_APP_CONFIG_PATH` to the deployed file
+
+## Root config defaults
+
+Packaged sync defaults now come from:
+
+- `baluffo.config.json`
+- optional `baluffo.config.local.json`
+
+Build-time precedence is:
+
+- CLI
+- env
+- `baluffo.config.local.json`
+- `baluffo.config.json`
+- code fallback
+
+That root config now provides the default packaged sync path, repo/branch/path defaults, allowlist defaults,
+and default build key derivation. `BALUFFO_SYNC_BUILD_*` env vars still override those values when present.
 
 ## Helper command
 
@@ -113,7 +132,7 @@ $env:BALUFFO_SYNC_BUILD_APP_ID="123456"
 $env:BALUFFO_SYNC_BUILD_INSTALLATION_ID="98765432"
 $env:BALUFFO_SYNC_BUILD_REPO="your-org/job-sources-backup"
 $env:BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH="C:\secrets\github-app-private-key.pem"
-py -3 scripts/build_ship_bundle.py
+npm run build:ship-bundle
 ```
 
 For local-only testing, add `--plaintext` to write `privateKeyPem` directly instead of the encrypted form.
