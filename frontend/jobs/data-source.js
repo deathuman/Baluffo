@@ -33,19 +33,33 @@ export function parseCSVLarge(csv, options = {}) {
   return [];
 }
 
+function resolveSheetsFallbackSources(options = {}) {
+  const list = Array.isArray(options.sheetsFallbackSources) ? options.sheetsFallbackSources : [];
+  if (list.length > 0) {
+    return list.filter(row => row && typeof row.sheetId === "string" && row.sheetId.trim());
+  }
+  if (options.sheetsFallbackSource && typeof options.sheetsFallbackSource.sheetId === "string") {
+    return [options.sheetsFallbackSource];
+  }
+  return [];
+}
+
 export async function fetchFromGoogleSheets(options = {}) {
   const {
-    sheetsFallbackSource,
     setSourceStatus,
     parseCSV,
     fetcher = fetchWithTimeout,
     timeoutMs = 20000
   } = options;
-  const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetsFallbackSource.sheetId}/export?format=csv&gid=${sheetsFallbackSource.gid}`;
-  const sources = [
-    { name: "Google Sheets fallback", url: csvUrl },
-    { name: "AllOrigins mirror fallback", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(csvUrl)}` }
-  ];
+  const sheets = resolveSheetsFallbackSources(options);
+  const sources = [];
+  sheets.forEach((sheet, index) => {
+    const gid = String(sheet.gid ?? "0");
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheet.sheetId}/export?format=csv&gid=${gid}`;
+    const label = index === 0 ? "Google Sheets fallback" : `Google Sheets fallback ${index + 1}`;
+    sources.push({ name: label, url: csvUrl });
+    sources.push({ name: `${label} mirror`, url: `https://api.allorigins.win/raw?url=${encodeURIComponent(csvUrl)}` });
+  });
 
   for (const source of sources) {
     try {
@@ -72,7 +86,6 @@ export async function fetchUnifiedJobs(options = {}) {
   const {
     unifiedJsonSources,
     unifiedCsvSources,
-    sheetsFallbackSource,
     setSourceStatus,
     parseUnifiedPayload,
     parseCSV,
@@ -111,7 +124,8 @@ export async function fetchUnifiedJobs(options = {}) {
 
   if (allowSheetsFallback) {
     const sheetsFallback = await fetchFromGoogleSheets({
-      sheetsFallbackSource,
+      sheetsFallbackSource: options.sheetsFallbackSource,
+      sheetsFallbackSources: options.sheetsFallbackSources,
       setSourceStatus,
       parseCSV,
       fetcher,

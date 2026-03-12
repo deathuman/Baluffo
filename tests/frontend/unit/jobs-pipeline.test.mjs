@@ -81,3 +81,29 @@ test("updateJobsPipelineUi updates button and ignores deprecated progress elemen
   assert.equal(button.classList.contains("running"), true);
   assert.equal(progress.textContent, "legacy");
 });
+
+test("updateJobsPipelineUi falls back to idle label when idle buttonLabel is empty", () => {
+  const button = {
+    textContent: "Run Discovery + Fetch + Sync",
+    dataset: {},
+    disabled: true,
+    classList: createClassList(),
+    setAttribute(name, value) {
+      this[name] = value;
+    }
+  };
+
+  updateJobsPipelineUi(
+    { jobsPipelineRunBtn: button },
+    {
+      running: false,
+      disabled: false,
+      buttonLabel: ""
+    }
+  );
+
+  assert.equal(button.textContent, "Run Discovery + Fetch + Sync");
+  assert.equal(button.disabled, false);
+  assert.equal(button["aria-disabled"], "false");
+  assert.equal(button.classList.contains("running"), false);
+});

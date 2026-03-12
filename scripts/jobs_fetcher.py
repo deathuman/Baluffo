@@ -50,10 +50,13 @@ from scripts.pipeline_io import (
 RawJob = Dict[str, Any]
 SourceLoader = Callable[..., List[RawJob]]
 
-SHEET_ID = "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE"
-SHEET_GID = "1560329579"
-GOOGLE_CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={SHEET_GID}"
-GOOGLE_ALL_ORIGINS_URL = f"https://api.allorigins.win/raw?url={quote(GOOGLE_CSV_URL, safe='')}"
+DEFAULT_GOOGLE_SHEET_ID = "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE"
+DEFAULT_GOOGLE_SHEET_GID = "1560329579"
+GOOGLE_SHEETS_SOURCES = [
+    {"name": "google_sheets", "sheetId": DEFAULT_GOOGLE_SHEET_ID, "gid": DEFAULT_GOOGLE_SHEET_GID},
+    {"name": "google_sheets_1er2oaxo", "sheetId": "1eR2oAXOuflr8CZeGoz3JTrsgNj3KuefbdXJOmNtjEVM", "gid": "0"},
+    {"name": "google_sheets_1mvqhxat", "sheetId": "1MvqHXAtXP_6ogtfrLM0g_RzGdJQyx5Q8mhPX4lZECkI", "gid": "0"},
+]
 REMOTE_OK_URLS = [
     "https://remoteok.com/api",
     "https://remoteok.io/api",
@@ -721,10 +724,13 @@ def find_column_index(headers: Sequence[str], exact_names: Sequence[str], contai
 def find_company_column(headers: Sequence[str]) -> int:
     normalized = [norm_text(header) for header in headers]
     for idx, header in enumerate(normalized):
-        if header in {"company", "company name"}:
+        if header in {"company", "company name", "studio", "employer", "organization", "organisation"}:
             return idx
     for idx, header in enumerate(normalized):
-        if "company" in header and not any(part in header for part in ("type", "category", "sector", "industry")):
+        if (
+            ("company" in header or "studio" in header or "employer" in header or "organization" in header or "organisation" in header)
+            and not any(part in header for part in ("type", "category", "sector", "industry"))
+        ):
             return idx
     return -1
 
@@ -793,9 +799,17 @@ def parse_google_sheets_csv(csv_text: str) -> List[RawJob]:
         normalized = [norm_text(cell) for cell in row if norm_text(cell)]
         if not normalized:
             continue
-        has_title = "title" in normalized or "role" in normalized
-        has_company = "company name" in normalized or "company" in normalized
-        has_location = "city" in normalized or "country" in normalized
+        has_title = any(
+            token in header
+            for header in normalized
+            for token in ("title", "role", "job", "position")
+        )
+        has_company = any(
+            token in header
+            for header in normalized
+            for token in ("company", "studio", "employer", "organization", "organisation")
+        )
+        has_location = "city" in normalized or "country" in normalized or "postal code" in normalized or "location" in normalized
         if has_title and has_company and has_location:
             header_idx = idx
             break
@@ -805,13 +819,29 @@ def parse_google_sheets_csv(csv_text: str) -> List[RawJob]:
     headers = [clean_text(header) for header in rows[header_idx]]
     company_idx = find_company_column(headers)
     company_candidates = company_name_candidate_indexes(headers, company_idx)
-    title_idx = find_column_index(headers, ["title", "role"], ["title", "role"])
+    title_idx = find_column_index(headers, ["title", "role", "job", "position"], ["title", "role", "job", "position"])
     city_idx = find_column_index(headers, ["city"], ["city"])
     country_idx = find_column_index(headers, ["country"], ["country"])
-    location_idx = find_column_index(headers, ["location type", "work type"], ["location", "work type", "remote"])
-    contract_idx = find_column_index(headers, ["employment type", "contract type", "employment", "contract"], ["employment", "contract"])
-    link_idx = find_column_index(headers, ["job link", "url", "apply"], ["job link", "url", "apply"])
-    sector_idx = find_column_index(headers, ["sector", "industry", "company type", "company category"], ["sector", "industry", "company type", "company category"])
+    location_idx = find_column_index(
+        headers,
+        ["location type", "work type", "fully remote", "remote"],
+        ["location", "work type", "remote", "fully remote"],
+    )
+    contract_idx = find_column_index(
+        headers,
+        ["employment type", "contract type", "employment", "contract", "job type"],
+        ["employment", "contract", "job type"],
+    )
+    link_idx = find_column_index(headers, ["job link", "url", "apply", "link"], ["job link", "url", "apply", "link"])
+    sector_idx = find_column_index(
+        headers,
+        ["sector", "industry", "company type", "company category", "job category"],
+        ["sector", "industry", "company type", "company category", "job category"],
+    )
+
+    default_country = "Unknown"
+    if country_idx < 0 and "german games industry" in norm_text(csv_text[:3000]):
+        default_country = "Germany"
 
     if title_idx < 0 or company_idx < 0:
         return []
@@ -829,7 +859,7 @@ def parse_google_sheets_csv(csv_text: str) -> List[RawJob]:
                 "title": title,
                 "company": company,
                 "city": clean_text(row[city_idx] if 0 <= city_idx < len(row) else ""),
-                "country": clean_text(row[country_idx] if 0 <= country_idx < len(row) else "Unknown"),
+                "country": clean_text(row[country_idx] if 0 <= country_idx < len(row) else default_country),
                 "workType": clean_text(row[location_idx] if 0 <= location_idx < len(row) else "On-site"),
                 "contractType": clean_text(row[contract_idx] if 0 <= contract_idx < len(row) else ""),
                 "jobLink": clean_text(row[link_idx] if 0 <= link_idx < len(row) else ""),
@@ -1783,9 +1813,30 @@ def fetch_with_retries(url: str, fetch_text: Callable[[str, int], str], timeout_
     raise RuntimeError(str(last_error) if last_error else f"Unknown fetch error for {url}")
 
 
-def run_google_sheets_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def google_sheet_candidate_urls(sheet_id: str, gid: str) -> List[str]:
+    csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+    gviz_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+    pub_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv"
+    return [
+        csv_url,
+        gviz_csv_url,
+        pub_csv_url,
+        f"https://api.allorigins.win/raw?url={quote(csv_url, safe='')}",
+        f"https://api.allorigins.win/raw?url={quote(gviz_csv_url, safe='')}",
+    ]
+
+
+def run_google_sheets_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    sheet_id: str = DEFAULT_GOOGLE_SHEET_ID,
+    gid: str = DEFAULT_GOOGLE_SHEET_GID,
+) -> List[RawJob]:
     errors: List[str] = []
-    for url in [GOOGLE_CSV_URL, GOOGLE_ALL_ORIGINS_URL]:
+    for url in google_sheet_candidate_urls(sheet_id, gid):
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             jobs = parse_google_sheets_csv(text)
@@ -3938,8 +3989,36 @@ def default_source_loaders(
         enabled=bool(social_enabled),
         lookback_minutes=DEFAULT_SOCIAL_LOOKBACK_MINUTES,
     )
+    google_sheet_loaders: Dict[str, SourceLoader] = {}
+    for source in GOOGLE_SHEETS_SOURCES:
+        source_name = clean_text(source.get("name"))
+        sheet_id = clean_text(source.get("sheetId"))
+        gid = clean_text(source.get("gid") or "0")
+        if not source_name or not sheet_id:
+            continue
+
+        def _loader(
+            *,
+            fetch_text: Callable[[str, int], str],
+            timeout_s: int,
+            retries: int,
+            backoff_s: float,
+            _sheet_id: str = sheet_id,
+            _gid: str = gid,
+        ) -> List[RawJob]:
+            return run_google_sheets_source(
+                fetch_text=fetch_text,
+                timeout_s=timeout_s,
+                retries=retries,
+                backoff_s=backoff_s,
+                sheet_id=_sheet_id,
+                gid=_gid,
+            )
+
+        google_sheet_loaders[source_name] = _loader
+
     available = {
-        "google_sheets": run_google_sheets_source,
+        **google_sheet_loaders,
         "remote_ok": run_remote_ok_source,
         "gamesindustry": run_gamesindustry_source,
         "epic_games_careers": run_epic_games_careers_source,

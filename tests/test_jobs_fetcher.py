@@ -26,6 +26,31 @@ class JobsFetcherTests(unittest.TestCase):
         self.assertEqual(rows[0]["title"], "Gameplay Programmer")
         self.assertEqual(rows[0]["company"], "Pixel Forge")
 
+    def test_parse_google_sheets_csv_supports_job_type_link_headers(self) -> None:
+        csv_text = (
+            "Intro row,,,,,,,,,\n"
+            "Company,Company Category,Job Category,Job,Job Type,Postal Code,City,Fully Remote?,Link,Added\n"
+            "Studio A,Developer,Programming,Gameplay Programmer,Full-Time,10115,Berlin,Yes,https://example.com/jobs/1,2026-03-10\n"
+        )
+        rows = jf.parse_google_sheets_csv(csv_text)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["title"], "Gameplay Programmer")
+        self.assertEqual(rows[0]["company"], "Studio A")
+        self.assertEqual(rows[0]["contractType"], "Full-Time")
+        self.assertEqual(rows[0]["jobLink"], "https://example.com/jobs/1")
+        self.assertEqual(rows[0]["sector"], "Developer")
+
+    def test_parse_google_sheets_csv_supports_studio_header_alias(self) -> None:
+        csv_text = (
+            "Studio,Country,Job Title,Experience Level,Link\n"
+            "Acme Games,Germany,Senior Gameplay Engineer,Senior,https://example.com/jobs/42\n"
+        )
+        rows = jf.parse_google_sheets_csv(csv_text)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["company"], "Acme Games")
+        self.assertEqual(rows[0]["country"], "Germany")
+        self.assertEqual(rows[0]["title"], "Senior Gameplay Engineer")
+
     def test_parse_args_uses_config_backed_output_and_social_defaults(self) -> None:
         prev_argv = list(sys.argv)
         try:
@@ -802,9 +827,15 @@ class JobsFetcherTests(unittest.TestCase):
 
     def test_scrapy_static_registration_in_default_loaders(self) -> None:
         self.assertIn("scrapy_static_sources", jfr.DEFAULT_SOURCE_LOADER_NAMES)
+        self.assertIn("google_sheets_1er2oaxo", jfr.DEFAULT_SOURCE_LOADER_NAMES)
+        self.assertIn("google_sheets_1mvqhxat", jfr.DEFAULT_SOURCE_LOADER_NAMES)
         self.assertEqual(jfr.SOURCE_REPORT_META["scrapy_static_sources"]["adapter"], "scrapy_static")
+        self.assertEqual(jfr.SOURCE_REPORT_META["google_sheets_1er2oaxo"]["adapter"], "csv")
+        self.assertEqual(jfr.SOURCE_REPORT_META["google_sheets_1mvqhxat"]["adapter"], "csv")
         names = [name for name, _ in jf.default_source_loaders()]
         self.assertIn("scrapy_static_sources", names)
+        self.assertIn("google_sheets_1er2oaxo", names)
+        self.assertIn("google_sheets_1mvqhxat", names)
 
     def test_run_pipeline_writes_browser_fallback_queue(self) -> None:
         def scraper_loader(**_: object):
@@ -1224,6 +1255,8 @@ class JobsFetcherTests(unittest.TestCase):
 
             sources = {row["name"]: row for row in report["sources"]}
             self.assertEqual(sources["google_sheets"]["status"], "ok")
+            self.assertEqual(sources["google_sheets_1er2oaxo"]["status"], "ok")
+            self.assertEqual(sources["google_sheets_1mvqhxat"]["status"], "ok")
             self.assertEqual(sources["remote_ok"]["status"], "ok")
             self.assertEqual(sources["gamesindustry"]["status"], "ok")
             self.assertEqual(sources["greenhouse_boards"]["status"], "ok")

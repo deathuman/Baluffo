@@ -180,7 +180,55 @@ function sourceUrlFromRegistry(row) {
   ).trim();
 }
 
-export function normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackSource) {
+function sanitizeSourceUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    return parsed.href;
+  } catch {
+    return "";
+  }
+}
+
+function isStaticSourceReportName(name) {
+  return String(name || "").trim().toLowerCase().startsWith("static_source::");
+}
+
+function compactStaticSourceLabel(rawName) {
+  const text = String(rawName || "").trim();
+  const marker = "listing_url:";
+  const idx = text.toLowerCase().indexOf(marker);
+  if (idx >= 0) {
+    const rawUrl = text.slice(idx + marker.length).trim();
+    const safeUrl = sanitizeSourceUrl(rawUrl);
+    if (safeUrl) {
+      try {
+        const parsed = new URL(safeUrl);
+        const host = String(parsed.hostname || "").trim();
+        if (host) return `Static source (${host})`;
+      } catch {
+        // Keep generic fallback below.
+      }
+    }
+  }
+  return "Static source";
+}
+
+function resolveSheetsForMetadata(sheetsFallbackSource, sheetsFallbackSources) {
+  const list = Array.isArray(sheetsFallbackSources) ? sheetsFallbackSources : [];
+  if (list.length > 0) {
+    return list.filter(row => row && typeof row.sheetId === "string" && row.sheetId.trim());
+  }
+  if (sheetsFallbackSource && typeof sheetsFallbackSource.sheetId === "string") {
+    return [sheetsFallbackSource];
+  }
+  return [];
+}
+
+export function normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackSource, sheetsFallbackSources) {
+  const MAX_STATIC_ACTIVE_ROWS = 8;
   const rows = [];
   const seen = new Set();
   const push = (name, url, status, note = "") => {
@@ -190,7 +238,12 @@ export function normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackS
     rows.push({ name, url, status, note });
   };
 
-  push("Google Sheets", `https://docs.google.com/spreadsheets/d/${sheetsFallbackSource.sheetId}/edit?gid=${sheetsFallbackSource.gid}`, "core");
+  const sheets = resolveSheetsForMetadata(sheetsFallbackSource, sheetsFallbackSources);
+  sheets.forEach((sheet, index) => {
+    const gid = String(sheet.gid ?? "0");
+    const name = index === 0 ? "Google Sheets" : `Google Sheets ${index + 1}`;
+    push(name, `https://docs.google.com/spreadsheets/d/${sheet.sheetId}/edit?gid=${gid}`, "core");
+  });
   push("Remote OK", "https://remoteok.com/", "core");
   push("GamesIndustry Jobs", "https://jobs.gamesindustry.biz/jobs", "core");
 
@@ -200,21 +253,57 @@ export function normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackS
     reportByName.set(String(item?.name || ""), item);
   });
 
-  const activeRows = Array.isArray(activeRegistry) ? activeRegistry : [];
-  activeRows
+  const activeRows = (Array.isArray(activeRegistry) ? activeRegistry : [])
     .filter(row => row && typeof row === "object")
-    .forEach(row => {
-      const name = String(row.name || row.studio || row.adapter || "Source").trim();
-      const url = sourceUrlFromRegistry(row);
-      push(name, url, "active");
-    });
+    .map(row => ({ ...row, _safeUrl: sanitizeSourceUrl(sourceUrlFromRegistry(row)) }));
 
-  reportSources
-    .filter(item => String(item?.status || "").toLowerCase() === "excluded")
+  const activeStaticRows = activeRows.filter(row => String(row.adapter || "").trim().toLowerCase() === "static");
+  const activeNonStaticRows = activeRows.filter(row => String(row.adapter || "").trim().toLowerCase() !== "static");
+
+  activeNonStaticRows.forEach(row => {
+      const name = String(row.name || row.studio || row.adapter || "Source").trim();
+      const url = row._safeUrl || "";
+      push(name, url, "active");
+  });
+
+  const staticRowsSorted = activeStaticRows
+    .slice()
+    .sort((a, b) => String(a.name || a.studio || "").localeCompare(String(b.name || b.studio || "")));
+  staticRowsSorted
+    .slice(0, MAX_STATIC_ACTIVE_ROWS)
+    .forEach(row => {
+      const name = String(row.name || row.studio || "Static source").trim();
+      push(name, row._safeUrl || "", "active");
+    });
+  if (staticRowsSorted.length > MAX_STATIC_ACTIVE_ROWS) {
+    push(
+      "Static sources",
+      "",
+      "active",
+      `${(staticRowsSorted.length - MAX_STATIC_ACTIVE_ROWS).toLocaleString()} additional static sources hidden for readability.`
+    );
+  }
+
+  const excludedRows = reportSources.filter(item => String(item?.status || "").toLowerCase() === "excluded");
+  const excludedStaticRows = excludedRows.filter(item => isStaticSourceReportName(item?.name));
+  const excludedNonStaticRows = excludedRows.filter(item => !isStaticSourceReportName(item?.name));
+
+  excludedNonStaticRows
     .forEach(item => {
       const name = String(item?.name || "Excluded source");
       push(name, "", "excluded", String(item?.error || "").trim());
     });
+  if (excludedStaticRows.length > 0) {
+    const labels = new Set(excludedStaticRows.slice(0, 3).map(row => compactStaticSourceLabel(row?.name)));
+    const hint = Array.from(labels).join(", ");
+    const suffix = hint ? ` (${hint})` : "";
+    push(
+      "Static sources (excluded)",
+      "",
+      "excluded",
+      `${excludedStaticRows.length.toLocaleString()} static sources excluded${suffix}.`
+    );
+  }
 
   rows.sort((a, b) => a.name.localeCompare(b.name));
   return { rows, reportByName };
@@ -264,6 +353,7 @@ export async function renderDataSourcesPanel(options) {
     sourceRegistryActiveUrls,
     jobsFetchReportUrls,
     sheetsFallbackSource,
+    sheetsFallbackSources,
     fetchJsonFromCandidates
   } = options;
 
@@ -274,7 +364,7 @@ export async function renderDataSourcesPanel(options) {
     fetchJsonFromCandidates(jobsFetchReportUrls)
   ]);
 
-  const normalized = normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackSource);
+  const normalized = normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackSource, sheetsFallbackSources);
   renderSourceListRows(dataSourcesListEl, normalized.rows, normalized.reportByName);
 
   if (dataSourcesCaptionEl) {

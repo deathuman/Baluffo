@@ -242,10 +242,11 @@ const UNIFIED_CSV_SOURCES = [
   { name: "Unified CSV (local data)", url: "data/jobs-unified.csv" },
   { name: "Unified CSV (root)", url: "jobs-unified.csv" }
 ];
-const SHEETS_FALLBACK_SOURCE = {
-  sheetId: "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE",
-  gid: "1560329579"
-};
+const SHEETS_FALLBACK_SOURCES = [
+  { sheetId: "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE", gid: "1560329579" },
+  { sheetId: "1eR2oAXOuflr8CZeGoz3JTrsgNj3KuefbdXJOmNtjEVM", gid: "0" },
+  { sheetId: "1MvqHXAtXP_6ogtfrLM0g_RzGdJQyx5Q8mhPX4lZECkI", gid: "0" }
+];
 const SOURCE_REGISTRY_ACTIVE_URLS = [
   "data/source-registry-active.json",
   "source-registry-active.json"
@@ -743,7 +744,7 @@ function handlePipelineCompletionStatus(payload) {
   updateJobsPipelineUi({
     running: false,
     disabled: !jobsPipelineUiState.bridgeOnline,
-    buttonLabel: hasError ? "Error" : "Ready",
+    buttonLabel: hasError ? "Error" : "",
     isError: hasError
   });
   if (updatesFound) {
@@ -783,7 +784,7 @@ async function pollJobsPipelineStatus() {
       updateJobsPipelineUi({
         running: false,
         disabled: false,
-        buttonLabel: "Ready"
+        buttonLabel: ""
       });
     }
     scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_IDLE_POLL_MS);
@@ -1401,7 +1402,7 @@ function displayJobs(jobs) {
   if (jobs.length === 0) {
     jobsList.innerHTML = '<div class="no-results">No jobs found matching your filters.</div>';
     pagination.innerHTML = "";
-    updateResultsSummary(0, 0, 0);
+    updateResultsSummary(0, 0, 0, allJobs.length);
     emitDesktopStartupMetric("jobs_display_empty");
     return;
   }
@@ -1445,7 +1446,7 @@ function displayJobs(jobs) {
   emitDesktopStartupMetric("jobs_display_bind_complete", {
     pageJobs: pageJobs.length
   });
-  updateResultsSummary(jobs.length, startIndex + 1, startIndex + pageJobs.length);
+  updateResultsSummary(jobs.length, startIndex + 1, startIndex + pageJobs.length, allJobs.length);
   emitDesktopStartupMetric("jobs_display_complete", {
     startIndex: startIndex + 1,
     endIndex: startIndex + pageJobs.length,
@@ -1587,13 +1588,21 @@ function enableKeyboardNav() {
   });
 }
 
-function updateResultsSummary(total, from, to) {
+function updateResultsSummary(total, from, to, loadedTotal = total) {
   if (!resultsSummary) return;
+  const loaded = Number.isFinite(Number(loadedTotal)) ? Number(loadedTotal) : total;
   if (total === 0) {
+    if (loaded > 0) {
+      resultsSummary.textContent = `Showing 0 jobs (${loaded.toLocaleString()} loaded)`;
+      return;
+    }
     resultsSummary.textContent = "0 jobs";
     return;
   }
-  const pageText = `Showing ${from}-${to} of ${total.toLocaleString()} jobs`;
+  const filteredText = `Showing ${from}-${to} of ${total.toLocaleString()} jobs`;
+  const pageText = loaded > total
+    ? `${filteredText} (${loaded.toLocaleString()} loaded)`
+    : filteredText;
   resultsSummary.textContent = pageText;
 }
 
@@ -1879,7 +1888,7 @@ async function fetchUnifiedJobs() {
   return fetchUnifiedJobsFromData({
     unifiedJsonSources: UNIFIED_JSON_SOURCES,
     unifiedCsvSources: UNIFIED_CSV_SOURCES,
-    sheetsFallbackSource: SHEETS_FALLBACK_SOURCE,
+    sheetsFallbackSources: SHEETS_FALLBACK_SOURCES,
     setSourceStatus,
     parseUnifiedPayload: payload => parseUnifiedJobsPayload(payload, jobsParsing),
     parseCSV: parseJobsCsv
@@ -1896,7 +1905,7 @@ async function renderDataSources() {
     dataSourcesCaptionEl,
     sourceRegistryActiveUrls: SOURCE_REGISTRY_ACTIVE_URLS,
     jobsFetchReportUrls: JOBS_FETCH_REPORT_URLS,
-    sheetsFallbackSource: SHEETS_FALLBACK_SOURCE,
+    sheetsFallbackSources: SHEETS_FALLBACK_SOURCES,
     fetchJsonFromCandidates
   });
 }
@@ -1998,7 +2007,7 @@ function showError(message) {
   showJobsError(jobsList, pagination, message, () => {
     init().catch(err => logJobsError("Retry failed", err));
   });
-  updateResultsSummary(0, 0, 0);
+  updateResultsSummary(0, 0, 0, allJobs.length);
 }
 
 export { bootJobsPage as boot };

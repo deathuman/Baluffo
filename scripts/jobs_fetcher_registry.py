@@ -7,6 +7,8 @@ from typing import Dict, List
 
 DEFAULT_SOURCE_LOADER_NAMES: List[str] = [
     "google_sheets",
+    "google_sheets_1er2oaxo",
+    "google_sheets_1mvqhxat",
     "remote_ok",
     "gamesindustry",
     "epic_games_careers",
@@ -25,6 +27,8 @@ DEFAULT_SOURCE_LOADER_NAMES: List[str] = [
 
 SOURCE_REPORT_META: Dict[str, Dict[str, str]] = {
     "google_sheets": {"adapter": "csv", "studio": "community_sheet", "fetchStrategy": "http"},
+    "google_sheets_1er2oaxo": {"adapter": "csv", "studio": "community_sheet", "fetchStrategy": "http"},
+    "google_sheets_1mvqhxat": {"adapter": "csv", "studio": "community_sheet", "fetchStrategy": "http"},
     "remote_ok": {"adapter": "api", "studio": "remote_ok", "fetchStrategy": "http"},
     "gamesindustry": {"adapter": "html", "studio": "gamesindustry", "fetchStrategy": "http"},
     "epic_games_careers": {"adapter": "api", "studio": "epic_games", "fetchStrategy": "http"},

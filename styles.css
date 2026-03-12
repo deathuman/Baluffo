@@ -947,7 +947,7 @@ h1 {
 }
 
 .jobs-pipeline-btn {
-  min-height: 2.55rem;
+  min-height: 0;
   font-weight: 700;
   white-space: nowrap;
 }
