@@ -62,6 +62,13 @@ def build_site_request_handler(directory: Path, *, data_dir: Path | None = None,
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(directory), **kwargs)
 
+        def end_headers(self):  # noqa: N802
+            # Desktop runtime should always load the latest local bundle assets.
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+            return super().end_headers()
+
         def do_GET(self):  # noqa: N802
             trace_enabled = bool(startup_probe and data_dir)
             path_only = str(getattr(self, "path", "") or "").split("?", 1)[0]

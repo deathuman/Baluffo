@@ -11,6 +11,7 @@ export function createJobsPipelineUiState() {
     pollingTimer: null,
     runId: "",
     active: false,
-    bridgeOnline: false
+    bridgeOnline: false,
+    startedAt: ""
   };
 }

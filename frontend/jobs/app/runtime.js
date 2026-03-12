@@ -51,7 +51,7 @@ import {
   setJobsAuthStatus
 } from "./auth.js";
 import {
-  getPipelineProgressLabel,
+  getPipelineRunningLabel,
   updateJobsPipelineUi as updateJobsPipelineUiFromModule,
   clearJobsPipelinePolling as clearJobsPipelinePollingFromModule,
   scheduleJobsPipelineStatusPoll as scheduleJobsPipelineStatusPollFromModule,
@@ -214,7 +214,6 @@ let quickFiltersResetBtn;
 let dataSourcesListEl;
 let dataSourcesCaptionEl;
 let jobsPipelineRunBtn;
-let jobsPipelineProgressEl;
 
 let currentUser = null;
 let savedJobKeys = new Set();
@@ -510,8 +509,7 @@ function cacheDom() {
     quickFiltersResetBtn,
     dataSourcesListEl,
     dataSourcesCaptionEl,
-    jobsPipelineRunBtn,
-    jobsPipelineProgressEl
+    jobsPipelineRunBtn
   } = cacheJobsDom(document));
 }
 
@@ -717,7 +715,7 @@ async function init() {
 
 function updateJobsPipelineUi({ running = false, disabled = false, buttonLabel = "", progressLabel = "", isError = false } = {}) {
   updateJobsPipelineUiFromModule(
-    { jobsPipelineRunBtn, jobsPipelineProgressEl },
+    { jobsPipelineRunBtn },
     { running, disabled, buttonLabel, progressLabel, isError }
   );
 }
@@ -737,13 +735,16 @@ function scheduleJobsPipelineStatusPoll(delayMs) {
 
 function handlePipelineCompletionStatus(payload) {
   const updatesFound = Boolean(payload?.updatesFound || payload?.refreshRecommended);
+  const hasError = Boolean(payload?.error) || String(payload?.stage || "").trim().toLowerCase() === "error";
   setRefreshJobsNeedsAttention(updatesFound);
   jobsPipelineUiState.active = false;
   jobsPipelineUiState.runId = "";
+  jobsPipelineUiState.startedAt = "";
   updateJobsPipelineUi({
     running: false,
     disabled: !jobsPipelineUiState.bridgeOnline,
-    progressLabel: updatesFound ? "Pipeline complete. Updates found." : "Pipeline complete."
+    buttonLabel: hasError ? "Error" : "Ready",
+    isError: hasError
   });
   if (updatesFound) {
     showToast("Pipeline completed. Refresh jobs to load new updates.", "success");
@@ -762,11 +763,14 @@ async function pollJobsPipelineStatus() {
     if (active) {
       jobsPipelineUiState.active = true;
       jobsPipelineUiState.runId = runId || jobsPipelineUiState.runId;
+      jobsPipelineUiState.startedAt = String(payload?.startedAt || jobsPipelineUiState.startedAt || "");
       updateJobsPipelineUi({
         running: true,
         disabled: true,
-        buttonLabel: "Pipeline Running...",
-        progressLabel: getPipelineProgressLabel(payload)
+        buttonLabel: getPipelineRunningLabel({
+          ...payload,
+          startedAt: jobsPipelineUiState.startedAt
+        })
       });
       scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_POLL_MS);
       return;
@@ -779,7 +783,7 @@ async function pollJobsPipelineStatus() {
       updateJobsPipelineUi({
         running: false,
         disabled: false,
-        progressLabel: "Ready"
+        buttonLabel: "Ready"
       });
     }
     scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_IDLE_POLL_MS);
@@ -787,10 +791,11 @@ async function pollJobsPipelineStatus() {
     jobsPipelineUiState.bridgeOnline = false;
     jobsPipelineUiState.active = false;
     jobsPipelineUiState.runId = "";
+    jobsPipelineUiState.startedAt = "";
     updateJobsPipelineUi({
       running: false,
       disabled: true,
-      progressLabel: "Bridge offline (desktop runtime required)",
+      buttonLabel: "Error",
       isError: true
     });
     scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_IDLE_POLL_MS);
@@ -801,7 +806,7 @@ function ensureJobsPipelineStatusWatch() {
   updateJobsPipelineUi({
     running: false,
     disabled: true,
-    progressLabel: "Checking bridge..."
+    buttonLabel: "Checking..."
   });
   pollJobsPipelineStatus().catch(() => {});
 }
@@ -813,7 +818,6 @@ async function triggerJobsPipelineRun() {
     running: true,
     disabled: true,
     buttonLabel: "Starting Pipeline...",
-    progressLabel: "Requesting pipeline start..."
   });
   try {
     const payload = await callJobsBridge("/tasks/run-jobs-pipeline", {
@@ -829,11 +833,14 @@ async function triggerJobsPipelineRun() {
     jobsPipelineUiState.bridgeOnline = true;
     jobsPipelineUiState.active = true;
     jobsPipelineUiState.runId = String(payload?.runId || "");
+    jobsPipelineUiState.startedAt = String(payload?.startedAt || new Date().toISOString());
     updateJobsPipelineUi({
       running: true,
       disabled: true,
-      buttonLabel: "Pipeline Running...",
-      progressLabel: getPipelineProgressLabel(payload)
+      buttonLabel: getPipelineRunningLabel({
+        ...payload,
+        startedAt: jobsPipelineUiState.startedAt
+      })
     });
     showToast("Jobs pipeline started.", "success");
     scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_POLL_MS);
@@ -841,10 +848,11 @@ async function triggerJobsPipelineRun() {
     const message = String(err?.message || "Could not start jobs pipeline.");
     jobsPipelineUiState.active = false;
     jobsPipelineUiState.runId = "";
+    jobsPipelineUiState.startedAt = "";
     updateJobsPipelineUi({
       running: false,
       disabled: true,
-      progressLabel: "Bridge offline (desktop runtime required)",
+      buttonLabel: "Error",
       isError: true
     });
     showToast(message.toLowerCase().includes("409") ? "Pipeline already running." : "Could not start jobs pipeline.", "error");

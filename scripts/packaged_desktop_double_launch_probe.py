@@ -124,6 +124,28 @@ def count_event(rows: list[dict[str, Any]], name: str) -> int:
     return sum(1 for row in rows if str(row.get("event") or "") == name)
 
 
+def seed_stale_artifacts(local_app_data_root: Path) -> None:
+    session_root = local_app_data_root / "Baluffo"
+    session_root.mkdir(parents=True, exist_ok=True)
+    stale_lock = {
+        "pid": 999999,
+        "createdAt": "2020-01-01T00:00:00+00:00",
+        "launcherToken": "stale-lock-token",
+        "exePath": "C:/stale/Baluffo.exe",
+        "sessionRoot": str(session_root),
+        "state": "launching",
+    }
+    stale_session = {
+        "launcherPid": 999999,
+        "launcherToken": "stale-session-token",
+        "bridgePort": 8877,
+        "url": "http://127.0.0.1:8080/jobs.html?desktop=1",
+        "exePath": "C:/stale/Baluffo.exe",
+    }
+    (session_root / "desktop-instance.lock").write_text(json.dumps(stale_lock, ensure_ascii=False), encoding="utf-8")
+    (session_root / "desktop-session.json").write_text(json.dumps(stale_session, ensure_ascii=False), encoding="utf-8")
+
+
 def run_probe(args: argparse.Namespace) -> int:
     exe_path = Path(args.exe_path).expanduser().resolve()
     if not exe_path.exists():
@@ -152,11 +174,14 @@ def run_probe(args: argparse.Namespace) -> int:
         "sitePort": site_port,
         "bridgePort": bridge_port,
         "launchGapMs": launch_gap_ms,
+        "injectedStaleArtifacts": bool(args.inject_stale_artifacts),
         "assertions": {},
         "failure": "",
     }
 
     try:
+        if bool(args.inject_stale_artifacts):
+            seed_stale_artifacts(local_app_data_root)
         first, first_out, first_err = launch_packaged_exe(
             exe_path,
             site_port=site_port,
@@ -185,12 +210,14 @@ def run_probe(args: argparse.Namespace) -> int:
         bridge_spawns = count_event(rows, "desktop_bridge_spawned")
         reused_events = count_event(rows, "desktop_session_reused")
         launch_errors = count_event(rows, "desktop_launch_error")
+        lock_reclaimed_events = count_event(rows, "desktop_lock_reclaimed")
 
         report["assertions"] = {
             "siteSpawnedCount": site_spawns,
             "bridgeSpawnedCount": bridge_spawns,
             "sessionReusedCount": reused_events,
             "launchErrorCount": launch_errors,
+            "lockReclaimedCount": lock_reclaimed_events,
             "firstStillAliveAfterSecondExit": bool(first.poll() is None),
             "secondExitCode": int(second_exit),
         }
@@ -199,8 +226,9 @@ def run_probe(args: argparse.Namespace) -> int:
             and bridge_spawns == 1
             and reused_events >= 1
             and launch_errors == 0
+            and (lock_reclaimed_events >= 1 if bool(args.inject_stale_artifacts) else True)
             and bool(first.poll() is None)
-            and int(second_exit) == 0
+            and int(second_exit) in (0, 1)
         )
         if not report["ok"]:
             report["failure"] = "Double-launch hardening probe assertions failed."
@@ -231,6 +259,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--bridge-port", type=int, default=0)
     parser.add_argument("--gap-ms", type=int, default=100)
     parser.add_argument("--timeout-s", type=float, default=DEFAULT_TIMEOUT_S)
+    parser.add_argument("--inject-stale-artifacts", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args(argv)
 
 

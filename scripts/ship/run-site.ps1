@@ -15,11 +15,7 @@ $Root = if (Test-Path (Join-Path $PSScriptRoot "scripts")) {
 } else {
   (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
 }
-$Launcher = Join-Path $Root "scripts\ship\runtime_launcher.py"
 $CurrentPointer = Join-Path $Root "app\current.txt"
-if (-not (Test-Path $Launcher)) {
-  throw "Runtime launcher not found: $Launcher"
-}
 $CurrentPointer = Join-Path $Root "app\current.txt"
 if (-not (Test-Path $CurrentPointer)) {
   throw "Missing app current pointer: $CurrentPointer"
@@ -40,7 +36,7 @@ Write-Host "[baluffo-ship] Python: $PythonCommand $($PythonArgs -join ' ')" -For
 
 Push-Location $ActiveRoot
 try {
-  & $PythonCommand @PythonArgs $Launcher site --root $Root --port $Port
+  & $PythonCommand @PythonArgs -m scripts.ship.runtime_launcher site --root $Root --port $Port
 }
 finally {
   Pop-Location

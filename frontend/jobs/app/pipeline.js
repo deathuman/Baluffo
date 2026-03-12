@@ -1,3 +1,48 @@
+function titleCaseWords(value) {
+  return String(value || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(token => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function normalizePipelineStage(payload) {
+  const progress = payload?.progress;
+  if (progress && typeof progress === "object") {
+    const label = String(progress.label || "").trim();
+    if (label) {
+      const cleaned = label
+        .replace(/^running\s+/i, "")
+        .replace(/\.\.\.$/, "")
+        .trim();
+      if (cleaned) return titleCaseWords(cleaned);
+    }
+  }
+  const rawStage = String(payload?.stage || "").trim().toLowerCase();
+  if (rawStage) {
+    if (rawStage === "sync_push") return "Sync Push";
+    if (rawStage === "sync_pull") return "Sync Pull";
+    return titleCaseWords(rawStage.replace(/_/g, " "));
+  }
+  return "Pipeline";
+}
+
+export function formatPipelineElapsed(startedAt, nowMs = Date.now()) {
+  const startedMs = Date.parse(String(startedAt || ""));
+  if (!Number.isFinite(startedMs)) return "";
+  const elapsedSeconds = Math.max(0, Math.floor((Number(nowMs) - startedMs) / 1000));
+  if (elapsedSeconds < 60) return `${elapsedSeconds}s`;
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
+export function getPipelineRunningLabel(payload, nowMs = Date.now()) {
+  const stage = normalizePipelineStage(payload);
+  const elapsed = formatPipelineElapsed(payload?.startedAt, nowMs);
+  return elapsed ? `${stage} running... ${elapsed}` : `${stage} running...`;
+}
+
 export function getPipelineProgressLabel(payload) {
   const progress = payload?.progress;
   if (progress && typeof progress === "object") {
@@ -23,12 +68,11 @@ export function updateJobsPipelineUi(refs, { running = false, disabled = false, 
     jobsPipelineRunBtn.disabled = Boolean(disabled);
     jobsPipelineRunBtn.setAttribute("aria-disabled", jobsPipelineRunBtn.disabled ? "true" : "false");
     jobsPipelineRunBtn.classList.toggle("running", Boolean(running));
+    jobsPipelineRunBtn.classList.toggle("log-error", Boolean(isError));
   }
-  if (jobsPipelineProgressEl) {
-    jobsPipelineProgressEl.textContent = String(progressLabel || "");
-    jobsPipelineProgressEl.classList.toggle("running", Boolean(running));
-    jobsPipelineProgressEl.classList.toggle("log-error", Boolean(isError));
-  }
+  // Deprecated on jobs page: pipeline status is surfaced via button label only.
+  void jobsPipelineProgressEl;
+  void progressLabel;
 }
 
 export function clearJobsPipelinePolling(state) {

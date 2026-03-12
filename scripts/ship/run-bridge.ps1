@@ -20,16 +20,7 @@ $Root = if (Test-Path (Join-Path $PSScriptRoot "scripts")) {
 if ([string]::IsNullOrWhiteSpace($DataDir)) {
   $DataDir = Join-Path $Root "data"
 }
-$Manager = Join-Path $Root "scripts\ship\update_manager.py"
-$Launcher = Join-Path $Root "scripts\ship\runtime_launcher.py"
-if (-not (Test-Path $Manager)) {
-  throw "Update manager not found: $Manager"
-}
-if (-not (Test-Path $Launcher)) {
-  throw "Runtime launcher not found: $Launcher"
-}
-
-& $PythonCommand @PythonArgs $Manager startup-check --root $Root --data-dir $DataDir
+& $PythonCommand @PythonArgs -m scripts.ship.update_manager startup-check --root $Root --data-dir $DataDir
 if ($LASTEXITCODE -ne 0) {
   throw "Startup validation failed. See error above."
 }
@@ -50,7 +41,7 @@ Write-Host "[baluffo-ship] Python: $PythonCommand $($PythonArgs -join ' ')" -For
 
 Push-Location $ActiveRoot
 try {
-  & $PythonCommand @PythonArgs $Launcher bridge --root $Root --bind-host $BindHost --port $Port --data-dir $DataDir
+  & $PythonCommand @PythonArgs -m scripts.ship.runtime_launcher bridge --root $Root --bind-host $BindHost --port $Port --data-dir $DataDir
 }
 finally {
   Pop-Location

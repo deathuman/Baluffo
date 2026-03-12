@@ -146,7 +146,19 @@ class DesktopAppTests(unittest.TestCase):
             root = Path(tmp) / "session-root"
             root.mkdir(parents=True, exist_ok=True)
             state_path = root / "desktop-session.json"
-            state_path.write_text(json.dumps({"launcherPid": 4444, "bridgePort": 8877, "url": "http://127.0.0.1:8080"}), encoding="utf-8")
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "launcherPid": 4444,
+                        "bridgePort": 8877,
+                        "launcherToken": "token-a",
+                        "launcherStartedAt": "2026-03-12T14:00:00+00:00",
+                        "exePath": "C:/tmp/Baluffo.exe",
+                        "url": "http://127.0.0.1:8080",
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             with mock.patch.object(desktop_app, "resolve_session_state_path", return_value=state_path), mock.patch.object(
                 desktop_app, "is_process_alive", return_value=False
@@ -161,10 +173,22 @@ class DesktopAppTests(unittest.TestCase):
             root = Path(tmp) / "session-root"
             root.mkdir(parents=True, exist_ok=True)
             state_path = root / "desktop-session.json"
-            state_path.write_text(json.dumps({"launcherPid": 4444, "bridgePort": 8877, "url": "http://127.0.0.1:8080"}), encoding="utf-8")
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "launcherPid": 4444,
+                        "bridgePort": 8877,
+                        "launcherToken": "token-a",
+                        "launcherStartedAt": "2026-03-12T14:00:00+00:00",
+                        "url": "http://127.0.0.1:8080",
+                        "exePath": "C:/tmp/Baluffo.exe",
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             with mock.patch.object(desktop_app, "resolve_session_state_path", return_value=state_path), mock.patch.object(
-                desktop_app, "is_process_alive", return_value=True
+                desktop_app, "_process_identity_matches", return_value=True
             ), mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=False):
                 state = desktop_app.get_valid_session_state()
 
@@ -176,16 +200,80 @@ class DesktopAppTests(unittest.TestCase):
             root = Path(tmp) / "session-root"
             root.mkdir(parents=True, exist_ok=True)
             lock_path = root / "desktop-instance.lock"
-            lock_path.write_text("445566", encoding="utf-8")
+            lock_path.write_text("not-json", encoding="utf-8")
 
             with mock.patch.object(desktop_app, "resolve_instance_lock_path", return_value=lock_path), mock.patch.object(
-                desktop_app, "is_process_alive", return_value=False
+                desktop_app, "_process_identity_matches", return_value=False
             ):
                 lock = desktop_app.acquire_instance_lock(timeout_s=0.5)
 
             self.assertIsNotNone(lock)
             assert lock is not None
             desktop_app.release_instance_lock(lock)
+
+    def test_read_instance_lock_payload_rejects_legacy_pid_format(self) -> None:
+        with workspace_tmpdir("desktop-app") as tmp:
+            lock_path = Path(tmp) / "desktop-instance.lock"
+            lock_path.write_text("445566", encoding="utf-8")
+            payload = desktop_app._read_instance_lock_payload(lock_path)
+            self.assertEqual(payload, {})
+
+    def test_diagnose_instance_conflict_reclaims_stale_owner(self) -> None:
+        with workspace_tmpdir("desktop-app") as tmp:
+            root = Path(tmp) / "session-root"
+            root.mkdir(parents=True, exist_ok=True)
+            lock_path = root / "desktop-instance.lock"
+            lock_path.write_text(
+                json.dumps(
+                    {
+                        "pid": 999,
+                        "createdAt": "2026-03-12T14:00:00+00:00",
+                        "launcherToken": "abc",
+                        "exePath": "C:/stale/Baluffo.exe",
+                        "sessionRoot": str(root),
+                        "state": "launching",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            session_path = root / "desktop-session.json"
+            session_path.write_text(json.dumps({"launcherPid": 999, "bridgePort": 8877}), encoding="utf-8")
+
+            with mock.patch.object(desktop_app, "resolve_instance_lock_path", return_value=lock_path), mock.patch.object(
+                desktop_app, "resolve_session_state_path", return_value=session_path
+            ), mock.patch.object(desktop_app, "_process_identity_matches", return_value=False), mock.patch.object(
+                desktop_app, "_append_startup_trace"
+            ):
+                result = desktop_app.diagnose_instance_conflict(data_dir=root, timeout_s=0.5)
+
+            self.assertEqual(result.get("action"), "reclaimed")
+            self.assertFalse(lock_path.exists())
+            self.assertFalse(session_path.exists())
+
+    def test_validate_session_state_rejects_token_mismatch(self) -> None:
+        state = {
+            "launcherPid": 4444,
+            "bridgePort": 8877,
+            "launcherToken": "token-old",
+            "launcherStartedAt": "2026-03-12T14:00:00+00:00",
+            "exePath": "C:/tmp/Baluffo.exe",
+        }
+        with mock.patch.object(desktop_app, "_process_identity_matches", return_value=True), mock.patch.object(
+            desktop_app, "is_baluffo_bridge_healthy", return_value=True
+        ):
+            ok, reason = desktop_app.validate_session_state(state, expected_launcher_token="token-new")
+        self.assertFalse(ok)
+        self.assertEqual(reason, "launcher_token_mismatch")
+
+    def test_validate_session_state_requires_new_session_fields(self) -> None:
+        state = {
+            "launcherPid": 4444,
+            "bridgePort": 8877,
+            "exePath": "C:/tmp/Baluffo.exe",
+        }
+        ok, reason = desktop_app.validate_session_state(state)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "missing_launcher_token")
 
     def test_launch_browser_for_url_falls_back_to_default_browser(self) -> None:
         with mock.patch.object(desktop_app, "resolve_chromium_browser_candidates", return_value=[]), mock.patch.object(
@@ -418,7 +506,7 @@ class DesktopAppTests(unittest.TestCase):
         }
 
         with mock.patch.object(desktop_app, "acquire_instance_lock", return_value=None), mock.patch.object(
-            desktop_app, "wait_for_valid_session_state", return_value=session
+            desktop_app, "diagnose_instance_conflict", return_value={"action": "active", "session": session}
         ), mock.patch.object(desktop_app, "start_child_process") as start_mock, mock.patch.object(
             desktop_app, "_append_startup_trace"
         ):

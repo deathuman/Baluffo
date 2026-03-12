@@ -14,13 +14,14 @@ import sys
 import tempfile
 import time
 import traceback
+import uuid
 import urllib.error
 import urllib.request
 import webbrowser
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 if os.name == "nt":
     import ctypes
@@ -40,12 +41,15 @@ DEFAULT_OPEN_PATH = str(DESKTOP_DEFAULTS["open_path"])
 DEFAULT_SITE_PORT = int(DESKTOP_DEFAULTS["site_port"])
 DEFAULT_BRIDGE_PORT = int(DESKTOP_DEFAULTS["bridge_port"])
 READY_TIMEOUT_S = 25.0
-HEARTBEAT_STARTUP_TIMEOUT_S = 45.0
-HEARTBEAT_IDLE_TIMEOUT_S = 30.0
+HEARTBEAT_STARTUP_TIMEOUT_S = 90.0
+# Keep runtime alive long enough to tolerate Chromium app-window handoff
+# and intermittent heartbeat gaps without tearing down site/bridge.
+HEARTBEAT_IDLE_TIMEOUT_S = 600.0
 CHROMIUM_PROCESS_READY_TIMEOUT_S = 2.0
 DETACHED_BROWSER_GRACE_TIMEOUT_S = 35.0
 INSTANCE_LOCK_WAIT_S = 3.0
 SESSION_REUSE_WAIT_S = 12.0
+INSTANCE_CONFLICT_RETRY_S = 6.0
 ALREADY_RUNNING_ERROR = "Baluffo is already running. Close the existing desktop session before starting a new one."
 MB_OK = 0x00000000
 MB_ICONERROR = 0x00000010
@@ -73,6 +77,8 @@ class DesktopRuntimeConfig:
 class InstanceLock:
     path: Path
     handle: int
+    launcher_token: str = ""
+    created_at: str = ""
 
 
 def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
@@ -300,6 +306,10 @@ def resolve_browser_session_root(env: dict[str, str] | None = None) -> Path:
     for candidate in candidates:
         try:
             candidate.mkdir(parents=True, exist_ok=True)
+            probe_path = candidate / ".baluffo-write-probe"
+            probe_path.write_text("ok", encoding="utf-8")
+            with contextlib.suppress(OSError):
+                probe_path.unlink()
             return candidate
         except OSError:
             continue
@@ -316,6 +326,19 @@ def resolve_session_state_path(env: dict[str, str] | None = None) -> Path:
 
 def resolve_instance_lock_path(env: dict[str, str] | None = None) -> Path:
     return resolve_browser_session_root(env) / "desktop-instance.lock"
+
+
+def _normalize_path_text(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    with contextlib.suppress(OSError, RuntimeError):
+        return str(Path(text).expanduser().resolve()).lower()
+    return text.lower()
+
+
+def _current_exe_path() -> str:
+    return str(Path(sys.executable if getattr(sys, "frozen", False) else Path(__file__).resolve()).resolve())
 
 
 def resolve_registry_app_path(executable_name: str) -> str:
@@ -375,39 +398,183 @@ def clear_session_state(env: dict[str, str] | None = None) -> None:
         path.unlink()
 
 
-def _read_lock_pid(path: Path) -> int:
+def _read_instance_lock_payload(path: Path) -> dict[str, object]:
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
-        return 0
+        return {}
     try:
-        return int(str(text or "").strip())
-    except ValueError:
-        return 0
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    pid = int(payload.get("pid") or 0)
+    if pid <= 0:
+        return {}
+    if not str(payload.get("createdAt") or "").strip():
+        return {}
+    if not str(payload.get("launcherToken") or "").strip():
+        return {}
+    if not str(payload.get("exePath") or "").strip():
+        return {}
+    if not str(payload.get("sessionRoot") or "").strip():
+        return {}
+    state = str(payload.get("state") or "").strip()
+    if state not in {"launching", "running"}:
+        return {}
+    return payload
 
 
-def acquire_instance_lock(*, timeout_s: float = INSTANCE_LOCK_WAIT_S, env: dict[str, str] | None = None) -> InstanceLock | None:
+def _make_lock_payload(*, launcher_token: str, state: str, session_root: Path, created_at: str | None = None) -> dict[str, object]:
+    return {
+        "pid": int(os.getpid()),
+        "createdAt": str(created_at or datetime.now(timezone.utc).isoformat()),
+        "launcherToken": str(launcher_token or ""),
+        "exePath": _current_exe_path(),
+        "sessionRoot": str(session_root),
+        "state": str(state or "launching"),
+    }
+
+
+def _write_lock_payload_to_handle(handle: int, payload: dict[str, object]) -> None:
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8", errors="replace")
+    os.lseek(handle, 0, os.SEEK_SET)
+    os.write(handle, data)
+    os.ftruncate(handle, len(data))
+
+
+def _write_lock_payload(path: Path, payload: dict[str, object]) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def _get_windows_process_image_path(pid: int) -> str:
+    if os.name != "nt":
+        return ""
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return ""
+    try:
+        size = ctypes.c_ulong(32768)
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if ctypes.windll.kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+            return str(buffer.value or "").strip()
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+    return ""
+
+
+def _filetime_to_unix_seconds(filetime: int) -> float:
+    return max(0.0, (int(filetime) - 116444736000000000) / 10000000.0)
+
+
+def _get_windows_process_start_ts(pid: int) -> float:
+    if os.name != "nt":
+        return 0.0
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return 0.0
+    try:
+        create_time = ctypes.c_ulonglong(0)
+        exit_time = ctypes.c_ulonglong(0)
+        kernel_time = ctypes.c_ulonglong(0)
+        user_time = ctypes.c_ulonglong(0)
+        ok = ctypes.windll.kernel32.GetProcessTimes(
+            handle,
+            ctypes.byref(create_time),
+            ctypes.byref(exit_time),
+            ctypes.byref(kernel_time),
+            ctypes.byref(user_time),
+        )
+        if not ok:
+            return 0.0
+        return _filetime_to_unix_seconds(int(create_time.value))
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+
+def _process_identity_matches(lock_payload: dict[str, object], *, expected_exe_path: str = "") -> bool:
+    pid = int(lock_payload.get("pid") or 0)
+    if pid <= 0 or not is_process_alive(pid):
+        return False
+    if os.name != "nt":
+        return True
+    process_path = _normalize_path_text(_get_windows_process_image_path(pid))
+    if not process_path:
+        return False
+    expected = _normalize_path_text(expected_exe_path or _current_exe_path())
+    lock_exe = _normalize_path_text(lock_payload.get("exePath"))
+    if expected and process_path != expected:
+        return False
+    if lock_exe and process_path != lock_exe:
+        return False
+    lock_created_ts = _parse_metric_ts(lock_payload.get("createdAt"))
+    process_created_ts = _get_windows_process_start_ts(pid)
+    if lock_created_ts > 0.0 and process_created_ts > 0.0 and abs(lock_created_ts - process_created_ts) > 180.0:
+        return False
+    return True
+
+
+def acquire_instance_lock(
+    *,
+    timeout_s: float = INSTANCE_LOCK_WAIT_S,
+    env: dict[str, str] | None = None,
+    launcher_token: str = "",
+    on_reclaim: Callable[[str], None] | None = None,
+) -> InstanceLock | None:
     path = resolve_instance_lock_path(env)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    session_root = path.parent
+    session_root.mkdir(parents=True, exist_ok=True)
+    token = str(launcher_token or uuid.uuid4().hex)
     deadline = time.monotonic() + max(0.2, float(timeout_s))
     while time.monotonic() < deadline:
         try:
             handle = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
         except FileExistsError:
-            lock_pid = _read_lock_pid(path)
-            if lock_pid > 0 and not is_process_alive(lock_pid):
+            lock_payload = _read_instance_lock_payload(path)
+            if not _process_identity_matches(lock_payload):
                 with contextlib.suppress(OSError):
                     path.unlink()
+                if callable(on_reclaim):
+                    with contextlib.suppress(Exception):
+                        on_reclaim("stale_lock_owner")
                 continue
             time.sleep(0.2)
             continue
         except OSError:
             time.sleep(0.2)
             continue
+        payload = _make_lock_payload(launcher_token=token, state="launching", session_root=session_root)
         with contextlib.suppress(OSError):
-            os.write(handle, str(os.getpid()).encode("utf-8", errors="ignore"))
-        return InstanceLock(path=path, handle=handle)
+            _write_lock_payload_to_handle(handle, payload)
+        return InstanceLock(path=path, handle=handle, launcher_token=token, created_at=str(payload.get("createdAt") or ""))
     return None
+
+
+def update_instance_lock_state(lock: InstanceLock, state: str) -> None:
+    if not lock:
+        return
+    payload = _read_instance_lock_payload(lock.path)
+    if not payload:
+        payload = _make_lock_payload(
+            launcher_token=str(lock.launcher_token or uuid.uuid4().hex),
+            state=str(state or "launching"),
+            session_root=lock.path.parent,
+            created_at=str(lock.created_at or datetime.now(timezone.utc).isoformat()),
+        )
+    else:
+        payload["state"] = str(state or "launching")
+        payload.setdefault("launcherToken", str(lock.launcher_token or ""))
+        payload.setdefault("createdAt", str(lock.created_at or datetime.now(timezone.utc).isoformat()))
+        payload.setdefault("exePath", _current_exe_path())
+    if int(lock.handle or 0) <= 2:
+        with contextlib.suppress(OSError):
+            _write_lock_payload(lock.path, payload)
+        return
+    with contextlib.suppress(OSError):
+        _write_lock_payload_to_handle(lock.handle, payload)
 
 
 def release_instance_lock(lock: InstanceLock | None) -> None:
@@ -468,29 +635,152 @@ def wait_for_baluffo_bridge(bridge_port: int, *, timeout_s: float = READY_TIMEOU
     raise RuntimeError("Baluffo bridge did not report a healthy desktop session.")
 
 
-def get_valid_session_state(env: dict[str, str] | None = None) -> dict[str, object]:
-    state = load_session_state(env)
+def validate_session_state(
+    state: dict[str, object],
+    *,
+    expected_exe_path: str = "",
+    expected_launcher_token: str = "",
+) -> tuple[bool, str]:
     launcher_pid = int(state.get("launcherPid") or 0)
     bridge_port = int(state.get("bridgePort") or 0)
-    if not launcher_pid or not bridge_port:
-        return {}
-    if not is_process_alive(launcher_pid):
-        clear_session_state(env)
-        return {}
+    if launcher_pid <= 0:
+        return False, "missing_launcher_pid"
+    if bridge_port <= 0:
+        return False, "missing_bridge_port"
+    launcher_token = str(state.get("launcherToken") or "").strip()
+    if not launcher_token:
+        return False, "missing_launcher_token"
+    launcher_started_at = str(state.get("launcherStartedAt") or "").strip()
+    if not launcher_started_at:
+        return False, "missing_launcher_started_at"
+    session_exe_path = str(state.get("exePath") or "").strip()
+    if not session_exe_path:
+        return False, "missing_exe_path"
+    if not _process_identity_matches(
+        {
+            "pid": launcher_pid,
+            "createdAt": launcher_started_at,
+            "exePath": session_exe_path,
+        },
+        expected_exe_path=expected_exe_path,
+    ):
+        return False, "launcher_identity_mismatch"
+    if expected_launcher_token and launcher_token != expected_launcher_token:
+        return False, "launcher_token_mismatch"
     if not is_baluffo_bridge_healthy(bridge_port):
-        clear_session_state(env)
+        return False, "bridge_unhealthy"
+    return True, "ok"
+
+
+def get_valid_session_state(
+    env: dict[str, str] | None = None,
+    *,
+    expected_exe_path: str = "",
+    expected_launcher_token: str = "",
+    clear_invalid: bool = True,
+) -> dict[str, object]:
+    state = load_session_state(env)
+    if not state:
         return {}
-    return state
+    ok, _reason = validate_session_state(
+        state,
+        expected_exe_path=expected_exe_path,
+        expected_launcher_token=expected_launcher_token,
+    )
+    if ok:
+        return state
+    if clear_invalid:
+        clear_session_state(env)
+    return {}
 
 
-def wait_for_valid_session_state(*, timeout_s: float = SESSION_REUSE_WAIT_S, env: dict[str, str] | None = None) -> dict[str, object]:
+def wait_for_valid_session_state(
+    *,
+    timeout_s: float = SESSION_REUSE_WAIT_S,
+    env: dict[str, str] | None = None,
+    expected_exe_path: str = "",
+    expected_launcher_token: str = "",
+) -> dict[str, object]:
     deadline = time.monotonic() + max(0.5, float(timeout_s))
     while time.monotonic() < deadline:
-        state = get_valid_session_state(env)
+        state = get_valid_session_state(
+            env,
+            expected_exe_path=expected_exe_path,
+            expected_launcher_token=expected_launcher_token,
+            clear_invalid=False,
+        )
         if state:
             return state
         time.sleep(0.25)
     return {}
+
+
+def _truncate_reason(reason: object, *, limit: int = 120) -> str:
+    text = str(reason or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)] + "..."
+
+
+def _reclaim_stale_instance_artifacts(*, env: dict[str, str] | None = None) -> None:
+    lock_path = resolve_instance_lock_path(env)
+    with contextlib.suppress(OSError):
+        lock_path.unlink()
+    clear_session_state(env)
+
+
+def diagnose_instance_conflict(
+    *,
+    data_dir: Path,
+    timeout_s: float = INSTANCE_CONFLICT_RETRY_S,
+    env: dict[str, str] | None = None,
+) -> dict[str, object]:
+    _append_startup_trace(data_dir, "desktop_lock_contended")
+    deadline = time.monotonic() + max(0.5, float(timeout_s))
+    expected_exe = _current_exe_path()
+    while time.monotonic() < deadline:
+        lock_path = resolve_instance_lock_path(env)
+        lock_payload = _read_instance_lock_payload(lock_path)
+        if not lock_payload:
+            return {"action": "retry", "reason": "missing_lock"}
+        owner_active = _process_identity_matches(lock_payload, expected_exe_path=expected_exe)
+        lock_token = str(lock_payload.get("launcherToken") or "")
+        if not owner_active:
+            _reclaim_stale_instance_artifacts(env=env)
+            _append_startup_trace(
+                data_dir,
+                "desktop_lock_reclaimed",
+                reason="stale_lock_owner",
+            )
+            return {"action": "reclaimed", "reason": "stale_lock_owner"}
+        raw_state = load_session_state(env)
+        if raw_state:
+            session_ok, reason = validate_session_state(
+                raw_state,
+                expected_exe_path=expected_exe,
+                expected_launcher_token=lock_token,
+            )
+            if session_ok:
+                return {"action": "active", "reason": "healthy_active_session", "session": raw_state}
+            _append_startup_trace(
+                data_dir,
+                "desktop_session_invalid_reason",
+                reason=_truncate_reason(reason),
+            )
+            _reclaim_stale_instance_artifacts(env=env)
+            _append_startup_trace(
+                data_dir,
+                "desktop_lock_reclaimed",
+                reason="invalid_session_state",
+            )
+            return {"action": "reclaimed", "reason": "invalid_session_state"}
+        time.sleep(0.25)
+    _append_startup_trace(
+        data_dir,
+        "desktop_lock_reclaim_failed",
+        reason="owner_active_no_session",
+    )
+    return {"action": "active_starting", "reason": "owner_active_no_session"}
 
 
 def build_browser_launch_command(browser_path: str, url: str, profile_dir: Path) -> list[str]:
@@ -690,10 +980,16 @@ def ensure_desktop_prerequisites() -> None:
 
 
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
-    instance_lock = acquire_instance_lock()
+    launcher_token = uuid.uuid4().hex
+    instance_lock = acquire_instance_lock(
+        launcher_token=launcher_token,
+        on_reclaim=lambda reason: _append_startup_trace(config.data_dir, "desktop_lock_reclaimed", reason=_truncate_reason(reason)),
+    )
     if instance_lock is None:
-        existing_session = wait_for_valid_session_state()
-        if existing_session:
+        diagnosis = diagnose_instance_conflict(data_dir=config.data_dir)
+        action = str(diagnosis.get("action") or "")
+        if action == "active":
+            existing_session = diagnosis.get("session") if isinstance(diagnosis.get("session"), dict) else {}
             _append_startup_trace(
                 config.data_dir,
                 "desktop_session_reused",
@@ -701,7 +997,13 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 reason="instance_lock_contended",
             )
             raise RuntimeError(ALREADY_RUNNING_ERROR)
-        raise RuntimeError("Baluffo is already starting in another process. Please retry in a few seconds.")
+        if action == "reclaimed" or action == "retry":
+            instance_lock = acquire_instance_lock(
+                launcher_token=launcher_token,
+                on_reclaim=lambda reason: _append_startup_trace(config.data_dir, "desktop_lock_reclaimed", reason=_truncate_reason(reason)),
+            )
+        if instance_lock is None:
+            raise RuntimeError("Baluffo is already starting in another process. Please retry in a few seconds.")
 
     site_process: subprocess.Popen[str] | None = None
     bridge_process: subprocess.Popen[str] | None = None
@@ -715,7 +1017,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         shipRoot=str(config.ship_root),
     )
     try:
-        existing_session = get_valid_session_state()
+        existing_session = get_valid_session_state(expected_launcher_token=launcher_token)
         if existing_session:
             _append_startup_trace(config.data_dir, "desktop_session_reused", bridgePort=int(existing_session.get("bridgePort") or 0))
             raise RuntimeError(ALREADY_RUNNING_ERROR)
@@ -788,15 +1090,19 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         )
         save_session_state({
             "launcherPid": os.getpid(),
+            "launcherToken": str(instance_lock.launcher_token or launcher_token),
+            "launcherStartedAt": str(instance_lock.created_at or datetime.now(timezone.utc).isoformat()),
             "sitePort": int(config.site_port),
             "bridgePort": int(config.bridge_port),
             "bridgeHost": str(config.bridge_host),
             "url": str(open_url),
             "launchMode": launch_mode,
             "browserPath": str(launch_result.get("browserPath") or ""),
+            "exePath": _current_exe_path(),
             "dataDir": str(config.data_dir),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
+        update_instance_lock_state(instance_lock, "running")
         session_state_written = True
         _append_startup_trace(config.data_dir, "desktop_window_created", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
         _append_startup_trace(

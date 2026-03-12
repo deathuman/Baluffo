@@ -37,7 +37,6 @@ export function cacheJobsDom(doc = document) {
     quickFiltersResetBtn: doc.getElementById("quick-filters-reset-btn"),
     dataSourcesListEl: doc.getElementById("data-sources-list"),
     dataSourcesCaptionEl: doc.getElementById("data-sources-caption"),
-    jobsPipelineRunBtn: doc.getElementById("jobs-pipeline-run-btn"),
-    jobsPipelineProgressEl: doc.getElementById("jobs-pipeline-progress")
+    jobsPipelineRunBtn: doc.getElementById("jobs-pipeline-run-btn")
   };
 }
