@@ -79,6 +79,16 @@ ADAPTER_QUEUE_CAPS = {
     "static": 6,
 }
 
+DEFAULT_DISCOVERY_THRESHOLDS = {
+    "minProviderEvidenceToProbe": MIN_PROVIDER_EVIDENCE_TO_PROBE,
+    "minStaticEvidenceToProbe": MIN_STATIC_EVIDENCE_TO_PROBE,
+    "minProviderEvidenceToQueue": MIN_PROVIDER_EVIDENCE_TO_QUEUE,
+    "minStaticEvidenceToQueue": MIN_STATIC_EVIDENCE_TO_QUEUE,
+    "lowEvidenceProbeLimit": LOW_EVIDENCE_PROBE_LIMIT,
+    "patternProviderProbeThreshold": PATTERN_PROVIDER_PROBE_THRESHOLD,
+    "patternProviderQueueThreshold": PATTERN_PROVIDER_QUEUE_THRESHOLD,
+}
+
 DISCOVERY_LOG_PATH = str(
     os.getenv("BALUFFO_DISCOVERY_LOG_PATH") or _STORAGE_DEFAULTS["source_discovery_log_path"]
 ).strip()
@@ -135,7 +145,8 @@ DEFAULT_DISCOVERY_CONFIG: Dict[str, Any] = {
             "government",
             "service provider",
         ],
-    }
+    },
+    "thresholds": dict(DEFAULT_DISCOVERY_THRESHOLDS),
 }
 
 
@@ -178,7 +189,25 @@ def load_discovery_config() -> Dict[str, Any]:
         merged = dict(payload.get("gamesmap") or {})
         merged.update(gamesmap)
         payload["gamesmap"] = merged
+    thresholds = raw.get("thresholds")
+    if isinstance(thresholds, dict):
+        merged_thresholds = dict(payload.get("thresholds") or DEFAULT_DISCOVERY_THRESHOLDS)
+        merged_thresholds.update(thresholds)
+        payload["thresholds"] = merged_thresholds
     return payload
+
+
+def resolve_discovery_thresholds(config: Optional[Dict[str, Any]]) -> Dict[str, int]:
+    source = config if isinstance(config, dict) else {}
+    raw = source.get("thresholds") if isinstance(source.get("thresholds"), dict) else {}
+    out: Dict[str, int] = {}
+    for key, default in DEFAULT_DISCOVERY_THRESHOLDS.items():
+        value = raw.get(key, default)
+        try:
+            out[key] = max(0, int(value))
+        except (TypeError, ValueError):
+            out[key] = int(default)
+    return out
 
 
 def to_slug(value: str) -> str:
@@ -1338,20 +1367,30 @@ def estimate_probe_priority(candidate: Dict[str, Any]) -> int:
     return int(candidate.get("evidenceScore") or 0) + (20 if str(candidate.get("discoveryStage") or "") == "curated_seed" else 0)
 
 
-def _evidence_threshold_for_probe(candidate: Dict[str, Any]) -> int:
+def _evidence_threshold_for_probe(candidate: Dict[str, Any], thresholds: Optional[Dict[str, int]] = None) -> int:
+    t = thresholds if isinstance(thresholds, dict) else DEFAULT_DISCOVERY_THRESHOLDS
     if str(candidate.get("discoveryStage") or "") == "provider_pattern":
-        return PATTERN_PROVIDER_PROBE_THRESHOLD
-    return MIN_STATIC_EVIDENCE_TO_PROBE if str(candidate.get("adapter") or "") == "static" else MIN_PROVIDER_EVIDENCE_TO_PROBE
+        return int(t.get("patternProviderProbeThreshold", PATTERN_PROVIDER_PROBE_THRESHOLD))
+    return (
+        int(t.get("minStaticEvidenceToProbe", MIN_STATIC_EVIDENCE_TO_PROBE))
+        if str(candidate.get("adapter") or "") == "static"
+        else int(t.get("minProviderEvidenceToProbe", MIN_PROVIDER_EVIDENCE_TO_PROBE))
+    )
 
 
-def _evidence_threshold_for_queue(candidate: Dict[str, Any]) -> int:
+def _evidence_threshold_for_queue(candidate: Dict[str, Any], thresholds: Optional[Dict[str, int]] = None) -> int:
+    t = thresholds if isinstance(thresholds, dict) else DEFAULT_DISCOVERY_THRESHOLDS
     if str(candidate.get("discoveryStage") or "") == "provider_pattern":
-        return PATTERN_PROVIDER_QUEUE_THRESHOLD
-    return MIN_STATIC_EVIDENCE_TO_QUEUE if str(candidate.get("adapter") or "") == "static" else MIN_PROVIDER_EVIDENCE_TO_QUEUE
+        return int(t.get("patternProviderQueueThreshold", PATTERN_PROVIDER_QUEUE_THRESHOLD))
+    return (
+        int(t.get("minStaticEvidenceToQueue", MIN_STATIC_EVIDENCE_TO_QUEUE))
+        if str(candidate.get("adapter") or "") == "static"
+        else int(t.get("minProviderEvidenceToQueue", MIN_PROVIDER_EVIDENCE_TO_QUEUE))
+    )
 
 
-def _should_queue_candidate(candidate: Dict[str, Any], jobs_found: int) -> bool:
-    return jobs_found > 0 or int(candidate.get("evidenceScore") or 0) >= _evidence_threshold_for_queue(candidate)
+def _should_queue_candidate(candidate: Dict[str, Any], jobs_found: int, thresholds: Optional[Dict[str, int]] = None) -> bool:
+    return jobs_found > 0 or int(candidate.get("evidenceScore") or 0) >= _evidence_threshold_for_queue(candidate, thresholds)
 
 
 def _sort_candidate_key(row: Dict[str, Any]) -> Tuple[int, int, int, str]:
@@ -1396,6 +1435,7 @@ def _init_stage_counter() -> Dict[str, int]:
 def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_web_search: bool = True, discovery_config: Optional[Dict[str, Any]] = None, fetcher=fetch_text) -> Dict[str, Any]:
     started_at = now_iso()
     effective_config = discovery_config if isinstance(discovery_config, dict) else load_discovery_config()
+    thresholds = resolve_discovery_thresholds(effective_config)
     active = load_json_array(ACTIVE_PATH, [])
     pending_existing = load_json_array(PENDING_PATH, [])
     rejected = load_json_array(REJECTED_PATH, [])
@@ -1437,6 +1477,7 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
     probed_count_by_stage = _init_stage_counter()
     queued_count_by_stage = _init_stage_counter()
     duplicate_reasons: Counter[str] = Counter()
+    dedupe_drop_rows: List[Dict[str, Any]] = []
 
     discovered = merge_candidate_streams(streams)
     for row in discovered:
@@ -1459,18 +1500,58 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
         if row_id in seen_ids:
             skipped_duplicate_count += 1
             duplicate_reasons["existing_id"] += 1
+            dedupe_drop_rows.append(
+                {
+                    "name": row.get("name"),
+                    "adapter": row.get("adapter"),
+                    "stage": "dedupe_skipped",
+                    "error": "existing_id",
+                    "dropStage": "dedupe_skipped",
+                    "dropReason": "existing_id",
+                }
+            )
             continue
         if row_domain and row_domain in seen_domains:
             skipped_duplicate_count += 1
             duplicate_reasons["existing_domain"] += 1
+            dedupe_drop_rows.append(
+                {
+                    "name": row.get("name"),
+                    "adapter": row.get("adapter"),
+                    "stage": "dedupe_skipped",
+                    "error": "existing_domain",
+                    "dropStage": "dedupe_skipped",
+                    "dropReason": "existing_domain",
+                }
+            )
             continue
         if row_id in local_seen_ids:
             skipped_duplicate_count += 1
             duplicate_reasons["run_id"] += 1
+            dedupe_drop_rows.append(
+                {
+                    "name": row.get("name"),
+                    "adapter": row.get("adapter"),
+                    "stage": "dedupe_skipped",
+                    "error": "run_id",
+                    "dropStage": "dedupe_skipped",
+                    "dropReason": "run_id",
+                }
+            )
             continue
         if row_domain and row_domain in local_seen_domains:
             skipped_duplicate_count += 1
             duplicate_reasons["run_domain"] += 1
+            dedupe_drop_rows.append(
+                {
+                    "name": row.get("name"),
+                    "adapter": row.get("adapter"),
+                    "stage": "dedupe_skipped",
+                    "error": "run_domain",
+                    "dropStage": "dedupe_skipped",
+                    "dropReason": "run_domain",
+                }
+            )
             continue
         local_seen_ids.add(row_id)
         if row_domain:
@@ -1486,7 +1567,16 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
     )
 
     queueable_candidates: List[Dict[str, Any]] = []
-    failures: List[Dict[str, Any]] = list(web_failures)
+    failures: List[Dict[str, Any]] = [
+        {
+            **row,
+            "dropStage": "page_fetch",
+            "dropReason": "page_fetch",
+        }
+        for row in list(web_failures)
+        if isinstance(row, dict)
+    ]
+    failures.extend(dedupe_drop_rows)
     healthy = 0
     probed = 0
     adapter_counter: Counter[str] = Counter()
@@ -1495,8 +1585,13 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
     skipped_low_evidence_probe_count = 0
     processed_count = 0
     low_evidence_probes_used = 0
+    validation_skipped_count = 0
+    queue_filtered_count = 0
+    probe_failed_count = 0
 
     def build_summary(current_candidates: List[Dict[str, Any]], deferred_candidates: int = 0, deferred_counts: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+        deferred_reason_rows = deferred_counts or {}
+        deferred_by_cap = int(sum(int(value or 0) for value in deferred_reason_rows.values()))
         return {
             "probedCount": probed,
             "healthyCount": healthy,
@@ -1521,6 +1616,18 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
             "queuedCountByStage": dict(queued_count_by_stage),
             "duplicateReasons": dict(duplicate_reasons),
             "deferredReasons": dict(deferred_counts or {}),
+            "thresholds": dict(thresholds),
+            "lossAccounting": {
+                "generated": int(found_endpoint_count),
+                "dedupSkipped": int(skipped_duplicate_count),
+                "dedupSkippedReasons": dict(duplicate_reasons),
+                "validationSkipped": int(validation_skipped_count),
+                "lowEvidenceSkipped": int(skipped_low_evidence_probe_count),
+                "probeFailed": int(probe_failed_count),
+                "queueFiltered": int(queue_filtered_count),
+                "deferredByCap": deferred_by_cap,
+                "queued": int(len([row for row in current_candidates if not bool(row.get("deferred"))])),
+            },
         }
 
     def write_progress_report(current_candidates: List[Dict[str, Any]]) -> None:
@@ -1551,22 +1658,23 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
         valid, invalid_reason = validate_candidate_for_probe(raw)
         if not valid:
             skipped_invalid += 1
-            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": invalid_reason, "stage": "validation"})
+            validation_skipped_count += 1
+            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": invalid_reason, "stage": "validation", "dropStage": "validation", "dropReason": "validation"})
             if processed_count % 5 == 0:
                 write_progress_report(queueable_candidates)
             continue
         evidence_score = int(raw.get("evidenceScore") or 0)
-        threshold = _evidence_threshold_for_probe(raw)
+        threshold = _evidence_threshold_for_probe(raw, thresholds)
         if evidence_score < threshold:
             if stage == "provider_pattern":
                 skipped_low_evidence_probe_count += 1
-                failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"pattern evidence score {evidence_score} below probe threshold {threshold}", "stage": "probe_skipped"})
+                failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"pattern evidence score {evidence_score} below probe threshold {threshold}", "stage": "probe_skipped", "dropStage": "low_evidence_skipped", "dropReason": "probe_threshold"})
                 if processed_count % 5 == 0:
                     write_progress_report(queueable_candidates)
                 continue
-            if low_evidence_probes_used >= LOW_EVIDENCE_PROBE_LIMIT:
+            if low_evidence_probes_used >= int(thresholds.get("lowEvidenceProbeLimit", LOW_EVIDENCE_PROBE_LIMIT)):
                 skipped_low_evidence_probe_count += 1
-                failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"evidence score {evidence_score} below probe threshold {threshold}", "stage": "probe_skipped"})
+                failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"evidence score {evidence_score} below probe threshold {threshold}", "stage": "probe_skipped", "dropStage": "low_evidence_skipped", "dropReason": "low_evidence_probe_cap"})
                 if processed_count % 5 == 0:
                     write_progress_report(queueable_candidates)
                 continue
@@ -1575,12 +1683,15 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
         probed_count_by_stage[stage] += 1
         ok, jobs_found, error = probe_candidate(raw, timeout_s, fetcher=fetcher)
         if not ok:
-            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": error, "stage": classify_probe_failure_stage(error)})
+            probe_failed_count += 1
+            probe_stage = classify_probe_failure_stage(error)
+            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": error, "stage": probe_stage, "dropStage": "probe_failed", "dropReason": probe_stage})
             if processed_count % 5 == 0:
                 write_progress_report(queueable_candidates)
             continue
-        if not _should_queue_candidate(raw, jobs_found):
-            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"candidate passed probe but evidence {evidence_score} is below queue threshold", "stage": "queue_filtered"})
+        if not _should_queue_candidate(raw, jobs_found, thresholds):
+            queue_filtered_count += 1
+            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"candidate passed probe but evidence {evidence_score} is below queue threshold", "stage": "queue_filtered", "dropStage": "queue_filtered", "dropReason": "queue_threshold"})
             if processed_count % 5 == 0:
                 write_progress_report(queueable_candidates)
             continue
@@ -1599,6 +1710,12 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
             write_progress_report(queueable_candidates)
 
     queued_candidates, report_candidates, deferred_reason_counts = apply_queue_balancing(queueable_candidates, top_n)
+    for row in report_candidates:
+        if not isinstance(row, dict):
+            continue
+        if bool(row.get("deferred")):
+            row["dropStage"] = "deferred_by_cap"
+            row["dropReason"] = str(row.get("deferReason") or "deferred")
     for row in queued_candidates:
         queued_count_by_stage[str(row.get("discoveryStage") or "provider_pattern")] += 1
     emit_log(

@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 import hashlib
 import json
+import os
 import re
 import sys
 import threading
@@ -240,6 +242,9 @@ DEFAULT_SOCIAL_CONFIG_PATH = _STORAGE_DEFAULTS["social_sources_config_path"]
 DEFAULT_SOCIAL_LOOKBACK_MINUTES = 30
 SOCIAL_SOURCE_NAMES = {"social_reddit", "social_x", "social_mastodon"}
 DEFAULT_SOCIAL_MIN_CONFIDENCE = 40
+DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE = "balanced"
+DEFAULT_SCRAPY_VALIDATION_STRICT = True
+DEFAULT_CANONICAL_STRICT_URL = False
 SOURCE_REGISTRY_ACTIVE_PATH = DEFAULT_OUTPUT_DIR / "source-registry-active.json"
 SOURCE_REGISTRY_PENDING_PATH = DEFAULT_OUTPUT_DIR / "source-registry-pending.json"
 SOURCE_APPROVAL_STATE_PATH = DEFAULT_OUTPUT_DIR / "source-approval-state.json"
@@ -479,6 +484,15 @@ def clean_text(value: Any) -> str:
 
 def norm_text(value: Any) -> str:
     return re.sub(r"\s+", " ", clean_text(value)).strip().lower()
+
+
+def env_flag(name: str, default: bool) -> bool:
+    raw = norm_text(os.getenv(name))
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return bool(default)
 
 
 def _deep_merge_dicts(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
@@ -2660,6 +2674,10 @@ def run_scrapy_static_source(
             "browserFallbackRecommended": False,
             "sourceId": source_id,
             "pages": [clean_text(page) for page in pages if clean_text(page)],
+            "loss": {
+                "scrapyRunnerRejectedValidation": 0,
+                "scrapyParentInvalidPayload": 0,
+            },
         }
 
     def _coerce_int(value: Any) -> int:
@@ -2671,13 +2689,26 @@ def run_scrapy_static_source(
     def _normalize_job(raw: Any, source_row: Dict[str, Any]) -> Optional[RawJob]:
         if not isinstance(raw, dict):
             return None
+        strict_validation = env_flag("BALUFFO_SCRAPY_VALIDATION_STRICT", DEFAULT_SCRAPY_VALIDATION_STRICT)
         source_name = clean_text(raw.get("source")) or (clean_text(source_row.get("name")) or "scrapy_static")
         studio_name = clean_text(raw.get("studio")) or (clean_text(source_row.get("studio")) or clean_text(source_row.get("name")) or "unknown")
         title = clean_text(raw.get("title"))
         company = clean_text(raw.get("company"))
         job_link = normalize_url(raw.get("jobLink"))
         source_job_id = clean_text(raw.get("sourceJobId"))
-        if not title or not company or not job_link:
+        if not title or not company:
+            return None
+        if not job_link and not strict_validation:
+            source_bundle_raw = raw.get("sourceBundle")
+            if isinstance(source_bundle_raw, list):
+                for item in source_bundle_raw:
+                    if not isinstance(item, dict):
+                        continue
+                    candidate = normalize_url(item.get("jobLink"))
+                    if candidate:
+                        job_link = candidate
+                        break
+        if not job_link:
             return None
         if not source_job_id:
             source_job_id = hashlib.sha1(f"{title}|{company}|{job_link}".encode("utf-8")).hexdigest()[:12]
@@ -2823,13 +2854,18 @@ def run_scrapy_static_source(
             jobs = envelope.get("jobs")
             if bool(envelope.get("ok")) and isinstance(jobs, list):
                 kept = 0
+                parent_invalid_payload = 0
                 for item in jobs:
                     normalized = _normalize_job(item, source)
                     if normalized:
                         kept += 1
                         results_list.append(normalized)
                     else:
+                        parent_invalid_payload += 1
                         errors_list.append(f"{source_name}: dropped invalid job payload from runner")
+                source_detail_loss = source_detail.get("loss") if isinstance(source_detail.get("loss"), dict) else {}
+                source_detail_loss["scrapyParentInvalidPayload"] = int(parent_invalid_payload)
+                source_detail["loss"] = source_detail_loss
                 source_detail["keptCount"] = max(int(source_detail.get("keptCount") or 0), kept)
                 source_detail["status"] = "ok"
                 if not clean_text(source_detail.get("classification")):
@@ -2861,6 +2897,9 @@ def run_scrapy_static_source(
                     "jobs_rejected_validation": _coerce_int(stats.get("jobs_rejected_validation")),
                     "finish_reason": clean_text(stats.get("finish_reason")),
                 }
+                source_detail_loss = source_detail.get("loss") if isinstance(source_detail.get("loss"), dict) else {}
+                source_detail_loss["scrapyRunnerRejectedValidation"] = _coerce_int(stats.get("jobs_rejected_validation"))
+                source_detail["loss"] = source_detail_loss
                 if int(source_detail.get("fetchedCount") or 0) <= 0:
                     source_detail["fetchedCount"] = int(source_detail["stats"]["downloader/response_count"])
 
@@ -2939,18 +2978,28 @@ def run_static_studio_pages_source(
         "view job",
     }
 
-    def is_probable_job_detail_url(candidate_url: str) -> bool:
+    static_profile = norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE")) or DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
+    default_path_tokens = ["/job/", "/jobs/", "/jobdetail/"]
+    default_query_keys = ["job_id"]
+    if static_profile == "broad":
+        default_path_tokens.extend(["/career/", "/careers/", "/position/", "/positions/"])
+        default_query_keys.extend(["gh_jid", "jid", "jobid"])
+
+    def is_probable_job_detail_url(candidate_url: str, source_row: Dict[str, Any]) -> bool:
         parsed = urlparse(candidate_url)
         path = parsed.path.lower()
         query = parsed.query.lower()
-        if (
-            "/job/" in path
-            or "/jobs/" in path
-            or "/jobdetail/" in path
-            or bool(re.search(r"/en/j/\d+", path))
-        ):
+        path_tokens = list(default_path_tokens)
+        query_keys = list(default_query_keys)
+        source_path_tokens = source_row.get("detailPathTokens")
+        source_query_keys = source_row.get("detailQueryKeys")
+        if isinstance(source_path_tokens, list):
+            path_tokens.extend([f"/{norm_text(token).strip('/')}/" for token in source_path_tokens if clean_text(token)])
+        if isinstance(source_query_keys, list):
+            query_keys.extend([norm_text(token) for token in source_query_keys if clean_text(token)])
+        if any(token and token in path for token in path_tokens) or bool(re.search(r"/en/j/\d+", path)):
             return True
-        if "job_id=" in query:
+        if any(key and f"{key}=" in query for key in query_keys):
             return True
         if "target-req=" in query and ("page=req" in query or "careerportal.aspx" in path):
             return True
@@ -2971,8 +3020,14 @@ def run_static_studio_pages_source(
             "fetchedCount": len(pages),
             "keptCount": 0,
             "error": "",
+            "loss": {
+                "staticNonJobUrlRejected": 0,
+                "staticDuplicateLinkRejected": 0,
+                "staticDetailParseEmpty": 0,
+            },
         }
         kept_before = len(jobs)
+        link_rejections: Counter[str] = Counter()
 
         for page in pages:
             page_url = clean_text(page)
@@ -3026,6 +3081,7 @@ def run_static_studio_pages_source(
                         anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", link_match.group(2) or ""))
                         absolute = urljoin(page_url, clean_text(href))
                         if absolute in detail_seen:
+                            link_rejections["duplicate_link"] += 1
                             continue
                         detail_seen.add(absolute)
                         detail_links.append((absolute, anchor_text))
@@ -3035,18 +3091,22 @@ def run_static_studio_pages_source(
                         anchor_inner = match.group(2) or ""
                         anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner))
                         absolute = urljoin(page_url, clean_text(href))
-                        if not is_probable_job_detail_url(absolute):
+                        if not is_probable_job_detail_url(absolute, source):
+                            link_rejections["non_job_url"] += 1
                             continue
                         if absolute in detail_seen:
+                            link_rejections["duplicate_link"] += 1
                             continue
                         detail_seen.add(absolute)
                         detail_links.append((absolute, anchor_text))
                     # Some career sites embed job links in JSON payloads instead of anchor hrefs.
                     for raw in re.findall(r'https?://[^\s"\'<>]+', listing_html, flags=re.I):
                         absolute = clean_text(raw)
-                        if not is_probable_job_detail_url(absolute):
+                        if not is_probable_job_detail_url(absolute, source):
+                            link_rejections["non_job_url"] += 1
                             continue
                         if absolute in detail_seen:
+                            link_rejections["duplicate_link"] += 1
                             continue
                         detail_seen.add(absolute)
                         detail_links.append((absolute, ""))
@@ -3072,6 +3132,7 @@ def run_static_studio_pages_source(
                                 row["studio"] = clean_text(source.get("studio")) or company or source_name
                                 jobs.append(row)
                             continue
+                        link_rejections["detail_parse_empty"] += 1
                         path_parts = [part for part in urlparse(detail).path.rstrip("/").split("/") if part]
                         slug = path_parts[-1] if path_parts else ""
                         if slug.lower() == "apply" and len(path_parts) >= 2:
@@ -3106,6 +3167,11 @@ def run_static_studio_pages_source(
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"static:{source_name}:{page_url}: {exc}")
         entry_report["keptCount"] = max(0, len(jobs) - kept_before)
+        entry_report["loss"] = {
+            "staticNonJobUrlRejected": int(link_rejections.get("non_job_url", 0)),
+            "staticDuplicateLinkRejected": int(link_rejections.get("duplicate_link", 0)),
+            "staticDetailParseEmpty": int(link_rejections.get("detail_parse_empty", 0)),
+        }
         if entry_report["keptCount"] == 0 and pages:
             entry_report["status"] = "error"
             entry_report["error"] = "no jobs extracted from source pages"
@@ -3485,11 +3551,19 @@ def run_personio_sources_source(*, fetch_text: Callable[[str, int], str], timeou
     return []
 
 
-def canonicalize_job(raw: RawJob, *, source: str, fetched_at: str) -> Optional[RawJob]:
+def canonicalize_job_with_reason(raw: Any, *, source: str, fetched_at: str) -> Tuple[Optional[RawJob], str]:
+    if not isinstance(raw, dict):
+        return None, "invalid_payload"
     title = clean_text(raw.get("title"))
     company = clean_text(raw.get("company"))
-    if not title or not company:
-        return None
+    if not title:
+        return None, "missing_title"
+    if not company:
+        return None, "missing_company"
+    normalized_link = normalize_url(raw.get("jobLink"))
+    raw_link = clean_text(raw.get("jobLink"))
+    if env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL) and raw_link and not normalized_link:
+        return None, "invalid_url"
 
     adapter = clean_text(raw.get("adapter"))
     studio = clean_text(raw.get("studio"))
@@ -3550,7 +3624,7 @@ def canonicalize_job(raw: RawJob, *, source: str, fetched_at: str) -> Optional[R
         "country": normalize_country(raw.get("country")),
         "workType": normalize_work_type(raw.get("workType")),
         "contractType": normalize_contract_type(raw.get("contractType"), title),
-        "jobLink": normalize_url(raw.get("jobLink")),
+        "jobLink": normalized_link,
         "sector": normalize_sector(raw.get("sector"), company, title),
         "profession": map_profession(title),
         "companyType": classify_company_type(company, title),
@@ -3573,6 +3647,11 @@ def canonicalize_job(raw: RawJob, *, source: str, fetched_at: str) -> Optional[R
     }
     normalized["qualityScore"] = compute_quality_score(normalized)
     normalized["focusScore"] = compute_focus_score(normalized)
+    return normalized, ""
+
+
+def canonicalize_job(raw: RawJob, *, source: str, fetched_at: str) -> Optional[RawJob]:
+    normalized, _reason = canonicalize_job_with_reason(raw, source=source, fetched_at=fetched_at)
     return normalized
 
 
@@ -3738,6 +3817,10 @@ def deduplicate_jobs(rows: Sequence[RawJob]) -> Tuple[List[RawJob], Dict[str, in
     by_secondary: Dict[str, int] = {}
     by_social: Dict[str, int] = {}
     merges = 0
+    merged_by_primary = 0
+    merged_by_secondary = 0
+    merged_by_social = 0
+    merge_samples: List[Dict[str, str]] = []
 
     for row in rows:
         primary = fingerprint_url(row.get("jobLink"))
@@ -3747,12 +3830,16 @@ def deduplicate_jobs(rows: Sequence[RawJob]) -> Tuple[List[RawJob], Dict[str, in
             social_key = f"{clean_text(row.get('source'))}|{clean_text(row.get('sourceJobId'))}"
 
         target_idx: Optional[int] = None
+        merge_reason = ""
         if primary and primary in by_primary:
             target_idx = by_primary[primary]
+            merge_reason = "primary_url"
         elif secondary and secondary in by_secondary:
             target_idx = by_secondary[secondary]
+            merge_reason = "secondary_key"
         elif social_key and social_key in by_social:
             target_idx = by_social[social_key]
+            merge_reason = "social_key"
 
         if target_idx is None:
             item = dict(row)
@@ -3777,6 +3864,23 @@ def deduplicate_jobs(rows: Sequence[RawJob]) -> Tuple[List[RawJob], Dict[str, in
             continue
 
         merges += 1
+        if merge_reason == "primary_url":
+            merged_by_primary += 1
+        elif merge_reason == "secondary_key":
+            merged_by_secondary += 1
+        elif merge_reason == "social_key":
+            merged_by_social += 1
+        if len(merge_samples) < 10:
+            merge_samples.append(
+                {
+                    "reason": merge_reason or "unknown",
+                    "existingDedupKey": clean_text(merged_rows[target_idx].get("dedupKey")),
+                    "incomingSource": clean_text(row.get("source")),
+                    "incomingTitle": clean_text(row.get("title")),
+                    "incomingCompany": clean_text(row.get("company")),
+                    "incomingJobLink": normalize_url(row.get("jobLink")),
+                }
+            )
         merged = merge_records(merged_rows[target_idx], row)
         primary = fingerprint_url(merged.get("jobLink"))
         secondary = dedup_secondary_key(merged)
@@ -3807,7 +3911,16 @@ def deduplicate_jobs(rows: Sequence[RawJob]) -> Tuple[List[RawJob], Dict[str, in
     )
     for idx, row in enumerate(merged_rows, start=1):
         row["id"] = idx
-    return merged_rows, {"inputCount": len(rows), "mergedCount": merges, "outputCount": len(merged_rows)}
+    return merged_rows, {
+        "inputCount": len(rows),
+        "mergedCount": merges,
+        "outputCount": len(merged_rows),
+        "mergedByPrimaryUrl": merged_by_primary,
+        "mergedBySecondaryKey": merged_by_secondary,
+        "mergedBySocialKey": merged_by_social,
+        "collisionSamplesCount": len(merge_samples),
+        "collisionSamples": merge_samples,
+    }
 
 
 def default_source_loaders(
@@ -3878,8 +3991,18 @@ def build_pipeline_summary(
     lifecycle_counts_map: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     lifecycle = lifecycle_counts_map or {}
+    raw_fetched = int(sum(int(row.get("fetchedCount") or 0) for row in source_reports if norm_text(row.get("status")) == "ok"))
+    canonical_kept = int(canonical_count)
+    canonical_dropped = max(0, raw_fetched - canonical_kept)
+    dedup_merged = int(dedup_stats.get("mergedCount") or 0)
+    final_output = len(deduped_rows)
     return {
         **dedup_stats,
+        "rawFetched": raw_fetched,
+        "canonicalDropped": canonical_dropped,
+        "canonicalKept": canonical_kept,
+        "dedupMerged": dedup_merged,
+        "finalOutput": final_output,
         "rawFetchedCount": canonical_count,
         "uniqueOutputCount": len(deduped_rows),
         "sourceBundleCollisions": sum(1 for row in deduped_rows if int(row.get("sourceBundleCount") or 0) > 1),
@@ -4254,12 +4377,46 @@ def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count:
         "socialConfigPath": clean_text(src.get("socialConfigPath")),
         "socialLookbackMinutes": _clamped_int(src.get("socialLookbackMinutes"), DEFAULT_SOCIAL_LOOKBACK_MINUTES, 1),
         "socialMinConfidence": _clamped_int(src.get("socialMinConfidence"), DEFAULT_SOCIAL_MIN_CONFIDENCE, 0),
+        "staticDetailHeuristicsProfile": clean_text(src.get("staticDetailHeuristicsProfile"))
+        or DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE,
+        "scrapyValidationStrict": bool(
+            src.get("scrapyValidationStrict")
+            if isinstance(src.get("scrapyValidationStrict"), bool)
+            else DEFAULT_SCRAPY_VALIDATION_STRICT
+        ),
+        "canonicalStrictUrlValidation": bool(
+            src.get("canonicalStrictUrlValidation")
+            if isinstance(src.get("canonicalStrictUrlValidation"), bool)
+            else DEFAULT_CANONICAL_STRICT_URL
+        ),
         "selectedSourceCount": _clamped_int(src.get("selectedSourceCount"), selected_source_count, 0),
     }
 
 
 def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
     src = row if isinstance(row, dict) else {}
+    def _normalize_loss(loss: Any) -> Dict[str, Any]:
+        payload = loss if isinstance(loss, dict) else {}
+        drop_reasons = payload.get("canonicalDropReasons") if isinstance(payload.get("canonicalDropReasons"), dict) else {}
+        return {
+            "rawFetched": _clamped_int(payload.get("rawFetched"), 0, 0),
+            "canonicalDropped": _clamped_int(payload.get("canonicalDropped"), 0, 0),
+            "canonicalKept": _clamped_int(payload.get("canonicalKept"), 0, 0),
+            "dedupMerged": _clamped_int(payload.get("dedupMerged"), 0, 0),
+            "finalOutput": _clamped_int(payload.get("finalOutput"), 0, 0),
+            "canonicalDropReasons": {
+                "missing_title": _clamped_int(drop_reasons.get("missing_title"), 0, 0),
+                "missing_company": _clamped_int(drop_reasons.get("missing_company"), 0, 0),
+                "invalid_url": _clamped_int(drop_reasons.get("invalid_url"), 0, 0),
+                "invalid_payload": _clamped_int(drop_reasons.get("invalid_payload"), 0, 0),
+            },
+            "scrapyRunnerRejectedValidation": _clamped_int(payload.get("scrapyRunnerRejectedValidation"), 0, 0),
+            "scrapyParentInvalidPayload": _clamped_int(payload.get("scrapyParentInvalidPayload"), 0, 0),
+            "staticNonJobUrlRejected": _clamped_int(payload.get("staticNonJobUrlRejected"), 0, 0),
+            "staticDuplicateLinkRejected": _clamped_int(payload.get("staticDuplicateLinkRejected"), 0, 0),
+            "staticDetailParseEmpty": _clamped_int(payload.get("staticDetailParseEmpty"), 0, 0),
+        }
+
     normalized = {
         "name": clean_text(src.get("name")),
         "status": norm_text(src.get("status")) or "error",
@@ -4272,6 +4429,11 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "error": clean_text(src.get("error")),
         "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
     }
+    exclusion_reason = clean_text(src.get("exclusionReason"))
+    if exclusion_reason:
+        normalized["exclusionReason"] = exclusion_reason
+    if isinstance(src.get("loss"), dict):
+        normalized["loss"] = _normalize_loss(src.get("loss"))
     details = src.get("details")
     if isinstance(details, list):
         clean_details: List[Any] = []
@@ -4309,6 +4471,8 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
                         "jobs_rejected_validation": _clamped_int(stats.get("jobs_rejected_validation"), 0, 0),
                         "finish_reason": clean_text(stats.get("finish_reason")),
                     }
+                if isinstance(item.get("loss"), dict):
+                    clean_item["loss"] = _normalize_loss(item.get("loss"))
                 source_id = clean_text(item.get("sourceId"))
                 if source_id:
                     clean_item["sourceId"] = source_id
@@ -4461,6 +4625,7 @@ def _build_excluded_source_report(source_name: str, reason: str) -> Dict[str, An
         "fetchedCount": 0,
         "keptCount": 0,
         "error": clean_text(reason),
+        "exclusionReason": clean_text(reason),
         "durationMs": 0,
     }
 
@@ -4565,6 +4730,7 @@ def run_pipeline(
     social_config_path: Optional[Path] = None,
     social_lookback_minutes: int = DEFAULT_SOCIAL_LOOKBACK_MINUTES,
     show_progress: bool = True,
+    selection_exclusions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -4584,6 +4750,8 @@ def run_pipeline(
 
     started_at = now_iso()
     source_reports: List[Dict[str, Any]] = []
+    if isinstance(selection_exclusions, list):
+        source_reports.extend([row for row in selection_exclusions if isinstance(row, dict)])
     canonical_rows: List[RawJob] = []
     max_workers = max(1, int(max_workers or 1))
     max_per_domain = max(1, int(max_per_domain or 1))
@@ -4678,6 +4846,10 @@ def run_pipeline(
         "socialConfigPath": str(effective_social_config_path),
         "socialLookbackMinutes": int(social_config.get("lookbackMinutes") or DEFAULT_SOCIAL_LOOKBACK_MINUTES),
         "socialMinConfidence": int(social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE),
+        "staticDetailHeuristicsProfile": norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE"))
+        or DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE,
+        "scrapyValidationStrict": env_flag("BALUFFO_SCRAPY_VALIDATION_STRICT", DEFAULT_SCRAPY_VALIDATION_STRICT),
+        "canonicalStrictUrlValidation": env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL),
         "selectedSourceCount": len(selected_loaders),
     }, selected_source_count=len(selected_loaders))
 
@@ -4785,19 +4957,50 @@ def run_pipeline(
             "lowConfidenceDropped": 0,
             "error": "",
             "durationMs": 0,
+            "loss": {
+                "rawFetched": 0,
+                "canonicalDropped": 0,
+                "canonicalKept": 0,
+                "dedupMerged": 0,
+                "finalOutput": 0,
+                "canonicalDropReasons": {
+                    "missing_title": 0,
+                    "missing_company": 0,
+                    "invalid_url": 0,
+                    "invalid_payload": 0,
+                },
+                "scrapyRunnerRejectedValidation": 0,
+                "scrapyParentInvalidPayload": 0,
+                "staticNonJobUrlRejected": 0,
+                "staticDuplicateLinkRejected": 0,
+                "staticDetailParseEmpty": 0,
+            },
         }
         canonical_batch: List[RawJob] = []
         try:
             thread_local.source_name = name
             raw_rows = loader(fetch_text=fetch_text_limited, timeout_s=timeout_s, retries=retries, backoff_s=backoff_s)
             report["fetchedCount"] = len(raw_rows)
+            report_loss = report["loss"] if isinstance(report.get("loss"), dict) else {}
+            report_loss["rawFetched"] = int(len(raw_rows))
+            drop_reasons = Counter()
             kept = 0
             for raw in raw_rows:
-                normalized = canonicalize_job(raw, source=name, fetched_at=started_at)
+                normalized, drop_reason = canonicalize_job_with_reason(raw, source=name, fetched_at=started_at)
                 if normalized:
                     canonical_batch.append(normalized)
                     kept += 1
+                elif drop_reason:
+                    drop_reasons[drop_reason] += 1
             report["keptCount"] = kept
+            report_loss["canonicalKept"] = int(kept)
+            report_loss["canonicalDropped"] = max(0, int(len(raw_rows)) - int(kept))
+            report_loss["canonicalDropReasons"] = {
+                "missing_title": int(drop_reasons.get("missing_title", 0)),
+                "missing_company": int(drop_reasons.get("missing_company", 0)),
+                "invalid_url": int(drop_reasons.get("invalid_url", 0)),
+                "invalid_payload": int(drop_reasons.get("invalid_payload", 0)),
+            }
             current_fingerprint = source_rows_fingerprint(canonical_batch)
             previous_fingerprint = clean_text((source_state_rows.get(name) or {}).get("lastFingerprint"))
             report["sourceFingerprint"] = current_fingerprint
@@ -4810,10 +5013,38 @@ def run_pipeline(
             details = diag.get("details")
             if isinstance(details, list) and details:
                 report["details"] = details
+            detail_rows = details if isinstance(details, list) else []
             partial_errors = [clean_text(err) for err in (diag.get("partialErrors") or []) if clean_text(err)]
             if partial_errors:
                 report["error"] = "; ".join(format_source_error(name, err) for err in partial_errors[:6])
             report["lowConfidenceDropped"] = int(diag.get("lowConfidenceDropped") or 0)
+            if name == "scrapy_static_sources":
+                runner_rejected = 0
+                parent_invalid = 0
+                for detail in detail_rows:
+                    if not isinstance(detail, dict):
+                        continue
+                    stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
+                    runner_rejected += int(stats.get("jobs_rejected_validation") or 0)
+                    loss_detail = detail.get("loss") if isinstance(detail.get("loss"), dict) else {}
+                    parent_invalid += int(loss_detail.get("scrapyParentInvalidPayload") or 0)
+                report_loss["scrapyRunnerRejectedValidation"] = int(runner_rejected)
+                report_loss["scrapyParentInvalidPayload"] = int(parent_invalid)
+            if norm_text(report.get("adapter")) == "static":
+                static_non_job = 0
+                static_dup = 0
+                static_empty = 0
+                for detail in detail_rows:
+                    if not isinstance(detail, dict):
+                        continue
+                    loss_detail = detail.get("loss") if isinstance(detail.get("loss"), dict) else {}
+                    static_non_job += int(loss_detail.get("staticNonJobUrlRejected") or 0)
+                    static_dup += int(loss_detail.get("staticDuplicateLinkRejected") or 0)
+                    static_empty += int(loss_detail.get("staticDetailParseEmpty") or 0)
+                report_loss["staticNonJobUrlRejected"] = int(static_non_job)
+                report_loss["staticDuplicateLinkRejected"] = int(static_dup)
+                report_loss["staticDetailParseEmpty"] = int(static_empty)
+            report["loss"] = report_loss
         except Exception as exc:  # noqa: BLE001
             report["status"] = "error"
             report["error"] = format_source_error(name, exc)
@@ -4868,6 +5099,19 @@ def run_pipeline(
             "keptCount": 0,
             "error": format_source_error(source_name, exc),
             "durationMs": 0,
+            "loss": {
+                "rawFetched": 0,
+                "canonicalDropped": 0,
+                "canonicalKept": 0,
+                "dedupMerged": 0,
+                "finalOutput": 0,
+                "canonicalDropReasons": {
+                    "missing_title": 0,
+                    "missing_company": 0,
+                    "invalid_url": 0,
+                    "invalid_payload": 0,
+                },
+            },
         }
 
     def run_source_execution_stage() -> None:
@@ -4930,6 +5174,20 @@ def run_pipeline(
     )
 
     dedup_stats["outputCount"] = len(deduped_rows)
+    final_output_by_source: Counter[str] = Counter(
+        clean_text(row.get("source")) for row in deduped_rows if clean_text(row.get("source"))
+    )
+    for report in source_reports:
+        if not isinstance(report, dict):
+            continue
+        loss = report.get("loss")
+        if not isinstance(loss, dict):
+            continue
+        source_name = clean_text(report.get("name"))
+        canonical_kept = int(loss.get("canonicalKept") or report.get("keptCount") or 0)
+        final_output = int(final_output_by_source.get(source_name, 0))
+        loss["finalOutput"] = max(0, final_output)
+        loss["dedupMerged"] = max(0, canonical_kept - final_output)
 
     wrote_json = False
     wrote_csv = False
@@ -5109,6 +5367,7 @@ def main() -> int:
     args = parse_args()
     source_loaders: Optional[List[Tuple[str, SourceLoader]]] = None
     seed_from_existing_output = False
+    selection_exclusions: List[Dict[str, Any]] = []
     social_config = load_social_config(
         config_path=Path(args.social_config_path),
         enabled=bool(args.social_enabled),
@@ -5127,6 +5386,10 @@ def main() -> int:
         wanted = set(only_sources)
         source_loaders = [(name, loader) for name, loader in default_loaders if name in wanted]
         seed_from_existing_output = True
+        for name, _loader in default_loaders:
+            if name in wanted:
+                continue
+            selection_exclusions.append(_build_excluded_source_report(name, "only_sources_filter"))
         missing = [name for name in only_sources if name not in {item[0] for item in source_loaders}]
         if missing:
             print(f"[jobs_fetcher] WARN unknown --only-sources entries: {', '.join(missing)}", flush=True)
@@ -5148,6 +5411,8 @@ def main() -> int:
                 successful = read_previously_successful_sources(previous_report)
         if successful:
             selected = [(name, loader) for name, loader in selected if name not in successful]
+            for source_name in sorted(successful):
+                selection_exclusions.append(_build_excluded_source_report(source_name, "skip_successful_ttl"))
         source_loaders = selected
         seed_from_existing_output = True
         if not args.quiet:
@@ -5157,6 +5422,16 @@ def main() -> int:
             )
 
     forced_only_sources = bool(only_sources)
+    deduped_selection_exclusions: List[Dict[str, Any]] = []
+    seen_selection_exclusions = set()
+    for row in selection_exclusions:
+        name = clean_text(row.get("name"))
+        reason = clean_text(row.get("exclusionReason") or row.get("error"))
+        token = f"{name}|{reason}"
+        if not name or token in seen_selection_exclusions:
+            continue
+        seen_selection_exclusions.add(token)
+        deduped_selection_exclusions.append(row)
     report = run_pipeline(
         output_dir=Path(args.output_dir),
         timeout_s=args.timeout,
@@ -5180,6 +5455,7 @@ def main() -> int:
         social_config_path=Path(args.social_config_path),
         social_lookback_minutes=int(args.social_lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES),
         show_progress=not args.quiet,
+        selection_exclusions=deduped_selection_exclusions,
     )
     summary = report.get("summary", {})
     output_count = int(summary.get("outputCount") or 0)

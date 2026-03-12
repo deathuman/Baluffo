@@ -836,6 +836,9 @@ class JobsFetcherTests(unittest.TestCase):
         self.assertIsNotNone(second)
         rows, stats = jf.deduplicate_jobs([first, second])
         self.assertEqual(stats["outputCount"], 1)
+        self.assertEqual(int(stats.get("mergedByPrimaryUrl") or 0), 1)
+        self.assertEqual(int(stats.get("mergedBySecondaryKey") or 0), 0)
+        self.assertEqual(int(stats.get("mergedBySocialKey") or 0), 0)
         self.assertEqual(rows[0]["sourceJobId"], "r-2")
         self.assertTrue(rows[0]["dedupKey"].startswith("url:"))
 
@@ -874,9 +877,33 @@ class JobsFetcherTests(unittest.TestCase):
         self.assertIsNotNone(second)
         rows, stats = jf.deduplicate_jobs([first, second])
         self.assertEqual(stats["outputCount"], 1)
+        self.assertEqual(int(stats.get("mergedBySecondaryKey") or 0), 1)
         self.assertTrue(rows[0]["dedupKey"].startswith("secondary:"))
         self.assertGreaterEqual(int(rows[0].get("sourceBundleCount") or 0), 2)
         self.assertIsInstance(rows[0].get("sourceBundle"), list)
+
+    def test_canonicalize_job_with_reason_accounts_drop_reasons(self) -> None:
+        dropped_title, reason_title = jf.canonicalize_job_with_reason(
+            {"company": "Studio A", "jobLink": "https://example.com/jobs/1"},
+            source="x",
+            fetched_at=jf.now_iso(),
+        )
+        dropped_company, reason_company = jf.canonicalize_job_with_reason(
+            {"title": "Gameplay Engineer", "jobLink": "https://example.com/jobs/2"},
+            source="x",
+            fetched_at=jf.now_iso(),
+        )
+        dropped_payload, reason_payload = jf.canonicalize_job_with_reason(
+            "not-a-dict",
+            source="x",
+            fetched_at=jf.now_iso(),
+        )
+        self.assertIsNone(dropped_title)
+        self.assertIsNone(dropped_company)
+        self.assertIsNone(dropped_payload)
+        self.assertEqual(reason_title, "missing_title")
+        self.assertEqual(reason_company, "missing_company")
+        self.assertEqual(reason_payload, "invalid_payload")
 
     def test_pipeline_partial_success_when_one_source_fails(self) -> None:
         def failing_loader(**_: object):
@@ -1154,6 +1181,8 @@ class JobsFetcherTests(unittest.TestCase):
             self.assertIn("summary", report)
             self.assertIn("sources", report)
             self.assertEqual(str(report["sources"][0].get("fetchStrategy") or ""), "auto")
+            self.assertIn("loss", report["sources"][0])
+            self.assertIn("canonicalDropReasons", (report["sources"][0].get("loss") or {}))
 
             task_payload = json.loads((out / "jobs-fetch-tasks.json").read_text(encoding="utf-8"))
             self.assertEqual(str(task_payload.get("schemaVersion") or ""), str(jf.SCHEMA_VERSION))
@@ -1167,6 +1196,48 @@ class JobsFetcherTests(unittest.TestCase):
             sources_state = state_payload.get("sources") or {}
             self.assertIn("ok_source", sources_state)
             self.assertEqual(int((sources_state["ok_source"]).get("consecutiveFailures") or 0), 0)
+
+    def test_run_pipeline_includes_selection_exclusions(self) -> None:
+        def ok_loader(**_: object):
+            return [
+                {
+                    "title": "Technical Artist",
+                    "company": "Incl Studio",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "Remote",
+                    "contractType": "Full-time",
+                    "jobLink": "https://example.com/included",
+                    "sector": "Game",
+                    "sourceJobId": "incl-1",
+                    "postedAt": "2026-03-01",
+                }
+            ]
+
+        with workspace_tmpdir("jobs-fetcher") as tmp:
+            out = Path(tmp)
+            report = jf.run_pipeline(
+                output_dir=out,
+                source_loaders=[("included_source", ok_loader)],
+                selection_exclusions=[
+                    {
+                        "name": "excluded_source",
+                        "status": "excluded",
+                        "adapter": "custom",
+                        "fetchStrategy": "auto",
+                        "studio": "",
+                        "fetchedCount": 0,
+                        "keptCount": 0,
+                        "error": "only_sources_filter",
+                        "exclusionReason": "only_sources_filter",
+                        "durationMs": 0,
+                    }
+                ],
+            )
+            excluded_rows = [row for row in (report.get("sources") or []) if row.get("name") == "excluded_source"]
+            self.assertEqual(len(excluded_rows), 1)
+            self.assertEqual(str(excluded_rows[0].get("status") or ""), "excluded")
+            self.assertEqual(str(excluded_rows[0].get("exclusionReason") or ""), "only_sources_filter")
 
     def test_should_skip_source_by_ttl_honors_recent_success_and_failure_state(self) -> None:
         now = jf.now_iso()

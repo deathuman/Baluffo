@@ -561,6 +561,9 @@ class SourceDiscoveryTests(unittest.TestCase):
                 self.assertEqual(int(summary.get("queuedCandidateCount") or 0), 2)
                 self.assertIn("generatedCountByStage", summary)
                 self.assertIn("queuedCountByStage", summary)
+                self.assertIn("lossAccounting", summary)
+                self.assertEqual(int((summary.get("lossAccounting") or {}).get("generated") or 0), 2)
+                self.assertEqual(int((summary.get("lossAccounting") or {}).get("queued") or 0), 2)
                 self.assertEqual(int((summary.get("queuedCountByStage") or {}).get("curated_seed") or 0), 2)
 
                 queued = json.loads(sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8"))
@@ -646,9 +649,12 @@ class SourceDiscoveryTests(unittest.TestCase):
                 report = sd.run_discovery(timeout_s=5, top_n=0, mode="dynamic", include_web_search=False, fetcher=lambda *_: json.dumps([{"id": 1}, {"id": 2}]))
                 self.assertEqual(int(report["summary"].get("queuedCandidateCount") or 0), 1)
                 self.assertEqual(int(report["summary"].get("discoverableButDeferredCount") or 0), 1)
+                self.assertGreaterEqual(int((report["summary"].get("lossAccounting") or {}).get("deferredByCap") or 0), 1)
                 deferred = [row for row in (report.get("candidates") or []) if bool(row.get("deferred"))]
                 self.assertEqual(len(deferred), 1)
                 self.assertEqual(str(deferred[0].get("deferReason") or ""), "adapter_cap")
+                self.assertEqual(str(deferred[0].get("dropStage") or ""), "deferred_by_cap")
+                self.assertEqual(str(deferred[0].get("dropReason") or ""), "adapter_cap")
             finally:
                 (
                     sd.ACTIVE_PATH,
@@ -693,8 +699,11 @@ class SourceDiscoveryTests(unittest.TestCase):
                 report = sd.run_discovery(timeout_s=5, top_n=0, mode="dynamic", include_web_search=False, fetcher=lambda *_: json.dumps({"jobs": [{}]}))
                 self.assertEqual(int(report["summary"].get("probedCandidateCount") or 0), 0)
                 self.assertEqual(int(report["summary"].get("queuedCandidateCount") or 0), 0)
+                self.assertGreaterEqual(int((report["summary"].get("lossAccounting") or {}).get("lowEvidenceSkipped") or 0), 1)
                 stages = [str(row.get("stage") or "") for row in (report.get("failures") or [])]
                 self.assertIn("probe_skipped", stages)
+                dropped = [row for row in (report.get("failures") or []) if str(row.get("dropStage") or "") == "low_evidence_skipped"]
+                self.assertTrue(dropped)
             finally:
                 (
                     sd.ACTIVE_PATH,
@@ -910,6 +919,22 @@ class SourceDiscoveryTests(unittest.TestCase):
                 sd.DISCOVERY_CONFIG_PATH = previous_path
             self.assertTrue(bool((cfg.get("gamesmap") or {}).get("enabled")))
             self.assertEqual(int((cfg.get("gamesmap") or {}).get("maxDetailPages") or 0), 25)
+
+    def test_resolve_discovery_thresholds_overrides_defaults(self) -> None:
+        thresholds = sd.resolve_discovery_thresholds(
+            {
+                "thresholds": {
+                    "minProviderEvidenceToProbe": 7,
+                    "patternProviderQueueThreshold": 55,
+                }
+            }
+        )
+        self.assertEqual(int(thresholds.get("minProviderEvidenceToProbe") or 0), 7)
+        self.assertEqual(int(thresholds.get("patternProviderQueueThreshold") or 0), 55)
+        self.assertEqual(
+            int(thresholds.get("minStaticEvidenceToQueue") or 0),
+            int(sd.DEFAULT_DISCOVERY_THRESHOLDS["minStaticEvidenceToQueue"]),
+        )
 
 
 if __name__ == "__main__":
