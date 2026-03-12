@@ -2642,6 +2642,11 @@ def run_scrapy_static_source(
     def _base_detail(source_row: Dict[str, Any], *, status: str = "error", error: str = "") -> Dict[str, Any]:
         source_name = clean_text(source_row.get("name")) or "unknown"
         studio_name = clean_text(source_row.get("studio")) or source_name
+        pages = source_row.get("pages") if isinstance(source_row.get("pages"), list) else []
+        source_id = clean_text(source_row.get("id"))
+        if not source_id:
+            seed = "|".join([source_name, studio_name, *[clean_text(page) for page in pages]])
+            source_id = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
         return {
             "adapter": "scrapy_static",
             "studio": studio_name,
@@ -2650,6 +2655,11 @@ def run_scrapy_static_source(
             "fetchedCount": 0,
             "keptCount": 0,
             "error": clean_text(error),
+            "classification": "parse_error" if norm_text(status) == "error" else "ok_no_jobs",
+            "top_reject_reasons": [],
+            "browserFallbackRecommended": False,
+            "sourceId": source_id,
+            "pages": [clean_text(page) for page in pages if clean_text(page)],
         }
 
     def _coerce_int(value: Any) -> int:
@@ -2771,7 +2781,14 @@ def run_scrapy_static_source(
                     errors_list.append(f"{source_name}: stderr: {stderr_text[:500]}")
 
             if not isinstance(envelope, dict) or "ok" not in envelope:
-                source_detail.update({"status": "error", "error": "Invalid envelope from scraper runner"})
+                source_detail.update(
+                    {
+                        "status": "error",
+                        "error": "Invalid envelope from scraper runner",
+                        "classification": "parse_error",
+                        "browserFallbackRecommended": False,
+                    }
+                )
                 if not isinstance(envelope, dict):
                     errors_list.append(f"{source_name}: invalid envelope type")
                 else:
@@ -2789,6 +2806,13 @@ def run_scrapy_static_source(
                             "fetchedCount": _coerce_int(detail_0.get("fetchedCount")),
                             "keptCount": _coerce_int(detail_0.get("keptCount")),
                             "error": clean_text(detail_0.get("error")),
+                            "classification": clean_text(detail_0.get("classification")) or source_detail.get("classification"),
+                            "browserFallbackRecommended": bool(detail_0.get("browserFallbackRecommended")),
+                            "top_reject_reasons": detail_0.get("top_reject_reasons")
+                            if isinstance(detail_0.get("top_reject_reasons"), list)
+                            else [],
+                            "sourceId": clean_text(detail_0.get("sourceId")) or source_detail.get("sourceId"),
+                            "pages": detail_0.get("pages") if isinstance(detail_0.get("pages"), list) else source_detail.get("pages"),
                         }
                     )
 
@@ -2808,10 +2832,19 @@ def run_scrapy_static_source(
                         errors_list.append(f"{source_name}: dropped invalid job payload from runner")
                 source_detail["keptCount"] = max(int(source_detail.get("keptCount") or 0), kept)
                 source_detail["status"] = "ok"
+                if not clean_text(source_detail.get("classification")):
+                    source_detail["classification"] = "ok_with_jobs" if kept > 0 else "ok_no_jobs"
+                if source_detail.get("classification") == "ok_no_jobs" and int(source_detail.get("fetchedCount") or 0) > 0:
+                    source_detail["classification"] = "fetch_ok_extract_zero"
+                source_detail["browserFallbackRecommended"] = bool(
+                    source_detail.get("browserFallbackRecommended")
+                    or source_detail.get("classification") in {"fetch_ok_extract_zero", "blocked_or_challenge"}
+                )
             else:
                 source_detail["status"] = "error"
                 if not clean_text(source_detail.get("error")):
                     source_detail["error"] = "crawl failed"
+                source_detail["classification"] = "parse_error"
                 errors_list.append(f"{source_name}: crawl failed")
 
             stats = envelope.get("stats")
@@ -2822,6 +2855,10 @@ def run_scrapy_static_source(
                     "downloader/response_status_count/200": _coerce_int(stats.get("downloader/response_status_count/200")),
                     "retry/count": _coerce_int(stats.get("retry/count")),
                     "item_scraped_count": _coerce_int(stats.get("item_scraped_count")),
+                    "candidate_links_found": _coerce_int(stats.get("candidate_links_found")),
+                    "detail_pages_visited": _coerce_int(stats.get("detail_pages_visited")),
+                    "jobs_emitted": _coerce_int(stats.get("jobs_emitted")),
+                    "jobs_rejected_validation": _coerce_int(stats.get("jobs_rejected_validation")),
                     "finish_reason": clean_text(stats.get("finish_reason")),
                 }
                 if int(source_detail.get("fetchedCount") or 0) <= 0:
@@ -2829,11 +2866,25 @@ def run_scrapy_static_source(
 
             details.append(source_detail)
         except subprocess.TimeoutExpired:
-            source_detail.update({"status": "error", "error": "subprocess timeout"})
+            source_detail.update(
+                {
+                    "status": "error",
+                    "error": "subprocess timeout",
+                    "classification": "timeout",
+                    "browserFallbackRecommended": True,
+                }
+            )
             errors_list.append(f"{source_name}: subprocess timeout")
             details.append(source_detail)
         except Exception as exc:  # noqa: BLE001
-            source_detail.update({"status": "error", "error": clean_text(exc)[:500]})
+            source_detail.update(
+                {
+                    "status": "error",
+                    "error": clean_text(exc)[:500],
+                    "classification": "parse_error",
+                    "browserFallbackRecommended": False,
+                }
+            )
             errors_list.append(f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}")
             details.append(source_detail)
 
@@ -3865,6 +3916,53 @@ def build_pipeline_summary(
     }
 
 
+def build_browser_fallback_queue(
+    source_reports: Sequence[Dict[str, Any]],
+    *,
+    generated_at: str,
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    seen = set()
+    for report in source_reports:
+        details = report.get("details") if isinstance(report, dict) else None
+        if not isinstance(details, list):
+            continue
+        for item in details:
+            if not isinstance(item, dict):
+                continue
+            classification = norm_text(item.get("classification"))
+            recommend = bool(item.get("browserFallbackRecommended"))
+            if not recommend or classification not in {"fetch_ok_extract_zero", "blocked_or_challenge", "timeout"}:
+                continue
+            source_id = clean_text(item.get("sourceId"))
+            name = clean_text(item.get("name"))
+            studio = clean_text(item.get("studio"))
+            pages = item.get("pages") if isinstance(item.get("pages"), list) else []
+            clean_pages = [clean_text(page) for page in pages if clean_text(page)] or [""]
+            for page in clean_pages:
+                dedupe_key = hashlib.sha1(
+                    "|".join(["scrapy_static", source_id or name, page]).encode("utf-8")
+                ).hexdigest()
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                rows.append(
+                    {
+                        "dedupeKey": dedupe_key,
+                        "adapter": "scrapy_static",
+                        "sourceId": source_id,
+                        "name": name,
+                        "studio": studio,
+                        "page": page,
+                        "classification": classification,
+                        "reason": clean_text(item.get("error")) or classification,
+                        "generatedAt": clean_text(generated_at),
+                    }
+                )
+    rows.sort(key=lambda row: (clean_text(row.get("studio")), clean_text(row.get("name")), clean_text(row.get("page"))))
+    return rows
+
+
 def read_previously_successful_sources(report_path: Path) -> set[str]:
     try:
         payload = json.loads(report_path.read_text(encoding="utf-8"))
@@ -4187,7 +4285,14 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
                     "fetchedCount": _clamped_int(item.get("fetchedCount"), 0, 0),
                     "keptCount": _clamped_int(item.get("keptCount"), 0, 0),
                     "error": clean_text(item.get("error")),
+                    "classification": clean_text(item.get("classification")) or "",
+                    "browserFallbackRecommended": bool(item.get("browserFallbackRecommended")),
                 }
+                top_reject_reasons = item.get("top_reject_reasons")
+                if isinstance(top_reject_reasons, list):
+                    clean_item["top_reject_reasons"] = [
+                        clean_text(reason) for reason in top_reject_reasons if clean_text(reason)
+                    ][:5]
                 stats = item.get("stats")
                 if isinstance(stats, dict):
                     clean_item["stats"] = {
@@ -4198,8 +4303,20 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
                         ),
                         "retry/count": _clamped_int(stats.get("retry/count"), 0, 0),
                         "item_scraped_count": _clamped_int(stats.get("item_scraped_count"), 0, 0),
+                        "candidate_links_found": _clamped_int(stats.get("candidate_links_found"), 0, 0),
+                        "detail_pages_visited": _clamped_int(stats.get("detail_pages_visited"), 0, 0),
+                        "jobs_emitted": _clamped_int(stats.get("jobs_emitted"), 0, 0),
+                        "jobs_rejected_validation": _clamped_int(stats.get("jobs_rejected_validation"), 0, 0),
                         "finish_reason": clean_text(stats.get("finish_reason")),
                     }
+                source_id = clean_text(item.get("sourceId"))
+                if source_id:
+                    clean_item["sourceId"] = source_id
+                pages = item.get("pages")
+                if isinstance(pages, list):
+                    clean_pages = [clean_text(page) for page in pages if clean_text(page)]
+                    if clean_pages:
+                        clean_item["pages"] = clean_pages
                 clean_details.append(clean_item)
                 continue
             text = clean_text(item)
@@ -4270,6 +4387,7 @@ def normalize_fetch_report_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "lightJson": clean_text(outputs.get("lightJson")),
             "report": clean_text(outputs.get("report")),
             "lifecycleState": clean_text(outputs.get("lifecycleState")),
+            "browserFallbackQueue": clean_text(outputs.get("browserFallbackQueue")),
             "changed": {
                 "json": bool(changed.get("json")),
                 "csv": bool(changed.get("csv")),
@@ -4458,6 +4576,7 @@ def run_pipeline(
     success_cache_path = output_dir / "jobs-success-cache.json"
     source_state_path = output_dir / "jobs-source-state.json"
     lifecycle_state_path = output_dir / "jobs-lifecycle-state.json"
+    browser_fallback_queue_path = output_dir / "jobs-browser-fallback-queue.json"
     task_state_path = output_dir / "jobs-fetch-tasks.json"
     pending_registry_path = output_dir / "source-registry-pending.json"
     approval_state_path = output_dir / "source-approval-state.json"
@@ -4826,6 +4945,8 @@ def run_pipeline(
     json_bytes = json_path.stat().st_size if json_path.exists() else 0
     csv_bytes = csv_path.stat().st_size if csv_path.exists() else 0
     light_json_bytes = light_json_path.stat().st_size if light_json_path.exists() else 0
+    browser_fallback_queue_rows = build_browser_fallback_queue(source_reports, generated_at=lifecycle_finished_at)
+    write_text_if_changed(browser_fallback_queue_path, json.dumps(browser_fallback_queue_rows, indent=2, ensure_ascii=False))
 
     report_payload = normalize_fetch_report_payload({
         "schemaVersion": SCHEMA_VERSION,
@@ -4853,6 +4974,7 @@ def run_pipeline(
             "lightJson": str(light_json_path),
             "report": str(report_path),
             "lifecycleState": str(lifecycle_state_path),
+            "browserFallbackQueue": str(browser_fallback_queue_path),
             "changed": {"json": wrote_json, "csv": wrote_csv, "lightJson": wrote_light_json},
         },
     })

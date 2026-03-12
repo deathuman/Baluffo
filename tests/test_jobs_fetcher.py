@@ -586,6 +586,11 @@ class JobsFetcherTests(unittest.TestCase):
         self.assertIsInstance(envelope.get("details"), list)
         self.assertIsInstance(envelope.get("partialErrors"), list)
         self.assertIsInstance(envelope.get("stats"), dict)
+        detail = (envelope.get("details") or [{}])[0]
+        self.assertIn("classification", detail)
+        self.assertIn("browserFallbackRecommended", detail)
+        self.assertIn("sourceId", detail)
+        self.assertIn("candidate_links_found", envelope.get("stats") or {})
 
     def test_scrapy_runner_invalid_schema_emits_error_envelope(self) -> None:
         runner_path = Path(jf.__file__).resolve().parent / "scrapers" / "runner.py"
@@ -630,6 +635,9 @@ class JobsFetcherTests(unittest.TestCase):
                     args, kwargs = diag.call_args
                     self.assertEqual(args[0], "scrapy_static_sources")
                     self.assertEqual(kwargs.get("adapter"), "scrapy_static")
+                    details = kwargs.get("details") or []
+                    self.assertTrue(details)
+                    self.assertEqual(str(details[0].get("classification") or ""), "parse_error")
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
@@ -638,6 +646,62 @@ class JobsFetcherTests(unittest.TestCase):
         self.assertEqual(jfr.SOURCE_REPORT_META["scrapy_static_sources"]["adapter"], "scrapy_static")
         names = [name for name, _ in jf.default_source_loaders()]
         self.assertIn("scrapy_static_sources", names)
+
+    def test_run_pipeline_writes_browser_fallback_queue(self) -> None:
+        def scraper_loader(**_: object):
+            jf.set_source_diagnostics(
+                "scrapy_static_sources",
+                adapter="scrapy_static",
+                studio="multiple",
+                details=[
+                    {
+                        "adapter": "scrapy_static",
+                        "studio": "Valve",
+                        "name": "Valve Careers Scrapy",
+                        "status": "ok",
+                        "fetchedCount": 10,
+                        "keptCount": 0,
+                        "error": "",
+                        "classification": "fetch_ok_extract_zero",
+                        "browserFallbackRecommended": True,
+                        "top_reject_reasons": ["missing_title:4"],
+                        "sourceId": "valve-source-id",
+                        "pages": ["https://www.valvesoftware.com/en/jobs"],
+                        "stats": {
+                            "downloader/request_count": 10,
+                            "downloader/response_count": 10,
+                            "downloader/response_status_count/200": 10,
+                            "retry/count": 0,
+                            "item_scraped_count": 0,
+                            "candidate_links_found": 8,
+                            "detail_pages_visited": 8,
+                            "jobs_emitted": 0,
+                            "jobs_rejected_validation": 8,
+                            "finish_reason": "finished",
+                        },
+                    }
+                ],
+                partial_errors=[],
+            )
+            return []
+
+        with workspace_tmpdir("jobs-fetcher-scrapy-fallback") as tmp:
+            out = Path(tmp)
+            report = jf.run_pipeline(
+                output_dir=out,
+                source_loaders=[("scrapy_static_sources", scraper_loader)],
+                show_progress=False,
+            )
+            queue_path = out / "jobs-browser-fallback-queue.json"
+            self.assertTrue(queue_path.exists())
+            queue_rows = json.loads(queue_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(queue_rows), 1)
+            self.assertEqual(str(queue_rows[0].get("adapter") or ""), "scrapy_static")
+            self.assertEqual(str(queue_rows[0].get("classification") or ""), "fetch_ok_extract_zero")
+            self.assertEqual(str((report.get("outputs") or {}).get("browserFallbackQueue") or ""), str(queue_path))
+            details = ((report.get("sources") or [{}])[0].get("details") or [{}])[0]
+            self.assertEqual(str(details.get("classification") or ""), "fetch_ok_extract_zero")
+            self.assertTrue(bool(details.get("browserFallbackRecommended")))
 
     def test_map_profession_recognizes_focus_synonyms(self) -> None:
         self.assertEqual(jf.map_profession("Senior Tech Artist"), "technical-artist")

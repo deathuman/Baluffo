@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 import hashlib
 import json
 import os
@@ -31,6 +32,114 @@ def _to_float(value: Any, default: float = 0.0) -> float:
         return float(default)
 
 
+DOMAIN_PROFILES: Dict[str, Dict[str, Any]] = {
+    "www.valvesoftware.com": {
+        "include_query_keys": ["job_id"],
+        "exclude_path_tokens": ["/faq", "/team", "/about"],
+        "title_selectors": ["h1::text", "title::text"],
+        "max_detail_links": 80,
+    },
+    "www.riotgames.com": {
+        "include_path_tokens": ["/jobs", "/job"],
+        "exclude_path_tokens": ["/internships", "/events", "/news", "/esports"],
+        "title_selectors": ["h1::text", "h2::text", "title::text"],
+        "max_detail_links": 50,
+    },
+    "cdprojektred.com": {
+        "include_path_tokens": ["/jobs", "/careers"],
+        "exclude_path_tokens": ["/news", "/about"],
+        "title_selectors": ["h1::text", "title::text"],
+        "max_detail_links": 60,
+    },
+    "supercell.com": {
+        "include_path_tokens": ["/careers", "/jobs"],
+        "exclude_path_tokens": ["/blog", "/news"],
+        "title_selectors": ["h1::text", "h2::text", "title::text"],
+        "max_detail_links": 50,
+    },
+    "larian.com": {
+        "include_path_tokens": ["/careers/"],
+        "exclude_path_tokens": ["/careers/location/"],
+        "title_selectors": ["h1::text", "title::text"],
+        "max_detail_links": 40,
+    },
+    "www.remedygames.com": {
+        "include_path_tokens": ["/careers", "/jobs"],
+        "exclude_path_tokens": ["/news", "/blog"],
+        "title_selectors": ["h1::text", "title::text"],
+        "max_detail_links": 40,
+    },
+    "www.ubisoft.com": {
+        "include_path_tokens": ["/careers", "/jobs"],
+        "exclude_path_tokens": ["/locations", "/teams"],
+        "title_selectors": ["h1::text", "title::text"],
+        "max_detail_links": 60,
+    },
+    "www.epicgames.com": {
+        "include_path_tokens": ["/careers", "/jobs"],
+        "exclude_path_tokens": ["/newsroom", "/store", "/site/en-us/home"],
+        "title_selectors": ["h1::text", "title::text"],
+        "max_detail_links": 60,
+    },
+}
+
+
+def _domain_profile_for_url(url: str) -> Dict[str, Any]:
+    host = _clean_text(urlparse(url).netloc).lower()
+    return dict(DOMAIN_PROFILES.get(host) or {})
+
+
+def _source_id(name: str, studio: str, pages: List[str]) -> str:
+    seed = "|".join([_clean_text(name), _clean_text(studio), *[_clean_text(p) for p in pages]])
+    return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+
+
+def _is_probable_job_detail_url(url: str, profile: Dict[str, Any]) -> bool:
+    parsed = urlparse(url)
+    path = _clean_text(parsed.path).lower()
+    query = _clean_text(parsed.query).lower()
+    if not path:
+        return False
+    exclude_path_tokens = [str(token).lower() for token in (profile.get("exclude_path_tokens") or [])]
+    for token in exclude_path_tokens:
+        if token and token in path:
+            return False
+    if "/jobs/" in path or "/job/" in path or "/jobdetail/" in path:
+        return True
+    if "job_id=" in query or "gh_jid=" in query or "lever-via=" in query:
+        return True
+    include_query_keys = [str(token).lower() for token in (profile.get("include_query_keys") or [])]
+    for key in include_query_keys:
+        if key and f"{key}=" in query:
+            return True
+    include_path_tokens = [str(token).lower() for token in (profile.get("include_path_tokens") or [])]
+    for token in include_path_tokens:
+        if token and token in path and (re.search(r"/[0-9]+", path) or re.search(r"/[0-9a-f]{8}-[0-9a-f-]{27,36}", path)):
+            return True
+    if "/careers/" in path and re.search(r"/[0-9a-f]{8}-[0-9a-f-]{27,36}$", path):
+        return True
+    if "/careers/location/" in path or "/careers/locations/" in path:
+        return False
+    if "location=" in query:
+        return False
+    return False
+
+
+def _classify_result(*, ok: bool, fetched_count: int, kept_count: int, partial_errors: List[str]) -> str:
+    if not ok:
+        return "parse_error"
+    if kept_count > 0:
+        return "ok_with_jobs"
+    if fetched_count <= 0:
+        return "blocked_or_challenge"
+    lower_errors = " ".join(item.lower() for item in partial_errors)
+    if "captcha" in lower_errors or "cloudflare" in lower_errors or "challenge" in lower_errors or "403" in lower_errors:
+        return "blocked_or_challenge"
+    if fetched_count > 0 and kept_count == 0:
+        return "fetch_ok_extract_zero"
+    return "ok_no_jobs"
+
+
 def _stats_subset(stats: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "downloader/request_count": _to_int(stats.get("downloader/request_count")),
@@ -39,10 +148,15 @@ def _stats_subset(stats: Dict[str, Any]) -> Dict[str, Any]:
         "retry/count": _to_int(stats.get("retry/count")),
         "item_scraped_count": _to_int(stats.get("item_scraped_count")),
         "finish_reason": _clean_text(stats.get("finish_reason")),
+        "candidate_links_found": _to_int(stats.get("candidate_links_found")),
+        "detail_pages_visited": _to_int(stats.get("detail_pages_visited")),
+        "jobs_emitted": _to_int(stats.get("jobs_emitted")),
+        "jobs_rejected_validation": _to_int(stats.get("jobs_rejected_validation")),
     }
 
 
 def _json_error_envelope(error: str, *, source_name: str, studio: str) -> Dict[str, Any]:
+    sid = _source_id(source_name, studio, [])
     return {
         "ok": False,
         "jobs": [],
@@ -55,6 +169,11 @@ def _json_error_envelope(error: str, *, source_name: str, studio: str) -> Dict[s
                 "fetchedCount": 0,
                 "keptCount": 0,
                 "error": _clean_text(error),
+                "classification": "parse_error",
+                "browserFallbackRecommended": False,
+                "top_reject_reasons": ["parse_error:1"],
+                "sourceId": sid,
+                "pages": [],
             }
         ],
         "partialErrors": [_clean_text(error)],
@@ -177,9 +296,18 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
     source_name = _clean_text(source.get("name")) or "scrapy_source"
     studio = _clean_text(source.get("studio")) or "unknown"
     pages = source.get("pages") or []
+    source_id_value = _source_id(source_name, studio, list(pages))
+    domain_profile = _domain_profile_for_url(_clean_text(pages[0]) if pages else "")
     partial_errors: List[str] = []
     jobs: List[Dict[str, Any]] = []
     seen_links = set()
+    reject_reasons: Counter[str] = Counter()
+    extraction_stats: Dict[str, int] = {
+        "candidate_links_found": 0,
+        "detail_pages_visited": 0,
+        "jobs_emitted": 0,
+        "jobs_rejected_validation": 0,
+    }
 
     # Test-only deterministic path that avoids network and Scrapy runtime.
     if _clean_text(os.getenv("BALUFFO_SCRAPY_RUNNER_SELFTEST")) == "1":
@@ -195,6 +323,11 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
                     "fetchedCount": 0,
                     "keptCount": 0,
                     "error": "",
+                    "classification": "ok_no_jobs",
+                    "browserFallbackRecommended": False,
+                    "top_reject_reasons": [],
+                    "sourceId": source_id_value,
+                    "pages": list(pages),
                 }
             ],
             "partialErrors": [],
@@ -211,11 +344,20 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
     class GenericCareersSpider(scrapy.Spider):
         name = "generic_careers"
 
-        def __init__(self, *, start_urls: List[str], studio_name: str, source_name_value: str, **kwargs: Any) -> None:
+        def __init__(
+            self,
+            *,
+            start_urls: List[str],
+            studio_name: str,
+            source_name_value: str,
+            profile: Dict[str, Any],
+            **kwargs: Any,
+        ) -> None:
             super().__init__(**kwargs)
             self.start_urls = start_urls
             self.studio_name = studio_name
             self.source_name_value = source_name_value
+            self.profile = profile or {}
             self._detail_seen = set()
 
         def parse(self, response: scrapy.http.Response):  # type: ignore[name-defined]
@@ -233,9 +375,11 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
                 if href in self._detail_seen:
                     continue
                 self._detail_seen.add(href)
+                extraction_stats["candidate_links_found"] += 1
                 yield scrapy.Request(url=href, callback=self.parse_job_detail)
 
         def parse_job_detail(self, response: scrapy.http.Response):  # type: ignore[name-defined]
+            extraction_stats["detail_pages_visited"] += 1
             for script in response.css('script[type="application/ld+json"]::text').getall():
                 try:
                     payload = json.loads(unescape(script))
@@ -248,11 +392,20 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
                         return
 
             raw_title = response.css("h1::text, [class*='title']::text").get("")
+            if not _clean_text(raw_title):
+                selectors = self.profile.get("title_selectors") if isinstance(self.profile, dict) else []
+                if isinstance(selectors, list):
+                    for selector in selectors:
+                        raw_title = response.css(_clean_text(selector)).get("")
+                        if _clean_text(raw_title):
+                            break
             title = _clean_text(raw_title)
             if not title:
+                reject_reasons["missing_title"] += 1
                 return
             job_link = _clean_text(response.url)
-            if not self._is_probable_job_detail_url(job_link):
+            if not _is_probable_job_detail_url(job_link, self.profile):
+                reject_reasons["non_job_url"] += 1
                 return
             self._append_job(
                 _build_job(
@@ -317,6 +470,7 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
             patterns = [
                 'a[href*="/job"]::attr(href)',
                 'a[href*="/jobs/"]::attr(href)',
+                'a[href*="/careers"]::attr(href)',
                 '[class*="job-listing"] a::attr(href)',
             ]
             links = set()
@@ -327,30 +481,19 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
                         continue
                     if urlparse(absolute).netloc != urlparse(response.url).netloc:
                         continue
-                    if not self._is_probable_job_detail_url(absolute):
+                    if not _is_probable_job_detail_url(absolute, self.profile):
                         continue
                     links.add(absolute)
-            return sorted(links)
-
-        def _is_probable_job_detail_url(self, url: str) -> bool:
-            parsed = urlparse(url)
-            path = _clean_text(parsed.path).lower()
-            query = _clean_text(parsed.query).lower()
-            if not path:
-                return False
-            if "/jobs/" in path or "/job/" in path or "/jobdetail/" in path:
-                return True
-            if "job_id=" in query:
-                return True
-            # Many sites use UUIDs for job detail pages under generic careers paths.
-            if "/careers/" in path and re.search(r"/[0-9a-f]{8}-[0-9a-f-]{27,36}$", path):
-                return True
-            # Filter known non-job taxonomy/listing pages.
-            if "/careers/location/" in path or "/careers/locations/" in path:
-                return False
-            if "location=" in query:
-                return False
-            return False
+            # Also mine raw URLs in scripts/html for query-based job links.
+            for raw in re.findall(r'https?://[^\s"\'<>]+', response.text or "", flags=re.I):
+                absolute = _clean_text(raw)
+                if urlparse(absolute).netloc != urlparse(response.url).netloc:
+                    continue
+                if not _is_probable_job_detail_url(absolute, self.profile):
+                    continue
+                links.add(absolute)
+            max_detail_links = _to_int(self.profile.get("max_detail_links"), 60)
+            return sorted(links)[: max(1, max_detail_links)]
 
         def _append_job(self, job: Dict[str, Any]) -> None:
             job_link = _clean_text(job.get("jobLink"))
@@ -358,14 +501,22 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
             company = _clean_text(job.get("company"))
             source_job_id = _clean_text(job.get("sourceJobId"))
             if not title or not company or not job_link:
+                extraction_stats["jobs_rejected_validation"] += 1
+                reject_reasons["missing_required_fields"] += 1
                 partial_errors.append(f"{self.source_name_value}: dropped incomplete job payload")
                 return
             if not source_job_id:
                 job["sourceJobId"] = _safe_id(f"{job_link}|{title}|{company}")
             if job_link in seen_links:
+                reject_reasons["duplicate_job_link"] += 1
+                return
+            if not _is_probable_job_detail_url(job_link, self.profile):
+                extraction_stats["jobs_rejected_validation"] += 1
+                reject_reasons["non_job_url"] += 1
                 return
             seen_links.add(job_link)
             jobs.append(job)
+            extraction_stats["jobs_emitted"] += 1
 
     settings = Settings(
         {
@@ -377,6 +528,8 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
             "TELNETCONSOLE_ENABLED": False,
             "WEBSOCKETS_ENABLED": False,
             "REACTOR_THREADPOOL_MAXSIZE": 10,
+            "DEPTH_LIMIT": 1,
+            "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         }
     )
 
@@ -391,6 +544,7 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
             start_urls=list(pages),
             studio_name=studio,
             source_name_value=source_name,
+            profile=domain_profile,
         )
         crawler_process.start(stop_after_crawl=True)
     except Exception as exc:  # noqa: BLE001
@@ -398,9 +552,15 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
         error_text = f"{source_name}: crawl failed: {exc}"
         partial_errors.append(error_text)
 
-    stats = _stats_subset(crawler.stats.get_stats() if getattr(crawler, "stats", None) else {})
+    crawler_stats = crawler.stats.get_stats() if getattr(crawler, "stats", None) else {}
+    for key, value in extraction_stats.items():
+        crawler_stats[key] = int(value)
+    stats = _stats_subset(crawler_stats)
     fetched_count = _to_int(stats.get("downloader/response_count"))
     kept_count = len(jobs)
+    classification = _classify_result(ok=ok, fetched_count=fetched_count, kept_count=kept_count, partial_errors=partial_errors)
+    top_reject_reasons = [f"{key}:{count}" for key, count in reject_reasons.most_common(5)]
+    browser_fallback_recommended = classification in {"fetch_ok_extract_zero", "blocked_or_challenge"}
 
     details = [
         {
@@ -411,6 +571,11 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
             "fetchedCount": fetched_count,
             "keptCount": kept_count,
             "error": error_text,
+            "classification": classification,
+            "browserFallbackRecommended": browser_fallback_recommended,
+            "top_reject_reasons": top_reject_reasons,
+            "sourceId": source_id_value,
+            "pages": list(pages),
         }
     ]
     return {
