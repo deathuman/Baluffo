@@ -17,6 +17,11 @@ permissions:
 jobs:
   windows-portable:
     runs-on: windows-latest
+    env:
+      BALUFFO_SYNC_BUILD_APP_ID: ${{ secrets.BALUFFO_SYNC_BUILD_APP_ID }}
+      BALUFFO_SYNC_BUILD_INSTALLATION_ID: ${{ secrets.BALUFFO_SYNC_BUILD_INSTALLATION_ID }}
+      BALUFFO_SYNC_BUILD_REPO: ${{ secrets.BALUFFO_SYNC_BUILD_REPO }}
+      BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM: ${{ secrets.BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM }}
     steps:
       - uses: actions/checkout@v4
 
@@ -55,6 +60,34 @@ jobs:
             }
           }
           "BALUFFO_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Prepare packaged sync config build inputs
+        shell: pwsh
+        run: |
+          $appId = "$env:BALUFFO_SYNC_BUILD_APP_ID"
+          $installId = "$env:BALUFFO_SYNC_BUILD_INSTALLATION_ID"
+          $repo = "$env:BALUFFO_SYNC_BUILD_REPO"
+          $privateKeyPem = "$env:BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM"
+
+          if ([string]::IsNullOrWhiteSpace($appId)) { $appId = "100000" }
+          if ([string]::IsNullOrWhiteSpace($installId)) { $installId = "100000" }
+          if ([string]::IsNullOrWhiteSpace($repo)) { $repo = "${{ github.repository }}" }
+
+          $keyPath = Join-Path $env:RUNNER_TEMP "baluffo-sync-app-private-key.pem"
+          if ([string]::IsNullOrWhiteSpace($privateKeyPem)) {
+            @"
+-----BEGIN PRIVATE KEY-----
+QkFMVUZGTy1DSS1QTEFDRUhPTERFUg==
+-----END PRIVATE KEY-----
+"@ | Set-Content -Path $keyPath -Encoding utf8
+          } else {
+            $privateKeyPem | Set-Content -Path $keyPath -Encoding utf8
+          }
+
+          "BALUFFO_SYNC_BUILD_APP_ID=$appId" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "BALUFFO_SYNC_BUILD_INSTALLATION_ID=$installId" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "BALUFFO_SYNC_BUILD_REPO=$repo" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH=$keyPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build portable executable
         run: python scripts/build_portable_exe.py --bundle-version ${{ env.BALUFFO_VERSION }}
