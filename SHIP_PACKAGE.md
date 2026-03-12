@@ -3,77 +3,52 @@
 ## Release Notes
 
 ### What's New
-- Completed a final frontend architecture refactor focused on maintainability:
-  - removed non-essential frontend globals (kept only the `window.JobAppLocalData` compatibility boundary)
-  - expanded page-level action dispatch coverage for jobs/saved/admin core flows
-  - introduced additional local-data domain modules (`constants`, `phase`, `profile-session`, `job-utils`)
-  - extracted jobs source-metadata rendering into dedicated module
-- Added a unified local aggregation pipeline that publishes:
-  - `data/jobs-unified.json`
-  - `data/jobs-unified.csv`
-  - `data/jobs-fetch-report.json`
-- Expanded job intake through multiple adapters (core feed + ATS/static adapters), with non-blocking partial-success behavior.
-- Added admin-managed source discovery and approval lifecycle (pending, active, rejected) with local persistence.
-- Improved Jobs/Saved auth presentation with a compact profile pill and clearer sign in/out actions.
-- Refined filters, country picker, and pagination visuals for better readability and theme consistency.
+- Added two new Google Sheets sources to the jobs ingestion pipeline.
+- Improved Google Sheets compatibility:
+  - supports alternate public export paths (`gviz`/`pub`) when direct CSV export is blocked
+  - supports additional header variants (`Studio`, `Job`, `Job Title`, `Job Type`, `Link`, etc.)
+- Refined Jobs page pipeline button UX:
+  - idle button now shows the real action label instead of `Ready`
+  - button includes a tooltip warning that runs may exceed 5 minutes
+  - button height is aligned with `Refresh Jobs`
+- Cleaned up Jobs page Data Sources panel:
+  - source URLs are sanitized before rendering
+  - static-source rows are compacted to reduce panel bloat
 
 ### Reliability & Data Coverage
-- Fetch pipeline now merges multi-source inputs into one unified feed while preserving fallback outputs and diagnostics.
-- Source failures are isolated per adapter/source and no longer block full feed publication.
-- Dynamic discovery supports probe-based candidate validation before queuing for approval.
-- Dedup/merge behavior keeps a single visible role row while preserving source provenance metadata.
+- Increased effective jobs coverage via additional public Sheets ingestion paths and parser tolerance.
+- Confirmed full pipeline output updates and packaged-runtime visibility of refreshed totals.
+- Source-level failures remain isolated and reported without blocking successful source publication.
 
 ### Admin Workflows
-- Admin page can run:
-  - Jobs fetcher
-  - Source discovery
-  - Discovery report reload
-- Full discovery review loop now available in Admin:
-  - Approve selected pending sources
-  - Reject selected pending sources
-  - Restore selected rejected sources
-- Added operational status/log surfaces (bridge state, fetch/discovery logs, latest report loading).
+- No breaking admin workflow changes in this release.
+- Existing fetch/discovery/sync controls remain unchanged.
 
 ### UI/UX Improvements
-- Jobs page header/navigation was streamlined:
-  - top isolated `Back` button
-  - `Saved Jobs` moved into profile action area
-- Filter area readability improvements:
-  - tighter country option spacing
-  - cleaner option rows and scroll treatment
-  - improved select/dropdown contrast in dark mode
-- Pagination styling now aligns with the updated visual language in both themes.
-- Light theme button contrast/saturation improved; destructive clear actions remain visually distinct.
+- Pipeline run button is now consistent with adjacent toolbar controls.
+- Jobs results summary now better reflects loaded dataset context after refresh/filtering.
+- Data Sources panel readability is improved by condensing static-source noise.
 
 ### Breaking/Non-breaking Notes
-- Non-breaking for frontend listing behavior and core filter/sort workflows.
-- Unified feed adds optional metadata fields (additive):
-  - `source`, `sourceJobId`, `fetchedAt`, `postedAt`, `dedupKey`, `qualityScore`, `focusScore`
-  - `sourceBundleCount`, `sourceBundle`
-- No internet-facing API changes were introduced.
-- Admin bridge interfaces are localhost-only operational endpoints.
+- Non-breaking release for existing jobs browsing and admin flows.
+- No required schema changes for consumers of unified feed outputs.
+- No internet-facing API changes introduced.
 
 ### Known Limitations
-- Some discovered endpoints may return `404`/`429` or anti-bot responses.
-- Discovery is best-effort and coverage-first; candidates still require admin approval before activation.
-- Certain sources may be valid but currently return zero open jobs.
+- Some third-party static/careers sources can still return `404`, timeout, or anti-bot responses.
+- Dynamic source availability remains dependent on provider uptime and access policies.
 
 ### Validation
-- Verified frontend architecture regressions with:
-  - `npm run test:frontend:unit` (dispatch + local-data service contracts)
-  - `npm run test:frontend` (Playwright smoke suite)
-- Verified fetch pipeline continues producing report artifacts under partial source failure conditions.
-- Verified admin discovery flow updates pending/active/rejected states through approve/reject/restore actions.
-- Verified approved sources are applied on subsequent fetch runs and reflected in fetch reporting.
-- Verified Jobs/Saved auth controls still represent guest/signed-in states and sign in/out behavior.
-- Verified filter/pagination rendering and behavior remain stable after visual updates in dark and light themes.
+- Verified frontend unit suite (`node --test tests/frontend/unit/all.test.mjs`) is green.
+- Verified targeted pipeline/source metadata unit coverage for new behavior is green.
+- Verified full fetch pipeline run updates `data/jobs-unified.*` and `data/jobs-fetch-report.json`.
+- Verified new packaged build launches and reports refreshed jobs totals in startup metrics.
 
 ### Operator Notes (Local Usage)
-- Run the local admin bridge before using discovery controls in Admin.
-- Discovery actions depend on bridge availability.
-- If bridge startup is delayed, Admin falls back to VS Code task launch and logs a manual command fallback for operators.
-- Approvals affect the next fetch run (run fetcher after approving sources).
-- This setup is optimized for local personal operation, not internet-exposed deployment.
+- Tag-driven GitHub release flow remains unchanged:
+  - create/push `v0.0.4` tag on `main`
+  - workflow publishes portable and ship zip artifacts with `0.0.4` versioned names
+  - release body is sourced from this `## Release Notes` section
 
 ---
 
