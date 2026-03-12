@@ -2987,8 +2987,11 @@ def run_static_studio_pages_source(
 
     def is_probable_job_detail_url(candidate_url: str, source_row: Dict[str, Any]) -> bool:
         parsed = urlparse(candidate_url)
+        host = parsed.netloc.lower()
         path = parsed.path.lower()
         query = parsed.query.lower()
+        if host.endswith("larian.com") and "/careers/location/" in path:
+            return False
         path_tokens = list(default_path_tokens)
         query_keys = list(default_query_keys)
         source_path_tokens = source_row.get("detailPathTokens")
@@ -2997,6 +3000,8 @@ def run_static_studio_pages_source(
             path_tokens.extend([f"/{norm_text(token).strip('/')}/" for token in source_path_tokens if clean_text(token)])
         if isinstance(source_query_keys, list):
             query_keys.extend([norm_text(token) for token in source_query_keys if clean_text(token)])
+        if re.search(r"/careers/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:/|$)", path):
+            return True
         if any(token and token in path for token in path_tokens) or bool(re.search(r"/en/j/\d+", path)):
             return True
         if any(key and f"{key}=" in query for key in query_keys):

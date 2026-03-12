@@ -966,7 +966,20 @@ def provider_reinforcement_score(seed: Dict[str, Any], provider: str) -> int:
 
 def _pattern_aliases_for_provider(seed: Dict[str, Any], provider: str) -> List[str]:
     aliases = expand_aliases(seed)
-    return aliases[:2] if provider in {"greenhouse", "lever", "workable", "teamtailor"} else aliases[:1]
+    scoped = aliases[:2] if provider in {"greenhouse", "lever", "workable", "teamtailor"} else aliases[:1]
+    if provider in {"lever", "teamtailor"}:
+        # Some providers mix dashed and compact account slugs (e.g. sandbox-vr vs sandboxvr).
+        expanded: List[str] = []
+        seen = set()
+        for alias in scoped:
+            for variant in (alias, alias.replace("-", ""), alias.replace("_", "")):
+                token = clean_token(variant)
+                if not token or token in seen:
+                    continue
+                seen.add(token)
+                expanded.append(token)
+        return expanded[:4]
+    return scoped
 
 
 def build_pattern_candidates() -> List[Dict[str, Any]]:
@@ -1003,6 +1016,21 @@ def build_pattern_candidates() -> List[Dict[str, Any]]:
                 elif provider == "workable":
                     rows.append({**base, "name": f"{studio} (Workable)", "adapter": "workable", "account": alias, "api_url": f"https://apply.workable.com/api/v1/widget/accounts/{alias}?details=true"})
                 elif provider == "teamtailor":
+                    if careers_url and "/jobs" in careers_url.lower():
+                        parsed = urlparse(careers_url)
+                        if parsed.scheme and parsed.netloc:
+                            base_url = f"{parsed.scheme}://{parsed.netloc}"
+                            rows.append(
+                                {
+                                    **base,
+                                    "name": f"{studio} (Teamtailor)",
+                                    "adapter": "teamtailor",
+                                    "company": studio,
+                                    "listing_url": careers_url,
+                                    "base_url": base_url,
+                                }
+                            )
+                            continue
                     rows.append({**base, "name": f"{studio} (Teamtailor)", "adapter": "teamtailor", "company": studio, "listing_url": f"https://{alias}.teamtailor.com/jobs", "base_url": f"https://{alias}.teamtailor.com"})
                 elif provider == "ashby":
                     rows.append({**base, "name": f"{studio} (Ashby)", "adapter": "ashby", "board_url": f"https://jobs.ashbyhq.com/{alias}/jobs"})

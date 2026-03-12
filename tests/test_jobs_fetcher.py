@@ -554,6 +554,126 @@ class JobsFetcherTests(unittest.TestCase):
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
+    def test_run_static_studio_pages_source_accepts_larian_uuid_paths_and_rejects_location_pages(self) -> None:
+        prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        jf.STUDIO_SOURCE_REGISTRY = [
+            {
+                "name": "Larian Studios (Manual Website)",
+                "studio": "Larian Studios",
+                "adapter": "static",
+                "company": "Larian Studios",
+                "pages": ["https://larian.com/careers"],
+                "enabledByDefault": True,
+            }
+        ]
+        listing = (
+            '<html><body>'
+            '<a href="https://larian.com/careers/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee">Senior Engineer</a>'
+            '<a href="https://larian.com/careers/location/gent?location=Gent">Gent</a>'
+            "</body></html>"
+        )
+        detail = "<html><body><h1>Senior Engineer</h1></body></html>"
+        try:
+            def fake_fetch(url: str, _: int) -> str:
+                if url == "https://larian.com/careers":
+                    return listing
+                if url == "https://larian.com/careers/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee":
+                    return detail
+                raise RuntimeError(f"Unexpected URL: {url}")
+
+            rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["jobLink"], "https://larian.com/careers/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        finally:
+            jf.STUDIO_SOURCE_REGISTRY = prev
+
+    def test_run_static_studio_pages_source_accepts_cdpr_query_key_override(self) -> None:
+        prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        jf.STUDIO_SOURCE_REGISTRY = [
+            {
+                "name": "Cdprojektred (Manual Website)",
+                "studio": "Cdprojektred",
+                "adapter": "static",
+                "company": "Cdprojektred",
+                "pages": ["https://cdprojektred.com/en/jobs"],
+                "detailQueryKeys": ["gh_jid"],
+                "enabledByDefault": True,
+            }
+        ]
+        listing = '<html><body><a href="https://cdprojektred.com/en/jobs?gh_jid=1234">Gameplay Engineer</a></body></html>'
+        detail = "<html><body><h1>Gameplay Engineer</h1></body></html>"
+        try:
+            def fake_fetch(url: str, _: int) -> str:
+                if url == "https://cdprojektred.com/en/jobs":
+                    return listing
+                if url == "https://cdprojektred.com/en/jobs?gh_jid=1234":
+                    return detail
+                raise RuntimeError(f"Unexpected URL: {url}")
+
+            rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["jobLink"], "https://cdprojektred.com/en/jobs?gh_jid=1234")
+        finally:
+            jf.STUDIO_SOURCE_REGISTRY = prev
+
+    def test_run_static_studio_pages_source_accepts_remedy_query_key_override(self) -> None:
+        prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        jf.STUDIO_SOURCE_REGISTRY = [
+            {
+                "name": "Remedy Entertainment (Manual Website)",
+                "studio": "Remedy Entertainment",
+                "adapter": "static",
+                "company": "Remedy Entertainment",
+                "pages": ["https://www.remedygames.com/careers"],
+                "detailQueryKeys": ["jobid"],
+                "enabledByDefault": True,
+            }
+        ]
+        listing = '<html><body><a href="https://www.remedygames.com/careers/open?jobid=42">Rendering Programmer</a></body></html>'
+        detail = "<html><body><h1>Rendering Programmer</h1></body></html>"
+        try:
+            def fake_fetch(url: str, _: int) -> str:
+                if url == "https://www.remedygames.com/careers":
+                    return listing
+                if url == "https://www.remedygames.com/careers/open?jobid=42":
+                    return detail
+                raise RuntimeError(f"Unexpected URL: {url}")
+
+            rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["jobLink"], "https://www.remedygames.com/careers/open?jobid=42")
+        finally:
+            jf.STUDIO_SOURCE_REGISTRY = prev
+
+    def test_run_static_studio_pages_source_accepts_ubisoft_query_key_override(self) -> None:
+        prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        jf.STUDIO_SOURCE_REGISTRY = [
+            {
+                "name": "Ubisoft (Manual Website)",
+                "studio": "Ubisoft",
+                "adapter": "static",
+                "company": "Ubisoft",
+                "pages": ["https://www.ubisoft.com/en-us/company/careers/locations/milan"],
+                "detailQueryKeys": ["jobid"],
+                "enabledByDefault": True,
+            }
+        ]
+        listing = '<html><body><a href="https://www.ubisoft.com/en-us/company/careers/search?jobid=99">Engine Programmer</a></body></html>'
+        detail = "<html><body><h1>Engine Programmer</h1></body></html>"
+        try:
+            def fake_fetch(url: str, _: int) -> str:
+                if url == "https://www.ubisoft.com/en-us/company/careers/locations/milan":
+                    return listing
+                if url == "https://www.ubisoft.com/en-us/company/careers/search?jobid=99":
+                    return detail
+                raise RuntimeError(f"Unexpected URL: {url}")
+
+            rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["jobLink"], "https://www.ubisoft.com/en-us/company/careers/search?jobid=99")
+        finally:
+            jf.STUDIO_SOURCE_REGISTRY = prev
+
     def test_scrapy_runner_emits_valid_envelope_selftest(self) -> None:
         runner_path = Path(jf.__file__).resolve().parent / "scrapers" / "runner.py"
         config = {

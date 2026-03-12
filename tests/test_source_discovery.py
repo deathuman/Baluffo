@@ -696,7 +696,14 @@ class SourceDiscoveryTests(unittest.TestCase):
                         "careersUrl": "https://example.com/careers",
                     }
                 ]
-                report = sd.run_discovery(timeout_s=5, top_n=0, mode="dynamic", include_web_search=False, fetcher=lambda *_: json.dumps({"jobs": [{}]}))
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config={"thresholds": {"patternProviderProbeThreshold": 32}},
+                    fetcher=lambda *_: json.dumps({"jobs": [{}]}),
+                )
                 self.assertEqual(int(report["summary"].get("probedCandidateCount") or 0), 0)
                 self.assertEqual(int(report["summary"].get("queuedCandidateCount") or 0), 0)
                 self.assertGreaterEqual(int((report["summary"].get("lossAccounting") or {}).get("lowEvidenceSkipped") or 0), 1)
