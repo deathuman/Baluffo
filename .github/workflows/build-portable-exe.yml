@@ -75,11 +75,12 @@ jobs:
 
           $keyPath = Join-Path $env:RUNNER_TEMP "baluffo-sync-app-private-key.pem"
           if ([string]::IsNullOrWhiteSpace($privateKeyPem)) {
-            @"
------BEGIN PRIVATE KEY-----
-QkFMVUZGTy1DSS1QTEFDRUhPTERFUg==
------END PRIVATE KEY-----
-"@ | Set-Content -Path $keyPath -Encoding utf8
+            $placeholderPem = @(
+              '-----BEGIN PRIVATE KEY-----',
+              'QkFMVUZGTy1DSS1QTEFDRUhPTERFUg==',
+              '-----END PRIVATE KEY-----'
+            ) -join [Environment]::NewLine
+            $placeholderPem | Set-Content -Path $keyPath -Encoding utf8
           } else {
             $privateKeyPem | Set-Content -Path $keyPath -Encoding utf8
           }
