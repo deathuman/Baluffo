@@ -210,6 +210,31 @@ def _env_value(name: str) -> str:
     return str(os.environ.get(name) or "").strip()
 
 
+def _normalize_private_key_pem(raw_value: str) -> str:
+    text = str(raw_value or "").strip()
+    if not text:
+        return ""
+    if "\\n" in text and "\n" not in text:
+        text = text.replace("\\n", "\n")
+    return text
+
+
+def _validate_private_key_pem(private_key_pem: str, *, source: str) -> None:
+    from scripts import source_sync
+
+    normalized = _normalize_private_key_pem(private_key_pem)
+    if not normalized:
+        raise RuntimeError(f"Packaged sync private key from {source} is empty.")
+    try:
+        source_sync._parse_rsa_private_key_der(source_sync._pem_to_der(normalized))  # noqa: SLF001
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"Invalid packaged sync private key from {source}: {exc}. "
+            "If using BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM, ensure it contains the full PEM "
+            "or escaped newlines (\\n)."
+        ) from exc
+
+
 def _candidate_local_packaged_sync_config_paths() -> list[Path]:
     candidates: list[Path] = []
     env_path = _env_value(PACKAGED_SYNC_LOCAL_CONFIG_ENV)
@@ -276,7 +301,14 @@ def _maybe_generate_packaged_sync_config() -> Path | None:
         private_key_path = Path(private_key_path_value).expanduser().resolve()
         if not private_key_path.exists():
             raise RuntimeError(f"Packaged sync private key file not found: {private_key_path}")
-        private_key_pem = private_key_path.read_text(encoding="utf-8")
+        private_key_pem = _normalize_private_key_pem(private_key_path.read_text(encoding="utf-8"))
+        _validate_private_key_pem(private_key_pem, source=str(private_key_path))
+    else:
+        private_key_pem = _normalize_private_key_pem(private_key_pem)
+        _validate_private_key_pem(
+            private_key_pem,
+            source=PACKAGED_SYNC_BUILD_ENV["private_key_pem"],
+        )
 
     if not private_key_pem:
         raise RuntimeError(

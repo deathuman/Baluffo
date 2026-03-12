@@ -67,6 +67,11 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($installId)) { $installId = "100000" }
           if ([string]::IsNullOrWhiteSpace($repo)) { $repo = "${{ github.repository }}" }
 
+          $isTagBuild = "${{ github.ref_type }}" -eq "tag"
+          if ($isTagBuild -and [string]::IsNullOrWhiteSpace($privateKeyPem)) {
+            throw "Missing BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM secret for tagged release build."
+          }
+
           $keyPath = Join-Path $env:RUNNER_TEMP "baluffo-sync-app-private-key.pem"
           if ([string]::IsNullOrWhiteSpace($privateKeyPem)) {
             $placeholderPem = @(
@@ -76,6 +81,9 @@ jobs:
             ) -join [Environment]::NewLine
             $placeholderPem | Set-Content -Path $keyPath -Encoding utf8
           } else {
+            if ($privateKeyPem.Contains('\n') -and -not $privateKeyPem.Contains("`n")) {
+              $privateKeyPem = $privateKeyPem.Replace('\n', "`n")
+            }
             $privateKeyPem | Set-Content -Path $keyPath -Encoding utf8
           }
 

@@ -110,15 +110,18 @@ class BuildShipBundleTests(unittest.TestCase):
                 "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----\n",
                 encoding="utf-8",
             )
-            output = self._build_with_temp_packaged_config(
-                tmp,
-                env={
-                    "BALUFFO_SYNC_BUILD_APP_ID": "123456",
-                    "BALUFFO_SYNC_BUILD_INSTALLATION_ID": "999999",
-                    "BALUFFO_SYNC_BUILD_REPO": "owner/repo",
-                    "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH": str(private_key_path),
-                },
-            )
+            with mock.patch("scripts.build_ship_bundle._candidate_local_packaged_sync_config_paths", return_value=[]), mock.patch(
+                "scripts.build_ship_bundle._validate_private_key_pem"
+            ):
+                output = self._build_with_temp_packaged_config(
+                    tmp,
+                    env={
+                        "BALUFFO_SYNC_BUILD_APP_ID": "123456",
+                        "BALUFFO_SYNC_BUILD_INSTALLATION_ID": "999999",
+                        "BALUFFO_SYNC_BUILD_REPO": "owner/repo",
+                        "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH": str(private_key_path),
+                    },
+                )
             packaged_config = json.loads(
                 (
                     output
@@ -136,6 +139,26 @@ class BuildShipBundleTests(unittest.TestCase):
             self.assertEqual(packaged_config["allowedBranch"], "main")
             self.assertEqual(packaged_config["allowedPathPrefix"], "baluffo/source-sync.json")
             self.assertEqual(packaged_config["keyDerivation"], "embedded")
+
+    def test_bundle_rejects_invalid_private_key_from_build_env(self) -> None:
+        with workspace_tmpdir("build-ship-bundle") as tmp:
+            private_key_path = Path(tmp) / "packaging" / "github-app-private-key.pem"
+            private_key_path.parent.mkdir(parents=True, exist_ok=True)
+            private_key_path.write_text(
+                "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----\n",
+                encoding="utf-8",
+            )
+            with mock.patch("scripts.build_ship_bundle._candidate_local_packaged_sync_config_paths", return_value=[]):
+                with self.assertRaisesRegex(RuntimeError, "Invalid packaged sync private key"):
+                    self._build_with_temp_packaged_config(
+                        tmp,
+                        env={
+                            "BALUFFO_SYNC_BUILD_APP_ID": "123456",
+                            "BALUFFO_SYNC_BUILD_INSTALLATION_ID": "999999",
+                            "BALUFFO_SYNC_BUILD_REPO": "owner/repo",
+                            "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH": str(private_key_path),
+                        },
+                    )
 
     def test_bundle_restores_packaged_sync_config_from_local_env_path(self) -> None:
         with workspace_tmpdir("build-ship-bundle") as tmp:
