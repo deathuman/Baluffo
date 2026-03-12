@@ -94,7 +94,7 @@ jobs:
         run: python scripts/build_portable_exe.py --bundle-version ${{ env.BALUFFO_VERSION }}
 
       - name: Build ship bundle
-        run: py -3 scripts/build_ship_bundle.py --bundle-version ${{ env.BALUFFO_VERSION }}
+        run: py -3.13 scripts/build_ship_bundle.py --bundle-version ${{ env.BALUFFO_VERSION }}
 
       - name: Create ship bundle zip
         shell: pwsh
