@@ -11,7 +11,9 @@ import re
 import sys
 from html import unescape
 from typing import Any, Dict, List, Tuple
+from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
+from urllib.request import Request, urlopen
 
 
 def _clean_text(value: Any) -> str:
@@ -68,6 +70,7 @@ DOMAIN_PROFILES: Dict[str, Dict[str, Any]] = {
         "exclude_path_tokens": ["/news", "/blog"],
         "title_selectors": ["h1::text", "title::text"],
         "max_detail_links": 40,
+        "job_provider": "jobylon_v1",
     },
     "www.ubisoft.com": {
         "include_path_tokens": ["/careers", "/jobs"],
@@ -92,6 +95,86 @@ def _domain_profile_for_url(url: str) -> Dict[str, Any]:
 def _source_id(name: str, studio: str, pages: List[str]) -> str:
     seed = "|".join([_clean_text(name), _clean_text(studio), *[_clean_text(p) for p in pages]])
     return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+
+
+def _http_text(url: str, *, timeout_s: int = 20) -> str:
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(req, timeout=max(1, int(timeout_s))) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+
+def _extract_jobylon_company_id(html: str) -> str:
+    match = re.search(r"jbl_company_id\s*=\s*([0-9]+)", html, flags=re.I)
+    return _clean_text(match.group(1)) if match else ""
+
+
+def _extract_jobylon_v1_jobs(
+    *,
+    source_name: str,
+    studio: str,
+    page_url: str,
+    timeout_s: int,
+) -> Tuple[List[Dict[str, Any]], Dict[str, int], List[str], Counter[str]]:
+    jobs: List[Dict[str, Any]] = []
+    stats = {
+        "candidate_links_found": 0,
+        "detail_pages_visited": 0,
+        "jobs_emitted": 0,
+        "jobs_rejected_validation": 0,
+    }
+    errors: List[str] = []
+    reject_reasons: Counter[str] = Counter()
+    seen = set()
+    try:
+        source_html = _http_text(page_url, timeout_s=timeout_s)
+        company_id = _extract_jobylon_company_id(source_html)
+        if not company_id:
+            return jobs, stats, errors, reject_reasons
+        embed_url = f"https://cdn.jobylon.com/jobs/companies/{company_id}/embed/v1/?target=jobylon-jobs-widget&page_size=50"
+        payload = _http_text(embed_url, timeout_s=timeout_s)
+        chunks = payload.split('<div id="jobylon-job-')
+        for raw in chunks[1:]:
+            job_id = _clean_text(raw.split('"', 1)[0])
+            title_match = re.search(r'(?is)<div class="jobylon-job-title[^"]*">\s*(.*?)\s*</div>', raw)
+            href_match = re.search(r'(?is)<a class="jobylon-apply-btn"\s+href="([^"]+)"', raw)
+            loc_match = re.search(r'(?is)<li class="jobylon-location"><strong>[^<]*</strong>\s*([^<]+)</li>', raw)
+            title = _clean_text(unescape(title_match.group(1))) if title_match else ""
+            job_link = _clean_text(href_match.group(1)) if href_match else ""
+            city = _clean_text(unescape(loc_match.group(1))) if loc_match else ""
+            if not title or not job_link:
+                stats["jobs_rejected_validation"] += 1
+                reject_reasons["missing_title_or_link"] += 1
+                continue
+            if "jobylon-open-application" in job_link:
+                reject_reasons["open_application"] += 1
+                continue
+            if job_link in seen:
+                reject_reasons["duplicate_job_link"] += 1
+                continue
+            seen.add(job_link)
+            stats["candidate_links_found"] += 1
+            stats["detail_pages_visited"] += 1
+            source_job_id = job_id or _safe_id(job_link)
+            jobs.append(
+                _build_job(
+                    source_name=source_name,
+                    studio=studio,
+                    title=title,
+                    company=studio,
+                    city=city,
+                    country="Unknown",
+                    work_type="",
+                    contract_type="",
+                    job_link=job_link,
+                    source_job_id=source_job_id,
+                )
+            )
+            stats["jobs_emitted"] += 1
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        errors.append(f"{source_name}: jobylon_v1 fetch failed: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"{source_name}: jobylon_v1 parse failed: {exc}")
+    return jobs, stats, errors, reject_reasons
 
 
 def _is_probable_job_detail_url(url: str, profile: Dict[str, Any]) -> bool:
@@ -517,6 +600,45 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
             seen_links.add(job_link)
             jobs.append(job)
             extraction_stats["jobs_emitted"] += 1
+
+    job_provider = _clean_text(domain_profile.get("job_provider"))
+    if job_provider == "jobylon_v1":
+        for page_url in pages:
+            provider_jobs, provider_stats, provider_errors, provider_rejects = _extract_jobylon_v1_jobs(
+                source_name=source_name,
+                studio=studio,
+                page_url=_clean_text(page_url),
+                timeout_s=_to_int(runtime.get("timeout_s"), 20),
+            )
+            partial_errors.extend(provider_errors)
+            for key, value in provider_stats.items():
+                if key in {"jobs_emitted", "jobs_rejected_validation"}:
+                    continue
+                extraction_stats[key] = int(extraction_stats.get(key, 0)) + _to_int(value)
+            for reason, count in provider_rejects.items():
+                reject_reasons[reason] += int(count)
+            for job in provider_jobs:
+                job_link = _clean_text(job.get("jobLink"))
+                title = _clean_text(job.get("title"))
+                company = _clean_text(job.get("company"))
+                source_job_id = _clean_text(job.get("sourceJobId"))
+                if not title or not company or not job_link:
+                    extraction_stats["jobs_rejected_validation"] += 1
+                    reject_reasons["missing_required_fields"] += 1
+                    continue
+                if not source_job_id:
+                    job["sourceJobId"] = _safe_id(f"{job_link}|{title}|{company}")
+                if job_link in seen_links:
+                    extraction_stats["jobs_rejected_validation"] += 1
+                    reject_reasons["duplicate_job_link"] += 1
+                    continue
+                if not _is_probable_job_detail_url(job_link, domain_profile):
+                    extraction_stats["jobs_rejected_validation"] += 1
+                    reject_reasons["non_job_url"] += 1
+                    continue
+                seen_links.add(job_link)
+                jobs.append(job)
+                extraction_stats["jobs_emitted"] += 1
 
     settings = Settings(
         {

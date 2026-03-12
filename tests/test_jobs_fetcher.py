@@ -8,6 +8,7 @@ from unittest import mock
 
 from scripts import jobs_fetcher as jf
 from scripts import jobs_fetcher_registry as jfr
+from scripts.scrapers import runner as scrapy_runner
 from tests.temp_paths import workspace_tmpdir
 
 
@@ -605,6 +606,44 @@ class JobsFetcherTests(unittest.TestCase):
         self.assertFalse(bool(envelope.get("ok")))
         self.assertIsInstance(envelope.get("partialErrors"), list)
         self.assertNotEqual(result.returncode, 0)
+
+    def test_scrapy_runner_jobylon_v1_extracts_jobs(self) -> None:
+        source_html = "<html><script>window.jbl_company_id = 2986;</script></html>"
+        embed_html = """
+        <div id="jobylon-job-329202">
+            <div class="jobylon-job-title">Senior Support Engineer</div>
+            <ul><li class="jobylon-location"><strong>Location</strong> Helsinki</li></ul>
+            <a class="jobylon-apply-btn" href="https://emp.jobylon.com/jobs/329202-remedy-entertainment-senior-support-engineer/"></a>
+        </div>
+        <div id="jobylon-job-322343">
+            <div class="jobylon-job-title">Development Director</div>
+            <ul><li class="jobylon-location"><strong>Location</strong> Stockholm</li></ul>
+            <a class="jobylon-apply-btn" href="https://emp.jobylon.com/jobs/322343-remedy-entertainment-development-director/"></a>
+        </div>
+        <div id="jobylon-job-000001">
+            <div class="jobylon-job-title">Open Application</div>
+            <a class="jobylon-apply-btn" href="https://emp.jobylon.com/jobylon-open-application/"></a>
+        </div>
+        """
+
+        with mock.patch.object(scrapy_runner, "_http_text", side_effect=[source_html, embed_html]):
+            jobs, stats, errors, reject_reasons = scrapy_runner._extract_jobylon_v1_jobs(
+                source_name="Remedy",
+                studio="Remedy Entertainment",
+                page_url="https://www.remedygames.com/careers",
+                timeout_s=20,
+            )
+
+        self.assertEqual(len(jobs), 2)
+        self.assertEqual(stats.get("jobs_emitted"), 2)
+        self.assertEqual(stats.get("candidate_links_found"), 2)
+        self.assertEqual(stats.get("detail_pages_visited"), 2)
+        self.assertEqual(errors, [])
+        self.assertEqual(int(reject_reasons.get("open_application", 0)), 1)
+        self.assertTrue(all(isinstance(row.get("sourceBundle"), list) and row.get("sourceBundle") for row in jobs))
+        links = {str(row.get("jobLink") or "") for row in jobs}
+        self.assertIn("https://emp.jobylon.com/jobs/329202-remedy-entertainment-senior-support-engineer/", links)
+        self.assertIn("https://emp.jobylon.com/jobs/322343-remedy-entertainment-development-director/", links)
 
     def test_run_scrapy_static_source_handles_malformed_json(self) -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
