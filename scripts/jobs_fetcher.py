@@ -2615,6 +2615,238 @@ def run_teamtailor_sources_source(*, fetch_text: Callable[[str, int], str], time
     return []
 
 
+def run_scrapy_static_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+) -> List[RawJob]:
+    del fetch_text  # Scrapy adapter uses subprocess transport and does not consume fetch_text.
+    import subprocess
+
+    results_list: List[RawJob] = []
+    errors_list: List[str] = []
+    details: List[Dict[str, Any]] = []
+
+    def _clean_errors(values: Any) -> List[str]:
+        if not isinstance(values, list):
+            return []
+        cleaned = []
+        for item in values:
+            text = clean_text(item)
+            if text:
+                cleaned.append(text)
+        return cleaned
+
+    def _base_detail(source_row: Dict[str, Any], *, status: str = "error", error: str = "") -> Dict[str, Any]:
+        source_name = clean_text(source_row.get("name")) or "unknown"
+        studio_name = clean_text(source_row.get("studio")) or source_name
+        return {
+            "adapter": "scrapy_static",
+            "studio": studio_name,
+            "name": source_name,
+            "status": status,
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "error": clean_text(error),
+        }
+
+    def _coerce_int(value: Any) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return 0
+
+    def _normalize_job(raw: Any, source_row: Dict[str, Any]) -> Optional[RawJob]:
+        if not isinstance(raw, dict):
+            return None
+        source_name = clean_text(raw.get("source")) or (clean_text(source_row.get("name")) or "scrapy_static")
+        studio_name = clean_text(raw.get("studio")) or (clean_text(source_row.get("studio")) or clean_text(source_row.get("name")) or "unknown")
+        title = clean_text(raw.get("title"))
+        company = clean_text(raw.get("company"))
+        job_link = normalize_url(raw.get("jobLink"))
+        source_job_id = clean_text(raw.get("sourceJobId"))
+        if not title or not company or not job_link:
+            return None
+        if not source_job_id:
+            source_job_id = hashlib.sha1(f"{title}|{company}|{job_link}".encode("utf-8")).hexdigest()[:12]
+        posted_at = to_iso(raw.get("postedAt"))
+        source_bundle = raw.get("sourceBundle")
+        if not isinstance(source_bundle, list) or not source_bundle:
+            source_bundle = [
+                {
+                    "source": source_name,
+                    "sourceJobId": source_job_id,
+                    "jobLink": job_link,
+                    "postedAt": posted_at,
+                    "adapter": "scrapy_static",
+                    "studio": studio_name,
+                }
+            ]
+
+        return {
+            "sourceJobId": source_job_id,
+            "title": title,
+            "company": company,
+            "city": clean_text(raw.get("city")),
+            "country": clean_text(raw.get("country")) or "Unknown",
+            "workType": clean_text(raw.get("workType")),
+            "contractType": clean_text(raw.get("contractType")),
+            "jobLink": job_link,
+            "sector": clean_text(raw.get("sector")) or "Game",
+            "postedAt": posted_at,
+            "source": source_name,
+            "studio": studio_name,
+            "adapter": clean_text(raw.get("adapter")) or "scrapy_static",
+            "sourceBundle": source_bundle,
+        }
+
+    sources = registry_entries("scrapy_static")
+    if not sources:
+        set_source_diagnostics(
+            "scrapy_static_sources",
+            adapter="scrapy_static",
+            studio="multiple",
+            details=[],
+            partial_errors=["No enabled scrapy_static sources"],
+        )
+        return []
+
+    runner_path = Path(__file__).resolve().parent / "scrapers" / "runner.py"
+    if not runner_path.exists():
+        msg = f"scrapy_static runner missing: {runner_path}"
+        set_source_diagnostics(
+            "scrapy_static_sources",
+            adapter="scrapy_static",
+            studio="multiple",
+            details=[_base_detail({"name": "scrapy_static"}, error=msg)],
+            partial_errors=[msg],
+        )
+        return []
+
+    for source in sources:
+        source_name = clean_text(source.get("name")) or "unknown"
+        studio_name = clean_text(source.get("studio")) or source_name
+        pages = source.get("pages") if isinstance(source.get("pages"), list) else []
+        config = {
+            "source": {
+                "name": source_name,
+                "studio": studio_name,
+                "pages": pages,
+                "nlPriority": bool(source.get("nlPriority", False)),
+                "remoteFriendly": bool(source.get("remoteFriendly", True)),
+            },
+            "runtime": {
+                "timeout_s": int(timeout_s),
+                "retries": int(retries),
+                "backoff_s": float(backoff_s),
+                "download_delay": 1.0,
+            },
+        }
+
+        source_detail = _base_detail(source)
+        try:
+            timeout_window = min(300, max(1, int(timeout_s)) * max(1, len(pages)) * 4)
+            result = subprocess.run(
+                [sys.executable, str(runner_path)],
+                input=json.dumps(config).encode("utf-8"),
+                capture_output=True,
+                timeout=timeout_window,
+                check=False,
+            )
+            stderr_text = clean_text(result.stderr.decode("utf-8", errors="replace"))
+            if result.returncode != 0:
+                errors_list.append(f"{source_name}: subprocess exit {result.returncode}")
+            if stderr_text and result.returncode != 0:
+                errors_list.append(f"{source_name}: stderr: {stderr_text[:500]}")
+
+            stdout_text = result.stdout.decode("utf-8", errors="replace")
+            try:
+                envelope = json.loads(stdout_text)
+            except json.JSONDecodeError as exc:
+                envelope = {}
+                errors_list.append(f"{source_name}: JSON parse error: {exc}")
+                if stderr_text:
+                    errors_list.append(f"{source_name}: stderr: {stderr_text[:500]}")
+
+            if not isinstance(envelope, dict) or "ok" not in envelope:
+                source_detail.update({"status": "error", "error": "Invalid envelope from scraper runner"})
+                if not isinstance(envelope, dict):
+                    errors_list.append(f"{source_name}: invalid envelope type")
+                else:
+                    errors_list.append(f"{source_name}: invalid envelope missing 'ok'")
+                details.append(source_detail)
+                continue
+
+            envelope_details = envelope.get("details")
+            if isinstance(envelope_details, list) and envelope_details:
+                detail_0 = envelope_details[0]
+                if isinstance(detail_0, dict):
+                    source_detail.update(
+                        {
+                            "status": "ok" if clean_text(detail_0.get("status")).lower() == "ok" else "error",
+                            "fetchedCount": _coerce_int(detail_0.get("fetchedCount")),
+                            "keptCount": _coerce_int(detail_0.get("keptCount")),
+                            "error": clean_text(detail_0.get("error")),
+                        }
+                    )
+
+            partial_errors = _clean_errors(envelope.get("partialErrors"))
+            for item in partial_errors:
+                errors_list.append(f"{source_name}: {item}")
+
+            jobs = envelope.get("jobs")
+            if bool(envelope.get("ok")) and isinstance(jobs, list):
+                kept = 0
+                for item in jobs:
+                    normalized = _normalize_job(item, source)
+                    if normalized:
+                        kept += 1
+                        results_list.append(normalized)
+                    else:
+                        errors_list.append(f"{source_name}: dropped invalid job payload from runner")
+                source_detail["keptCount"] = max(int(source_detail.get("keptCount") or 0), kept)
+                source_detail["status"] = "ok"
+            else:
+                source_detail["status"] = "error"
+                if not clean_text(source_detail.get("error")):
+                    source_detail["error"] = "crawl failed"
+                errors_list.append(f"{source_name}: crawl failed")
+
+            stats = envelope.get("stats")
+            if isinstance(stats, dict):
+                source_detail["stats"] = {
+                    "downloader/request_count": _coerce_int(stats.get("downloader/request_count")),
+                    "downloader/response_count": _coerce_int(stats.get("downloader/response_count")),
+                    "downloader/response_status_count/200": _coerce_int(stats.get("downloader/response_status_count/200")),
+                    "retry/count": _coerce_int(stats.get("retry/count")),
+                    "item_scraped_count": _coerce_int(stats.get("item_scraped_count")),
+                    "finish_reason": clean_text(stats.get("finish_reason")),
+                }
+                if int(source_detail.get("fetchedCount") or 0) <= 0:
+                    source_detail["fetchedCount"] = int(source_detail["stats"]["downloader/response_count"])
+
+            details.append(source_detail)
+        except subprocess.TimeoutExpired:
+            source_detail.update({"status": "error", "error": "subprocess timeout"})
+            errors_list.append(f"{source_name}: subprocess timeout")
+            details.append(source_detail)
+        except Exception as exc:  # noqa: BLE001
+            source_detail.update({"status": "error", "error": clean_text(exc)[:500]})
+            errors_list.append(f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}")
+            details.append(source_detail)
+
+    set_source_diagnostics(
+        "scrapy_static_sources",
+        adapter="scrapy_static",
+        studio="multiple",
+        details=details,
+        partial_errors=errors_list,
+    )
+    return results_list
+
+
 def static_source_shard(row: Dict[str, Any]) -> str:
     label = clean_text(row.get("studio")) or clean_text(row.get("name"))
     first_alpha = ""
@@ -3549,6 +3781,7 @@ def default_source_loaders(
         "workable_sources": run_workable_sources_source,
         "ashby_sources": run_ashby_sources_source,
         "personio_sources": run_personio_sources_source,
+        "scrapy_static_sources": run_scrapy_static_source,
         "social_reddit": lambda **kwargs: run_social_reddit_source(**kwargs, social_config=social_cfg),
         "social_x": lambda **kwargs: run_social_x_source(**kwargs, social_config=social_cfg),
         "social_mastodon": lambda **kwargs: run_social_mastodon_source(**kwargs, social_config=social_cfg),
@@ -3946,7 +4179,7 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
         clean_details: List[Any] = []
         for item in details:
             if isinstance(item, dict):
-                clean_details.append({
+                clean_item = {
                     "adapter": clean_text(item.get("adapter")),
                     "studio": clean_text(item.get("studio")),
                     "name": clean_text(item.get("name")),
@@ -3954,7 +4187,20 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
                     "fetchedCount": _clamped_int(item.get("fetchedCount"), 0, 0),
                     "keptCount": _clamped_int(item.get("keptCount"), 0, 0),
                     "error": clean_text(item.get("error")),
-                })
+                }
+                stats = item.get("stats")
+                if isinstance(stats, dict):
+                    clean_item["stats"] = {
+                        "downloader/request_count": _clamped_int(stats.get("downloader/request_count"), 0, 0),
+                        "downloader/response_count": _clamped_int(stats.get("downloader/response_count"), 0, 0),
+                        "downloader/response_status_count/200": _clamped_int(
+                            stats.get("downloader/response_status_count/200"), 0, 0
+                        ),
+                        "retry/count": _clamped_int(stats.get("retry/count"), 0, 0),
+                        "item_scraped_count": _clamped_int(stats.get("item_scraped_count"), 0, 0),
+                        "finish_reason": clean_text(stats.get("finish_reason")),
+                    }
+                clean_details.append(clean_item)
                 continue
             text = clean_text(item)
             if text:

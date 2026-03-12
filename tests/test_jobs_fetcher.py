@@ -1,10 +1,13 @@
 import json
+import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from scripts import jobs_fetcher as jf
+from scripts import jobs_fetcher_registry as jfr
 from tests.temp_paths import workspace_tmpdir
 
 
@@ -549,6 +552,92 @@ class JobsFetcherTests(unittest.TestCase):
             self.assertGreaterEqual(len(rows), 2)
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
+
+    def test_scrapy_runner_emits_valid_envelope_selftest(self) -> None:
+        runner_path = Path(jf.__file__).resolve().parent / "scrapers" / "runner.py"
+        config = {
+            "source": {
+                "name": "Scrapy Test Studio",
+                "studio": "Scrapy Test Studio",
+                "pages": ["https://example.com/jobs"],
+                "nlPriority": False,
+                "remoteFriendly": True,
+            },
+            "runtime": {
+                "timeout_s": 5,
+                "retries": 1,
+                "backoff_s": 1.0,
+                "download_delay": 0.1,
+            },
+        }
+        env = dict(os.environ)
+        env["BALUFFO_SCRAPY_RUNNER_SELFTEST"] = "1"
+        result = subprocess.run(  # noqa: S603
+            [sys.executable, str(runner_path)],
+            input=json.dumps(config),
+            text=True,
+            capture_output=True,
+            check=False,
+            env=env,
+        )
+        envelope = json.loads(result.stdout)
+        self.assertIn("ok", envelope)
+        self.assertIsInstance(envelope.get("jobs"), list)
+        self.assertIsInstance(envelope.get("details"), list)
+        self.assertIsInstance(envelope.get("partialErrors"), list)
+        self.assertIsInstance(envelope.get("stats"), dict)
+
+    def test_scrapy_runner_invalid_schema_emits_error_envelope(self) -> None:
+        runner_path = Path(jf.__file__).resolve().parent / "scrapers" / "runner.py"
+        result = subprocess.run(  # noqa: S603
+            [sys.executable, str(runner_path)],
+            input=json.dumps({"source": {"name": "Only Name"}}),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        envelope = json.loads(result.stdout)
+        self.assertFalse(bool(envelope.get("ok")))
+        self.assertIsInstance(envelope.get("partialErrors"), list)
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_run_scrapy_static_source_handles_malformed_json(self) -> None:
+        prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        jf.STUDIO_SOURCE_REGISTRY = [
+            {
+                "name": "Scrapy Test Studio",
+                "studio": "Scrapy Test Studio",
+                "adapter": "scrapy_static",
+                "pages": ["https://example.com/jobs"],
+                "enabledByDefault": True,
+            }
+        ]
+        fake_result = mock.Mock()
+        fake_result.stdout = b"not json"
+        fake_result.stderr = b"runner stderr"
+        fake_result.returncode = 1
+        try:
+            with mock.patch("subprocess.run", return_value=fake_result):
+                with mock.patch.object(jf, "set_source_diagnostics") as diag:
+                    rows = jf.run_scrapy_static_source(
+                        fetch_text=lambda _url, _timeout: "",
+                        timeout_s=5,
+                        retries=1,
+                        backoff_s=1.0,
+                    )
+                    self.assertEqual(rows, [])
+                    diag.assert_called_once()
+                    args, kwargs = diag.call_args
+                    self.assertEqual(args[0], "scrapy_static_sources")
+                    self.assertEqual(kwargs.get("adapter"), "scrapy_static")
+        finally:
+            jf.STUDIO_SOURCE_REGISTRY = prev
+
+    def test_scrapy_static_registration_in_default_loaders(self) -> None:
+        self.assertIn("scrapy_static_sources", jfr.DEFAULT_SOURCE_LOADER_NAMES)
+        self.assertEqual(jfr.SOURCE_REPORT_META["scrapy_static_sources"]["adapter"], "scrapy_static")
+        names = [name for name, _ in jf.default_source_loaders()]
+        self.assertIn("scrapy_static_sources", names)
 
     def test_map_profession_recognizes_focus_synonyms(self) -> None:
         self.assertEqual(jf.map_profession("Senior Tech Artist"), "technical-artist")
