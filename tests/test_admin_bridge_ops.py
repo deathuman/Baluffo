@@ -39,6 +39,7 @@ class AdminBridgeOpsTests(unittest.TestCase):
             "ACTIVE_SYNC_THREADS": dict(admin_bridge.ACTIVE_SYNC_THREADS),
             "SOURCE_REGISTRY_DATA_DIR": admin_bridge.source_registry_module.DATA_DIR,
             "MAX_HISTORY_ROWS": admin_bridge.MAX_HISTORY_ROWS,
+            "MAYBE_TRIGGER_AUTO_SYNC_PUSH": admin_bridge._maybe_trigger_auto_sync_push,  # noqa: SLF001
         }
         admin_bridge.OPS_HISTORY_PATH = root / "admin-run-history.json"
         admin_bridge.OPS_ALERT_STATE_PATH = root / "admin-alert-state.json"
@@ -68,6 +69,7 @@ class AdminBridgeOpsTests(unittest.TestCase):
         }), encoding="utf-8")
         os.environ[admin_bridge.source_sync_module.PACKAGED_SYNC_CONFIG_ENV] = str(packaged_sync_config)
         admin_bridge.refresh_sync_config()
+        admin_bridge._maybe_trigger_auto_sync_push = lambda _reason: False  # noqa: SLF001
 
     def tearDown(self):
         admin_bridge.wait_for_sync_tasks(timeout_s=2.0)
