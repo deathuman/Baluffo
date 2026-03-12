@@ -42,12 +42,6 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install chromium
 
-      - name: Run release gates
-        run: |
-          npm run test:frontend:unit
-          npm run test:py
-          py -3.13 scripts/packaged_desktop_smoke.py
-
       - name: Resolve bundle version
         shell: pwsh
         run: |
@@ -89,6 +83,12 @@ jobs:
           "BALUFFO_SYNC_BUILD_INSTALLATION_ID=$installId" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "BALUFFO_SYNC_BUILD_REPO=$repo" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "BALUFFO_SYNC_BUILD_PRIVATE_KEY_PATH=$keyPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run release gates
+        run: |
+          npm run test:frontend:unit
+          npm run test:py
+          py -3.13 scripts/packaged_desktop_smoke.py
 
       - name: Build portable executable
         run: python scripts/build_portable_exe.py --bundle-version ${{ env.BALUFFO_VERSION }}
