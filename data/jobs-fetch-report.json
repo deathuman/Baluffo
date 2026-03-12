@@ -1,419 +1,730 @@
 {
   "schemaVersion": "1.0",
-  "startedAt": "2026-03-09T20:40:07.857616+00:00",
-  "finishedAt": "2026-03-09T20:41:41.063725+00:00",
+  "startedAt": "2026-03-12T12:26:31.028708+00:00",
+  "finishedAt": "2026-03-12T12:26:47.252578+00:00",
   "runtime": {
     "maxWorkers": 6,
     "maxPerDomain": 2,
     "fetchStrategy": "auto",
     "fetchClient": "urllib",
     "adapterHttpConcurrency": 24,
-    "seedFromExistingOutput": false,
+    "seedFromExistingOutput": true,
     "sourceTtlMinutes": 360,
     "respectSourceCadence": false,
     "hotSourceCadenceMinutes": 15,
     "coldSourceCadenceMinutes": 60,
     "circuitBreakerFailures": 3,
     "circuitBreakerCooldownMinutes": 180,
-    "ignoreCircuitBreaker": false,
+    "ignoreCircuitBreaker": true,
     "socialEnabled": false,
     "socialConfigPath": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\social-sources-config.json",
     "socialLookbackMinutes": 30,
     "socialMinConfidence": 40,
-    "selectedSourceCount": 28
+    "staticDetailHeuristicsProfile": "balanced",
+    "scrapyValidationStrict": true,
+    "canonicalStrictUrlValidation": false,
+    "selectedSourceCount": 3
   },
   "summary": {
-    "inputCount": 33603,
-    "mergedCount": 495,
-    "outputCount": 33108,
-    "rawFetchedCount": 33603,
-    "uniqueOutputCount": 33108,
-    "sourceBundleCollisions": 212,
-    "targetRoleCount": 207,
+    "inputCount": 33356,
+    "mergedCount": 20,
+    "outputCount": 33336,
+    "mergedByPrimaryUrl": 20,
+    "mergedBySecondaryKey": 0,
+    "mergedBySocialKey": 0,
+    "collisionSamplesCount": 10,
+    "collisionSamples": [
+      {
+        "reason": "primary_url",
+        "existingDedupKey": "url:a462be89b2e9adf739a70f826f0e6856c8a54c08",
+        "incomingSource": "static_source::static:listing_url:https://larian.com/careers",
+        "incomingTitle": "Character Artist Kuala Lumpur Character Art Full -Time Apply",
+        "incomingCompany": "Larian Studios",
+        "incomingJobLink": "https://larian.com/careers/f042d3fc-831d-4e59-977b-f4c2d687e488"
+      },
+      {
+        "reason": "primary_url",
+        "existingDedupKey": "url:a297a067570114da0f08dd58d9501225a692f92f",
+        "incomingSource": "static_source::static:listing_url:https://larian.com/careers",
+        "incomingTitle": "Junior Cinematic Animator Guildford Cinematic Animation Full -Time Apply",
+        "incomingCompany": "Larian Studios",
+        "incomingJobLink": "https://larian.com/careers/9b21f212-a1b9-43d2-a1ef-28c783674f5b"
+      },
+      {
+        "reason": "primary_url",
+        "existingDedupKey": "url:88939165f46f5676fa8fdea3eb8b30fbc1db49e2",
+        "incomingSource": "static_source::static:listing_url:https://larian.com/careers",
+        "incomingTitle": "Senior Character Concept Artist Warsaw Concept &Amp; 2D Art Full -Time Apply",
+        "incomingCompany": "Larian Studios",
+        "incomingJobLink": "https://larian.com/careers/ec806d16-cb88-45ec-8ad4-61dccfcd92c4"
+      },
+      {
+        "reason": "primary_url",
+        "existingDedupKey": "url:a871ea04cbe39177cded9a2464a7cdaa03b0ddba",
+        "incomingSource": "static_source::static:listing_url:https://larian.com/careers",
+        "incomingTitle": "Backend Developer Warsaw Digital Full -Time Apply",
+        "incomingCompany": "Larian Studios",
+        "incomingJobLink": "https://larian.com/careers/6347ebf8-bf9f-4367-ab3c-ac03cce3c28d"
+      },
+      {
+        "reason": "primary_url",
+        "existingDedupKey": "url:5978ffa69d28a23a385a3637a6eac256d6f050dc",
+        "incomingSource": "static_source::static:listing_url:https://larian.com/careers",
+        "incomingTitle": "Engine Programmer Warsaw Engine Programming Full -Time Apply",
+        "incomingCompany": "Larian Studios",
+        "incomingJobLink": "https://larian.com/careers/f2e32e37-6595-455a-bd3c-f23b0f362108"
+      },
+      {
+        "reason": "primary_url",
+        "existingDedupKey": "url:f19c7c16bc96aaee1d85cece3f6af7ba3c50b1af",
+        "incomingSource": "static_source::static:listing_url:https://larian.com/careers",
+        "incomingTitle": "Associate Lead Engine Programmer Quebec Engine Programming Full -Time Apply",
+        "incomingCompany": "Larian Studios",
+        "incomingJobLink": "https://larian.com/careers/aa67bbf9-d58f-4e60-85ff-68072d374cf1"
+      },
+      {
+        "reason": "primary_url",
+        "existingDedupKey": "url:b3ce525de230724b742a18768bacfc3d99812f5e",
+        "incomingSource": "static_source::static:listing_url:https://larian.com/careers",
+        "incomingTitle": "Associate Lead Engine Programmer Warsaw , Barcelona Engine Programming Full -Time Apply",
+        "incomingCompany": "Larian Studios",
+        "incomingJobLink": "https://larian.com/careers/b57d52f4-b6c3-41d6-8299-7004a4841972"
+      },
+      {
+        "reason": "primary_url",
+        "existingDedupKey": "url:dea44d6400b072ce302753fd8174f6b242987493",
+        "incomingSource": "static_source::static:listing_url:https://larian.com/careers",
+        "incomingTitle": "Engine Programmer Quebec Engine Programming Full -Time Apply",
+        "incomingCompany": "Larian Studios",
+        "incomingJobLink": "https://larian.com/careers/a6fcb51e-72d8-46f1-973f-96f976d62ac2"
+      },
+      {
+        "reason": "primary_url",
+        "existingDedupKey": "url:969af107befbe654c4449e97989ad580136f1f6c",
+        "incomingSource": "static_source::static:listing_url:https://larian.com/careers",
+        "incomingTitle": "Junior Accounts Payable Accountant Gent , Dublin Finance Full -Time Apply",
+        "incomingCompany": "Larian Studios",
+        "incomingJobLink": "https://larian.com/careers/5e54024a-98b8-4183-8f81-914c0a2d721f"
+      },
+      {
+        "reason": "primary_url",
+        "existingDedupKey": "url:748eeb838d02ce744832aeb98836abde586ac7ae",
+        "incomingSource": "static_source::static:listing_url:https://larian.com/careers",
+        "incomingTitle": "Gameplay Programmer Warsaw Gameplay Programming Full -Time Apply",
+        "incomingCompany": "Larian Studios",
+        "incomingJobLink": "https://larian.com/careers/bce7861d-77eb-469e-a905-d4473fe64af7"
+      }
+    ],
+    "rawFetched": 20,
+    "canonicalDropped": 0,
+    "canonicalKept": 33356,
+    "dedupMerged": 20,
+    "finalOutput": 33336,
+    "rawFetchedCount": 33356,
+    "uniqueOutputCount": 33336,
+    "sourceBundleCollisions": 209,
+    "targetRoleCount": 216,
     "netherlandsCount": 311,
-    "remoteCount": 5869,
+    "remoteCount": 5874,
     "targetRoleNetherlandsCount": 0,
     "targetRoleRemoteCount": 37,
     "preservedPreviousOutput": false,
-    "sourceCount": 29,
-    "successfulSources": 28,
+    "sourceCount": 43,
+    "successfulSources": 3,
     "failedSources": 0,
-    "excludedSources": 1,
-    "activeSourceCount": 33,
-    "pendingSourceCount": 1,
+    "excludedSources": 40,
+    "activeSourceCount": 47,
+    "pendingSourceCount": 6,
     "newlyApprovedSinceLastRun": 0,
-    "jsonBytes": 40353039,
-    "csvBytes": 21551130,
-    "lightJsonBytes": 19209217,
+    "jsonBytes": 40679786,
+    "csvBytes": 21749487,
+    "lightJsonBytes": 19357690,
     "sizeGuardrailExceeded": false,
     "recordGuardrailExceeded": false,
-    "lifecycleActiveCount": 33108,
-    "lifecycleLikelyRemovedCount": 390,
+    "lifecycleActiveCount": 33336,
+    "lifecycleLikelyRemovedCount": 256,
     "lifecycleArchivedCount": 0,
-    "lifecycleTrackedCount": 33498
+    "lifecycleTrackedCount": 33592
   },
   "sources": [
     {
-      "name": "gamesindustry",
-      "status": "ok",
-      "adapter": "html",
+      "name": "google_sheets",
+      "status": "excluded",
+      "adapter": "csv",
       "fetchStrategy": "http",
-      "studio": "gamesindustry",
-      "fetchedCount": 24,
-      "keptCount": 24,
+      "studio": "community_sheet",
+      "fetchedCount": 0,
+      "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 247
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
     },
     {
       "name": "remote_ok",
-      "status": "ok",
+      "status": "excluded",
       "adapter": "api",
       "fetchStrategy": "http",
       "studio": "remote_ok",
-      "fetchedCount": 49,
-      "keptCount": 49,
+      "fetchedCount": 0,
+      "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 122
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
     },
     {
-      "name": "smartrecruiters_sources",
-      "status": "ok",
-      "adapter": "smartrecruiters",
+      "name": "gamesindustry",
+      "status": "excluded",
+      "adapter": "html",
       "fetchStrategy": "http",
-      "studio": "multiple",
-      "fetchedCount": 93,
-      "keptCount": 93,
+      "studio": "gamesindustry",
+      "fetchedCount": 0,
+      "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 440,
-      "details": [
-        {
-          "adapter": "smartrecruiters",
-          "studio": "CD PROJEKT RED",
-          "name": "CD PROJEKT RED (SmartRecruiters)",
-          "status": "ok",
-          "fetchedCount": 97,
-          "keptCount": 26,
-          "error": ""
-        },
-        {
-          "adapter": "smartrecruiters",
-          "studio": "Gameloft",
-          "name": "Gameloft (SmartRecruiters)",
-          "status": "ok",
-          "fetchedCount": 67,
-          "keptCount": 67,
-          "error": ""
-        }
-      ]
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "epic_games_careers",
+      "status": "excluded",
+      "adapter": "api",
+      "fetchStrategy": "http",
+      "studio": "epic_games",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
     },
     {
       "name": "greenhouse_boards",
-      "status": "ok",
+      "status": "excluded",
       "adapter": "greenhouse",
       "fetchStrategy": "http",
       "studio": "multiple",
-      "fetchedCount": 209,
-      "keptCount": 209,
+      "fetchedCount": 0,
+      "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 832,
-      "details": [
-        {
-          "adapter": "greenhouse",
-          "studio": "Guerrilla Games",
-          "name": "Guerrilla Games",
-          "status": "ok",
-          "fetchedCount": 9,
-          "keptCount": 9,
-          "error": ""
-        },
-        {
-          "adapter": "greenhouse",
-          "studio": "PlayStation Global",
-          "name": "PlayStation Global",
-          "status": "ok",
-          "fetchedCount": 200,
-          "keptCount": 200,
-          "error": ""
-        }
-      ]
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "teamtailor_sources",
+      "status": "excluded",
+      "adapter": "teamtailor",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "lever_sources",
+      "status": "excluded",
+      "adapter": "lever",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "smartrecruiters_sources",
+      "status": "excluded",
+      "adapter": "smartrecruiters",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
     },
     {
       "name": "workable_sources",
-      "status": "ok",
+      "status": "excluded",
       "adapter": "workable",
       "fetchStrategy": "http",
       "studio": "multiple",
-      "fetchedCount": 10,
-      "keptCount": 10,
+      "fetchedCount": 0,
+      "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 426,
-      "details": [
-        {
-          "adapter": "workable",
-          "studio": "Hutch",
-          "name": "Hutch (Workable)",
-          "status": "ok",
-          "fetchedCount": 10,
-          "keptCount": 10,
-          "error": ""
-        },
-        {
-          "adapter": "workable",
-          "studio": "Wargaming",
-          "name": "Wargaming (Workable)",
-          "status": "ok",
-          "fetchedCount": 0,
-          "keptCount": 0,
-          "error": ""
-        }
-      ]
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
     },
     {
       "name": "ashby_sources",
-      "status": "ok",
+      "status": "excluded",
       "adapter": "ashby",
       "fetchStrategy": "http",
       "studio": "multiple",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 341,
-      "details": [
-        {
-          "adapter": "ashby",
-          "studio": "Jagex",
-          "name": "Jagex (Ashby)",
-          "status": "error",
-          "fetchedCount": 0,
-          "keptCount": 0,
-          "error": "no jobs extracted from ashby board html"
-        },
-        {
-          "adapter": "ashby",
-          "studio": "Scopely",
-          "name": "Scopely (Ashby)",
-          "status": "error",
-          "fetchedCount": 0,
-          "keptCount": 0,
-          "error": "no jobs extracted from ashby board html"
-        }
-      ]
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
     },
     {
-      "name": "lever_sources",
-      "status": "ok",
-      "adapter": "lever",
+      "name": "personio_sources",
+      "status": "excluded",
+      "adapter": "personio",
       "fetchStrategy": "http",
       "studio": "multiple",
-      "fetchedCount": 26,
-      "keptCount": 26,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 4264,
-      "details": [
-        {
-          "adapter": "lever",
-          "studio": "Jagex",
-          "name": "Jagex (Lever)",
-          "status": "ok",
-          "fetchedCount": 0,
-          "keptCount": 0,
-          "error": ""
-        },
-        {
-          "adapter": "lever",
-          "studio": "Sandbox VR",
-          "name": "Sandbox VR (Lever)",
-          "status": "ok",
-          "fetchedCount": 31,
-          "keptCount": 0,
-          "error": ""
-        },
-        {
-          "adapter": "lever",
-          "studio": "Voodoo",
-          "name": "Voodoo (Lever)",
-          "status": "ok",
-          "fetchedCount": 34,
-          "keptCount": 26,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "teamtailor_sources",
-      "status": "ok",
-      "adapter": "teamtailor",
-      "fetchStrategy": "http",
-      "studio": "multiple",
-      "fetchedCount": 20,
-      "keptCount": 20,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 4910,
-      "details": [
-        {
-          "adapter": "teamtailor",
-          "studio": "Paradox Interactive",
-          "name": "Paradox Careers",
-          "status": "ok",
-          "fetchedCount": 20,
-          "keptCount": 20,
-          "error": ""
-        },
-        {
-          "adapter": "teamtailor",
-          "studio": "Paradox Interactive",
-          "name": "Paradox Interactive (Teamtailor)",
-          "status": "ok",
-          "fetchedCount": 20,
-          "keptCount": 0,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "google_sheets",
-      "status": "ok",
-      "adapter": "csv",
-      "fetchStrategy": "http",
-      "studio": "community_sheet",
-      "fetchedCount": 32811,
-      "keptCount": 32811,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 5044
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.naconstudiomilan.com/careers",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Nacon Studio Milan",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 1756,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Nacon Studio Milan",
-          "name": "Nacon Studio Milan (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages"
-        }
-      ]
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "scrapy_static_sources",
+      "status": "excluded",
+      "adapter": "scrapy_static",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
     },
     {
       "name": "static_source::static:name:little chicken",
-      "status": "ok",
-      "adapter": "static",
+      "status": "excluded",
+      "adapter": "custom",
       "fetchStrategy": "auto",
-      "studio": "Little Chicken",
-      "fetchedCount": 9,
-      "keptCount": 9,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 6177,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Little Chicken",
-          "name": "Little Chicken",
-          "status": "ok",
-          "fetchedCount": 2,
-          "keptCount": 9,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "epic_games_careers",
-      "status": "ok",
-      "adapter": "api",
-      "fetchStrategy": "http",
-      "studio": "epic_games",
-      "fetchedCount": 258,
-      "keptCount": 258,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 7736
-    },
-    {
-      "name": "static_source::static:listing_url:https://supercell.com/en/careers/",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Supercell",
+      "studio": "",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 5648,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Supercell",
-          "name": "Supercell (Manual Website)",
-          "status": "error",
-          "fetchedCount": 7,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages"
-        }
-      ]
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.naconstudiomilan.com/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://ioi.dk/careers/",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
     },
     {
       "name": "static_source::static:listing_url:https://milestone.it/careers",
-      "status": "ok",
-      "adapter": "static",
+      "status": "excluded",
+      "adapter": "custom",
       "fetchStrategy": "auto",
-      "studio": "Milestone",
+      "studio": "",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 4416,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Milestone",
-          "name": "Milestone (Manual Website)",
-          "status": "error",
-          "fetchedCount": 4,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages"
-        }
-      ]
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
     },
     {
       "name": "static_source::static:listing_url:https://jobs.zenimax.com",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.kojimaproductions.jp/en/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://gamejobs.work/category/environment-artist",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://careers.wbd.com/global/en/job/r000087820/lead-environment-artist",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.aweinteractive.com/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://careers.nintendo.com/jobs",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.workwithindies.com/careers/angry-mob-games-stylized-environment-artist",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.pixelmafia.com/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://digitalbros.com/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.impactreality.com/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://careers.activision.com",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.riotgames.com/en/work-with-us/jobs",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://34bigthings.com/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.stormindgames.com/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.quanticdream.com/en/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.rockstargames.com/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://jobs.nintendo.de",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:http://www.ahoiii.com/jobs",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:http://www.astragon.de/unternehmen/jobs",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:http://jobs.andarion-games.com",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.articy.com/en/company/jobs/",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.augmented-minds.com/de/unternehmen/karriere/",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "only_sources_filter",
+      "durationMs": 0,
+      "exclusionReason": "only_sources_filter"
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.ubisoft.com/en-us/company/careers/locations/milan",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Zenimax",
+      "studio": "Ubisoft",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 663,
+      "durationMs": 109,
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 1738,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
       "details": [
         {
           "adapter": "static",
-          "studio": "Zenimax",
-          "name": "Zenimax (Manual Website)",
+          "studio": "Ubisoft",
+          "name": "Ubisoft (Manual Website)",
           "status": "error",
           "fetchedCount": 1,
           "keptCount": 0,
-          "error": "no jobs extracted from source pages"
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 1738,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
         }
       ]
     },
@@ -427,7 +738,25 @@
       "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 1572,
+      "durationMs": 844,
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 466,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
       "details": [
         {
           "adapter": "static",
@@ -436,209 +765,27 @@
           "status": "error",
           "fetchedCount": 2,
           "keptCount": 0,
-          "error": "no jobs extracted from source pages"
-        }
-      ]
-    },
-    {
-      "name": "personio_sources",
-      "status": "ok",
-      "adapter": "personio",
-      "fetchStrategy": "http",
-      "studio": "multiple",
-      "fetchedCount": 1,
-      "keptCount": 1,
-      "lowConfidenceDropped": 0,
-      "error": "personio_sources: personio:InnoGames (Personio): HTTP 429 for https://innogames.jobs.personio.de/xml; personio_sources: personio:Travian (Personio): HTTP 429 for https://travian.jobs.personio.de/xml",
-      "durationMs": 14641,
-      "details": [
-        {
-          "adapter": "personio",
-          "studio": "InnoGames",
-          "name": "InnoGames (Personio)",
-          "status": "error",
-          "fetchedCount": 0,
-          "keptCount": 0,
-          "error": "HTTP 429 for https://innogames.jobs.personio.de/xml"
-        },
-        {
-          "adapter": "personio",
-          "studio": "Travian",
-          "name": "Travian (Personio)",
-          "status": "error",
-          "fetchedCount": 0,
-          "keptCount": 0,
-          "error": "HTTP 429 for https://travian.jobs.personio.de/xml"
-        },
-        {
-          "adapter": "personio",
-          "studio": "Yager",
-          "name": "Yager (Personio)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 1,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.littlechicken.nl/about-us/jobs/",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Little Chicken",
-      "fetchedCount": 12,
-      "keptCount": 12,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 11473,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Little Chicken",
-          "name": "Little Chicken (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 7,
-          "keptCount": 12,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.kojimaproductions.jp/en/careers",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Kojimaproductions",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 3984,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Kojimaproductions",
-          "name": "Kojimaproductions (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages"
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.aweinteractive.com/careers",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Awe Interactive",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 662,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Awe Interactive",
-          "name": "Awe Interactive (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages"
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://gamejobs.work/category/environment-artist",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Game Jobs",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 1928,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Game Jobs",
-          "name": "Game Jobs (Manual Website)",
-          "status": "error",
-          "fetchedCount": 2,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages"
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.workwithindies.com/careers/angry-mob-games-stylized-environment-artist",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Workwithindies",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 1288,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Workwithindies",
-          "name": "Workwithindies (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages"
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.wbd.com/global/en/job/r000087820/lead-environment-artist",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Wbd",
-      "fetchedCount": 2,
-      "keptCount": 2,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 3247,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Wbd",
-          "name": "Wbd (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 2,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.pixelmafia.com/careers",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Pixelmafia",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 1646,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Pixelmafia",
-          "name": "Pixelmafia (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages"
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 466,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
         }
       ]
     },
@@ -648,103 +795,60 @@
       "adapter": "static",
       "fetchStrategy": "auto",
       "studio": "Larian Studios",
-      "fetchedCount": 0,
-      "keptCount": 0,
+      "fetchedCount": 20,
+      "keptCount": 20,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 16418,
+      "durationMs": 8670,
+      "loss": {
+        "rawFetched": 20,
+        "canonicalDropped": 0,
+        "canonicalKept": 20,
+        "dedupMerged": 0,
+        "finalOutput": 27,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 1173,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 20
+      },
       "details": [
         {
           "adapter": "static",
           "studio": "Larian Studios",
           "name": "Larian Studios (Manual Website)",
-          "status": "error",
-          "fetchedCount": 7,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages"
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://ioi.dk/careers/",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "IO Interactive",
-      "fetchedCount": 1,
-      "keptCount": 1,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 15780,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "IO Interactive",
-          "name": "IO Interactive (Manual Website)",
           "status": "ok",
           "fetchedCount": 7,
-          "keptCount": 1,
-          "error": ""
+          "keptCount": 20,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 1173,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 20
+          }
         }
       ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Lazyapply",
-      "fetchedCount": 23,
-      "keptCount": 23,
-      "lowConfidenceDropped": 0,
-      "error": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/2k-games/jobs/senior-environment-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/2k-games/jobs/senior-environment-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1077); static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/kabam/jobs/senior-2d-character-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/kabam/jobs/senior-2d-character-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1077); static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/2k-games/jobs/expert-environment-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/2k-games/jobs/expert-environment-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1077)",
-      "durationMs": 55148,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Lazyapply",
-          "name": "Lazyapply (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 23,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.nintendo.com/jobs",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Nintendo",
-      "fetchedCount": 55,
-      "keptCount": 55,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 70502,
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Nintendo",
-          "name": "Nintendo (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 55,
-          "error": ""
-        }
-      ]
-    },
-    {
-      "name": "wellfound",
-      "status": "excluded",
-      "adapter": "html",
-      "fetchStrategy": "browser",
-      "studio": "wellfound",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "disabled_by_default: blocked by anti-bot restrictions in non-browser fetch mode",
-      "durationMs": 0
     }
   ],
   "outputs": {
@@ -753,6 +857,7 @@
     "lightJson": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-unified-light.json",
     "report": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-fetch-report.json",
     "lifecycleState": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-lifecycle-state.json",
+    "browserFallbackQueue": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-browser-fallback-queue.json",
     "changed": {
       "json": true,
       "csv": true,

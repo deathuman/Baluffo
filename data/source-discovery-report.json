@@ -1,199 +1,694 @@
 {
   "schemaVersion": "1.0",
   "mode": "dynamic",
-  "startedAt": "2026-03-09T20:38:45.831461+00:00",
-  "finishedAt": "2026-03-09T20:40:07.046404+00:00",
+  "startedAt": "2026-03-12T12:05:17.545460+00:00",
+  "finishedAt": "2026-03-12T12:08:06.812445+00:00",
   "summary": {
-    "probedCount": 2,
-    "healthyCount": 0,
-    "newCandidateCount": 0,
+    "probedCount": 14,
+    "healthyCount": 2,
+    "newCandidateCount": 2,
     "taEnvCandidateCount": 0,
-    "nlCandidateCount": 0,
-    "remoteCandidateCount": 0,
+    "nlCandidateCount": 2,
+    "remoteCandidateCount": 2,
     "failedProbeCount": 0,
-    "probeMissCount": 2,
-    "foundEndpointCount": 55,
-    "probedCandidateCount": 2,
-    "queuedCandidateCount": 0,
+    "probeMissCount": 10,
+    "foundEndpointCount": 60,
+    "probedCandidateCount": 14,
+    "queuedCandidateCount": 2,
     "discoverableButDeferredCount": 0,
-    "skippedDuplicateCount": 41,
+    "skippedDuplicateCount": 46,
     "skippedInvalidCount": 0,
-    "skippedLowEvidenceProbeCount": 12,
-    "adapterCounts": {},
-    "methodCounts": {},
+    "skippedLowEvidenceProbeCount": 0,
+    "adapterCounts": {
+      "teamtailor": 1,
+      "workable": 1
+    },
+    "methodCounts": {
+      "seed_careers_page": 1,
+      "pattern": 1
+    },
     "generatedCountByStage": {
       "curated_seed": 10,
-      "provider_pattern": 28,
+      "provider_pattern": 26,
       "web_provider": 11,
-      "generic_static": 6
+      "generic_static": 13
     },
     "survivedDedupeCountByStage": {
       "curated_seed": 0,
-      "provider_pattern": 14,
-      "web_provider": 0,
-      "generic_static": 0
+      "provider_pattern": 12,
+      "web_provider": 1,
+      "generic_static": 1
     },
     "probedCountByStage": {
       "curated_seed": 0,
-      "provider_pattern": 2,
-      "web_provider": 0,
-      "generic_static": 0
+      "provider_pattern": 12,
+      "web_provider": 1,
+      "generic_static": 1
     },
     "queuedCountByStage": {
       "curated_seed": 0,
-      "provider_pattern": 0,
-      "web_provider": 0,
+      "provider_pattern": 1,
+      "web_provider": 1,
       "generic_static": 0
     },
     "duplicateReasons": {
-      "existing_id": 41
+      "existing_id": 46
     },
-    "deferredReasons": {}
+    "deferredReasons": {},
+    "thresholds": {
+      "minProviderEvidenceToProbe": 18,
+      "minStaticEvidenceToProbe": 22,
+      "minProviderEvidenceToQueue": 26,
+      "minStaticEvidenceToQueue": 34,
+      "lowEvidenceProbeLimit": 12,
+      "patternProviderProbeThreshold": 24,
+      "patternProviderQueueThreshold": 40
+    },
+    "lossAccounting": {
+      "generated": 60,
+      "dedupSkipped": 46,
+      "dedupSkippedReasons": {
+        "existing_id": 46
+      },
+      "validationSkipped": 0,
+      "lowEvidenceSkipped": 0,
+      "probeFailed": 10,
+      "queueFiltered": 2,
+      "deferredByCap": 0,
+      "queued": 2
+    }
   },
-  "candidates": [],
+  "candidates": [
+    {
+      "name": "Paradox Interactive (Teamtailor)",
+      "studio": "Paradox Interactive",
+      "adapter": "teamtailor",
+      "listing_url": "https://paradox-interactive.teamtailor.com/jobs",
+      "base_url": "https://paradox-interactive.teamtailor.com",
+      "company": "Paradox Interactive",
+      "remoteFriendly": true,
+      "nlPriority": true,
+      "discoveryMethod": "seed_careers_page",
+      "discoveryStage": "web_provider",
+      "careersUrl": "https://career.paradoxplaza.com/jobs",
+      "evidenceScore": 52,
+      "evidenceTypes": [
+        "provider_url",
+        "html_embed",
+        "careers_page"
+      ],
+      "evidenceSource": "html_embed",
+      "id": "teamtailor:listing_url:https://paradox-interactive.teamtailor.com/jobs",
+      "discoveredAt": "2026-03-12T12:08:01.214449+00:00",
+      "enabledByDefault": false,
+      "score": 85,
+      "reasons": [
+        "nl_priority",
+        "remote_friendly",
+        "strong_evidence",
+        "live_jobs_detected"
+      ],
+      "sampleCount": 20,
+      "jobsFound": 20,
+      "confidence": "high",
+      "lastProbedAt": "2026-03-12T12:08:01.478540+00:00",
+      "weakSignal": false,
+      "deferred": false
+    },
+    {
+      "studio": "Vertigo Games",
+      "remoteFriendly": true,
+      "nlPriority": true,
+      "discoveryMethod": "pattern",
+      "discoveryStage": "provider_pattern",
+      "careersUrl": "https://vertigo-games.com/careers",
+      "evidenceScore": 24,
+      "evidenceTypes": [
+        "provider_hint",
+        "seed_catalog"
+      ],
+      "evidenceSource": "pattern",
+      "name": "Vertigo Games (Workable)",
+      "adapter": "workable",
+      "account": "vertigogames",
+      "api_url": "https://apply.workable.com/api/v1/widget/accounts/vertigogames?details=true",
+      "id": "workable:account:vertigogames",
+      "discoveredAt": "2026-03-12T12:08:01.214348+00:00",
+      "enabledByDefault": false,
+      "score": 67,
+      "reasons": [
+        "nl_priority",
+        "remote_friendly",
+        "evidence_signal",
+        "live_jobs_detected"
+      ],
+      "sampleCount": 15,
+      "jobsFound": 15,
+      "confidence": "high",
+      "lastProbedAt": "2026-03-12T12:08:02.867072+00:00",
+      "weakSignal": false,
+      "deferred": false
+    }
+  ],
   "failures": [
     {
       "name": "https://www.nixxes.com/careers",
       "adapter": "seed_careers_page",
       "error": "HTTP Error 404: Not Found",
-      "stage": "page_fetch"
+      "stage": "page_fetch",
+      "dropStage": "page_fetch",
+      "dropReason": "page_fetch"
     },
     {
       "name": "https://vertigo-games.com/careers",
       "adapter": "seed_careers_page",
-      "error": "<urlopen error timed out>",
-      "stage": "page_fetch"
+      "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'vertigo-games.com'. (_ssl.c:1077)>",
+      "stage": "page_fetch",
+      "dropStage": "page_fetch",
+      "dropReason": "page_fetch"
     },
     {
       "name": "https://www.triumphstudios.com/careers",
       "adapter": "seed_careers_page",
-      "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'www.triumphstudios.com'. (_ssl.c:1077)>",
-      "stage": "page_fetch"
+      "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1077)>",
+      "stage": "page_fetch",
+      "dropStage": "page_fetch",
+      "dropReason": "page_fetch"
     },
     {
       "name": "https://careers.jagex.com/",
       "adapter": "seed_careers_page",
       "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
-      "stage": "page_fetch"
+      "stage": "page_fetch",
+      "dropStage": "page_fetch",
+      "dropReason": "page_fetch"
     },
     {
       "name": "https://www.avalanche-studios.com/careers",
       "adapter": "seed_careers_page",
       "error": "HTTP Error 404: Not Found",
-      "stage": "page_fetch"
+      "stage": "page_fetch",
+      "dropStage": "page_fetch",
+      "dropReason": "page_fetch"
     },
     {
       "name": "https://www.rebellion.com/careers",
       "adapter": "seed_careers_page",
       "error": "HTTP Error 403: Forbidden",
-      "stage": "page_fetch"
+      "stage": "page_fetch",
+      "dropStage": "page_fetch",
+      "dropReason": "page_fetch"
     },
     {
       "name": "https://jobs.lever.co/voodoo",
       "adapter": "seed_careers_page",
       "error": "HTTP Error 404: Not Found",
-      "stage": "page_fetch"
+      "stage": "page_fetch",
+      "dropStage": "page_fetch",
+      "dropReason": "page_fetch"
     },
     {
       "name": "Sandbox VR (Lever)",
       "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/sandbox-vr: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Voodoo (Lever)",
+      "adapter": "lever",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "CD PROJEKT RED (SmartRecruiters)",
+      "adapter": "smartrecruiters",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Gameloft (SmartRecruiters)",
+      "adapter": "smartrecruiters",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Hutch (Workable)",
+      "adapter": "workable",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Wargaming (Workable)",
+      "adapter": "workable",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "InnoGames (Personio)",
+      "adapter": "personio",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Travian (Personio)",
+      "adapter": "personio",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Jagex (Ashby)",
+      "adapter": "ashby",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Scopely (Ashby)",
+      "adapter": "ashby",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Guerrilla Games (Greenhouse)",
+      "adapter": "greenhouse",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Larian Studios (Greenhouse)",
+      "adapter": "greenhouse",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Jagex (Lever)",
+      "adapter": "lever",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Jagex (Ashby)",
+      "adapter": "ashby",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
     },
     {
       "name": "Paradox Interactive (Teamtailor)",
       "adapter": "teamtailor",
-      "domain": "paradoxinteractive.teamtailor.com",
-      "error": "https://paradoxinteractive.teamtailor.com/jobs: HTTP Error 404: Not Found",
-      "stage": "probe_miss"
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Hutch (Workable)",
+      "adapter": "workable",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Wargaming (Workable)",
+      "adapter": "workable",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Scopely (Ashby)",
+      "adapter": "ashby",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "InnoGames (Personio)",
+      "adapter": "personio",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Travian (Personio)",
+      "adapter": "personio",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Gameloft (SmartRecruiters)",
+      "adapter": "smartrecruiters",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "CD PROJEKT RED (SmartRecruiters)",
+      "adapter": "smartrecruiters",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Sandbox VR (Lever)",
+      "adapter": "lever",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Voodoo (Lever)",
+      "adapter": "lever",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "PlayStation Global (Greenhouse)",
+      "adapter": "greenhouse",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Yager (Personio)",
+      "adapter": "personio",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Hutch (Workable)",
+      "adapter": "workable",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Wargaming (Workable)",
+      "adapter": "workable",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Scopely (Ashby)",
+      "adapter": "ashby",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "InnoGames (Personio)",
+      "adapter": "personio",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Travian (Personio)",
+      "adapter": "personio",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Gameloft (SmartRecruiters)",
+      "adapter": "smartrecruiters",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "CD PROJEKT RED (SmartRecruiters)",
+      "adapter": "smartrecruiters",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Sandbox VR (Lever)",
+      "adapter": "lever",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Little Chicken (Manual Website)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Larian Studios (Manual Website)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Remedy Entertainment (Manual Website)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Supercell (Manual Website)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "IO Interactive (Manual Website)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Milestone (Manual Website)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Aerosoft GmbH Luftfahrt-Datentechnik (Gamesmap)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Ahoiii Entertainment UG (haftungsbeschränkt) (Gamesmap)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Andarion Games GmbH (Gamesmap)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "articy Software GmbH &amp; Co. KG (Gamesmap)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "astragon Entertainment GmbH (Gamesmap)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Augmented Minds Ambrus &amp; Lonau GbR (Gamesmap)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Aesir Interactive GmbH (Gamesmap)",
+      "adapter": "static",
+      "domain": "www.aesir-interactive.com",
+      "error": "http://www.aesir-interactive.com/jobs: HTTP Error 404: Not Found",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
     },
     {
       "name": "Guerrilla Games (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
+      "error": "https://boards.greenhouse.io/guerrillagames: HTTP Error 404: Not Found",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
     },
     {
       "name": "Vertigo Games (Workable)",
       "adapter": "workable",
       "domain": "apply.workable.com",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
-    },
-    {
-      "name": "Vertigo Games (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
     },
     {
       "name": "Vertigo Games (SmartRecruiters)",
       "adapter": "smartrecruiters",
       "domain": "api.smartrecruiters.com",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
     },
     {
       "name": "PlayStation Global (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
+      "error": "https://boards.greenhouse.io/playstation-global: HTTP Error 404: Not Found",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
     },
     {
       "name": "PlayStation Global (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
+      "error": "https://boards.greenhouse.io/playstationglobal: HTTP Error 404: Not Found",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
     },
     {
       "name": "Larian Studios (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
+      "error": "https://boards.greenhouse.io/larianstudios: HTTP Error 404: Not Found",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
     },
     {
       "name": "Remedy Entertainment (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
+      "error": "https://boards.greenhouse.io/remedy-entertainment: HTTP Error 404: Not Found",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
     },
     {
       "name": "Remedy Entertainment (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
+      "error": "https://boards.greenhouse.io/remedyentertainment: HTTP Error 404: Not Found",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
     },
     {
       "name": "Supercell (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
+      "error": "https://boards.greenhouse.io/supercell: HTTP Error 404: Not Found",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
     },
     {
       "name": "IO Interactive (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
+      "error": "https://boards.greenhouse.io/io-interactive: HTTP Error 404: Not Found",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
     },
     {
       "name": "IO Interactive (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "boards-api.greenhouse.io",
-      "error": "pattern evidence score 24 below probe threshold 30",
-      "stage": "probe_skipped"
+      "error": "https://boards.greenhouse.io/iointeractive: HTTP Error 404: Not Found",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
     }
   ],
   "topFailures": [
+    {
+      "key": "static",
+      "count": 12
+    },
     {
       "key": "greenhouse:boards-api.greenhouse.io",
       "count": 9
@@ -203,16 +698,12 @@
       "count": 7
     },
     {
-      "key": "workable:apply.workable.com",
-      "count": 2
+      "key": "personio",
+      "count": 7
     },
     {
-      "key": "lever:api.lever.co",
-      "count": 1
-    },
-    {
-      "key": "teamtailor:paradoxinteractive.teamtailor.com",
-      "count": 1
+      "key": "lever",
+      "count": 6
     }
   ],
   "outputs": {
