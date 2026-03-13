@@ -40,6 +40,7 @@ export function createAdminRuntimeState({
     discoveryCompletionPollDeadline: 0,
     discoveryLaunchAtMs: 0,
     discoveryLiveProgressState: null,
+    discoveryOptimisticRun: null,
     discoveryLogRemoteOffset: 0,
     discoveryLogDetailsSyncing: false,
     discoveryLogUserToggled: false,

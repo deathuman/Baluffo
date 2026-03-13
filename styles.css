@@ -1901,6 +1901,52 @@ h1 {
   letter-spacing: 0.35px;
 }
 
+.admin-task-progress {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 0.7rem;
+}
+
+.admin-task-progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 0.46rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-8) 82%, transparent);
+  border: 1px solid var(--surface-13);
+}
+
+.admin-task-progress-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent), color-mix(in srgb, var(--accent-hover) 82%, white 18%));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 28%, transparent);
+  transition: width 0.22s ease;
+}
+
+.admin-task-progress.indeterminate .admin-task-progress-bar {
+  position: absolute;
+  left: -36%;
+  width: 36%;
+  animation: adminTaskProgressSlide 1.15s ease-in-out infinite;
+}
+
+.admin-task-progress-label {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+@keyframes adminTaskProgressSlide {
+  0% {
+    left: -36%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
 .admin-sync-title-wrap {
   display: grid;
   gap: 0.22rem;
@@ -1967,9 +2013,10 @@ h1 {
 
 .admin-sync-card-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.6rem;
+  flex-wrap: wrap;
   margin-bottom: 0.6rem;
 }
 
@@ -1982,11 +2029,26 @@ h1 {
   background: var(--surface-7);
   color: var(--text-secondary);
   font-size: 0.72rem;
-  white-space: nowrap;
+  max-width: 100%;
+  white-space: normal;
 }
 
 .admin-sync-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 0.55rem;
   margin-bottom: 0.7rem;
+  min-width: 0;
+  width: 100%;
+}
+
+.admin-sync-settings-card .backup-toggle {
+  min-width: 0;
+}
+
+.admin-sync-toggle input {
+  margin-top: 0.18rem;
 }
 
 .admin-sync-config-hint {
@@ -2166,6 +2228,9 @@ h1 {
 .admin-discovery-log-summary {
   cursor: pointer;
   padding: 0.55rem 0.68rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   color: var(--text-secondary);
   font-size: 0.86rem;
   font-weight: 700;
@@ -2179,6 +2244,7 @@ h1 {
 .admin-discovery-log-summary::after {
   content: " \25B8";
   color: var(--text-subtle);
+  margin-left: auto;
 }
 
 .admin-discovery-log-card[open] .admin-discovery-log-summary::after {

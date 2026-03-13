@@ -31,6 +31,7 @@ import {
   getSourceJobsFoundCount as getSourceJobsFoundCountFromDomain,
   deriveSourceStatus as deriveSourceStatusFromDomain,
   normalizeOpsRuns as normalizeOpsRunsFromDomain,
+  applyOptimisticDiscoveryRun as applyOptimisticDiscoveryRunFromDomain,
   getOpsPollIntervalMs as getOpsPollIntervalMsFromDomain
 } from "../domain.js";
 import {
@@ -331,6 +332,7 @@ function composeControllers() {
     getBridge,
     postBridge,
     normalizeOpsRuns: (runs, nowMs = Date.now()) => normalizeOpsRunsFromDomain(runs, nowMs),
+    applyOptimisticDiscoveryRun: (runModel, optimisticRun, nowMs = Date.now()) => applyOptimisticDiscoveryRunFromDomain(runModel, optimisticRun, nowMs),
     getOpsPollIntervalMs: hasLiveRuns => getOpsPollIntervalMsFromDomain(hasLiveRuns, OPS_POLL_IDLE_INTERVAL_MS, OPS_POLL_LIVE_INTERVAL_MS),
     renderAdminOpsAlerts,
     renderAdminOpsKpis,
@@ -345,6 +347,11 @@ function composeControllers() {
     adminDispatch,
     adminActions: ADMIN_ACTIONS,
     escapeHtml,
+    onBridgeStatusChange: status => {
+      if (status === "online") {
+        registryController?.loadDiscoveryData().catch(() => {});
+      }
+    },
     bridgeStatusPollIntervalMs: BRIDGE_STATUS_POLL_INTERVAL_MS,
     idlePollIntervalMs: OPS_POLL_IDLE_INTERVAL_MS
   });
@@ -442,6 +449,7 @@ function composeControllers() {
     setSourceStatus,
     setFetcherLogPlaceholder: (...args) => fetcherController.setFetcherLogPlaceholder(...args),
     setDiscoveryLogPlaceholder: (...args) => discoveryController.setDiscoveryLogPlaceholder(...args),
+    clearOptimisticDiscoveryRun: (...args) => discoveryController.clearOptimisticDiscoveryRun(...args),
     setManualSourceFeedback: (...args) => registryController.setManualSourceFeedback(...args),
     setOpsPlaceholders: (...args) => opsController.setOpsPlaceholders(...args),
     setBridgeStatusBadge: (...args) => opsController.setBridgeStatusBadge(...args),
@@ -498,6 +506,11 @@ function bindEvents() {
 
   bindAsyncClick(refs.adminRunDiscoveryBtnEl, () => discoveryController.runDiscoveryTask());
   bindAsyncClick(refs.adminLoadDiscoveryBtnEl, () => registryController.loadDiscoveryData());
+  bindUi(refs.adminClearDiscoveryLogBtnEl, "click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    discoveryController.setDiscoveryLogPlaceholder("Discovery log cleared.");
+  });
   bindAsyncClick(refs.adminApproveSourcesBtnEl, () => registryController.approveSelectedSources());
   bindAsyncClick(refs.adminRejectSourcesBtnEl, () => registryController.rejectSelectedSources());
   bindAsyncClick(refs.adminDeleteSourcesBtnEl, () => registryController.deleteSelectedSources());

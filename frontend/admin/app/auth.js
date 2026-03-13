@@ -13,6 +13,7 @@ export function createAdminAuthController({
   setSourceStatus,
   setFetcherLogPlaceholder,
   setDiscoveryLogPlaceholder,
+  clearOptimisticDiscoveryRun,
   setManualSourceFeedback,
   setOpsPlaceholders,
   setBridgeStatusBadge,
@@ -120,6 +121,7 @@ export function createAdminAuthController({
 
     state.adminPin = nextPin;
     state.syncConfigDirty = false;
+    clearOptimisticDiscoveryRun();
     resetBusyFlags();
     adminDispatch.dispatch({ type: adminActions.UNLOCKED });
     setSourceStatus("Admin access granted.");
@@ -156,6 +158,7 @@ export function createAdminAuthController({
     state.adminPin = "";
     state.syncConfigDirty = false;
     state.latestSyncStatusCache = null;
+    clearOptimisticDiscoveryRun();
     resetBusyFlags();
     adminDispatch.dispatch({ type: adminActions.LOCKED });
     if (refs.adminPinGateEl) refs.adminPinGateEl.classList.remove("hidden");

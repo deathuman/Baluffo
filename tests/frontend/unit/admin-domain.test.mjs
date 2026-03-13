@@ -8,6 +8,9 @@ import {
   applySourceFilter,
   getSourceJobsFoundCount,
   normalizeOpsRuns,
+  applyOptimisticDiscoveryRun,
+  deriveFetcherProgressModel,
+  deriveDiscoveryProgressModel,
   getOpsPollIntervalMs
 } from "../../../frontend/admin/domain.js";
 
@@ -132,4 +135,80 @@ test("admin domain normalizes ops runs into current + collapsed completed groups
 test("admin domain derives adaptive ops polling interval", () => {
   assert.equal(getOpsPollIntervalMs(true), 2000);
   assert.equal(getOpsPollIntervalMs(false), 10000);
+});
+
+test("admin domain injects optimistic discovery row into current runs when history lags", () => {
+  const baseModel = normalizeOpsRuns([
+    { id: "f1", type: "fetch", status: "started", startedAt: "2026-03-08T10:00:00.000Z", finishedAt: "", durationMs: 0 }
+  ], Date.parse("2026-03-08T10:01:00.000Z"));
+
+  const model = applyOptimisticDiscoveryRun(baseModel, {
+    runId: "disc_1",
+    startedAt: "2026-03-08T10:00:30.000Z"
+  }, Date.parse("2026-03-08T10:01:00.000Z"));
+
+  assert.equal(model.currentRows.length, 2);
+  assert.ok(model.currentRows.some(row => row.type === "discovery" && row.isLive === true && row.optimistic === true));
+  assert.ok(model.liveTypes.includes("discovery"));
+});
+
+test("admin domain does not duplicate discovery when a live history row already exists", () => {
+  const baseModel = normalizeOpsRuns([
+    { id: "d1", type: "discovery", status: "started", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "", durationMs: 0 }
+  ], Date.parse("2026-03-08T10:01:00.000Z"));
+
+  const model = applyOptimisticDiscoveryRun(baseModel, {
+    runId: "disc_1",
+    startedAt: "2026-03-08T10:00:30.000Z"
+  }, Date.parse("2026-03-08T10:01:00.000Z"));
+
+  assert.equal(model.currentRows.length, 1);
+  assert.equal(model.currentRows[0].optimistic, undefined);
+});
+
+test("admin domain suppresses optimistic discovery row once a matching completed run exists", () => {
+  const baseModel = normalizeOpsRuns([
+    { id: "d1", type: "discovery", status: "ok", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 }
+  ], Date.parse("2026-03-08T10:01:30.000Z"));
+
+  const model = applyOptimisticDiscoveryRun(baseModel, {
+    runId: "disc_1",
+    startedAt: "2026-03-08T10:00:30.000Z"
+  }, Date.parse("2026-03-08T10:01:30.000Z"));
+
+  assert.equal(model.currentRows.length, 0);
+  assert.equal(model.visibleCompletedRows.length, 1);
+});
+
+test("admin domain derives determinate fetcher progress when total sources are known", () => {
+  const view = deriveFetcherProgressModel({
+    summary: {
+      successfulSources: 8,
+      failedSources: 1,
+      excludedSources: 2,
+      outputCount: 45,
+      sourceCount: 20
+    },
+    runtime: {
+      selectedSourceCount: 20
+    }
+  }, { running: true });
+
+  assert.equal(view.active, true);
+  assert.equal(view.determinate, true);
+  assert.equal(view.ratio, 11 / 20);
+  assert.match(view.label, /11\/20 sources resolved/i);
+});
+
+test("admin domain falls back to indeterminate discovery progress when only scanning is known", () => {
+  const view = deriveDiscoveryProgressModel({
+    summary: {
+      queuedCandidateCount: 3,
+      failedProbeCount: 1
+    }
+  }, { running: true });
+
+  assert.equal(view.active, true);
+  assert.equal(view.determinate, false);
+  assert.match(view.label, /scanning candidates/i);
 });

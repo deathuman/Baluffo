@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createAdminAuthController } from "../../../frontend/admin/app/auth.js";
+import { createAdminDiscoveryController } from "../../../frontend/admin/app/discovery.js";
+import { createAdminFetcherController } from "../../../frontend/admin/app/fetcher.js";
 import { createAdminRegistryController } from "../../../frontend/admin/app/registry.js";
 import { createAdminSyncController } from "../../../frontend/admin/app/sync.js";
 
@@ -23,6 +25,22 @@ function createClassList(initial = []) {
     remove(...tokens) {
       tokens.forEach(token => values.delete(token));
     },
+    toggle(token, force) {
+      if (force === true) {
+        values.add(token);
+        return true;
+      }
+      if (force === false) {
+        values.delete(token);
+        return false;
+      }
+      if (values.has(token)) {
+        values.delete(token);
+        return false;
+      }
+      values.add(token);
+      return true;
+    },
     contains(token) {
       return values.has(token);
     },
@@ -44,6 +62,9 @@ function createElement(overrides = {}) {
     attributes: {},
     setAttribute(name, value) {
       this.attributes[name] = String(value);
+    },
+    removeAttribute(name) {
+      delete this.attributes[name];
     },
     ...overrides
   };
@@ -131,6 +152,9 @@ test("admin auth controller unlocks and locks the composed admin view", async ()
     },
     setDiscoveryLogPlaceholder(message) {
       calls.push(`discoveryPlaceholder:${message}`);
+    },
+    clearOptimisticDiscoveryRun() {
+      calls.push("clearOptimisticDiscoveryRun");
     },
     setManualSourceFeedback(message) {
       calls.push(`manualFeedback:${message}`);
@@ -259,6 +283,7 @@ test("admin auth controller polls for api readiness while locked", async () => {
       },
       setFetcherLogPlaceholder() {},
       setDiscoveryLogPlaceholder() {},
+      clearOptimisticDiscoveryRun() {},
       setManualSourceFeedback() {},
       setOpsPlaceholders() {},
       setBridgeStatusBadge() {},
@@ -572,6 +597,324 @@ test("admin registry controller approves selected pending rows", async () => {
       assert.ok(logs.some(line => /source discovery data loaded/i.test(line)));
     }
   );
+});
+
+test("admin discovery controller stores optimistic run metadata while discovery watch is active", async () => {
+  const toasts = [];
+  const logs = [];
+  const scheduled = [];
+  const previousSetTimeout = global.setTimeout;
+  const previousClearTimeout = global.clearTimeout;
+  global.setTimeout = callback => {
+    scheduled.push(callback);
+    return scheduled.length;
+  };
+  global.clearTimeout = () => {};
+
+  try {
+    const state = {
+      adminPin: "1234",
+      discoveryLogRemoteOffset: 0,
+      discoveryLaunchAtMs: 0,
+      discoveryCompletionPollDeadline: 0,
+      discoveryReportPollTimeoutMs: 60000,
+      discoveryReportPollIntervalMs: 5000,
+      discoveryCompletionPollTimer: null,
+      discoveryLiveProgressState: null,
+      discoveryOptimisticRun: null,
+      adminBusyState: {
+        discoveryRun: false,
+        discoveryWatch: false,
+        discoveryLoad: false,
+        discoveryWrite: false,
+        manualAdd: false,
+        manualCheck: false,
+        liveDiscoveryRunning: false
+      }
+    };
+    const refs = {
+      adminDiscoveryLogEl: createElement()
+    };
+    const busyTransitions = [];
+    const calls = [];
+    const controller = createAdminDiscoveryController({
+      state,
+      refs,
+      getBridge: async path => {
+        calls.push(path);
+        if (String(path).startsWith("/discovery/log?offset=")) {
+          return { text: "", nextOffset: 0 };
+        }
+        throw new Error(`unexpected path ${path}`);
+      },
+      postBridge: async path => {
+        calls.push(path);
+        return {
+          started: true,
+          runId: "discovery_123",
+          startedAt: "2026-03-08T10:01:00.000Z"
+        };
+      },
+      setBusyFlag(key, value) {
+        busyTransitions.push(`${key}:${String(value)}`);
+        state.adminBusyState[key] = value;
+      },
+      getErrorMessage: err => String(err?.message || err || "unknown"),
+      logAdminError() {},
+      showToast(message, level) {
+        toasts.push({ message, level });
+      },
+      createLogEvent(scope, message, level) {
+        return { scope, message, level, timestamp: "2026-03-08T10:01:00.000Z" };
+      },
+      appendLogRow(_container, event) {
+        logs.push(String(event.message || ""));
+      },
+      loadOpsHealthData: async () => {
+        calls.push("loadOpsHealthData");
+      },
+      scheduleOpsHealthPolling(delay) {
+        calls.push(`scheduleOpsHealthPolling:${delay}`);
+      },
+      loadDiscoveryData: async () => {}
+    });
+
+    await controller.runDiscoveryTask();
+
+    assert.deepEqual(state.discoveryOptimisticRun, {
+      runId: "discovery_123",
+      startedAt: "2026-03-08T10:01:00.000Z"
+    });
+    assert.equal(state.adminBusyState.discoveryWatch, true);
+    assert.equal(state.adminBusyState.liveDiscoveryRunning, true);
+    assert.ok(calls.includes("/tasks/run-discovery"));
+    assert.ok(calls.includes("loadOpsHealthData"));
+    assert.ok(calls.includes("scheduleOpsHealthPolling:250"));
+    assert.ok(logs.some(line => /source discovery task started/i.test(line)));
+    assert.ok(toasts.some(item => item.message === "Source discovery started." && item.level === "success"));
+    assert.deepEqual(busyTransitions, [
+      "discoveryRun:true",
+      "liveDiscoveryRunning:true",
+      "discoveryWatch:false",
+      "discoveryWatch:true",
+      "discoveryRun:false"
+    ]);
+  } finally {
+    global.setTimeout = previousSetTimeout;
+    global.clearTimeout = previousClearTimeout;
+  }
+});
+
+test("admin discovery controller emits summary-first live progress and updates progress bar", async () => {
+  const logs = [];
+  const previousSetTimeout = global.setTimeout;
+  const previousClearTimeout = global.clearTimeout;
+  const previousDateNow = Date.now;
+  const scheduled = [];
+  global.setTimeout = callback => {
+    scheduled.push(callback);
+    return scheduled.length;
+  };
+  global.clearTimeout = () => {};
+  Date.now = () => Date.parse("2026-03-08T10:01:00.500Z");
+
+  try {
+    const barEl = createElement({ style: {} });
+    const state = {
+      adminPin: "1234",
+      discoveryLogRemoteOffset: 0,
+      discoveryLaunchAtMs: 0,
+      discoveryCompletionPollDeadline: 0,
+      discoveryReportPollTimeoutMs: 600000,
+      discoveryReportPollIntervalMs: 5000,
+      discoveryCompletionPollTimer: null,
+      discoveryLiveProgressState: null,
+      discoveryOptimisticRun: null,
+      adminBusyState: {
+        discoveryRun: false,
+        discoveryWatch: false,
+        discoveryLoad: false,
+        discoveryWrite: false,
+        manualAdd: false,
+        manualCheck: false,
+        liveDiscoveryRunning: false
+      }
+    };
+    const refs = {
+      adminDiscoveryLogEl: createElement(),
+      adminDiscoveryProgressEl: createElement({ style: {}, classList: createClassList(["hidden"]) }),
+      adminDiscoveryProgressBarEl: barEl,
+      adminDiscoveryProgressLabelEl: createElement()
+    };
+    const controller = createAdminDiscoveryController({
+      state,
+      refs,
+      getBridge: async path => {
+        if (path === "/discovery/report") {
+          return {
+            startedAt: "2026-03-08T10:01:00.000Z",
+            finishedAt: "",
+            summary: {
+              foundEndpointCount: 12,
+              probedCandidateCount: 5,
+              queuedCandidateCount: 3,
+              failedProbeCount: 1,
+              skippedDuplicateCount: 2,
+              skippedInvalidCount: 0
+            },
+            candidates: [
+              { adapter: "greenhouse" },
+              { adapter: "greenhouse" },
+              { adapter: "teamtailor" }
+            ],
+            failures: [
+              { stage: "timeout", error: "request timed out" }
+            ]
+          };
+        }
+        if (String(path).startsWith("/discovery/log?offset=")) {
+          return {
+            text: "[2026-03-08T10:01:02.000Z] queued candidate detail\n[2026-03-08T10:01:03.000Z] timeout while probing\n",
+            nextOffset: 99
+          };
+        }
+        throw new Error(`unexpected path ${path}`);
+      },
+      postBridge: async () => ({
+        started: true,
+        runId: "discovery_123",
+        startedAt: "2026-03-08T10:01:00.000Z"
+      }),
+      setBusyFlag(key, value) {
+        state.adminBusyState[key] = value;
+      },
+      getErrorMessage: err => String(err?.message || err || "unknown"),
+      logAdminError() {},
+      showToast() {},
+      createLogEvent(scope, message, level) {
+        return { scope, message, level, timestamp: "2026-03-08T10:01:00.000Z" };
+      },
+      appendLogRow(_container, event) {
+        logs.push(String(event.message || ""));
+      },
+      loadOpsHealthData: async () => {},
+      scheduleOpsHealthPolling() {},
+      loadDiscoveryData: async () => {}
+    });
+
+    await controller.runDiscoveryTask();
+    scheduled[0]();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.ok(logs.some(line => /discovery started\. watching live progress/i.test(line)));
+    assert.equal(refs.adminDiscoveryProgressEl.classList.contains("hidden"), false);
+    assert.match(refs.adminDiscoveryProgressLabelEl.textContent, /discovery:/i);
+  } finally {
+    global.setTimeout = previousSetTimeout;
+    global.clearTimeout = previousClearTimeout;
+    Date.now = previousDateNow;
+  }
+});
+
+test("admin fetcher controller emits summary-first progress and updates progress bar", async () => {
+  const logs = [];
+  const state = {
+    adminPin: "1234",
+    latestFetcherReportCache: null,
+    fetcherLaunchAtMs: Date.parse("2026-03-08T10:00:00.000Z"),
+    fetcherCompletionPollDeadline: Date.parse("2026-03-08T10:10:00.000Z"),
+    fetchReportPollIntervalMs: 5000,
+    fetcherCompletionPollTimer: null,
+    fetcherLiveProgressState: null,
+    adminBusyState: {
+      fetcherRun: false,
+      fetcherWatch: false,
+      fetcherReportLoad: false,
+      liveFetchRunning: false
+    }
+  };
+  const refs = {
+    adminFetcherLogEl: createElement(),
+    adminFetcherProgressEl: createElement({ style: {}, classList: createClassList(["hidden"]) }),
+    adminFetcherProgressBarEl: createElement({ style: {} }),
+    adminFetcherProgressLabelEl: createElement(),
+    adminRunFetcherBtnEl: createElement(),
+    adminRunFetcherIncrementalBtnEl: createElement(),
+    adminRunFetcherForceBtnEl: createElement(),
+    adminRetryFailedBtnEl: createElement()
+  };
+  const scheduled = [];
+  const previousSetTimeout = global.setTimeout;
+  const previousClearTimeout = global.clearTimeout;
+  const previousDateNow = Date.now;
+  global.setTimeout = callback => {
+    scheduled.push(callback);
+    return scheduled.length;
+  };
+  global.clearTimeout = () => {};
+  Date.now = () => Date.parse("2026-03-08T10:00:00.500Z");
+
+  try {
+    const controller = createAdminFetcherController({
+      state,
+      refs,
+      getBridge: async () => ({}),
+      postBridge: async () => ({}),
+      fetchJobsFetchReportJson: async () => ({
+        startedAt: "2026-03-08T10:00:00.000Z",
+        finishedAt: "",
+        runtime: { selectedSourceCount: 10 },
+        summary: {
+          successfulSources: 4,
+          failedSources: 1,
+          excludedSources: 1,
+          outputCount: 18,
+          sourceCount: 10
+        },
+        sources: [
+          { name: "Studio A", status: "ok", keptCount: 4, durationMs: 1200 },
+          { name: "Studio B", status: "error", keptCount: 0, durationMs: 2200, error: "HTTP 403" },
+          { name: "Studio C", status: "running", keptCount: 0, durationMs: 26000 }
+        ]
+      }),
+      writeJobsAutoRefreshSignal() {},
+      showToast() {},
+      getErrorMessage: err => String(err?.message || err || "unknown"),
+      logAdminError() {},
+      setBusyFlag(key, value) {
+        state.adminBusyState[key] = value;
+      },
+      getSourceStatusSetter: () => () => {},
+      loadOpsHealthData: async () => {},
+      startOpsHealthPolling() {},
+      fetchReportPollIntervalMs: 5000,
+      fetchReportPollTimeoutMs: 600000,
+      jobsAutoRefreshSignalKey: "k",
+      jobsFetcherCommand: "python scripts/jobs_fetcher.py",
+      jobsFetcherTaskLabel: "Run jobs fetcher",
+      jobsFetchReportUrl: "data/jobs-fetch-report.json",
+      createLogEvent(scope, message, level) {
+        return { scope, message, level, timestamp: "2026-03-08T10:00:00.000Z" };
+      },
+      appendLogRow(_container, event) {
+        logs.push(String(event.message || ""));
+      }
+    });
+
+    controller.startFetcherCompletionWatch();
+    scheduled[0]();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.ok(logs.some(line => /fetcher started\. watching live progress/i.test(line)));
+    assert.equal(refs.adminFetcherProgressEl.classList.contains("hidden"), false);
+    assert.match(refs.adminFetcherProgressLabelEl.textContent, /6\/10 sources resolved/i);
+  } finally {
+    global.setTimeout = previousSetTimeout;
+    global.clearTimeout = previousClearTimeout;
+    Date.now = previousDateNow;
+  }
 });
 
 test("admin sync controller hydrates status and runs save/test/pull/push flows", async () => {

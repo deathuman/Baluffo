@@ -80,6 +80,12 @@
             <button id="admin-refresh-report-btn" class="btn clear-filters-btn" title="Reload the latest jobs fetch report and append per-source details to this output log." aria-label="Load latest fetch report">Load Latest Report</button>
           </div>
         </div>
+        <div id="admin-fetcher-progress" class="admin-task-progress hidden" role="progressbar" aria-label="Fetcher progress" aria-valuemin="0" aria-valuemax="100">
+          <div class="admin-task-progress-track">
+            <div id="admin-fetcher-progress-bar" class="admin-task-progress-bar"></div>
+          </div>
+          <div id="admin-fetcher-progress-label" class="admin-task-progress-label"></div>
+        </div>
         <div id="admin-fetcher-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
       </section>
 
@@ -93,6 +99,12 @@
               <div class="admin-fetcher-actions">
                 <button id="admin-run-discovery-btn" class="btn clear-filters-btn">Run Discovery</button>
                 <button id="admin-load-discovery-btn" class="btn clear-filters-btn">Load Discovery Report</button>
+              </div>
+              <div id="admin-discovery-progress" class="admin-task-progress hidden" role="progressbar" aria-label="Discovery progress" aria-valuemin="0" aria-valuemax="100">
+                <div class="admin-task-progress-track">
+                  <div id="admin-discovery-progress-bar" class="admin-task-progress-bar"></div>
+                </div>
+                <div id="admin-discovery-progress-label" class="admin-task-progress-label"></div>
               </div>
               <div id="admin-discovery-summary" class="results-summary">No discovery report loaded yet.</div>
             </div>
@@ -114,7 +126,20 @@
           </div>
 
           <details id="admin-discovery-log-details" class="admin-discovery-card admin-discovery-log-card" open>
-            <summary class="admin-discovery-log-summary">Discovery Log</summary>
+            <summary class="admin-discovery-log-summary">
+              <span>Discovery Log</span>
+              <button
+                id="admin-clear-discovery-log-btn"
+                class="btn clear-filters-btn admin-fetcher-icon-btn"
+                type="button"
+                title="Clear discovery log"
+                aria-label="Clear discovery log"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM8 9h2v9H8V9Z" />
+                </svg>
+              </button>
+            </summary>
             <div id="admin-discovery-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
           </details>
 

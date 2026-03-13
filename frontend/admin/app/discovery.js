@@ -1,3 +1,6 @@
+import { deriveDiscoveryProgressModel } from "../domain.js";
+import { applyAdminTaskProgress } from "./progress-ui.js";
+
 export function isDiscoveryMobileViewport(width = window.innerWidth) {
   return Number(width) < 900;
 }
@@ -51,6 +54,52 @@ export function createAdminDiscoveryController({
   scheduleOpsHealthPolling,
   loadDiscoveryData
 }) {
+  function setDiscoveryProgress(view) {
+    applyAdminTaskProgress(
+      refs.adminDiscoveryProgressEl,
+      refs.adminDiscoveryProgressBarEl,
+      refs.adminDiscoveryProgressLabelEl,
+      view
+    );
+  }
+
+  function updateDiscoveryProgressFromReport(report, { running = false } = {}) {
+    setDiscoveryProgress(deriveDiscoveryProgressModel(report, { running }));
+  }
+
+  function normalizeDiscoveryServerLine(rawLine) {
+    const trimmed = String(rawLine || "").trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.replace(/\s+/g, " ").trim();
+    if (/launching source discovery task/i.test(normalized)) return null;
+    if (/discovery report written/i.test(normalized)) return null;
+    if (/watching discovery report/i.test(normalized)) return null;
+    if (/\b(found|queued|probed)\b/i.test(normalized) && !/\b(error|failed|timeout|dns|ssl|forbidden)\b/i.test(normalized)) {
+      return null;
+    }
+    const level = /\b(error|failed|timeout|dns|ssl|forbidden)\b/i.test(normalized) ? "warn" : "muted";
+    return {
+      message: normalized,
+      level
+    };
+  }
+
+  function setOptimisticDiscoveryRun(runMeta) {
+    const startedAt = String(runMeta?.startedAt || "").trim();
+    if (!startedAt) {
+      state.discoveryOptimisticRun = null;
+      return;
+    }
+    state.discoveryOptimisticRun = {
+      runId: String(runMeta?.runId || ""),
+      startedAt
+    };
+  }
+
+  function clearOptimisticDiscoveryRun() {
+    state.discoveryOptimisticRun = null;
+  }
+
   function appendDiscoveryLog(message, level = "info") {
     if (!refs.adminDiscoveryLogEl) return;
     const event = createLogEvent("discovery", message, level);
@@ -70,16 +119,20 @@ export function createAdminDiscoveryController({
       const trimmed = String(line || "").trim();
       if (!trimmed) return;
       const match = trimmed.match(/^\[([^\]]+)\]\s*(.*)$/);
+      const normalizedLine = normalizeDiscoveryServerLine(match ? match[2] : trimmed);
+      if (!normalizedLine) return;
+      if (state.discoveryLiveProgressState?.serverLogSignatures?.has(normalizedLine.message)) return;
+      state.discoveryLiveProgressState?.serverLogSignatures?.add(normalizedLine.message);
       if (match) {
         appendDiscoveryLogEvent({
           timestamp: match[1],
-          level: "muted",
+          level: normalizedLine.level,
           scope: "discovery",
-          message: match[2] || ""
-        }, "muted");
+          message: normalizedLine.message
+        }, normalizedLine.level);
         return;
       }
-      appendDiscoveryLog(trimmed, "muted");
+      appendDiscoveryLog(normalizedLine.message, normalizedLine.level);
     });
   }
 
@@ -87,6 +140,7 @@ export function createAdminDiscoveryController({
     if (!refs.adminDiscoveryLogEl) return;
     refs.adminDiscoveryLogEl.innerHTML = "";
     state.discoveryLogRemoteOffset = 0;
+    setDiscoveryProgress({ active: false });
     appendDiscoveryLog(message, "muted");
   }
 
@@ -104,6 +158,7 @@ export function createAdminDiscoveryController({
   function runProgressAppend(report, nowMs) {
     const liveState = state.discoveryLiveProgressState;
     if (!liveState) return;
+    updateDiscoveryProgressFromReport(report, { running: true });
     const summary = report?.summary || {};
     const foundCount = Number(summary.foundEndpointCount ?? 0);
     const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
@@ -116,19 +171,28 @@ export function createAdminDiscoveryController({
     if (summarySignature !== liveState.summarySignature) {
       liveState.summarySignature = summarySignature;
       appendDiscoveryLog(
-        `Progress: found ${foundCount}, probed ${probedCount}, queued (new) ${queuedCount}, failed ${failedCount}, skipped dupes ${skippedCount}, skipped invalid ${invalidCount}.`,
+        `Discovery: probed ${probedCount}/${Math.max(foundCount, probedCount, 1)} found so far, queued ${queuedCount}, failed ${failedCount}, skipped dupes ${skippedCount}, invalid ${invalidCount}.`,
         failedCount > 0 ? "warn" : "info"
       );
     }
 
     const candidates = Array.isArray(report?.candidates) ? report.candidates : [];
     if (candidates.length > liveState.candidateCount) {
-      candidates.slice(liveState.candidateCount, candidates.length).slice(-3).forEach(row => {
-        appendDiscoveryLog(
-          `Queued candidate: ${String(row?.name || "unknown")} [${String(row?.adapter || "unknown")}] jobs ${Number(row?.jobsFound || 0)}.`,
-          "muted"
-        );
+      const nextRows = candidates.slice(liveState.candidateCount, candidates.length);
+      const adapterCounts = new Map();
+      nextRows.forEach(row => {
+        const adapter = String(row?.adapter || "unknown");
+        adapterCounts.set(adapter, Number(adapterCounts.get(adapter) || 0) + 1);
       });
+      const burstSummary = Array.from(adapterCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 2)
+        .map(([adapter, count]) => `${adapter} ${count}`)
+        .join(" | ");
+      appendDiscoveryLog(
+        `New queue burst: +${nextRows.length} candidate${nextRows.length === 1 ? "" : "s"}${burstSummary ? ` (${burstSummary})` : ""}.`,
+        "muted"
+      );
       liveState.candidateCount = candidates.length;
     } else {
       liveState.candidateCount = candidates.length;
@@ -136,19 +200,26 @@ export function createAdminDiscoveryController({
 
     const failures = Array.isArray(report?.failures) ? report.failures : [];
     if (failures.length > liveState.failureCount) {
-      failures.slice(liveState.failureCount, failures.length).slice(-3).forEach(item => {
-        const stage = String(item?.stage || "probe");
-        const name = String(item?.name || item?.domain || "unknown");
-        appendDiscoveryLog(`Probe issue: ${name} [${stage}] ${String(item?.error || "unknown error")}`, "warn");
+      const nextFailures = failures.slice(liveState.failureCount, failures.length);
+      const grouped = new Map();
+      nextFailures.forEach(item => {
+        const key = String(item?.stage || item?.errorCode || item?.error || "unknown").trim() || "unknown";
+        grouped.set(key, Number(grouped.get(key) || 0) + 1);
       });
+      const cluster = Array.from(grouped.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([label, count]) => `${label} x${count}`)
+        .join(" | ");
+      appendDiscoveryLog(`Failure cluster: ${cluster}`, "warn");
       liveState.failureCount = failures.length;
     } else {
       liveState.failureCount = failures.length;
     }
 
-    if ((nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 20000) {
+    if ((nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 12000) {
       liveState.lastHeartbeatAtMs = nowMs;
-      appendDiscoveryLog("Discovery still running. Waiting for more probe updates...", "muted");
+      appendDiscoveryLog(`Discovery active: found ${foundCount}, probed ${probedCount}, queued ${queuedCount}.`, "muted");
     }
   }
 
@@ -162,15 +233,21 @@ export function createAdminDiscoveryController({
     stopDiscoveryCompletionWatch();
     setBusyFlag("discoveryWatch", true);
     state.discoveryLaunchAtMs = Date.now();
+    const optimisticStartedAtMs = parseReportTimestampMs(state.discoveryOptimisticRun?.startedAt);
+    if (optimisticStartedAtMs > 0) {
+      state.discoveryLaunchAtMs = optimisticStartedAtMs;
+    }
     state.discoveryCompletionPollDeadline = state.discoveryLaunchAtMs + state.discoveryReportPollTimeoutMs;
     state.discoveryLogRemoteOffset = 0;
     state.discoveryLiveProgressState = {
       summarySignature: "",
       candidateCount: 0,
       failureCount: 0,
+      serverLogSignatures: new Set(),
       lastHeartbeatAtMs: 0
     };
-    appendDiscoveryLog("Watching discovery report for live progress...");
+    updateDiscoveryProgressFromReport(null, { running: true });
+    appendDiscoveryLog("Discovery started. Watching live progress...", "info");
     loadDiscoveryLogChunk({ reset: true }).catch(() => {});
     scheduleDiscoveryCompletionPoll(250);
   }
@@ -181,6 +258,7 @@ export function createAdminDiscoveryController({
       state.discoveryCompletionPollTimer = null;
     }
     state.discoveryLiveProgressState = null;
+    setDiscoveryProgress({ active: false });
     setBusyFlag("discoveryWatch", false);
   }
 
@@ -197,6 +275,8 @@ export function createAdminDiscoveryController({
     const now = Date.now();
     if (now >= state.discoveryCompletionPollDeadline) {
       appendDiscoveryLog("Could not confirm discovery completion from report within timeout window.", "warn");
+      clearOptimisticDiscoveryRun();
+      setBusyFlag("liveDiscoveryRunning", false);
       stopDiscoveryCompletionWatch();
       return;
     }
@@ -215,10 +295,13 @@ export function createAdminDiscoveryController({
       const queuedCount = Number(summary.queuedCandidateCount ?? summary.newCandidateCount ?? 0);
       const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
       const failedCount = Number(summary.failedProbeCount || 0);
+      updateDiscoveryProgressFromReport(report, { running: true });
       appendDiscoveryLog(
-        `Discovery run completed: found ${Number(summary.foundEndpointCount ?? 0)}, probed ${probedCount}, queued (new) ${queuedCount}, failed ${failedCount}.`,
+        `Discovery completed: found ${Number(summary.foundEndpointCount ?? 0)}, probed ${probedCount}, queued ${queuedCount}, failed ${failedCount}.`,
         failedCount > 0 ? "warn" : "success"
       );
+      clearOptimisticDiscoveryRun();
+      setBusyFlag("liveDiscoveryRunning", false);
       await Promise.allSettled([loadDiscoveryData(), loadOpsHealthData()]);
       stopDiscoveryCompletionWatch();
       return;
@@ -239,9 +322,11 @@ export function createAdminDiscoveryController({
     setBusyFlag("discoveryRun", true);
     setBusyFlag("liveDiscoveryRunning", true);
     state.discoveryLogRemoteOffset = 0;
+    updateDiscoveryProgressFromReport(null, { running: true });
     appendDiscoveryLog("Triggering source discovery task...");
     try {
-      await postBridge("/tasks/run-discovery", {});
+      const result = await postBridge("/tasks/run-discovery", {});
+      setOptimisticDiscoveryRun(result || {});
       appendDiscoveryLog("Source discovery task started.", "success");
       showToast("Source discovery started.", "success");
       startDiscoveryCompletionWatch();
@@ -250,6 +335,7 @@ export function createAdminDiscoveryController({
     } catch (err) {
       appendDiscoveryLog(`Could not trigger discovery task: ${getErrorMessage(err)}`, "error");
       showToast("Could not trigger source discovery task.", "error");
+      clearOptimisticDiscoveryRun();
       setBusyFlag("liveDiscoveryRunning", false);
     } finally {
       setBusyFlag("discoveryRun", false);
@@ -273,6 +359,7 @@ export function createAdminDiscoveryController({
     appendDiscoveryServerLogText,
     loadDiscoveryLogChunk,
     setDiscoveryLogPlaceholder,
+    clearOptimisticDiscoveryRun,
     startDiscoveryCompletionWatch,
     stopDiscoveryCompletionWatch,
     runDiscoveryTask,

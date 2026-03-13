@@ -250,6 +250,138 @@ export function normalizeOpsRuns(runs, nowMs = Date.now()) {
   };
 }
 
+function compactCount(value) {
+  return Number(value || 0).toLocaleString();
+}
+
+export function applyOptimisticDiscoveryRun(model, optimisticRun, nowMs = Date.now()) {
+  const baseModel = model && typeof model === "object"
+    ? model
+    : {
+        currentRows: [],
+        visibleCompletedRows: [],
+        olderCompletedRows: [],
+        hasLiveRuns: false,
+        liveTypes: []
+      };
+  const startedAt = String(optimisticRun?.startedAt || "").trim();
+  if (!startedAt) return baseModel;
+
+  const currentRows = Array.isArray(baseModel.currentRows) ? [...baseModel.currentRows] : [];
+  const visibleCompletedRows = Array.isArray(baseModel.visibleCompletedRows) ? [...baseModel.visibleCompletedRows] : [];
+  const olderCompletedRows = Array.isArray(baseModel.olderCompletedRows) ? [...baseModel.olderCompletedRows] : [];
+  const allRows = [...currentRows, ...visibleCompletedRows, ...olderCompletedRows];
+
+  const hasLiveDiscovery = currentRows.some(row => (
+    String(row?.type || "").trim().toLowerCase() === "discovery"
+    && Boolean(row?.isLive)
+  ));
+  if (hasLiveDiscovery) return baseModel;
+
+  const hasCompletedMatch = allRows.some(row => (
+    String(row?.type || "").trim().toLowerCase() === "discovery"
+    && String(row?.startedAt || "").trim() === startedAt
+    && String(row?.finishedAt || "").trim()
+  ));
+  if (hasCompletedMatch) return baseModel;
+
+  currentRows.push({
+    id: String(optimisticRun?.runId || `optimistic-discovery:${startedAt}`),
+    type: "discovery",
+    status: "started",
+    startedAt,
+    finishedAt: "",
+    durationMs: 0,
+    summary: {},
+    isLive: true,
+    elapsedMs: Math.max(0, Number(nowMs || Date.now()) - parseRunTimestampMs({ startedAt })),
+    displayStatus: "running",
+    optimistic: true
+  });
+  currentRows.sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a));
+  const liveTypes = Array.from(new Set([
+    ...currentRows
+      .filter(row => Boolean(row?.isLive))
+      .map(row => String(row?.type || "").toLowerCase())
+      .filter(Boolean),
+    ...(Array.isArray(baseModel.liveTypes) ? baseModel.liveTypes : [])
+  ]));
+
+  return {
+    ...baseModel,
+    currentRows,
+    visibleCompletedRows,
+    olderCompletedRows,
+    hasLiveRuns: currentRows.some(row => Boolean(row?.isLive)),
+    liveTypes
+  };
+}
+
+export function deriveFetcherProgressModel(report, { running = false } = {}) {
+  const summary = report?.summary || {};
+  const runtime = report?.runtime || {};
+  const totalSources = Math.max(
+    0,
+    Number(runtime.selectedSourceCount || 0),
+    Number(summary.sourceCount || 0)
+  );
+  const successfulSources = Math.max(0, Number(summary.successfulSources || 0));
+  const failedSources = Math.max(0, Number(summary.failedSources || 0));
+  const excludedSources = Math.max(0, Number(summary.excludedSources || 0));
+  const resolvedSources = successfulSources + failedSources + excludedSources;
+  const outputCount = Math.max(0, Number(summary.outputCount || 0));
+  const active = Boolean(running) || (!String(report?.finishedAt || "").trim() && (resolvedSources > 0 || outputCount > 0));
+  if (!active) {
+    return {
+      active: false,
+      determinate: false,
+      ratio: 0,
+      label: ""
+    };
+  }
+  const determinate = totalSources > 0;
+  const ratio = determinate ? Math.max(0, Math.min(1, resolvedSources / totalSources)) : 0;
+  const resolvedLabel = determinate
+    ? `${compactCount(Math.min(resolvedSources, totalSources))}/${compactCount(totalSources)} sources resolved`
+    : `${compactCount(resolvedSources)} sources resolved`;
+  return {
+    active: true,
+    determinate,
+    ratio,
+    label: `Fetcher: ${resolvedLabel} | output ${compactCount(outputCount)} | failed ${compactCount(failedSources)} | excluded ${compactCount(excludedSources)}`
+  };
+}
+
+export function deriveDiscoveryProgressModel(report, { running = false } = {}) {
+  const summary = report?.summary || {};
+  const foundCount = Math.max(0, Number(summary.foundEndpointCount ?? 0));
+  const probedCount = Math.max(0, Number(summary.probedCandidateCount ?? summary.probedCount ?? 0));
+  const queuedCount = Math.max(0, Number(summary.queuedCandidateCount ?? summary.newCandidateCount ?? 0));
+  const failedCount = Math.max(0, Number(summary.failedProbeCount || 0));
+  const active = Boolean(running) || (!String(report?.finishedAt || "").trim() && (foundCount > 0 || probedCount > 0 || queuedCount > 0 || failedCount > 0));
+  if (!active) {
+    return {
+      active: false,
+      determinate: false,
+      ratio: 0,
+      label: ""
+    };
+  }
+
+  const determinate = foundCount > 0 || probedCount > 0;
+  const total = Math.max(foundCount, probedCount, 1);
+  const ratio = determinate ? Math.max(0, Math.min(1, probedCount / total)) : 0;
+  const label = determinate
+    ? `Discovery: probed ${compactCount(probedCount)}/${compactCount(total)} found so far | queued ${compactCount(queuedCount)} | failed ${compactCount(failedCount)}`
+    : `Discovery: scanning candidates | queued ${compactCount(queuedCount)} | failed ${compactCount(failedCount)}`;
+  return {
+    active: true,
+    determinate,
+    ratio,
+    label
+  };
+}
+
 export function getOpsPollIntervalMs(hasLiveRuns, idleMs = 10000, liveMs = 2000) {
   return Boolean(hasLiveRuns) ? Number(liveMs) : Number(idleMs);
 }

@@ -1,3 +1,6 @@
+import { deriveFetcherProgressModel } from "../domain.js";
+import { applyAdminTaskProgress } from "./progress-ui.js";
+
 export const FETCHER_FALLBACK_MESSAGES = {
   bridgeUnavailable: "Admin bridge unavailable, using VS Code task fallback.",
   presetNeedsBridge: "VS Code task fallback supports default fetcher runs only. Start admin bridge and retry.",
@@ -63,6 +66,28 @@ export function createAdminFetcherController({
   createLogEvent,
   appendLogRow
 }) {
+  function formatDurationCompact(ms) {
+    const value = Math.max(0, Number(ms) || 0);
+    if (value < 1000) return `${value}ms`;
+    if (value < 60_000) return `${Math.round(value / 1000)}s`;
+    const minutes = Math.floor(value / 60_000);
+    const seconds = Math.round((value % 60_000) / 1000);
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+
+  function setFetcherProgress(view) {
+    applyAdminTaskProgress(
+      refs.adminFetcherProgressEl,
+      refs.adminFetcherProgressBarEl,
+      refs.adminFetcherProgressLabelEl,
+      view
+    );
+  }
+
+  function updateFetcherProgressFromReport(report, { running = false } = {}) {
+    setFetcherProgress(deriveFetcherProgressModel(report, { running }));
+  }
+
   function getFetcherPresetMeta(preset) {
     const key = String(preset || "default").trim().toLowerCase();
     return FETCHER_PRESET_META[key] || FETCHER_PRESET_META.default;
@@ -97,6 +122,7 @@ export function createAdminFetcherController({
   function setFetcherLogPlaceholder(message) {
     if (!refs.adminFetcherLogEl) return;
     refs.adminFetcherLogEl.innerHTML = "";
+    setFetcherProgress({ active: false });
     appendFetcherLog(message, "muted");
   }
 
@@ -176,20 +202,20 @@ export function createAdminFetcherController({
       const report = await fetchJobsFetchReportJsonWithRetry();
       if (!report) {
         appendFetcherLog("Fetch report is not available yet. It may still be generating.", "warn");
+        updateFetcherProgressFromReport(null, { running: Boolean(state.adminBusyState.fetcherWatch || state.adminBusyState.liveFetchRunning) });
         if (!silent) showToast("Fetch report not available yet. Retry in a few seconds.", "info");
         return;
       }
       state.latestFetcherReportCache = report;
+      updateFetcherProgressFromReport(report, { running: false });
 
       const summary = report?.summary || {};
+      const totalSources = Math.max(0, Number(report?.runtime?.selectedSourceCount || 0), Number(summary.sourceCount || 0));
+      const resolvedSources = Math.max(0, Number(summary.successfulSources || 0) + Number(summary.failedSources || 0) + Number(summary.excludedSources || 0));
       appendFetcherLog(
-        `Summary: output ${Number(summary.outputCount || 0).toLocaleString()}, merged ${Number(summary.mergedCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
-        "success"
+        `Fetcher summary: ${totalSources > 0 ? `${resolvedSources}/${totalSources} sources resolved` : `${resolvedSources} sources resolved`}, output ${Number(summary.outputCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
+        Number(summary.failedSources || 0) > 0 ? "warn" : "success"
       );
-      const lifecycleLabel = formatLifecycleSummary(report);
-      if (lifecycleLabel) appendFetcherLog(lifecycleLabel, "muted");
-      const runtimeLabel = formatFetcherRuntimeOptions(report);
-      if (runtimeLabel) appendFetcherLog(`Runtime options: ${runtimeLabel}.`, "muted");
 
       const sources = Array.isArray(report?.sources) ? report.sources : [];
       if (!sources.length) {
@@ -197,23 +223,21 @@ export function createAdminFetcherController({
         return;
       }
 
-      sources.forEach(source => {
-        const status = String(source?.status || "unknown").toLowerCase();
-        const line = `${source?.name || "unknown"} [${status}] fetched ${Number(source?.fetchedCount || 0).toLocaleString()}, kept ${Number(source?.keptCount || 0).toLocaleString()}, duration ${Number(source?.durationMs || 0)}ms${source?.error ? `, note: ${source.error}` : ""}`;
-        const level = status === "error" ? "error" : status === "excluded" ? "warn" : "info";
-        appendFetcherLog(line, level);
-
-        const details = Array.isArray(source?.details) ? source.details : [];
-        details.forEach(detail => {
-          const detailStatus = String(detail?.status || "unknown").toLowerCase();
-          const detailLevel = detailStatus === "error" ? "error" : detailStatus === "excluded" ? "warn" : "muted";
-          const detailLine =
-            `  - ${detail?.name || detail?.studio || "source"} [${detailStatus}] ` +
-            `fetched ${Number(detail?.fetchedCount || 0).toLocaleString()}, kept ${Number(detail?.keptCount || 0).toLocaleString()}` +
-            `${detail?.error ? `, note: ${detail.error}` : ""}`;
-          appendFetcherLog(detailLine, detailLevel);
-        });
-      });
+      const failedSources = sources
+        .filter(source => String(source?.status || "").toLowerCase() === "error")
+        .slice(0, 3)
+        .map(source => `${String(source?.name || "unknown")}${source?.error ? ` [${String(source.error)}]` : ""}`);
+      if (failedSources.length) {
+        appendFetcherLog(`Failures: ${failedSources.join(" | ")}`, "warn");
+      }
+      const slowSources = sources
+        .filter(source => Number(source?.durationMs || 0) >= 20_000)
+        .sort((a, b) => Number(b?.durationMs || 0) - Number(a?.durationMs || 0))
+        .slice(0, 2)
+        .map(source => `${String(source?.name || "unknown")} ${formatDurationCompact(source?.durationMs)}`);
+      if (slowSources.length) {
+        appendFetcherLog(`Slowest sources: ${slowSources.join(" | ")}`, "muted");
+      }
 
       loadOpsHealthData().catch(() => {});
     } finally {
@@ -273,64 +297,76 @@ export function createAdminFetcherController({
   function appendFetcherProgressFromReport(report, nowMs) {
     const liveState = state.fetcherLiveProgressState;
     if (!liveState) return;
+    updateFetcherProgressFromReport(report, { running: true });
     const summary = report?.summary || {};
     const outputCount = Number(summary.outputCount || 0);
-    const mergedCount = Number(summary.mergedCount || 0);
-    const rawFetchedCount = Number(summary.rawFetchedCount || 0);
+    const selectedSourceCount = Math.max(0, Number(report?.runtime?.selectedSourceCount || 0), Number(summary.sourceCount || 0));
     const failedSources = Number(summary.failedSources || 0);
     const excludedSources = Number(summary.excludedSources || 0);
     const successfulSources = Number(summary.successfulSources || 0);
-    const lifecycleActive = Number(summary.lifecycleActiveCount || 0);
-    const lifecycleLikelyRemoved = Number(summary.lifecycleLikelyRemovedCount || 0);
-    const lifecycleArchived = Number(summary.lifecycleArchivedCount || 0);
+    const resolvedSources = successfulSources + failedSources + excludedSources;
 
     const summarySignature = [
       outputCount,
-      mergedCount,
-      rawFetchedCount,
+      selectedSourceCount,
+      resolvedSources,
       failedSources,
-      excludedSources,
-      successfulSources,
-      lifecycleActive,
-      lifecycleLikelyRemoved,
-      lifecycleArchived
+      excludedSources
     ].join("|");
     if (summarySignature !== liveState.summarySignature) {
       liveState.summarySignature = summarySignature;
       appendFetcherLog(
-        `Progress: output ${outputCount.toLocaleString()}, merged ${mergedCount.toLocaleString()}, fetched ${rawFetchedCount.toLocaleString()}, ok ${successfulSources}, failed ${failedSources}, excluded ${excludedSources}, lifecycle active ${lifecycleActive.toLocaleString()}, likely removed ${lifecycleLikelyRemoved.toLocaleString()}, archived ${lifecycleArchived.toLocaleString()}.`,
+        `Fetcher: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, output ${outputCount.toLocaleString()}, failed ${failedSources}, excluded ${excludedSources}.`,
         failedSources > 0 ? "warn" : "info"
       );
     }
-    const runtimeLabel = formatFetcherRuntimeOptions(report);
-    if (runtimeLabel && runtimeLabel !== liveState.runtimeSignature) {
-      liveState.runtimeSignature = runtimeLabel;
-      appendFetcherLog(`Progress runtime: ${runtimeLabel}.`, "muted");
-    }
 
     const sources = Array.isArray(report?.sources) ? report.sources : [];
+    const notableEvents = [];
     sources.forEach(source => {
       const name = String(source?.name || "unknown");
       const status = String(source?.status || "unknown").toLowerCase();
       const signature = [
         status,
-        Number(source?.fetchedCount || 0),
         Number(source?.keptCount || 0),
         Number(source?.durationMs || 0),
         String(source?.error || "")
       ].join("|");
-      if (liveState.sourceSignatures.get(name) === signature) return;
+      const previousSignature = liveState.sourceSignatures.get(name);
+      if (previousSignature === signature) return;
       liveState.sourceSignatures.set(name, signature);
-      const level = status === "error" ? "error" : status === "excluded" ? "warn" : "muted";
-      appendFetcherLog(
-        `Progress source: ${name} [${status}] fetched ${Number(source?.fetchedCount || 0).toLocaleString()}, kept ${Number(source?.keptCount || 0).toLocaleString()}, duration ${Number(source?.durationMs || 0)}ms${source?.error ? `, note: ${source.error}` : ""}`,
-        level
-      );
+      if (status === "error") {
+        notableEvents.push({
+          level: "error",
+          message: `Failure: ${name}${source?.error ? ` [${String(source.error)}]` : ""}`
+        });
+        return;
+      }
+      if (status === "excluded") {
+        notableEvents.push({
+          level: "warn",
+          message: `Excluded: ${name}${source?.error ? ` [${String(source.error)}]` : ""}`
+        });
+        return;
+      }
+      if (status === "running" && Number(source?.durationMs || 0) >= 20_000 && !liveState.reportedSlowSources.has(name)) {
+        liveState.reportedSlowSources.add(name);
+        notableEvents.push({
+          level: "muted",
+          message: `Slow source: ${name} still running after ${formatDurationCompact(source?.durationMs)}`
+        });
+      }
+    });
+    notableEvents.slice(0, 2).forEach(item => {
+      appendFetcherLog(item.message, item.level);
     });
 
-    if ((nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 20000) {
+    if ((nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 12000) {
       liveState.lastHeartbeatAtMs = nowMs;
-      appendFetcherLog("Fetcher still running. Waiting for more source updates...", "muted");
+      appendFetcherLog(
+        `Fetcher active: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} resolved` : `${resolvedSources} resolved`}, output ${outputCount.toLocaleString()}.`,
+        "muted"
+      );
     }
   }
 
@@ -341,11 +377,12 @@ export function createAdminFetcherController({
     state.fetcherCompletionPollDeadline = state.fetcherLaunchAtMs + fetchReportPollTimeoutMs;
     state.fetcherLiveProgressState = {
       summarySignature: "",
-      runtimeSignature: "",
       sourceSignatures: new Map(),
+      reportedSlowSources: new Set(),
       lastHeartbeatAtMs: 0
     };
-    appendFetcherLog("Watching fetch report for completion to trigger jobs auto-refresh...");
+    updateFetcherProgressFromReport(null, { running: true });
+    appendFetcherLog("Fetcher started. Watching live progress...", "info");
     scheduleFetcherCompletionPoll(900);
   }
 
@@ -355,6 +392,7 @@ export function createAdminFetcherController({
       state.fetcherCompletionPollTimer = null;
     }
     state.fetcherLiveProgressState = null;
+    setFetcherProgress({ active: false });
     setBusyFlag("fetcherWatch", false);
   }
 
@@ -383,14 +421,11 @@ export function createAdminFetcherController({
     const finishedMs = parseReportTimestampMs(report?.finishedAt);
     if (finishedMs >= (state.fetcherLaunchAtMs - 1000)) {
       const summary = report?.summary || {};
+      updateFetcherProgressFromReport(report, { running: true });
       appendFetcherLog(
-        `Fetcher run completed: output ${Number(summary.outputCount || 0).toLocaleString()}, failed sources ${Number(summary.failedSources || 0)}.`,
-        "success"
+        `Fetcher completed: output ${Number(summary.outputCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
+        Number(summary.failedSources || 0) > 0 ? "warn" : "success"
       );
-      const lifecycleLabel = formatLifecycleSummary(report);
-      if (lifecycleLabel) appendFetcherLog(lifecycleLabel, "muted");
-      const runtimeLabel = formatFetcherRuntimeOptions(report);
-      if (runtimeLabel) appendFetcherLog(`Completed with runtime options: ${runtimeLabel}.`, "muted");
       emitJobsAutoRefreshSignal(report);
       stopFetcherCompletionWatch();
       return;

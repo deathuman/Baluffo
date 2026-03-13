@@ -12,6 +12,7 @@ export function createAdminOpsController({
   getBridge,
   postBridge,
   normalizeOpsRuns,
+  applyOptimisticDiscoveryRun,
   getOpsPollIntervalMs,
   renderAdminOpsAlerts,
   renderAdminOpsKpis,
@@ -26,9 +27,12 @@ export function createAdminOpsController({
   adminDispatch,
   adminActions,
   escapeHtml,
+  onBridgeStatusChange,
   bridgeStatusPollIntervalMs,
   idlePollIntervalMs
 }) {
+  let lastBridgeStatus = "checking";
+
   function setOpsPlaceholders(message = "Unlock admin to view operations health.") {
     if (refs.adminSyncStatusEl) {
       refs.adminSyncStatusEl.textContent = message;
@@ -84,10 +88,17 @@ export function createAdminOpsController({
         fetcherMetrics = null;
       }
       state.latestOpsHealthCache = health || null;
-      const runModel = normalizeOpsRuns(historyPayload?.runs || [], Date.now());
+      const rawRunModel = normalizeOpsRuns(historyPayload?.runs || [], Date.now());
+      const optimisticDiscoveryActive = Boolean(
+        state.adminBusyState.discoveryWatch
+        && state.discoveryOptimisticRun?.startedAt
+      );
+      const runModel = optimisticDiscoveryActive
+        ? applyOptimisticDiscoveryRun(rawRunModel, state.discoveryOptimisticRun, Date.now())
+        : rawRunModel;
       const liveTypes = new Set(Array.isArray(runModel?.liveTypes) ? runModel.liveTypes : []);
       setBusyFlag("liveFetchRunning", liveTypes.has("fetch"));
-      setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
+      setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery") || optimisticDiscoveryActive);
       setBusyFlag("liveSyncRunning", liveTypes.has("sync"));
       setBusyFlag("livePipelineRunning", liveTypes.has("pipeline"));
 
@@ -151,10 +162,18 @@ export function createAdminOpsController({
 
   async function pollBridgeStatus(options = {}) {
     if (!state.adminPin) {
+      if (lastBridgeStatus !== "checking") {
+        lastBridgeStatus = "checking";
+        onBridgeStatusChange?.("checking");
+      }
       setBridgeStatusBadge("checking", "Bridge Locked");
       return;
     }
     if (options.forceChecking) {
+      if (lastBridgeStatus !== "checking") {
+        lastBridgeStatus = "checking";
+        onBridgeStatusChange?.("checking");
+      }
       setBridgeStatusBadge("checking", "Bridge Checking");
     }
     try {
@@ -162,8 +181,16 @@ export function createAdminOpsController({
       const summary = summaryPayload?.summary || {};
       const activeCount = Number(summary?.activeCount || 0);
       const pendingCount = Number(summary?.pendingCount || 0);
+      if (lastBridgeStatus !== "online") {
+        lastBridgeStatus = "online";
+        onBridgeStatusChange?.("online");
+      }
       setBridgeStatusBadge("online", `Bridge Online (${activeCount} active, ${pendingCount} pending)`);
     } catch {
+      if (lastBridgeStatus !== "offline") {
+        lastBridgeStatus = "offline";
+        onBridgeStatusChange?.("offline");
+      }
       setBridgeStatusBadge("offline", "Bridge Offline");
     }
   }
