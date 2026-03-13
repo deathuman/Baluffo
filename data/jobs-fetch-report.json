@@ -1,13 +1,15 @@
 {
   "schemaVersion": "1.0",
-  "startedAt": "2026-03-12T15:31:58.738498+00:00",
-  "finishedAt": "2026-03-12T15:36:44.383175+00:00",
+  "startedAt": "2026-03-13T16:16:57.527490+00:00",
+  "finishedAt": "2026-03-13T16:18:27.939021+00:00",
   "runtime": {
     "maxWorkers": 6,
     "maxPerDomain": 2,
     "fetchStrategy": "auto",
-    "fetchClient": "urllib",
+    "fetchClient": "httpx_async",
     "adapterHttpConcurrency": 24,
+    "staticDetailConcurrency": 6,
+    "googleSheetsRedirectConcurrency": 8,
     "seedFromExistingOutput": false,
     "sourceTtlMinutes": 360,
     "respectSourceCadence": false,
@@ -23,561 +25,270 @@
     "staticDetailHeuristicsProfile": "balanced",
     "scrapyValidationStrict": true,
     "canonicalStrictUrlValidation": false,
-    "selectedSourceCount": 51
+    "selectedSourceCount": 52,
+    "slowestSources": [
+      {
+        "name": "google_sheets",
+        "adapter": "csv",
+        "durationMs": 83327,
+        "keptCount": 32810,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "static_source::static:listing_url:https://www.riotgames.com/en/work-with-us/jobs",
+        "adapter": "static",
+        "durationMs": 44781,
+        "keptCount": 161,
+        "detailPagesVisited": 161,
+        "detailYieldPct": 100
+      },
+      {
+        "name": "static_source::static:listing_url:https://careers.nintendo.com/jobs",
+        "adapter": "static",
+        "durationMs": 34456,
+        "keptCount": 56,
+        "detailPagesVisited": 56,
+        "detailYieldPct": 100
+      },
+      {
+        "name": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist",
+        "adapter": "static",
+        "durationMs": 14160,
+        "keptCount": 21,
+        "detailPagesVisited": 26,
+        "detailYieldPct": 81
+      },
+      {
+        "name": "personio_sources",
+        "adapter": "personio",
+        "durationMs": 11546,
+        "keptCount": 0,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "google_sheets_1er2oaxo",
+        "adapter": "csv",
+        "durationMs": 8490,
+        "keptCount": 2239,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "static_source::static:name:little chicken",
+        "adapter": "static",
+        "durationMs": 5914,
+        "keptCount": 4,
+        "detailPagesVisited": 4,
+        "detailYieldPct": 100
+      },
+      {
+        "name": "static_source::static:listing_url:https://jobs.zenimax.com",
+        "adapter": "custom",
+        "durationMs": 5740,
+        "keptCount": 0,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "static_source::static:listing_url:https://larian.com/careers",
+        "adapter": "static",
+        "durationMs": 4877,
+        "keptCount": 18,
+        "detailPagesVisited": 18,
+        "detailYieldPct": 100
+      },
+      {
+        "name": "lever_sources",
+        "adapter": "lever",
+        "durationMs": 4054,
+        "keptCount": 26,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      }
+    ]
   },
   "summary": {
-    "inputCount": 36396,
-    "mergedCount": 753,
-    "outputCount": 35643,
-    "mergedByPrimaryUrl": 381,
-    "mergedBySecondaryKey": 372,
+    "inputCount": 36403,
+    "mergedCount": 1523,
+    "outputCount": 34880,
+    "mergedByPrimaryUrl": 1189,
+    "mergedBySecondaryKey": 334,
     "mergedBySocialKey": 0,
     "collisionSamplesCount": 10,
     "collisionSamples": [
       {
         "reason": "primary_url",
-        "existingDedupKey": "url:5d53d9560fb251fc039d46989a239351052688f5",
-        "incomingSource": "gamesindustry",
-        "incomingTitle": "Senior Quality Analyst",
-        "incomingCompany": "Unknown",
-        "incomingJobLink": "https://jobs.gamesindustry.biz/job/senior-quality-analyst-43821"
+        "existingDedupKey": "url:ac66229d8c194ee2e27f75b4a328f6726f93eada",
+        "incomingSource": "google_sheets_1er2oaxo",
+        "incomingTitle": "VFX Artist",
+        "incomingCompany": "Red Star 3D",
+        "incomingJobLink": "https://www.redstar3d.com/jobs"
+      },
+      {
+        "reason": "secondary_key",
+        "existingDedupKey": "url:f027bfc9dfbe3eaec665c2344af6f4a04144b7c4",
+        "incomingSource": "google_sheets_1er2oaxo",
+        "incomingTitle": "Gameplay Engineer",
+        "incomingCompany": "Supermassive Games",
+        "incomingJobLink": "https://apply.workable.com/supermassive-games/j/3FCEC65F16"
       },
       {
         "reason": "primary_url",
-        "existingDedupKey": "url:f3f7cd075ab77740d290bdf72b2d862b030e147a",
-        "incomingSource": "gamesindustry",
-        "incomingTitle": "Junior Game Artist / Developer (Apprenticeship Program)",
-        "incomingCompany": "Unknown",
-        "incomingJobLink": "https://jobs.gamesindustry.biz/job/junior-game-artist-developer-apprenticeship-program-43814"
+        "existingDedupKey": "url:f3ad9eeee5c6fb0575f165fb7f2bc4c773e80ff7",
+        "incomingSource": "google_sheets_1er2oaxo",
+        "incomingTitle": "Game Designer",
+        "incomingCompany": "Atomic Theory",
+        "incomingJobLink": "https://www.rocketscience.gg/careers/97b0d848-4176-4c39-8327-fe6eb4c4a53f"
+      },
+      {
+        "reason": "secondary_key",
+        "existingDedupKey": "url:69000a56dee35eedce988623dbb4efcfe13d10d3",
+        "incomingSource": "google_sheets_1er2oaxo",
+        "incomingTitle": "Animator, 2D",
+        "incomingCompany": "Kavaleer",
+        "incomingJobLink": "https://www.linkedin.com/posts/kavaleer-productions_animationjobs-jobsireland-activity-7437888586273697794-XWUx"
       },
       {
         "reason": "primary_url",
-        "existingDedupKey": "url:39a8296a475fc3443f1ccf46638e5431f7ca06de",
-        "incomingSource": "gamesindustry",
-        "incomingTitle": "Product Marketing Manager",
-        "incomingCompany": "Unknown",
-        "incomingJobLink": "https://jobs.gamesindustry.biz/job/product-marketing-manager-43813"
+        "existingDedupKey": "url:c3edac959577310557f9d78898d0b215094dff11",
+        "incomingSource": "google_sheets_1er2oaxo",
+        "incomingTitle": "Scene Prep Supervisor",
+        "incomingCompany": "Kavaleer",
+        "incomingJobLink": "https://www.linkedin.com/posts/kavaleer-productions_animationjobs-jobsireland-activity-7437844940119785473-GO56"
       },
       {
         "reason": "primary_url",
-        "existingDedupKey": "url:0aa7db95fedb3175fd121b78d5e8fd0d8313a655",
-        "incomingSource": "gamesindustry",
-        "incomingTitle": "Total Rewards Specialist",
-        "incomingCompany": "Unknown",
-        "incomingJobLink": "https://jobs.gamesindustry.biz/job/total-rewards-specialist-43806"
+        "existingDedupKey": "url:c3ea18202c9fa1e39950d1491940a3097b197187",
+        "incomingSource": "google_sheets_1er2oaxo",
+        "incomingTitle": "Cleanup Artist",
+        "incomingCompany": "Baleuko",
+        "incomingJobLink": "https://www.linkedin.com/feed/update/urn:li:activity:7437863551379263488"
       },
       {
-        "reason": "secondary_key",
-        "existingDedupKey": "url:450c8dd05d9776c64c6751edad41410290bc4d7a",
-        "incomingSource": "greenhouse_boards",
-        "incomingTitle": "Editorial Manager - PlayStation Store",
-        "incomingCompany": "PlayStation Global",
-        "incomingJobLink": "https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5627120004"
+        "reason": "primary_url",
+        "existingDedupKey": "url:c3ea18202c9fa1e39950d1491940a3097b197187",
+        "incomingSource": "google_sheets_1er2oaxo",
+        "incomingTitle": "Compositor",
+        "incomingCompany": "Baleuko",
+        "incomingJobLink": "https://www.linkedin.com/feed/update/urn:li:activity:7437863551379263488"
       },
       {
-        "reason": "secondary_key",
-        "existingDedupKey": "url:6673b23a2a073ff20419d091bbd1fa624b74fd55",
-        "incomingSource": "greenhouse_boards",
-        "incomingTitle": "Lead Producer",
-        "incomingCompany": "PlayStation Global",
-        "incomingJobLink": "https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5763659004"
+        "reason": "primary_url",
+        "existingDedupKey": "url:d5e0d22829d57e30ab4a298d0ca8950225668261",
+        "incomingSource": "google_sheets_1er2oaxo",
+        "incomingTitle": "Compositor",
+        "incomingCompany": "BlueBolt",
+        "incomingJobLink": "https://www.blue-bolt.com/hiring"
       },
       {
-        "reason": "secondary_key",
-        "existingDedupKey": "url:c17ba72f2c24c6c109c42fa7bf20b0fc555458bc",
-        "incomingSource": "greenhouse_boards",
-        "incomingTitle": "Senior Software Engineer",
-        "incomingCompany": "PlayStation Global",
-        "incomingJobLink": "https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5822187004"
+        "reason": "primary_url",
+        "existingDedupKey": "url:16f8794d365b7b7d8ef959118f78cb783ca6dac0",
+        "incomingSource": "google_sheets_1er2oaxo",
+        "incomingTitle": "FX Artist",
+        "incomingCompany": "Fin Design + Effects",
+        "incomingJobLink": "https://finvfx.bamboohr.com/careers/53"
       },
       {
-        "reason": "secondary_key",
-        "existingDedupKey": "url:16809f6e3a0b525cb4a9c3f8abd98fa9fa5f74d8",
-        "incomingSource": "greenhouse_boards",
-        "incomingTitle": "Software Engineer II",
-        "incomingCompany": "PlayStation Global",
-        "incomingJobLink": "https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5710429004"
-      },
-      {
-        "reason": "secondary_key",
-        "existingDedupKey": "url:16809f6e3a0b525cb4a9c3f8abd98fa9fa5f74d8",
-        "incomingSource": "greenhouse_boards",
-        "incomingTitle": "Software Engineer II",
-        "incomingCompany": "PlayStation Global",
-        "incomingJobLink": "https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5712749004"
-      },
-      {
-        "reason": "secondary_key",
-        "existingDedupKey": "url:16809f6e3a0b525cb4a9c3f8abd98fa9fa5f74d8",
-        "incomingSource": "greenhouse_boards",
-        "incomingTitle": "Software Engineer II",
-        "incomingCompany": "PlayStation Global",
-        "incomingJobLink": "https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5764771004"
+        "reason": "primary_url",
+        "existingDedupKey": "url:a62a80127cedf8e802c311cdf9663a335552c1f1",
+        "incomingSource": "google_sheets_1er2oaxo",
+        "incomingTitle": "Look Development Artist",
+        "incomingCompany": "Fin Design + Effects",
+        "incomingJobLink": "https://finvfx.bamboohr.com/careers/86"
       }
     ],
-    "rawFetched": 36396,
-    "canonicalDropped": 0,
-    "canonicalKept": 36396,
-    "dedupMerged": 753,
-    "finalOutput": 35643,
-    "rawFetchedCount": 36396,
-    "uniqueOutputCount": 35643,
-    "sourceBundleCollisions": 432,
-    "targetRoleCount": 363,
-    "netherlandsCount": 323,
-    "remoteCount": 6342,
+    "rawFetched": 36420,
+    "canonicalDropped": 17,
+    "canonicalKept": 36403,
+    "dedupMerged": 1523,
+    "finalOutput": 34880,
+    "rawFetchedCount": 36403,
+    "uniqueOutputCount": 34880,
+    "sourceBundleCollisions": 959,
+    "targetRoleCount": 332,
+    "netherlandsCount": 319,
+    "remoteCount": 6177,
     "targetRoleNetherlandsCount": 0,
-    "targetRoleRemoteCount": 67,
+    "targetRoleRemoteCount": 61,
     "preservedPreviousOutput": false,
-    "sourceCount": 52,
-    "successfulSources": 49,
-    "failedSources": 2,
-    "excludedSources": 1,
-    "activeSourceCount": 54,
-    "pendingSourceCount": 5,
-    "newlyApprovedSinceLastRun": 0,
-    "jsonBytes": 43191974,
-    "csvBytes": 22939991,
-    "lightJsonBytes": 20525720,
+    "sourceCount": 53,
+    "successfulSources": 48,
+    "failedSources": 1,
+    "excludedSources": 4,
+    "activeSourceCount": 56,
+    "pendingSourceCount": 4,
+    "newlyApprovedSinceLastRun": 2,
+    "jsonBytes": 42777919,
+    "csvBytes": 22923574,
+    "lightJsonBytes": 20247305,
     "sizeGuardrailExceeded": false,
     "recordGuardrailExceeded": false,
-    "lifecycleActiveCount": 35662,
-    "lifecycleLikelyRemovedCount": 256,
+    "lifecycleActiveCount": 34885,
+    "lifecycleLikelyRemovedCount": 7471,
     "lifecycleArchivedCount": 0,
-    "lifecycleTrackedCount": 35918
+    "lifecycleTrackedCount": 42356
   },
   "sources": [
     {
-      "name": "remote_ok",
-      "status": "ok",
-      "adapter": "api",
-      "fetchStrategy": "http",
-      "studio": "remote_ok",
-      "fetchedCount": 45,
-      "keptCount": 45,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 117,
-      "loss": {
-        "rawFetched": 45,
-        "canonicalDropped": 0,
-        "canonicalKept": 45,
-        "dedupMerged": 0,
-        "finalOutput": 45,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 0,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      }
-    },
-    {
-      "name": "gamesindustry",
-      "status": "ok",
-      "adapter": "html",
-      "fetchStrategy": "http",
-      "studio": "gamesindustry",
-      "fetchedCount": 24,
-      "keptCount": 24,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 214,
-      "loss": {
-        "rawFetched": 24,
-        "canonicalDropped": 0,
-        "canonicalKept": 24,
-        "dedupMerged": 4,
-        "finalOutput": 20,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 0,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      }
-    },
-    {
-      "name": "greenhouse_boards",
-      "status": "ok",
-      "adapter": "greenhouse",
-      "fetchStrategy": "http",
-      "studio": "multiple",
-      "fetchedCount": 212,
-      "keptCount": 212,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 996,
-      "loss": {
-        "rawFetched": 212,
-        "canonicalDropped": 0,
-        "canonicalKept": 212,
-        "dedupMerged": 6,
-        "finalOutput": 206,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 0,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "greenhouse",
-          "studio": "Guerrilla Games",
-          "name": "Guerrilla Games",
-          "status": "ok",
-          "fetchedCount": 9,
-          "keptCount": 9,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false
-        },
-        {
-          "adapter": "greenhouse",
-          "studio": "PlayStation Global",
-          "name": "PlayStation Global",
-          "status": "ok",
-          "fetchedCount": 203,
-          "keptCount": 203,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false
-        }
-      ]
-    },
-    {
-      "name": "google_sheets_1mvqhxat",
-      "status": "ok",
-      "adapter": "csv",
-      "fetchStrategy": "http",
-      "studio": "community_sheet",
-      "fetchedCount": 374,
-      "keptCount": 374,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 1335,
-      "loss": {
-        "rawFetched": 374,
-        "canonicalDropped": 0,
-        "canonicalKept": 374,
-        "dedupMerged": 11,
-        "finalOutput": 363,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 0,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      }
-    },
-    {
-      "name": "smartrecruiters_sources",
-      "status": "ok",
-      "adapter": "smartrecruiters",
-      "fetchStrategy": "http",
-      "studio": "multiple",
-      "fetchedCount": 90,
-      "keptCount": 90,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 485,
-      "loss": {
-        "rawFetched": 90,
-        "canonicalDropped": 0,
-        "canonicalKept": 90,
-        "dedupMerged": 1,
-        "finalOutput": 89,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 0,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "smartrecruiters",
-          "studio": "CD PROJEKT RED",
-          "name": "CD PROJEKT RED (SmartRecruiters)",
-          "status": "ok",
-          "fetchedCount": 96,
-          "keptCount": 24,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false
-        },
-        {
-          "adapter": "smartrecruiters",
-          "studio": "Gameloft",
-          "name": "Gameloft (SmartRecruiters)",
-          "status": "ok",
-          "fetchedCount": 66,
-          "keptCount": 66,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false
-        }
-      ]
-    },
-    {
-      "name": "workable_sources",
-      "status": "ok",
-      "adapter": "workable",
-      "fetchStrategy": "http",
-      "studio": "multiple",
-      "fetchedCount": 10,
-      "keptCount": 10,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 718,
-      "loss": {
-        "rawFetched": 10,
-        "canonicalDropped": 0,
-        "canonicalKept": 10,
-        "dedupMerged": 0,
-        "finalOutput": 10,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 0,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "workable",
-          "studio": "Hutch",
-          "name": "Hutch (Workable)",
-          "status": "ok",
-          "fetchedCount": 10,
-          "keptCount": 10,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false
-        },
-        {
-          "adapter": "workable",
-          "studio": "Wargaming",
-          "name": "Wargaming (Workable)",
-          "status": "ok",
-          "fetchedCount": 0,
-          "keptCount": 0,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false
-        }
-      ]
-    },
-    {
-      "name": "ashby_sources",
-      "status": "ok",
-      "adapter": "ashby",
-      "fetchStrategy": "http",
-      "studio": "multiple",
+      "name": "static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 1304,
-      "loss": {
-        "rawFetched": 0,
-        "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 0,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "ashby",
-          "studio": "Jagex",
-          "name": "Jagex (Ashby)",
-          "status": "error",
-          "fetchedCount": 0,
-          "keptCount": 0,
-          "error": "no jobs extracted from ashby board html",
-          "classification": "",
-          "browserFallbackRecommended": false
-        },
-        {
-          "adapter": "ashby",
-          "studio": "Scopely",
-          "name": "Scopely (Ashby)",
-          "status": "error",
-          "fetchedCount": 0,
-          "keptCount": 0,
-          "error": "no jobs extracted from ashby board html",
-          "classification": "",
-          "browserFallbackRecommended": false
-        }
-      ]
-    },
-    {
-      "name": "google_sheets",
-      "status": "ok",
-      "adapter": "csv",
-      "fetchStrategy": "http",
-      "studio": "community_sheet",
-      "fetchedCount": 32811,
-      "keptCount": 32811,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 5331,
-      "loss": {
-        "rawFetched": 32811,
-        "canonicalDropped": 0,
-        "canonicalKept": 32811,
-        "dedupMerged": 476,
-        "finalOutput": 32335,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 0,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      }
-    },
-    {
-      "name": "scrapy_static_sources",
-      "status": "ok",
-      "adapter": "scrapy_static",
-      "fetchStrategy": "http",
-      "studio": "multiple",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "scrapy_static_sources: No enabled scrapy_static sources",
+      "error": "circuit_breaker_active_until:2026-03-13T19:09:55.749066+00:00",
       "durationMs": 0,
-      "loss": {
-        "rawFetched": 0,
-        "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 0,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      }
+      "exclusionReason": "circuit_breaker_active_until:2026-03-13T19:09:55.749066+00:00"
     },
     {
-      "name": "teamtailor_sources",
-      "status": "ok",
-      "adapter": "teamtailor",
-      "fetchStrategy": "http",
-      "studio": "multiple",
-      "fetchedCount": 20,
-      "keptCount": 20,
+      "name": "static_source::static:listing_url:https://tequilaworks.com/en/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 5531,
-      "loss": {
-        "rawFetched": 20,
-        "canonicalDropped": 0,
-        "canonicalKept": 20,
-        "dedupMerged": 9,
-        "finalOutput": 11,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 0,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "teamtailor",
-          "studio": "Paradox Interactive",
-          "name": "Paradox Careers",
-          "status": "ok",
-          "fetchedCount": 20,
-          "keptCount": 20,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false
-        },
-        {
-          "adapter": "teamtailor",
-          "studio": "Paradox Interactive",
-          "name": "Paradox Interactive (Teamtailor)",
-          "status": "ok",
-          "fetchedCount": 20,
-          "keptCount": 0,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false
-        }
-      ]
+      "error": "circuit_breaker_active_until:2026-03-13T16:19:40.841727+00:00",
+      "durationMs": 0,
+      "exclusionReason": "circuit_breaker_active_until:2026-03-13T16:19:40.841727+00:00"
     },
     {
-      "name": "static_source::static:listing_url:https://www.naconstudiomilan.com/careers",
+      "name": "static_source::static:listing_url:https://www.arkane-studios.com/en/careers",
+      "status": "excluded",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "circuit_breaker_active_until:2026-03-13T16:19:40.841695+00:00",
+      "durationMs": 0,
+      "exclusionReason": "circuit_breaker_active_until:2026-03-13T16:19:40.841695+00:00"
+    },
+    {
+      "name": "static_source::static:listing_url:http://www.ahoiii.com/jobs",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Nacon Studio Milan",
+      "studio": "Ahoiii Entertainment UG (haftungsbeschränkt)",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 1613,
+      "durationMs": 348,
+      "stageTimingsMs": {
+        "listingFetch": 339,
+        "parseCsv": 0,
+        "candidateExtraction": 8,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
         "rawFetched": 0,
         "canonicalDropped": 0,
@@ -587,26 +298,49 @@
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 166,
+        "staticNonJobUrlRejected": 253,
         "staticDuplicateLinkRejected": 0,
         "staticDetailParseEmpty": 0
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Nacon Studio Milan",
-          "name": "Nacon Studio Milan (Manual Website)",
+          "studio": "Ahoiii Entertainment UG (haftungsbeschränkt)",
+          "name": "Ahoiii Entertainment UG (haftungsbeschränkt) (Gamesmap)",
           "status": "error",
           "fetchedCount": 1,
           "keptCount": 0,
           "error": "no jobs extracted from source pages",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 339,
+            "candidate_extraction_ms": 8,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -616,47 +350,18 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 166,
+            "staticNonJobUrlRejected": 253,
             "staticDuplicateLinkRejected": 0,
             "staticDetailParseEmpty": 0
           }
         }
       ]
-    },
-    {
-      "name": "epic_games_careers",
-      "status": "ok",
-      "adapter": "api",
-      "fetchStrategy": "http",
-      "studio": "epic_games",
-      "fetchedCount": 252,
-      "keptCount": 252,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 7547,
-      "loss": {
-        "rawFetched": 252,
-        "canonicalDropped": 0,
-        "canonicalKept": 252,
-        "dedupMerged": 11,
-        "finalOutput": 241,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 0,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      }
     },
     {
       "name": "google_sheets_1er2oaxo",
@@ -664,20 +369,29 @@
       "adapter": "csv",
       "fetchStrategy": "http",
       "studio": "community_sheet",
-      "fetchedCount": 2190,
-      "keptCount": 2190,
+      "fetchedCount": 2252,
+      "keptCount": 2239,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 9979,
+      "durationMs": 8490,
+      "stageTimingsMs": {
+        "listingFetch": 0,
+        "parseCsv": 54,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 139
+      },
       "loss": {
-        "rawFetched": 2190,
-        "canonicalDropped": 0,
-        "canonicalKept": 2190,
-        "dedupMerged": 211,
-        "finalOutput": 1979,
+        "rawFetched": 2252,
+        "canonicalDropped": 13,
+        "canonicalKept": 2239,
+        "dedupMerged": 488,
+        "finalOutput": 1751,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 13,
           "invalid_url": 0,
           "invalid_payload": 0
         },
@@ -686,126 +400,39 @@
         "staticNonJobUrlRejected": 0,
         "staticDuplicateLinkRejected": 0,
         "staticDetailParseEmpty": 0
-      }
-    },
-    {
-      "name": "static_source::static:listing_url:https://supercell.com/en/careers/",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Supercell",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 2609,
-      "loss": {
-        "rawFetched": 0,
-        "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 690,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
       },
       "details": [
         {
-          "adapter": "static",
-          "studio": "Supercell",
-          "name": "Supercell (Manual Website)",
-          "status": "error",
-          "fetchedCount": 7,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 690,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:name:little chicken",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Little Chicken",
-      "fetchedCount": 9,
-      "keptCount": 9,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 10561,
-      "loss": {
-        "rawFetched": 9,
-        "canonicalDropped": 0,
-        "canonicalKept": 9,
-        "dedupMerged": 3,
-        "finalOutput": 6,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 204,
-        "staticDuplicateLinkRejected": 21,
-        "staticDetailParseEmpty": 9
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Little Chicken",
-          "name": "Little Chicken",
+          "adapter": "csv",
+          "studio": "community_sheet",
+          "name": "google_sheets_1er2oaxo",
           "status": "ok",
-          "fetchedCount": 2,
-          "keptCount": 9,
+          "fetchedCount": 2252,
+          "keptCount": 2252,
           "error": "",
           "classification": "",
           "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 204,
-            "staticDuplicateLinkRejected": 21,
-            "staticDetailParseEmpty": 9
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 54,
+            "listing_fetch_ms": 0,
+            "candidate_extraction_ms": 0,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
           }
         }
       ]
@@ -817,19 +444,20 @@
       "fetchStrategy": "http",
       "studio": "multiple",
       "fetchedCount": 3,
-      "keptCount": 3,
+      "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "personio_sources: personio:InnoGames (Personio): HTTP 429 for https://innogames.jobs.personio.de/xml; personio_sources: personio:Travian (Personio): HTTP 429 for https://travian.jobs.personio.de/xml",
-      "durationMs": 15945,
+      "durationMs": 11546,
       "loss": {
         "rawFetched": 3,
-        "canonicalDropped": 0,
-        "canonicalKept": 3,
+        "canonicalDropped": 3,
+        "canonicalKept": 0,
         "dedupMerged": 0,
-        "finalOutput": 3,
+        "finalOutput": 0,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 3,
           "invalid_url": 0,
           "invalid_payload": 0
         },
@@ -887,289 +515,76 @@
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://milestone.it/careers",
+      "name": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Milestone",
-      "fetchedCount": 0,
-      "keptCount": 0,
+      "studio": "Lazyapply",
+      "fetchedCount": 21,
+      "keptCount": 21,
       "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 5536,
+      "error": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/2k-games/jobs/senior-environment-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/2k-games/jobs/senior-environment-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1077); static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/2k-games/jobs/expert-environment-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/2k-games/jobs/expert-environment-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1077); static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/kabam/jobs/senior-2d-character-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/kabam/jobs/senior-2d-character-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1077)",
+      "durationMs": 14160,
+      "stageTimingsMs": {
+        "listingFetch": 1288,
+        "parseCsv": 0,
+        "candidateExtraction": 4,
+        "detailFetch": 49873,
+        "redirectResolve": 0,
+        "canonicalization": 5
+      },
       "loss": {
-        "rawFetched": 0,
+        "rawFetched": 21,
         "canonicalDropped": 0,
-        "canonicalKept": 0,
+        "canonicalKept": 21,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 21,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 951,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
+        "staticNonJobUrlRejected": 49,
+        "staticDuplicateLinkRejected": 8,
+        "staticDetailParseEmpty": 23
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Milestone",
-          "name": "Milestone (Manual Website)",
-          "status": "error",
-          "fetchedCount": 4,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 951,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.remedygames.com/careers",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Remedy Entertainment",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 1595,
-      "loss": {
-        "rawFetched": 0,
-        "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 466,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Remedy Entertainment",
-          "name": "Remedy Entertainment (Manual Website)",
-          "status": "error",
-          "fetchedCount": 2,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 466,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.zenimax.com",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Zenimax",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 427,
-      "loss": {
-        "rawFetched": 0,
-        "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 53,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Zenimax",
-          "name": "Zenimax (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 53,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.kojimaproductions.jp/en/careers",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Kojimaproductions",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 3272,
-      "loss": {
-        "rawFetched": 0,
-        "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 129,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Kojimaproductions",
-          "name": "Kojimaproductions (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 129,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://ioi.dk/careers/",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "IO Interactive",
-      "fetchedCount": 1,
-      "keptCount": 1,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 12888,
-      "loss": {
-        "rawFetched": 1,
-        "canonicalDropped": 0,
-        "canonicalKept": 1,
-        "dedupMerged": 0,
-        "finalOutput": 1,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 1165,
-        "staticDuplicateLinkRejected": 2,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "IO Interactive",
-          "name": "IO Interactive (Manual Website)",
+          "studio": "Lazyapply",
+          "name": "Lazyapply (Manual Website)",
           "status": "ok",
-          "fetchedCount": 7,
-          "keptCount": 1,
+          "fetchedCount": 1,
+          "keptCount": 21,
           "error": "",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 26,
+            "detail_pages_visited": 26,
+            "jobs_emitted": 21,
+            "fetch_cache_hits": 1,
+            "detail_yield_percent": 81,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1288,
+            "candidate_extraction_ms": 4,
+            "detail_fetch_ms": 49873,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -1179,58 +594,90 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 1165,
-            "staticDuplicateLinkRejected": 2,
-            "staticDetailParseEmpty": 0
+            "staticNonJobUrlRejected": 49,
+            "staticDuplicateLinkRejected": 8,
+            "staticDetailParseEmpty": 23
           }
         }
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://gamejobs.work/category/environment-artist",
+      "name": "static_source::static:name:little chicken",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Game Jobs",
-      "fetchedCount": 0,
-      "keptCount": 0,
+      "studio": "Little Chicken",
+      "fetchedCount": 4,
+      "keptCount": 4,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 2502,
+      "durationMs": 5914,
+      "stageTimingsMs": {
+        "listingFetch": 2641,
+        "parseCsv": 0,
+        "candidateExtraction": 8,
+        "detailFetch": 5187,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
-        "rawFetched": 0,
+        "rawFetched": 4,
         "canonicalDropped": 0,
-        "canonicalKept": 0,
+        "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 266,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
+        "staticNonJobUrlRejected": 228,
+        "staticDuplicateLinkRejected": 3,
+        "staticDetailParseEmpty": 4
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Game Jobs",
-          "name": "Game Jobs (Manual Website)",
-          "status": "error",
+          "studio": "Little Chicken",
+          "name": "Little Chicken",
+          "status": "ok",
           "fetchedCount": 2,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
+          "keptCount": 4,
+          "error": "",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 4,
+            "detail_pages_visited": 4,
+            "jobs_emitted": 4,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 100,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 2641,
+            "candidate_extraction_ms": 8,
+            "detail_fetch_ms": 5187,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -1240,75 +687,15 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 266,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.aweinteractive.com/careers",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Awe Interactive",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 651,
-      "loss": {
-        "rawFetched": 0,
-        "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 74,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Awe Interactive",
-          "name": "Awe Interactive (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 74,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
+            "staticNonJobUrlRejected": 228,
+            "staticDuplicateLinkRejected": 3,
+            "staticDetailParseEmpty": 4
           }
         }
       ]
@@ -1319,28 +706,37 @@
       "adapter": "static",
       "fetchStrategy": "auto",
       "studio": "Little Chicken",
-      "fetchedCount": 12,
-      "keptCount": 12,
+      "fetchedCount": 3,
+      "keptCount": 3,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 20332,
+      "durationMs": 3899,
+      "stageTimingsMs": {
+        "listingFetch": 2280,
+        "parseCsv": 0,
+        "candidateExtraction": 20,
+        "detailFetch": 3571,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
-        "rawFetched": 12,
+        "rawFetched": 3,
         "canonicalDropped": 0,
-        "canonicalKept": 12,
-        "dedupMerged": 12,
+        "canonicalKept": 3,
+        "dedupMerged": 3,
         "finalOutput": 0,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 523,
-        "staticDuplicateLinkRejected": 54,
-        "staticDetailParseEmpty": 12
+        "staticNonJobUrlRejected": 560,
+        "staticDuplicateLinkRejected": 39,
+        "staticDetailParseEmpty": 3
       },
       "details": [
         {
@@ -1349,10 +745,32 @@
           "name": "Little Chicken (Manual Website)",
           "status": "ok",
           "fetchedCount": 7,
-          "keptCount": 12,
+          "keptCount": 3,
           "error": "",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 3,
+            "detail_pages_visited": 3,
+            "jobs_emitted": 3,
+            "fetch_cache_hits": 4,
+            "detail_yield_percent": 100,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 2280,
+            "candidate_extraction_ms": 20,
+            "detail_fetch_ms": 3571,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -1362,119 +780,129 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 523,
-            "staticDuplicateLinkRejected": 54,
-            "staticDetailParseEmpty": 12
+            "staticNonJobUrlRejected": 560,
+            "staticDuplicateLinkRejected": 39,
+            "staticDetailParseEmpty": 3
           }
         }
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.workwithindies.com/careers/angry-mob-games-stylized-environment-artist",
+      "name": "epic_games_careers",
       "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Workwithindies",
-      "fetchedCount": 0,
-      "keptCount": 0,
+      "adapter": "api",
+      "fetchStrategy": "http",
+      "studio": "epic_games",
+      "fetchedCount": 248,
+      "keptCount": 248,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 517,
+      "durationMs": 2273,
+      "stageTimingsMs": {
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 33
+      },
       "loss": {
-        "rawFetched": 0,
+        "rawFetched": 248,
         "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "canonicalKept": 248,
+        "dedupMerged": 13,
+        "finalOutput": 235,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 128,
+        "staticNonJobUrlRejected": 0,
         "staticDuplicateLinkRejected": 0,
         "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Workwithindies",
-          "name": "Workwithindies (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 128,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
-          }
-        }
-      ]
+      }
     },
     {
-      "name": "static_source::static:listing_url:https://careers.wbd.com/global/en/job/r000087820/lead-environment-artist",
+      "name": "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Wbd",
-      "fetchedCount": 2,
-      "keptCount": 2,
+      "studio": "Valve Software",
+      "fetchedCount": 28,
+      "keptCount": 28,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 3399,
+      "durationMs": 3220,
+      "stageTimingsMs": {
+        "listingFetch": 582,
+        "parseCsv": 0,
+        "candidateExtraction": 4,
+        "detailFetch": 14409,
+        "redirectResolve": 0,
+        "canonicalization": 3
+      },
       "loss": {
-        "rawFetched": 2,
+        "rawFetched": 28,
         "canonicalDropped": 0,
-        "canonicalKept": 2,
+        "canonicalKept": 28,
         "dedupMerged": 0,
-        "finalOutput": 2,
+        "finalOutput": 28,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 118,
-        "staticDuplicateLinkRejected": 5,
-        "staticDetailParseEmpty": 1
+        "staticNonJobUrlRejected": 68,
+        "staticDuplicateLinkRejected": 42,
+        "staticDetailParseEmpty": 28
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Wbd",
-          "name": "Wbd (Manual Website)",
+          "studio": "Valve Software",
+          "name": "Valve Software (Manual Website)",
           "status": "ok",
           "fetchedCount": 1,
-          "keptCount": 2,
+          "keptCount": 28,
           "error": "",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 28,
+            "detail_pages_visited": 28,
+            "jobs_emitted": 28,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 100,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 582,
+            "candidate_extraction_ms": 4,
+            "detail_fetch_ms": 14409,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -1484,58 +912,90 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 118,
-            "staticDuplicateLinkRejected": 5,
-            "staticDetailParseEmpty": 1
+            "staticNonJobUrlRejected": 68,
+            "staticDuplicateLinkRejected": 42,
+            "staticDetailParseEmpty": 28
           }
         }
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.pixelmafia.com/careers",
+      "name": "static_source::static:listing_url:https://larian.com/careers",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Pixelmafia",
-      "fetchedCount": 0,
-      "keptCount": 0,
+      "studio": "Larian Studios",
+      "fetchedCount": 18,
+      "keptCount": 18,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 1455,
+      "durationMs": 4877,
+      "stageTimingsMs": {
+        "listingFetch": 3355,
+        "parseCsv": 0,
+        "candidateExtraction": 61,
+        "detailFetch": 5279,
+        "redirectResolve": 0,
+        "canonicalization": 1
+      },
       "loss": {
-        "rawFetched": 0,
+        "rawFetched": 18,
         "canonicalDropped": 0,
-        "canonicalKept": 0,
+        "canonicalKept": 18,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 18,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 113,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
+        "staticNonJobUrlRejected": 1172,
+        "staticDuplicateLinkRejected": 17,
+        "staticDetailParseEmpty": 18
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Pixelmafia",
-          "name": "Pixelmafia (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
+          "studio": "Larian Studios",
+          "name": "Larian Studios (Manual Website)",
+          "status": "ok",
+          "fetchedCount": 7,
+          "keptCount": 18,
+          "error": "",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 18,
+            "detail_pages_visited": 18,
+            "jobs_emitted": 18,
+            "fetch_cache_hits": 1,
+            "detail_yield_percent": 100,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 3355,
+            "candidate_extraction_ms": 61,
+            "detail_fetch_ms": 5279,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -1545,258 +1005,15 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 113,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.impactreality.com/careers",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Impactreality",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 689,
-      "loss": {
-        "rawFetched": 0,
-        "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 120,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Impactreality",
-          "name": "Impactreality (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 120,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://digitalbros.com/careers",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Digitalbros",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 1736,
-      "loss": {
-        "rawFetched": 0,
-        "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 176,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Digitalbros",
-          "name": "Digitalbros (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 176,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.activision.com",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Activision",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 2032,
-      "loss": {
-        "rawFetched": 0,
-        "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 203,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Activision",
-          "name": "Activision (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 203,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://cdprojektred.com/en/jobs",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Cdprojektred",
-      "fetchedCount": 0,
-      "keptCount": 0,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 1641,
-      "loss": {
-        "rawFetched": 0,
-        "canonicalDropped": 0,
-        "canonicalKept": 0,
-        "dedupMerged": 0,
-        "finalOutput": 0,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 119,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 0
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Cdprojektred",
-          "name": "Cdprojektred (Manual Website)",
-          "status": "error",
-          "fetchedCount": 1,
-          "keptCount": 0,
-          "error": "no jobs extracted from source pages",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 119,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 0
+            "staticNonJobUrlRejected": 1172,
+            "staticDuplicateLinkRejected": 17,
+            "staticDetailParseEmpty": 18
           }
         }
       ]
@@ -1811,7 +1028,15 @@
       "keptCount": 26,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 38987,
+      "durationMs": 4054,
+      "stageTimingsMs": {
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 3
+      },
       "loss": {
         "rawFetched": 26,
         "canonicalDropped": 0,
@@ -1821,6 +1046,7 @@
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
@@ -1847,7 +1073,7 @@
           "studio": "Sandbox VR",
           "name": "Sandbox VR (Lever)",
           "status": "ok",
-          "fetchedCount": 31,
+          "fetchedCount": 30,
           "keptCount": 0,
           "error": "",
           "classification": "",
@@ -1867,16 +1093,24 @@
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://34bigthings.com/careers",
+      "name": "static_source::static:listing_url:https://supercell.com/en/careers/",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "34bigthings",
+      "studio": "Supercell",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 3806,
+      "durationMs": 2625,
+      "stageTimingsMs": {
+        "listingFetch": 2594,
+        "parseCsv": 0,
+        "candidateExtraction": 26,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
         "rawFetched": 0,
         "canonicalDropped": 0,
@@ -1886,26 +1120,49 @@
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 153,
+        "staticNonJobUrlRejected": 690,
         "staticDuplicateLinkRejected": 0,
         "staticDetailParseEmpty": 0
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "34bigthings",
-          "name": "34bigthings (Manual Website)",
+          "studio": "Supercell",
+          "name": "Supercell (Manual Website)",
           "status": "error",
-          "fetchedCount": 1,
+          "fetchedCount": 7,
           "keptCount": 0,
           "error": "no jobs extracted from source pages",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 1,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 2594,
+            "candidate_extraction_ms": 26,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -1915,12 +1172,13 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 153,
+            "staticNonJobUrlRejected": 690,
             "staticDuplicateLinkRejected": 0,
             "staticDetailParseEmpty": 0
           }
@@ -1928,45 +1186,76 @@
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://larian.com/careers",
+      "name": "static_source::static:listing_url:https://ioi.dk/careers/",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Larian Studios",
-      "fetchedCount": 19,
-      "keptCount": 19,
+      "studio": "IO Interactive",
+      "fetchedCount": 1,
+      "keptCount": 1,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 36690,
+      "durationMs": 2805,
+      "stageTimingsMs": {
+        "listingFetch": 2425,
+        "parseCsv": 0,
+        "candidateExtraction": 56,
+        "detailFetch": 317,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
-        "rawFetched": 19,
+        "rawFetched": 1,
         "canonicalDropped": 0,
-        "canonicalKept": 19,
+        "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 19,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 1173,
-        "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 19
+        "staticNonJobUrlRejected": 1345,
+        "staticDuplicateLinkRejected": 5,
+        "staticDetailParseEmpty": 0
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Larian Studios",
-          "name": "Larian Studios (Manual Website)",
+          "studio": "IO Interactive",
+          "name": "IO Interactive (Manual Website)",
           "status": "ok",
           "fetchedCount": 7,
-          "keptCount": 19,
+          "keptCount": 1,
           "error": "",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 1,
+            "detail_pages_visited": 1,
+            "jobs_emitted": 1,
+            "fetch_cache_hits": 1,
+            "detail_yield_percent": 100,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 2425,
+            "candidate_extraction_ms": 56,
+            "detail_fetch_ms": 317,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -1976,29 +1265,101 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 1173,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 19
+            "staticNonJobUrlRejected": 1345,
+            "staticDuplicateLinkRejected": 5,
+            "staticDetailParseEmpty": 0
           }
         }
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.ubisoft.com/en-us/company/careers/locations/milan",
+      "name": "greenhouse_boards",
+      "status": "ok",
+      "adapter": "greenhouse",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 209,
+      "keptCount": 209,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 1065,
+      "stageTimingsMs": {
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 22
+      },
+      "loss": {
+        "rawFetched": 209,
+        "canonicalDropped": 0,
+        "canonicalKept": 209,
+        "dedupMerged": 6,
+        "finalOutput": 203,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "greenhouse",
+          "studio": "Guerrilla Games",
+          "name": "Guerrilla Games",
+          "status": "ok",
+          "fetchedCount": 9,
+          "keptCount": 9,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "PlayStation Global",
+          "name": "PlayStation Global",
+          "status": "ok",
+          "fetchedCount": 200,
+          "keptCount": 200,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.kojimaproductions.jp/en/careers",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Ubisoft",
+      "studio": "Kojimaproductions",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 926,
+      "durationMs": 1757,
+      "stageTimingsMs": {
+        "listingFetch": 1062,
+        "parseCsv": 0,
+        "candidateExtraction": 4,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
         "rawFetched": 0,
         "canonicalDropped": 0,
@@ -2008,26 +1369,49 @@
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 1738,
+        "staticNonJobUrlRejected": 129,
         "staticDuplicateLinkRejected": 0,
         "staticDetailParseEmpty": 0
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Ubisoft",
-          "name": "Ubisoft (Manual Website)",
+          "studio": "Kojimaproductions",
+          "name": "Kojimaproductions (Manual Website)",
           "status": "error",
           "fetchedCount": 1,
           "keptCount": 0,
           "error": "no jobs extracted from source pages",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1062,
+            "candidate_extraction_ms": 4,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -2037,12 +1421,13 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 1738,
+            "staticNonJobUrlRejected": 129,
             "staticDuplicateLinkRejected": 0,
             "staticDetailParseEmpty": 0
           }
@@ -2050,45 +1435,139 @@
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs",
+      "name": "teamtailor_sources",
       "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Valve Software",
-      "fetchedCount": 28,
-      "keptCount": 28,
+      "adapter": "teamtailor",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 20,
+      "keptCount": 20,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 14833,
+      "durationMs": 1419,
+      "stageTimingsMs": {
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 1
+      },
       "loss": {
-        "rawFetched": 28,
+        "rawFetched": 20,
         "canonicalDropped": 0,
-        "canonicalKept": 28,
-        "dedupMerged": 0,
-        "finalOutput": 28,
+        "canonicalKept": 20,
+        "dedupMerged": 10,
+        "finalOutput": 10,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 68,
-        "staticDuplicateLinkRejected": 42,
-        "staticDetailParseEmpty": 28
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "teamtailor",
+          "studio": "Paradox Interactive",
+          "name": "Paradox Careers",
+          "status": "ok",
+          "fetchedCount": 20,
+          "keptCount": 20,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false
+        },
+        {
+          "adapter": "teamtailor",
+          "studio": "Paradox Interactive",
+          "name": "Paradox Interactive (Teamtailor)",
+          "status": "ok",
+          "fetchedCount": 20,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://careers.wbd.com/global/en/job/r000087820/lead-environment-artist",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Wbd",
+      "fetchedCount": 2,
+      "keptCount": 2,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 2691,
+      "stageTimingsMs": {
+        "listingFetch": 2287,
+        "parseCsv": 0,
+        "candidateExtraction": 6,
+        "detailFetch": 398,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 2,
+        "canonicalDropped": 0,
+        "canonicalKept": 2,
+        "dedupMerged": 0,
+        "finalOutput": 2,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 118,
+        "staticDuplicateLinkRejected": 6,
+        "staticDetailParseEmpty": 1
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Valve Software",
-          "name": "Valve Software (Manual Website)",
+          "studio": "Wbd",
+          "name": "Wbd (Manual Website)",
           "status": "ok",
           "fetchedCount": 1,
-          "keptCount": 28,
+          "keptCount": 2,
           "error": "",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 1,
+            "detail_pages_visited": 1,
+            "jobs_emitted": 2,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 200,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 2287,
+            "candidate_extraction_ms": 6,
+            "detail_fetch_ms": 398,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -2098,29 +1577,38 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 68,
-            "staticDuplicateLinkRejected": 42,
-            "staticDetailParseEmpty": 28
+            "staticNonJobUrlRejected": 118,
+            "staticDuplicateLinkRejected": 6,
+            "staticDetailParseEmpty": 1
           }
         }
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.quanticdream.com/en/careers",
+      "name": "static_source::static:listing_url:http://jobs.andarion-games.com",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Quanticdream",
+      "studio": "Andarion Games GmbH",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 873,
+      "durationMs": 1792,
+      "stageTimingsMs": {
+        "listingFetch": 1787,
+        "parseCsv": 0,
+        "candidateExtraction": 4,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
         "rawFetched": 0,
         "canonicalDropped": 0,
@@ -2130,26 +1618,49 @@
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 54,
+        "staticNonJobUrlRejected": 105,
         "staticDuplicateLinkRejected": 0,
         "staticDetailParseEmpty": 0
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Quanticdream",
-          "name": "Quanticdream (Manual Website)",
+          "studio": "Andarion Games GmbH",
+          "name": "Andarion Games GmbH (Gamesmap)",
           "status": "error",
           "fetchedCount": 1,
           "keptCount": 0,
           "error": "no jobs extracted from source pages",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1787,
+            "candidate_extraction_ms": 4,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -2159,12 +1670,13 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 54,
+            "staticNonJobUrlRejected": 105,
             "staticDuplicateLinkRejected": 0,
             "staticDetailParseEmpty": 0
           }
@@ -2172,16 +1684,24 @@
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.rockstargames.com/careers",
+      "name": "static_source::static:listing_url:https://www.augmented-minds.com/de/unternehmen/karriere/",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Rockstar Games",
+      "studio": "Augmented Minds Ambrus &amp; Lonau GbR",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 336,
+      "durationMs": 1700,
+      "stageTimingsMs": {
+        "listingFetch": 1693,
+        "parseCsv": 0,
+        "candidateExtraction": 6,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
         "rawFetched": 0,
         "canonicalDropped": 0,
@@ -2191,26 +1711,49 @@
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 26,
+        "staticNonJobUrlRejected": 182,
         "staticDuplicateLinkRejected": 0,
         "staticDetailParseEmpty": 0
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Rockstar Games",
-          "name": "Rockstar Games (Manual Website)",
+          "studio": "Augmented Minds Ambrus &amp; Lonau GbR",
+          "name": "Augmented Minds Ambrus &amp; Lonau GbR (Gamesmap)",
           "status": "error",
           "fetchedCount": 1,
           "keptCount": 0,
           "error": "no jobs extracted from source pages",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1693,
+            "candidate_extraction_ms": 6,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -2220,12 +1763,199 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 26,
+            "staticNonJobUrlRejected": 182,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://careers.activision.com",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Activision",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 649,
+      "stageTimingsMs": {
+        "listingFetch": 643,
+        "parseCsv": 0,
+        "candidateExtraction": 6,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 203,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Activision",
+          "name": "Activision (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 643,
+            "candidate_extraction_ms": 6,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 203,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://gamejobs.work/category/environment-artist",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Game Jobs",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 1282,
+      "stageTimingsMs": {
+        "listingFetch": 1270,
+        "parseCsv": 0,
+        "candidateExtraction": 10,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 266,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Game Jobs",
+          "name": "Game Jobs (Manual Website)",
+          "status": "error",
+          "fetchedCount": 2,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1270,
+            "candidate_extraction_ms": 10,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 266,
             "staticDuplicateLinkRejected": 0,
             "staticDetailParseEmpty": 0
           }
@@ -2242,7 +1972,15 @@
       "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 2854,
+      "durationMs": 2253,
+      "stageTimingsMs": {
+        "listingFetch": 2247,
+        "parseCsv": 0,
+        "candidateExtraction": 6,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
         "rawFetched": 0,
         "canonicalDropped": 0,
@@ -2252,6 +1990,7 @@
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
@@ -2272,6 +2011,28 @@
           "error": "no jobs extracted from source pages",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 2247,
+            "candidate_extraction_ms": 6,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -2281,6 +2042,7 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
@@ -2294,16 +2056,24 @@
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://jobs.nintendo.de",
+      "name": "static_source::static:listing_url:https://digitalbros.com/careers",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Nintendo",
+      "studio": "Digitalbros",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 1210,
+      "durationMs": 1529,
+      "stageTimingsMs": {
+        "listingFetch": 1523,
+        "parseCsv": 0,
+        "candidateExtraction": 5,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
         "rawFetched": 0,
         "canonicalDropped": 0,
@@ -2313,26 +2083,49 @@
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 1,
+        "staticNonJobUrlRejected": 176,
         "staticDuplicateLinkRejected": 0,
         "staticDetailParseEmpty": 0
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Nintendo",
-          "name": "Nintendo (Manual Website)",
+          "studio": "Digitalbros",
+          "name": "Digitalbros (Manual Website)",
           "status": "error",
           "fetchedCount": 1,
           "keptCount": 0,
           "error": "no jobs extracted from source pages",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1523,
+            "candidate_extraction_ms": 5,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -2342,12 +2135,13 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 1,
+            "staticNonJobUrlRejected": 176,
             "staticDuplicateLinkRejected": 0,
             "staticDetailParseEmpty": 0
           }
@@ -2355,16 +2149,24 @@
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.arkane-studios.com/en/careers",
-      "status": "error",
-      "adapter": "custom",
+      "name": "static_source::static:listing_url:https://www.workwithindies.com/careers/angry-mob-games-stylized-environment-artist",
+      "status": "ok",
+      "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "",
+      "studio": "Workwithindies",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "static_source::static:listing_url:https://www.arkane-studios.com/en/careers: static:Arkane Studios (Manual Website):https://www.arkane-studios.com/en/careers: HTTP 404 for https://www.arkane-studios.com/en/careers",
-      "durationMs": 6961,
+      "error": "",
+      "durationMs": 445,
+      "stageTimingsMs": {
+        "listingFetch": 440,
+        "parseCsv": 0,
+        "candidateExtraction": 4,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
         "rawFetched": 0,
         "canonicalDropped": 0,
@@ -2374,6 +2176,193 @@
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 128,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Workwithindies",
+          "name": "Workwithindies (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 440,
+            "candidate_extraction_ms": 4,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 128,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.naconstudiomilan.com/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Nacon Studio Milan",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 1192,
+      "stageTimingsMs": {
+        "listingFetch": 1187,
+        "parseCsv": 0,
+        "candidateExtraction": 5,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 166,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Nacon Studio Milan",
+          "name": "Nacon Studio Milan (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1187,
+            "candidate_extraction_ms": 5,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 166,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "google_sheets_1mvqhxat",
+      "status": "ok",
+      "adapter": "csv",
+      "fetchStrategy": "http",
+      "studio": "community_sheet",
+      "fetchedCount": 374,
+      "keptCount": 374,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 1489,
+      "stageTimingsMs": {
+        "listingFetch": 0,
+        "parseCsv": 7,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 24
+      },
+      "loss": {
+        "rawFetched": 374,
+        "canonicalDropped": 0,
+        "canonicalKept": 374,
+        "dedupMerged": 32,
+        "finalOutput": 342,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
@@ -2382,48 +2371,114 @@
         "staticNonJobUrlRejected": 0,
         "staticDuplicateLinkRejected": 0,
         "staticDetailParseEmpty": 0
-      }
+      },
+      "details": [
+        {
+          "adapter": "csv",
+          "studio": "community_sheet",
+          "name": "google_sheets_1mvqhxat",
+          "status": "ok",
+          "fetchedCount": 374,
+          "keptCount": 374,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 7,
+            "listing_fetch_ms": 0,
+            "candidate_extraction_ms": 0,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          }
+        }
+      ]
     },
     {
-      "name": "static_source::static:listing_url:http://www.ahoiii.com/jobs",
+      "name": "static_source::static:listing_url:https://milestone.it/careers",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
-      "studio": "Ahoiii Entertainment UG (haftungsbeschränkt)",
-      "fetchedCount": 4,
-      "keptCount": 4,
+      "studio": "Milestone",
+      "fetchedCount": 0,
+      "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 4205,
+      "durationMs": 810,
+      "stageTimingsMs": {
+        "listingFetch": 777,
+        "parseCsv": 0,
+        "candidateExtraction": 29,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
-        "rawFetched": 4,
+        "rawFetched": 0,
         "canonicalDropped": 0,
-        "canonicalKept": 4,
-        "dedupMerged": 3,
-        "finalOutput": 1,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 223,
-        "staticDuplicateLinkRejected": 26,
-        "staticDetailParseEmpty": 4
+        "staticNonJobUrlRejected": 951,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
       },
       "details": [
         {
           "adapter": "static",
-          "studio": "Ahoiii Entertainment UG (haftungsbeschränkt)",
-          "name": "Ahoiii Entertainment UG (haftungsbeschränkt) (Gamesmap)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 4,
-          "error": "",
+          "studio": "Milestone",
+          "name": "Milestone (Manual Website)",
+          "status": "error",
+          "fetchedCount": 4,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 1,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 777,
+            "candidate_extraction_ms": 29,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -2433,15 +2488,331 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 223,
-            "staticDuplicateLinkRejected": 26,
-            "staticDetailParseEmpty": 4
+            "staticNonJobUrlRejected": 951,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
           }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://insomniac.games/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Insomniac",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 1395,
+      "stageTimingsMs": {
+        "listingFetch": 1394,
+        "parseCsv": 0,
+        "candidateExtraction": 1,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 35,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Insomniac",
+          "name": "Insomniac (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1394,
+            "candidate_extraction_ms": 1,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 35,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "workable_sources",
+      "status": "ok",
+      "adapter": "workable",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 25,
+      "keptCount": 25,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 929,
+      "stageTimingsMs": {
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 2
+      },
+      "loss": {
+        "rawFetched": 25,
+        "canonicalDropped": 0,
+        "canonicalKept": 25,
+        "dedupMerged": 0,
+        "finalOutput": 25,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "workable",
+          "studio": "Hutch",
+          "name": "Hutch (Workable)",
+          "status": "ok",
+          "fetchedCount": 10,
+          "keptCount": 10,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false
+        },
+        {
+          "adapter": "workable",
+          "studio": "Wargaming",
+          "name": "Wargaming (Workable)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false
+        },
+        {
+          "adapter": "workable",
+          "studio": "Vertigo Games",
+          "name": "Vertigo Games (Workable)",
+          "status": "ok",
+          "fetchedCount": 15,
+          "keptCount": 15,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://34bigthings.com/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "34bigthings",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 1457,
+      "stageTimingsMs": {
+        "listingFetch": 1452,
+        "parseCsv": 0,
+        "candidateExtraction": 5,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 153,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "34bigthings",
+          "name": "34bigthings (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1452,
+            "candidate_extraction_ms": 5,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 153,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "ashby_sources",
+      "status": "ok",
+      "adapter": "ashby",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 870,
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "ashby",
+          "studio": "Jagex",
+          "name": "Jagex (Ashby)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "no jobs extracted from ashby board html",
+          "classification": "",
+          "browserFallbackRecommended": false
+        },
+        {
+          "adapter": "ashby",
+          "studio": "Scopely",
+          "name": "Scopely (Ashby)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "no jobs extracted from ashby board html",
+          "classification": "",
+          "browserFallbackRecommended": false
         }
       ]
     },
@@ -2455,7 +2826,15 @@
       "keptCount": 0,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 632,
+      "durationMs": 661,
+      "stageTimingsMs": {
+        "listingFetch": 658,
+        "parseCsv": 0,
+        "candidateExtraction": 2,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
         "rawFetched": 0,
         "canonicalDropped": 0,
@@ -2465,6 +2844,7 @@
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
@@ -2485,6 +2865,28 @@
           "error": "no jobs extracted from source pages",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 658,
+            "candidate_extraction_ms": 2,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -2494,6 +2896,7 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
@@ -2507,321 +2910,24 @@
       ]
     },
     {
-      "name": "static_source::static:listing_url:http://jobs.andarion-games.com",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Andarion Games GmbH",
-      "fetchedCount": 2,
-      "keptCount": 2,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 4713,
-      "loss": {
-        "rawFetched": 2,
-        "canonicalDropped": 0,
-        "canonicalKept": 2,
-        "dedupMerged": 1,
-        "finalOutput": 1,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 96,
-        "staticDuplicateLinkRejected": 7,
-        "staticDetailParseEmpty": 2
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Andarion Games GmbH",
-          "name": "Andarion Games GmbH (Gamesmap)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 2,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 96,
-            "staticDuplicateLinkRejected": 7,
-            "staticDetailParseEmpty": 2
-          }
-        }
-      ]
-    },
-    {
       "name": "static_source::static:listing_url:https://www.articy.com/en/company/jobs/",
       "status": "ok",
       "adapter": "static",
       "fetchStrategy": "auto",
       "studio": "articy Software GmbH &amp; Co. KG",
-      "fetchedCount": 2,
-      "keptCount": 2,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 2119,
-      "loss": {
-        "rawFetched": 2,
-        "canonicalDropped": 0,
-        "canonicalKept": 2,
-        "dedupMerged": 1,
-        "finalOutput": 1,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 152,
-        "staticDuplicateLinkRejected": 5,
-        "staticDetailParseEmpty": 2
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "articy Software GmbH &amp; Co. KG",
-          "name": "articy Software GmbH &amp; Co. KG (Gamesmap)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 2,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 152,
-            "staticDuplicateLinkRejected": 5,
-            "staticDetailParseEmpty": 2
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.augmented-minds.com/de/unternehmen/karriere/",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Augmented Minds Ambrus &amp; Lonau GbR",
-      "fetchedCount": 1,
-      "keptCount": 1,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 10468,
-      "loss": {
-        "rawFetched": 1,
-        "canonicalDropped": 0,
-        "canonicalKept": 1,
-        "dedupMerged": 0,
-        "finalOutput": 1,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 179,
-        "staticDuplicateLinkRejected": 2,
-        "staticDetailParseEmpty": 1
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Augmented Minds Ambrus &amp; Lonau GbR",
-          "name": "Augmented Minds Ambrus &amp; Lonau GbR (Gamesmap)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 1,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 179,
-            "staticDuplicateLinkRejected": 2,
-            "staticDetailParseEmpty": 1
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.nintendo.com/jobs",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Nintendo",
-      "fetchedCount": 58,
-      "keptCount": 58,
-      "lowConfidenceDropped": 0,
-      "error": "",
-      "durationMs": 53385,
-      "loss": {
-        "rawFetched": 58,
-        "canonicalDropped": 0,
-        "canonicalKept": 58,
-        "dedupMerged": 1,
-        "finalOutput": 57,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 178,
-        "staticDuplicateLinkRejected": 1,
-        "staticDetailParseEmpty": 1
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Nintendo",
-          "name": "Nintendo (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 58,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 178,
-            "staticDuplicateLinkRejected": 1,
-            "staticDetailParseEmpty": 1
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist",
-      "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Lazyapply",
-      "fetchedCount": 23,
-      "keptCount": 23,
-      "lowConfidenceDropped": 0,
-      "error": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/2k-games/jobs/senior-environment-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/2k-games/jobs/senior-environment-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1032); static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/kabam/jobs/senior-2d-character-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/kabam/jobs/senior-2d-character-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1032); static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website):https://www.lazyapply.com/company/2k-games/jobs/expert-environment-artist-vancouver-remote: Network error for https://www.lazyapply.com/company/2k-games/jobs/expert-environment-artist-vancouver-remote: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1032)",
-      "durationMs": 69483,
-      "loss": {
-        "rawFetched": 23,
-        "canonicalDropped": 0,
-        "canonicalKept": 23,
-        "dedupMerged": 2,
-        "finalOutput": 21,
-        "canonicalDropReasons": {
-          "missing_title": 0,
-          "missing_company": 0,
-          "invalid_url": 0,
-          "invalid_payload": 0
-        },
-        "scrapyRunnerRejectedValidation": 0,
-        "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 49,
-        "staticDuplicateLinkRejected": 6,
-        "staticDetailParseEmpty": 25
-      },
-      "details": [
-        {
-          "adapter": "static",
-          "studio": "Lazyapply",
-          "name": "Lazyapply (Manual Website)",
-          "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 23,
-          "error": "",
-          "classification": "",
-          "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 49,
-            "staticDuplicateLinkRejected": 6,
-            "staticDetailParseEmpty": 25
-          }
-        }
-      ]
-    },
-    {
-      "name": "static_source::static:listing_url:https://tequilaworks.com/en/careers",
-      "status": "error",
-      "adapter": "custom",
-      "fetchStrategy": "auto",
-      "studio": "",
       "fetchedCount": 0,
       "keptCount": 0,
       "lowConfidenceDropped": 0,
-      "error": "static_source::static:listing_url:https://tequilaworks.com/en/careers: static:Tequilaworks (Manual Website):https://tequilaworks.com/en/careers: Network error for https://tequilaworks.com/en/careers: timed out",
-      "durationMs": 65173,
+      "error": "",
+      "durationMs": 1199,
+      "stageTimingsMs": {
+        "listingFetch": 1194,
+        "parseCsv": 0,
+        "candidateExtraction": 5,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
       "loss": {
         "rawFetched": 0,
         "canonicalDropped": 0,
@@ -2831,6 +2937,1194 @@
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 159,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "articy Software GmbH &amp; Co. KG",
+          "name": "articy Software GmbH &amp; Co. KG (Gamesmap)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1194,
+            "candidate_extraction_ms": 5,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 159,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.ubisoft.com/en-us/company/careers/locations/milan",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Ubisoft",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 1329,
+      "stageTimingsMs": {
+        "listingFetch": 1273,
+        "parseCsv": 0,
+        "candidateExtraction": 55,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 1738,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Ubisoft",
+          "name": "Ubisoft (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1273,
+            "candidate_extraction_ms": 55,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 1738,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.quanticdream.com/en/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Quanticdream",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 679,
+      "stageTimingsMs": {
+        "listingFetch": 677,
+        "parseCsv": 0,
+        "candidateExtraction": 1,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 54,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Quanticdream",
+          "name": "Quanticdream (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 677,
+            "candidate_extraction_ms": 1,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 54,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://jobs.nintendo.de",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Nintendo",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 1279,
+      "stageTimingsMs": {
+        "listingFetch": 1279,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 1,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Nintendo",
+          "name": "Nintendo (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1279,
+            "candidate_extraction_ms": 0,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 1,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.pixelmafia.com/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Pixelmafia",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 932,
+      "stageTimingsMs": {
+        "listingFetch": 927,
+        "parseCsv": 0,
+        "candidateExtraction": 4,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 113,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Pixelmafia",
+          "name": "Pixelmafia (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 927,
+            "candidate_extraction_ms": 4,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 113,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "gamesindustry",
+      "status": "ok",
+      "adapter": "html",
+      "fetchStrategy": "http",
+      "studio": "gamesindustry",
+      "fetchedCount": 24,
+      "keptCount": 24,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 380,
+      "stageTimingsMs": {
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 2
+      },
+      "loss": {
+        "rawFetched": 24,
+        "canonicalDropped": 0,
+        "canonicalKept": 24,
+        "dedupMerged": 4,
+        "finalOutput": 20,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      }
+    },
+    {
+      "name": "smartrecruiters_sources",
+      "status": "ok",
+      "adapter": "smartrecruiters",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 87,
+      "keptCount": 87,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 996,
+      "stageTimingsMs": {
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 8
+      },
+      "loss": {
+        "rawFetched": 87,
+        "canonicalDropped": 0,
+        "canonicalKept": 87,
+        "dedupMerged": 1,
+        "finalOutput": 86,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "smartrecruiters",
+          "studio": "CD PROJEKT RED",
+          "name": "CD PROJEKT RED (SmartRecruiters)",
+          "status": "ok",
+          "fetchedCount": 95,
+          "keptCount": 24,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false
+        },
+        {
+          "adapter": "smartrecruiters",
+          "studio": "Gameloft",
+          "name": "Gameloft (SmartRecruiters)",
+          "status": "ok",
+          "fetchedCount": 63,
+          "keptCount": 63,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://cdprojektred.com/en/jobs",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Cdprojektred",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 1585,
+      "stageTimingsMs": {
+        "listingFetch": 1581,
+        "parseCsv": 0,
+        "candidateExtraction": 4,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 119,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Cdprojektred",
+          "name": "Cdprojektred (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1581,
+            "candidate_extraction_ms": 4,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 119,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.remedygames.com/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Remedy Entertainment",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 876,
+      "stageTimingsMs": {
+        "listingFetch": 862,
+        "parseCsv": 0,
+        "candidateExtraction": 14,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 466,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Remedy Entertainment",
+          "name": "Remedy Entertainment (Manual Website)",
+          "status": "error",
+          "fetchedCount": 2,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 1,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 862,
+            "candidate_extraction_ms": 14,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 466,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.aweinteractive.com/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Awe Interactive",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 856,
+      "stageTimingsMs": {
+        "listingFetch": 853,
+        "parseCsv": 0,
+        "candidateExtraction": 3,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 74,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Awe Interactive",
+          "name": "Awe Interactive (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 853,
+            "candidate_extraction_ms": 3,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 74,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "remote_ok",
+      "status": "ok",
+      "adapter": "api",
+      "fetchStrategy": "http",
+      "studio": "remote_ok",
+      "fetchedCount": 47,
+      "keptCount": 47,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 632,
+      "stageTimingsMs": {
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 5
+      },
+      "loss": {
+        "rawFetched": 47,
+        "canonicalDropped": 0,
+        "canonicalKept": 47,
+        "dedupMerged": 0,
+        "finalOutput": 47,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      }
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.impactreality.com/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Impactreality",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 601,
+      "stageTimingsMs": {
+        "listingFetch": 595,
+        "parseCsv": 0,
+        "candidateExtraction": 5,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 140,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Impactreality",
+          "name": "Impactreality (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 595,
+            "candidate_extraction_ms": 5,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 140,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "scrapy_static_sources",
+      "status": "ok",
+      "adapter": "scrapy_static",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "scrapy_static_sources: No enabled scrapy_static sources",
+      "durationMs": 0,
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      }
+    },
+    {
+      "name": "static_source::static:listing_url:https://careers.nintendo.com/jobs",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Nintendo",
+      "fetchedCount": 56,
+      "keptCount": 56,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 34456,
+      "stageTimingsMs": {
+        "listingFetch": 1203,
+        "parseCsv": 0,
+        "candidateExtraction": 9,
+        "detailFetch": 187699,
+        "redirectResolve": 0,
+        "canonicalization": 6
+      },
+      "loss": {
+        "rawFetched": 56,
+        "canonicalDropped": 0,
+        "canonicalKept": 56,
+        "dedupMerged": 1,
+        "finalOutput": 55,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 178,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Nintendo",
+          "name": "Nintendo (Manual Website)",
+          "status": "ok",
+          "fetchedCount": 1,
+          "keptCount": 56,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 56,
+            "detail_pages_visited": 56,
+            "jobs_emitted": 56,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 100,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1203,
+            "candidate_extraction_ms": 9,
+            "detail_fetch_ms": 187699,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 178,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://www.rockstargames.com/careers",
+      "status": "ok",
+      "adapter": "static",
+      "fetchStrategy": "auto",
+      "studio": "Rockstar Games",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "",
+      "durationMs": 1143,
+      "stageTimingsMs": {
+        "listingFetch": 1142,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 0
+      },
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 26,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0
+      },
+      "details": [
+        {
+          "adapter": "static",
+          "studio": "Rockstar Games",
+          "name": "Rockstar Games (Manual Website)",
+          "status": "error",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "no jobs extracted from source pages",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 1142,
+            "candidate_extraction_ms": 0,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
+          "loss": {
+            "rawFetched": 0,
+            "canonicalDropped": 0,
+            "canonicalKept": 0,
+            "dedupMerged": 0,
+            "finalOutput": 0,
+            "canonicalDropReasons": {
+              "missing_title": 0,
+              "missing_company": 0,
+              "missing_job_link": 0,
+              "invalid_url": 0,
+              "invalid_payload": 0
+            },
+            "scrapyRunnerRejectedValidation": 0,
+            "scrapyParentInvalidPayload": 0,
+            "staticNonJobUrlRejected": 26,
+            "staticDuplicateLinkRejected": 0,
+            "staticDetailParseEmpty": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "static_source::static:listing_url:https://jobs.zenimax.com",
+      "status": "error",
+      "adapter": "custom",
+      "fetchStrategy": "auto",
+      "studio": "",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "error": "static_source::static:listing_url:https://jobs.zenimax.com: static:Zenimax (Manual Website):https://jobs.zenimax.com: HTTP 403 for https://jobs.zenimax.com",
+      "durationMs": 5740,
+      "loss": {
+        "rawFetched": 0,
+        "canonicalDropped": 0,
+        "canonicalKept": 0,
+        "dedupMerged": 0,
+        "finalOutput": 0,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
@@ -2847,20 +4141,29 @@
       "adapter": "static",
       "fetchStrategy": "auto",
       "studio": "Riot Games",
-      "fetchedCount": 163,
-      "keptCount": 163,
+      "fetchedCount": 161,
+      "keptCount": 161,
       "lowConfidenceDropped": 0,
       "error": "",
-      "durationMs": 133089,
+      "durationMs": 44781,
+      "stageTimingsMs": {
+        "listingFetch": 297,
+        "parseCsv": 0,
+        "candidateExtraction": 12,
+        "detailFetch": 262796,
+        "redirectResolve": 0,
+        "canonicalization": 16
+      },
       "loss": {
-        "rawFetched": 163,
+        "rawFetched": 161,
         "canonicalDropped": 0,
-        "canonicalKept": 163,
+        "canonicalKept": 161,
         "dedupMerged": 0,
-        "finalOutput": 163,
+        "finalOutput": 161,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 0,
           "invalid_url": 0,
           "invalid_payload": 0
         },
@@ -2868,7 +4171,7 @@
         "scrapyParentInvalidPayload": 0,
         "staticNonJobUrlRejected": 59,
         "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 163
+        "staticDetailParseEmpty": 161
       },
       "details": [
         {
@@ -2877,10 +4180,32 @@
           "name": "Riot Games (Manual Website)",
           "status": "ok",
           "fetchedCount": 1,
-          "keptCount": 163,
+          "keptCount": 161,
           "error": "",
           "classification": "",
           "browserFallbackRecommended": false,
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 161,
+            "detail_pages_visited": 161,
+            "jobs_emitted": 161,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 100,
+            "redirect_candidates": 0,
+            "redirect_resolved": 0,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 0,
+            "listing_fetch_ms": 297,
+            "candidate_extraction_ms": 12,
+            "detail_fetch_ms": 262796,
+            "redirect_resolve_ms": 0,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
+          },
           "loss": {
             "rawFetched": 0,
             "canonicalDropped": 0,
@@ -2890,6 +4215,7 @@
             "canonicalDropReasons": {
               "missing_title": 0,
               "missing_company": 0,
+              "missing_job_link": 0,
               "invalid_url": 0,
               "invalid_payload": 0
             },
@@ -2897,68 +4223,81 @@
             "scrapyParentInvalidPayload": 0,
             "staticNonJobUrlRejected": 59,
             "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 163
+            "staticDetailParseEmpty": 161
           }
         }
       ]
     },
     {
-      "name": "static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs",
+      "name": "google_sheets",
       "status": "ok",
-      "adapter": "static",
-      "fetchStrategy": "auto",
-      "studio": "Epic Games",
-      "fetchedCount": 15,
-      "keptCount": 15,
+      "adapter": "csv",
+      "fetchStrategy": "http",
+      "studio": "community_sheet",
+      "fetchedCount": 32811,
+      "keptCount": 32810,
       "lowConfidenceDropped": 0,
-      "error": "static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs: static:Epic Games (Manual Website):https://www.epicgames.com/site/en-US/careers/jobs/5784117004: HTTP 403 for https://www.epicgames.com/site/en-US/careers/jobs/5784117004; static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs: static:Epic Games (Manual Website):https://www.epicgames.com/site/en-US/careers/jobs/5737761004: HTTP 403 for https://www.epicgames.com/site/en-US/careers/jobs/5737761004; static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs: static:Epic Games (Manual Website):https://www.epicgames.com/site/en-US/careers/jobs/5819936004: HTTP 403 for https://www.epicgames.com/site/en-US/careers/jobs/5819936004; static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs: static:Epic Games (Manual Website):https://www.epicgames.com/site/en-US/careers/jobs/5710558004: HTTP 403 for https://www.epicgames.com/site/en-US/careers/jobs/5710558004; static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs: static:Epic Games (Manual Website):https://www.epicgames.com/site/en-US/careers/jobs/5819928004: HTTP 403 for https://www.epicgames.com/site/en-US/careers/jobs/5819928004; static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs: static:Epic Games (Manual Website):https://www.epicgames.com/site/en-US/careers/jobs/5784808004: HTTP 403 for https://www.epicgames.com/site/en-US/careers/jobs/5784808004",
-      "durationMs": 234718,
+      "error": "",
+      "durationMs": 83327,
+      "stageTimingsMs": {
+        "listingFetch": 0,
+        "parseCsv": 718,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 76479,
+        "canonicalization": 2111
+      },
       "loss": {
-        "rawFetched": 15,
-        "canonicalDropped": 0,
-        "canonicalKept": 15,
-        "dedupMerged": 1,
-        "finalOutput": 14,
+        "rawFetched": 32811,
+        "canonicalDropped": 1,
+        "canonicalKept": 32810,
+        "dedupMerged": 965,
+        "finalOutput": 31845,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
+          "missing_job_link": 1,
           "invalid_url": 0,
           "invalid_payload": 0
         },
         "scrapyRunnerRejectedValidation": 0,
         "scrapyParentInvalidPayload": 0,
-        "staticNonJobUrlRejected": 70,
+        "staticNonJobUrlRejected": 0,
         "staticDuplicateLinkRejected": 0,
-        "staticDetailParseEmpty": 15
+        "staticDetailParseEmpty": 0
       },
       "details": [
         {
-          "adapter": "static",
-          "studio": "Epic Games",
-          "name": "Epic Games (Manual Website)",
+          "adapter": "csv",
+          "studio": "community_sheet",
+          "name": "google_sheets",
           "status": "ok",
-          "fetchedCount": 1,
-          "keptCount": 15,
+          "fetchedCount": 32811,
+          "keptCount": 32811,
           "error": "",
           "classification": "",
           "browserFallbackRecommended": false,
-          "loss": {
-            "rawFetched": 0,
-            "canonicalDropped": 0,
-            "canonicalKept": 0,
-            "dedupMerged": 0,
-            "finalOutput": 0,
-            "canonicalDropReasons": {
-              "missing_title": 0,
-              "missing_company": 0,
-              "invalid_url": 0,
-              "invalid_payload": 0
-            },
-            "scrapyRunnerRejectedValidation": 0,
-            "scrapyParentInvalidPayload": 0,
-            "staticNonJobUrlRejected": 70,
-            "staticDuplicateLinkRejected": 0,
-            "staticDetailParseEmpty": 15
+          "stats": {
+            "downloader/request_count": 0,
+            "downloader/response_count": 0,
+            "downloader/response_status_count/200": 0,
+            "retry/count": 0,
+            "item_scraped_count": 0,
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "fetch_cache_hits": 0,
+            "detail_yield_percent": 0,
+            "redirect_candidates": 449,
+            "redirect_resolved": 449,
+            "redirect_cache_hits": 0,
+            "parse_csv_ms": 718,
+            "listing_fetch_ms": 0,
+            "candidate_extraction_ms": 0,
+            "detail_fetch_ms": 0,
+            "redirect_resolve_ms": 76479,
+            "jobs_rejected_validation": 0,
+            "finish_reason": ""
           }
         }
       ]
@@ -2978,12 +4317,12 @@
     }
   ],
   "outputs": {
-    "json": "data\\jobs-unified.json",
-    "csv": "data\\jobs-unified.csv",
-    "lightJson": "data\\jobs-unified-light.json",
-    "report": "data\\jobs-fetch-report.json",
-    "lifecycleState": "data\\jobs-lifecycle-state.json",
-    "browserFallbackQueue": "data\\jobs-browser-fallback-queue.json",
+    "json": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-unified.json",
+    "csv": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-unified.csv",
+    "lightJson": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-unified-light.json",
+    "report": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-fetch-report.json",
+    "lifecycleState": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-lifecycle-state.json",
+    "browserFallbackQueue": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\jobs-browser-fallback-queue.json",
     "changed": {
       "json": true,
       "csv": true,

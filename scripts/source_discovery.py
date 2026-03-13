@@ -94,24 +94,24 @@ DISCOVERY_LOG_PATH = str(
 ).strip()
 
 STATIC_DISCOVERY_CANDIDATES: List[Dict[str, Any]] = [
-    {"name": "Sandbox VR (Lever)", "studio": "Sandbox VR", "adapter": "lever", "account": "sandboxvr", "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json", "remoteFriendly": True, "nlPriority": False},
-    {"name": "Voodoo (Lever)", "studio": "Voodoo", "adapter": "lever", "account": "voodoo", "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json", "remoteFriendly": True, "nlPriority": False},
-    {"name": "CD PROJEKT RED (SmartRecruiters)", "studio": "CD PROJEKT RED", "adapter": "smartrecruiters", "company_id": "CDPROJEKTRED", "api_url": "https://api.smartrecruiters.com/v1/companies/CDPROJEKTRED/postings", "remoteFriendly": True, "nlPriority": False},
-    {"name": "Gameloft (SmartRecruiters)", "studio": "Gameloft", "adapter": "smartrecruiters", "company_id": "Gameloft", "api_url": "https://api.smartrecruiters.com/v1/companies/Gameloft/postings", "remoteFriendly": True, "nlPriority": False},
-    {"name": "Hutch (Workable)", "studio": "Hutch", "adapter": "workable", "account": "hutch", "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true", "remoteFriendly": True, "nlPriority": False},
-    {"name": "Wargaming (Workable)", "studio": "Wargaming", "adapter": "workable", "account": "wargaming", "api_url": "https://apply.workable.com/api/v1/widget/accounts/wargaming?details=true", "remoteFriendly": True, "nlPriority": False},
-    {"name": "InnoGames (Personio)", "studio": "InnoGames", "adapter": "personio", "feed_url": "https://innogames.jobs.personio.de/xml", "remoteFriendly": True, "nlPriority": True},
-    {"name": "Travian (Personio)", "studio": "Travian", "adapter": "personio", "feed_url": "https://travian.jobs.personio.de/xml", "remoteFriendly": True, "nlPriority": True},
-    {"name": "Jagex (Ashby)", "studio": "Jagex", "adapter": "ashby", "board_url": "https://jobs.ashbyhq.com/jagex/jobs", "remoteFriendly": True, "nlPriority": False},
-    {"name": "Scopely (Ashby)", "studio": "Scopely", "adapter": "ashby", "board_url": "https://jobs.ashbyhq.com/scopely/jobs", "remoteFriendly": True, "nlPriority": False},
+    {"name": "Sandbox VR (Lever)", "studio": "Sandbox VR", "adapter": "lever", "account": "sandboxvr", "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json", "nlPriority": False},
+    {"name": "Voodoo (Lever)", "studio": "Voodoo", "adapter": "lever", "account": "voodoo", "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json", "nlPriority": False},
+    {"name": "CD PROJEKT RED (SmartRecruiters)", "studio": "CD PROJEKT RED", "adapter": "smartrecruiters", "company_id": "CDPROJEKTRED", "api_url": "https://api.smartrecruiters.com/v1/companies/CDPROJEKTRED/postings", "nlPriority": False},
+    {"name": "Gameloft (SmartRecruiters)", "studio": "Gameloft", "adapter": "smartrecruiters", "company_id": "Gameloft", "api_url": "https://api.smartrecruiters.com/v1/companies/Gameloft/postings", "nlPriority": False},
+    {"name": "Hutch (Workable)", "studio": "Hutch", "adapter": "workable", "account": "hutch", "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true", "nlPriority": False},
+    {"name": "Wargaming (Workable)", "studio": "Wargaming", "adapter": "workable", "account": "wargaming", "api_url": "https://apply.workable.com/api/v1/widget/accounts/wargaming?details=true", "nlPriority": False},
+    {"name": "InnoGames (Personio)", "studio": "InnoGames", "adapter": "personio", "feed_url": "https://innogames.jobs.personio.de/xml", "nlPriority": True},
+    {"name": "Travian (Personio)", "studio": "Travian", "adapter": "personio", "feed_url": "https://travian.jobs.personio.de/xml", "nlPriority": True},
+    {"name": "Jagex (Ashby)", "studio": "Jagex", "adapter": "ashby", "board_url": "https://jobs.ashbyhq.com/jagex/jobs", "nlPriority": False},
+    {"name": "Scopely (Ashby)", "studio": "Scopely", "adapter": "ashby", "board_url": "https://jobs.ashbyhq.com/scopely/jobs", "nlPriority": False},
 ]
 
 DEFAULT_STUDIO_SEEDS: List[Dict[str, Any]] = [
-    {"studio": "Guerrilla Games", "aliases": ["guerrilla-games", "guerrillagames"], "nlPriority": True, "remoteFriendly": True, "likelyProviders": ["greenhouse"], "careersUrl": "https://www.guerrilla-games.com/join"},
-    {"studio": "Nixxes", "aliases": ["nixxes"], "nlPriority": True, "remoteFriendly": True, "likelyProviders": ["static"], "careersUrl": "https://www.nixxes.com/careers"},
-    {"studio": "Vertigo Games", "aliases": ["vertigo-games", "vertigogames"], "nlPriority": True, "remoteFriendly": True, "likelyProviders": ["workable", "smartrecruiters"], "careersUrl": "https://vertigo-games.com/careers"},
-    {"studio": "Triumph Studios", "aliases": ["triumph-studios", "triumphstudios"], "nlPriority": True, "remoteFriendly": True, "likelyProviders": ["static"], "careersUrl": "https://www.triumphstudios.com/careers"},
-    {"studio": "Little Chicken", "aliases": ["littlechicken", "little-chicken"], "nlPriority": True, "remoteFriendly": True, "likelyProviders": ["static"], "careersUrl": "https://www.littlechicken.nl/about-us/jobs/"},
+    {"studio": "Guerrilla Games", "aliases": ["guerrilla-games", "guerrillagames"], "nlPriority": True, "likelyProviders": ["greenhouse"], "careersUrl": "https://www.guerrilla-games.com/join"},
+    {"studio": "Nixxes", "aliases": ["nixxes"], "nlPriority": True, "likelyProviders": ["static"], "careersUrl": "https://www.nixxes.com/careers"},
+    {"studio": "Vertigo Games", "aliases": ["vertigo-games", "vertigogames"], "nlPriority": True, "likelyProviders": ["workable", "smartrecruiters"], "careersUrl": "https://vertigo-games.com/careers"},
+    {"studio": "Triumph Studios", "aliases": ["triumph-studios", "triumphstudios"], "nlPriority": True, "likelyProviders": ["static"], "careersUrl": "https://www.triumphstudios.com/careers"},
+    {"studio": "Little Chicken", "aliases": ["littlechicken", "little-chicken"], "nlPriority": True, "likelyProviders": ["static"], "careersUrl": "https://www.littlechicken.nl/about-us/jobs/"},
 ]
 
 DEFAULT_DISCOVERY_CONFIG: Dict[str, Any] = {
@@ -490,9 +490,6 @@ def compute_candidate_score(candidate: Dict[str, Any], jobs_found: int) -> Tuple
     if bool(candidate.get("nlPriority")):
         score += 25
         reasons.append("nl_priority")
-    if bool(candidate.get("remoteFriendly")):
-        score += 15
-        reasons.append("remote_friendly")
     evidence = int(candidate.get("evidenceScore") or 0)
     if evidence > 0:
         score += min(25, evidence // 2)
@@ -757,7 +754,6 @@ def build_gamesmap_static_candidate(
     studio: str,
     target_url: str,
     nl_priority: bool,
-    remote_friendly: bool,
     website_only: bool,
     detail_url: str,
     categories: List[str],
@@ -783,7 +779,6 @@ def build_gamesmap_static_candidate(
         "adapter": "static",
         "pages": [target_url],
         "listing_url": target_url,
-        "remoteFriendly": remote_friendly,
         "nlPriority": nl_priority,
         "enabledByDefault": False,
         "discoveryMethod": "gamesmap",
@@ -859,10 +854,8 @@ def discover_gamesmap_candidates(timeout_s: int, *, config: Optional[Dict[str, A
         careers_url = str(parsed.get("careersUrl") or "").strip()
         website_url = str(parsed.get("websiteUrl") or "").strip()
         nl_priority = False
-        remote_friendly = True
-
         if careers_url:
-            inferred = infer_web_candidate(careers_url, studio, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method="gamesmap")
+            inferred = infer_web_candidate(careers_url, studio, nl_priority=nl_priority, discovery_method="gamesmap")
             if inferred:
                 inferred["evidenceSource"] = "gamesmap"
                 inferred["evidenceTypes"] = unique_string_list([*(inferred.get("evidenceTypes") or []), "gamesmap_directory", "gamesmap_careers_url", "gamesmap_category_match"])
@@ -880,7 +873,6 @@ def discover_gamesmap_candidates(timeout_s: int, *, config: Optional[Dict[str, A
                         studio=studio,
                         target_url=careers_url,
                         nl_priority=nl_priority,
-                        remote_friendly=remote_friendly,
                         website_only=False,
                         detail_url=detail_url,
                         categories=categories,
@@ -896,7 +888,6 @@ def discover_gamesmap_candidates(timeout_s: int, *, config: Optional[Dict[str, A
                     studio=studio,
                     target_url=website_url,
                     nl_priority=nl_priority,
-                    remote_friendly=remote_friendly,
                     website_only=True,
                     detail_url=detail_url,
                     categories=categories,
@@ -931,8 +922,6 @@ def likely_providers_for_seed(seed: Dict[str, Any]) -> List[str]:
     providers = {"greenhouse", "workable", "teamtailor"}
     if not bool(seed.get("nlPriority")):
         providers.update({"lever", "smartrecruiters", "ashby"})
-    if bool(seed.get("remoteFriendly")):
-        providers.add("personio")
     return [item for item in SUPPORTED_PROVIDERS if item in providers]
 
 
@@ -989,7 +978,6 @@ def build_pattern_candidates() -> List[Dict[str, Any]]:
         if not studio:
             continue
         nl_priority = bool(seed.get("nlPriority"))
-        remote_friendly = bool(seed.get("remoteFriendly"))
         careers_url = str(seed.get("careersUrl") or "").strip()
         evidence_types = ["provider_hint", "seed_catalog"]
         explicit = [str(item).strip().lower() for item in (seed.get("likelyProviders") or []) if str(item).strip()]
@@ -998,7 +986,6 @@ def build_pattern_candidates() -> List[Dict[str, Any]]:
             for alias in _pattern_aliases_for_provider(seed, provider):
                 base: Dict[str, Any] = {
                     "studio": studio,
-                    "remoteFriendly": remote_friendly,
                     "nlPriority": nl_priority,
                     "discoveryMethod": "pattern",
                     "discoveryStage": "provider_pattern",
@@ -1082,7 +1069,7 @@ def studio_domain_match(studio: str, url: str) -> bool:
     return bool(token[:8] and token[:8] in clean_token(f"{parsed.netloc} {parsed.path}"))
 
 
-def _provider_candidate(*, studio: str, adapter: str, url: str, nl_priority: bool, remote_friendly: bool, discovery_method: str, evidence_types: List[str], evidence_source: str, evidence_score: int) -> Optional[Dict[str, Any]]:
+def _provider_candidate(*, studio: str, adapter: str, url: str, nl_priority: bool, discovery_method: str, evidence_types: List[str], evidence_source: str, evidence_score: int) -> Optional[Dict[str, Any]]:
     parsed = urlparse(url)
     host = (parsed.netloc or "").lower()
     path = parsed.path or ""
@@ -1090,7 +1077,7 @@ def _provider_candidate(*, studio: str, adapter: str, url: str, nl_priority: boo
         slug = clean_token(path.split("/boards/", 1)[1].split("/", 1)[0]) if "boards-api.greenhouse.io" in host and "/boards/" in path else clean_token(([p for p in path.split("/") if p] or [""])[0])
         if not slug:
             return None
-        return {"name": f"{studio} (Greenhouse)", "studio": studio, "adapter": "greenhouse", "slug": slug, "api_url": f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+        return {"name": f"{studio} (Greenhouse)", "studio": studio, "adapter": "greenhouse", "slug": slug, "api_url": f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true", "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
     if adapter == "lever":
         if "api.lever.co" in host and "/v0/postings/" in path:
             account = clean_token(path.split("/v0/postings/", 1)[1].split("/", 1)[0])
@@ -1098,7 +1085,7 @@ def _provider_candidate(*, studio: str, adapter: str, url: str, nl_priority: boo
             account = clean_token(([p for p in path.split("/") if p] or [""])[0])
         if not account:
             return None
-        return {"name": f"{studio} (Lever)", "studio": studio, "adapter": "lever", "account": account, "api_url": f"https://api.lever.co/v0/postings/{account}?mode=json", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+        return {"name": f"{studio} (Lever)", "studio": studio, "adapter": "lever", "account": account, "api_url": f"https://api.lever.co/v0/postings/{account}?mode=json", "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
     if adapter == "smartrecruiters":
         company_id = ""
         if "api.smartrecruiters.com" in host and "/companies/" in path:
@@ -1111,25 +1098,25 @@ def _provider_candidate(*, studio: str, adapter: str, url: str, nl_priority: boo
             company_id = ([p for p in path.split("/") if p] or [""])[0].strip()
         if not company_id:
             return None
-        return {"name": f"{studio} (SmartRecruiters)", "studio": studio, "adapter": "smartrecruiters", "company_id": company_id, "api_url": f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+        return {"name": f"{studio} (SmartRecruiters)", "studio": studio, "adapter": "smartrecruiters", "company_id": company_id, "api_url": f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings", "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
     if adapter == "workable":
         account = clean_token(([p for p in path.split("/") if p] or [""])[-1])
         if not account:
             return None
-        return {"name": f"{studio} (Workable)", "studio": studio, "adapter": "workable", "account": account, "api_url": f"https://apply.workable.com/api/v1/widget/accounts/{account}?details=true", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+        return {"name": f"{studio} (Workable)", "studio": studio, "adapter": "workable", "account": account, "api_url": f"https://apply.workable.com/api/v1/widget/accounts/{account}?details=true", "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
     if adapter == "teamtailor":
         base_url = f"{parsed.scheme}://{host}" if parsed.scheme else f"https://{host}"
-        return {"name": f"{studio} (Teamtailor)", "studio": studio, "adapter": "teamtailor", "listing_url": f"{base_url}/jobs", "base_url": base_url, "company": studio, "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+        return {"name": f"{studio} (Teamtailor)", "studio": studio, "adapter": "teamtailor", "listing_url": f"{base_url}/jobs", "base_url": base_url, "company": studio, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
     if adapter == "ashby":
         slug = clean_token(([p for p in path.split("/") if p] or [""])[0])
         if not slug:
             return None
-        return {"name": f"{studio} (Ashby)", "studio": studio, "adapter": "ashby", "board_url": f"https://jobs.ashbyhq.com/{slug}/jobs", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+        return {"name": f"{studio} (Ashby)", "studio": studio, "adapter": "ashby", "board_url": f"https://jobs.ashbyhq.com/{slug}/jobs", "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
     if adapter == "personio":
         token = host.split(".jobs.personio.de", 1)[0]
         if not token:
             return None
-        return {"name": f"{studio} (Personio)", "studio": studio, "adapter": "personio", "feed_url": f"https://{token}.jobs.personio.de/xml", "remoteFriendly": remote_friendly, "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
+        return {"name": f"{studio} (Personio)", "studio": studio, "adapter": "personio", "feed_url": f"https://{token}.jobs.personio.de/xml", "nlPriority": nl_priority, "discoveryMethod": discovery_method, "discoveryStage": "web_provider", "careersUrl": url, "evidenceScore": evidence_score, "evidenceTypes": evidence_types, "evidenceSource": evidence_source}
     return None
 
 
@@ -1177,32 +1164,32 @@ def collapse_competing_candidates(candidates: Iterable[Dict[str, Any]]) -> List[
     return unique_sources([*passthrough, *preferred.values()])
 
 
-def infer_web_candidate(url: str, studio: str, *, nl_priority: bool, remote_friendly: bool, discovery_method: str = "web_search") -> Optional[Dict[str, Any]]:
+def infer_web_candidate(url: str, studio: str, *, nl_priority: bool, discovery_method: str = "web_search") -> Optional[Dict[str, Any]]:
     parsed = urlparse(url)
     host = (parsed.netloc or "").lower()
     path = parsed.path or ""
     evidence_types = ["provider_url"]
     evidence_score = 28 + (12 if studio_domain_match(studio, url) else 0) + (4 if careers_keyword_count(url) else 0)
     if "boards.greenhouse.io" in host or "jobs.greenhouse.io" in host or "boards-api.greenhouse.io" in host:
-        return _provider_candidate(studio=studio, adapter="greenhouse", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+        return _provider_candidate(studio=studio, adapter="greenhouse", url=url, nl_priority=nl_priority, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
     if "jobs.ashbyhq.com" in host:
-        return _provider_candidate(studio=studio, adapter="ashby", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+        return _provider_candidate(studio=studio, adapter="ashby", url=url, nl_priority=nl_priority, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
     if "apply.workable.com" in host:
-        return _provider_candidate(studio=studio, adapter="workable", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+        return _provider_candidate(studio=studio, adapter="workable", url=url, nl_priority=nl_priority, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
     if ".teamtailor.com" in host:
-        return _provider_candidate(studio=studio, adapter="teamtailor", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+        return _provider_candidate(studio=studio, adapter="teamtailor", url=url, nl_priority=nl_priority, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
     if ".jobs.personio.de" in host:
-        return _provider_candidate(studio=studio, adapter="personio", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+        return _provider_candidate(studio=studio, adapter="personio", url=url, nl_priority=nl_priority, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
     if ("api.lever.co" in host and "/v0/postings/" in path) or ("lever.co" in host and host != "api.lever.co"):
-        return _provider_candidate(studio=studio, adapter="lever", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+        return _provider_candidate(studio=studio, adapter="lever", url=url, nl_priority=nl_priority, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
     if ("api.smartrecruiters.com" in host and "/companies/" in path) or "jobs.smartrecruiters.com" in host:
-        return _provider_candidate(studio=studio, adapter="smartrecruiters", url=url, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
+        return _provider_candidate(studio=studio, adapter="smartrecruiters", url=url, nl_priority=nl_priority, discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score)
     return None
 
 
-def infer_provider_candidates_from_html(page_url: str, html: str, *, studio: str, nl_priority: bool, remote_friendly: bool, discovery_method: str = "web_search") -> List[Dict[str, Any]]:
+def infer_provider_candidates_from_html(page_url: str, html: str, *, studio: str, nl_priority: bool, discovery_method: str = "web_search") -> List[Dict[str, Any]]:
     candidates: List[Dict[str, Any]] = []
-    page_candidate = infer_web_candidate(page_url, studio, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method)
+    page_candidate = infer_web_candidate(page_url, studio, nl_priority=nl_priority, discovery_method=discovery_method)
     if page_candidate:
         page_candidate["evidenceSource"] = "page_url"
         page_candidate["evidenceTypes"] = unique_string_list([*(page_candidate.get("evidenceTypes") or []), "careers_page"])
@@ -1220,7 +1207,7 @@ def infer_provider_candidates_from_html(page_url: str, html: str, *, studio: str
         if not url or url in seen:
             continue
         seen.add(url)
-        inferred = infer_web_candidate(url, studio, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method=discovery_method)
+        inferred = infer_web_candidate(url, studio, nl_priority=nl_priority, discovery_method=discovery_method)
         if not inferred:
             continue
         inferred["evidenceSource"] = "html_embed"
@@ -1231,7 +1218,7 @@ def infer_provider_candidates_from_html(page_url: str, html: str, *, studio: str
     return collapse_competing_candidates(candidates)
 
 
-def build_static_candidate_from_page(page_url: str, html: str, *, studio: str, nl_priority: bool, remote_friendly: bool, discovery_method: str) -> Optional[Dict[str, Any]]:
+def build_static_candidate_from_page(page_url: str, html: str, *, studio: str, nl_priority: bool, discovery_method: str) -> Optional[Dict[str, Any]]:
     if is_blocked_generic_static_url(page_url):
         return None
     if not careers_keyword_count(page_url) and careers_keyword_count(html) == 0:
@@ -1259,7 +1246,6 @@ def build_static_candidate_from_page(page_url: str, html: str, *, studio: str, n
         "adapter": "static",
         "pages": [page_url, *detail_sample],
         "listing_url": page_url,
-        "remoteFriendly": remote_friendly,
         "nlPriority": nl_priority,
         "enabledByDefault": False,
         "discoveryMethod": discovery_method,
@@ -1302,7 +1288,6 @@ def discover_seed_careers_page_candidates(timeout_s: int, *, fetcher=fetch_text)
         if not careers_url or not studio:
             continue
         nl_priority = bool(seed.get("nlPriority"))
-        remote_friendly = bool(seed.get("remoteFriendly"))
         try:
             page_html = fetcher(careers_url, timeout_s)
         except Exception as exc:  # noqa: BLE001
@@ -1313,7 +1298,6 @@ def discover_seed_careers_page_candidates(timeout_s: int, *, fetcher=fetch_text)
             page_html,
             studio=studio,
             nl_priority=nl_priority,
-            remote_friendly=remote_friendly,
             discovery_method="seed_careers_page",
         )
         provider_candidates.extend(page_provider_candidates)
@@ -1324,7 +1308,6 @@ def discover_seed_careers_page_candidates(timeout_s: int, *, fetcher=fetch_text)
             page_html,
             studio=studio,
             nl_priority=nl_priority,
-            remote_friendly=remote_friendly,
             discovery_method="seed_careers_page",
         )
         if static_candidate:
@@ -1346,9 +1329,8 @@ def discover_web_search_candidates(timeout_s: int, *, fetcher=fetch_text, max_qu
         links = extract_links_from_html(html)[:MAX_SEARCH_LINKS_PER_QUERY]
         studio = str(seed.get("studio") or "")
         nl_priority = bool(seed.get("nlPriority"))
-        remote_friendly = bool(seed.get("remoteFriendly"))
         for link in links:
-            inferred = infer_web_candidate(link, studio, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method="web_search")
+            inferred = infer_web_candidate(link, studio, nl_priority=nl_priority, discovery_method="web_search")
             if inferred:
                 provider_candidates.append(inferred)
                 continue
@@ -1365,11 +1347,10 @@ def discover_web_search_candidates(timeout_s: int, *, fetcher=fetch_text, max_qu
                     page_html,
                     studio=studio,
                     nl_priority=nl_priority,
-                    remote_friendly=remote_friendly,
                     discovery_method="web_search",
                 )
             )
-            static_candidate = build_static_candidate_from_page(link, page_html, studio=studio, nl_priority=nl_priority, remote_friendly=remote_friendly, discovery_method="web_search")
+            static_candidate = build_static_candidate_from_page(link, page_html, studio=studio, nl_priority=nl_priority, discovery_method="web_search")
             if static_candidate:
                 static_candidates.append(static_candidate)
     return collapse_competing_candidates(provider_candidates), unique_sources(static_candidates), failures
@@ -1626,7 +1607,6 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
             "newCandidateCount": len(current_candidates),
             "taEnvCandidateCount": sum(1 for row in current_candidates if "target_role_signal" in row.get("reasons", [])),
             "nlCandidateCount": sum(1 for row in current_candidates if bool(row.get("nlPriority"))),
-            "remoteCandidateCount": sum(1 for row in current_candidates if bool(row.get("remoteFriendly"))),
             "failedProbeCount": len([row for row in failures if str(row.get("stage")) == "probe"]),
             "probeMissCount": len([row for row in failures if str(row.get("stage")) == "probe_miss"]),
             "foundEndpointCount": found_endpoint_count,

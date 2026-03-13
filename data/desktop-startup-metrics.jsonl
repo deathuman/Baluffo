@@ -1,0 +1,9 @@
+{"ts": "2026-03-13T13:48:22.502815+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-13T13:48:22.503709+00:00", "event": "admin_pin_gate_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-13T13:48:22.504168+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready", "elapsedMs": 4}}
+{"ts": "2026-03-13T14:22:51.790674+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-13T14:22:51.794975+00:00", "event": "admin_pin_gate_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-13T14:22:51.796541+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready", "elapsedMs": 3}}
+{"ts": "2026-03-13T15:02:16.367685+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-13T15:02:16.369381+00:00", "event": "admin_pin_gate_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-13T15:02:16.370150+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready", "elapsedMs": 4}}

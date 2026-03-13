@@ -508,7 +508,6 @@ def build_manual_candidate(normalized_url: str) -> Dict[str, Any] | None:
         normalized_url,
         studio,
         nl_priority=False,
-        remote_friendly=True,
     )
     if not isinstance(inferred, dict):
         fallback = {
@@ -518,7 +517,6 @@ def build_manual_candidate(normalized_url: str) -> Dict[str, Any] | None:
             "adapter": "static",
             "pages": [normalized_url],
             "listing_url": normalized_url,
-            "remoteFriendly": True,
             "nlPriority": False,
             "enabledByDefault": False,
             "discoveryMethod": "manual",

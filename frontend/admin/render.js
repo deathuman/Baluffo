@@ -109,7 +109,6 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
         <div>Studio</div>
         <div>Status</div>
         <div>Jobs</div>
-        <div>Remote</div>
       </div>
     </div>
     <div class="jobs-table-body">
@@ -139,7 +138,6 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
               ? "warning"
               : "healthy";
         const jobsFound = formatSourceJobsFound(row);
-        const remote = row.remoteFriendly ? "Yes" : "No";
         const sourceUrl = escapeHtml(String(
           row.listing_url
           || row.api_url
@@ -166,7 +164,6 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
             <div class="admin-cell" data-label="Studio">${studio}</div>
             <div class="admin-cell" data-label="Status"><span class="admin-status-chip ${statusClass}"${statusTitle}>${status}</span></div>
             <div class="admin-cell" data-label="Jobs">${jobsFound}</div>
-            <div class="admin-cell" data-label="Remote">${remote}</div>
           </div>
         `;
       }).join("")}

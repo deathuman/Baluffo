@@ -9,6 +9,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -79,7 +80,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "adapter": "greenhouse",
         "slug": "guerrilla-games",
         "nlPriority": True,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -88,7 +88,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "adapter": "greenhouse",
         "slug": "sonyinteractiveentertainmentglobal",
         "nlPriority": True,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -99,7 +98,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "base_url": "https://career.paradoxplaza.com",
         "company": "Paradox Interactive",
         "nlPriority": True,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -112,7 +110,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
             "https://www.littlechicken.nl/job/",
         ],
         "nlPriority": True,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -121,7 +118,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "adapter": "greenhouse",
         "slug": "larian-studios",
         "nlPriority": True,
-        "remoteFriendly": True,
         "enabledByDefault": False,
     },
     {
@@ -131,7 +127,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "account": "jagex",
         "api_url": "https://api.lever.co/v0/postings/jagex?mode=json",
         "nlPriority": False,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -141,7 +136,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "account": "sandboxvr",
         "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json",
         "nlPriority": False,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -151,7 +145,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "account": "voodoo",
         "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json",
         "nlPriority": False,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -161,7 +154,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "company_id": "CDPROJEKTRED",
         "api_url": "https://api.smartrecruiters.com/v1/companies/CDPROJEKTRED/postings",
         "nlPriority": False,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -171,7 +163,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "company_id": "Gameloft",
         "api_url": "https://api.smartrecruiters.com/v1/companies/Gameloft/postings",
         "nlPriority": False,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -181,7 +172,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "account": "hutch",
         "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true",
         "nlPriority": False,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -191,7 +181,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "account": "wargaming",
         "api_url": "https://apply.workable.com/api/v1/widget/accounts/wargaming?details=true",
         "nlPriority": False,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -200,7 +189,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "adapter": "personio",
         "feed_url": "https://innogames.jobs.personio.de/xml",
         "nlPriority": True,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -209,7 +197,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "adapter": "personio",
         "feed_url": "https://travian.jobs.personio.de/xml",
         "nlPriority": True,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -218,7 +205,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "adapter": "ashby",
         "board_url": "https://jobs.ashbyhq.com/jagex/jobs",
         "nlPriority": False,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
     {
@@ -227,7 +213,6 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "adapter": "ashby",
         "board_url": "https://jobs.ashbyhq.com/scopely/jobs",
         "nlPriority": False,
-        "remoteFriendly": True,
         "enabledByDefault": True,
     },
 ]
@@ -237,8 +222,21 @@ DEFAULT_RETRIES = 2
 DEFAULT_BACKOFF_S = 1.6
 DEFAULT_FETCH_STRATEGY = "auto"
 DEFAULT_ADAPTER_HTTP_CONCURRENCY = 24
+DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = 8
 DEFAULT_HOT_SOURCE_CADENCE_MINUTES = 15
 DEFAULT_COLD_SOURCE_CADENCE_MINUTES = 60
+UNKNOWN_COMPANY_LABEL = "Unknown company"
+UNTRUSTWORTHY_COMPANY_LABELS = {
+    "game",
+    "tech",
+    "game company",
+    "tech company",
+    "gaming company",
+    "technology company",
+    "giant enemy crab",
+    "farbridge",
+    "enduring games",
+}
 _STORAGE_DEFAULTS = get_storage_defaults()
 DEFAULT_OUTPUT_DIR = _STORAGE_DEFAULTS["data_dir"]
 DEFAULT_SOCIAL_CONFIG_PATH = _STORAGE_DEFAULTS["social_sources_config_path"]
@@ -246,6 +244,7 @@ DEFAULT_SOCIAL_LOOKBACK_MINUTES = 30
 SOCIAL_SOURCE_NAMES = {"social_reddit", "social_x", "social_mastodon"}
 DEFAULT_SOCIAL_MIN_CONFIDENCE = 40
 DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE = "balanced"
+DEFAULT_STATIC_DETAIL_CONCURRENCY = 6
 DEFAULT_SCRAPY_VALIDATION_STRICT = True
 DEFAULT_CANONICAL_STRICT_URL = False
 SOURCE_REGISTRY_ACTIVE_PATH = DEFAULT_OUTPUT_DIR / "source-registry-active.json"
@@ -379,6 +378,15 @@ LIGHTWEIGHT_OUTPUT_FIELDS = [
     "sourceBundleCount",
 ]
 TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source"}
+SUPPORTED_REDIRECT_HOSTS = {"gracklehq.com", "www.gracklehq.com"}
+DEFAULT_HTTP_HEADERS = {
+    "User-Agent": "BaluffoJobsFetcher/1.0 (+https://github.com/)",
+    "Accept": "application/json,text/html,text/csv,*/*",
+}
+DEFAULT_REDIRECT_HEADERS = {
+    "User-Agent": DEFAULT_HTTP_HEADERS["User-Agent"],
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
 LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = 14
 LIFECYCLE_ARCHIVE_RETENTION_DAYS = 120
 
@@ -592,9 +600,169 @@ def normalize_url(url: Any) -> str:
     return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, "", query, ""))
 
 
-def fingerprint_url(url: Any) -> str:
+def canonical_url_fingerprint_seed(url: Any) -> str:
     normalized = normalize_url(url)
-    return hashlib.sha1(normalized.encode("utf-8")).hexdigest() if normalized else ""
+    if not normalized:
+        return ""
+    parsed = urlparse(normalized)
+    host = parsed.netloc.lower()
+    path = parsed.path or "/"
+
+    if host in {"jobs.smartrecruiters.com", "api.smartrecruiters.com"}:
+        jobs_match = re.match(r"^/([^/]+)/(\d+)(?:-[^/]+)?$", path)
+        if jobs_match:
+            company_id, posting_id = jobs_match.groups()
+            return f"smartrecruiters:{company_id.lower()}:{posting_id}"
+        api_match = re.match(r"^/v1/companies/([^/]+)/postings/(\d+)$", path)
+        if api_match:
+            company_id, posting_id = api_match.groups()
+            return f"smartrecruiters:{company_id.lower()}:{posting_id}"
+
+    return normalized
+
+
+def fingerprint_url(url: Any) -> str:
+    seed = canonical_url_fingerprint_seed(url)
+    return hashlib.sha1(seed.encode("utf-8")).hexdigest() if seed else ""
+
+
+def is_supported_redirect_url(url: Any) -> bool:
+    normalized = normalize_url(url)
+    if not normalized:
+        return False
+    parsed = urlparse(normalized)
+    return parsed.netloc.lower() in SUPPORTED_REDIRECT_HOSTS and parsed.path.startswith("/rd/")
+
+
+def resolve_supported_redirect_url(url: Any, *, timeout_s: int = DEFAULT_TIMEOUT_S) -> str:
+    normalized = normalize_url(url)
+    if not is_supported_redirect_url(normalized):
+        return normalized
+    last_error: Optional[Exception] = None
+    for method in ("HEAD", "GET"):
+        request = Request(normalized, headers=DEFAULT_REDIRECT_HEADERS, method=method)
+        try:
+            with urlopen(request, timeout=max(1, int(timeout_s or DEFAULT_TIMEOUT_S))) as response:
+                resolved = normalize_url(response.geturl())
+                return resolved or normalized
+        except HTTPError as exc:
+            last_error = exc
+            if method == "HEAD" and int(getattr(exc, "code", 0) or 0) in {400, 403, 405, 429, 500, 501, 503}:
+                continue
+            return normalized
+        except (URLError, ValueError) as exc:
+            last_error = exc
+            if method == "HEAD":
+                continue
+            break
+    _ = last_error
+    return normalized
+
+
+class PooledRedirectResolver:
+    def __init__(
+        self,
+        *,
+        timeout_s: int = DEFAULT_TIMEOUT_S,
+        max_connections: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+    ) -> None:
+        self._timeout_s = max(1, int(timeout_s or DEFAULT_TIMEOUT_S))
+        self._cache: Dict[str, str] = {}
+        self._inflight: Dict[str, threading.Event] = {}
+        self._lock = threading.Lock()
+        self._cache_hits = 0
+        self._resolved_count = 0
+        self._client = None
+        if httpx is not None:
+            try:
+                self._client = httpx.Client(
+                    follow_redirects=True,
+                    headers=DEFAULT_REDIRECT_HEADERS,
+                    timeout=httpx.Timeout(float(self._timeout_s)),
+                    limits=httpx.Limits(
+                        max_keepalive_connections=max(1, int(max_connections or 1)),
+                        max_connections=max(2, int(max_connections or 1) * 2),
+                    ),
+                )
+            except Exception:  # noqa: BLE001
+                self._client = None
+
+    def _resolve_with_client(self, normalized: str) -> str:
+        if self._client is None:
+            return resolve_supported_redirect_url(normalized, timeout_s=self._timeout_s)
+        last_error: Optional[Exception] = None
+        for method in ("HEAD", "GET"):
+            try:
+                response = self._client.request(method, normalized)
+                resolved = normalize_url(str(response.url))
+                return resolved or normalized
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                status_code = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
+                if method == "HEAD" and status_code in {400, 403, 405, 429, 500, 501, 503}:
+                    continue
+                if method == "HEAD":
+                    continue
+                break
+        _ = last_error
+        return normalized
+
+    def resolve(self, url: str) -> str:
+        normalized = normalize_url(url)
+        if not is_supported_redirect_url(normalized):
+            return normalized
+        owner = False
+        wait_event: Optional[threading.Event] = None
+        with self._lock:
+            cached = self._cache.get(normalized)
+            if cached is not None:
+                self._cache_hits += 1
+                return cached
+            wait_event = self._inflight.get(normalized)
+            if wait_event is None:
+                wait_event = threading.Event()
+                self._inflight[normalized] = wait_event
+                owner = True
+        if not owner:
+            wait_event.wait(timeout=float(self._timeout_s))
+            with self._lock:
+                cached = self._cache.get(normalized, normalized)
+                self._cache_hits += 1
+                return cached
+        resolved = self._resolve_with_client(normalized)
+        with self._lock:
+            self._cache[normalized] = resolved
+            if resolved and resolved != normalized:
+                self._resolved_count += 1
+            done_event = self._inflight.pop(normalized, None)
+            if done_event is not None:
+                done_event.set()
+        return resolved
+
+    def snapshot_stats(self) -> Dict[str, int]:
+        with self._lock:
+            return {
+                "cacheHits": int(self._cache_hits),
+                "resolvedCount": int(self._resolved_count),
+            }
+
+    def close(self) -> None:
+        client = self._client
+        self._client = None
+        if client is None:
+            return
+        try:
+            client.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def build_redirect_resolver(
+    *,
+    timeout_s: int = DEFAULT_TIMEOUT_S,
+    max_connections: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+) -> PooledRedirectResolver:
+    return PooledRedirectResolver(timeout_s=timeout_s, max_connections=max_connections)
 
 
 def normalize_country(value: Any) -> str:
@@ -657,6 +825,8 @@ def map_profession(title: Any) -> str:
     lower = norm_text(title)
     if "technical animator" in lower:
         return "technical-animator"
+    if "technical director" in lower or re.search(r"\btd\b", lower):
+        return "technical-director"
     if (
         "technical artist" in lower
         or "tech artist" in lower
@@ -762,15 +932,64 @@ def company_name_candidate_indexes(headers: Sequence[str], primary_idx: int) -> 
     return candidates
 
 
-def is_generic_company_label(value: str) -> bool:
-    return norm_text(value) in {
-        "game",
-        "tech",
-        "game company",
-        "tech company",
-        "gaming company",
-        "technology company",
-    }
+def google_sheets_link_candidate_indexes(headers: Sequence[str], primary_idx: int) -> List[int]:
+    normalized = [norm_text(header) for header in headers]
+    seen = set()
+    candidates: List[int] = []
+
+    def push(index: int) -> None:
+        if index < 0 or index >= len(headers) or index in seen:
+            return
+        seen.add(index)
+        candidates.append(index)
+
+    push(primary_idx)
+    for idx, header in enumerate(normalized):
+        if header in {"job link", "url", "apply", "link", "source/contact", "source / contact", "source", "contact"}:
+            push(idx)
+            continue
+        if any(token in header for token in ("job link", "apply", "source/contact", "source / contact")):
+            push(idx)
+            continue
+        if header == "url":
+            push(idx)
+            continue
+        if header == "link":
+            push(idx)
+            continue
+        if header == "source" or header == "contact":
+            push(idx)
+    return candidates
+
+
+def resolve_google_sheets_job_link(row: Sequence[str], candidate_indexes: Sequence[int]) -> str:
+    for idx in candidate_indexes:
+        if idx < 0 or idx >= len(row):
+            continue
+        raw_value = clean_text(row[idx])
+        if not raw_value:
+            continue
+        if raw_value.lower().startswith("mailto:"):
+            continue
+        if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", raw_value):
+            continue
+        normalized = normalize_url(raw_value)
+        if normalized:
+            return normalized
+    return ""
+
+
+def is_untrustworthy_company_label(value: str) -> bool:
+    return norm_text(value) in UNTRUSTWORTHY_COMPANY_LABELS
+
+
+def normalize_company_value(value: Any) -> str:
+    company = clean_text(value)
+    if not company:
+        return ""
+    if is_untrustworthy_company_label(company):
+        return UNKNOWN_COMPANY_LABEL
+    return company
 
 
 def resolve_company_name(row: Sequence[str], primary_idx: int, candidate_indexes: Sequence[int]) -> str:
@@ -781,11 +1000,12 @@ def resolve_company_name(row: Sequence[str], primary_idx: int, candidate_indexes
         if 0 <= idx < len(row):
             values.append(clean_text(row[idx]))
     for value in values:
-        if value and not is_generic_company_label(value):
+        if value and not is_untrustworthy_company_label(value):
             return value
     for value in values:
-        if value:
-            return value
+        normalized = normalize_company_value(value)
+        if normalized:
+            return normalized
     return ""
 
 
@@ -833,6 +1053,7 @@ def parse_google_sheets_csv(csv_text: str) -> List[RawJob]:
         ["employment", "contract", "job type"],
     )
     link_idx = find_column_index(headers, ["job link", "url", "apply", "link"], ["job link", "url", "apply", "link"])
+    link_candidates = google_sheets_link_candidate_indexes(headers, link_idx)
     sector_idx = find_column_index(
         headers,
         ["sector", "industry", "company type", "company category", "job category"],
@@ -862,7 +1083,7 @@ def parse_google_sheets_csv(csv_text: str) -> List[RawJob]:
                 "country": clean_text(row[country_idx] if 0 <= country_idx < len(row) else default_country),
                 "workType": clean_text(row[location_idx] if 0 <= location_idx < len(row) else "On-site"),
                 "contractType": clean_text(row[contract_idx] if 0 <= contract_idx < len(row) else ""),
-                "jobLink": clean_text(row[link_idx] if 0 <= link_idx < len(row) else ""),
+                "jobLink": resolve_google_sheets_job_link(row, link_candidates),
                 "sector": clean_text(row[sector_idx] if 0 <= sector_idx < len(row) else ""),
             }
         )
@@ -1700,10 +1921,7 @@ def parse_wellfound_html(html_text: str, base_url: str = "https://wellfound.com/
 def default_fetch_text(url: str, timeout_s: int) -> str:
     request = Request(
         url,
-        headers={
-            "User-Agent": "BaluffoJobsFetcher/1.0 (+https://github.com/)",
-            "Accept": "application/json,text/html,text/csv,*/*",
-        },
+        headers=DEFAULT_HTTP_HEADERS,
     )
     try:
         with urlopen(request, timeout=timeout_s) as response:
@@ -1732,10 +1950,7 @@ class AsyncHttpTextFetcher:
         asyncio.set_event_loop(self._loop)
         self._client = httpx.AsyncClient(
             follow_redirects=True,
-            headers={
-                "User-Agent": "BaluffoJobsFetcher/1.0 (+https://github.com/)",
-                "Accept": "application/json,text/html,text/csv,*/*",
-            },
+            headers=DEFAULT_HTTP_HEADERS,
             limits=httpx.Limits(
                 max_keepalive_connections=self._max_connections,
                 max_connections=max(self._max_connections * 2, self._max_connections),
@@ -1834,17 +2049,39 @@ def run_google_sheets_source(
     backoff_s: float,
     sheet_id: str = DEFAULT_GOOGLE_SHEET_ID,
     gid: str = DEFAULT_GOOGLE_SHEET_GID,
+    diagnostics_name: str = "",
 ) -> List[RawJob]:
     errors: List[str] = []
+    details: List[Dict[str, Any]] = []
     for url in google_sheet_candidate_urls(sheet_id, gid):
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            parse_started = time.perf_counter()
             jobs = parse_google_sheets_csv(text)
+            parse_csv_ms = int((time.perf_counter() - parse_started) * 1000)
+            details.append(
+                {
+                    "adapter": "csv",
+                    "studio": "community_sheet",
+                    "name": diagnostics_name or f"google_sheets:{sheet_id}:{gid}",
+                    "status": "ok" if jobs else "error",
+                    "fetchedCount": len(jobs),
+                    "keptCount": len(jobs),
+                    "error": "" if jobs else "empty/invalid CSV",
+                    "stats": {
+                        "parse_csv_ms": parse_csv_ms,
+                    },
+                }
+            )
             if jobs:
+                if diagnostics_name:
+                    set_source_diagnostics(diagnostics_name, adapter="csv", studio="community_sheet", details=details, partial_errors=[])
                 return jobs
             errors.append(f"{url}: empty/invalid CSV")
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{url}: {exc}")
+    if diagnostics_name:
+        set_source_diagnostics(diagnostics_name, adapter="csv", studio="community_sheet", details=details, partial_errors=errors)
     raise RuntimeError("; ".join(errors) if errors else "Google Sheets source failed")
 
 
@@ -2827,7 +3064,6 @@ def run_scrapy_static_source(
                 "studio": studio_name,
                 "pages": pages,
                 "nlPriority": bool(source.get("nlPriority", False)),
-                "remoteFriendly": bool(source.get("remoteFriendly", True)),
             },
             "runtime": {
                 "timeout_s": int(timeout_s),
@@ -3013,6 +3249,8 @@ def run_static_studio_pages_source(
     sources: Optional[List[Dict[str, Any]]] = None,
     shard: Optional[str] = None,
     diagnostics_name: str = "static_studio_pages",
+    static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
+    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> List[RawJob]:
     jobs: List[RawJob] = []
     errors: List[str] = []
@@ -3030,11 +3268,39 @@ def run_static_studio_pages_source(
     }
 
     static_profile = norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE")) or DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
+    static_detail_concurrency = max(1, int(static_detail_concurrency or DEFAULT_STATIC_DETAIL_CONCURRENCY))
     default_path_tokens = ["/job/", "/jobs/", "/jobdetail/"]
     default_query_keys = ["job_id"]
     if static_profile == "broad":
         default_path_tokens.extend(["/career/", "/careers/", "/position/", "/positions/"])
         default_query_keys.extend(["gh_jid", "jid", "jobid"])
+
+    def source_detail_concurrency(source_key: str) -> int:
+        entry = (source_state_rows or {}).get(source_key) if isinstance(source_state_rows, dict) else {}
+        if not isinstance(entry, dict):
+            return static_detail_concurrency
+        pages_visited = int(entry.get("lastDetailPagesVisited") or 0)
+        duration_ms = int(entry.get("lastDurationMs") or 0)
+        if pages_visited >= 40 or duration_ms >= 15_000:
+            return max(static_detail_concurrency, 8)
+        return static_detail_concurrency
+
+    fetch_cache: Dict[str, str] = {}
+    fetch_cache_lock = threading.Lock()
+
+    def fetch_html_cached(url: str) -> Tuple[str, bool]:
+        normalized = normalize_url(url) or clean_text(url)
+        if not normalized:
+            return "", False
+        with fetch_cache_lock:
+            cached = fetch_cache.get(normalized)
+        if cached is not None:
+            return cached, True
+        fetch_url = clean_text(url) or normalized
+        text = fetch_with_retries(fetch_url, fetch_text, timeout_s, retries, backoff_s)
+        with fetch_cache_lock:
+            fetch_cache[normalized] = text
+        return text, False
 
     def is_probable_job_detail_url(candidate_url: str, source_row: Dict[str, Any]) -> bool:
         parsed = urlparse(candidate_url)
@@ -3081,16 +3347,110 @@ def run_static_studio_pages_source(
                 "staticDuplicateLinkRejected": 0,
                 "staticDetailParseEmpty": 0,
             },
+            "stats": {
+                "candidate_links_found": 0,
+                "detail_pages_visited": 0,
+                "jobs_emitted": 0,
+                "fetch_cache_hits": 0,
+                "detail_yield_percent": 0,
+                "listing_fetch_ms": 0,
+                "candidate_extraction_ms": 0,
+                "detail_fetch_ms": 0,
+            },
         }
         kept_before = len(jobs)
         link_rejections: Counter[str] = Counter()
+        stats = entry_report["stats"]
+
+        def add_detail_link(
+            detail_links: List[Tuple[str, str]],
+            detail_seen: set[str],
+            candidate_url: str,
+            anchor_text: str,
+            *,
+            enforce_heuristics: bool,
+        ) -> None:
+            absolute = normalize_url(urljoin(page_url, clean_text(candidate_url)))
+            if not absolute:
+                link_rejections["non_job_url"] += 1
+                return
+            if enforce_heuristics and not is_probable_job_detail_url(absolute, source):
+                link_rejections["non_job_url"] += 1
+                return
+            if absolute in detail_seen or absolute in seen_links:
+                link_rejections["duplicate_link"] += 1
+                return
+            detail_seen.add(absolute)
+            detail_links.append((absolute, clean_text(anchor_text)))
+
+        def process_detail_link(detail: str, detail_title: str) -> Dict[str, Any]:
+            cache_hit = False
+            fetch_started = time.perf_counter()
+            detail_html, cache_hit = fetch_html_cached(detail)
+            fetch_ms = int((time.perf_counter() - fetch_started) * 1000)
+
+            parse_started = time.perf_counter()
+            detail_jobs = parse_jobpostings_from_html(
+                detail_html,
+                base_url=detail,
+                fallback_company=company,
+                fallback_source_id_prefix=f"static:{source_name}",
+            )
+            parse_ms = int((time.perf_counter() - parse_started) * 1000)
+
+            rows: List[RawJob] = []
+            parse_empty = False
+            if detail_jobs:
+                for row in detail_jobs:
+                    row["adapter"] = "static"
+                    row["studio"] = clean_text(source.get("studio")) or company or source_name
+                    rows.append(row)
+            else:
+                parse_empty = True
+                path_parts = [part for part in urlparse(detail).path.rstrip("/").split("/") if part]
+                slug = path_parts[-1] if path_parts else ""
+                if slug.lower() == "apply" and len(path_parts) >= 2:
+                    slug = path_parts[-2]
+                slug = re.sub(r"_[Rr]\d+(?:-\d+)?$", "", slug)
+                title = strip_html_text(re.sub(r"[-_]+", " ", slug))
+                parsed_title = clean_text(detail_title)
+                if parsed_title and parsed_title.lower() not in ignored_link_titles:
+                    title = parsed_title
+                if title and not re.fullmatch(r"\d+", title):
+                    rows.append(
+                        {
+                            "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
+                            "title": title.title(),
+                            "company": company,
+                            "city": "",
+                            "country": "Unknown",
+                            "workType": "",
+                            "contractType": "",
+                            "jobLink": detail,
+                            "sector": "Game",
+                            "postedAt": "",
+                            "adapter": "static",
+                            "studio": clean_text(source.get("studio")) or company or source_name,
+                        }
+                    )
+            return {
+                "rows": rows,
+                "parseEmpty": parse_empty,
+                "fetchMs": fetch_ms,
+                "parseMs": parse_ms,
+                "cacheHit": cache_hit,
+            }
 
         for page in pages:
             page_url = clean_text(page)
             if not page_url:
                 continue
             try:
-                html = fetch_with_retries(page_url, fetch_text, timeout_s, retries, backoff_s)
+                listing_fetch_started = time.perf_counter()
+                html, cache_hit = fetch_html_cached(page_url)
+                stats["listing_fetch_ms"] += int((time.perf_counter() - listing_fetch_started) * 1000)
+                if cache_hit:
+                    stats["fetch_cache_hits"] += 1
                 detail_links: List[Tuple[str, str]] = []
                 detail_seen = set()
                 listing_htmls = [html]
@@ -3107,6 +3467,7 @@ def run_static_studio_pages_source(
                 except Exception as exc:  # noqa: BLE001
                     errors.append(f"static:{source_name}:{page_url}: dynamic-listing-fetch failed: {exc}")
 
+                extraction_started = time.perf_counter()
                 for listing_html in listing_htmls:
                     parsed = parse_jobpostings_from_html(
                         listing_html,
@@ -3135,94 +3496,53 @@ def run_static_studio_pages_source(
                             continue
                         href = clean_text(link_match.group(1))
                         anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", link_match.group(2) or ""))
-                        absolute = urljoin(page_url, clean_text(href))
-                        if absolute in detail_seen:
-                            link_rejections["duplicate_link"] += 1
-                            continue
-                        detail_seen.add(absolute)
-                        detail_links.append((absolute, anchor_text))
+                        add_detail_link(detail_links, detail_seen, href, anchor_text, enforce_heuristics=False)
 
                     for match in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', listing_html):
                         href = clean_text(match.group(1))
                         anchor_inner = match.group(2) or ""
                         anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner))
-                        absolute = urljoin(page_url, clean_text(href))
-                        if not is_probable_job_detail_url(absolute, source):
-                            link_rejections["non_job_url"] += 1
-                            continue
-                        if absolute in detail_seen:
-                            link_rejections["duplicate_link"] += 1
-                            continue
-                        detail_seen.add(absolute)
-                        detail_links.append((absolute, anchor_text))
+                        add_detail_link(detail_links, detail_seen, href, anchor_text, enforce_heuristics=True)
                     # Some career sites embed job links in JSON payloads instead of anchor hrefs.
                     for raw in re.findall(r'https?://[^\s"\'<>]+', listing_html, flags=re.I):
-                        absolute = clean_text(raw)
-                        if not is_probable_job_detail_url(absolute, source):
-                            link_rejections["non_job_url"] += 1
-                            continue
-                        if absolute in detail_seen:
-                            link_rejections["duplicate_link"] += 1
-                            continue
-                        detail_seen.add(absolute)
-                        detail_links.append((absolute, ""))
+                        add_detail_link(detail_links, detail_seen, clean_text(raw), "", enforce_heuristics=True)
+                stats["candidate_links_found"] += len(detail_links)
+                stats["candidate_extraction_ms"] += int((time.perf_counter() - extraction_started) * 1000)
 
-                for detail, detail_title in detail_links:
-                    if detail in seen_links:
-                        continue
-                    try:
-                        detail_html = fetch_with_retries(detail, fetch_text, timeout_s, retries, backoff_s)
-                        detail_jobs = parse_jobpostings_from_html(
-                            detail_html,
-                            base_url=detail,
-                            fallback_company=company,
-                            fallback_source_id_prefix=f"static:{source_name}",
-                        )
-                        if detail_jobs:
-                            for row in detail_jobs:
-                                link = normalize_url(row.get("jobLink"))
-                                if not link or link in seen_links:
-                                    continue
-                                seen_links.add(link)
-                                row["adapter"] = "static"
-                                row["studio"] = clean_text(source.get("studio")) or company or source_name
-                                jobs.append(row)
+                if not detail_links:
+                    continue
+                source_key = diagnostics_name if len(selected_sources) == 1 else source_name
+                detail_fetch_started = time.perf_counter()
+                with ThreadPoolExecutor(max_workers=source_detail_concurrency(source_key)) as executor:
+                    future_map = {
+                        executor.submit(process_detail_link, detail, detail_title): (detail, detail_title)
+                        for detail, detail_title in detail_links
+                    }
+                    for future in as_completed(future_map):
+                        detail, _detail_title = future_map[future]
+                        stats["detail_pages_visited"] += 1
+                        try:
+                            detail_result = future.result()
+                        except Exception as exc:  # noqa: BLE001
+                            errors.append(f"static:{source_name}:{detail}: {exc}")
                             continue
-                        link_rejections["detail_parse_empty"] += 1
-                        path_parts = [part for part in urlparse(detail).path.rstrip("/").split("/") if part]
-                        slug = path_parts[-1] if path_parts else ""
-                        if slug.lower() == "apply" and len(path_parts) >= 2:
-                            slug = path_parts[-2]
-                        slug = re.sub(r"_[Rr]\d+(?:-\d+)?$", "", slug)
-                        title = strip_html_text(re.sub(r"[-_]+", " ", slug))
-                        parsed_title = clean_text(detail_title)
-                        if parsed_title and parsed_title.lower() not in ignored_link_titles:
-                            title = parsed_title
-                        if title:
-                            if re.fullmatch(r"\d+", title):
+                        stats["fetch_cache_hits"] += 1 if detail_result.get("cacheHit") else 0
+                        stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
+                        if detail_result.get("parseEmpty"):
+                            link_rejections["detail_parse_empty"] += 1
+                        for row in detail_result.get("rows") or []:
+                            link = normalize_url(row.get("jobLink"))
+                            if not link or link in seen_links:
                                 continue
-                            seen_links.add(detail)
-                            jobs.append(
-                                {
-                                    "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
-                                    "title": title.title(),
-                                    "company": company,
-                                    "city": "",
-                                    "country": "Unknown",
-                                    "workType": "",
-                                    "contractType": "",
-                                    "jobLink": detail,
-                                    "sector": "Game",
-                                    "postedAt": "",
-                                    "adapter": "static",
-                                    "studio": clean_text(source.get("studio")) or company or source_name,
-                                }
-                            )
-                    except Exception as exc:  # noqa: BLE001
-                        errors.append(f"static:{source_name}:{detail}: {exc}")
+                            seen_links.add(link)
+                            jobs.append(row)
+                stats["detail_fetch_ms"] += max(0, int((time.perf_counter() - detail_fetch_started) * 1000) - int(stats["detail_fetch_ms"] or 0))
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"static:{source_name}:{page_url}: {exc}")
         entry_report["keptCount"] = max(0, len(jobs) - kept_before)
+        stats["jobs_emitted"] = int(entry_report["keptCount"])
+        if int(stats["detail_pages_visited"] or 0) > 0:
+            stats["detail_yield_percent"] = int(round((entry_report["keptCount"] / stats["detail_pages_visited"]) * 100))
         entry_report["loss"] = {
             "staticNonJobUrlRejected": int(link_rejections.get("non_job_url", 0)),
             "staticDuplicateLinkRejected": int(link_rejections.get("duplicate_link", 0)),
@@ -3260,6 +3580,8 @@ def run_static_source_entry_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
+    static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
+    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
@@ -3268,10 +3590,20 @@ def run_static_source_entry_source(
         backoff_s=backoff_s,
         sources=[source_row],
         diagnostics_name=diagnostics_name,
+        static_detail_concurrency=static_detail_concurrency,
+        source_state_rows=source_state_rows,
     )
 
 
-def run_static_studio_pages_a_i_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_static_studio_pages_a_i_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
+    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -3279,6 +3611,8 @@ def run_static_studio_pages_a_i_source(*, fetch_text: Callable[[str, int], str],
         backoff_s=backoff_s,
         shard="a_i",
         diagnostics_name="static_studio_pages_a_i",
+        static_detail_concurrency=static_detail_concurrency,
+        source_state_rows=source_state_rows,
     )
 
 
@@ -3300,6 +3634,8 @@ def build_static_source_loaders() -> List[Tuple[str, SourceLoader]]:
             backoff_s: float,
             _row: Dict[str, Any] = row,
             _loader_name: str = loader_name,
+            static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
+            source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
         ) -> List[RawJob]:
             return run_static_source_entry_source(
                 source_row=_row,
@@ -3308,13 +3644,23 @@ def build_static_source_loaders() -> List[Tuple[str, SourceLoader]]:
                 timeout_s=timeout_s,
                 retries=retries,
                 backoff_s=backoff_s,
+                static_detail_concurrency=static_detail_concurrency,
+                source_state_rows=source_state_rows,
             )
 
         loaders.append((loader_name, _loader))
     return loaders
 
 
-def run_static_studio_pages_j_r_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_static_studio_pages_j_r_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
+    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -3322,10 +3668,20 @@ def run_static_studio_pages_j_r_source(*, fetch_text: Callable[[str, int], str],
         backoff_s=backoff_s,
         shard="j_r",
         diagnostics_name="static_studio_pages_j_r",
+        static_detail_concurrency=static_detail_concurrency,
+        source_state_rows=source_state_rows,
     )
 
 
-def run_static_studio_pages_s_z_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_static_studio_pages_s_z_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
+    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -3333,6 +3689,8 @@ def run_static_studio_pages_s_z_source(*, fetch_text: Callable[[str, int], str],
         backoff_s=backoff_s,
         shard="s_z",
         diagnostics_name="static_studio_pages_s_z",
+        static_detail_concurrency=static_detail_concurrency,
+        source_state_rows=source_state_rows,
     )
 
 
@@ -3607,17 +3965,35 @@ def run_personio_sources_source(*, fetch_text: Callable[[str, int], str], timeou
     return []
 
 
-def canonicalize_job_with_reason(raw: Any, *, source: str, fetched_at: str) -> Tuple[Optional[RawJob], str]:
+def canonicalize_job_with_reason(
+    raw: Any,
+    *,
+    source: str,
+    fetched_at: str,
+    resolve_redirect_url: Optional[Callable[[str], str]] = None,
+    resolved_job_link: Any = None,
+) -> Tuple[Optional[RawJob], str]:
     if not isinstance(raw, dict):
         return None, "invalid_payload"
     title = clean_text(raw.get("title"))
     company = clean_text(raw.get("company"))
     if not title:
         return None, "missing_title"
+    company = normalize_company_value(company)
     if not company:
         return None, "missing_company"
-    normalized_link = normalize_url(raw.get("jobLink"))
+    normalized_link_source = raw.get("jobLink") if resolved_job_link is None else resolved_job_link
+    normalized_link = normalize_url(normalized_link_source)
+    if resolved_job_link is None and normalized_link and callable(resolve_redirect_url):
+        try:
+            resolved_link = normalize_url(resolve_redirect_url(normalized_link))
+        except Exception:  # noqa: BLE001
+            resolved_link = normalized_link
+        if resolved_link:
+            normalized_link = resolved_link
     raw_link = clean_text(raw.get("jobLink"))
+    if not normalized_link:
+        return None, "missing_job_link"
     if env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL) and raw_link and not normalized_link:
         return None, "invalid_url"
 
@@ -3706,9 +4082,90 @@ def canonicalize_job_with_reason(raw: Any, *, source: str, fetched_at: str) -> T
     return normalized, ""
 
 
-def canonicalize_job(raw: RawJob, *, source: str, fetched_at: str) -> Optional[RawJob]:
-    normalized, _reason = canonicalize_job_with_reason(raw, source=source, fetched_at=fetched_at)
+def canonicalize_job(
+    raw: RawJob,
+    *,
+    source: str,
+    fetched_at: str,
+    resolve_redirect_url: Optional[Callable[[str], str]] = None,
+    resolved_job_link: Any = None,
+) -> Optional[RawJob]:
+    normalized, _reason = canonicalize_job_with_reason(
+        raw,
+        source=source,
+        fetched_at=fetched_at,
+        resolve_redirect_url=resolve_redirect_url,
+        resolved_job_link=resolved_job_link,
+    )
     return normalized
+
+
+def canonicalize_google_sheets_rows(
+    raw_rows: Sequence[RawJob],
+    *,
+    source: str,
+    fetched_at: str,
+    redirect_resolver: Optional[PooledRedirectResolver] = None,
+    redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+) -> Tuple[List[RawJob], Counter, Dict[str, int]]:
+    redirect_concurrency = max(1, int(redirect_concurrency or DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY))
+    redirect_candidates: List[Tuple[int, str]] = []
+    resolved_links: Dict[int, str] = {}
+    for idx, raw in enumerate(raw_rows):
+        normalized_link = normalize_url((raw or {}).get("jobLink"))
+        if normalized_link and is_supported_redirect_url(normalized_link):
+            redirect_candidates.append((idx, normalized_link))
+
+    snapshot_stats = getattr(redirect_resolver, "snapshot_stats", None)
+    resolver_stats_before = snapshot_stats() if callable(snapshot_stats) else {}
+    redirect_started = time.perf_counter()
+    resolve_fn = getattr(redirect_resolver, "resolve", None)
+    if redirect_candidates and callable(resolve_fn):
+        def _resolve(item: Tuple[int, str]) -> Tuple[int, str]:
+            row_idx, url = item
+            return row_idx, resolve_fn(url)
+
+        if redirect_concurrency <= 1 or len(redirect_candidates) <= 1:
+            for item in redirect_candidates:
+                row_idx, resolved = _resolve(item)
+                resolved_links[row_idx] = resolved
+        else:
+            with ThreadPoolExecutor(max_workers=min(redirect_concurrency, len(redirect_candidates))) as executor:
+                future_map = {executor.submit(_resolve, item): item[0] for item in redirect_candidates}
+                for future in as_completed(future_map):
+                    row_idx, resolved = future.result()
+                    resolved_links[row_idx] = resolved
+    redirect_resolve_ms = int((time.perf_counter() - redirect_started) * 1000)
+    resolver_stats_after = snapshot_stats() if callable(snapshot_stats) else {}
+
+    canonical_started = time.perf_counter()
+    canonical_batch: List[RawJob] = []
+    drop_reasons: Counter[str] = Counter()
+    for idx, raw in enumerate(raw_rows):
+        normalized, drop_reason = canonicalize_job_with_reason(
+            raw,
+            source=source,
+            fetched_at=fetched_at,
+            resolved_job_link=resolved_links.get(idx),
+        )
+        if normalized:
+            canonical_batch.append(normalized)
+        elif drop_reason:
+            drop_reasons[drop_reason] += 1
+    canonicalize_ms = int((time.perf_counter() - canonical_started) * 1000)
+
+    redirect_resolved = sum(
+        1
+        for idx, original in redirect_candidates
+        if normalize_url(resolved_links.get(idx)) and normalize_url(resolved_links.get(idx)) != normalize_url(original)
+    )
+    return canonical_batch, drop_reasons, {
+        "redirect_candidates": len(redirect_candidates),
+        "redirect_resolved": int(redirect_resolved),
+        "redirect_cache_hits": max(0, int(resolver_stats_after.get("cacheHits", 0)) - int(resolver_stats_before.get("cacheHits", 0))),
+        "redirect_resolve_ms": int(redirect_resolve_ms),
+        "canonicalize_ms": int(canonicalize_ms),
+    }
 
 
 def compute_quality_score(job: RawJob) -> int:
@@ -3811,12 +4268,27 @@ def record_richness(job: RawJob) -> int:
     return sum(1 for field in fields if clean_text(job.get(field)))
 
 
+def company_preference_score(job: RawJob) -> int:
+    company = clean_text(job.get("company"))
+    if not company:
+        return 0
+    if norm_text(company) in {norm_text(UNKNOWN_COMPANY_LABEL), "unknown"}:
+        return 1
+    return 2
+
+
 def choose_base_record(left: RawJob, right: RawJob) -> Tuple[RawJob, RawJob]:
     left_rich = record_richness(left)
     right_rich = record_richness(right)
     if right_rich > left_rich:
         return right, left
     if left_rich > right_rich:
+        return left, right
+    left_company_score = company_preference_score(left)
+    right_company_score = company_preference_score(right)
+    if right_company_score > left_company_score:
+        return right, left
+    if left_company_score > right_company_score:
         return left, right
     if posted_ts(right.get("postedAt")) > posted_ts(left.get("postedAt")):
         return right, left
@@ -3829,6 +4301,8 @@ def merge_records(existing: RawJob, candidate: RawJob) -> RawJob:
     for field in OUTPUT_FIELDS:
         if not clean_text(merged.get(field)) and clean_text(other.get(field)):
             merged[field] = other[field]
+    if company_preference_score(other) > company_preference_score(merged):
+        merged["company"] = clean_text(other.get("company"))
     if posted_ts(other.get("postedAt")) > posted_ts(merged.get("postedAt")):
         merged["postedAt"] = to_iso(other.get("postedAt"))
 
@@ -4005,6 +4479,7 @@ def default_source_loaders(
             backoff_s: float,
             _sheet_id: str = sheet_id,
             _gid: str = gid,
+            _source_name: str = source_name,
         ) -> List[RawJob]:
             return run_google_sheets_source(
                 fetch_text=fetch_text,
@@ -4013,6 +4488,7 @@ def default_source_loaders(
                 backoff_s=backoff_s,
                 sheet_id=_sheet_id,
                 gid=_gid,
+                diagnostics_name=_source_name,
             )
 
         google_sheet_loaders[source_name] = _loader
@@ -4259,6 +4735,12 @@ def normalize_source_state_payload(payload: Dict[str, Any], *, updated_at: str =
                 "lastDurationMs": _clamped_int(raw_entry.get("lastDurationMs"), 0, 0),
                 "lastFetchedCount": _clamped_int(raw_entry.get("lastFetchedCount"), 0, 0),
                 "lastKeptCount": _clamped_int(raw_entry.get("lastKeptCount"), 0, 0),
+                "lastCandidateLinksFound": _clamped_int(raw_entry.get("lastCandidateLinksFound"), 0, 0),
+                "lastDetailPagesVisited": _clamped_int(raw_entry.get("lastDetailPagesVisited"), 0, 0),
+                "lastDetailYieldPct": _clamped_int(raw_entry.get("lastDetailYieldPct"), 0, 0),
+                "lastRedirectCandidates": _clamped_int(raw_entry.get("lastRedirectCandidates"), 0, 0),
+                "lastRedirectResolved": _clamped_int(raw_entry.get("lastRedirectResolved"), 0, 0),
+                "lastRedirectCacheHits": _clamped_int(raw_entry.get("lastRedirectCacheHits"), 0, 0),
                 "lastSuccessAt": clean_text(raw_entry.get("lastSuccessAt")),
                 "lastFingerprint": clean_text(raw_entry.get("lastFingerprint")),
                 "consecutiveFailures": _clamped_int(raw_entry.get("consecutiveFailures"), 0, 0),
@@ -4266,7 +4748,18 @@ def normalize_source_state_payload(payload: Dict[str, Any], *, updated_at: str =
                 "lastFailureAt": clean_text(raw_entry.get("lastFailureAt")),
                 "lastError": clean_text(raw_entry.get("lastError")),
             }
-            out_rows[name] = {key: value for key, value in entry.items() if value not in {"", None}}
+            raw_stage_timings = raw_entry.get("lastStageTimingsMs") if isinstance(raw_entry.get("lastStageTimingsMs"), dict) else {}
+            clean_stage_timings = {
+                "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
+                "parseCsv": _clamped_int(raw_stage_timings.get("parseCsv"), 0, 0),
+                "candidateExtraction": _clamped_int(raw_stage_timings.get("candidateExtraction"), 0, 0),
+                "detailFetch": _clamped_int(raw_stage_timings.get("detailFetch"), 0, 0),
+                "redirectResolve": _clamped_int(raw_stage_timings.get("redirectResolve"), 0, 0),
+                "canonicalization": _clamped_int(raw_stage_timings.get("canonicalization"), 0, 0),
+            }
+            if any(clean_stage_timings.values()):
+                entry["lastStageTimingsMs"] = clean_stage_timings
+            out_rows[name] = {key: value for key, value in entry.items() if value != "" and value is not None}
     return {
         "schemaVersion": SCHEMA_VERSION,
         "updatedAt": clean_text(src.get("updatedAt")) or clean_text(updated_at) or now_iso(),
@@ -4373,6 +4866,7 @@ def apply_job_lifecycle_state(
     lifecycle_rows: Dict[str, Dict[str, Any]],
     finished_at: str,
     allow_mark_missing: bool,
+    eligible_missing_sources: Optional[set[str]] = None,
     remove_to_archive_days: int = LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS,
     archive_retention_days: int = LIFECYCLE_ARCHIVE_RETENTION_DAYS,
 ) -> Tuple[List[RawJob], Dict[str, Dict[str, Any]], Dict[str, int]]:
@@ -4403,11 +4897,23 @@ def apply_job_lifecycle_state(
             "postedAt": to_iso(row.get("postedAt")),
         }
 
-    if allow_mark_missing:
+    mark_missing_for_all = bool(allow_mark_missing)
+    eligible_sources = {
+        clean_text(source_name)
+        for source_name in (eligible_missing_sources or set())
+        if clean_text(source_name)
+    }
+    should_mark_missing = mark_missing_for_all or bool(eligible_sources)
+
+    if should_mark_missing:
         now_dt = parse_datetime(finished_at) or datetime.now(timezone.utc)
         for key, entry in list(next_rows.items()):
             if key in seen_keys:
                 continue
+            if not mark_missing_for_all:
+                entry_source = clean_text(entry.get("source"))
+                if entry_source not in eligible_sources:
+                    continue
             status = norm_text(entry.get("status")) or "active"
             removed_at = clean_text(entry.get("removedAt")) or finished_at
             if status == "active":
@@ -4439,12 +4945,16 @@ def apply_job_lifecycle_state(
 
 def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count: int) -> Dict[str, Any]:
     src = runtime if isinstance(runtime, dict) else {}
-    return {
+    normalized = {
         "maxWorkers": _clamped_int(src.get("maxWorkers"), 1, 1),
         "maxPerDomain": _clamped_int(src.get("maxPerDomain"), 1, 1),
         "fetchStrategy": clean_text(src.get("fetchStrategy")) or DEFAULT_FETCH_STRATEGY,
         "fetchClient": clean_text(src.get("fetchClient")) or "urllib",
         "adapterHttpConcurrency": _clamped_int(src.get("adapterHttpConcurrency"), DEFAULT_ADAPTER_HTTP_CONCURRENCY, 1),
+        "staticDetailConcurrency": _clamped_int(src.get("staticDetailConcurrency"), DEFAULT_STATIC_DETAIL_CONCURRENCY, 1),
+        "googleSheetsRedirectConcurrency": _clamped_int(
+            src.get("googleSheetsRedirectConcurrency"), DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY, 1
+        ),
         "seedFromExistingOutput": bool(src.get("seedFromExistingOutput")),
         "sourceTtlMinutes": _clamped_int(src.get("sourceTtlMinutes"), 0, 0),
         "respectSourceCadence": bool(src.get("respectSourceCadence")),
@@ -4475,6 +4985,21 @@ def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count:
         ),
         "selectedSourceCount": _clamped_int(src.get("selectedSourceCount"), selected_source_count, 0),
     }
+    slowest_sources = src.get("slowestSources")
+    if isinstance(slowest_sources, list):
+        normalized["slowestSources"] = [
+            {
+                "name": clean_text(item.get("name")),
+                "adapter": clean_text(item.get("adapter")),
+                "durationMs": _clamped_int(item.get("durationMs"), 0, 0),
+                "keptCount": _clamped_int(item.get("keptCount"), 0, 0),
+                "detailPagesVisited": _clamped_int(item.get("detailPagesVisited"), 0, 0),
+                "detailYieldPct": _clamped_int(item.get("detailYieldPct"), 0, 0),
+            }
+            for item in slowest_sources
+            if isinstance(item, dict) and clean_text(item.get("name"))
+        ][:10]
+    return normalized
 
 
 def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -4491,6 +5016,7 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
             "canonicalDropReasons": {
                 "missing_title": _clamped_int(drop_reasons.get("missing_title"), 0, 0),
                 "missing_company": _clamped_int(drop_reasons.get("missing_company"), 0, 0),
+                "missing_job_link": _clamped_int(drop_reasons.get("missing_job_link"), 0, 0),
                 "invalid_url": _clamped_int(drop_reasons.get("invalid_url"), 0, 0),
                 "invalid_payload": _clamped_int(drop_reasons.get("invalid_payload"), 0, 0),
             },
@@ -4513,6 +5039,17 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "error": clean_text(src.get("error")),
         "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
     }
+    raw_stage_timings = src.get("stageTimingsMs") if isinstance(src.get("stageTimingsMs"), dict) else {}
+    clean_stage_timings = {
+        "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
+        "parseCsv": _clamped_int(raw_stage_timings.get("parseCsv"), 0, 0),
+        "candidateExtraction": _clamped_int(raw_stage_timings.get("candidateExtraction"), 0, 0),
+        "detailFetch": _clamped_int(raw_stage_timings.get("detailFetch"), 0, 0),
+        "redirectResolve": _clamped_int(raw_stage_timings.get("redirectResolve"), 0, 0),
+        "canonicalization": _clamped_int(raw_stage_timings.get("canonicalization"), 0, 0),
+    }
+    if any(clean_stage_timings.values()):
+        normalized["stageTimingsMs"] = clean_stage_timings
     exclusion_reason = clean_text(src.get("exclusionReason"))
     if exclusion_reason:
         normalized["exclusionReason"] = exclusion_reason
@@ -4552,6 +5089,16 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
                         "candidate_links_found": _clamped_int(stats.get("candidate_links_found"), 0, 0),
                         "detail_pages_visited": _clamped_int(stats.get("detail_pages_visited"), 0, 0),
                         "jobs_emitted": _clamped_int(stats.get("jobs_emitted"), 0, 0),
+                        "fetch_cache_hits": _clamped_int(stats.get("fetch_cache_hits"), 0, 0),
+                        "detail_yield_percent": _clamped_int(stats.get("detail_yield_percent"), 0, 0),
+                        "redirect_candidates": _clamped_int(stats.get("redirect_candidates"), 0, 0),
+                        "redirect_resolved": _clamped_int(stats.get("redirect_resolved"), 0, 0),
+                        "redirect_cache_hits": _clamped_int(stats.get("redirect_cache_hits"), 0, 0),
+                        "parse_csv_ms": _clamped_int(stats.get("parse_csv_ms"), 0, 0),
+                        "listing_fetch_ms": _clamped_int(stats.get("listing_fetch_ms"), 0, 0),
+                        "candidate_extraction_ms": _clamped_int(stats.get("candidate_extraction_ms"), 0, 0),
+                        "detail_fetch_ms": _clamped_int(stats.get("detail_fetch_ms"), 0, 0),
+                        "redirect_resolve_ms": _clamped_int(stats.get("redirect_resolve_ms"), 0, 0),
                         "jobs_rejected_validation": _clamped_int(stats.get("jobs_rejected_validation"), 0, 0),
                         "finish_reason": clean_text(stats.get("finish_reason")),
                     }
@@ -4760,6 +5307,28 @@ def update_source_state_rows(
         entry["lastDurationMs"] = int(report.get("durationMs") or 0)
         entry["lastFetchedCount"] = int(report.get("fetchedCount") or 0)
         entry["lastKeptCount"] = int(report.get("keptCount") or 0)
+        details = report.get("details") if isinstance(report.get("details"), list) else []
+        static_detail = details[0] if len(details) == 1 and isinstance(details[0], dict) else {}
+        static_stats = static_detail.get("stats") if isinstance(static_detail, dict) and isinstance(static_detail.get("stats"), dict) else {}
+        entry["lastCandidateLinksFound"] = int(static_stats.get("candidate_links_found") or 0)
+        entry["lastDetailPagesVisited"] = int(static_stats.get("detail_pages_visited") or 0)
+        entry["lastDetailYieldPct"] = int(static_stats.get("detail_yield_percent") or 0)
+        entry["lastRedirectCandidates"] = int(static_stats.get("redirect_candidates") or 0)
+        entry["lastRedirectResolved"] = int(static_stats.get("redirect_resolved") or 0)
+        entry["lastRedirectCacheHits"] = int(static_stats.get("redirect_cache_hits") or 0)
+        stage_timings = report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
+        clean_stage_timings = {
+            "listingFetch": int(stage_timings.get("listingFetch") or 0),
+            "parseCsv": int(stage_timings.get("parseCsv") or 0),
+            "candidateExtraction": int(stage_timings.get("candidateExtraction") or 0),
+            "detailFetch": int(stage_timings.get("detailFetch") or 0),
+            "redirectResolve": int(stage_timings.get("redirectResolve") or 0),
+            "canonicalization": int(stage_timings.get("canonicalization") or 0),
+        }
+        if any(clean_stage_timings.values()):
+            entry["lastStageTimingsMs"] = clean_stage_timings
+        else:
+            entry.pop("lastStageTimingsMs", None)
         if entry["lastStatus"] == "ok":
             entry["lastSuccessAt"] = finished_at
             reported_fingerprint = clean_text(report.get("sourceFingerprint"))
@@ -4804,6 +5373,7 @@ def run_pipeline(
     max_per_domain: int = 2,
     fetch_strategy: str = DEFAULT_FETCH_STRATEGY,
     adapter_http_concurrency: int = DEFAULT_ADAPTER_HTTP_CONCURRENCY,
+    google_sheets_redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
     respect_source_cadence: bool = False,
     hot_source_cadence_minutes: int = DEFAULT_HOT_SOURCE_CADENCE_MINUTES,
     cold_source_cadence_minutes: int = DEFAULT_COLD_SOURCE_CADENCE_MINUTES,
@@ -4813,6 +5383,7 @@ def run_pipeline(
     social_enabled: bool = False,
     social_config_path: Optional[Path] = None,
     social_lookback_minutes: int = DEFAULT_SOCIAL_LOOKBACK_MINUTES,
+    static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
     show_progress: bool = True,
     selection_exclusions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
@@ -4840,12 +5411,18 @@ def run_pipeline(
     max_workers = max(1, int(max_workers or 1))
     max_per_domain = max(1, int(max_per_domain or 1))
     adapter_http_concurrency = max(1, int(adapter_http_concurrency or 1))
+    google_sheets_redirect_concurrency = max(1, int(google_sheets_redirect_concurrency or 1))
+    static_detail_concurrency = max(1, int(static_detail_concurrency or 1))
     hot_source_cadence_minutes = max(1, int(hot_source_cadence_minutes or 1))
     cold_source_cadence_minutes = max(1, int(cold_source_cadence_minutes or 1))
     fetch_text_impl, fetch_client, async_fetcher = resolve_fetch_text_impl(
         fetch_text=fetch_text,
         fetch_strategy=fetch_strategy,
         adapter_http_concurrency=adapter_http_concurrency,
+    )
+    redirect_resolver = build_redirect_resolver(
+        timeout_s=timeout_s,
+        max_connections=google_sheets_redirect_concurrency,
     )
     source_state_rows = read_source_state(source_state_path)
     lifecycle_rows = read_job_lifecycle_state(lifecycle_state_path)
@@ -4911,6 +5488,15 @@ def run_pipeline(
             selected_loaders = default_source_loaders()
     else:
         selected_loaders = list(source_loaders)
+    def _source_priority(item: Tuple[str, SourceLoader]) -> Tuple[int, int]:
+        source_name = clean_text(item[0])
+        adapter = clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter"))
+        state = source_state_rows.get(source_name) if isinstance(source_state_rows.get(source_name), dict) else {}
+        duration_ms = int((state or {}).get("lastDurationMs") or 0)
+        detail_pages = int((state or {}).get("lastDetailPagesVisited") or 0)
+        static_priority = 0 if adapter == "static" else 1
+        return (static_priority, -(duration_ms + (detail_pages * 25)))
+    selected_loaders = sorted(selected_loaders, key=_source_priority)
     using_default_loaders = source_loaders is None
     runtime_payload = normalize_runtime_payload({
         "maxWorkers": max_workers,
@@ -4918,6 +5504,8 @@ def run_pipeline(
         "fetchStrategy": clean_text(fetch_strategy) or DEFAULT_FETCH_STRATEGY,
         "fetchClient": fetch_client,
         "adapterHttpConcurrency": adapter_http_concurrency,
+        "staticDetailConcurrency": static_detail_concurrency,
+        "googleSheetsRedirectConcurrency": google_sheets_redirect_concurrency,
         "seedFromExistingOutput": bool(seed_from_existing_output),
         "sourceTtlMinutes": int(source_ttl_minutes or 0),
         "respectSourceCadence": bool(respect_source_cadence),
@@ -5050,6 +5638,7 @@ def run_pipeline(
                 "canonicalDropReasons": {
                     "missing_title": 0,
                     "missing_company": 0,
+                    "missing_job_link": 0,
                     "invalid_url": 0,
                     "invalid_payload": 0,
                 },
@@ -5063,25 +5652,70 @@ def run_pipeline(
         canonical_batch: List[RawJob] = []
         try:
             thread_local.source_name = name
-            raw_rows = loader(fetch_text=fetch_text_limited, timeout_s=timeout_s, retries=retries, backoff_s=backoff_s)
+            loader_kwargs = {
+                "fetch_text": fetch_text_limited,
+                "timeout_s": timeout_s,
+                "retries": retries,
+                "backoff_s": backoff_s,
+            }
+            if norm_text(report.get("adapter")) == "static":
+                loader_kwargs["static_detail_concurrency"] = static_detail_concurrency
+                loader_kwargs["source_state_rows"] = source_state_rows
+            try:
+                signature = inspect.signature(loader)
+                accepts_var_kwargs = any(
+                    parameter.kind == inspect.Parameter.VAR_KEYWORD
+                    for parameter in signature.parameters.values()
+                )
+                accepted_kwargs = loader_kwargs if accepts_var_kwargs else {
+                    key: value for key, value in loader_kwargs.items() if key in signature.parameters
+                }
+            except (TypeError, ValueError):
+                accepted_kwargs = {
+                    "fetch_text": fetch_text_limited,
+                    "timeout_s": timeout_s,
+                    "retries": retries,
+                    "backoff_s": backoff_s,
+                }
+            raw_rows = loader(**accepted_kwargs)
             report["fetchedCount"] = len(raw_rows)
             report_loss = report["loss"] if isinstance(report.get("loss"), dict) else {}
             report_loss["rawFetched"] = int(len(raw_rows))
             drop_reasons = Counter()
             kept = 0
-            for raw in raw_rows:
-                normalized, drop_reason = canonicalize_job_with_reason(raw, source=name, fetched_at=started_at)
-                if normalized:
-                    canonical_batch.append(normalized)
-                    kept += 1
-                elif drop_reason:
-                    drop_reasons[drop_reason] += 1
+            google_sheet_redirect_stats: Dict[str, int] = {}
+            if name.startswith("google_sheets"):
+                canonical_batch, drop_reasons, google_sheet_redirect_stats = canonicalize_google_sheets_rows(
+                    raw_rows,
+                    source=name,
+                    fetched_at=started_at,
+                    redirect_resolver=redirect_resolver,
+                    redirect_concurrency=google_sheets_redirect_concurrency,
+                )
+                kept = len(canonical_batch)
+                canonicalization_ms = int(google_sheet_redirect_stats.get("canonicalize_ms") or 0)
+            else:
+                canonicalization_started = time.perf_counter()
+                for raw in raw_rows:
+                    normalized, drop_reason = canonicalize_job_with_reason(
+                        raw,
+                        source=name,
+                        fetched_at=started_at,
+                        resolve_redirect_url=redirect_resolver.resolve,
+                    )
+                    if normalized:
+                        canonical_batch.append(normalized)
+                        kept += 1
+                    elif drop_reason:
+                        drop_reasons[drop_reason] += 1
+                canonicalization_ms = int((time.perf_counter() - canonicalization_started) * 1000)
             report["keptCount"] = kept
             report_loss["canonicalKept"] = int(kept)
             report_loss["canonicalDropped"] = max(0, int(len(raw_rows)) - int(kept))
             report_loss["canonicalDropReasons"] = {
                 "missing_title": int(drop_reasons.get("missing_title", 0)),
                 "missing_company": int(drop_reasons.get("missing_company", 0)),
+                "missing_job_link": int(drop_reasons.get("missing_job_link", 0)),
                 "invalid_url": int(drop_reasons.get("invalid_url", 0)),
                 "invalid_payload": int(drop_reasons.get("invalid_payload", 0)),
             }
@@ -5098,6 +5732,43 @@ def run_pipeline(
             if isinstance(details, list) and details:
                 report["details"] = details
             detail_rows = details if isinstance(details, list) else []
+            stage_timings = report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
+            if norm_text(report.get("adapter")) == "static":
+                listing_fetch_ms = 0
+                candidate_extraction_ms = 0
+                detail_fetch_ms = 0
+                for detail in detail_rows:
+                    if not isinstance(detail, dict):
+                        continue
+                    stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
+                    listing_fetch_ms += int(stats.get("listing_fetch_ms") or 0)
+                    candidate_extraction_ms += int(stats.get("candidate_extraction_ms") or 0)
+                    detail_fetch_ms += int(stats.get("detail_fetch_ms") or 0)
+                stage_timings.update({
+                    "listingFetch": int(listing_fetch_ms),
+                    "candidateExtraction": int(candidate_extraction_ms),
+                    "detailFetch": int(detail_fetch_ms),
+                })
+            if norm_text(report.get("adapter")) == "csv":
+                parse_csv_ms = 0
+                for detail in detail_rows:
+                    if not isinstance(detail, dict):
+                        continue
+                    stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
+                    parse_csv_ms += int(stats.get("parse_csv_ms") or 0)
+                    if google_sheet_redirect_stats:
+                        stats["redirect_candidates"] = int(google_sheet_redirect_stats.get("redirect_candidates") or 0)
+                        stats["redirect_resolved"] = int(google_sheet_redirect_stats.get("redirect_resolved") or 0)
+                        stats["redirect_cache_hits"] = int(google_sheet_redirect_stats.get("redirect_cache_hits") or 0)
+                        stats["redirect_resolve_ms"] = int(google_sheet_redirect_stats.get("redirect_resolve_ms") or 0)
+                        stats["canonicalize_ms"] = int(google_sheet_redirect_stats.get("canonicalize_ms") or 0)
+                stage_timings.update({
+                    "parseCsv": int(parse_csv_ms),
+                    "redirectResolve": int(google_sheet_redirect_stats.get("redirect_resolve_ms") or 0),
+                })
+            stage_timings["canonicalization"] = int(canonicalization_ms)
+            if any(int(value or 0) > 0 for value in stage_timings.values()):
+                report["stageTimingsMs"] = stage_timings
             partial_errors = [clean_text(err) for err in (diag.get("partialErrors") or []) if clean_text(err)]
             if partial_errors:
                 report["error"] = "; ".join(format_source_error(name, err) for err in partial_errors[:6])
@@ -5227,6 +5898,9 @@ def run_pipeline(
     finally:
         if async_fetcher is not None:
             async_fetcher.close()
+        close_redirect_resolver = getattr(redirect_resolver, "close", None)
+        if callable(close_redirect_resolver):
+            close_redirect_resolver()
 
     if using_default_loaders:
         append_excluded_default_sources(source_reports)
@@ -5248,13 +5922,22 @@ def run_pipeline(
     selected_loader_names = {name for name, _ in selected_loaders}
     selected_reports = [row for row in source_reports if clean_text(row.get("name")) in selected_loader_names]
     run_is_healthy = all(norm_text(row.get("status")) == "ok" for row in selected_reports) if selected_reports else False
+    successful_source_names = {
+        clean_text(row.get("name"))
+        for row in selected_reports
+        if norm_text(row.get("status")) == "ok" and clean_text(row.get("name"))
+    }
     allow_mark_missing = bool(using_default_loaders and not seed_from_existing_output and run_is_healthy)
+    eligible_missing_sources = (
+        successful_source_names if using_default_loaders and not seed_from_existing_output else set()
+    )
     lifecycle_finished_at = now_iso()
     deduped_rows, lifecycle_rows, lifecycle_counts_map = apply_job_lifecycle_state(
         deduped_rows=deduped_rows,
         lifecycle_rows=lifecycle_rows,
         finished_at=lifecycle_finished_at,
         allow_mark_missing=allow_mark_missing,
+        eligible_missing_sources=eligible_missing_sources,
     )
 
     dedup_stats["outputCount"] = len(deduped_rows)
@@ -5320,6 +6003,25 @@ def run_pipeline(
             "changed": {"json": wrote_json, "csv": wrote_csv, "lightJson": wrote_light_json},
         },
     })
+    report_payload["runtime"]["slowestSources"] = [
+        {
+            "name": clean_text(row.get("name")),
+            "adapter": clean_text(row.get("adapter")),
+            "durationMs": int(row.get("durationMs") or 0),
+            "keptCount": int(row.get("keptCount") or 0),
+            "detailPagesVisited": int(
+                (((row.get("details") or [{}])[0] if isinstance(row.get("details"), list) and row.get("details") else {}).get("stats") or {}).get("detail_pages_visited") or 0
+            ),
+            "detailYieldPct": int(
+                (((row.get("details") or [{}])[0] if isinstance(row.get("details"), list) and row.get("details") else {}).get("stats") or {}).get("detail_yield_percent") or 0
+            ),
+        }
+        for row in sorted(
+            [row for row in report_payload.get("sources", []) if isinstance(row, dict)],
+            key=lambda item: int(item.get("durationMs") or 0),
+            reverse=True,
+        )[:10]
+    ]
     write_text_if_changed(report_path, json.dumps(report_payload, indent=2, ensure_ascii=False))
     finished_at = clean_text(report_payload.get("finishedAt")) or now_iso()
     write_task_state(finished_at=finished_at, force=True)
@@ -5387,6 +6089,18 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_ADAPTER_HTTP_CONCURRENCY,
         help="Connection pool size used by async HTTP fetch transport.",
+    )
+    parser.add_argument(
+        "--google-sheets-redirect-concurrency",
+        type=int,
+        default=DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+        help="Max concurrent redirect resolutions for supported Google Sheets redirect links.",
+    )
+    parser.add_argument(
+        "--static-detail-concurrency",
+        type=int,
+        default=DEFAULT_STATIC_DETAIL_CONCURRENCY,
+        help="Max concurrent static detail-page fetches per source before per-domain limiting is applied.",
     )
     parser.add_argument(
         "--source-ttl-minutes",
@@ -5529,6 +6243,8 @@ def main() -> int:
         max_per_domain=args.max_per_domain,
         fetch_strategy=args.fetch_strategy,
         adapter_http_concurrency=args.adapter_http_concurrency,
+        google_sheets_redirect_concurrency=args.google_sheets_redirect_concurrency,
+        static_detail_concurrency=args.static_detail_concurrency,
         circuit_breaker_failures=args.circuit_breaker_failures,
         circuit_breaker_cooldown_minutes=args.circuit_breaker_cooldown_minutes,
         respect_source_cadence=bool(args.respect_source_cadence),

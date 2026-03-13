@@ -34,7 +34,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                 "studio": "Example Studio",
                 "aliases": ["example-studio"],
                 "nlPriority": True,
-                "remoteFriendly": True,
                 "likelyProviders": ["greenhouse", "teamtailor"],
             }
         ]
@@ -53,7 +52,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                 "studio": "Example Studio",
                 "aliases": ["example-studio"],
                 "nlPriority": False,
-                "remoteFriendly": True,
                 "likelyProviders": ["greenhouse"],
                 "careersUrl": "https://boards.greenhouse.io/example-studio",
             }
@@ -121,7 +119,6 @@ class SourceDiscoveryTests(unittest.TestCase):
             html,
             studio="Example Studio",
             nl_priority=False,
-            remote_friendly=True,
         )
         adapters = {str(row.get("adapter") or "") for row in rows}
         self.assertIn("greenhouse", adapters)
@@ -133,7 +130,6 @@ class SourceDiscoveryTests(unittest.TestCase):
             "<html><body>Careers</body></html>",
             studio="Example Studio",
             nl_priority=False,
-            remote_friendly=True,
             discovery_method="seed_careers_page",
         )
         self.assertEqual(len(rows), 1)
@@ -150,7 +146,6 @@ class SourceDiscoveryTests(unittest.TestCase):
             html,
             studio="Example Studio",
             nl_priority=False,
-            remote_friendly=True,
             discovery_method="seed_careers_page",
         )
         self.assertEqual(len(rows), 1)
@@ -163,7 +158,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                 "studio": "Example Studio",
                 "aliases": ["example-studio"],
                 "nlPriority": False,
-                "remoteFriendly": True,
                 "careersUrl": "https://example.com/careers",
             }
         ]
@@ -188,7 +182,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                 "studio": "Example Studio",
                 "aliases": ["example-studio"],
                 "nlPriority": False,
-                "remoteFriendly": True,
                 "careersUrl": "https://example.jobs.personio.de/",
             }
         ]
@@ -212,7 +205,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                 "studio": "Example Studio",
                 "aliases": ["example-studio"],
                 "nlPriority": False,
-                "remoteFriendly": True,
                 "careersUrl": "https://example.com/careers",
             }
         ]
@@ -243,7 +235,6 @@ class SourceDiscoveryTests(unittest.TestCase):
             html,
             studio="Example Studio",
             nl_priority=False,
-            remote_friendly=True,
             discovery_method="web_search",
         )
         self.assertIsNotNone(row)
@@ -258,7 +249,6 @@ class SourceDiscoveryTests(unittest.TestCase):
             '<a href="/jobs/test">Test</a>',
             studio="Example Studio",
             nl_priority=False,
-            remote_friendly=True,
             discovery_method="web_search",
         )
         self.assertIsNone(row)
@@ -526,7 +516,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                         "adapter": "lever",
                         "account": "demo",
                         "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
-                        "remoteFriendly": True,
                         "nlPriority": True,
                     },
                     {
@@ -535,7 +524,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                         "adapter": "greenhouse",
                         "slug": "demo",
                         "api_url": "https://boards-api.greenhouse.io/v1/boards/demo/jobs?content=true",
-                        "remoteFriendly": True,
                         "nlPriority": True,
                     },
                 ]
@@ -691,7 +679,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                         "studio": "Example Studio",
                         "aliases": ["example-studio"],
                         "nlPriority": False,
-                        "remoteFriendly": True,
                         "likelyProviders": ["teamtailor"],
                         "careersUrl": "https://example.com/careers",
                     }
@@ -789,7 +776,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                         "studio": "Example Studio",
                         "aliases": ["example-studio"],
                         "nlPriority": False,
-                        "remoteFriendly": True,
                         "likelyProviders": ["teamtailor"],
                         "careersUrl": "https://example.com/careers",
                     }

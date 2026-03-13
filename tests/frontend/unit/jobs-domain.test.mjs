@@ -4,6 +4,7 @@ import {
   detectWorkType,
   detectContractType,
   classifyCompanyType,
+  mapProfession,
   normalizeJobs,
   getJobKeyForJob,
   deriveFreshness,
@@ -28,6 +29,20 @@ test("jobs domain classifies company and normalizes jobs", () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].workType, "Remote");
   assert.equal(rows[0].companyType, "Game");
+});
+
+test("jobs domain maps technical director title synonyms", () => {
+  assert.equal(mapProfession("Technical Director"), "technical-director");
+  assert.equal(mapProfession("Associate Technical Director"), "technical-director");
+  assert.equal(mapProfession("Senior Animation TD"), "technical-director");
+  assert.equal(mapProfession("Pipeline TD"), "technical-director");
+  assert.equal(mapProfession("TDengine Programmer"), "engine");
+
+  const rows = normalizeJobs([{ title: "Technical Director - Tools", company: "Studio" }], {
+    professionLabels: { "technical-director": "Technical Director" },
+    sanitizeUrl: value => value
+  });
+  assert.equal(rows[0].profession, "technical-director");
 });
 
 test("jobs domain generates fallback key", () => {
