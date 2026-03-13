@@ -36,6 +36,7 @@ export function createAdminRuntimeState({
     fetcherCompletionPollDeadline: 0,
     fetcherLaunchAtMs: 0,
     fetcherLiveProgressState: null,
+    fetcherLogRemoteOffset: 0,
     discoveryCompletionPollTimer: null,
     discoveryCompletionPollDeadline: 0,
     discoveryLaunchAtMs: 0,

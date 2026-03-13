@@ -125,6 +125,8 @@ class AdminBridgeOpsRuntimeTests(AdminBridgeOpsTestCase):
         })
         health = admin_bridge.compute_ops_health()
         self.assertEqual(health["service"], "baluffo-bridge")
+        self.assertIn("desktopMode", health)
+        self.assertEqual(bool(health["desktopMode"]), bool(admin_bridge.RUNTIME_CONFIG.desktop_mode))
         self.assertIn("kpis", health)
         self.assertIn("alerts", health)
         self.assertGreaterEqual(len(health["alerts"]), 1)
@@ -184,6 +186,31 @@ class AdminBridgeOpsRuntimeTests(AdminBridgeOpsTestCase):
         self.assertEqual(str(details[0].get("name") or ""), "Jagex (Lever)")
         self.assertEqual(str(details[0].get("status") or ""), "ok")
         self.assertEqual(int(details[0].get("keptCount") or 0), 2)
+
+    def test_normalize_discovery_report_contract_derives_queued_count_from_candidates(self):
+        payload = admin_bridge.normalize_discovery_report_contract({
+            "summary": {"queuedCandidateCount": 0, "probedCandidateCount": 4},
+            "candidates": [
+                {"name": "A", "deferred": False},
+                {"name": "B"},
+                {"name": "C", "deferred": True},
+            ],
+        })
+        self.assertEqual(int((payload.get("summary") or {}).get("queuedCandidateCount") or 0), 2)
+
+    def test_summarize_discovery_report_prefers_derived_queued_count(self):
+        summary, status = admin_bridge.summarize_discovery_report({
+            "startedAt": "2026-03-01T00:00:00+00:00",
+            "finishedAt": "2026-03-01T00:01:00+00:00",
+            "summary": {"queuedCandidateCount": 0, "failedProbeCount": 0, "probedCandidateCount": 2},
+            "candidates": [
+                {"name": "A"},
+                {"name": "B", "deferred": False},
+                {"name": "C", "deferred": True},
+            ],
+        })
+        self.assertEqual(int(summary.get("queuedCandidateCount") or 0), 2)
+        self.assertEqual(status, "ok")
 
     def test_build_fetcher_args_retry_failed_is_deterministic_and_filters_unknown(self):
         admin_bridge.save_json_atomic(admin_bridge.JOBS_FETCH_REPORT_PATH, {

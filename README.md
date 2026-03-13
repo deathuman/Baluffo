@@ -174,10 +174,12 @@ Snapshot schema (`source-sync.json`, v1):
 npm run build:ship-bundle
 ```
 
-Optional version:
+Optional version override:
 
 ```powershell
 python scripts/build_ship_bundle.py --bundle-version 1.2.3
+
+Default build version comes from `scripts/app_version.py`.
 ```
 
 Bundle output: `dist/baluffo-ship` with launcher scripts:
@@ -225,6 +227,8 @@ Optional custom icon override:
 
 ```powershell
 python scripts/build_portable_exe.py --bundle-version 1.2.3 --icon C:\path\to\Baluffo.ico
+
+Without `--bundle-version`, portable packaging uses the shared app version from `scripts/app_version.py`.
 ```
 
 Build/test workflows are standardized on Python 3.13.x for deterministic local and CI behavior.

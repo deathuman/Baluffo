@@ -1005,6 +1005,14 @@ async function signInUser() {
     if (String(result.error || "").toLowerCase().includes("cancel")) return;
     logJobsError("Sign-in failed", new Error(result.error));
     showToast("Sign-in failed. Please try again.", "error");
+    return;
+  }
+  if (savedJobsBtn && !savedJobsBtn.classList.contains("hidden")) {
+    try {
+      savedJobsBtn.focus({ preventScroll: true });
+    } catch {
+      savedJobsBtn.focus();
+    }
   }
 }
 

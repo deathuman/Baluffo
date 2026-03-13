@@ -14,10 +14,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = ROOT / "dist" / "baluffo-ship"
-DEFAULT_BUNDLE_VERSION = "1.0.0"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.app_version import APP_VERSION
 from scripts.baluffo_config import get_sync_defaults
 from scripts.build_frontend_runtime_config import (
     build_frontend_runtime_config_payload,
@@ -25,6 +25,8 @@ from scripts.build_frontend_runtime_config import (
     write_frontend_runtime_config,
 )
 from scripts.python_version_guard import ensure_required_python
+
+DEFAULT_BUNDLE_VERSION = APP_VERSION
 
 APP_RUNTIME_FILES = (
     "baluffo.config.json",
@@ -52,6 +54,7 @@ APP_RUNTIME_FILES = (
 APP_RUNTIME_SCRIPTS = (
     "__init__.py",
     "admin_bridge.py",
+    "app_version.py",
     "baluffo_config.py",
     "contracts.py",
     "fetcher_metrics.py",

@@ -1,3 +1,5 @@
+import { requestProfileName } from "./profile-name-dialog.js";
+
 export function createAuthDomain(deps) {
   const {
     listeners,
@@ -31,11 +33,14 @@ export function createAuthDomain(deps) {
 
   async function signIn() {
     const profiles = readProfiles();
-    const label = profiles.length
-      ? `Enter profile name to sign in (existing or new).\nExisting: ${profiles.map(p => p.name).join(", ")}`
-      : "Enter a profile name to create local sign-in:";
-
-    const input = window.prompt(label, profiles[0]?.name || "");
+    const input = await requestProfileName({
+      title: "Sign in",
+      description: profiles.length
+        ? `Choose an existing profile or create a new one. Existing: ${profiles.map(profile => profile.name).join(", ")}`
+        : "Enter a profile name to create local sign-in.",
+      existingProfiles: profiles,
+      defaultValue: profiles[0]?.name || ""
+    });
     const profile = chooseProfile(profiles, input);
     if (!profile) throw new Error("Sign-in cancelled.");
 

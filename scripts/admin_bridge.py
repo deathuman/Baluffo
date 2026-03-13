@@ -35,6 +35,7 @@ from scripts import source_discovery as discovery
 from scripts import fetcher_metrics as fetcher_metrics_module
 from scripts import source_registry as source_registry_module
 from scripts import source_sync as source_sync_module
+from scripts.app_version import get_app_version
 from scripts.baluffo_config import get_bridge_defaults, get_security_defaults, get_storage_defaults
 from scripts.contracts import SCHEMA_VERSION
 from scripts.local_data_store import LocalDataPaths, LocalDataStore
@@ -61,6 +62,7 @@ JOBS_FETCH_REPORT_PATH = ROOT / "data" / "jobs-fetch-report.json"
 TASKS_CONFIG_PATH = ROOT / ".vscode" / "tasks.json"
 TASK_STATE_PATH = ROOT / "data" / "admin-task-state.json"
 DISCOVERY_LOG_PATH = ROOT / "data" / "source-discovery.log"
+FETCHER_LOG_PATH = ROOT / "data" / "jobs-fetcher.log"
 SYNC_CONFIG_PATH = ROOT / "data" / "source-sync-config.json"
 SYNC_RUNTIME_PATH = ROOT / "data" / "source-sync-runtime.json"
 STARTUP_METRICS_PATH = ROOT / "data" / "desktop-startup-metrics.jsonl"
@@ -222,7 +224,7 @@ def bridge_log(level: str, message: str, **fields: Any) -> None:
 
 def configure_runtime_paths(config: RuntimeConfig) -> None:
     global RUNTIME_CONFIG
-    global OPS_HISTORY_PATH, OPS_ALERT_STATE_PATH, JOBS_FETCH_REPORT_PATH, TASK_STATE_PATH, DISCOVERY_LOG_PATH
+    global OPS_HISTORY_PATH, OPS_ALERT_STATE_PATH, JOBS_FETCH_REPORT_PATH, TASK_STATE_PATH, DISCOVERY_LOG_PATH, FETCHER_LOG_PATH
     global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
     global TASKS_CONFIG_PATH, SYNC_CONFIG_PATH, SYNC_RUNTIME_PATH, STARTUP_METRICS_PATH
     global DESKTOP_LOCAL_DATA_STORE, DESKTOP_SESSION_ACTIVITY_AT
@@ -236,6 +238,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     JOBS_FETCH_REPORT_PATH = data_dir / "jobs-fetch-report.json"
     TASK_STATE_PATH = data_dir / "admin-task-state.json"
     DISCOVERY_LOG_PATH = data_dir / "source-discovery.log"
+    FETCHER_LOG_PATH = data_dir / "jobs-fetcher.log"
     SYNC_CONFIG_PATH = data_dir / "source-sync-config.json"
     SYNC_RUNTIME_PATH = data_dir / "source-sync-runtime.json"
     STARTUP_METRICS_PATH = data_dir / "desktop-startup-metrics.jsonl"
@@ -1627,6 +1630,8 @@ def run_background_script(script_name: str, args: List[str] | None = None) -> in
     child_env["BALUFFO_DATA_DIR"] = str(RUNTIME_CONFIG.data_dir)
     if task_type == "discovery":
         child_env["BALUFFO_DISCOVERY_LOG_PATH"] = str(DISCOVERY_LOG_PATH)
+    elif task_type == "fetch":
+        child_env["BALUFFO_FETCHER_LOG_PATH"] = str(FETCHER_LOG_PATH)
     popen_kwargs: Dict[str, Any] = {
         "cwd": str(Path(RUNTIME_CONFIG.root)),
         "stdin": subprocess.DEVNULL,
@@ -1640,9 +1645,10 @@ def run_background_script(script_name: str, args: List[str] | None = None) -> in
         popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
     log_handle = None
     try:
-        if task_type == "discovery":
-            DISCOVERY_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-            log_handle = open(DISCOVERY_LOG_PATH, "a", encoding="utf-8")
+        if task_type in {"discovery", "fetch"}:
+            log_path = DISCOVERY_LOG_PATH if task_type == "discovery" else FETCHER_LOG_PATH
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_handle = open(log_path, "a", encoding="utf-8")
             popen_kwargs["stdout"] = log_handle
             popen_kwargs["stderr"] = subprocess.STDOUT
         proc = subprocess.Popen(command, **popen_kwargs)
@@ -1747,6 +1753,39 @@ def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
         "sources": normalized_sources,
         "outputs": dict(src.get("outputs") or {}),
     }
+
+
+def _derive_discovery_queued_count(report: Dict[str, Any], summary: Dict[str, Any]) -> int:
+    queued = int(summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0)
+    candidates = report.get("candidates")
+    if not isinstance(candidates, list):
+        return max(0, queued)
+    derived = len([
+        row for row in candidates
+        if isinstance(row, dict) and not bool(row.get("deferred"))
+    ])
+    return max(0, max(queued, derived))
+
+
+def normalize_discovery_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
+    src = payload if isinstance(payload, dict) else {}
+    summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
+    candidates = src.get("candidates")
+    failures = src.get("failures")
+    top_failures = src.get("topFailures")
+    normalized = {
+        "schemaVersion": _safe_schema_version(src.get("schemaVersion")),
+        "mode": str(src.get("mode") or "").strip(),
+        "startedAt": str(src.get("startedAt") or "").strip(),
+        "finishedAt": str(src.get("finishedAt") or "").strip(),
+        "summary": dict(summary),
+        "candidates": list(candidates) if isinstance(candidates, list) else [],
+        "failures": list(failures) if isinstance(failures, list) else [],
+        "topFailures": list(top_failures) if isinstance(top_failures, list) else [],
+        "outputs": dict(src.get("outputs") or {}),
+    }
+    normalized["summary"]["queuedCandidateCount"] = _derive_discovery_queued_count(normalized, normalized["summary"])
+    return normalized
 
 
 def _failed_source_names_from_latest_report(*, allowed_names: set[str] | None = None) -> List[str]:
@@ -2106,8 +2145,9 @@ def summarize_fetch_report(report: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def summarize_discovery_report(report: Dict[str, Any]) -> Dict[str, Any]:
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
-    queued = int(summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0)
+    normalized = normalize_discovery_report_contract(report)
+    summary = normalized.get("summary") if isinstance(normalized.get("summary"), dict) else {}
+    queued = int(summary.get("queuedCandidateCount") or 0)
     failed = int(summary.get("failedProbeCount") or 0)
     probed = int(summary.get("probedCandidateCount") or summary.get("probedCount") or 0)
     duration_ms = 0
@@ -2169,7 +2209,7 @@ def sync_history_from_reports() -> List[Dict[str, Any]]:
                     "sourceCount": int(fetch_summary["sourceCount"]),
                 },
             }, dedupe_fields=("type", "finishedAt"))
-        discovery_report = load_json_object(DISCOVERY_REPORT_PATH, {})
+        discovery_report = normalize_discovery_report_contract(load_json_object(DISCOVERY_REPORT_PATH, {}))
         discovery_started_at = str(discovery_report.get("startedAt") or "")
         discovery_finished_at = str(discovery_report.get("finishedAt") or "")
         if report_is_stale_in_progress("discovery", DISCOVERY_REPORT_PATH, discovery_report):
@@ -2395,6 +2435,7 @@ def compute_ops_health() -> Dict[str, Any]:
 
     return {
         "service": "baluffo-bridge",
+        "desktopMode": bool(RUNTIME_CONFIG.desktop_mode),
         "generatedAt": now_iso(),
         "desktopLastActivityAt": str(DESKTOP_SESSION_ACTIVITY_AT or ""),
         "status": severity,
@@ -2458,6 +2499,7 @@ def get_sync_status_payload() -> Dict[str, Any]:
         runtime_state = {**dict(SYNC_STATUS), **load_sync_runtime_state()}
     return {
         "ok": True,
+        "appVersion": get_app_version(),
         "config": cfg,
         "savedConfig": get_saved_sync_config_payload(),
         "runtime": runtime_state,
@@ -2626,7 +2668,7 @@ def _watch_discovery_run_for_auto_sync(run_id: str, pid: int, started_at: str) -
     while pid_is_running(pid):
         threading.Event().wait(0.8)
     try:
-        report = load_json_object(DISCOVERY_REPORT_PATH, {})
+        report = normalize_discovery_report_contract(load_json_object(DISCOVERY_REPORT_PATH, {}))
         finished_at = str(report.get("finishedAt") or "")
         finished_dt = parse_iso(finished_at)
         if not finished_dt or finished_dt < started_dt:
@@ -2911,6 +2953,7 @@ def get_jobs_pipeline_status_payload() -> Dict[str, Any]:
         progress = payload.get("progress")
         payload["progress"] = dict(progress) if isinstance(progress, dict) else _pipeline_progress(0, 3, "Idle")
         payload["active"] = bool(payload.get("active"))
+        payload["appVersion"] = get_app_version()
         return payload
 
 
@@ -2961,6 +3004,8 @@ def start_fetcher_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, An
     run_id = f"fetch_{uuid.uuid4().hex[:10]}"
     started_at = now_iso()
     fetcher_args, preset = build_fetcher_args_from_payload(payload if isinstance(payload, dict) else {})
+    FETCHER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    FETCHER_LOG_PATH.write_text(f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8")
     append_run_history({
         "id": run_id,
         "type": "fetch",
@@ -3269,7 +3314,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"sources": state["rejected"], "summary": summarize_state(state)})
             return
         if path == "/discovery/report":
-            report = load_json_object(DISCOVERY_REPORT_PATH, {})
+            report = normalize_discovery_report_contract(load_json_object(DISCOVERY_REPORT_PATH, {}))
             self._send_json(report or {"summary": {}, "candidates": [], "failures": []})
             return
         if path == "/discovery/log":
@@ -3280,6 +3325,21 @@ class Handler(BaseHTTPRequestHandler):
                 offset = 0
             try:
                 text = DISCOVERY_LOG_PATH.read_text(encoding="utf-8")
+            except OSError:
+                text = ""
+            next_offset = min(len(text), offset)
+            chunk = text[offset:]
+            next_offset = len(text)
+            self._send_json({"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False})
+            return
+        if path == "/fetcher/log":
+            offset_raw = (query.get("offset") or ["0"])[0]
+            try:
+                offset = max(0, int(offset_raw))
+            except ValueError:
+                offset = 0
+            try:
+                text = FETCHER_LOG_PATH.read_text(encoding="utf-8")
             except OSError:
                 text = ""
             next_offset = min(len(text), offset)

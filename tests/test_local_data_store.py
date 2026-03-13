@@ -208,6 +208,34 @@ class LocalDataStoreTests(unittest.TestCase):
             self.assertEqual(int(result.get("historyAdded", 0)), 1)
             self.assertTrue(any("jobKey" in str(w) for w in result.get("warnings") or []))
 
+    def test_update_application_status_is_noop_when_reclicking_same_phase(self) -> None:
+        with workspace_tmpdir("local-data-store") as tmp:
+            store = LocalDataStore(LocalDataPaths.from_data_dir(Path(tmp) / "data"))
+            user = store.sign_in("SamePhase")
+            uid = str(user["uid"])
+            job_key = store.save_job_for_user(
+                uid,
+                {
+                    "title": "Gameplay Programmer",
+                    "company": "Studio Same",
+                    "jobLink": "https://example.com/same-phase",
+                    "applicationStatus": "bookmark",
+                },
+            )
+
+            before_row = store.list_saved_jobs(uid)[0]
+            before_updated_at = str(before_row.get("updatedAt") or "")
+            before_phase_timestamps = dict(before_row.get("phaseTimestamps") or {})
+            before_activity_len = len(store.list_activity_for_user(uid, 2000))
+
+            store.update_application_status(uid, job_key, "bookmark")
+
+            after_row = store.list_saved_jobs(uid)[0]
+            after_activity_len = len(store.list_activity_for_user(uid, 2000))
+            self.assertEqual(str(after_row.get("updatedAt") or ""), before_updated_at)
+            self.assertEqual(dict(after_row.get("phaseTimestamps") or {}), before_phase_timestamps)
+            self.assertEqual(after_activity_len, before_activity_len)
+
 
 if __name__ == "__main__":
     unittest.main()

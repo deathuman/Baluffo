@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from scripts.app_version import APP_VERSION
 from scripts.build_ship_bundle import STARTUP_PREVIEW_LIMIT, build_bundle
 from tests.temp_paths import workspace_tmpdir
 
@@ -51,6 +52,7 @@ class BuildShipBundleTests(unittest.TestCase):
             self.assertTrue((output / "app" / "update-manifest.json").exists())
             self.assertTrue((version_root / "frontend" / "admin" / "app.js").exists())
             self.assertTrue((version_root / "scripts" / "admin_bridge.py").exists())
+            self.assertTrue((version_root / "scripts" / "app_version.py").exists())
             self.assertTrue((version_root / "scripts" / "baluffo_config.py").exists())
             self.assertTrue((version_root / "scripts" / "local_data_store.py").exists())
             self.assertTrue((version_root / "scripts" / "source_sync.py").exists())
@@ -77,6 +79,13 @@ class BuildShipBundleTests(unittest.TestCase):
 
             seeded_report = json.loads((output / "data" / "jobs-fetch-report.json").read_text(encoding="utf-8"))
             self.assertEqual(seeded_report, {"summary": {}, "sources": [], "runtime": {}, "outputs": {}})
+
+    def test_parse_args_defaults_to_shared_app_version(self) -> None:
+        with mock.patch("sys.argv", ["build_ship_bundle.py"]):
+            from scripts import build_ship_bundle
+
+            args = build_ship_bundle.parse_args()
+        self.assertEqual(args.bundle_version, APP_VERSION)
 
     def test_bundle_generates_capped_startup_preview(self) -> None:
         with workspace_tmpdir("build-ship-bundle") as tmp:

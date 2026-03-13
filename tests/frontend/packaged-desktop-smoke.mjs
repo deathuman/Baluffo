@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, request as playwrightRequest } from "@playwright/test";
-import { stubPrompt } from "./playwright-helpers.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,6 +51,22 @@ async function gotoDesktop(page, relativePath) {
   await page.goto(
     `${BASE_URL}/${relativePath}${separator}desktop=1&bridgePort=${encodeURIComponent(BRIDGE_PORT)}&bridgeHost=${encodeURIComponent(BRIDGE_HOST)}`
   );
+}
+
+async function signInWithProfile(page, buttonSelector, profileName, expectedFocusSelector) {
+  await page.locator(buttonSelector).click();
+  const profileInput = page.locator("#local-auth-name-input");
+  await profileInput.waitFor({ state: "visible", timeout: 10_000 });
+  await profileInput.fill(profileName);
+  await profileInput.press("Enter");
+  await profileInput.waitFor({ state: "detached", timeout: 10_000 });
+  if (expectedFocusSelector) {
+    await page.waitForFunction(
+      selector => document.activeElement === document.querySelector(selector),
+      expectedFocusSelector,
+      { timeout: 10_000 }
+    );
+  }
 }
 
 async function waitForDesktopAdapter(page) {
@@ -174,8 +189,6 @@ async function main() {
     });
     page = await context.newPage();
     apiRequest = await playwrightRequest.newContext({ baseURL: BRIDGE_BASE });
-    await stubPrompt(page, DESKTOP_USER_NAME);
-
     await runScenario("Jobs startup and facade ordering", async () => {
       await gotoDesktop(page, "jobs.html");
       await waitForDesktopAdapter(page);
@@ -184,6 +197,8 @@ async function main() {
       assert.ok(String(sourceStatus || "").trim().length > 0, "jobs source status should not be empty");
       const health = await apiRequest.get(`${BRIDGE_BASE}/ops/health`);
       assert.equal(health.ok(), true, "ops health should be reachable");
+      const healthPayload = await health.json();
+      assert.equal(Boolean(healthPayload?.desktopMode), true, "desktop bridge should report desktop mode");
       await assertFacadeStartupOrdering(apiRequest);
     }, scenarios);
 
@@ -191,7 +206,7 @@ async function main() {
       const signInBtn = page.locator("#auth-sign-in-btn");
       await signInBtn.waitFor({ state: "visible", timeout: 10_000 });
       assert.equal(await signInBtn.isEnabled(), true, "sign in button should be enabled");
-      await signInBtn.click();
+      await signInWithProfile(page, "#auth-sign-in-btn", DESKTOP_USER_NAME, "#saved-jobs-btn");
       await page.locator("#saved-jobs-btn").waitFor({ state: "visible", timeout: 15_000 });
       const authStatus = await page.locator("#auth-status").textContent();
       assert.match(String(authStatus || ""), /Packaged Smoke User/);

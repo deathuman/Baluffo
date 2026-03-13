@@ -48,6 +48,7 @@ import {
   readAdminLastJobsUrl,
   writeJobsAutoRefreshSignal
 } from "../state-sync/index.js";
+import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
 import { cacheAdminDom } from "./dom.js";
 import {
   isSyncBusy as isSyncBusyFromModule,
@@ -291,7 +292,11 @@ async function wipeAccount(uid, name) {
     showToast("Missing user id for wipe.", "error");
     return;
   }
-  const confirmed = window.confirm(`Wipe account data for ${name || uid}? This cannot be undone.`);
+  const confirmed = await requestConfirmationDialog({
+    title: "Wipe account data?",
+    description: `Wipe account data for ${name || uid}? This cannot be undone.`,
+    confirmLabel: "Wipe account"
+  });
   if (!confirmed) return;
   try {
     await adminService.wipeUserData(state.adminPin, uid);

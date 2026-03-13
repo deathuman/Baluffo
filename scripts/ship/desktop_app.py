@@ -18,7 +18,7 @@ import uuid
 import urllib.error
 import urllib.request
 import webbrowser
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.ship.runtime_launcher import wait_for_url
 from scripts.ship.startup_profile import summarize_startup_metrics, write_startup_summary
+from scripts.app_version import get_app_version
 from scripts.baluffo_config import get_desktop_defaults
 
 DESKTOP_DEFAULTS = get_desktop_defaults()
@@ -71,6 +72,8 @@ class DesktopRuntimeConfig:
     open_path: str
     title: str
     startup_probe: bool
+    site_port_explicit: bool = False
+    bridge_port_explicit: bool = False
 
 
 @dataclass(frozen=True)
@@ -192,13 +195,24 @@ def start_child_process(command: Sequence[str], *, extra_env: dict[str, str] | N
         env.update({key: str(value) for key, value in extra_env.items()})
         popen_kwargs["env"] = env
     if os.name == "nt":
-        popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) | int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
     return subprocess.Popen(list(command), **popen_kwargs)
 
 
 def terminate_process(process: subprocess.Popen[str] | None) -> None:
     if process is None or process.poll() is not None:
         return
+    if os.name == "nt":
+        with contextlib.suppress(Exception):  # noqa: BLE001
+            subprocess.run(
+                ["taskkill", "/PID", str(int(process.pid)), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=10,
+            )
+            process.wait(timeout=5)
+            return
     with contextlib.suppress(Exception):  # noqa: BLE001
         process.terminate()
         process.wait(timeout=5)
@@ -247,8 +261,10 @@ def _isolated_scripts_package():
 
 def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
     ship_root = resolve_ship_root(args.root or None)
-    site_port = int(args.site_port) if int(args.site_port) > 0 else DEFAULT_SITE_PORT
-    bridge_port = int(args.bridge_port) if int(args.bridge_port) > 0 else DEFAULT_BRIDGE_PORT
+    site_port_explicit = int(args.site_port) > 0
+    bridge_port_explicit = int(args.bridge_port) > 0
+    site_port = int(args.site_port) if site_port_explicit else DEFAULT_SITE_PORT
+    bridge_port = int(args.bridge_port) if bridge_port_explicit else DEFAULT_BRIDGE_PORT
     data_dir = Path(args.data_dir).expanduser().resolve() if str(args.data_dir or "").strip() else ship_root / "data"
     return DesktopRuntimeConfig(
         ship_root=ship_root,
@@ -259,6 +275,8 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
         open_path=str(args.open_path or DEFAULT_OPEN_PATH).lstrip("/") or DEFAULT_OPEN_PATH,
         title=str(args.title or DESKTOP_DEFAULTS["title"] or WINDOW_TITLE).strip() or WINDOW_TITLE,
         startup_probe=bool(args.startup_probe or _truthy_env(os.environ.get("BALUFFO_STARTUP_PROBE"))),
+        site_port_explicit=site_port_explicit,
+        bridge_port_explicit=bridge_port_explicit,
     )
 
 
@@ -266,12 +284,23 @@ def _port_is_available(host: str, port: int) -> bool:
     import socket
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            with contextlib.suppress(OSError):
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         try:
             sock.bind((host, int(port)))
             return True
         except OSError:
             return False
+
+
+def choose_free_port() -> int:
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        return int(sock.getsockname()[1])
 
 
 def ensure_runtime_ports(config: DesktopRuntimeConfig) -> None:
@@ -283,6 +312,35 @@ def ensure_runtime_ports(config: DesktopRuntimeConfig) -> None:
         raise RuntimeError(
             f"Baluffo desktop bridge port {config.bridge_port} is already in use. Close the other process or choose a different --bridge-port."
         )
+
+
+def resolve_runtime_ports(config: DesktopRuntimeConfig) -> DesktopRuntimeConfig:
+    resolved = config
+    site_port = int(resolved.site_port)
+    bridge_port = int(resolved.bridge_port)
+
+    if not _port_is_available("127.0.0.1", site_port):
+        if resolved.site_port_explicit:
+            raise RuntimeError(
+                f"Baluffo desktop site port {site_port} is already in use. Close the other process or choose a different --site-port."
+            )
+        site_port = int(choose_free_port())
+
+    bridge_available = _port_is_available(str(resolved.bridge_host), bridge_port)
+    if bridge_port == site_port or not bridge_available:
+        if resolved.bridge_port_explicit:
+            raise RuntimeError(
+                f"Baluffo desktop bridge port {bridge_port} is already in use. Close the other process or choose a different --bridge-port."
+            )
+        next_bridge_port = int(choose_free_port())
+        while next_bridge_port == site_port or not _port_is_available(str(resolved.bridge_host), next_bridge_port):
+            next_bridge_port = int(choose_free_port())
+        bridge_port = next_bridge_port
+
+    if site_port != int(resolved.site_port) or bridge_port != int(resolved.bridge_port):
+        resolved = replace(resolved, site_port=site_port, bridge_port=bridge_port)
+    ensure_runtime_ports(resolved)
+    return resolved
 
 
 def build_open_url(config: DesktopRuntimeConfig) -> str:
@@ -618,12 +676,21 @@ def fetch_json(url: str, timeout_s: float = 2.5) -> dict[str, object]:
     return payload if isinstance(payload, dict) else {}
 
 
-def is_baluffo_bridge_healthy(bridge_port: int, *, timeout_s: float = 2.0) -> bool:
+def is_baluffo_bridge_healthy(
+    bridge_port: int,
+    *,
+    timeout_s: float = 2.0,
+    require_desktop_mode: bool = False,
+) -> bool:
     try:
         payload = fetch_json(f"http://127.0.0.1:{int(bridge_port)}/ops/health", timeout_s=timeout_s)
     except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
         return False
-    return str(payload.get("service") or "") == "baluffo-bridge"
+    if str(payload.get("service") or "") != "baluffo-bridge":
+        return False
+    if require_desktop_mode and not bool(payload.get("desktopMode")):
+        return False
+    return True
 
 
 def get_baluffo_bridge_health(bridge_port: int, *, timeout_s: float = 2.0) -> dict[str, object]:
@@ -634,10 +701,15 @@ def get_baluffo_bridge_health(bridge_port: int, *, timeout_s: float = 2.0) -> di
     return payload if str(payload.get("service") or "") == "baluffo-bridge" else {}
 
 
-def wait_for_baluffo_bridge(bridge_port: int, *, timeout_s: float = READY_TIMEOUT_S) -> None:
+def wait_for_baluffo_bridge(
+    bridge_port: int,
+    *,
+    timeout_s: float = READY_TIMEOUT_S,
+    require_desktop_mode: bool = False,
+) -> None:
     deadline = time.monotonic() + max(1.0, float(timeout_s))
     while time.monotonic() < deadline:
-        if is_baluffo_bridge_healthy(bridge_port, timeout_s=1.5):
+        if is_baluffo_bridge_healthy(bridge_port, timeout_s=1.5, require_desktop_mode=require_desktop_mode):
             return
         time.sleep(0.25)
     raise RuntimeError("Baluffo bridge did not report a healthy desktop session.")
@@ -675,7 +747,7 @@ def validate_session_state(
         return False, "launcher_identity_mismatch"
     if expected_launcher_token and launcher_token != expected_launcher_token:
         return False, "launcher_token_mismatch"
-    if not is_baluffo_bridge_healthy(bridge_port):
+    if not is_baluffo_bridge_healthy(bridge_port, require_desktop_mode=True):
         return False, "bridge_unhealthy"
     return True, "ok"
 
@@ -994,6 +1066,7 @@ def ensure_desktop_prerequisites() -> None:
 
 
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
+    config = resolve_runtime_ports(config)
     launcher_token = uuid.uuid4().hex
     instance_lock = acquire_instance_lock(
         launcher_token=launcher_token,
@@ -1070,7 +1143,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         open_url = build_open_url(config)
         wait_for_url(open_url, timeout_s=READY_TIMEOUT_S)
         try:
-            wait_for_baluffo_bridge(config.bridge_port, timeout_s=5.0)
+            wait_for_baluffo_bridge(config.bridge_port, timeout_s=5.0, require_desktop_mode=True)
             _append_startup_trace(
                 config.data_dir,
                 "desktop_bridge_ready",
@@ -1107,6 +1180,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             browserPath=str(launch_result.get("browserPath") or ""),
         )
         save_session_state({
+            "appVersion": get_app_version(),
             "launcherPid": os.getpid(),
             "launcherToken": str(instance_lock.launcher_token or launcher_token),
             "launcherStartedAt": str(instance_lock.created_at or datetime.now(timezone.utc).isoformat()),

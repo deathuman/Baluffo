@@ -1,5 +1,23 @@
 import { test, expect } from "@playwright/test";
-import { stubPrompt } from "./playwright-helpers.js";
+
+async function signInWithProfile(page, buttonSelector, profileName, expectedFocusSelector) {
+  await page.click(buttonSelector);
+  const profileInput = page.locator("#local-auth-name-input");
+  await expect(profileInput).toBeVisible();
+  await profileInput.fill(profileName);
+  await profileInput.press("Enter");
+  await expect(profileInput).toBeHidden();
+  if (expectedFocusSelector) {
+    await expect(page.locator(expectedFocusSelector)).toBeFocused();
+  }
+}
+
+async function cancelSignIn(page) {
+  const cancelBtn = page.locator("#local-auth-cancel-btn");
+  await expect(cancelBtn).toBeVisible();
+  await cancelBtn.click();
+  await expect(page.locator("#local-auth-name-input")).toBeHidden();
+}
 
 test("index compatibility entry redirects to jobs", async ({ page }) => {
   await page.goto("/index.html");
@@ -8,7 +26,6 @@ test("index compatibility entry redirects to jobs", async ({ page }) => {
 });
 
 test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning", async ({ page }) => {
-  await stubPrompt(page);
   await page.goto("/jobs.html");
 
   await expect(page.locator("#jobs-list")).toBeVisible();
@@ -23,7 +40,7 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
     await pageButtons.nth(1).click();
   }
 
-  await page.click("#auth-sign-in-btn");
+  await signInWithProfile(page, "#auth-sign-in-btn", "Smoke User", "#saved-jobs-btn");
   await expect(page.locator("#saved-jobs-btn")).toBeVisible();
 
   const saveBtn = page.locator(".save-job-btn").first();
@@ -36,16 +53,16 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await page.click("#auth-sign-out-btn");
   await saveBtn.click();
   await expect(page.locator(".toast").last()).toContainText("Sign in to save jobs");
+  await cancelSignIn(page);
 
   await page.locator(".jobs-sources summary").click();
   await expect(page.locator("#data-sources-list")).toContainText("Google Sheets");
 });
 
 test("saved smoke: export stays available for signed-in browser users and guest state restores", async ({ page }) => {
-  await stubPrompt(page);
   await page.goto("/saved.html");
 
-  await page.click("#saved-auth-sign-in-btn");
+  await signInWithProfile(page, "#saved-auth-sign-in-btn", "Smoke User", "#add-custom-job-btn");
   await expect(page.locator("#saved-auth-status")).not.toContainText(/Guest/i);
   await page.locator("#saved-utilities summary").click();
   await expect(page.locator("#export-backup-btn")).toBeEnabled();

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createAuthDomain } from "../../../frontend/local-data/auth.js";
+import { requestConfirmationDialog } from "../../../frontend/local-data/profile-name-dialog.js";
 import { createSavedJobsDomain } from "../../../frontend/local-data/saved-jobs.js";
 
 function createStorageMock() {
@@ -65,6 +66,24 @@ test("auth domain signIn/signOut updates session and emits auth changes", async 
   assert.equal(localStorage.getItem("session_key"), null);
   assert.equal(observed.at(-1), "");
   unsub();
+});
+
+test("confirmation dialog falls back to window.confirm outside the browser DOM", async () => {
+  let confirmCalls = 0;
+  global.window = {
+    confirm: message => {
+      confirmCalls += 1;
+      return /cannot be undone/i.test(String(message || ""));
+    }
+  };
+
+  const result = await requestConfirmationDialog({
+    title: "Delete selected sources?",
+    description: "Delete 2 selected source(s) from registry? This cannot be undone."
+  });
+
+  assert.equal(result, true);
+  assert.equal(confirmCalls, 1);
 });
 
 test("saved-jobs domain normalizes bookmark timestamp and merge keeps richer existing row", () => {

@@ -126,6 +126,7 @@ Saved job record fields:
 - Build:
   - `npm run build:ship-bundle`
   - direct Python entrypoint: `python scripts/build_ship_bundle.py --bundle-version 1.2.3`
+  - default version source: `scripts/app_version.py`
 - Output:
   - `dist/baluffo-ship`
 - Launchers in bundle root:
@@ -146,6 +147,7 @@ Saved job record fields:
 - Build:
   - `npm run build:portable-exe -- --bundle-version 1.2.3`
   - direct Python entrypoint: `python scripts/build_portable_exe.py --bundle-version 1.2.3`
+  - default version source: `scripts/app_version.py`
 - Output:
   - `dist/baluffo-portable`
   - `dist/baluffo-portable-1.2.3.zip`

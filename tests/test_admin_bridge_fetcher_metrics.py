@@ -1,6 +1,7 @@
 import unittest
 
 from scripts import admin_bridge
+from scripts.app_version import APP_VERSION
 
 
 class AdminBridgeFetcherMetricsTests(unittest.TestCase):
@@ -29,6 +30,14 @@ class AdminBridgeFetcherMetricsTests(unittest.TestCase):
         finally:
             admin_bridge.sync_history_from_reports = original_sync
             admin_bridge.load_json_object = original_load
+
+    def test_sync_status_payload_includes_app_version(self):
+        payload = admin_bridge.get_sync_status_payload()
+        self.assertEqual(payload.get("appVersion"), APP_VERSION)
+
+    def test_jobs_pipeline_status_payload_includes_app_version(self):
+        payload = admin_bridge.get_jobs_pipeline_status_payload()
+        self.assertEqual(payload.get("appVersion"), APP_VERSION)
 
 
 if __name__ == "__main__":

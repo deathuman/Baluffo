@@ -1,4 +1,4 @@
-import { deriveDiscoveryProgressModel } from "../domain.js";
+import { deriveDiscoveryProgressModel, deriveDiscoveryQueuedCount } from "../domain.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
 
 export function isDiscoveryMobileViewport(width = window.innerWidth) {
@@ -74,9 +74,6 @@ export function createAdminDiscoveryController({
     if (/launching source discovery task/i.test(normalized)) return null;
     if (/discovery report written/i.test(normalized)) return null;
     if (/watching discovery report/i.test(normalized)) return null;
-    if (/\b(found|queued|probed)\b/i.test(normalized) && !/\b(error|failed|timeout|dns|ssl|forbidden)\b/i.test(normalized)) {
-      return null;
-    }
     const level = /\b(error|failed|timeout|dns|ssl|forbidden)\b/i.test(normalized) ? "warn" : "muted";
     return {
       message: normalized,
@@ -108,7 +105,15 @@ export function createAdminDiscoveryController({
 
   function appendDiscoveryLogEvent(eventLike, fallbackLevel = "muted") {
     if (!refs.adminDiscoveryLogEl) return;
-    const event = createLogEvent("discovery", eventLike, fallbackLevel);
+    const event = (eventLike && typeof eventLike === "object" && !Array.isArray(eventLike))
+      ? {
+          timestamp: String(eventLike.timestamp || new Date().toISOString()),
+          level: String(eventLike.level || fallbackLevel || "muted"),
+          scope: String(eventLike.scope || "discovery"),
+          sourceId: String(eventLike.sourceId || ""),
+          message: String(eventLike.message || "")
+        }
+      : createLogEvent("discovery", eventLike, fallbackLevel);
     appendLogRow(refs.adminDiscoveryLogEl, event);
   }
 
@@ -160,18 +165,24 @@ export function createAdminDiscoveryController({
     if (!liveState) return;
     updateDiscoveryProgressFromReport(report, { running: true });
     const summary = report?.summary || {};
+    const phaseLabel = String(summary.phaseLabel || summary.phase || "").trim();
     const foundCount = Number(summary.foundEndpointCount ?? 0);
     const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
-    const queuedCount = Number(summary.queuedCandidateCount ?? summary.newCandidateCount ?? 0);
+    const queuedCount = deriveDiscoveryQueuedCount(report);
+    const deferredCount = Number(summary.discoverableButDeferredCount ?? 0);
     const failedCount = Number(summary.failedProbeCount || 0);
     const skippedCount = Number(summary.skippedDuplicateCount || 0);
     const invalidCount = Number(summary.skippedInvalidCount || 0);
 
-    const summarySignature = [foundCount, probedCount, queuedCount, failedCount, skippedCount, invalidCount].join("|");
+    const summarySignature = [foundCount, probedCount, queuedCount, deferredCount, failedCount, skippedCount, invalidCount].join("|");
+    if (phaseLabel && phaseLabel !== liveState.phaseLabel) {
+      liveState.phaseLabel = phaseLabel;
+      appendDiscoveryLog(`Discovery phase: ${phaseLabel}.`, "muted");
+    }
     if (summarySignature !== liveState.summarySignature) {
       liveState.summarySignature = summarySignature;
       appendDiscoveryLog(
-        `Discovery: probed ${probedCount}/${Math.max(foundCount, probedCount, 1)} found so far, queued ${queuedCount}, failed ${failedCount}, skipped dupes ${skippedCount}, invalid ${invalidCount}.`,
+        `Discovery: endpoints ${foundCount}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}, failed ${failedCount}, skipped dupes ${skippedCount}, invalid ${invalidCount}.`,
         failedCount > 0 ? "warn" : "info"
       );
     }
@@ -219,7 +230,10 @@ export function createAdminDiscoveryController({
 
     if ((nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 12000) {
       liveState.lastHeartbeatAtMs = nowMs;
-      appendDiscoveryLog(`Discovery active: found ${foundCount}, probed ${probedCount}, queued ${queuedCount}.`, "muted");
+      appendDiscoveryLog(
+        `Discovery active${phaseLabel ? ` (${phaseLabel})` : ""}: endpoints ${foundCount}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}.`,
+        "muted"
+      );
     }
   }
 
@@ -240,6 +254,7 @@ export function createAdminDiscoveryController({
     state.discoveryCompletionPollDeadline = state.discoveryLaunchAtMs + state.discoveryReportPollTimeoutMs;
     state.discoveryLogRemoteOffset = 0;
     state.discoveryLiveProgressState = {
+      phaseLabel: "",
       summarySignature: "",
       candidateCount: 0,
       failureCount: 0,
@@ -292,12 +307,13 @@ export function createAdminDiscoveryController({
     const finishedMs = parseReportTimestampMs(report?.finishedAt);
     if (finishedMs >= (state.discoveryLaunchAtMs - 1000)) {
       const summary = report?.summary || {};
-      const queuedCount = Number(summary.queuedCandidateCount ?? summary.newCandidateCount ?? 0);
+      const queuedCount = deriveDiscoveryQueuedCount(report);
+      const deferredCount = Number(summary.discoverableButDeferredCount ?? 0);
       const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
       const failedCount = Number(summary.failedProbeCount || 0);
       updateDiscoveryProgressFromReport(report, { running: true });
       appendDiscoveryLog(
-        `Discovery completed: found ${Number(summary.foundEndpointCount ?? 0)}, probed ${probedCount}, queued ${queuedCount}, failed ${failedCount}.`,
+        `Discovery completed: endpoints ${Number(summary.foundEndpointCount ?? 0)}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}, failed ${failedCount}.`,
         failedCount > 0 ? "warn" : "success"
       );
       clearOptimisticDiscoveryRun();

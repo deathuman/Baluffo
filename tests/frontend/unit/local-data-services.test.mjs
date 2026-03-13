@@ -83,6 +83,18 @@ test("attachmentsService list returns normalized list", async () => {
   assert.deepEqual(result.data, [{ id: "a1" }]);
 });
 
+test("attachmentsService list preserves hydrated image blobs for previews", async () => {
+  const blob = new Blob(["img"], { type: "image/png" });
+  setMockApi({
+    listAttachmentsForJob: async () => [{ id: "a1", name: "shot.png", type: "image/png", blob }]
+  });
+  const { attachmentsService } = await import("../../../frontend/local-data/services.js");
+  const result = await attachmentsService.listAttachmentsForJob("u1", "job_1");
+  assert.equal(result.ok, true);
+  assert.equal(result.data.length, 1);
+  assert.equal(result.data[0].blob, blob);
+});
+
 test("adminService overview returns fallback data on error", async () => {
   setMockApi({
     getAdminOverview: async () => {

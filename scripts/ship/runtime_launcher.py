@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.ship import update_manager
+from scripts.app_version import get_app_version
 from scripts.baluffo_config import get_bridge_defaults, get_desktop_defaults
 
 BRIDGE_DEFAULTS = get_bridge_defaults()
@@ -196,6 +197,7 @@ def run_site_server(root: str | Path | None = None, *, port: int = int(DESKTOP_D
             {
                 "ok": True,
                 "mode": "site",
+                "appVersion": get_app_version(),
                 "root": str(layout.root),
                 "activeRoot": str(layout.active_root),
                 "currentVersion": layout.current_version,

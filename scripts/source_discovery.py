@@ -1459,22 +1459,54 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
     static_web_candidates: List[Dict[str, Any]] = []
     web_failures: List[Dict[str, Any]] = []
 
-    streams: List[Tuple[str, List[Dict[str, Any]]]] = [("curated_seed", stage_curated_seed_candidates())]
+    stage_status = {
+        "phase": "candidate_generation",
+        "phaseLabel": "Generating initial discovery candidates",
+    }
+
+    streams: List[Tuple[str, List[Dict[str, Any]]]] = []
+    emit_log("Generating curated seed candidates from static discovery inputs.")
+    curated_seed_candidates = stage_curated_seed_candidates()
+    emit_log(f"Curated seed generation complete: {len(curated_seed_candidates)} candidate(s).")
+    streams.append(("curated_seed", curated_seed_candidates))
     if mode == "dynamic":
-        streams.append(("provider_pattern", build_pattern_candidates()))
+        emit_log("Generating provider-pattern candidates from the studio seed catalog.")
+        provider_pattern_candidates = build_pattern_candidates()
+        emit_log(f"Provider-pattern generation complete: {len(provider_pattern_candidates)} candidate(s).")
+        streams.append(("provider_pattern", provider_pattern_candidates))
+
+        emit_log("Scanning known careers pages from the seed catalog.")
+        stage_status["phaseLabel"] = "Scanning known careers pages"
         provider_web_candidates, static_web_candidates, web_failures = discover_seed_careers_page_candidates(timeout_s, fetcher=fetcher)
+        emit_log(
+            "Seed careers scan complete: "
+            f"provider={len(provider_web_candidates)}, static={len(static_web_candidates)}, failures={len(web_failures)}."
+        )
         streams.append(("web_provider", provider_web_candidates))
         streams.append(("generic_static", static_web_candidates))
+
+        emit_log("Scanning Gamesmap directory for discoverable studios.")
+        stage_status["phaseLabel"] = "Scanning Gamesmap directory"
         provider_gamesmap_candidates, static_gamesmap_candidates, gamesmap_failures = discover_gamesmap_candidates(
             timeout_s,
             config=effective_config,
             fetcher=fetcher,
         )
+        emit_log(
+            "Gamesmap scan complete: "
+            f"provider={len(provider_gamesmap_candidates)}, static={len(static_gamesmap_candidates)}, failures={len(gamesmap_failures)}."
+        )
         web_failures.extend(gamesmap_failures)
         streams.append(("web_provider", provider_gamesmap_candidates))
         streams.append(("generic_static", static_gamesmap_candidates))
         if include_web_search:
+            emit_log("Running web-search discovery queries.")
+            stage_status["phaseLabel"] = "Running web-search queries"
             provider_search_candidates, static_search_candidates, search_failures = discover_web_search_candidates(timeout_s, fetcher=fetcher)
+            emit_log(
+                "Web-search discovery complete: "
+                f"provider={len(provider_search_candidates)}, static={len(static_search_candidates)}, failures={len(search_failures)}."
+            )
             provider_web_candidates.extend(provider_search_candidates)
             static_web_candidates.extend(static_search_candidates)
             web_failures.extend(search_failures)
@@ -1598,10 +1630,19 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
     queue_filtered_count = 0
     probe_failed_count = 0
 
-    def build_summary(current_candidates: List[Dict[str, Any]], deferred_candidates: int = 0, deferred_counts: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+    def build_summary(
+        current_candidates: List[Dict[str, Any]],
+        deferred_candidates: int = 0,
+        deferred_counts: Optional[Dict[str, int]] = None,
+        *,
+        phase: str = "",
+        phase_label: str = "",
+    ) -> Dict[str, Any]:
         deferred_reason_rows = deferred_counts or {}
         deferred_by_cap = int(sum(int(value or 0) for value in deferred_reason_rows.values()))
         return {
+            "phase": str(phase or ""),
+            "phaseLabel": str(phase_label or ""),
             "probedCount": probed,
             "healthyCount": healthy,
             "newCandidateCount": len(current_candidates),
@@ -1638,7 +1679,7 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
             },
         }
 
-    def write_progress_report(current_candidates: List[Dict[str, Any]]) -> None:
+    def write_progress_report(current_candidates: List[Dict[str, Any]], *, phase: str = "", phase_label: str = "") -> None:
         save_json_atomic(
             DISCOVERY_REPORT_PATH,
             {
@@ -1646,7 +1687,7 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
                 "mode": mode,
                 "startedAt": started_at,
                 "finishedAt": "",
-                "summary": build_summary(current_candidates),
+                "summary": build_summary(current_candidates, phase=phase, phase_label=phase_label),
                 "candidates": current_candidates,
                 "failures": failures,
                 "topFailures": [],
@@ -1658,8 +1699,11 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
             },
         )
 
-    write_progress_report([])
+    write_progress_report([], phase="candidate_generation", phase_label=str(stage_status.get("phaseLabel") or "Generating initial discovery candidates"))
     emit_log(f"Starting probe phase for {len(filtered)} candidate(s).")
+    stage_status["phase"] = "probe"
+    stage_status["phaseLabel"] = f"Probing {len(filtered)} candidate(s)"
+    write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
     for raw in filtered:
         processed_count += 1
         stage = str(raw.get("discoveryStage") or "provider_pattern")
@@ -1669,7 +1713,7 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
             validation_skipped_count += 1
             failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": invalid_reason, "stage": "validation", "dropStage": "validation", "dropReason": "validation"})
             if processed_count % 5 == 0:
-                write_progress_report(queueable_candidates)
+                write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
             continue
         evidence_score = int(raw.get("evidenceScore") or 0)
         threshold = _evidence_threshold_for_probe(raw, thresholds)
@@ -1678,13 +1722,13 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
                 skipped_low_evidence_probe_count += 1
                 failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"pattern evidence score {evidence_score} below probe threshold {threshold}", "stage": "probe_skipped", "dropStage": "low_evidence_skipped", "dropReason": "probe_threshold"})
                 if processed_count % 5 == 0:
-                    write_progress_report(queueable_candidates)
+                    write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
                 continue
             if low_evidence_probes_used >= int(thresholds.get("lowEvidenceProbeLimit", LOW_EVIDENCE_PROBE_LIMIT)):
                 skipped_low_evidence_probe_count += 1
                 failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"evidence score {evidence_score} below probe threshold {threshold}", "stage": "probe_skipped", "dropStage": "low_evidence_skipped", "dropReason": "low_evidence_probe_cap"})
                 if processed_count % 5 == 0:
-                    write_progress_report(queueable_candidates)
+                    write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
                 continue
             low_evidence_probes_used += 1
         probed += 1
@@ -1695,13 +1739,13 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
             probe_stage = classify_probe_failure_stage(error)
             failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": error, "stage": probe_stage, "dropStage": "probe_failed", "dropReason": probe_stage})
             if processed_count % 5 == 0:
-                write_progress_report(queueable_candidates)
+                write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
             continue
         if not _should_queue_candidate(raw, jobs_found, thresholds):
             queue_filtered_count += 1
             failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"candidate passed probe but evidence {evidence_score} is below queue threshold", "stage": "queue_filtered", "dropStage": "queue_filtered", "dropReason": "queue_threshold"})
             if processed_count % 5 == 0:
-                write_progress_report(queueable_candidates)
+                write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
             continue
         healthy += 1
         score, reasons = compute_candidate_score(raw, jobs_found)
@@ -1715,7 +1759,7 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
                 f"probe_misses={len([row for row in failures if str(row.get('stage')) == 'probe_miss'])}, "
                 f"skipped_low_evidence={skipped_low_evidence_probe_count}."
             )
-            write_progress_report(queueable_candidates)
+            write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
 
     queued_candidates, report_candidates, deferred_reason_counts = apply_queue_balancing(queueable_candidates, top_n)
     for row in report_candidates:
@@ -1746,7 +1790,7 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
         "mode": mode,
         "startedAt": started_at,
         "finishedAt": now_iso(),
-        "summary": summary,
+        "summary": {**summary, "phase": "completed", "phaseLabel": "Discovery completed"},
         "candidates": report_candidates,
         "failures": failures,
         "topFailures": [{"key": key, "count": count} for key, count in failure_counter.most_common(5)],

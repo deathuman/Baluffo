@@ -72,7 +72,9 @@ export function setActivityPanelOpen(open, deps) {
   if (historyPanelToggleBtnEl) {
     historyPanelToggleBtnEl.classList.toggle("active", nextOpen);
     historyPanelToggleBtnEl.setAttribute("aria-expanded", nextOpen ? "true" : "false");
-    historyPanelToggleBtnEl.textContent = nextOpen ? "Hide Activity" : "Show Activity";
+    const label = nextOpen ? "Hide activity timeline" : "Show activity timeline";
+    historyPanelToggleBtnEl.setAttribute("aria-label", label);
+    historyPanelToggleBtnEl.setAttribute("title", label);
   }
   if (persist && currentUser) {
     persistTimelinePreferences(currentUser.uid);

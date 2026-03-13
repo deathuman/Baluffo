@@ -426,6 +426,8 @@ class LocalDataStore:
                 raise ValueError("Saved job not found.")
             previous_status = normalize_application_status(target.get("applicationStatus"))
             next_status = normalize_application_status(status)
+            if previous_status == next_status:
+                return
             if not bool(options.get("override")) and not can_transition_phase(previous_status, next_status):
                 raise ValueError("Invalid phase transition. Use override for backward or skipped transitions.")
             phase_timestamps = dict(target.get("phaseTimestamps") or {})
