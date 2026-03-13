@@ -64,6 +64,9 @@ APP_RUNTIME_SCRIPTS = (
     "local_data_store.py",
     "discovery_seed_catalog.json",
 )
+APP_RUNTIME_SCRIPT_DIRS = (
+    "jobs",
+)
 PACKAGING_FILES = (
     "README.md",
     "github-app-sync-config.template.json",
@@ -159,7 +162,7 @@ def _manifest_payload(version: str, sha256: str) -> dict:
 
 
 def _seed_runtime_data(data_dir: Path) -> None:
-    from scripts.jobs_fetcher import DEFAULT_SOCIAL_CONFIG, DEFAULT_STUDIO_SOURCE_REGISTRY  # local import to keep script lightweight
+    from scripts.jobs.registry import DEFAULT_SOCIAL_CONFIG, DEFAULT_STUDIO_SOURCE_REGISTRY  # local import to keep script lightweight
 
     data_dir.mkdir(parents=True, exist_ok=True)
     payloads = {
@@ -356,6 +359,8 @@ def _copy_app_version(version_dir: Path) -> None:
     _copy_tree(ROOT / "frontend", version_dir / "frontend")
     for rel in APP_RUNTIME_SCRIPTS:
         _copy_file(ROOT / "scripts" / rel, version_dir / "scripts" / rel)
+    for rel in APP_RUNTIME_SCRIPT_DIRS:
+        _copy_tree(ROOT / "scripts" / rel, version_dir / "scripts" / rel)
     _copy_file(ROOT / "scripts" / "ship" / "__init__.py", version_dir / "scripts" / "ship" / "__init__.py")
     for rel in PACKAGING_FILES:
         _copy_file(ROOT / "packaging" / rel, version_dir / "packaging" / rel)

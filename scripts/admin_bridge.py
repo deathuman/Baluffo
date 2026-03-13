@@ -27,12 +27,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.jobs_fetcher import (
-    DEFAULT_STUDIO_SOURCE_REGISTRY,
-    default_source_loaders,
-    normalize_url as normalize_job_url,
-    parse_jobpostings_from_html,
-)
+from scripts.jobs.parsers import parse_jobpostings_from_html
+from scripts.jobs.pipeline import default_source_loaders
+from scripts.jobs.registry import DEFAULT_STUDIO_SOURCE_REGISTRY
+from scripts.jobs.transport import normalize_url as normalize_job_url
 from scripts import source_discovery as discovery
 from scripts import fetcher_metrics as fetcher_metrics_module
 from scripts import source_registry as source_registry_module
