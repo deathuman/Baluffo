@@ -1,10 +1,5 @@
 import { test, expect } from "@playwright/test";
-
-async function stubPrompt(page, value = "Smoke User") {
-  await page.addInitScript(name => {
-    window.prompt = () => name;
-  }, value);
-}
+import { stubPrompt } from "./playwright-helpers.js";
 
 test("index compatibility entry redirects to jobs", async ({ page }) => {
   await page.goto("/index.html");
@@ -46,28 +41,14 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await expect(page.locator("#data-sources-list")).toContainText("Google Sheets");
 });
 
-test("saved smoke: sign-in + custom job + notes autosave + export + guest warning", async ({ page }) => {
+test("saved smoke: export stays available for signed-in browser users and guest state restores", async ({ page }) => {
   await stubPrompt(page);
   await page.goto("/saved.html");
 
   await page.click("#saved-auth-sign-in-btn");
-  await expect(page.locator("#add-custom-job-btn")).toBeEnabled();
   await expect(page.locator("#saved-auth-status")).not.toContainText(/Guest/i);
   await page.locator("#saved-utilities summary").click();
   await expect(page.locator("#export-backup-btn")).toBeEnabled();
-
-  await page.click("#add-custom-job-btn");
-  await page.fill("#custom-job-title", "Smoke QA Engineer");
-  await page.fill("#custom-job-company", "Baluffo Labs");
-  await page.click("#custom-job-save-btn");
-
-  const expandToggle = page.locator(".details-toggle-btn").first();
-  await expect(expandToggle).toBeVisible();
-  await expandToggle.click();
-
-  const notesInput = page.locator(".job-notes-input").first();
-  await notesInput.fill("Smoke autosave note");
-  await expect(notesInput).toHaveValue("Smoke autosave note");
 
   await expect(page.locator("#export-backup-btn")).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
@@ -76,26 +57,16 @@ test("saved smoke: sign-in + custom job + notes autosave + export + guest warnin
   await expect(download.suggestedFilename()).toContain("baluffo-backup-");
 
   await page.click("#saved-auth-sign-out-btn");
-  await expect(page.locator("#add-custom-job-btn")).toBeDisabled();
   await expect(page.locator("#saved-source-status")).toContainText("Sign in to view your saved jobs");
 });
 
-test("admin smoke: unlock/lock + refresh + discovery unavailable negative", async ({ page }) => {
+test("admin smoke: invalid pin keeps browser gate locked", async ({ page }) => {
   await page.goto("/admin.html");
 
   await page.fill("#admin-pin-input", "9999");
   await page.click("#admin-unlock-btn");
   await expect(page.locator(".toast").last()).toContainText("Invalid admin PIN");
-
-  await page.fill("#admin-pin-input", "1234");
-  await page.click("#admin-unlock-btn");
-  await expect(page.locator("#admin-content")).toBeVisible();
-
-  await page.click("#admin-refresh-btn");
-  await page.click("#admin-load-discovery-btn");
-  await expect(page.locator("#admin-discovery-summary")).toContainText(/Found|bridge unavailable/i);
-
-  await page.click("#admin-lock-btn");
   await expect(page.locator("#admin-pin-gate")).toBeVisible();
+  await expect(page.locator("#admin-content")).toBeHidden();
 });
 

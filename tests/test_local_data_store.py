@@ -128,21 +128,24 @@ class LocalDataStoreTests(unittest.TestCase):
             payload_no_files = store.export_profile_data(uid, include_files=False)
             self.assertEqual(payload_no_files.get("schemaVersion"), 2)
             self.assertEqual(payload_no_files.get("includesFiles"), False)
+            self.assertEqual(payload_no_files.get("counts"), {"savedJobs": 2, "customJobs": 1, "historyEvents": activity_before_len, "attachments": 2})
             self.assertEqual(any(bool((row or {}).get("blobDataUrl")) for row in payload_no_files.get("attachments") or []), False)
 
             payload_with_files = store.export_profile_data(uid, include_files=True)
             self.assertEqual(payload_with_files.get("schemaVersion"), 2)
             self.assertEqual(payload_with_files.get("includesFiles"), True)
+            self.assertEqual(payload_with_files.get("counts"), {"savedJobs": 2, "customJobs": 1, "historyEvents": activity_before_len, "attachments": 2})
             self.assertEqual(all(bool((row or {}).get("blobDataUrl")) for row in payload_with_files.get("attachments") or []), True)
 
             store.wipe_account_admin("1234", uid)
             recreated = store.sign_in("BackupRoundtrip")
             uid_after = str(recreated["uid"])
             result = store.import_profile_data(uid_after, payload_with_files)
-            self.assertGreaterEqual(int(result.get("created", 0)), 2)
-            self.assertGreaterEqual(int(result.get("historyAdded", 0)), 1)
-            self.assertGreaterEqual(int(result.get("attachmentsAdded", 0)), 2)
-            self.assertGreaterEqual(int(result.get("attachmentsHydrated", 0)), 2)
+            self.assertEqual(int(result.get("created", 0)), 2)
+            self.assertEqual(int(result.get("updated", 0)), 0)
+            self.assertEqual(int(result.get("skippedInvalid", 0)), 0)
+            self.assertEqual(int(result.get("historyAdded", 0)), activity_before_len)
+            self.assertEqual(sorted(str(w) for w in result.get("warnings") or []), [])
 
             jobs_after = {row["jobKey"]: row for row in store.list_saved_jobs(uid_after)}
             self.assertEqual(set(jobs_before.keys()), set(jobs_after.keys()))
@@ -200,9 +203,9 @@ class LocalDataStoreTests(unittest.TestCase):
             self.assertEqual(len(jobs), 1)
             self.assertEqual(jobs[0]["title"], "QA Engineer Updated")
             self.assertEqual(int(result.get("skippedInvalid", 0)), 2)
-            self.assertGreaterEqual(int(result.get("attachmentsAdded", 0)), 1)
-            self.assertGreaterEqual(int(result.get("attachmentsHydrated", 0)), 1)
-            self.assertGreaterEqual(int(result.get("historyAdded", 0)), 1)
+            self.assertEqual(int(result.get("created", 0)), 0)
+            self.assertEqual(int(result.get("updated", 0)), 1)
+            self.assertEqual(int(result.get("historyAdded", 0)), 1)
             self.assertTrue(any("jobKey" in str(w) for w in result.get("warnings") or []))
 
 

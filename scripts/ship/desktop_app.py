@@ -55,9 +55,9 @@ MB_OK = 0x00000000
 MB_ICONERROR = 0x00000010
 APP_PATH_REGISTRY_SUBKEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths"
 CHROMIUM_BROWSER_CANDIDATES = (
-    ("msedge", "msedge.exe"),
     ("chrome", "chrome.exe"),
     ("brave", "brave.exe"),
+    ("msedge", "msedge.exe"),
 )
 
 
@@ -374,6 +374,14 @@ def resolve_chromium_browser_candidates() -> list[dict[str, str]]:
             })
             break
     return candidates
+
+
+def chromium_app_mode_supported(candidate: dict[str, str], *, env: dict[str, str] | None = None) -> bool:
+    env_map = env if env is not None else os.environ
+    browser_name = str(candidate.get("name") or "").strip().lower()
+    if browser_name != "msedge":
+        return True
+    return _truthy_env(env_map.get("BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"))
 
 
 def load_session_state(env: dict[str, str] | None = None) -> dict[str, object]:
@@ -818,7 +826,8 @@ def launch_browser_for_url(url: str, *, preferred_browser_path: str = "", env: d
     if preferred_browser_path:
         preferred = str(preferred_browser_path).strip().lower()
         candidates = sorted(candidates, key=lambda item: 0 if str(item.get("path") or "").lower() == preferred else 1)
-    for candidate in candidates:
+    app_mode_candidates = [candidate for candidate in candidates if chromium_app_mode_supported(candidate, env=env)]
+    for candidate in app_mode_candidates:
         browser_path = str(candidate.get("path") or "").strip()
         if not browser_path:
             continue
@@ -826,12 +835,14 @@ def launch_browser_for_url(url: str, *, preferred_browser_path: str = "", env: d
             process = launch_chromium_app(url, browser_path, profile_dir)
         except OSError:
             continue
+        launch_started_mono = time.perf_counter()
         if wait_for_browser_process_ready(process):
             return {
                 "mode": "chromium-app",
                 "browserName": str(candidate.get("name") or ""),
                 "browserPath": browser_path,
                 "process": process,
+                "windowShownAtMonotonic": launch_started_mono,
             }
         # Some Chromium builds (notably Brave) can exit the launcher process
         # immediately after handing off the app window to another process.
@@ -844,8 +855,10 @@ def launch_browser_for_url(url: str, *, preferred_browser_path: str = "", env: d
                 "browserName": str(candidate.get("name") or ""),
                 "browserPath": browser_path,
                 "process": None,
+                "windowShownAtMonotonic": launch_started_mono,
             }
         terminate_process(process)
+    launch_started_mono = time.perf_counter()
     if not webbrowser.open(url):
         raise RuntimeError("Baluffo could not launch a browser window for the desktop session.")
     return {
@@ -853,6 +866,7 @@ def launch_browser_for_url(url: str, *, preferred_browser_path: str = "", env: d
         "browserName": "",
         "browserPath": "",
         "process": None,
+        "windowShownAtMonotonic": launch_started_mono,
     }
 
 
@@ -1080,6 +1094,10 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         launch_result = launch_browser_for_url(open_url)
         launch_mode = str(launch_result.get("mode") or "default-browser")
         browser_process = launch_result.get("process") if isinstance(launch_result.get("process"), subprocess.Popen) else None
+        shell_window_shown_elapsed_ms = int((time.perf_counter() - started_mono) * 1000)
+        window_shown_at_mono = launch_result.get("windowShownAtMonotonic")
+        if isinstance(window_shown_at_mono, (int, float)):
+            shell_window_shown_elapsed_ms = max(0, int((float(window_shown_at_mono) - started_mono) * 1000))
         _append_startup_trace(
             config.data_dir,
             "desktop_browser_launch_selected",
@@ -1108,7 +1126,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         _append_startup_trace(
             config.data_dir,
             "desktop_shell_window_shown",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            elapsedMs=shell_window_shown_elapsed_ms,
             mode=launch_mode,
         )
         stop_reason = watch_browser_session(config.data_dir, started_mono, bridge_port=config.bridge_port, browser_process=browser_process)

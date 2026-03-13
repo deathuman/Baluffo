@@ -172,56 +172,52 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
             self.assertEqual(resolved, rebuilt_exe.resolve())
             build_mock.assert_called_once_with(rebuilt_dir)
 
-    def test_parse_playwright_report_flattens_spec_statuses(self) -> None:
+    def test_parse_packaged_node_smoke_report_reads_scenarios(self) -> None:
         with workspace_tmpdir("packaged-smoke") as tmp:
-            report_path = Path(tmp) / "playwright-report.json"
+            report_path = Path(tmp) / "smoke-report.json"
             report_path.write_text(
                 json.dumps(
                     {
-                        "suites": [
-                            {
-                                "title": "chromium",
-                                "specs": [
-                                    {
-                                        "title": "Startup",
-                                        "tests": [
-                                            {
-                                                "results": [
-                                                    {
-                                                        "status": "passed",
-                                                        "duration": 1234,
-                                                    }
-                                                ]
-                                            }
-                                        ],
-                                    },
-                                    {
-                                        "title": "Admin access",
-                                        "tests": [
-                                            {
-                                                "results": [
-                                                    {
-                                                        "status": "failed",
-                                                        "duration": 321,
-                                                        "error": {"message": "unlock failed"},
-                                                    }
-                                                ]
-                                            }
-                                        ],
-                                    },
-                                ],
-                            }
-                        ]
+                        "ok": False,
+                        "scenarios": [
+                            {"name": "Jobs startup", "status": "passed", "durationMs": 1200, "error": ""},
+                            {"name": "Admin action", "status": "failed", "durationMs": 500, "error": "unlock failed"},
+                        ],
                     }
                 ),
                 encoding="utf-8",
             )
-            rows = smoke.parse_playwright_report(report_path)
+            rows = smoke.parse_packaged_node_smoke_report(report_path)
             self.assertEqual(len(rows), 2)
-            self.assertEqual(rows[0]["name"], "Startup")
-            self.assertEqual(rows[0]["status"], "passed")
-            self.assertEqual(rows[1]["status"], "failed")
+            self.assertEqual(rows[0]["name"], "Jobs startup")
             self.assertEqual(rows[1]["error"], "unlock failed")
+
+    def test_collect_packaged_smoke_env_diagnostics_reports_paths_and_elevation(self) -> None:
+        with workspace_tmpdir("packaged-smoke") as tmp:
+            root = Path(tmp)
+            exe_path = root / "dist" / "baluffo-portable" / "Baluffo.exe"
+            exe_path.parent.mkdir(parents=True, exist_ok=True)
+            exe_path.write_text("exe", encoding="utf-8")
+            env = {"TMP": str(root / "tmp"), "TEMP": str(root / "temp")}
+            with mock.patch.object(smoke, "is_windows_process_elevated", return_value=True):
+                diagnostics = smoke.collect_packaged_smoke_env_diagnostics(
+                    artifacts_dir=root / "artifacts",
+                    exe_path=exe_path,
+                    node_command=["C:/Program Files/nodejs/node.exe"],
+                    env=env,
+                )
+            self.assertTrue(diagnostics["artifactsDirWritable"])
+            self.assertTrue(diagnostics["exeParentWritable"])
+            self.assertEqual(diagnostics["nodePath"], "C:/Program Files/nodejs/node.exe")
+            self.assertEqual(diagnostics["tmp"], str(root / "tmp"))
+            self.assertEqual(diagnostics["temp"], str(root / "temp"))
+            self.assertTrue(diagnostics["isElevated"])
+
+    def test_classify_subprocess_error_marks_spawn_eperm(self) -> None:
+        error = PermissionError("spawn EPERM")
+        self.assertEqual(smoke.classify_subprocess_error(error), "node_process_spawn_blocked")
+        self.assertEqual(smoke.classify_subprocess_error("Error: spawn EPERM"), "playwright_worker_spawn_blocked")
+        self.assertEqual(smoke.classify_subprocess_error("browserType.launch: spawn EPERM"), "node_process_spawn_blocked")
 
     def test_run_packaged_smoke_writes_failure_report_on_runtime_timeout(self) -> None:
         with workspace_tmpdir("packaged-smoke") as tmp:
@@ -251,11 +247,14 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 smoke, "launch_packaged_exe", return_value=(process, stdout_handle, stderr_handle)
             ), mock.patch.object(
                 smoke, "wait_for_packaged_runtime", side_effect=TimeoutError("timed out waiting for bridge")
-            ), mock.patch.object(smoke, "terminate_process_tree") as terminate_mock:
+            ), mock.patch.object(smoke, "terminate_process_tree") as terminate_mock, mock.patch.object(
+                smoke, "collect_packaged_smoke_env_diagnostics", return_value={"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False}
+            ):
                 payload = smoke.run_packaged_smoke(args)
             self.assertFalse(payload["ok"])
             self.assertEqual(payload["failure"]["step"], "runner")
             self.assertIn("timed out waiting for bridge", payload["failure"]["message"])
+            self.assertEqual(payload["environment"]["tmp"], "C:/tmp")
             self.assertTrue(report_path.exists())
             saved = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertFalse(saved["ok"])
@@ -313,12 +312,15 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 },
             ), mock.patch.object(
                 smoke,
-                "run_playwright_packaged_smoke",
+                "run_packaged_node_smoke",
                 return_value={
                     "exitCode": 0,
-                    "reportPath": str(artifacts_dir / "playwright-report.json"),
-                    "outputDir": str(artifacts_dir / "playwright-output"),
+                    "reportPath": str(artifacts_dir / "smoke-report.json"),
+                    "outputDir": str(artifacts_dir / "smoke-output"),
                     "scenarios": scenarios,
+                    "failureCategory": "",
+                    "runnerError": "",
+                    "environment": {"tmp": str(artifacts_dir / "tmp"), "temp": str(artifacts_dir / "tmp"), "isElevated": False},
                 },
             ), mock.patch.object(
                 smoke,
@@ -333,13 +335,69 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
             self.assertEqual(payload["scenarios"][0]["name"], "Startup Profile")
             self.assertEqual(payload["scenarios"][1:], scenarios)
             self.assertEqual(payload["startupMetrics"], startup_metrics)
+            self.assertEqual(payload["environment"]["tmp"], str(artifacts_dir / "tmp"))
             self.assertTrue(report_path.exists())
             saved = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertTrue(saved["ok"])
-            self.assertEqual(saved["artifacts"]["playwrightReport"], str(artifacts_dir / "playwright-report.json"))
+            self.assertEqual(saved["artifacts"]["smokeReport"], str(artifacts_dir / "smoke-report.json"))
+            self.assertEqual(saved["artifacts"]["smokeRunnerStdout"], str(artifacts_dir / "smoke-runner-stdout.log"))
+            self.assertEqual(saved["artifacts"]["playwrightReport"], str(artifacts_dir / "smoke-report.json"))
+            self.assertEqual(saved["artifacts"]["playwrightStdout"], str(artifacts_dir / "smoke-runner-stdout.log"))
             terminate_mock.assert_called_once_with(process)
             stdout_handle.close.assert_called_once()
             stderr_handle.close.assert_called_once()
+
+    def test_run_packaged_smoke_classifies_spawn_failure_from_node_runner(self) -> None:
+        with workspace_tmpdir("packaged-smoke") as tmp:
+            root = Path(tmp)
+            report_path = root / "data" / "latest.json"
+            artifacts_dir = root / "artifacts"
+            exe_path = root / "Baluffo.exe"
+            exe_path.write_text("exe", encoding="utf-8")
+            process = mock.Mock()
+            process.pid = 999
+            process.poll.return_value = None
+            stdout_handle = mock.Mock()
+            stderr_handle = mock.Mock()
+            args = smoke.parse_args(
+                [
+                    "--exe-path",
+                    str(exe_path),
+                    "--report-path",
+                    str(report_path),
+                    "--artifacts-dir",
+                    str(artifacts_dir),
+                ]
+            )
+            with mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path), mock.patch.object(
+                smoke, "launch_packaged_exe", return_value=(process, stdout_handle, stderr_handle)
+            ), mock.patch.object(
+                smoke,
+                "wait_for_packaged_runtime",
+                return_value={"health": {"ok": True}, "session": {"ok": True}, "startupMetrics": []},
+            ), mock.patch.object(
+                smoke,
+                "capture_runtime_snapshot",
+                return_value={},
+            ), mock.patch.object(
+                smoke,
+                "run_packaged_node_smoke",
+                return_value={
+                    "exitCode": 1,
+                    "reportPath": str(artifacts_dir / "smoke-report.json"),
+                    "outputDir": str(artifacts_dir / "smoke-output"),
+                    "scenarios": [],
+                    "failureCategory": "node_process_spawn_blocked",
+                    "runnerError": "spawn EPERM",
+                    "environment": {"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": True},
+                },
+            ), mock.patch.object(smoke, "terminate_process_tree"):
+                payload = smoke.run_packaged_smoke(args)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["failure"]["step"], "playwright")
+            self.assertEqual(payload["failure"]["category"], "node_process_spawn_blocked")
+            self.assertEqual(payload["failure"]["message"], "spawn EPERM")
+            self.assertEqual(payload["environment"]["isElevated"], True)
 
     def test_run_packaged_smoke_fails_when_embedded_probe_fails(self) -> None:
         with workspace_tmpdir("packaged-smoke") as tmp:

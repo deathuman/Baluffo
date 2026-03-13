@@ -38,13 +38,12 @@ test("backup import-export: buildProfileBackupPayload emits deterministic orderi
   assert.equal(payload.schemaVersion, 2);
   assert.equal(payload.version, 2);
   assert.equal(payload.includesFiles, true);
-  assert.ok(Array.isArray(payload.savedJobs));
-  assert.ok(Array.isArray(payload.attachments));
-  assert.ok(Array.isArray(payload.activityLog));
-  assert.ok(payload.counts && typeof payload.counts === "object");
-  assert.equal(typeof payload.counts.savedJobs, "number");
-  assert.equal(typeof payload.counts.historyEvents, "number");
-  assert.equal(typeof payload.counts.attachments, "number");
+  assert.deepEqual(payload.counts, {
+    savedJobs: 2,
+    customJobs: 0,
+    historyEvents: 2,
+    attachments: 2
+  });
 });
 
 test("backup import-export: includesFiles false keeps payload contract intact", () => {
@@ -66,6 +65,12 @@ test("backup import-export: includesFiles false keeps payload contract intact", 
   assert.equal(payload.attachments.length, 1);
   assert.equal(payload.activityLog.length, 0);
   assert.equal(payload.attachments[0].blobDataUrl, undefined);
+  assert.deepEqual(payload.counts, {
+    savedJobs: 1,
+    customJobs: 0,
+    historyEvents: 0,
+    attachments: 1
+  });
 });
 
 test("backup import-export: includesFiles true keeps attachment payload references", () => {
@@ -90,8 +95,10 @@ test("backup import-export: includesFiles true keeps attachment payload referenc
   });
   assert.equal(payload.includesFiles, true);
   assert.equal(payload.attachments[0].blobDataUrl, "data:text/plain;base64,QQ==");
-  assert.equal(payload.schemaVersion, 2);
-  assert.equal(typeof payload.counts.savedJobs, "number");
-  assert.equal(typeof payload.counts.historyEvents, "number");
-  assert.equal(typeof payload.counts.attachments, "number");
+  assert.deepEqual(payload.counts, {
+    savedJobs: 1,
+    customJobs: 0,
+    historyEvents: 0,
+    attachments: 1
+  });
 });

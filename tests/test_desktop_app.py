@@ -92,7 +92,7 @@ class DesktopAppTests(unittest.TestCase):
             "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1&startupProbe=1",
         )
 
-    def test_resolve_chromium_browser_candidates_prefers_edge_then_chrome_then_brave(self) -> None:
+    def test_resolve_chromium_browser_candidates_prefers_chrome_then_brave_then_edge(self) -> None:
         with mock.patch.object(
             desktop_app.shutil,
             "which",
@@ -107,7 +107,7 @@ class DesktopAppTests(unittest.TestCase):
         ), mock.patch.object(desktop_app, "resolve_registry_app_path", return_value=""):
             candidates = desktop_app.resolve_chromium_browser_candidates()
 
-        self.assertEqual([row["name"] for row in candidates], ["msedge", "chrome", "brave"])
+        self.assertEqual([row["name"] for row in candidates], ["chrome", "brave", "msedge"])
 
     def test_resolve_chromium_browser_candidates_uses_registry_fallback(self) -> None:
         with mock.patch.object(desktop_app.shutil, "which", return_value=""), mock.patch.object(
@@ -284,17 +284,53 @@ class DesktopAppTests(unittest.TestCase):
         self.assertEqual(result["mode"], "default-browser")
         open_mock.assert_called_once()
 
+    def test_launch_browser_for_url_skips_edge_app_mode_by_default(self) -> None:
+        with mock.patch.object(
+            desktop_app, "resolve_chromium_browser_candidates", return_value=[{"name": "msedge", "path": "C:/Edge/msedge.exe"}]
+        ), mock.patch.object(
+            desktop_app, "launch_chromium_app"
+        ) as launch_mock, mock.patch.object(
+            desktop_app.webbrowser, "open", return_value=True
+        ) as open_mock:
+            result = desktop_app.launch_browser_for_url("http://127.0.0.1:8080/jobs.html")
+
+        self.assertEqual(result["mode"], "default-browser")
+        launch_mock.assert_not_called()
+        open_mock.assert_called_once()
+
+    def test_launch_browser_for_url_can_opt_in_to_edge_app_mode(self) -> None:
+        fake_process = mock.Mock(spec=subprocess.Popen)
+        with mock.patch.object(
+            desktop_app, "resolve_chromium_browser_candidates", return_value=[{"name": "msedge", "path": "C:/Edge/msedge.exe"}]
+        ), mock.patch.object(
+            desktop_app, "launch_chromium_app", return_value=fake_process
+        ), mock.patch.object(
+            desktop_app, "wait_for_browser_process_ready", return_value=True
+        ), mock.patch.object(
+            desktop_app.webbrowser, "open", return_value=True
+        ) as open_mock:
+            result = desktop_app.launch_browser_for_url(
+                "http://127.0.0.1:8080/jobs.html",
+                env={"BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE": "1"},
+            )
+
+        self.assertEqual(result["mode"], "chromium-app")
+        self.assertEqual(result["browserName"], "msedge")
+        self.assertIsInstance(result["windowShownAtMonotonic"], float)
+        open_mock.assert_not_called()
+
     def test_launch_browser_for_url_switches_to_default_browser_when_chromium_exits_with_error(self) -> None:
         fake_process = mock.Mock(spec=subprocess.Popen)
         fake_process.poll.return_value = 1
         with mock.patch.object(
-            desktop_app, "resolve_chromium_browser_candidates", return_value=[{"name": "msedge", "path": "C:/Edge/msedge.exe"}]
+            desktop_app, "resolve_chromium_browser_candidates", return_value=[{"name": "chrome", "path": "C:/Chrome/chrome.exe"}]
         ), mock.patch.object(desktop_app, "launch_chromium_app", return_value=fake_process), mock.patch.object(
             desktop_app.webbrowser, "open", return_value=True
         ) as open_mock, mock.patch.object(desktop_app, "terminate_process") as terminate_mock:
             result = desktop_app.launch_browser_for_url("http://127.0.0.1:8080/jobs.html")
 
         self.assertEqual(result["mode"], "default-browser")
+        self.assertIsInstance(result["windowShownAtMonotonic"], float)
         terminate_mock.assert_called_once_with(fake_process)
         open_mock.assert_called_once()
 
@@ -311,6 +347,7 @@ class DesktopAppTests(unittest.TestCase):
         self.assertEqual(result["mode"], "chromium-app")
         self.assertEqual(result["browserName"], "brave")
         self.assertIsNone(result["process"])
+        self.assertIsInstance(result["windowShownAtMonotonic"], float)
         terminate_mock.assert_not_called()
         open_mock.assert_not_called()
 

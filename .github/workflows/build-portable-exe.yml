@@ -96,7 +96,7 @@ jobs:
         run: |
           npm run test:frontend:unit
           npm run test:py
-          py -3.13 scripts/packaged_desktop_smoke.py
+          npm run test:frontend:packaged
 
       - name: Build portable executable
         run: python scripts/build_portable_exe.py --bundle-version ${{ env.BALUFFO_VERSION }}
