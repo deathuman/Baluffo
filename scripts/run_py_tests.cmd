@@ -7,7 +7,7 @@ set "TEST_TMP=%REPO_ROOT%\.codex-tmp-tests"
 if not exist "%TEST_TMP%" mkdir "%TEST_TMP%"
 set "TMP=%TEST_TMP%"
 set "TEMP=%TEST_TMP%"
-set "PYTHON_CMD=py -3.13"
+set "PYTHON_CMD=python"
 
 %PYTHON_CMD% --version >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (

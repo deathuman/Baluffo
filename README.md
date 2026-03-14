@@ -9,7 +9,7 @@ Baluffo is a local-first web app for browsing, filtering, saving, and managing g
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 It combines:
-- A multi-source jobs feed pipeline (`scripts/jobs_fetcher.py`)
+- A multi-source jobs feed pipeline (scripts/jobs_fetcher.py, a stable wrapper for the modular jobs pipeline)
 - A Jobs UI with advanced filters and quick actions (`jobs.html`)
 - A Saved Jobs workspace with backup/restore and custom entries (`saved.html`)
 - An Admin console for source discovery, approvals, and operations health (`admin.html`)

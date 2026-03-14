@@ -58,8 +58,8 @@ export const AdminConfig = {
   FETCH_REPORT_POLL_TIMEOUT_MS: 10 * 60 * 1000,
   ADMIN_BRIDGE_BASE: resolveRuntimeBridgeBase(),
   BRIDGE_STATUS_POLL_INTERVAL_MS: 10000,
-  ADMIN_PIN_DEFAULT: String(BALUFFO_RUNTIME_CONFIG?.security?.admin_pin_default || DEFAULT_CONFIG.security.admin_pin_default),
+  ADMIN_PIN_DEFAULT: String(BALUFFO_FRONTEND_RUNTIME_CONFIG?.security?.admin_pin_default || "1234"),
   GITHUB_APP_ENABLED_DEFAULT: Boolean(
-    BALUFFO_RUNTIME_CONFIG?.security?.github_app_enabled_default ?? DEFAULT_CONFIG.security.github_app_enabled_default
+    BALUFFO_FRONTEND_RUNTIME_CONFIG?.security?.github_app_enabled_default ?? true
   )
 };
