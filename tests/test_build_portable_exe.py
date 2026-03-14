@@ -3,11 +3,14 @@ from pathlib import Path
 from unittest import mock
 from zipfile import ZipFile
 
+from scripts.app_version import APP_VERSION
 from scripts import build_ship_bundle
 from scripts.build_portable_exe import (
+    DEFAULT_BUNDLE_VERSION,
     build_portable_layout,
     create_zip,
     generate_icon_file,
+    parse_args,
     resolve_icon_path,
 )
 from tests.temp_paths import workspace_tmpdir
@@ -37,6 +40,12 @@ class BuildPortableExeTests(unittest.TestCase):
                 names = set(handle.namelist())
             self.assertIn("Baluffo.exe", names)
             self.assertIn("ship/", names)
+
+    def test_parse_args_defaults_to_shared_app_version(self) -> None:
+        with mock.patch("sys.argv", ["build_portable_exe.py"]):
+            args = parse_args()
+        self.assertEqual(DEFAULT_BUNDLE_VERSION, APP_VERSION)
+        self.assertEqual(args.bundle_version, APP_VERSION)
 
     def test_generate_icon_file_writes_valid_ico_header(self) -> None:
         with workspace_tmpdir("build-portable-exe") as tmp:

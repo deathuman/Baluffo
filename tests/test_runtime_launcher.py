@@ -4,7 +4,9 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
+from scripts.app_version import APP_VERSION
 from scripts.ship import runtime_launcher as rl
 from tests.temp_paths import workspace_tmpdir
 
@@ -104,6 +106,26 @@ class RuntimeLauncherTests(unittest.TestCase):
             events = [json.loads(line)["event"] for line in metrics_path.read_text(encoding="utf-8").splitlines() if line.strip()]
             self.assertIn("desktop_site_request_start", events)
             self.assertIn("desktop_site_request_complete", events)
+
+    def test_run_site_server_reports_app_version(self) -> None:
+        with workspace_tmpdir("runtime-launcher") as tmp:
+            root = Path(tmp) / "ship"
+            _seed_ship_root(root, version="2.4.6")
+
+            class _StopServer(Exception):
+                pass
+
+            with mock.patch("builtins.print") as print_mock, mock.patch.object(
+                rl,
+                "ThreadingHTTPServer",
+                side_effect=_StopServer,
+            ):
+                with self.assertRaises(_StopServer):
+                    rl.run_site_server(root, port=8123)
+
+            payload = json.loads(print_mock.call_args.args[0])
+            self.assertEqual(payload["appVersion"], APP_VERSION)
+            self.assertEqual(payload["currentVersion"], "2.4.6")
 
 
 if __name__ == "__main__":

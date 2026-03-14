@@ -317,7 +317,6 @@ def _validate_input(payload: Any) -> Tuple[Dict[str, Any] | None, str]:
             "studio": studio,
             "pages": [_clean_text(item) for item in pages if _clean_text(item)],
             "nlPriority": bool(source.get("nlPriority", False)),
-            "remoteFriendly": bool(source.get("remoteFriendly", True)),
         },
         "runtime": {
             "timeout_s": timeout_s,

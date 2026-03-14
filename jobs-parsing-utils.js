@@ -9,6 +9,19 @@ export function parseUnifiedJobsPayload(payload) {
     return rows.filter(row => row && typeof row === "object");
   }
 
+  const UNKNOWN_COMPANY_LABEL = "Unknown company";
+  const UNTRUSTWORTHY_COMPANY_LABELS = new Set([
+    "game",
+    "tech",
+    "game company",
+    "tech company",
+    "gaming company",
+    "technology company",
+    "giant enemy crab",
+    "farbridge",
+    "enduring games"
+  ]);
+
   function parseCSVRecords(csv) {
     const rows = [];
     let row = [];
@@ -119,16 +132,16 @@ export function parseUnifiedJobsPayload(payload) {
     return candidates;
   }
 
-  function isGenericCompanyLabel(value) {
+  function isUntrustworthyCompanyLabel(value) {
     const lower = String(value || "").trim().toLowerCase();
-    return (
-      lower === "game" ||
-      lower === "tech" ||
-      lower === "game company" ||
-      lower === "tech company" ||
-      lower === "gaming company" ||
-      lower === "technology company"
-    );
+    return UNTRUSTWORTHY_COMPANY_LABELS.has(lower);
+  }
+
+  function normalizeCompanyValue(value) {
+    const company = String(value || "").trim();
+    if (!company) return "";
+    if (isUntrustworthyCompanyLabel(company)) return UNKNOWN_COMPANY_LABEL;
+    return company;
   }
 
   function resolveCompanyName(fields, primaryIdx, candidateIdxs) {
@@ -141,10 +154,11 @@ export function parseUnifiedJobsPayload(payload) {
     });
 
     for (const value of allCandidates) {
-      if (value && !isGenericCompanyLabel(value)) return value;
+      if (value && !isUntrustworthyCompanyLabel(value)) return value;
     }
     for (const value of allCandidates) {
-      if (value) return value;
+      const normalized = normalizeCompanyValue(value);
+      if (normalized) return normalized;
     }
     return "";
   }

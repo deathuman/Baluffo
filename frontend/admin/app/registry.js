@@ -1,3 +1,6 @@
+import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
+import { deriveDiscoveryQueuedCount } from "../domain.js";
+
 export function createAdminRegistryController({
   state,
   refs,
@@ -244,7 +247,12 @@ export function createAdminRegistryController({
       showToast("Select sources to delete.", "info");
       return;
     }
-    if (!window.confirm(`Delete ${sources.length} selected source(s) from registry? This cannot be undone.`)) {
+    const confirmed = await requestConfirmationDialog({
+      title: "Delete selected sources?",
+      description: `Delete ${sources.length} selected source(s) from registry? This cannot be undone.`,
+      confirmLabel: "Delete sources"
+    });
+    if (!confirmed) {
       return;
     }
     setBusyFlag("discoveryWrite", true);
@@ -279,7 +287,7 @@ export function createAdminRegistryController({
       const summary = report?.summary || {};
       const foundCount = Number(summary.foundEndpointCount ?? summary.probedCount ?? 0);
       const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
-      const queuedCount = Number(summary.queuedCandidateCount ?? summary.newCandidateCount ?? 0);
+      const queuedCount = deriveDiscoveryQueuedCount(report);
       const skippedCount = Number(summary.skippedDuplicateCount || 0);
       const failedCount = Number(summary.failedProbeCount || 0);
       const pendingRows = mergeSourceStatusFromReport(Array.isArray(pending?.sources) ? pending.sources : [], latestFetchReport, "pending");

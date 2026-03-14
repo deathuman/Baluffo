@@ -20,6 +20,7 @@ DEFAULT_EXE_NAME = "Baluffo"
 DEFAULT_ICON_SIZE = 256
 RUNTIME_HIDDEN_IMPORTS = (
     "scripts.admin_bridge",
+    "scripts.app_version",
     "scripts.baluffo_config",
     "scripts.contracts",
     "scripts.fetcher_metrics",

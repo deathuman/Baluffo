@@ -356,7 +356,8 @@ export function deriveDiscoveryProgressModel(report, { running = false } = {}) {
   const summary = report?.summary || {};
   const foundCount = Math.max(0, Number(summary.foundEndpointCount ?? 0));
   const probedCount = Math.max(0, Number(summary.probedCandidateCount ?? summary.probedCount ?? 0));
-  const queuedCount = Math.max(0, Number(summary.queuedCandidateCount ?? summary.newCandidateCount ?? 0));
+  const queuedCount = deriveDiscoveryQueuedCount(report);
+  const deferredCount = Math.max(0, Number(summary.discoverableButDeferredCount ?? 0));
   const failedCount = Math.max(0, Number(summary.failedProbeCount || 0));
   const active = Boolean(running) || (!String(report?.finishedAt || "").trim() && (foundCount > 0 || probedCount > 0 || queuedCount > 0 || failedCount > 0));
   if (!active) {
@@ -369,17 +370,25 @@ export function deriveDiscoveryProgressModel(report, { running = false } = {}) {
   }
 
   const determinate = foundCount > 0 || probedCount > 0;
-  const total = Math.max(foundCount, probedCount, 1);
-  const ratio = determinate ? Math.max(0, Math.min(1, probedCount / total)) : 0;
+  const total = Math.max(foundCount, probedCount, 0);
+  const ratio = determinate && total > 0 ? Math.max(0, Math.min(1, probedCount / total)) : 0;
   const label = determinate
-    ? `Discovery: probed ${compactCount(probedCount)}/${compactCount(total)} found so far | queued ${compactCount(queuedCount)} | failed ${compactCount(failedCount)}`
-    : `Discovery: scanning candidates | queued ${compactCount(queuedCount)} | failed ${compactCount(failedCount)}`;
+    ? `Discovery: endpoints ${compactCount(foundCount)} | probed ${compactCount(probedCount)} | queued ${compactCount(queuedCount)} | deferred ${compactCount(deferredCount)} | failed ${compactCount(failedCount)}`
+    : `Discovery: initializing scan | queued ${compactCount(queuedCount)} | deferred ${compactCount(deferredCount)} | failed ${compactCount(failedCount)}`;
   return {
     active: true,
     determinate,
     ratio,
     label
   };
+}
+
+export function deriveDiscoveryQueuedCount(report) {
+  const summary = report?.summary || {};
+  const summaryQueued = Math.max(0, Number(summary.queuedCandidateCount ?? summary.newCandidateCount ?? 0));
+  const candidates = Array.isArray(report?.candidates) ? report.candidates : [];
+  const derivedQueued = candidates.filter(row => row && typeof row === "object" && !row.deferred).length;
+  return Math.max(summaryQueued, derivedQueued);
 }
 
 export function getOpsPollIntervalMs(hasLiveRuns, idleMs = 10000, liveMs = 2000) {

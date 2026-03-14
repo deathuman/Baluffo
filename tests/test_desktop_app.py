@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 from types import SimpleNamespace
 
+from scripts.app_version import APP_VERSION
 from scripts.ship import desktop_app
 from tests.temp_paths import workspace_tmpdir
 
@@ -33,6 +34,8 @@ class DesktopAppTests(unittest.TestCase):
         self.assertEqual(config.ship_root, root)
         self.assertEqual(config.site_port, desktop_app.DEFAULT_SITE_PORT)
         self.assertEqual(config.bridge_port, desktop_app.DEFAULT_BRIDGE_PORT)
+        self.assertFalse(config.site_port_explicit)
+        self.assertFalse(config.bridge_port_explicit)
         self.assertEqual(config.data_dir, root / "data")
         self.assertEqual(config.open_path, "admin.html")
         self.assertEqual(config.title, desktop_app.WINDOW_TITLE)
@@ -92,7 +95,52 @@ class DesktopAppTests(unittest.TestCase):
             "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1&startupProbe=1",
         )
 
-    def test_resolve_chromium_browser_candidates_prefers_edge_then_chrome_then_brave(self) -> None:
+    def test_resolve_runtime_ports_falls_back_to_free_ports_for_defaults(self) -> None:
+        config = desktop_app.DesktopRuntimeConfig(
+            ship_root=Path("C:/tmp/baluffo-ship"),
+            site_port=8080,
+            bridge_port=8877,
+            bridge_host="127.0.0.1",
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+            open_path="jobs.html",
+            title="Baluffo",
+            startup_probe=False,
+        )
+
+        availability = {
+            ("127.0.0.1", 8080): False,
+            ("127.0.0.1", 19080): True,
+            ("127.0.0.1", 8877): False,
+            ("127.0.0.1", 19877): True,
+        }
+        with mock.patch.object(
+            desktop_app,
+            "_port_is_available",
+            side_effect=lambda host, port: availability.get((str(host), int(port)), True),
+        ), mock.patch.object(desktop_app, "choose_free_port", side_effect=[19080, 19877]):
+            resolved = desktop_app.resolve_runtime_ports(config)
+
+        self.assertEqual(resolved.site_port, 19080)
+        self.assertEqual(resolved.bridge_port, 19877)
+
+    def test_resolve_runtime_ports_keeps_explicit_port_fail_fast(self) -> None:
+        config = desktop_app.DesktopRuntimeConfig(
+            ship_root=Path("C:/tmp/baluffo-ship"),
+            site_port=8080,
+            bridge_port=8877,
+            bridge_host="127.0.0.1",
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+            open_path="jobs.html",
+            title="Baluffo",
+            startup_probe=False,
+            site_port_explicit=True,
+        )
+
+        with mock.patch.object(desktop_app, "_port_is_available", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "site port 8080 is already in use"):
+                desktop_app.resolve_runtime_ports(config)
+
+    def test_resolve_chromium_browser_candidates_prefers_chrome_then_brave_then_edge(self) -> None:
         with mock.patch.object(
             desktop_app.shutil,
             "which",
@@ -107,7 +155,7 @@ class DesktopAppTests(unittest.TestCase):
         ), mock.patch.object(desktop_app, "resolve_registry_app_path", return_value=""):
             candidates = desktop_app.resolve_chromium_browser_candidates()
 
-        self.assertEqual([row["name"] for row in candidates], ["msedge", "chrome", "brave"])
+        self.assertEqual([row["name"] for row in candidates], ["chrome", "brave", "msedge"])
 
     def test_resolve_chromium_browser_candidates_uses_registry_fallback(self) -> None:
         with mock.patch.object(desktop_app.shutil, "which", return_value=""), mock.patch.object(
@@ -275,6 +323,22 @@ class DesktopAppTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(reason, "missing_launcher_token")
 
+    def test_validate_session_state_rejects_non_desktop_bridge(self) -> None:
+        state = {
+            "launcherPid": 4444,
+            "bridgePort": 8877,
+            "launcherToken": "token-a",
+            "launcherStartedAt": "2026-03-12T14:00:00+00:00",
+            "exePath": "C:/tmp/Baluffo.exe",
+        }
+        with mock.patch.object(desktop_app, "_process_identity_matches", return_value=True), mock.patch.object(
+            desktop_app, "is_baluffo_bridge_healthy", return_value=False
+        ) as health_mock:
+            ok, reason = desktop_app.validate_session_state(state)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "bridge_unhealthy")
+        health_mock.assert_called_once_with(8877, require_desktop_mode=True)
+
     def test_launch_browser_for_url_falls_back_to_default_browser(self) -> None:
         with mock.patch.object(desktop_app, "resolve_chromium_browser_candidates", return_value=[]), mock.patch.object(
             desktop_app.webbrowser, "open", return_value=True
@@ -284,17 +348,69 @@ class DesktopAppTests(unittest.TestCase):
         self.assertEqual(result["mode"], "default-browser")
         open_mock.assert_called_once()
 
+    def test_launch_browser_for_url_skips_edge_app_mode_by_default(self) -> None:
+        with mock.patch.object(
+            desktop_app, "resolve_chromium_browser_candidates", return_value=[{"name": "msedge", "path": "C:/Edge/msedge.exe"}]
+        ), mock.patch.object(
+            desktop_app, "launch_chromium_app"
+        ) as launch_mock, mock.patch.object(
+            desktop_app.webbrowser, "open", return_value=True
+        ) as open_mock:
+            result = desktop_app.launch_browser_for_url("http://127.0.0.1:8080/jobs.html")
+
+        self.assertEqual(result["mode"], "default-browser")
+        launch_mock.assert_not_called()
+        open_mock.assert_called_once()
+
+    def test_launch_browser_for_url_can_opt_in_to_edge_app_mode(self) -> None:
+        fake_process = mock.Mock(spec=subprocess.Popen)
+        with mock.patch.object(
+            desktop_app, "resolve_chromium_browser_candidates", return_value=[{"name": "msedge", "path": "C:/Edge/msedge.exe"}]
+        ), mock.patch.object(
+            desktop_app, "launch_chromium_app", return_value=fake_process
+        ), mock.patch.object(
+            desktop_app, "wait_for_browser_process_ready", return_value=True
+        ), mock.patch.object(
+            desktop_app.webbrowser, "open", return_value=True
+        ) as open_mock:
+            result = desktop_app.launch_browser_for_url(
+                "http://127.0.0.1:8080/jobs.html",
+                env={"BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE": "1"},
+            )
+
+        self.assertEqual(result["mode"], "chromium-app")
+        self.assertEqual(result["browserName"], "msedge")
+        self.assertIsInstance(result["windowShownAtMonotonic"], float)
+        open_mock.assert_not_called()
+
+    def test_terminate_process_uses_taskkill_tree_on_windows(self) -> None:
+        fake_process = mock.Mock(spec=subprocess.Popen)
+        fake_process.pid = 4321
+        fake_process.poll.return_value = None
+
+        with mock.patch.object(desktop_app, "os") as os_mock, mock.patch.object(
+            desktop_app.subprocess, "run"
+        ) as run_mock:
+            os_mock.name = "nt"
+            desktop_app.terminate_process(fake_process)
+
+        run_mock.assert_called_once()
+        args = run_mock.call_args.args[0]
+        self.assertEqual(args, ["taskkill", "/PID", "4321", "/T", "/F"])
+        fake_process.wait.assert_called_once_with(timeout=5)
+
     def test_launch_browser_for_url_switches_to_default_browser_when_chromium_exits_with_error(self) -> None:
         fake_process = mock.Mock(spec=subprocess.Popen)
         fake_process.poll.return_value = 1
         with mock.patch.object(
-            desktop_app, "resolve_chromium_browser_candidates", return_value=[{"name": "msedge", "path": "C:/Edge/msedge.exe"}]
+            desktop_app, "resolve_chromium_browser_candidates", return_value=[{"name": "chrome", "path": "C:/Chrome/chrome.exe"}]
         ), mock.patch.object(desktop_app, "launch_chromium_app", return_value=fake_process), mock.patch.object(
             desktop_app.webbrowser, "open", return_value=True
         ) as open_mock, mock.patch.object(desktop_app, "terminate_process") as terminate_mock:
             result = desktop_app.launch_browser_for_url("http://127.0.0.1:8080/jobs.html")
 
         self.assertEqual(result["mode"], "default-browser")
+        self.assertIsInstance(result["windowShownAtMonotonic"], float)
         terminate_mock.assert_called_once_with(fake_process)
         open_mock.assert_called_once()
 
@@ -311,6 +427,7 @@ class DesktopAppTests(unittest.TestCase):
         self.assertEqual(result["mode"], "chromium-app")
         self.assertEqual(result["browserName"], "brave")
         self.assertIsNone(result["process"])
+        self.assertIsInstance(result["windowShownAtMonotonic"], float)
         terminate_mock.assert_not_called()
         open_mock.assert_not_called()
 
@@ -381,6 +498,8 @@ class DesktopAppTests(unittest.TestCase):
             desktop_app, "acquire_instance_lock", return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1)
         ), mock.patch.object(
             desktop_app, "release_instance_lock"
+        ), mock.patch.object(
+            desktop_app, "resolve_runtime_ports", return_value=config
         ), mock.patch.object(desktop_app, "start_child_process") as start_mock, mock.patch.object(
             desktop_app, "_append_startup_trace"
         ):
@@ -408,6 +527,8 @@ class DesktopAppTests(unittest.TestCase):
         ), mock.patch.object(
             desktop_app, "release_instance_lock"
         ), mock.patch.object(
+            desktop_app, "resolve_runtime_ports", return_value=config
+        ), mock.patch.object(
             desktop_app, "ensure_runtime_ports"
         ), mock.patch.object(
             desktop_app, "start_child_process", side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)]
@@ -432,6 +553,7 @@ class DesktopAppTests(unittest.TestCase):
             desktop_app.launch_desktop_app(config)
 
         save_payload = save_mock.call_args.args[0]
+        self.assertEqual(save_payload["appVersion"], APP_VERSION)
         self.assertEqual(save_payload["launchMode"], "chromium-app")
         self.assertEqual(save_payload["browserPath"], "C:/Edge/msedge.exe")
         self.assertEqual(save_payload["bridgePort"], 8877)
@@ -456,6 +578,8 @@ class DesktopAppTests(unittest.TestCase):
             desktop_app, "acquire_instance_lock", return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1)
         ), mock.patch.object(
             desktop_app, "release_instance_lock"
+        ), mock.patch.object(
+            desktop_app, "resolve_runtime_ports", return_value=config
         ), mock.patch.object(
             desktop_app, "ensure_runtime_ports"
         ), mock.patch.object(
@@ -507,6 +631,8 @@ class DesktopAppTests(unittest.TestCase):
 
         with mock.patch.object(desktop_app, "acquire_instance_lock", return_value=None), mock.patch.object(
             desktop_app, "diagnose_instance_conflict", return_value={"action": "active", "session": session}
+        ), mock.patch.object(
+            desktop_app, "resolve_runtime_ports", return_value=config
         ), mock.patch.object(desktop_app, "start_child_process") as start_mock, mock.patch.object(
             desktop_app, "_append_startup_trace"
         ):

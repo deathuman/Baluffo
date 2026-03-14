@@ -119,11 +119,66 @@ export function createAdminFetcherController({
     appendLogRow(refs.adminFetcherLogEl, event);
   }
 
+  function normalizeFetcherServerLine(rawLine) {
+    const trimmed = String(rawLine || "").trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.replace(/\s+/g, " ").trim();
+    if (/^triggered fetcher via local admin bridge/i.test(normalized)) return null;
+    if (/^fetcher started\. watching live progress/i.test(normalized)) return null;
+    const level = /\b(error|failed|timeout|dns|ssl|forbidden|traceback|exception)\b/i.test(normalized)
+      ? "warn"
+      : /\bwarn|retry|excluded\b/i.test(normalized)
+        ? "muted"
+        : "muted";
+    return {
+      message: normalized,
+      level
+    };
+  }
+
+  function appendFetcherServerLogText(text) {
+    const payload = String(text || "");
+    if (!payload) return;
+    payload.split(/\r?\n/).forEach(line => {
+      const trimmed = String(line || "").trim();
+      if (!trimmed) return;
+      const match = trimmed.match(/^\[([^\]]+)\]\s*(.*)$/);
+      const normalizedLine = normalizeFetcherServerLine(match ? match[2] : trimmed);
+      if (!normalizedLine) return;
+      if (state.fetcherLiveProgressState?.serverLogSignatures?.has(normalizedLine.message)) return;
+      state.fetcherLiveProgressState?.serverLogSignatures?.add(normalizedLine.message);
+      if (match) {
+        const event = {
+          timestamp: match[1],
+          level: normalizedLine.level,
+          scope: "fetcher",
+          sourceId: "",
+          message: normalizedLine.message
+        };
+        appendLogRow(refs.adminFetcherLogEl, event);
+        return;
+      }
+      appendFetcherLog(normalizedLine.message, normalizedLine.level);
+    });
+  }
+
   function setFetcherLogPlaceholder(message) {
     if (!refs.adminFetcherLogEl) return;
     refs.adminFetcherLogEl.innerHTML = "";
+    state.fetcherLogRemoteOffset = 0;
     setFetcherProgress({ active: false });
     appendFetcherLog(message, "muted");
+  }
+
+  async function loadFetcherLogChunk(options = {}) {
+    if (!state.adminPin) return null;
+    const reset = Boolean(options?.reset);
+    const offset = reset ? 0 : Math.max(0, Number(state.fetcherLogRemoteOffset) || 0);
+    const payload = await getBridge(`/fetcher/log?offset=${offset}`);
+    if (reset) state.fetcherLogRemoteOffset = 0;
+    appendFetcherServerLogText(String(payload?.text || ""));
+    state.fetcherLogRemoteOffset = Math.max(0, Number(payload?.nextOffset) || 0);
+    return payload || null;
   }
 
   function formatFetcherRuntimeOptions(report) {
@@ -375,14 +430,17 @@ export function createAdminFetcherController({
     setBusyFlag("fetcherWatch", true);
     state.fetcherLaunchAtMs = Date.now();
     state.fetcherCompletionPollDeadline = state.fetcherLaunchAtMs + fetchReportPollTimeoutMs;
+    state.fetcherLogRemoteOffset = 0;
     state.fetcherLiveProgressState = {
       summarySignature: "",
       sourceSignatures: new Map(),
       reportedSlowSources: new Set(),
+      serverLogSignatures: new Set(),
       lastHeartbeatAtMs: 0
     };
     updateFetcherProgressFromReport(null, { running: true });
     appendFetcherLog("Fetcher started. Watching live progress...", "info");
+    loadFetcherLogChunk({ reset: true }).catch(() => {});
     scheduleFetcherCompletionPoll(900);
   }
 
@@ -413,7 +471,10 @@ export function createAdminFetcherController({
       return;
     }
 
-    const report = await fetchJobsFetchReportJson();
+    const [report] = await Promise.all([
+      fetchJobsFetchReportJson(),
+      loadFetcherLogChunk().catch(() => null)
+    ]);
     const startedMs = parseReportTimestampMs(report?.startedAt);
     if (startedMs >= (state.fetcherLaunchAtMs - 1000)) {
       appendFetcherProgressFromReport(report, now);
@@ -537,6 +598,8 @@ export function createAdminFetcherController({
     copyLatestFailureSummary,
     triggerJobsFetcherTask,
     startFetcherCompletionWatch,
-    stopFetcherCompletionWatch
+    stopFetcherCompletionWatch,
+    loadFetcherLogChunk,
+    appendFetcherServerLogText
   };
 }

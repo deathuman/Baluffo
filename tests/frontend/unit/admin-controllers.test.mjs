@@ -755,9 +755,11 @@ test("admin discovery controller emits summary-first live progress and updates p
             startedAt: "2026-03-08T10:01:00.000Z",
             finishedAt: "",
             summary: {
+              phaseLabel: "Scanning known careers pages",
               foundEndpointCount: 12,
               probedCandidateCount: 5,
               queuedCandidateCount: 3,
+              discoverableButDeferredCount: 4,
               failedProbeCount: 1,
               skippedDuplicateCount: 2,
               skippedInvalidCount: 0
@@ -774,7 +776,7 @@ test("admin discovery controller emits summary-first live progress and updates p
         }
         if (String(path).startsWith("/discovery/log?offset=")) {
           return {
-            text: "[2026-03-08T10:01:02.000Z] queued candidate detail\n[2026-03-08T10:01:03.000Z] timeout while probing\n",
+            text: "[2026-03-08T10:01:01.000Z] Scanning known careers pages from the seed catalog.\n[2026-03-08T10:01:02.000Z] found 12 candidates, probed 5, queued 3\n[2026-03-08T10:01:03.000Z] timeout while probing\n",
             nextOffset: 99
           };
         }
@@ -803,11 +805,11 @@ test("admin discovery controller emits summary-first live progress and updates p
     });
 
     await controller.runDiscoveryTask();
-    scheduled[0]();
-    await Promise.resolve();
-    await Promise.resolve();
+    await scheduled[0]();
 
     assert.ok(logs.some(line => /discovery started\. watching live progress/i.test(line)));
+    assert.ok(logs.some(line => /scanning known careers pages/i.test(line)));
+    assert.ok(logs.some(line => /found 12 candidates, probed 5, queued 3/i.test(line)));
     assert.equal(refs.adminDiscoveryProgressEl.classList.contains("hidden"), false);
     assert.match(refs.adminDiscoveryProgressLabelEl.textContent, /discovery:/i);
   } finally {
@@ -859,7 +861,15 @@ test("admin fetcher controller emits summary-first progress and updates progress
     const controller = createAdminFetcherController({
       state,
       refs,
-      getBridge: async () => ({}),
+      getBridge: async path => {
+        if (String(path).startsWith("/fetcher/log?offset=")) {
+          return {
+            text: "[2026-03-08T10:00:01.000Z] [jobs_fetcher] START source=Studio A\n[2026-03-08T10:00:02.000Z] [jobs_fetcher] WARN source=Studio B HTTP 403\n",
+            nextOffset: 120
+          };
+        }
+        return {};
+      },
       postBridge: async () => ({}),
       fetchJobsFetchReportJson: async () => ({
         startedAt: "2026-03-08T10:00:00.000Z",
@@ -903,13 +913,13 @@ test("admin fetcher controller emits summary-first progress and updates progress
     });
 
     controller.startFetcherCompletionWatch();
-    scheduled[0]();
-    await Promise.resolve();
-    await Promise.resolve();
+    await scheduled[0]();
 
     assert.ok(logs.some(line => /fetcher started\. watching live progress/i.test(line)));
+    assert.ok(logs.some(line => /start source=studio a/i.test(line)));
+    assert.ok(logs.some(line => /warn source=studio b http 403/i.test(line)));
     assert.equal(refs.adminFetcherProgressEl.classList.contains("hidden"), false);
-    assert.match(refs.adminFetcherProgressLabelEl.textContent, /6\/10 sources resolved/i);
+    assert.match(String(refs.adminFetcherProgressLabelEl.textContent || ""), /fetcher:/i);
   } finally {
     global.setTimeout = previousSetTimeout;
     global.clearTimeout = previousClearTimeout;

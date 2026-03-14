@@ -147,8 +147,6 @@ test("backup domain importProfileData reports created/updated/skipped and attach
   assert.equal(result.created, 1);
   assert.equal(result.updated, 1);
   assert.equal(result.skippedInvalid, 1);
-  assert.equal(result.attachmentsAdded, 1);
-  assert.equal(result.attachmentsHydrated, 1);
   assert.equal(result.historyAdded, 1);
   assert.match(result.warnings.join(" | "), /payload-warning/);
   assert.match(result.warnings.join(" | "), /missing title\/company/i);
@@ -156,7 +154,20 @@ test("backup domain importProfileData reports created/updated/skipped and attach
   assert.equal(writes.saved_jobs.length, 2);
   assert.equal(writes.attachments.length, 2);
   assert.equal(writes.activity_log.length, 1);
+  assert.deepEqual(
+    writes.attachments.map(row => ({ id: row.id, hasBlob: row.blob instanceof Blob })),
+    [
+      { id: "att_same", hasBlob: true },
+      { id: "att_new", hasBlob: true }
+    ]
+  );
   assert.equal(metadataCalls.length >= 2, true);
-  assert.equal(updateAttachmentCalls.length >= 2, true);
+  assert.deepEqual(
+    updateAttachmentCalls.map(row => row.jobKey),
+    [
+      "job_existing",
+      "job_new"
+    ]
+  );
   assert.equal(notifyCount, 1);
 });

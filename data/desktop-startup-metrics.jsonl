@@ -1,66 +1,9 @@
-{"ts": "2026-03-12T23:07:04.067451+00:00", "event": "admin_pin_gate_ready", "payload": {}}
-{"ts": "2026-03-12T23:07:04.067660+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready"}}
-{"ts": "2026-03-12T23:07:04.067758+00:00", "event": "admin_init_ready", "payload": {}}
-{"ts": "2026-03-12T23:09:44.924969+00:00", "event": "admin_init_ready", "payload": {}}
-{"ts": "2026-03-12T23:09:44.925103+00:00", "event": "admin_pin_gate_ready", "payload": {}}
-{"ts": "2026-03-12T23:09:44.925329+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready"}}
-{"ts": "2026-03-12T23:29:39.685714+00:00", "event": "desktop_browser_heartbeat", "payload": {"page": "/jobs.html", "visibility": "visible"}}
-{"ts": "2026-03-12T23:29:39.700446+00:00", "event": "jobs_init_start", "payload": {}}
-{"ts": "2026-03-12T23:29:39.701339+00:00", "event": "jobs_auth_ready", "payload": {}}
-{"ts": "2026-03-12T23:29:39.701974+00:00", "event": "jobs_cache_checked", "payload": {"desktopMode": true, "hasCache": false}}
-{"ts": "2026-03-12T23:29:39.702126+00:00", "event": "jobs_startup_preview_fetch_start", "payload": {}}
-{"ts": "2026-03-12T23:29:39.702264+00:00", "event": "jobs_cache_miss", "payload": {}}
-{"ts": "2026-03-12T23:29:39.711441+00:00", "event": "jobs_startup_preview_fetch_complete", "payload": {"durationMs": 5, "hasPayload": true}}
-{"ts": "2026-03-12T23:29:39.712516+00:00", "event": "jobs_startup_preview_parse_start", "payload": {}}
-{"ts": "2026-03-12T23:29:39.712663+00:00", "event": "jobs_startup_preview_parse_complete", "payload": {"rowCount": 240}}
-{"ts": "2026-03-12T23:29:39.712764+00:00", "event": "jobs_startup_preview_normalize_start", "payload": {}}
-{"ts": "2026-03-12T23:29:39.713615+00:00", "event": "jobs_startup_preview_normalize_complete", "payload": {"rowCount": 240}}
-{"ts": "2026-03-12T23:29:39.721540+00:00", "event": "jobs_startup_preview_render_start", "payload": {"rowCount": 240}}
-{"ts": "2026-03-12T23:29:39.725719+00:00", "event": "jobs_apply_filters_start", "payload": {"resetPage": false, "totalJobs": 240}}
-{"ts": "2026-03-12T23:29:39.726692+00:00", "event": "jobs_apply_filters_complete", "payload": {"filteredCount": 240}}
-{"ts": "2026-03-12T23:29:39.729539+00:00", "event": "jobs_sort_complete", "payload": {"filteredCount": 240, "sortMode": "relevance"}}
-{"ts": "2026-03-12T23:29:39.730694+00:00", "event": "jobs_display_start", "payload": {"totalCount": 240, "currentPage": 1}}
-{"ts": "2026-03-12T23:29:39.733545+00:00", "event": "jobs_display_dom_committed", "payload": {"pageJobs": 11}}
-{"ts": "2026-03-12T23:29:39.733675+00:00", "event": "jobs_display_markup_start", "payload": {"pageJobs": 11, "totalPages": 22}}
-{"ts": "2026-03-12T23:29:39.733809+00:00", "event": "jobs_display_pagination_complete", "payload": {"totalPages": 22}}
-{"ts": "2026-03-12T23:29:39.745411+00:00", "event": "jobs_display_complete", "payload": {"startIndex": 1, "endIndex": 11, "totalCount": 240}}
-{"ts": "2026-03-12T23:29:39.745565+00:00", "event": "jobs_display_bind_complete", "payload": {"pageJobs": 11}}
-{"ts": "2026-03-12T23:29:39.746128+00:00", "event": "jobs_write_state_start", "payload": {}}
-{"ts": "2026-03-12T23:29:39.748162+00:00", "event": "jobs_write_state_params_start", "payload": {}}
-{"ts": "2026-03-12T23:29:39.751255+00:00", "event": "jobs_write_state_desktop_deferred", "payload": {"url": "/jobs.html"}}
-{"ts": "2026-03-12T23:29:39.751403+00:00", "event": "jobs_write_state_params_complete", "payload": {}}
-{"ts": "2026-03-12T23:29:39.753622+00:00", "event": "jobs_write_state_complete", "payload": {}}
-{"ts": "2026-03-12T23:29:39.754008+00:00", "event": "jobs_first_interactive", "payload": {"reason": "startup_preview"}}
-{"ts": "2026-03-12T23:29:39.756216+00:00", "event": "jobs_first_render", "payload": {"stage": "startup_preview", "rowCount": 240}}
-{"ts": "2026-03-12T23:29:39.756459+00:00", "event": "jobs_startup_preview_render_returned", "payload": {"rowCount": 240}}
-{"ts": "2026-03-12T23:29:39.758629+00:00", "event": "jobs_startup_preview_render_complete", "payload": {"rowCount": 240}}
-{"ts": "2026-03-12T23:29:39.759018+00:00", "event": "jobs_startup_preview_loaded", "payload": {"rowCount": 240, "durationMs": 24}}
-{"ts": "2026-03-12T23:29:39.761151+00:00", "event": "jobs_write_state_remember_url_start", "payload": {}}
-{"ts": "2026-03-12T23:29:39.761438+00:00", "event": "jobs_write_state_remember_url_complete", "payload": {}}
-{"ts": "2026-03-12T23:29:39.844071+00:00", "event": "jobs_display_frame_presented", "payload": {"pageJobs": 11}}
-{"ts": "2026-03-12T23:29:39.994524+00:00", "event": "jobs_apply_filters_start", "payload": {"resetPage": false, "totalJobs": 35643}}
-{"ts": "2026-03-12T23:29:40.058210+00:00", "event": "jobs_sort_complete", "payload": {"filteredCount": 35643, "sortMode": "relevance"}}
-{"ts": "2026-03-12T23:29:40.058325+00:00", "event": "jobs_apply_filters_complete", "payload": {"filteredCount": 35643}}
-{"ts": "2026-03-12T23:29:40.058421+00:00", "event": "jobs_display_markup_start", "payload": {"pageJobs": 11, "totalPages": 3241}}
-{"ts": "2026-03-12T23:29:40.058515+00:00", "event": "jobs_display_pagination_complete", "payload": {"totalPages": 3241}}
-{"ts": "2026-03-12T23:29:40.058675+00:00", "event": "jobs_display_dom_committed", "payload": {"pageJobs": 11}}
-{"ts": "2026-03-12T23:29:40.058768+00:00", "event": "jobs_display_start", "payload": {"totalCount": 35643, "currentPage": 1}}
-{"ts": "2026-03-12T23:29:40.065830+00:00", "event": "jobs_display_bind_complete", "payload": {"pageJobs": 11}}
-{"ts": "2026-03-12T23:29:40.066612+00:00", "event": "jobs_display_complete", "payload": {"startIndex": 1, "endIndex": 11, "totalCount": 35643}}
-{"ts": "2026-03-12T23:29:40.066826+00:00", "event": "jobs_write_state_desktop_flush", "payload": {"url": "/jobs.html"}}
-{"ts": "2026-03-12T23:29:40.067349+00:00", "event": "jobs_write_state_complete", "payload": {}}
-{"ts": "2026-03-12T23:29:40.067777+00:00", "event": "jobs_write_state_params_complete", "payload": {}}
-{"ts": "2026-03-12T23:29:40.068206+00:00", "event": "jobs_write_state_start", "payload": {}}
-{"ts": "2026-03-12T23:29:40.071903+00:00", "event": "jobs_write_state_params_start", "payload": {}}
-{"ts": "2026-03-12T23:29:40.072818+00:00", "event": "jobs_display_frame_presented", "payload": {"pageJobs": 11}}
-{"ts": "2026-03-12T23:29:40.079803+00:00", "event": "jobs_write_state_remember_url_start", "payload": {}}
-{"ts": "2026-03-12T23:29:40.080404+00:00", "event": "jobs_write_state_remember_url_complete", "payload": {}}
-{"ts": "2026-03-12T23:29:50.263462+00:00", "event": "desktop_browser_heartbeat", "payload": {"page": "/jobs.html", "visibility": "hidden"}}
-{"ts": "2026-03-12T23:29:59.690582+00:00", "event": "desktop_browser_heartbeat", "payload": {"page": "/jobs.html", "visibility": "visible"}}
-{"ts": "2026-03-12T23:30:00.275754+00:00", "event": "desktop_browser_heartbeat", "payload": {"page": "/admin.html", "visibility": "visible"}}
-{"ts": "2026-03-12T23:30:00.278125+00:00", "event": "admin_init_ready", "payload": {}}
-{"ts": "2026-03-12T23:30:00.278230+00:00", "event": "admin_pin_gate_ready", "payload": {}}
-{"ts": "2026-03-12T23:30:00.278560+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready"}}
-{"ts": "2026-03-12T23:30:10.281961+00:00", "event": "desktop_browser_heartbeat", "payload": {"page": "/admin.html", "visibility": "visible"}}
-{"ts": "2026-03-12T23:30:20.277800+00:00", "event": "desktop_browser_heartbeat", "payload": {"page": "/admin.html", "visibility": "visible"}}
-{"ts": "2026-03-12T23:30:30.288173+00:00", "event": "desktop_browser_heartbeat", "payload": {"page": "/admin.html", "visibility": "visible"}}
+{"ts": "2026-03-13T13:48:22.502815+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-13T13:48:22.503709+00:00", "event": "admin_pin_gate_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-13T13:48:22.504168+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready", "elapsedMs": 4}}
+{"ts": "2026-03-13T14:22:51.790674+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-13T14:22:51.794975+00:00", "event": "admin_pin_gate_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-13T14:22:51.796541+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready", "elapsedMs": 3}}
+{"ts": "2026-03-13T15:02:16.367685+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-13T15:02:16.369381+00:00", "event": "admin_pin_gate_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-13T15:02:16.370150+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready", "elapsedMs": 4}}

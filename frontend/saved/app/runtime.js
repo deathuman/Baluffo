@@ -48,6 +48,7 @@ import {
 } from "../state-sync/index.js";
 import { cacheSavedDom } from "./dom.js";
 import { setSavedAuthControlsReady, setSavedAuthStatus, toggleSavedAuthButtons } from "./auth.js";
+import { requestConfirmationDialog, requestTextInputDialog } from "../../local-data/profile-name-dialog.js";
 import { updateCustomJobWarning as updateCustomJobWarningUi } from "./custom-job.js";
 import {
   buildTimelinePrefsKey as buildTimelinePrefsKeyFromActivity,
@@ -483,7 +484,7 @@ function initSavedJobsPage() {
     setCustomJobAvailability(true);
     const timelinePrefs = loadTimelinePreferences(currentUser.uid);
     timelineScope = timelinePrefs.scope;
-    setActivityPanelOpen(Boolean(timelinePrefs.visible), { persist: false });
+    setActivityPanelOpen(false, { persist: false });
     updateTimelineScopeButtons();
     renderSelectedJobHint();
     subscribeToSavedJobs(currentUser.uid);
@@ -959,6 +960,9 @@ async function updatePhase(jobKey, phase) {
   }
   const currentPhase = normalizePhase(row?.applicationStatus);
   const normalized = normalizePhase(phase);
+  if (normalized === currentPhase) {
+    return;
+  }
   const regularAllowed = canTransition(currentPhase, normalized);
   const overrideArmed = phaseOverrideArmedGlobal;
   if (!regularAllowed && !overrideArmed) {
@@ -969,13 +973,17 @@ async function updatePhase(jobKey, phase) {
   if (!regularAllowed && overrideArmed) {
     const from = PHASE_LABELS[currentPhase] || currentPhase;
     const to = PHASE_LABELS[normalized] || normalized;
-    const ok = window.confirm(`Override phase lock?\n\n${from} -> ${to}`);
+    const ok = await requestConfirmationDialog({
+      title: "Override phase lock?",
+      description: `${from} -> ${to}`,
+      confirmLabel: "Override"
+    });
     if (!ok) return;
   }
 
   try {
     const interviewTimestamp = needsInterviewTimestamp(normalized)
-      ? requestInterviewTimestamp(normalized, row?.phaseTimestamps?.[normalized] || "")
+      ? await requestInterviewTimestamp(normalized, row?.phaseTimestamps?.[normalized] || "")
       : "";
     if (needsInterviewTimestamp(normalized) && !interviewTimestamp) {
       return;
@@ -1121,13 +1129,16 @@ function parseScheduledTimestampInput(rawValue) {
   return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
 }
 
-function requestInterviewTimestamp(phase, previousTimestamp = "") {
+async function requestInterviewTimestamp(phase, previousTimestamp = "") {
   const phaseLabel = PHASE_LABELS[normalizePhase(phase)] || "Interview";
   const promptDefault = toPromptLocalDateTime(previousTimestamp);
-  const raw = window.prompt(
-    `${phaseLabel} time (YYYY-MM-DD HH:MM).`,
-    promptDefault
-  );
+  const raw = await requestTextInputDialog({
+    title: `${phaseLabel} time`,
+    description: "Enter interview time as YYYY-MM-DD HH:MM.",
+    label: `${phaseLabel} time`,
+    submitLabel: "Save time",
+    defaultValue: promptDefault
+  });
   if (raw == null) return "";
   const parsed = parseScheduledTimestampInput(raw);
   if (!parsed) {
@@ -1806,6 +1817,15 @@ async function signInUser() {
     if (String(result.error || "").toLowerCase().includes("cancel")) return;
     console.error("Sign-in failed:", result.error);
     showToast("Sign-in failed.", "error");
+    return;
+  }
+  const focusTarget = addCustomJobBtnEl || signOutBtnEl || jobsPageBtnEl;
+  if (focusTarget) {
+    try {
+      focusTarget.focus({ preventScroll: true });
+    } catch {
+      focusTarget.focus();
+    }
   }
 }
 

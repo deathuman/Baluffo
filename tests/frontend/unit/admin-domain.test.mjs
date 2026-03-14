@@ -11,6 +11,7 @@ import {
   applyOptimisticDiscoveryRun,
   deriveFetcherProgressModel,
   deriveDiscoveryProgressModel,
+  deriveDiscoveryQueuedCount,
   getOpsPollIntervalMs
 } from "../../../frontend/admin/domain.js";
 
@@ -204,11 +205,29 @@ test("admin domain falls back to indeterminate discovery progress when only scan
   const view = deriveDiscoveryProgressModel({
     summary: {
       queuedCandidateCount: 3,
+      discoverableButDeferredCount: 2,
       failedProbeCount: 1
     }
   }, { running: true });
 
   assert.equal(view.active, true);
   assert.equal(view.determinate, false);
-  assert.match(view.label, /scanning candidates/i);
+  assert.match(view.label, /initializing scan/i);
+  assert.match(view.label, /queued 3/i);
+  assert.match(view.label, /deferred 2/i);
+});
+
+test("admin domain derives queued discovery count from candidate rows when summary is stale", () => {
+  const queued = deriveDiscoveryQueuedCount({
+    summary: {
+      queuedCandidateCount: 0
+    },
+    candidates: [
+      { name: "A" },
+      { name: "B", deferred: false },
+      { name: "C", deferred: true }
+    ]
+  });
+
+  assert.equal(queued, 2);
 });

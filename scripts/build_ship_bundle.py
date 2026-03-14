@@ -14,10 +14,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = ROOT / "dist" / "baluffo-ship"
-DEFAULT_BUNDLE_VERSION = "1.0.0"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.app_version import APP_VERSION
 from scripts.baluffo_config import get_sync_defaults
 from scripts.build_frontend_runtime_config import (
     build_frontend_runtime_config_payload,
@@ -25,6 +25,8 @@ from scripts.build_frontend_runtime_config import (
     write_frontend_runtime_config,
 )
 from scripts.python_version_guard import ensure_required_python
+
+DEFAULT_BUNDLE_VERSION = APP_VERSION
 
 APP_RUNTIME_FILES = (
     "baluffo.config.json",
@@ -52,6 +54,7 @@ APP_RUNTIME_FILES = (
 APP_RUNTIME_SCRIPTS = (
     "__init__.py",
     "admin_bridge.py",
+    "app_version.py",
     "baluffo_config.py",
     "contracts.py",
     "fetcher_metrics.py",
@@ -63,6 +66,9 @@ APP_RUNTIME_SCRIPTS = (
     "source_sync.py",
     "local_data_store.py",
     "discovery_seed_catalog.json",
+)
+APP_RUNTIME_SCRIPT_DIRS = (
+    "jobs",
 )
 PACKAGING_FILES = (
     "README.md",
@@ -159,7 +165,7 @@ def _manifest_payload(version: str, sha256: str) -> dict:
 
 
 def _seed_runtime_data(data_dir: Path) -> None:
-    from scripts.jobs_fetcher import DEFAULT_SOCIAL_CONFIG, DEFAULT_STUDIO_SOURCE_REGISTRY  # local import to keep script lightweight
+    from scripts.jobs.registry import DEFAULT_SOCIAL_CONFIG, DEFAULT_STUDIO_SOURCE_REGISTRY  # local import to keep script lightweight
 
     data_dir.mkdir(parents=True, exist_ok=True)
     payloads = {
@@ -356,6 +362,8 @@ def _copy_app_version(version_dir: Path) -> None:
     _copy_tree(ROOT / "frontend", version_dir / "frontend")
     for rel in APP_RUNTIME_SCRIPTS:
         _copy_file(ROOT / "scripts" / rel, version_dir / "scripts" / rel)
+    for rel in APP_RUNTIME_SCRIPT_DIRS:
+        _copy_tree(ROOT / "scripts" / rel, version_dir / "scripts" / rel)
     _copy_file(ROOT / "scripts" / "ship" / "__init__.py", version_dir / "scripts" / "ship" / "__init__.py")
     for rel in PACKAGING_FILES:
         _copy_file(ROOT / "packaging" / rel, version_dir / "packaging" / rel)

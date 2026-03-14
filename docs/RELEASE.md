@@ -25,6 +25,7 @@ Every release must track these versions explicitly:
 - `updater_version`: capability version of `scripts/ship/update_manager.py`
 - `data_schema_version`: version of persisted data expectations and migrations
 - `manifest_schema_version`: version of the update manifest contract
+- The default `app_version` used by local build/package workflows is defined in `scripts/app_version.py`.
 
 Compatibility rules:
 

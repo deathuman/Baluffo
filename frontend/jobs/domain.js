@@ -44,6 +44,7 @@ export function normalizeSector(text, company = "", title = "") {
 export function mapProfession(title) {
   const lower = String(title || "").toLowerCase();
   if (lower.includes("technical animator")) return "technical-animator";
+  if (lower.includes("technical director") || /\btd\b/.test(lower)) return "technical-director";
   if (lower.includes("technical artist")) return "technical-artist";
   if (lower.includes("environment artist")) return "environment-artist";
   if (lower.includes("character artist")) return "character-artist";

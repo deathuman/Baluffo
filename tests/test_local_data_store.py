@@ -128,21 +128,24 @@ class LocalDataStoreTests(unittest.TestCase):
             payload_no_files = store.export_profile_data(uid, include_files=False)
             self.assertEqual(payload_no_files.get("schemaVersion"), 2)
             self.assertEqual(payload_no_files.get("includesFiles"), False)
+            self.assertEqual(payload_no_files.get("counts"), {"savedJobs": 2, "customJobs": 1, "historyEvents": activity_before_len, "attachments": 2})
             self.assertEqual(any(bool((row or {}).get("blobDataUrl")) for row in payload_no_files.get("attachments") or []), False)
 
             payload_with_files = store.export_profile_data(uid, include_files=True)
             self.assertEqual(payload_with_files.get("schemaVersion"), 2)
             self.assertEqual(payload_with_files.get("includesFiles"), True)
+            self.assertEqual(payload_with_files.get("counts"), {"savedJobs": 2, "customJobs": 1, "historyEvents": activity_before_len, "attachments": 2})
             self.assertEqual(all(bool((row or {}).get("blobDataUrl")) for row in payload_with_files.get("attachments") or []), True)
 
             store.wipe_account_admin("1234", uid)
             recreated = store.sign_in("BackupRoundtrip")
             uid_after = str(recreated["uid"])
             result = store.import_profile_data(uid_after, payload_with_files)
-            self.assertGreaterEqual(int(result.get("created", 0)), 2)
-            self.assertGreaterEqual(int(result.get("historyAdded", 0)), 1)
-            self.assertGreaterEqual(int(result.get("attachmentsAdded", 0)), 2)
-            self.assertGreaterEqual(int(result.get("attachmentsHydrated", 0)), 2)
+            self.assertEqual(int(result.get("created", 0)), 2)
+            self.assertEqual(int(result.get("updated", 0)), 0)
+            self.assertEqual(int(result.get("skippedInvalid", 0)), 0)
+            self.assertEqual(int(result.get("historyAdded", 0)), activity_before_len)
+            self.assertEqual(sorted(str(w) for w in result.get("warnings") or []), [])
 
             jobs_after = {row["jobKey"]: row for row in store.list_saved_jobs(uid_after)}
             self.assertEqual(set(jobs_before.keys()), set(jobs_after.keys()))
@@ -200,10 +203,38 @@ class LocalDataStoreTests(unittest.TestCase):
             self.assertEqual(len(jobs), 1)
             self.assertEqual(jobs[0]["title"], "QA Engineer Updated")
             self.assertEqual(int(result.get("skippedInvalid", 0)), 2)
-            self.assertGreaterEqual(int(result.get("attachmentsAdded", 0)), 1)
-            self.assertGreaterEqual(int(result.get("attachmentsHydrated", 0)), 1)
-            self.assertGreaterEqual(int(result.get("historyAdded", 0)), 1)
+            self.assertEqual(int(result.get("created", 0)), 0)
+            self.assertEqual(int(result.get("updated", 0)), 1)
+            self.assertEqual(int(result.get("historyAdded", 0)), 1)
             self.assertTrue(any("jobKey" in str(w) for w in result.get("warnings") or []))
+
+    def test_update_application_status_is_noop_when_reclicking_same_phase(self) -> None:
+        with workspace_tmpdir("local-data-store") as tmp:
+            store = LocalDataStore(LocalDataPaths.from_data_dir(Path(tmp) / "data"))
+            user = store.sign_in("SamePhase")
+            uid = str(user["uid"])
+            job_key = store.save_job_for_user(
+                uid,
+                {
+                    "title": "Gameplay Programmer",
+                    "company": "Studio Same",
+                    "jobLink": "https://example.com/same-phase",
+                    "applicationStatus": "bookmark",
+                },
+            )
+
+            before_row = store.list_saved_jobs(uid)[0]
+            before_updated_at = str(before_row.get("updatedAt") or "")
+            before_phase_timestamps = dict(before_row.get("phaseTimestamps") or {})
+            before_activity_len = len(store.list_activity_for_user(uid, 2000))
+
+            store.update_application_status(uid, job_key, "bookmark")
+
+            after_row = store.list_saved_jobs(uid)[0]
+            after_activity_len = len(store.list_activity_for_user(uid, 2000))
+            self.assertEqual(str(after_row.get("updatedAt") or ""), before_updated_at)
+            self.assertEqual(dict(after_row.get("phaseTimestamps") or {}), before_phase_timestamps)
+            self.assertEqual(after_activity_len, before_activity_len)
 
 
 if __name__ == "__main__":

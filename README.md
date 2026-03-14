@@ -92,7 +92,8 @@ It combines:
 - Python 3.13.x (required for project build/test workflows)
 - Node.js (only needed for JS syntax checks in validation)
 
-Project commands below use `python` and expect that executable to resolve to Python 3.13.x.
+Direct shell examples below use `python` and expect that executable to resolve to Python 3.13.x.
+The npm build/test entrypoints use the Windows launcher explicitly via `py -3.13`.
 
 ### 2) Serve the site locally
 
@@ -187,10 +188,12 @@ Snapshot schema (`source-sync.json`, v1):
 npm run build:ship-bundle
 ```
 
-Optional version:
+Optional version override:
 
 ```powershell
 python scripts/build_ship_bundle.py --bundle-version 1.2.3
+
+Default build version comes from `scripts/app_version.py`.
 ```
 
 Bundle output: `dist/baluffo-ship` with launcher scripts:
@@ -238,6 +241,8 @@ Optional custom icon override:
 
 ```powershell
 python scripts/build_portable_exe.py --bundle-version 1.2.3 --icon C:\path\to\Baluffo.ico
+
+Without `--bundle-version`, portable packaging uses the shared app version from `scripts/app_version.py`.
 ```
 
 Build/test workflows are standardized on Python 3.13.x for deterministic local and CI behavior.
@@ -258,7 +263,9 @@ The executable starts the local site and bridge internally, waits for readiness,
 Desktop mode now uses a fixed site origin so theme/quick-filter browser state stays stable, while core user data is stored under `ship\data\local-user-data\` instead of browser-local IndexedDB/localStorage.
 
 If no custom icon is provided, the build generates and embeds a branded default `.ico`.
-Packaged desktop launch prefers Chromium app mode (Edge/Chrome/Brave with an isolated profile) and falls back to default browser only when needed.
+Packaged desktop launch prefers Chromium app mode with Chrome/Brave and falls back to the default browser when needed.
+Edge app mode is disabled by default because some Windows setups crash in that path; set
+`BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE=1` only if you explicitly want to opt back into Edge app mode.
 
 ## Validation
 
@@ -282,14 +289,35 @@ node --check frontend/shared/ui/index.js frontend/shared/data/index.js
 npm install
 npx playwright install chromium
 npm run test:frontend:unit
+npm run test:frontend:packaged
 npm run test:smoke
 ```
+
+`npm run test:frontend:unit` is the canonical local and CI entrypoint for frontend unit coverage.
+It first verifies that the generated manifest `tests/frontend/unit/all.test.mjs` matches every
+`tests/frontend/unit/*.test.mjs` file, then runs the suite in the existing single-process mode.
+If you add, rename, or remove a frontend unit test file, refresh the manifest with:
+
+```powershell
+npm run sync:test-manifest
+```
+
+`npm run test:frontend:packaged` is the canonical local and CI entrypoint for the packaged desktop
+release gate. It runs the packaged smoke runner through `py -3.13`, so it does not depend on the
+machine-default `python` executable. The packaged smoke runner now drives Playwright from a
+single-process Node script and records temp-dir / node-path / elevation diagnostics in the smoke
+report to make Windows `spawn EPERM` failures easier to diagnose.
 
 ### Python tests
 
 ```powershell
 npm run test:py
 ```
+
+`npm run test:py` is the canonical local and CI entrypoint for Python tests. It uses Python 3.13
+and `unittest` discovery over `tests/test_*.py`. Helpers and compatibility shims must stay outside
+that filename pattern.
+
 
 ### Fetcher performance baseline
 

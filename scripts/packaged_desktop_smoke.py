@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import json
 import os
 import shutil
@@ -28,7 +30,8 @@ DEFAULT_EXE_PATH = ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
 DEFAULT_REPORT_PATH = ROOT / "data" / "packaged-desktop-smoke-report.json"
 DEFAULT_ARTIFACT_ROOT = ROOT / ".codex-tmp" / "packaged-desktop-smoke"
 DEFAULT_RUNTIME_TIMEOUT_S = 35.0
-DEFAULT_PLAYWRIGHT_TIMEOUT_S = 180.0
+DEFAULT_SMOKE_RUNNER_TIMEOUT_S = 180.0
+DEFAULT_NODE_SMOKE_SCRIPT = ROOT / "tests" / "frontend" / "packaged-desktop-smoke.mjs"
 STARTUP_REQUIRED_EVENTS = (
     "desktop_launch_start",
     "desktop_site_ready",
@@ -141,12 +144,108 @@ def run_portable_build(output_dir: Path | None = None) -> Path:
     return DEFAULT_EXE_PATH
 
 
-def resolve_playwright_command() -> List[str]:
-    local_cmd = ROOT / "node_modules" / ".bin" / ("playwright.cmd" if os.name == "nt" else "playwright")
-    if local_cmd.exists():
-        return [str(local_cmd)]
-    fallback = shutil.which("npx.cmd") or shutil.which("npx") or "npx"
-    return [fallback, "playwright"]
+def resolve_node_command() -> List[str]:
+    local_node = ROOT / "node_modules" / ".bin" / ("node.cmd" if os.name == "nt" else "node")
+    if local_node.exists():
+        return [str(local_node)]
+    node_path = shutil.which("node.exe") or shutil.which("node")
+    return [node_path or "node"]
+
+
+def write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(str(text or ""), encoding="utf-8")
+
+
+def is_windows_process_elevated() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def path_is_writable(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / f".write-probe-{os.getpid()}"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def classify_subprocess_error(error: Exception | str) -> str:
+    if isinstance(error, PermissionError):
+        return "node_process_spawn_blocked"
+    if isinstance(error, OSError):
+        if getattr(error, "errno", None) == errno.EPERM or getattr(error, "winerror", None) == 5:
+            return "node_process_spawn_blocked"
+    message = str(error or "").lower()
+    if "executable doesn't exist" in message or "download new browsers" in message:
+        return "playwright_browser_missing"
+    if "browsertype.launch: spawn eperm" in message:
+        return "node_process_spawn_blocked"
+    if "spawn eperm" in message:
+        return "playwright_worker_spawn_blocked"
+    if "access is denied" in message or "operation not permitted" in message:
+        return "node_process_spawn_blocked"
+    return "runner_error"
+
+
+def collect_packaged_smoke_env_diagnostics(
+    *,
+    artifacts_dir: Path,
+    exe_path: Path,
+    node_command: List[str] | None = None,
+    env: Dict[str, str] | None = None,
+) -> Dict[str, Any]:
+    env_map = env if env is not None else os.environ
+    node_cmd = list(node_command or resolve_node_command())
+    diagnostics = {
+        "cwd": str(ROOT),
+        "artifactsDir": str(artifacts_dir),
+        "artifactsDirWritable": path_is_writable(artifacts_dir),
+        "exePath": str(exe_path),
+        "exeParentWritable": path_is_writable(Path(exe_path).parent),
+        "nodeCommand": node_cmd,
+        "nodePath": str(node_cmd[0]) if node_cmd else "",
+        "tmp": str(env_map.get("TMP") or ""),
+        "temp": str(env_map.get("TEMP") or ""),
+        "isElevated": is_windows_process_elevated(),
+    }
+    return diagnostics
+
+
+def build_packaged_smoke_env(
+    *,
+    site_base_url: str,
+    bridge_base_url: str,
+    artifacts_dir: Path,
+    headed: bool,
+    pause_on_failure: bool,
+) -> Dict[str, str]:
+    env = os.environ.copy()
+    output_dir = artifacts_dir / "smoke-output"
+    temp_dir = artifacts_dir / "node-temp"
+    cache_dir = artifacts_dir / "node-cache"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    env["PACKAGED_DESKTOP_BASE_URL"] = site_base_url
+    env["PACKAGED_DESKTOP_BRIDGE_BASE"] = bridge_base_url
+    env["PACKAGED_SMOKE_ARTIFACTS_DIR"] = str(output_dir)
+    env["PACKAGED_SMOKE_OUTPUT_DIR"] = str(output_dir)
+    env["PACKAGED_SMOKE_REPORT_PATH"] = str(artifacts_dir / "smoke-report.json")
+    env["PACKAGED_SMOKE_PLAYWRIGHT_REPORT"] = env["PACKAGED_SMOKE_REPORT_PATH"]
+    env["PACKAGED_SMOKE_HEADED"] = "1" if headed else "0"
+    env["PACKAGED_SMOKE_PAUSE_ON_FAILURE"] = "1" if pause_on_failure else "0"
+    env["TMP"] = str(temp_dir)
+    env["TEMP"] = str(temp_dir)
+    env["npm_config_cache"] = str(cache_dir)
+    return env
 
 
 def ensure_portable_exe(exe_path: Path, rebuild: bool = False, rebuild_output_dir: Path | None = None) -> Path:
@@ -380,63 +479,22 @@ def run_embedded_runtime_probe(
             stderr_handle.close()
 
 
-def parse_playwright_report(path: Path) -> List[Dict[str, Any]]:
+def parse_packaged_node_smoke_report(path: Path) -> List[Dict[str, Any]]:
     if not path.exists():
         return []
     payload = json.loads(path.read_text(encoding="utf-8") or "{}")
-    rows: List[Dict[str, Any]] = []
-
-    def append_spec(spec: Dict[str, Any]) -> None:
-        tests = spec.get("tests") if isinstance(spec.get("tests"), list) else []
-        result_statuses: List[str] = []
-        durations: List[int] = []
-        errors: List[str] = []
-        for item in tests:
-            if not isinstance(item, dict):
-                continue
-            results = item.get("results") if isinstance(item.get("results"), list) else []
-            if results:
-                for result in results:
-                    if not isinstance(result, dict):
-                        continue
-                    status = str(result.get("status") or "").strip() or str(item.get("status") or "").strip()
-                    if status:
-                        result_statuses.append(status)
-                    durations.append(int(result.get("duration") or 0))
-                    error_obj = result.get("error")
-                    if isinstance(error_obj, dict) and error_obj.get("message"):
-                        errors.append(str(error_obj.get("message")))
-            else:
-                status = str(item.get("status") or "").strip()
-                if status:
-                    result_statuses.append(status)
-        status = result_statuses[-1] if result_statuses else "unknown"
-        title = str(spec.get("title") or "Playwright Scenario").strip() or "Playwright Scenario"
-        rows.append(
-            {
-                "name": title,
-                "slug": slugify_token(title),
-                "status": status,
-                "durationMs": sum(durations),
-                "error": errors[0] if errors else "",
-            }
-        )
-
-    def walk_suite(suite: Dict[str, Any]) -> None:
-        for spec in suite.get("specs", []) if isinstance(suite.get("specs"), list) else []:
-            if isinstance(spec, dict):
-                append_spec(spec)
-        for child in suite.get("suites", []) if isinstance(suite.get("suites"), list) else []:
-            if isinstance(child, dict):
-                walk_suite(child)
-
-    for suite in payload.get("suites", []) if isinstance(payload.get("suites"), list) else []:
-        if isinstance(suite, dict):
-            walk_suite(suite)
-    return rows
+    rows = payload.get("scenarios") if isinstance(payload, dict) else []
+    return [row for row in rows if isinstance(row, dict)]
 
 
-def run_playwright_packaged_smoke(
+def read_packaged_node_smoke_payload(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8") or "{}")
+    return payload if isinstance(payload, dict) else {}
+
+
+def run_packaged_node_smoke(
     *,
     site_base_url: str,
     bridge_base_url: str,
@@ -445,43 +503,78 @@ def run_playwright_packaged_smoke(
     pause_on_failure: bool,
     timeout_s: float,
 ) -> Dict[str, Any]:
-    output_dir = artifacts_dir / "playwright-output"
-    report_path = artifacts_dir / "playwright-report.json"
-    command = [
-        *resolve_playwright_command(),
-        "test",
-        "tests/frontend/packaged-desktop.spec.js",
-        "-c",
-        "playwright.packaged.config.js",
-    ]
-    env = os.environ.copy()
-    env["PACKAGED_DESKTOP_BASE_URL"] = site_base_url
-    env["PACKAGED_DESKTOP_BRIDGE_BASE"] = bridge_base_url
-    env["PACKAGED_SMOKE_ARTIFACTS_DIR"] = str(output_dir)
-    env["PACKAGED_SMOKE_PLAYWRIGHT_REPORT"] = str(report_path)
-    env["PACKAGED_SMOKE_HEADED"] = "1" if headed else "0"
-    env["PACKAGED_SMOKE_PAUSE_ON_FAILURE"] = "1" if pause_on_failure else "0"
-    completed = subprocess.run(
-        command,
-        cwd=ROOT,
-        env=env,
-        timeout=max(30.0, float(timeout_s)),
-        check=False,
+    output_dir = artifacts_dir / "smoke-output"
+    report_path = artifacts_dir / "smoke-report.json"
+    command = [*resolve_node_command(), str(DEFAULT_NODE_SMOKE_SCRIPT)]
+    env = build_packaged_smoke_env(
+        site_base_url=site_base_url,
+        bridge_base_url=bridge_base_url,
+        artifacts_dir=artifacts_dir,
+        headed=headed,
+        pause_on_failure=pause_on_failure,
     )
-    scenarios = parse_playwright_report(report_path)
+    diagnostics = collect_packaged_smoke_env_diagnostics(
+        artifacts_dir=artifacts_dir,
+        exe_path=DEFAULT_EXE_PATH,
+        node_command=command,
+        env=env,
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=env,
+            timeout=max(30.0, float(timeout_s)),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        diagnostics["runnerStdout"] = ""
+        diagnostics["runnerStderr"] = str(exc)
+        write_text(artifacts_dir / "smoke-runner-stdout.log", "")
+        write_text(artifacts_dir / "smoke-runner-stderr.log", str(exc))
+        return {
+            "exitCode": 1,
+            "reportPath": str(report_path),
+            "outputDir": str(output_dir),
+            "scenarios": [],
+            "failureCategory": classify_subprocess_error(exc),
+            "runnerError": str(exc),
+            "environment": diagnostics,
+        }
+    write_text(artifacts_dir / "smoke-runner-stdout.log", str(completed.stdout or ""))
+    write_text(artifacts_dir / "smoke-runner-stderr.log", str(completed.stderr or ""))
+    diagnostics["runnerStdout"] = str(completed.stdout or "")
+    diagnostics["runnerStderr"] = str(completed.stderr or "")
+    report_payload = read_packaged_node_smoke_payload(report_path)
+    scenarios = parse_packaged_node_smoke_report(report_path)
+    report_errors = [str(item) for item in report_payload.get("errors", []) if str(item or "").strip()] if isinstance(report_payload.get("errors"), list) else []
+    failure_category = ""
+    runner_error = str(completed.stderr or completed.stdout or "")
+    if report_errors:
+        runner_error = report_errors[0]
+    if int(completed.returncode) != 0:
+        failure_category = classify_subprocess_error(runner_error)
     return {
         "exitCode": int(completed.returncode),
         "reportPath": str(report_path),
         "outputDir": str(output_dir),
         "scenarios": scenarios,
+        "failureCategory": failure_category,
+        "runnerError": runner_error,
+        "environment": diagnostics,
     }
 
 
-def build_failure_payload(step: str, error: Exception | str) -> Dict[str, Any]:
-    return {
+def build_failure_payload(step: str, error: Exception | str, *, category: str = "") -> Dict[str, Any]:
+    payload = {
         "step": str(step or "unknown"),
         "message": str(error),
     }
+    if category:
+        payload["category"] = str(category)
+    return payload
 
 
 def run_warmup_launch(exe_path: Path, *, open_path: str, runtime_timeout_s: float, startup_probe: bool) -> None:
@@ -564,6 +657,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> Dict[str, Any]:
             "exeStdout": str(stdout_path),
             "exeStderr": str(stderr_path),
         },
+        "environment": {},
         "failure": None,
     }
     if rebuild_output_dir is not None:
@@ -573,13 +667,14 @@ def run_packaged_smoke(args: argparse.Namespace) -> Dict[str, Any]:
     stdout_handle = None
     stderr_handle = None
     try:
+        report["environment"] = collect_packaged_smoke_env_diagnostics(artifacts_dir=artifacts_dir, exe_path=exe_path)
         if profile_mode == "warm":
-          run_warmup_launch(
-              exe_path,
-              open_path=open_path,
-              runtime_timeout_s=float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S),
-              startup_probe=startup_probe,
-          )
+            run_warmup_launch(
+                exe_path,
+                open_path=open_path,
+                runtime_timeout_s=float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S),
+                startup_probe=startup_probe,
+            )
         if embedded_probes and not bool(args.profile_only):
             embedded_scenarios = [
                 run_embedded_runtime_probe(
@@ -639,22 +734,33 @@ def run_packaged_smoke(args: argparse.Namespace) -> Dict[str, Any]:
             report["ok"] = all(str(row.get("status")) == "passed" for row in report["scenarios"])
             return report
 
-        playwright_result = run_playwright_packaged_smoke(
+        smoke_runner_result = run_packaged_node_smoke(
             site_base_url=site_base_url,
             bridge_base_url=bridge_base_url,
             artifacts_dir=artifacts_dir,
             headed=bool(args.headed),
             pause_on_failure=bool(args.pause_on_failure),
-            timeout_s=float(args.playwright_timeout or DEFAULT_PLAYWRIGHT_TIMEOUT_S),
+            timeout_s=float(args.playwright_timeout or DEFAULT_SMOKE_RUNNER_TIMEOUT_S),
         )
-        report["artifacts"]["playwrightReport"] = str(playwright_result["reportPath"])
-        report["artifacts"]["playwrightOutputDir"] = str(playwright_result["outputDir"])
-        report["scenarios"].extend(list(playwright_result.get("scenarios") or []))
-        if int(playwright_result.get("exitCode", 1)) != 0:
+        report["artifacts"]["smokeReport"] = str(smoke_runner_result["reportPath"])
+        report["artifacts"]["smokeOutputDir"] = str(smoke_runner_result["outputDir"])
+        report["artifacts"]["smokeRunnerStdout"] = str(artifacts_dir / "smoke-runner-stdout.log")
+        report["artifacts"]["smokeRunnerStderr"] = str(artifacts_dir / "smoke-runner-stderr.log")
+        report["artifacts"]["playwrightReport"] = report["artifacts"]["smokeReport"]
+        report["artifacts"]["playwrightOutputDir"] = report["artifacts"]["smokeOutputDir"]
+        report["artifacts"]["playwrightStdout"] = report["artifacts"]["smokeRunnerStdout"]
+        report["artifacts"]["playwrightStderr"] = report["artifacts"]["smokeRunnerStderr"]
+        report["scenarios"].extend(list(smoke_runner_result.get("scenarios") or []))
+        if isinstance(smoke_runner_result.get("environment"), dict):
+            report["environment"] = dict(smoke_runner_result["environment"])
+        if int(smoke_runner_result.get("exitCode", 1)) != 0:
             failed = next((row for row in report["scenarios"] if str(row.get("status")) != "passed"), None)
             report["failure"] = build_failure_payload(
                 "playwright",
-                failed.get("error") if isinstance(failed, dict) and failed.get("error") else "Packaged Playwright smoke failed.",
+                failed.get("error")
+                if isinstance(failed, dict) and failed.get("error")
+                else str(smoke_runner_result.get("runnerError") or "Packaged desktop smoke failed."),
+                category=str(smoke_runner_result.get("failureCategory") or ""),
             )
         else:
             report["ok"] = all(str(row.get("status")) == "passed" for row in report["scenarios"])
@@ -687,7 +793,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> Dict[str, Any]:
                         }
                     )
         if not report["failure"]:
-            report["failure"] = build_failure_payload("runner", exc)
+            report["failure"] = build_failure_payload("runner", exc, category=classify_subprocess_error(exc))
     finally:
         terminate_process_tree(process)
         if stdout_handle is not None:
@@ -708,7 +814,7 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--site-port", type=int, default=0)
     parser.add_argument("--bridge-port", type=int, default=0)
     parser.add_argument("--runtime-timeout", type=float, default=DEFAULT_RUNTIME_TIMEOUT_S)
-    parser.add_argument("--playwright-timeout", type=float, default=DEFAULT_PLAYWRIGHT_TIMEOUT_S)
+    parser.add_argument("--playwright-timeout", type=float, default=DEFAULT_SMOKE_RUNNER_TIMEOUT_S)
     parser.add_argument("--rebuild", action="store_true")
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--pause-on-failure", action="store_true")

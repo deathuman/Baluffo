@@ -5,6 +5,7 @@ import unittest
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+from unittest import mock
 
 from scripts import source_discovery as sd
 
@@ -34,7 +35,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                 "studio": "Example Studio",
                 "aliases": ["example-studio"],
                 "nlPriority": True,
-                "remoteFriendly": True,
                 "likelyProviders": ["greenhouse", "teamtailor"],
             }
         ]
@@ -53,7 +53,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                 "studio": "Example Studio",
                 "aliases": ["example-studio"],
                 "nlPriority": False,
-                "remoteFriendly": True,
                 "likelyProviders": ["greenhouse"],
                 "careersUrl": "https://boards.greenhouse.io/example-studio",
             }
@@ -121,7 +120,6 @@ class SourceDiscoveryTests(unittest.TestCase):
             html,
             studio="Example Studio",
             nl_priority=False,
-            remote_friendly=True,
         )
         adapters = {str(row.get("adapter") or "") for row in rows}
         self.assertIn("greenhouse", adapters)
@@ -133,7 +131,6 @@ class SourceDiscoveryTests(unittest.TestCase):
             "<html><body>Careers</body></html>",
             studio="Example Studio",
             nl_priority=False,
-            remote_friendly=True,
             discovery_method="seed_careers_page",
         )
         self.assertEqual(len(rows), 1)
@@ -150,7 +147,6 @@ class SourceDiscoveryTests(unittest.TestCase):
             html,
             studio="Example Studio",
             nl_priority=False,
-            remote_friendly=True,
             discovery_method="seed_careers_page",
         )
         self.assertEqual(len(rows), 1)
@@ -163,7 +159,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                 "studio": "Example Studio",
                 "aliases": ["example-studio"],
                 "nlPriority": False,
-                "remoteFriendly": True,
                 "careersUrl": "https://example.com/careers",
             }
         ]
@@ -188,7 +183,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                 "studio": "Example Studio",
                 "aliases": ["example-studio"],
                 "nlPriority": False,
-                "remoteFriendly": True,
                 "careersUrl": "https://example.jobs.personio.de/",
             }
         ]
@@ -212,7 +206,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                 "studio": "Example Studio",
                 "aliases": ["example-studio"],
                 "nlPriority": False,
-                "remoteFriendly": True,
                 "careersUrl": "https://example.com/careers",
             }
         ]
@@ -243,7 +236,6 @@ class SourceDiscoveryTests(unittest.TestCase):
             html,
             studio="Example Studio",
             nl_priority=False,
-            remote_friendly=True,
             discovery_method="web_search",
         )
         self.assertIsNotNone(row)
@@ -258,7 +250,6 @@ class SourceDiscoveryTests(unittest.TestCase):
             '<a href="/jobs/test">Test</a>',
             studio="Example Studio",
             nl_priority=False,
-            remote_friendly=True,
             discovery_method="web_search",
         )
         self.assertIsNone(row)
@@ -526,7 +517,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                         "adapter": "lever",
                         "account": "demo",
                         "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
-                        "remoteFriendly": True,
                         "nlPriority": True,
                     },
                     {
@@ -535,7 +525,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                         "adapter": "greenhouse",
                         "slug": "demo",
                         "api_url": "https://boards-api.greenhouse.io/v1/boards/demo/jobs?content=true",
-                        "remoteFriendly": True,
                         "nlPriority": True,
                     },
                 ]
@@ -573,6 +562,53 @@ class SourceDiscoveryTests(unittest.TestCase):
                     self.assertIn("evidenceTypes", row)
                     self.assertIn("discoveryStage", row)
                     self.assertFalse(bool(row.get("deferred")))
+            finally:
+                (
+                    sd.ACTIVE_PATH,
+                    sd.PENDING_PATH,
+                    sd.REJECTED_PATH,
+                    sd.DISCOVERY_CANDIDATES_PATH,
+                    sd.DISCOVERY_REPORT_PATH,
+                ) = prev_paths
+                sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+                sd.STUDIO_SEEDS = prev_seeds
+
+    def test_run_discovery_emits_phase_logs_for_candidate_generation(self) -> None:
+        with self.workspace_tmpdir() as root:
+            prev_paths = (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+            )
+            prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+            prev_seeds = list(sd.STUDIO_SEEDS)
+            try:
+                sd.ACTIVE_PATH = root / "active.json"
+                sd.PENDING_PATH = root / "pending.json"
+                sd.REJECTED_PATH = root / "rejected.json"
+                sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+                sd.DISCOVERY_REPORT_PATH = root / "report.json"
+                sd.STUDIO_SEEDS = []
+                sd.STATIC_DISCOVERY_CANDIDATES = []
+
+                with mock.patch.object(sd, "emit_log") as emit_log_mock:
+                    report = sd.run_discovery(
+                        timeout_s=5,
+                        top_n=0,
+                        mode="dynamic",
+                        include_web_search=False,
+                        discovery_config={"gamesmap": {"enabled": False}},
+                        fetcher=lambda *_: "",
+                    )
+
+                messages = [str(call.args[0]) for call in emit_log_mock.call_args_list if call.args]
+                self.assertTrue(any("Generating curated seed candidates" in message for message in messages))
+                self.assertTrue(any("Generating provider-pattern candidates" in message for message in messages))
+                self.assertTrue(any("Scanning known careers pages" in message for message in messages))
+                self.assertTrue(any("Starting probe phase" in message for message in messages))
+                self.assertEqual(str((report.get("summary") or {}).get("phase") or ""), "completed")
             finally:
                 (
                     sd.ACTIVE_PATH,
@@ -691,7 +727,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                         "studio": "Example Studio",
                         "aliases": ["example-studio"],
                         "nlPriority": False,
-                        "remoteFriendly": True,
                         "likelyProviders": ["teamtailor"],
                         "careersUrl": "https://example.com/careers",
                     }
@@ -789,7 +824,6 @@ class SourceDiscoveryTests(unittest.TestCase):
                         "studio": "Example Studio",
                         "aliases": ["example-studio"],
                         "nlPriority": False,
-                        "remoteFriendly": True,
                         "likelyProviders": ["teamtailor"],
                         "careersUrl": "https://example.com/careers",
                     }

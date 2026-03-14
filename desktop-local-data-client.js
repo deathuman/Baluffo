@@ -1,5 +1,6 @@
 import { AdminConfig } from "./admin-config.js";
 import { APPLICATION_STATUSES } from "./frontend/local-data/constants.js";
+import { requestProfileName } from "./frontend/local-data/profile-name-dialog.js";
 import { createLocalDataRuntime } from "./frontend/local-data/runtime-contract.js";
 import { buildAttachmentPath, generateJobKey } from "./frontend/local-data/job-utils.js";
 import { canTransitionPhase, normalizeApplicationStatus } from "./frontend/local-data/phase.js";
@@ -47,6 +48,19 @@ function parseFilenameFromContentDisposition(value) {
   return plainMatch && plainMatch[1] ? String(plainMatch[1]).trim() : "";
 }
 
+function getFileExtension(name) {
+  const idx = String(name || "").lastIndexOf(".");
+  if (idx === -1) return "";
+  return String(name).slice(idx + 1).toLowerCase();
+}
+
+function isImageAttachmentMeta(attachment) {
+  const type = String(attachment?.type || "").toLowerCase();
+  if (type === "image/png" || type === "image/jpeg") return true;
+  const ext = getFileExtension(attachment?.name || "");
+  return ext === "png" || ext === "jpg" || ext === "jpeg";
+}
+
 async function requestJson(path, options = {}) {
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
@@ -60,6 +74,27 @@ async function requestJson(path, options = {}) {
     throw new Error(String(payload?.error || response.statusText || "Request failed."));
   }
   return payload;
+}
+
+async function fetchAttachmentBlob(uid, jobKey, attachmentId) {
+  const response = await fetch(buildAttachmentContentUrl(uid, jobKey, attachmentId));
+  if (!response.ok) {
+    let errorMessage = "Could not read attachment.";
+    try {
+      const payload = await response.json();
+      errorMessage = String(payload?.error || errorMessage);
+    } catch {
+      // ignore
+    }
+    throw new Error(errorMessage);
+  }
+  const blob = await response.blob();
+  const headerName = parseFilenameFromContentDisposition(response.headers.get("Content-Disposition"));
+  return {
+    blob,
+    filename: headerName,
+    contentType: response.headers.get("Content-Type") || blob.type || ""
+  };
 }
 
 function notifyAuthChanged() {
@@ -151,7 +186,11 @@ const desktopApi = createLocalDataRuntime({
     return () => AUTH_LISTENERS.delete(callback);
   },
   async signIn() {
-    const name = window.prompt("Enter profile name to sign in or create a local desktop profile:", currentUser?.displayName || "");
+    const name = await requestProfileName({
+      title: "Sign in",
+      description: "Enter a profile name to sign in or create a local desktop profile.",
+      defaultValue: currentUser?.displayName || ""
+    });
     if (!String(name || "").trim()) {
       throw new Error("Sign-in cancelled.");
     }
@@ -225,7 +264,26 @@ const desktopApi = createLocalDataRuntime({
   },
   async listAttachmentsForJob(uid, jobKey) {
     const payload = await requestJson(`/attachments?uid=${encodeURIComponent(String(uid || ""))}&jobKey=${encodeURIComponent(String(jobKey || ""))}`);
-    return Array.isArray(payload.rows) ? payload.rows : [];
+    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    const hydrated = await Promise.all(
+      rows.map(async row => {
+        if (!isImageAttachmentMeta(row)) {
+          return row;
+        }
+        try {
+          const attachmentId = String(row?.id || "");
+          if (!attachmentId) return row;
+          const data = await fetchAttachmentBlob(uid, jobKey, attachmentId);
+          return {
+            ...row,
+            blob: data.blob
+          };
+        } catch {
+          return row;
+        }
+      })
+    );
+    return hydrated;
   },
   async addAttachmentForJob(uid, jobKey, fileMeta, blob) {
     const blobDataUrl = await fileToDataUrl(blob);
@@ -237,24 +295,7 @@ const desktopApi = createLocalDataRuntime({
     return String(payload.attachmentId || "");
   },
   async getAttachmentBlob(uid, jobKey, attachmentId) {
-    const response = await fetch(buildAttachmentContentUrl(uid, jobKey, attachmentId));
-    if (!response.ok) {
-      let errorMessage = "Could not read attachment.";
-      try {
-        const payload = await response.json();
-        errorMessage = String(payload?.error || errorMessage);
-      } catch {
-        // ignore
-      }
-      throw new Error(errorMessage);
-    }
-    const blob = await response.blob();
-    const headerName = parseFilenameFromContentDisposition(response.headers.get("Content-Disposition"));
-    return {
-      blob,
-      filename: headerName,
-      contentType: response.headers.get("Content-Type") || blob.type || ""
-    };
+    return fetchAttachmentBlob(uid, jobKey, attachmentId);
   },
   getAttachmentDownloadUrl(uid, jobKey, attachmentId) {
     return buildAttachmentContentUrl(uid, jobKey, attachmentId, { download: true });
