@@ -59,6 +59,22 @@ runtime data roots:
   - `app/dom.js`, `app/sources.js`
 - Runtime composes `render.js`, `domain.js`, `data-source.js`, `services.js`, `state-sync/index.js`, `actions.js`.
 
+## Data Model Overview
+
+- **`data/jobs-unified.json`**: The main aggregated jobs feed. This is the primary data source for the Jobs UI.
+- **`data/jobs-unified.csv`**: A CSV version of the aggregated jobs feed.
+- **`data/jobs-fetch-report.json`**: A report on the last run of the jobs fetcher, including which sources were successful and which failed.
+- **`data/source-registry-active.json`**: A list of the active job sources that the fetcher will use.
+- **`data/source-registry-pending.json`**: A list of new job sources that have been discovered but not yet approved.
+- **`data/source-registry-rejected.json`**: A list of job sources that have been rejected.
+- **`data/source-discovery-report.json`**: A report on the last run of the source discovery process.
+- **`data/source-discovery-candidates.json`**: A list of candidate job sources that have been discovered.
+- **`data/local-user-data/profiles.json`**: A list of user profiles.
+- **`data/local-user-data/session.json`**: The current user session.
+- **`data/local-user-data/users/{uid}/saved-jobs.json`**: A list of jobs that a user has saved.
+- **`data/local-user-data/users/{uid}/activity.json`**: A log of a user's activity.
+- **`data/local-user-data/users/{uid}/attachments.json`**: A list of attachments that a user has uploaded.
+
 ## 3) Task -> minimal files
 
 | Task | Start here (minimal) | Then load only if needed |
@@ -72,6 +88,8 @@ runtime data roots:
 | Admin unlock/ops/fetch/discovery/sync | `frontend/admin/app/{auth,ops,fetcher,discovery,sync}.js` | `frontend/admin/app/runtime.js`, `frontend/admin/services.js` |
 | Bridge API/runtime behavior | `scripts/admin_bridge.py` | `frontend/admin/services.js`, `frontend/jobs/services.js`, `frontend/saved/services.js` |
 | Desktop startup/runtime behavior | `scripts/ship/desktop_app.py` | `tests/test_desktop_app.py`, `scripts/ship/runtime_launcher.py` |
+| Add new filter to jobs page | `frontend/jobs/app/filters.js` | `frontend/jobs/render.js`, `frontend/jobs/app/runtime.js` |
+| Add new field to custom job form | `frontend/saved/app/custom-job.js` | `frontend/saved/render.js`, `frontend/saved/app/runtime.js` |
 
 ## 4) Runtime contracts (safe-edit guardrails)
 
@@ -105,3 +123,8 @@ runtime data roots:
 - Ship bundle packaging runbook: `docs/ship-bundle-runbook.md`
 - Portable EXE runbook: `docs/portable-executable-runbook.md`
 - Deployment/update flow: `docs/deployment-and-update-guide.md`
+
+## Key Libraries and Frameworks
+
+- **Playwright:** Used for frontend smoke regression tests.
+- **PyInstaller:** Used to package the application as a portable Windows executable.

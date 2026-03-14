@@ -1,32 +1,26 @@
 {
   "schemaVersion": "1.0",
   "mode": "dynamic",
-  "startedAt": "2026-03-12T12:05:17.545460+00:00",
-  "finishedAt": "2026-03-12T12:08:06.812445+00:00",
+  "startedAt": "2026-03-12T23:03:09.894634+00:00",
+  "finishedAt": "2026-03-12T23:05:44.877141+00:00",
   "summary": {
-    "probedCount": 14,
-    "healthyCount": 2,
-    "newCandidateCount": 2,
+    "probedCount": 12,
+    "healthyCount": 0,
+    "newCandidateCount": 0,
     "taEnvCandidateCount": 0,
-    "nlCandidateCount": 2,
-    "remoteCandidateCount": 2,
+    "nlCandidateCount": 0,
+    "remoteCandidateCount": 0,
     "failedProbeCount": 0,
     "probeMissCount": 10,
     "foundEndpointCount": 60,
-    "probedCandidateCount": 14,
-    "queuedCandidateCount": 2,
+    "probedCandidateCount": 12,
+    "queuedCandidateCount": 0,
     "discoverableButDeferredCount": 0,
-    "skippedDuplicateCount": 46,
+    "skippedDuplicateCount": 48,
     "skippedInvalidCount": 0,
     "skippedLowEvidenceProbeCount": 0,
-    "adapterCounts": {
-      "teamtailor": 1,
-      "workable": 1
-    },
-    "methodCounts": {
-      "seed_careers_page": 1,
-      "pattern": 1
-    },
+    "adapterCounts": {},
+    "methodCounts": {},
     "generatedCountByStage": {
       "curated_seed": 10,
       "provider_pattern": 26,
@@ -35,24 +29,24 @@
     },
     "survivedDedupeCountByStage": {
       "curated_seed": 0,
-      "provider_pattern": 12,
-      "web_provider": 1,
+      "provider_pattern": 11,
+      "web_provider": 0,
       "generic_static": 1
     },
     "probedCountByStage": {
       "curated_seed": 0,
-      "provider_pattern": 12,
-      "web_provider": 1,
+      "provider_pattern": 11,
+      "web_provider": 0,
       "generic_static": 1
     },
     "queuedCountByStage": {
       "curated_seed": 0,
-      "provider_pattern": 1,
-      "web_provider": 1,
+      "provider_pattern": 0,
+      "web_provider": 0,
       "generic_static": 0
     },
     "duplicateReasons": {
-      "existing_id": 46
+      "existing_id": 48
     },
     "deferredReasons": {},
     "thresholds": {
@@ -66,90 +60,19 @@
     },
     "lossAccounting": {
       "generated": 60,
-      "dedupSkipped": 46,
+      "dedupSkipped": 48,
       "dedupSkippedReasons": {
-        "existing_id": 46
+        "existing_id": 48
       },
       "validationSkipped": 0,
       "lowEvidenceSkipped": 0,
       "probeFailed": 10,
       "queueFiltered": 2,
       "deferredByCap": 0,
-      "queued": 2
+      "queued": 0
     }
   },
-  "candidates": [
-    {
-      "name": "Paradox Interactive (Teamtailor)",
-      "studio": "Paradox Interactive",
-      "adapter": "teamtailor",
-      "listing_url": "https://paradox-interactive.teamtailor.com/jobs",
-      "base_url": "https://paradox-interactive.teamtailor.com",
-      "company": "Paradox Interactive",
-      "remoteFriendly": true,
-      "nlPriority": true,
-      "discoveryMethod": "seed_careers_page",
-      "discoveryStage": "web_provider",
-      "careersUrl": "https://career.paradoxplaza.com/jobs",
-      "evidenceScore": 52,
-      "evidenceTypes": [
-        "provider_url",
-        "html_embed",
-        "careers_page"
-      ],
-      "evidenceSource": "html_embed",
-      "id": "teamtailor:listing_url:https://paradox-interactive.teamtailor.com/jobs",
-      "discoveredAt": "2026-03-12T12:08:01.214449+00:00",
-      "enabledByDefault": false,
-      "score": 85,
-      "reasons": [
-        "nl_priority",
-        "remote_friendly",
-        "strong_evidence",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 20,
-      "jobsFound": 20,
-      "confidence": "high",
-      "lastProbedAt": "2026-03-12T12:08:01.478540+00:00",
-      "weakSignal": false,
-      "deferred": false
-    },
-    {
-      "studio": "Vertigo Games",
-      "remoteFriendly": true,
-      "nlPriority": true,
-      "discoveryMethod": "pattern",
-      "discoveryStage": "provider_pattern",
-      "careersUrl": "https://vertigo-games.com/careers",
-      "evidenceScore": 24,
-      "evidenceTypes": [
-        "provider_hint",
-        "seed_catalog"
-      ],
-      "evidenceSource": "pattern",
-      "name": "Vertigo Games (Workable)",
-      "adapter": "workable",
-      "account": "vertigogames",
-      "api_url": "https://apply.workable.com/api/v1/widget/accounts/vertigogames?details=true",
-      "id": "workable:account:vertigogames",
-      "discoveredAt": "2026-03-12T12:08:01.214348+00:00",
-      "enabledByDefault": false,
-      "score": 67,
-      "reasons": [
-        "nl_priority",
-        "remote_friendly",
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 15,
-      "jobsFound": 15,
-      "confidence": "high",
-      "lastProbedAt": "2026-03-12T12:08:02.867072+00:00",
-      "weakSignal": false,
-      "deferred": false
-    }
-  ],
+  "candidates": [],
   "failures": [
     {
       "name": "https://www.nixxes.com/careers",
@@ -162,7 +85,7 @@
     {
       "name": "https://vertigo-games.com/careers",
       "adapter": "seed_careers_page",
-      "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'vertigo-games.com'. (_ssl.c:1077)>",
+      "error": "HTTP Error 404: Not Found",
       "stage": "page_fetch",
       "dropStage": "page_fetch",
       "dropReason": "page_fetch"
@@ -170,7 +93,7 @@
     {
       "name": "https://www.triumphstudios.com/careers",
       "adapter": "seed_careers_page",
-      "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1077)>",
+      "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)>",
       "stage": "page_fetch",
       "dropStage": "page_fetch",
       "dropReason": "page_fetch"
@@ -296,6 +219,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Vertigo Games (Workable)",
+      "adapter": "workable",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Larian Studios (Greenhouse)",
       "adapter": "greenhouse",
       "stage": "dedupe_skipped",
@@ -410,6 +341,14 @@
     {
       "name": "Yager (Personio)",
       "adapter": "personio",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Paradox Interactive (Teamtailor)",
+      "adapter": "teamtailor",
       "stage": "dedupe_skipped",
       "error": "existing_id",
       "dropStage": "dedupe_skipped",
@@ -698,17 +637,17 @@
       "count": 7
     },
     {
-      "key": "personio",
+      "key": "workable",
       "count": 7
     },
     {
-      "key": "lever",
-      "count": 6
+      "key": "personio",
+      "count": 7
     }
   ],
   "outputs": {
-    "report": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\source-discovery-report.json",
-    "candidates": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\source-discovery-candidates.json",
-    "pending": "C:\\Users\\amolino\\Desktop\\Baluffo\\Baluffo\\data\\source-registry-pending.json"
+    "report": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-discovery-report.json",
+    "candidates": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-discovery-candidates.json",
+    "pending": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-registry-pending.json"
   }
 }

@@ -43,6 +43,20 @@ It combines:
   - IndexedDB for saved jobs/attachments metadata
 - Data/ops scripts: Python
 
+## Documentation
+
+- **Architecture Map:** [docs/architecture-ai-map.md](docs/architecture-ai-map.md) - A scan-first architecture guide for AI-assisted coding.
+- **Release Process:** [docs/RELEASE.md](docs/RELEASE.md) - A guide to the release process.
+- **Ship Bundle Runbook:** [docs/ship-bundle-runbook.md](docs/ship-bundle-runbook.md) - A runbook for the ship bundle.
+- **Portable Executable Runbook:** [docs/portable-executable-runbook.md](docs/portable-executable-runbook.md) - A runbook for the portable executable.
+- **Deployment and Update Guide:** [docs/deployment-and-update-guide.md](docs/deployment-and-update-guide.md) - A guide to deployment and updates.
+- **Versioning Policy and Release Checklist:** [docs/versioning-policy-and-release-checklist.md](docs/versioning-policy-and-release-checklist.md) - The project's versioning policy and release checklist.
+- **Jobs Saved Contributor Map:** [docs/jobs-saved-contributor-map.md](docs/jobs-saved-contributor-map.md) - A map of contributors to the saved jobs feature.
+- **Fetcher Runtime Contracts:** [docs/fetcher-runtime-contracts.md](docs/fetcher-runtime-contracts.md) - The runtime contracts for the fetcher.
+- **Agents:** [AGENTS.md](AGENTS.md) - Information about the agents.
+- **Local Setup:** [LOCAL_SETUP.md](LOCAL_SETUP.md) - Instructions for setting up a local development environment.
+- **Ship Package:** [SHIP_PACKAGE.md](SHIP_PACKAGE.md) - Information about the ship package.
+
 ## Project Structure
 
 ```text
