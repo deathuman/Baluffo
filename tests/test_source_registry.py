@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 
 from scripts import source_registry as sr
-from tests.temp_paths import workspace_tmpdir
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 class SourceRegistryTests(unittest.TestCase):

@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 
 from scripts import backup_e2e_validate as backup_validate
-from tests.temp_paths import workspace_tmpdir
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 class BackupE2EValidateTests(unittest.TestCase):

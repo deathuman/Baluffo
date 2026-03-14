@@ -5,7 +5,7 @@ from unittest import mock
 
 from scripts.app_version import APP_VERSION
 from scripts.build_ship_bundle import STARTUP_PREVIEW_LIMIT, build_bundle
-from tests.temp_paths import workspace_tmpdir
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 class BuildShipBundleTests(unittest.TestCase):

@@ -5,7 +5,7 @@ from unittest import mock
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from scripts.ship import update_manager as um
-from tests.temp_paths import workspace_tmpdir
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 def _write(path: Path, text: str) -> None:

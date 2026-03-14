@@ -11,7 +11,7 @@ from unittest import mock
 from scripts import jobs_fetcher as jf
 from scripts import jobs_fetcher_registry as jfr
 from scripts.scrapers import runner as scrapy_runner
-from tests.temp_paths import workspace_tmpdir
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 class JobsFetcherTests(unittest.TestCase):

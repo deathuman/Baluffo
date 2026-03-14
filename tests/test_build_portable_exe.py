@@ -13,7 +13,7 @@ from scripts.build_portable_exe import (
     parse_args,
     resolve_icon_path,
 )
-from tests.temp_paths import workspace_tmpdir
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 class BuildPortableExeTests(unittest.TestCase):

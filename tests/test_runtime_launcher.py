@@ -8,7 +8,7 @@ from unittest import mock
 
 from scripts.app_version import APP_VERSION
 from scripts.ship import runtime_launcher as rl
-from tests.temp_paths import workspace_tmpdir
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 def _write(path: Path, text: str) -> None:

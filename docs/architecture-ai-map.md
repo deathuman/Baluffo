@@ -86,6 +86,7 @@ runtime data roots:
 | Saved attachments flow | `frontend/saved/app/attachments.js` | `frontend/saved/app/runtime.js`, `frontend/saved/services.js` |
 | Saved timeline/activity | `frontend/saved/app/activity.js` | `frontend/saved/app/runtime.js` |
 | Admin unlock/ops/fetch/discovery/sync | `frontend/admin/app/{auth,ops,fetcher,discovery,sync}.js` | `frontend/admin/app/runtime.js`, `frontend/admin/services.js` |
+| Job processing pipeline | `scripts/jobs/pipeline.py` | `scripts/jobs/adapters`, `scripts/jobs/canonicalize.py`, `scripts.jobs.dedup.py` |
 | Bridge API/runtime behavior | `scripts/admin_bridge.py` | `frontend/admin/services.js`, `frontend/jobs/services.js`, `frontend/saved/services.js` |
 | Desktop startup/runtime behavior | `scripts/ship/desktop_app.py` | `tests/test_desktop_app.py`, `scripts/ship/runtime_launcher.py` |
 | Add new filter to jobs page | `frontend/jobs/app/filters.js` | `frontend/jobs/render.js`, `frontend/jobs/app/runtime.js` |

@@ -50,7 +50,7 @@ function resolveRuntimeBridgeBase() {
 
 export const AdminConfig = {
   JOBS_LAST_URL_KEY: "baluffo_jobs_last_url",
-  JOBS_FETCHER_COMMAND: "python scripts/jobs_fetcher.py",
+  JOBS_FETCHER_COMMAND: "python scripts/jobs/pipeline.py",
   JOBS_FETCHER_TASK_LABEL: "Run jobs fetcher",
   JOBS_FETCH_REPORT_URL: "data/jobs-fetch-report.json",
   JOBS_AUTO_REFRESH_SIGNAL_KEY: "baluffo_jobs_auto_refresh_signal",

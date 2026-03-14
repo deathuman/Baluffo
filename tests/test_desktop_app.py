@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 from scripts.app_version import APP_VERSION
 from scripts.ship import desktop_app
-from tests.temp_paths import workspace_tmpdir
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 class DesktopAppTests(unittest.TestCase):

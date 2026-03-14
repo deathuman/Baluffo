@@ -10,7 +10,7 @@ from scripts import admin_bridge
 
 class AdminBridgeOpsTestCase(unittest.TestCase):
     def setUp(self):
-        temp_root = Path(__file__).resolve().parents[1] / ".codex-tmp-tests"
+        temp_root = Path(__file__).resolve().parents[2] / ".codex-tmp-tests"
         temp_root.mkdir(parents=True, exist_ok=True)
         self.test_root = temp_root / f"admin-bridge-{uuid.uuid4().hex}"
         self.test_root.mkdir(parents=True, exist_ok=True)

@@ -3,7 +3,7 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 TEST_TMP_ROOT = ROOT / ".codex-test-tmp"
 
 

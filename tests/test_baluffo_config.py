@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest import mock
 
 from scripts import baluffo_config
-from tests.temp_paths import workspace_tmpdir
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 class BaluffoConfigTests(unittest.TestCase):

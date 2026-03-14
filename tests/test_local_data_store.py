@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 
 from scripts.local_data_store import LocalDataPaths, LocalDataStore
-from tests.temp_paths import workspace_tmpdir
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 class LocalDataStoreTests(unittest.TestCase):

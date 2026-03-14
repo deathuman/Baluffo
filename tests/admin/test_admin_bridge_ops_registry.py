@@ -1,5 +1,5 @@
 from scripts import admin_bridge
-from tests.admin_bridge_ops_base import AdminBridgeOpsTestCase
+from tests.admin.admin_bridge_ops_base import AdminBridgeOpsTestCase
 
 
 class AdminBridgeOpsRegistryTests(AdminBridgeOpsTestCase):

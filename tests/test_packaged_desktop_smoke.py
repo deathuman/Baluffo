@@ -5,7 +5,7 @@ from unittest import mock
 
 from scripts import packaged_desktop_smoke as smoke
 from scripts.ship.startup_profile import summarize_startup_metrics
-from tests.temp_paths import workspace_tmpdir
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 class PackagedDesktopSmokeTests(unittest.TestCase):

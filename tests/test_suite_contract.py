@@ -6,7 +6,7 @@ from pathlib import Path
 class TestSuiteContractTests(unittest.TestCase):
     def test_discovered_python_test_files_define_real_tests(self) -> None:
         root = Path(__file__).resolve().parent
-        test_files = sorted(root.glob("test_*.py"))
+        test_files = sorted(root.rglob("test_*.py"))
         pattern = re.compile(r"^(class\s+\w+Tests\s*\(|def\s+test_)", re.MULTILINE)
 
         for path in test_files:
