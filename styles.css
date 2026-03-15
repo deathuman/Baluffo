@@ -652,6 +652,8 @@ h1 {
   gap: 0.72rem 0.82rem;
   margin-bottom: 0.82rem;
   padding: 1.05rem 1.05rem 0.95rem;
+  position: relative;
+  z-index: 20;
   background:
     radial-gradient(circle at right top, var(--accent-soft-bg), transparent 48%),
     linear-gradient(180deg, var(--surface-5), var(--surface-2));
