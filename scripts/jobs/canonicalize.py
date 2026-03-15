@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from scripts.jobs import common
+from scripts.jobs.interfaces import JobProcessor
 from scripts.jobs.models import CanonicalJob, RawJob
 from scripts.jobs.transport import PooledRedirectResolver
 
@@ -259,3 +260,54 @@ def canonical_job_to_legacy_dict(job: CanonicalJob) -> Dict[str, Any]:
 
 def canonical_jobs_to_legacy_dicts(rows: Sequence[CanonicalJob]) -> List[Dict[str, Any]]:
     return [row.to_dict() for row in rows]
+
+
+class CanonicalNormalizer(JobProcessor):
+    """Structural normalizer implementing the JobProcessor protocol."""
+
+    def __init__(
+        self,
+        source: str,
+        fetched_at: str,
+        resolve_redirect_url: Optional[Callable[[str], str]] = None,
+        redirect_resolver: Optional[PooledRedirectResolver] = None,
+        redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+    ) -> None:
+        self.source = source
+        self.fetched_at = fetched_at
+        self.resolve_redirect_url = resolve_redirect_url
+        self.redirect_resolver = redirect_resolver
+        self.redirect_concurrency = redirect_concurrency
+        self.stats: Dict[str, Any] = {}
+        self.drop_reasons: Counter[str] = Counter()
+
+    def process(self, jobs: List[CanonicalJob], **options: Any) -> List[CanonicalJob]:
+        # Implementation accepts RawJob masquerading as CanonicalJob initially
+        # during the adapter -> pipeline boundary transition.
+        raw_rows = jobs
+        if self.source.startswith("google_sheets"):
+            canonical_batch, self.drop_reasons, self.stats = canonicalize_google_sheets_rows(
+                raw_rows,  # type: ignore
+                source=self.source,
+                fetched_at=self.fetched_at,
+                redirect_resolver=self.redirect_resolver,
+                redirect_concurrency=self.redirect_concurrency,
+            )
+            return canonical_batch
+
+        canonical_batch = []
+        canonical_started = time.perf_counter()
+        for raw in raw_rows:
+            normalized, drop_reason = canonicalize_job_with_reason(
+                raw,  # type: ignore
+                source=self.source,
+                fetched_at=self.fetched_at,
+                resolve_redirect_url=self.resolve_redirect_url,
+            )
+            if normalized:
+                canonical_batch.append(normalized)
+            elif drop_reason:
+                self.drop_reasons[drop_reason] += 1
+        
+        self.stats["canonicalize_ms"] = int((time.perf_counter() - canonical_started) * 1000)
+        return canonical_batch

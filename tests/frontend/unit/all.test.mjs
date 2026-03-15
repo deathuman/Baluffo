@@ -8,6 +8,7 @@ import "./admin-render.test.mjs";
 import "./jobs-data-source.test.mjs";
 import "./jobs-domain.test.mjs";
 import "./jobs-html.test.mjs";
+import "./jobs-parsing-utils.test.mjs";
 import "./jobs-pipeline.test.mjs";
 import "./jobs-render.test.mjs";
 import "./jobs-source-metadata.test.mjs";

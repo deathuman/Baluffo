@@ -16,6 +16,7 @@ from scripts.jobs.canonicalize import (
     posted_ts,
     to_iso,
 )
+from scripts.jobs.interfaces import JobProcessor
 from scripts.jobs.models import CanonicalJob
 
 fingerprint_url = common.fingerprint_url
@@ -229,6 +230,7 @@ def deduplicate_jobs(rows: Sequence[CanonicalJob | Dict[str, Any]]) -> Tuple[Lis
         reverse=True,
     )
     merged_rows = [CanonicalJob.from_mapping({**row.to_dict(), "id": idx}) for idx, row in enumerate(merged_rows, start=1)]
+    merged_rows = [CanonicalJob.from_mapping({**row.to_dict(), "id": idx}) for idx, row in enumerate(merged_rows, start=1)]
     return merged_rows, {
         "inputCount": len(rows),
         "mergedCount": merges,
@@ -239,3 +241,15 @@ def deduplicate_jobs(rows: Sequence[CanonicalJob | Dict[str, Any]]) -> Tuple[Lis
         "collisionSamplesCount": len(merge_samples),
         "collisionSamples": merge_samples,
     }
+
+
+class CanonicalDeduplicator(JobProcessor):
+    """Structural deduplicator implementing the JobProcessor protocol."""
+
+    def __init__(self) -> None:
+        self.stats: Dict[str, Any] = {}
+
+    def process(self, jobs: List[CanonicalJob], **options: Any) -> List[CanonicalJob]:
+        merged, stats = deduplicate_jobs(jobs)
+        self.stats = stats
+        return merged

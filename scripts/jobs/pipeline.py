@@ -1,4 +1,4 @@
-﻿"""Package-owned pipeline entrypoints."""
+"""Package-owned pipeline entrypoints."""
 
 from __future__ import annotations
 
@@ -22,9 +22,9 @@ from scripts.jobs import reporting as reporting_pkg
 from scripts.jobs import state as state_pkg
 from scripts.jobs import transport as transport_pkg
 from scripts.jobs.adapters import default_source_loaders as package_default_source_loaders
+from scripts.jobs.interfaces import SourceLoader
 from scripts.jobs.models import CanonicalJob
 
-SourceLoader = common.SourceLoader
 RawJob = common.RawJob
 
 DEFAULT_OUTPUT_DIR = common.DEFAULT_OUTPUT_DIR
@@ -66,9 +66,8 @@ read_approved_since_last_run = common.read_approved_since_last_run
 env_flag = common.env_flag
 
 canonicalize_job = canonicalize_pkg.canonicalize_job
-canonicalize_job_with_reason = canonicalize_pkg.canonicalize_job_with_reason
-canonicalize_google_sheets_rows = canonicalize_pkg.canonicalize_google_sheets_rows
-deduplicate_jobs = dedup_pkg.deduplicate_jobs
+CanonicalNormalizer = canonicalize_pkg.CanonicalNormalizer
+CanonicalDeduplicator = dedup_pkg.CanonicalDeduplicator
 format_source_error = reporting_pkg.format_source_error
 build_pipeline_summary = reporting_pkg.build_pipeline_summary
 build_browser_fallback_queue = reporting_pkg.build_browser_fallback_queue
@@ -225,7 +224,9 @@ def run_pipeline(
     runtime_payload: Dict[str, Any] = {}
 
     def write_progress_report() -> None:
-        deduped_progress_rows, dedup_progress_stats = deduplicate_jobs(canonical_rows)
+        deduplicator = CanonicalDeduplicator()
+        deduped_progress_rows = deduplicator.process(canonical_rows)
+        dedup_progress_stats = deduplicator.stats
         dedup_progress_stats["outputCount"] = len(deduped_progress_rows)
         progress_lifecycle_counts = lifecycle_counts(lifecycle_rows)
         progress_payload = normalize_fetch_report_payload({
@@ -471,34 +472,25 @@ def run_pipeline(
             report["fetchedCount"] = len(raw_rows)
             report_loss = report["loss"] if isinstance(report.get("loss"), dict) else {}
             report_loss["rawFetched"] = int(len(raw_rows))
-            drop_reasons = Counter()
-            kept = 0
+            
+            normalizer = CanonicalNormalizer(
+                source=name,
+                fetched_at=started_at,
+                resolve_redirect_url=redirect_resolver.resolve,
+                redirect_resolver=redirect_resolver,
+                redirect_concurrency=google_sheets_redirect_concurrency,
+            )
+            canonical_batch = normalizer.process(raw_rows)  # type: ignore
+            drop_reasons = normalizer.drop_reasons
+            
+            kept = len(canonical_batch)
             google_sheet_redirect_stats: Dict[str, int] = {}
             if name.startswith("google_sheets"):
-                canonical_batch, drop_reasons, google_sheet_redirect_stats = canonicalize_google_sheets_rows(
-                    raw_rows,
-                    source=name,
-                    fetched_at=started_at,
-                    redirect_resolver=redirect_resolver,
-                    redirect_concurrency=google_sheets_redirect_concurrency,
-                )
-                kept = len(canonical_batch)
+                google_sheet_redirect_stats = normalizer.stats
                 canonicalization_ms = int(google_sheet_redirect_stats.get("canonicalize_ms") or 0)
             else:
-                canonicalization_started = time.perf_counter()
-                for raw in raw_rows:
-                    normalized, drop_reason = canonicalize_job_with_reason(
-                        raw,
-                        source=name,
-                        fetched_at=started_at,
-                        resolve_redirect_url=redirect_resolver.resolve,
-                    )
-                    if normalized:
-                        canonical_batch.append(normalized)
-                        kept += 1
-                    elif drop_reason:
-                        drop_reasons[drop_reason] += 1
-                canonicalization_ms = int((time.perf_counter() - canonicalization_started) * 1000)
+                canonicalization_ms = int(normalizer.stats.get("canonicalize_ms") or 0)
+            
             report["keptCount"] = kept
             report_loss["canonicalKept"] = int(kept)
             report_loss["canonicalDropped"] = max(0, int(len(raw_rows)) - int(kept))
@@ -695,7 +687,9 @@ def run_pipeline(
     if using_default_loaders:
         append_excluded_default_sources(source_reports)
 
-    deduped_rows, dedup_stats = deduplicate_jobs(canonical_rows)
+    deduplicator = CanonicalDeduplicator()
+    deduped_rows = deduplicator.process(canonical_rows)
+    dedup_stats = deduplicator.stats
 
     preserved_previous = False
     if preserve_previous_on_empty and not deduped_rows:

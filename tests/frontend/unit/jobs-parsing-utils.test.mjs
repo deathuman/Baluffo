@@ -1,3 +1,4 @@
+import test from "node:test";
 import assert from "node:assert/strict";
 import { parseCSVLarge } from "../../../jobs-parsing-utils.js";
 

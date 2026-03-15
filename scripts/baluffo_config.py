@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_CONFIG_PATH = ROOT / "baluffo.config.json"
@@ -18,6 +21,7 @@ CODE_FALLBACK_CONFIG: Dict[str, Any] = {
         "log_format": "human",
         "log_level": "info",
         "quiet_requests": False,
+        "max_history_rows": 240,
     },
     "storage": {
         "data_dir": "data",
@@ -117,6 +121,9 @@ def get_bridge_defaults() -> Dict[str, Any]:
         "log_format": _coerce_str(cfg.get("log_format"), CODE_FALLBACK_CONFIG["bridge"]["log_format"]).lower(),
         "log_level": _coerce_str(cfg.get("log_level"), CODE_FALLBACK_CONFIG["bridge"]["log_level"]).lower(),
         "quiet_requests": _coerce_bool(cfg.get("quiet_requests"), CODE_FALLBACK_CONFIG["bridge"]["quiet_requests"]),
+        "max_history_rows": _coerce_int(
+            cfg.get("max_history_rows"), CODE_FALLBACK_CONFIG["bridge"]["max_history_rows"], minimum=0, maximum=1000
+        ),
     }
 
 
@@ -197,3 +204,135 @@ def get_desktop_defaults() -> Dict[str, Any]:
         "open_path": _coerce_str(cfg.get("open_path"), CODE_FALLBACK_CONFIG["desktop"]["open_path"]).lstrip("/"),
         "title": _coerce_str(cfg.get("title"), CODE_FALLBACK_CONFIG["desktop"]["title"]),
     }
+
+
+# ---------------------------------------------------------------------------
+# Structured config objects (salvaged from refactor, additive-only)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BridgeConfig:
+    host: str
+    port: int
+    log_format: str
+    log_level: str
+    quiet_requests: bool
+    max_history_rows: int
+
+
+@dataclass
+class StorageConfig:
+    data_dir: Path
+    source_discovery_config_path: Path
+    source_discovery_log_path: Path
+    social_sources_config_path: Path
+    ops_history_path: Path
+    ops_alert_state_path: Path
+    jobs_fetch_report_path: Path
+    discovery_report_path: Path
+    active_path: Path
+    pending_path: Path
+    rejected_path: Path
+    tasks_config_path: Path
+    task_state_path: Path
+    sync_config_path: Path
+    sync_runtime_path: Path
+    run_history_path: Path
+
+
+@dataclass
+class AdminBridgeConfig:
+    root: Path
+    bridge: BridgeConfig
+    storage: StorageConfig
+    desktop_mode: bool
+
+
+def resolve_admin_bridge_config(
+    args: argparse.Namespace,
+    *,
+    env: Optional[Dict[str, str]] = None,
+) -> AdminBridgeConfig:
+    """Resolve admin bridge config from CLI args, env vars, and config files.
+
+    Layers (highest to lowest priority): CLI args > env vars > config files > code fallback.
+    The existing ``get_bridge_defaults()`` / ``get_storage_defaults()`` functions are
+    used as the source-of-truth for resolved scalar values so this function stays in sync
+    automatically whenever those functions evolve.
+    """
+    env_map = env if isinstance(env, dict) else os.environ
+    bridge_defaults = get_bridge_defaults()
+    storage_defaults = get_storage_defaults()
+
+    host = _coerce_str(
+        getattr(args, "host", None) or env_map.get("BALUFFO_BRIDGE_HOST") or bridge_defaults["host"],
+        bridge_defaults["host"],
+    )
+    port = _coerce_int(
+        getattr(args, "port", None) or env_map.get("BALUFFO_BRIDGE_PORT"),
+        bridge_defaults["port"],
+    )
+    log_format = _coerce_str(
+        getattr(args, "log_format", None) or env_map.get("BALUFFO_BRIDGE_LOG_FORMAT") or bridge_defaults["log_format"],
+        bridge_defaults["log_format"],
+    ).lower()
+    log_level = _coerce_str(
+        getattr(args, "log_level", None) or env_map.get("BALUFFO_BRIDGE_LOG_LEVEL") or bridge_defaults["log_level"],
+        bridge_defaults["log_level"],
+    ).lower()
+    quiet_requests_env = str(env_map.get("BALUFFO_BRIDGE_QUIET_REQUESTS") or "").strip().lower()
+    quiet_requests = _coerce_bool(
+        getattr(args, "quiet_requests", None)
+        if getattr(args, "quiet_requests", None) is not None
+        else quiet_requests_env
+        if quiet_requests_env
+        else bridge_defaults["quiet_requests"],
+        bridge_defaults["quiet_requests"],
+    )
+    max_history_rows = _coerce_int(
+        getattr(args, "max_history_rows", None) or env_map.get("BALUFFO_BRIDGE_MAX_HISTORY_ROWS"),
+        bridge_defaults["max_history_rows"],
+        minimum=0,
+        maximum=1000,
+    )
+    desktop_mode = _coerce_bool(env_map.get("BALUFFO_DESKTOP_MODE"), False)
+
+    data_dir = resolve_path(
+        getattr(args, "data_dir", None) or env_map.get("BALUFFO_DATA_DIR") or storage_defaults["data_dir"],
+        str(storage_defaults["data_dir"]),
+    )
+
+    bridge = BridgeConfig(
+        host=host,
+        port=port,
+        log_format=log_format,
+        log_level=log_level,
+        quiet_requests=quiet_requests,
+        max_history_rows=max_history_rows,
+    )
+
+    storage = StorageConfig(
+        data_dir=data_dir,
+        source_discovery_config_path=data_dir / "source-discovery-config.json",
+        source_discovery_log_path=data_dir / "source-discovery.log",
+        social_sources_config_path=data_dir / "social-sources-config.json",
+        ops_history_path=data_dir / "admin-run-history.json",
+        ops_alert_state_path=data_dir / "admin-alert-state.json",
+        jobs_fetch_report_path=data_dir / "jobs-fetch-report.json",
+        discovery_report_path=data_dir / "source-discovery-report.json",
+        active_path=data_dir / "source-registry-active.json",
+        pending_path=data_dir / "source-registry-pending.json",
+        rejected_path=data_dir / "source-registry-rejected.json",
+        tasks_config_path=ROOT / ".vscode" / "tasks.json",
+        task_state_path=data_dir / "admin-task-state.json",
+        sync_config_path=data_dir / "source-sync-config.json",
+        sync_runtime_path=data_dir / "source-sync-runtime.json",
+        run_history_path=data_dir / "admin-run-history.json",
+    )
+
+    return AdminBridgeConfig(
+        root=ROOT,
+        bridge=bridge,
+        storage=storage,
+        desktop_mode=desktop_mode,
+    )
