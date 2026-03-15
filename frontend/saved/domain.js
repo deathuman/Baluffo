@@ -24,6 +24,11 @@ export function toDatetimeLocalValue(value, parseIsoDate) {
   return local.toISOString().slice(0, 16);
 }
 
+/**
+ * @param {Object} values
+ * @param {Object} [options]
+ * @returns {Partial<import('../shared/types.js').SavedJob>}
+ */
 export function normalizeCustomJobInput(values, options = {}) {
   const title = String(values?.title || "").trim();
   const company = String(values?.company || "").trim();
@@ -62,6 +67,11 @@ export function activityTypeLabel(type) {
   }
 }
 
+/**
+ * @param {Object} entry
+ * @param {Object} [options]
+ * @returns {string}
+ */
 export function formatActivityDetail(entry, options = {}) {
   const type = String(entry?.type || "event");
   const details = entry?.details && typeof entry.details === "object" ? entry.details : {};

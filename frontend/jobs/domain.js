@@ -65,6 +65,10 @@ export function mapProfession(title) {
   return "other";
 }
 
+/**
+ * @param {import('../shared/types.js').CanonicalJob} job
+ * @returns {boolean}
+ */
 export function isInternshipJob(job) {
   const contract = String(job?.contractType || "").toLowerCase();
   if (contract === "internship") return true;
@@ -162,6 +166,11 @@ export function mapFreshnessAgeToScore(ageDays) {
   return Math.round(71 + staleProgress * 29);
 }
 
+/**
+ * @param {import('../shared/types.js').CanonicalJob} row
+ * @param {Object} [options]
+ * @returns {Object}
+ */
 export function deriveFreshness(row, options = {}) {
   const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
   const postedMs = parseTimestampMs(row?.postedAt);
@@ -184,6 +193,11 @@ export function deriveFreshness(row, options = {}) {
   };
 }
 
+/**
+ * @param {Array<import('../shared/types.js').CanonicalJob>} rows
+ * @param {Object} [options]
+ * @returns {Array<import('../shared/types.js').CanonicalJob>}
+ */
 export function normalizeJobs(rows, options = {}) {
   if (!Array.isArray(rows)) return [];
   const professionLabels = options.professionLabels || {};
@@ -231,6 +245,11 @@ export function simpleHash(input) {
   return Math.abs(hash).toString(16);
 }
 
+/**
+ * @param {import('../shared/types.js').CanonicalJob} job
+ * @param {Object} [options]
+ * @returns {string}
+ */
 export function getJobKeyForJob(job, options = {}) {
   const generated = typeof options.generateJobKey === "function" ? options.generateJobKey(job) : "";
   if (generated) return generated;
@@ -238,6 +257,11 @@ export function getJobKeyForJob(job, options = {}) {
   return `job_${simpleHash(canonical)}`;
 }
 
+/**
+ * @param {import('../shared/types.js').CanonicalJob} job
+ * @param {Object} [options]
+ * @returns {import('../shared/types.js').SavedJobSnapshot}
+ */
 export function toJobSnapshot(job, options = {}) {
   const sanitizeUrl = options.sanitizeUrl || (value => String(value || ""));
   const companyType = classifyCompanyType(job?.company, job?.title);
