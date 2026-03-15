@@ -8,7 +8,7 @@ from datetime import timedelta
 from pathlib import Path
 from urllib.error import HTTPError
 
-from scripts import source_sync as sync
+from src import source_sync as sync
 
 
 class _FakeResponse:
@@ -554,3 +554,4 @@ class SourceSyncTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

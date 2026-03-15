@@ -44,6 +44,7 @@ import {
   writeAutoRefreshSignal,
   rememberJobsUrl
 } from "../state-sync/index.js";
+import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { cacheJobsDom } from "./dom.js";
 import {
   toggleJobsAuthButtons,
@@ -1487,7 +1488,8 @@ function bindRenderedJobEvents(pageJobs) {
   if (!jobsList) return;
   const pageById = new Map(pageJobs.map(job => [String(job.id), job]));
 
-  jobsList.querySelectorAll(".job-row[data-job-link]").forEach(row => {
+  const t = UI_TOKENS.jobs;
+  jobsList.querySelectorAll(`${ui(t.jobRow)}[data-job-link]`).forEach(row => {
     const link = row.dataset.jobLink;
     if (!link) return;
     const jobKey = String(row.dataset.jobKey || "").trim();
@@ -1495,19 +1497,19 @@ function bindRenderedJobEvents(pageJobs) {
     row.tabIndex = 0;
     row.setAttribute("role", "link");
     row.addEventListener("click", e => {
-      if (e.target.closest(".save-job-btn")) return;
+      if (e.target.closest(ui(t.saveJobBtn))) return;
       window.open(link, "_blank", "noopener,noreferrer");
       markJobSeenFromInteraction(jobKey).catch(() => {});
     });
     row.addEventListener("keydown", e => {
       if (e.key !== "Enter") return;
-      if (e.target.closest(".save-job-btn")) return;
+      if (e.target.closest(ui(t.saveJobBtn))) return;
       window.open(link, "_blank", "noopener,noreferrer");
       markJobSeenFromInteraction(jobKey).catch(() => {});
     });
   });
 
-  jobsList.querySelectorAll(".save-job-btn").forEach(btn => {
+  jobsList.querySelectorAll(ui(t.saveJobBtn)).forEach(btn => {
     btn.addEventListener("click", async e => {
       e.preventDefault();
       e.stopPropagation();

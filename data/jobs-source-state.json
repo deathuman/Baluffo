@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "updatedAt": "2026-03-13T16:18:31.090664+00:00",
+  "updatedAt": "2026-03-15T22:26:15.871770+00:00",
   "sources": {
     "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs": {
       "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
@@ -27,11 +27,11 @@
       }
     },
     "lever_sources": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 4054,
-      "lastFetchedCount": 26,
-      "lastKeptCount": 26,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
@@ -40,22 +40,14 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "8dae2c379483efac4f9b076f805cf9ada93c5741",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 0,
-        "parseCsv": 0,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 3
-      }
+      "consecutiveFailures": 0
     },
     "remote_ok": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 632,
-      "lastFetchedCount": 47,
-      "lastKeptCount": 47,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
@@ -64,22 +56,14 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "e971735ebad79d14f59ef8c7766c527f234a4c90",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 0,
-        "parseCsv": 0,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 5
-      }
+      "consecutiveFailures": 0
     },
     "gamesindustry": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 380,
-      "lastFetchedCount": 24,
-      "lastKeptCount": 24,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
@@ -88,22 +72,14 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "74cd1da01d74ee993eb7f2f4f8e4bf0989e39a49",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 0,
-        "parseCsv": 0,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 2
-      }
+      "consecutiveFailures": 0
     },
     "smartrecruiters_sources": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 996,
-      "lastFetchedCount": 87,
-      "lastKeptCount": 87,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
@@ -112,44 +88,28 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "b979db63b221b25ba339b04b37cd15ea1cb72e66",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 0,
-        "parseCsv": 0,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 8
-      }
+      "consecutiveFailures": 0
     },
     "google_sheets": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 83327,
-      "lastFetchedCount": 32811,
-      "lastKeptCount": 32810,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
-      "lastRedirectCandidates": 449,
-      "lastRedirectResolved": 449,
+      "lastRedirectCandidates": 0,
+      "lastRedirectResolved": 0,
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "1413ac7fe3787bc1fa009e548b5fd977d40abc9d",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 0,
-        "parseCsv": 718,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 76479,
-        "canonicalization": 2111
-      }
+      "consecutiveFailures": 0
     },
     "ashby_sources": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 870,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -163,10 +123,10 @@
       "consecutiveFailures": 0
     },
     "personio_sources": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 11546,
-      "lastFetchedCount": 3,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
@@ -179,11 +139,11 @@
       "consecutiveFailures": 0
     },
     "greenhouse_boards": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1065,
-      "lastFetchedCount": 209,
-      "lastKeptCount": 209,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
@@ -192,22 +152,14 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "c6bd9ee0e5f2801d6bf70b72704791631a656be6",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 0,
-        "parseCsv": 0,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 22
-      }
+      "consecutiveFailures": 0
     },
     "workable_sources": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 929,
-      "lastFetchedCount": 25,
-      "lastKeptCount": 25,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
@@ -216,22 +168,14 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "974fd739de9c8583e5b9b67c9bc9724cec1c1a21",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 0,
-        "parseCsv": 0,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 2
-      }
+      "consecutiveFailures": 0
     },
     "epic_games_careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 2273,
-      "lastFetchedCount": 248,
-      "lastKeptCount": 248,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
@@ -240,15 +184,7 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "39bff6e62c234fbcfcb2e992ae55a5a6de0f5b69",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 0,
-        "parseCsv": 0,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 33
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.ioi.dk/careers": {
       "lastRunAt": "2026-03-09T11:12:27.299648+00:00",
@@ -379,11 +315,11 @@
       }
     },
     "teamtailor_sources": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1419,
-      "lastFetchedCount": 20,
-      "lastKeptCount": 20,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
@@ -392,15 +328,7 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "4275ea6a863220c04005c0c6fda55f558c0eb5b7",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 0,
-        "parseCsv": 0,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 1
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://ea.gr8people.com": {
       "lastRunAt": "2026-03-09T11:12:27.299648+00:00",
@@ -457,11 +385,11 @@
       "consecutiveFailures": 0
     },
     "static_source::auto:00fb61a6597b": {
-      "lastRunAt": "2026-03-09T09:20:16.165568+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 3206,
-      "lastFetchedCount": 10,
-      "lastKeptCount": 10,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
@@ -851,8 +779,8 @@
       }
     },
     "scrapy_static_sources": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
@@ -1256,11 +1184,11 @@
       "lastError": "static_source::static:listing_url:https://tequilaworks.com/en/careers: static:Tequilaworks (Manual Website):https://tequilaworks.com/en/careers: Network error for https://tequilaworks.com/en/careers: timed out"
     },
     "google_sheets_1mvqhxat": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1489,
-      "lastFetchedCount": 374,
-      "lastKeptCount": 374,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
@@ -1269,22 +1197,14 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "c0a2a53643d8085b4d0774d7c8b6fd53003676b5",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 0,
-        "parseCsv": 7,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 24
-      }
+      "consecutiveFailures": 0
     },
     "google_sheets_1er2oaxo": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 8490,
-      "lastFetchedCount": 2252,
-      "lastKeptCount": 2239,
+      "lastRunAt": "2026-03-15T22:26:13.336934+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
       "lastDetailPagesVisited": 0,
       "lastDetailYieldPct": 0,
@@ -1293,15 +1213,7 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "757ccfe5a7f0b30fbd51f90ac4e42d229ee1684c",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 0,
-        "parseCsv": 54,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 139
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://insomniac.games/careers": {
       "lastRunAt": "2026-03-13T16:18:27.939021+00:00",

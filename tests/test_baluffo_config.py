@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts import baluffo_config
+from src import baluffo_config
 from tests.helpers.temp_paths import workspace_tmpdir
 
 

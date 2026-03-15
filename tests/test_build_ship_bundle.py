@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts.app_version import APP_VERSION
+from src.app_version import APP_VERSION
 from scripts.build_ship_bundle import STARTUP_PREVIEW_LIMIT, build_bundle
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -51,12 +51,12 @@ class BuildShipBundleTests(unittest.TestCase):
             self.assertTrue((output / "RELEASE_GUIDE.md").exists())
             self.assertTrue((output / "app" / "update-manifest.json").exists())
             self.assertTrue((version_root / "frontend" / "admin" / "app.js").exists())
-            self.assertTrue((version_root / "scripts" / "admin_bridge.py").exists())
-            self.assertTrue((version_root / "scripts" / "app_version.py").exists())
-            self.assertTrue((version_root / "scripts" / "baluffo_config.py").exists())
-            self.assertTrue((version_root / "scripts" / "local_data_store.py").exists())
-            self.assertTrue((version_root / "scripts" / "source_sync.py").exists())
-            self.assertTrue((version_root / "scripts" / "discovery_seed_catalog.json").exists())
+            self.assertTrue((version_root / "src" / "admin_bridge.py").exists())
+            self.assertTrue((version_root / "src" / "app_version.py").exists())
+            self.assertTrue((version_root / "src" / "baluffo_config.py").exists())
+            self.assertTrue((version_root / "src" / "local_data_store.py").exists())
+            self.assertTrue((version_root / "src" / "source_sync.py").exists())
+            self.assertTrue((version_root / "src" / "discovery_seed_catalog.json").exists())
             self.assertTrue((version_root / "app-local-data-client.js").exists())
             self.assertTrue((version_root / "baluffo.config.json").exists())
             self.assertTrue((version_root / "frontend-runtime-config.js").exists())
@@ -70,8 +70,8 @@ class BuildShipBundleTests(unittest.TestCase):
             self.assertTrue((version_root / "packaging" / "github-app-sync-config.template.json").exists())
             self.assertFalse((version_root / "package-lock.json").exists())
             self.assertFalse((version_root / "LOCAL_SETUP.md").exists())
-            self.assertFalse((version_root / "scripts" / "run_py_tests.cmd").exists())
-            self.assertFalse((version_root / "scripts" / "build_sync_app_config.py").exists())
+            self.assertFalse((version_root / "src" / "run_py_tests.cmd").exists())
+            self.assertFalse((version_root / "src" / "build_sync_app_config.py").exists())
             self.assertFalse((version_root / "baluffo.config.local.json").exists())
             self.assertTrue((version_root / "packaging" / "github-app-sync-config.json").exists())
             bundled_release_guide = (output / "RELEASE_GUIDE.md").read_text(encoding="utf-8")

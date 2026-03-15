@@ -6,8 +6,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from scripts.app_version import APP_VERSION
-from scripts.ship import runtime_launcher as rl
+from src.app_version import APP_VERSION
+from src.ship import runtime_launcher as rl
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -30,11 +30,11 @@ def _seed_ship_root(root: Path, version: str = "1.2.3") -> None:
             }
         ),
     )
-    (root / "app" / "versions" / version / "scripts").mkdir(parents=True, exist_ok=True)
+    (root / "app" / "versions" / version / "src").mkdir(parents=True, exist_ok=True)
     _write(root / "app" / "versions" / version / "index.html", "<html></html>\n")
     _write(root / "app" / "versions" / version / "jobs.html", "<html></html>\n")
     _write(root / "app" / "versions" / version / "saved.html", "<html></html>\n")
-    _write(root / "app" / "versions" / version / "scripts" / "admin_bridge.py", "print('ok')\n")
+    _write(root / "app" / "versions" / version / "src" / "admin_bridge.py", "print('ok')\n")
     (root / "data").mkdir(parents=True, exist_ok=True)
 
 

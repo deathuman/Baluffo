@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
-from scripts import source_discovery as sd
+from src import source_discovery as sd
 
 
 class SourceDiscoveryTests(unittest.TestCase):
@@ -980,3 +980,4 @@ class SourceDiscoveryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

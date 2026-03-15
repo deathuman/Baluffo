@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest import mock
 from types import SimpleNamespace
 
-from scripts.app_version import APP_VERSION
-from scripts.ship import desktop_app
+from src.app_version import APP_VERSION
+from src.ship import desktop_app
 from tests.helpers.temp_paths import workspace_tmpdir
 
 

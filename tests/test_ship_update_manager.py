@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest import mock
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from scripts.ship import update_manager as um
+from src.ship import update_manager as um
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -27,8 +27,8 @@ def _seed_root(root: Path, version: str = "1.0.0") -> None:
             }
         ),
     )
-    (root / "app" / "versions" / version / "scripts").mkdir(parents=True, exist_ok=True)
-    _write(root / "app" / "versions" / version / "scripts" / "admin_bridge.py", "print('ok')\n")
+    (root / "app" / "versions" / version / "src").mkdir(parents=True, exist_ok=True)
+    _write(root / "app" / "versions" / version / "src" / "admin_bridge.py", "print('ok')\n")
     _write(root / "app" / "versions" / version / "index.html", "<html></html>\n")
     _write(root / "app" / "versions" / version / "jobs.html", "<html></html>\n")
     _write(root / "app" / "versions" / version / "saved.html", "<html></html>\n")
@@ -40,7 +40,7 @@ def _seed_root(root: Path, version: str = "1.0.0") -> None:
 
 def _build_update_zip(work: Path, version: str) -> Path:
     source = work / "payload" / "app" / "versions" / version
-    _write(source / "scripts" / "admin_bridge.py", "print('updated')\n")
+    _write(source / "src" / "admin_bridge.py", "print('updated')\n")
     _write(source / "index.html", "<html>new</html>\n")
     _write(source / "jobs.html", "<html>new</html>\n")
     _write(source / "saved.html", "<html>new</html>\n")
@@ -130,8 +130,8 @@ class ShipUpdateManagerTests(unittest.TestCase):
         with workspace_tmpdir("ship-update") as tmp:
             root = Path(tmp) / "ship"
             _seed_root(root, version="1.1.0")
-            (root / "app" / "versions" / "1.0.0" / "scripts").mkdir(parents=True, exist_ok=True)
-            _write(root / "app" / "versions" / "1.0.0" / "scripts" / "admin_bridge.py", "print('ok')\n")
+            (root / "app" / "versions" / "1.0.0" / "src").mkdir(parents=True, exist_ok=True)
+            _write(root / "app" / "versions" / "1.0.0" / "src" / "admin_bridge.py", "print('ok')\n")
             _write(root / "app" / "versions" / "1.0.0" / "index.html", "<html></html>\n")
             _write(root / "app" / "versions" / "1.0.0" / "jobs.html", "<html></html>\n")
             _write(root / "app" / "versions" / "1.0.0" / "saved.html", "<html></html>\n")

@@ -49,6 +49,7 @@ import {
   writeJobsAutoRefreshSignal
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
+import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { cacheAdminDom } from "./dom.js";
 import {
   isSyncBusy as isSyncBusyFromModule,
@@ -270,7 +271,8 @@ function renderTotals(totals) {
 function renderUsers(users) {
   if (!refs.adminUsersListEl) return;
   refs.adminUsersListEl.innerHTML = renderUsersTableHtml(users, formatBytes);
-  refs.adminUsersListEl.querySelectorAll(".admin-wipe-btn").forEach(btn => {
+  const t = UI_TOKENS.admin;
+  refs.adminUsersListEl.querySelectorAll(ui(t.wipeBtn)).forEach(btn => {
     bindAsyncClick(btn, async () => {
       const uid = String(btn.dataset.uid || "");
       const name = String(btn.dataset.name || uid || "this account");

@@ -9,7 +9,7 @@ Baluffo is a local-first web app for browsing, filtering, saving, and managing g
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 It combines:
-- A multi-source jobs feed pipeline (scripts/jobs_fetcher.py, a stable wrapper for the modular jobs pipeline)
+- A multi-source jobs feed pipeline (src/jobs_fetcher.py, a stable wrapper for the modular jobs pipeline)
 - A Jobs UI with advanced filters and quick actions (`jobs.html`)
 - A Saved Jobs workspace with backup/restore and custom entries (`saved.html`)
 - An Admin console for source discovery, approvals, and operations health (`admin.html`)
@@ -53,7 +53,8 @@ It combines:
 - **Versioning Policy and Release Checklist:** [docs/versioning-policy-and-release-checklist.md](docs/versioning-policy-and-release-checklist.md) - The project's versioning policy and release checklist.
 - **Jobs Saved Contributor Map:** [docs/jobs-saved-contributor-map.md](docs/jobs-saved-contributor-map.md) - A map of contributors to the saved jobs feature.
 - **Fetcher Runtime Contracts:** [docs/fetcher-runtime-contracts.md](docs/fetcher-runtime-contracts.md) - The runtime contracts for the fetcher.
-- **Agents:** [AGENTS.md](AGENTS.md) - Information about the agents.
+- **Agents:** [AGENTS.md](AGENTS.md) - **CRITICAL:** Repo-local iteration rules for AI agents and automated tools.
+- **Data Contracts:** [docs/DATA_CONTRACT.md](docs/DATA_CONTRACT.md) - UI handles (`data-ui`) and inter-process data shapes.
 - **Local Setup:** [LOCAL_SETUP.md](LOCAL_SETUP.md) - Instructions for setting up a local development environment.
 - **Ship Package:** [SHIP_PACKAGE.md](SHIP_PACKAGE.md) - Information about the ship package.
 
@@ -66,13 +67,16 @@ It combines:
 |- saved.html                 # Saved jobs page
 |- admin.html                 # Admin page
 |- frontend/                  # ES module entrypoints + page architecture layers
+|  `- shared/ui/selectors.js  # Centralized UI handle registry (data-ui)
 |- local-data-client.js       # Local auth/storage provider
 |- jobs-state.js              # Shared filter labels/config
 |- data/                      # Feed outputs, source registries, reports
-|- scripts/
+|- src/
 |  |- jobs_fetcher.py         # Build unified jobs feed
 |  |- source_discovery.py     # Discover candidate sources
 |  `- admin_bridge.py         # Local admin HTTP bridge
+|- scripts/
+|  `- orchestrator.py         # Mission control for build/test
 `- tests/                     # Python test suite
 ```
 
@@ -110,26 +114,26 @@ Open:
 ### 3) Generate or refresh jobs feed
 
 ```powershell
-python scripts/jobs_fetcher.py
+python src/jobs_fetcher.py
 ```
 
 ### 4) Run source discovery (optional)
 
 ```powershell
-python scripts/source_discovery.py --mode dynamic
+python src/source_discovery.py --mode dynamic
 ```
 
 ### 5) Run admin bridge (for Admin discovery actions)
 
 ```powershell
-python scripts/admin_bridge.py
+python src/admin_bridge.py
 ```
 
 Optional runtime overrides:
 
 ```powershell
 $env:BALUFFO_DATA_DIR = "C:\baluffo\data"
-python scripts/admin_bridge.py --host 127.0.0.1 --port 8877 --log-format human --log-level info
+python src/admin_bridge.py --host 127.0.0.1 --port 8877 --log-format human --log-level info
 ```
 
 Runtime config precedence:
@@ -281,9 +285,26 @@ node --check frontend/jobs/index.js frontend/jobs/app.js
 node --check frontend/saved/index.js frontend/saved/app.js
 node --check frontend/admin/index.js frontend/admin/app.js
 node --check frontend/shared/ui/index.js frontend/shared/data/index.js
+node --check frontend/shared/ui/selectors.js
 ```
 
-### Frontend smoke regression (Playwright)
+### Full Verification (Standard Workflow)
+
+The canonical way to build and test the entire workspace is via the orchestrated verify command:
+
+```powershell
+npm run verify
+```
+
+This command:
+1.  Calculates a source hash to skip redundant work.
+2.  Builds the full Ship Bundle and Portable EXE.
+3.  Runs Python unit tests (`pytest`).
+4.  Runs Frontend unit tests (`node --test`).
+5.  Runs Packaged Desktop Smoke tests (Playwright).
+6.  Updates the `_out/LATEST_MANIFEST.json` HUD.
+
+### Component-level testing
 
 ```powershell
 npm install

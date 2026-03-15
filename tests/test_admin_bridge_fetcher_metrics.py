@@ -1,7 +1,7 @@
 import unittest
 
-from scripts import admin_bridge
-from scripts.app_version import APP_VERSION
+from src import admin_bridge
+from src.app_version import APP_VERSION
 
 
 class AdminBridgeFetcherMetricsTests(unittest.TestCase):
@@ -42,3 +42,4 @@ class AdminBridgeFetcherMetricsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

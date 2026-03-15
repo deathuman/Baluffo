@@ -15,27 +15,27 @@
       </div>
       <div class="auth-profile-shell" aria-live="polite">
         <div class="auth-profile-pill">
-          <span id="auth-avatar" class="auth-avatar" aria-hidden="true">G</span>
+          <span id="auth-avatar" data-ui="auth-avatar" class="auth-avatar" aria-hidden="true">G</span>
           <span class="auth-meta">
-            <span id="auth-status" class="auth-status">Guest</span>
-            <span id="auth-status-hint" class="auth-status-hint">Browsing as guest</span>
+            <span id="auth-status" data-ui="auth-status" class="auth-status">Guest</span>
+            <span id="auth-status-hint" data-ui="auth-status-hint" class="auth-status-hint">Browsing as guest</span>
           </span>
         </div>
         <div class="auth-actions">
-          <button id="saved-jobs-btn" class="btn back-btn hidden" aria-label="Go to saved jobs page">Saved Jobs</button>
-          <button id="auth-sign-in-btn" class="btn back-btn" aria-label="Sign in">Sign in</button>
-          <button id="auth-sign-out-btn" class="btn back-btn hidden" aria-label="Sign out">Sign out</button>
+          <button id="saved-jobs-btn" data-ui="saved-page-btn" class="btn back-btn hidden" aria-label="Go to saved jobs page">Saved Jobs</button>
+          <button id="auth-sign-in-btn" data-ui="auth-sign-in-btn" class="btn back-btn" aria-label="Sign in">Sign in</button>
+          <button id="auth-sign-out-btn" data-ui="auth-sign-out-btn" class="btn back-btn hidden" aria-label="Sign out">Sign out</button>
         </div>
       </div>
     </div>
 
-    <div id="fetch-progress" class="fetch-progress hidden"></div>
-    <p id="source-status" class="source-status" aria-live="polite"></p>
+    <div id="fetch-progress" data-ui="fetch-progress" class="fetch-progress hidden"></div>
+    <p id="source-status" data-ui="source-status" class="source-status" aria-live="polite"></p>
 
     <div class="filters" aria-label="Job filters">
       <div class="filter-group">
         <label for="work-type-filter">Work Type:</label>
-        <select id="work-type-filter">
+        <select id="work-type-filter" data-ui="work-type-filter">
           <option value="">All Types</option>
           <option value="Remote">Remote</option>
           <option value="Onsite">On-Site</option>
@@ -45,7 +45,7 @@
 
       <div class="filter-group">
         <label for="lifecycle-status-filter">Listing Status:</label>
-        <select id="lifecycle-status-filter">
+        <select id="lifecycle-status-filter" data-ui="lifecycle-status-filter">
           <option value="active">Active</option>
           <option value="">Any</option>
           <option value="likely_removed">Likely Removed</option>
@@ -55,26 +55,26 @@
 
       <div class="filter-group">
         <label for="country-picker-btn">Country:</label>
-        <button id="country-picker-btn" type="button" class="country-picker-btn" aria-haspopup="dialog" aria-expanded="false">Country: All</button>
-        <div id="country-picker-panel" class="country-picker-panel hidden" role="dialog" aria-label="Country filter options">
-          <input id="country-picker-search" type="text" class="country-picker-search" placeholder="Search countries...">
-          <div id="country-picker-options" class="country-picker-options"></div>
-          <button id="country-picker-clear-btn" type="button" class="country-picker-clear-btn">Clear</button>
+        <button id="country-picker-btn" data-ui="country-picker-btn" type="button" class="country-picker-btn" aria-haspopup="dialog" aria-expanded="false">Country: All</button>
+        <div id="country-picker-panel" data-ui="country-picker-panel" class="country-picker-panel hidden" role="dialog" aria-label="Country filter options">
+          <input id="country-picker-search" data-ui="country-picker-search" type="text" class="country-picker-search" placeholder="Search countries...">
+          <div id="country-picker-options" data-ui="country-picker-options" class="country-picker-options"></div>
+          <button id="country-picker-clear-btn" data-ui="country-picker-clear-btn" type="button" class="country-picker-clear-btn">Clear</button>
         </div>
-        <select id="country-filter" multiple size="5" class="country-filter-multi hidden" aria-hidden="true"></select>
-        <span id="country-selection-badge" class="country-selection-badge">All countries</span>
+        <select id="country-filter" data-ui="country-filter" multiple size="5" class="country-filter-multi hidden" aria-hidden="true"></select>
+        <span id="country-selection-badge" data-ui="country-selection-badge" class="country-selection-badge">All countries</span>
       </div>
 
       <div class="filter-group">
         <label for="city-filter">City:</label>
-        <select id="city-filter">
+        <select id="city-filter" data-ui="city-filter">
           <option value="">All Cities</option>
         </select>
       </div>
 
       <div class="filter-group">
         <label for="sector-filter">Sector:</label>
-        <select id="sector-filter">
+        <select id="sector-filter" data-ui="sector-filter">
           <option value="">All Sectors</option>
         </select>
       </div>
@@ -84,16 +84,17 @@
         <input
           type="text"
           id="profession-search-filter"
+          data-ui="profession-search-filter"
           placeholder="Type to narrow roles..."
         >
-        <select id="profession-filter">
+        <select id="profession-filter" data-ui="profession-filter">
           <option value="">All Roles</option>
         </select>
       </div>
 
       <div class="filter-group">
         <label for="sort-filter">Sort By:</label>
-        <select id="sort-filter">
+        <select id="sort-filter" data-ui="sort-filter">
           <option value="relevance">Best Match</option>
           <option value="remote-first">Remote First</option>
           <option value="title-asc">Title A-Z</option>
@@ -107,6 +108,7 @@
         <input
           type="text"
           id="search-filter"
+          data-ui="search-filter"
           placeholder="Search by title, company, city..."
         >
       </div>
@@ -114,38 +116,38 @@
     </div>
 
     <div class="quick-actions-wrap">
-      <div id="quick-actions" class="quick-actions" aria-label="Quick filter actions"></div>
+      <div id="quick-actions" data-ui="quick-actions" class="quick-actions" aria-label="Quick filter actions"></div>
       <div class="quick-actions-settings">
-        <button id="customize-quick-filters-btn" type="button" class="btn quick-btn quick-customize-btn" aria-haspopup="dialog" aria-expanded="false">Customize</button>
-        <div id="quick-filters-panel" class="quick-filters-panel hidden" role="dialog" aria-label="Customize quick filters">
+        <button id="customize-quick-filters-btn" data-ui="customize-quick-filters-btn" type="button" class="btn quick-btn quick-customize-btn" aria-haspopup="dialog" aria-expanded="false">Customize</button>
+        <div id="quick-filters-panel" data-ui="quick-filters-panel" class="quick-filters-panel hidden" role="dialog" aria-label="Customize quick filters">
           <p class="quick-filters-title">Show quick filters</p>
-          <div id="quick-filters-options" class="quick-filters-options"></div>
-          <button id="quick-filters-reset-btn" type="button" class="btn quick-btn quick-filters-reset-btn">Reset defaults</button>
+          <div id="quick-filters-options" data-ui="quick-filters-options" class="quick-filters-options"></div>
+          <button id="quick-filters-reset-btn" data-ui="quick-filters-reset-btn" type="button" class="btn quick-btn quick-filters-reset-btn">Reset defaults</button>
         </div>
       </div>
     </div>
-    <div id="active-filters-summary" class="active-filters-summary">No active filters</div>
+    <div id="active-filters-summary" data-ui="active-filters-summary" class="active-filters-summary">No active filters</div>
 
     <div class="jobs-toolbar">
-      <p id="results-summary" class="results-summary" aria-live="polite"></p>
+      <p id="results-summary" data-ui="results-summary" class="results-summary" aria-live="polite"></p>
       <div class="toolbar-actions">
-        <button id="refresh-jobs-btn" class="btn clear-filters-btn">Refresh Jobs</button>
-        <button id="jobs-pipeline-run-btn" class="btn clear-filters-btn jobs-pipeline-btn" type="button" title="Runs discovery, fetch, and sync pipeline. Can take more than 5 minutes.">Run Discovery + Fetch + Sync</button>
-        <span id="refresh-jobs-needed-badge" class="refresh-jobs-needed-badge hidden" aria-live="polite">Updates found</span>
-        <span id="jobs-last-updated" class="jobs-last-updated" aria-live="polite"></span>
+        <button id="refresh-jobs-btn" data-ui="refresh-jobs-btn" class="btn clear-filters-btn">Refresh Jobs</button>
+        <button id="jobs-pipeline-run-btn" data-ui="jobs-pipeline-run-btn" class="btn clear-filters-btn jobs-pipeline-btn" type="button" title="Runs discovery, fetch, and sync pipeline. Can take more than 5 minutes.">Run Discovery + Fetch + Sync</button>
+        <span id="refresh-jobs-needed-badge" data-ui="refresh-jobs-needed-badge" class="refresh-jobs-needed-badge hidden" aria-live="polite">Updates found</span>
+        <span id="jobs-last-updated" data-ui="jobs-last-updated" class="jobs-last-updated" aria-live="polite"></span>
       </div>
     </div>
 
-    <div id="jobs-list" class="jobs-list">
+    <div id="jobs-list" data-ui="jobs-list" class="jobs-list">
       <div class="loading">Loading jobs...</div>
     </div>
 
-    <div id="pagination" class="pagination"></div>
+    <div id="pagination" data-ui="pagination" class="pagination"></div>
 
     <details class="jobs-sources">
       <summary>Data sources</summary>
-      <p id="data-sources-caption">Source list reflects your current local fetch configuration and latest fetch report.</p>
-      <ul id="data-sources-list" class="sources-list">
+      <p id="data-sources-caption" data-ui="data-sources-caption">Source list reflects your current local fetch configuration and latest fetch report.</p>
+      <ul id="data-sources-list" data-ui="data-sources-list" class="sources-list">
         <li>Loading configured sources...</li>
       </ul>
     </details>

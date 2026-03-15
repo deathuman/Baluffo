@@ -67,9 +67,9 @@ export function renderSavedJobBlockHtml(job, options = {}) {
     : "";
 
   return `
-    <div class="saved-job-block ${isExpanded ? "expanded" : ""} ${isSelected ? "selected" : ""}" data-job-key="${jobKey}">
+    <div class="saved-job-block ${isExpanded ? "expanded" : ""} ${isSelected ? "selected" : ""}" data-job-key="${jobKey}" data-ui="saved-job-block">
       <div class="saved-job-row">
-        <button class="remove-saved-btn remove-inline-btn" data-job-key="${jobKey}" aria-label="Remove saved job">X</button>
+        <button class="remove-saved-btn remove-inline-btn" data-job-key="${jobKey}" data-ui="remove-saved-btn" aria-label="Remove saved job">X</button>
         <div class="col-title job-cell" data-label="Position" title="${safeTitle}">
           <div class="saved-title-stack">
             <span class="saved-title-main">${safeTitle}</span>
@@ -82,8 +82,8 @@ export function renderSavedJobBlockHtml(job, options = {}) {
           </div>
           ${isCustom ? `
             <div class="saved-personal-actions">
-              <button class="btn back-btn personal-edit-btn" data-job-key="${jobKey}" aria-label="Edit custom job">Edit</button>
-              <button class="btn back-btn personal-duplicate-btn" data-job-key="${jobKey}" aria-label="Duplicate custom job">Duplicate</button>
+              <button class="btn back-btn personal-edit-btn" data-job-key="${jobKey}" data-ui="personal-edit-btn" aria-label="Edit custom job">Edit</button>
+              <button class="btn back-btn personal-duplicate-btn" data-job-key="${jobKey}" data-ui="personal-duplicate-btn" aria-label="Duplicate custom job">Duplicate</button>
             </div>
           ` : ""}
         </div>
@@ -112,6 +112,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
         <button
           class="details-toggle-btn"
           data-job-key="${jobKey}"
+          data-ui="details-toggle-btn"
           aria-expanded="${isExpanded ? "true" : "false"}"
           aria-label="${isExpanded ? "Collapse" : "Expand"} notes and attachments"
         >
@@ -121,15 +122,15 @@ export function renderSavedJobBlockHtml(job, options = {}) {
       </div>
       <div class="saved-details-section ${isExpanded ? "" : "collapsed"}" data-job-key="${jobKey}" aria-hidden="${isExpanded ? "false" : "true"}">
         <div class="saved-details-tabs" role="tablist" aria-label="Saved job details tabs">
-          <button class="saved-details-tab-btn ${tabClassNotes}" data-job-key="${jobKey}" data-details-tab="notes" role="tab" aria-selected="${activeTab === "notes" ? "true" : "false"}">Notes</button>
-          <button class="saved-details-tab-btn ${tabClassAttachments}" data-job-key="${jobKey}" data-details-tab="attachments" role="tab" aria-selected="${activeTab === "attachments" ? "true" : "false"}">Attachments</button>
-          <button class="saved-details-tab-btn ${tabClassHistory}" data-job-key="${jobKey}" data-details-tab="history" role="tab" aria-selected="${activeTab === "history" ? "true" : "false"}">History</button>
+          <button class="saved-details-tab-btn ${tabClassNotes}" data-job-key="${jobKey}" data-ui="saved-details-tab-btn" data-details-tab="notes" role="tab" aria-selected="${activeTab === "notes" ? "true" : "false"}">Notes</button>
+          <button class="saved-details-tab-btn ${tabClassAttachments}" data-job-key="${jobKey}" data-ui="saved-details-tab-btn" data-details-tab="attachments" role="tab" aria-selected="${activeTab === "attachments" ? "true" : "false"}">Attachments</button>
+          <button class="saved-details-tab-btn ${tabClassHistory}" data-job-key="${jobKey}" data-ui="saved-details-tab-btn" data-details-tab="history" role="tab" aria-selected="${activeTab === "history" ? "true" : "false"}">History</button>
         </div>
         <div class="saved-details-panels">
           <div class="saved-notes-row saved-details-panel ${activeTab === "notes" ? "" : "hidden"}" data-tab-panel="notes">
             <div class="notes-label">Notes</div>
             <div class="notes-value">
-              <textarea class="job-notes-input" data-job-key="${jobKey}" placeholder="Add notes, links, interview reminders..." ${!currentUser ? "disabled" : ""}>${escapeHtml(job.notes || "")}</textarea>
+              <textarea class="job-notes-input" data-job-key="${jobKey}" data-ui="job-notes-input" placeholder="Add notes, links, interview reminders..." ${!currentUser ? "disabled" : ""}>${escapeHtml(job.notes || "")}</textarea>
               <div class="note-save-state" data-job-key="${jobKey}">Saved</div>
             </div>
           </div>
@@ -137,7 +138,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
             <div class="attachments-label">Attachments</div>
             <div class="attachments-value">
               <div class="attachments-toolbar">
-                <button class="btn back-btn attach-upload-btn" data-job-key="${jobKey}" ${!currentUser ? "disabled" : ""}>Upload</button>
+                <button class="btn back-btn attach-upload-btn" data-job-key="${jobKey}" data-ui="attach-upload-btn" ${!currentUser ? "disabled" : ""}>Upload</button>
                 <span class="attachments-hint">Max ${maxAttachmentsPerJob} files, ${Math.round(maxAttachmentBytes / (1024 * 1024))}MB each</span>
               </div>
               <input class="attach-file-input hidden" type="file" multiple data-job-key="${jobKey}" accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
@@ -150,7 +151,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
             <div class="attachments-label">History</div>
             <div class="attachments-value">
               <div class="job-history-toolbar">
-                <button class="btn back-btn job-history-refresh-btn" data-job-key="${jobKey}">Refresh</button>
+                <button class="btn back-btn job-history-refresh-btn" data-job-key="${jobKey}" data-ui="job-history-refresh-btn">Refresh</button>
               </div>
               <div class="job-history-list">
                 ${historyRows}
@@ -277,6 +278,7 @@ export function renderPhaseBar(jobKey, activePhase, phaseTimestamps, savedAt, op
       <button
         class="${classes}"
         data-job-key="${safeJobKey}"
+        data-ui="phase-step-btn"
         data-phase="${phase}"
         data-current-phase="${escapeHtml(activePhase)}"
         ${canClick ? "" : "disabled"}

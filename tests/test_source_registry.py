@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from scripts import source_registry as sr
+from src import source_registry as sr
 from tests.helpers.temp_paths import workspace_tmpdir
 
 

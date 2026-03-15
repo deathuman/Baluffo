@@ -1,6 +1,6 @@
 import unittest
 
-from scripts import fetcher_metrics as fm
+from src import fetcher_metrics as fm
 
 
 class FetcherMetricsTests(unittest.TestCase):
@@ -45,3 +45,4 @@ class FetcherMetricsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

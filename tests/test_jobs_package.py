@@ -2,9 +2,9 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from scripts import jobs_fetcher as jf
-from scripts.jobs import adapters, canonicalize, dedup, parsers, registry, transport
-from scripts.jobs.models import CanonicalJob
+from src import jobs_fetcher as jf
+from src.jobs import adapters, canonicalize, dedup, parsers, registry, transport
+from src.jobs.models import CanonicalJob
 
 
 class JobsPackageTests(unittest.TestCase):
@@ -132,7 +132,7 @@ class JobsPackageTests(unittest.TestCase):
             jf.STUDIO_SOURCE_REGISTRY = previous
 
     def test_package_modules_do_not_import_legacy_impl(self) -> None:
-        package_root = Path(__file__).resolve().parents[1] / "scripts" / "jobs"
+        package_root = Path(__file__).resolve().parents[1] / "src" / "jobs"
         targets = [
             package_root / "canonicalize.py",
             package_root / "dedup.py",
@@ -145,8 +145,8 @@ class JobsPackageTests(unittest.TestCase):
         ]
         for target in targets:
             text = target.read_text(encoding="utf-8")
-            self.assertNotIn("from scripts.jobs import legacy_impl", text, msg=str(target))
-            self.assertNotIn("import scripts.jobs.legacy_impl", text, msg=str(target))
+            self.assertNotIn("from src.jobs import legacy_impl", text, msg=str(target))
+            self.assertNotIn("import src.jobs.legacy_impl", text, msg=str(target))
 
     def test_jobs_fetcher_exposes_curated_package_surface(self) -> None:
         self.assertTrue(callable(jf.run_pipeline))
@@ -166,3 +166,4 @@ class JobsPackageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

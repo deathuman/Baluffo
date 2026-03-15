@@ -11,11 +11,12 @@ jobs.html / saved.html / admin.html
   -> frontend/{jobs|saved|admin}/app/runtime.js
       -> page modules (app/*.js + actions/services/state-sync/render/domain/data-source)
       -> shared helpers (frontend/shared/*, root utils)
+      -> UI registry (frontend/shared/ui/selectors.js)
 
-admin bridge (local HTTP API): scripts/admin_bridge.py
-jobs feed + discovery/sync scripts: scripts/jobs_fetcher.py, scripts/source_discovery.py, scripts/source_sync.py
+admin bridge (local HTTP API): src/admin_bridge.py
+jobs feed + discovery/sync scripts: src/jobs_fetcher.py, src/source_discovery.py, src/source_sync.py
 
-desktop launcher/runtime: scripts/ship/desktop_app.py
+desktop launcher/runtime: src/ship/desktop_app.py
   -> spawns local site + bridge
   -> opens browser app window
   -> watches heartbeat/activity and shutdown flow
@@ -88,6 +89,7 @@ runtime data roots:
 | Admin unlock/ops/fetch/discovery/sync | `frontend/admin/app/{auth,ops,fetcher,discovery,sync}.js` | `frontend/admin/app/runtime.js`, `frontend/admin/services.js` |
 | Job processing pipeline | `scripts/jobs/pipeline.py` | `scripts/jobs/adapters`, `scripts/jobs/canonicalize.py`, `scripts.jobs.dedup.py` |
 | Bridge API/runtime behavior | `scripts/admin_bridge.py` | `frontend/admin/services.js`, `frontend/jobs/services.js`, `frontend/saved/services.js` |
+| UI Selection & Interaction | `frontend/shared/ui/selectors.js` | `frontend/*/app/dom.js`, `frontend/*/app/runtime.js` |
 | Desktop startup/runtime behavior | `scripts/ship/desktop_app.py` | `tests/test_desktop_app.py`, `scripts/ship/runtime_launcher.py` |
 | Add new filter to jobs page | `frontend/jobs/app/filters.js` | `frontend/jobs/render.js`, `frontend/jobs/app/runtime.js` |
 | Add new field to custom job form | `frontend/saved/app/custom-job.js` | `frontend/saved/render.js`, `frontend/saved/app/runtime.js` |
@@ -113,9 +115,10 @@ runtime data roots:
 | Change area | Fastest verification |
 |---|---|
 | Frontend module wiring/syntax | `node --check frontend/jobs/app.js frontend/saved/app.js frontend/admin/app.js` |
-| Frontend behavior/unit coverage | `npm run test:frontend:unit` |
+| Full Workspace Verification | `npm run verify` (Orchestrated Rebuild + All Tests) |
+| Frontend behavior/unit coverage | `npm run test:unit` |
 | Desktop launcher/runtime behavior | `python -m pytest tests/test_desktop_app.py` |
-| Packaged desktop smoke contract | `python -m pytest tests/test_packaged_desktop_smoke.py` |
+| Packaged desktop smoke contract | `npm run test:smoke` |
 | Bridge behavior changes | `python -m pytest tests/test_admin_bridge_ops.py` |
 
 ## 6) Related deep-dive docs

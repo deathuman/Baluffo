@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.python_version_guard import REQUIRED_MAJOR, REQUIRED_MINOR, ensure_required_python
+from src.python_version_guard import REQUIRED_MAJOR, REQUIRED_MINOR, ensure_required_python
 
 
 def main() -> int:
@@ -29,3 +29,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

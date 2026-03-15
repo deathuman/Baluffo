@@ -8,6 +8,8 @@ dist/
 .codex-tmp-tests/
 support/
 logs/
+_out/
+.state/
 
 # Local runtime/generated data (keep local, do not track)
 data/*.json

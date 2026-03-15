@@ -7,54 +7,54 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <button class="btn back-btn theme-toggle-btn global-theme-toggle" type="button" aria-label="Switch theme">Theme</button>
-  <span id="admin-bridge-status-badge" class="admin-bridge-badge admin-bridge-floating checking hidden" title="Local admin bridge status">Bridge Checking</span>
+  <button class="btn back-btn theme-toggle-btn global-theme-toggle" data-ui="theme-toggle-btn" type="button" aria-label="Switch theme">Theme</button>
+  <span id="admin-bridge-status-badge" data-ui="admin-bridge-status-badge" class="admin-bridge-badge admin-bridge-floating checking hidden" title="Local admin bridge status">Bridge Checking</span>
   <div class="jobs-container">
     <div class="jobs-header">
       <h1>Administration</h1>
       <div class="header-actions">
-        <button id="admin-jobs-btn" class="btn back-btn" aria-label="Go to jobs page">All Jobs</button>
-        <button id="admin-saved-btn" class="btn back-btn" aria-label="Go to saved jobs page">Saved Jobs</button>
-        <button id="admin-lock-btn" class="btn back-btn hidden" aria-label="Lock admin panel">Lock</button>
+        <button id="admin-jobs-btn" data-ui="admin-jobs-btn" class="btn back-btn" aria-label="Go to jobs page">All Jobs</button>
+        <button id="admin-saved-btn" data-ui="admin-saved-btn" class="btn back-btn" aria-label="Go to saved jobs page">Saved Jobs</button>
+        <button id="admin-lock-btn" data-ui="admin-lock-btn" class="btn back-btn hidden" aria-label="Lock admin panel">Lock</button>
       </div>
     </div>
 
-    <p id="admin-source-status" class="source-status">Enter admin PIN to access user overview.</p>
+    <p id="admin-source-status" data-ui="admin-source-status" class="source-status">Enter admin PIN to access user overview.</p>
 
-    <section id="admin-pin-gate" class="admin-panel">
+    <section id="admin-pin-gate" data-ui="admin-pin-gate" class="admin-panel">
       <h2 class="admin-section-title">PIN Required</h2>
       <div class="admin-pin-row">
-        <input id="admin-pin-input" type="password" class="admin-pin-input" placeholder="Enter admin PIN" autocomplete="off">
-        <button id="admin-unlock-btn" class="btn back-btn">Unlock</button>
+        <input id="admin-pin-input" data-ui="admin-pin-input" type="password" class="admin-pin-input" placeholder="Enter admin PIN" autocomplete="off">
+        <button id="admin-unlock-btn" data-ui="admin-unlock-btn" class="btn back-btn">Unlock</button>
       </div>
     </section>
 
-    <section id="admin-content" class="admin-panel hidden">
+    <section id="admin-content" data-ui="admin-content" class="admin-panel hidden">
       <div class="admin-toolbar">
         <h2 class="admin-section-title">Stored Profiles Overview</h2>
         <div class="admin-toolbar-actions">
-          <button id="admin-refresh-btn" class="btn clear-filters-btn">Refresh</button>
+          <button id="admin-refresh-btn" data-ui="admin-refresh-btn" class="btn clear-filters-btn">Refresh</button>
         </div>
       </div>
 
-      <div id="admin-totals" class="admin-totals"></div>
-      <div id="admin-users-list" class="jobs-list"></div>
+      <div id="admin-totals" data-ui="admin-totals" class="admin-totals"></div>
+      <div id="admin-users-list" data-ui="admin-users-list" class="jobs-list"></div>
 
       <section class="admin-fetcher-panel admin-ops-panel">
         <div class="admin-fetcher-header">
           <h3 class="admin-fetcher-title">Operations Health</h3>
           <div class="admin-fetcher-actions">
-            <button id="admin-refresh-ops-btn" class="btn clear-filters-btn">Refresh Ops Health</button>
+            <button id="admin-refresh-ops-btn" data-ui="admin-refresh-ops-btn" class="btn clear-filters-btn">Refresh Ops Health</button>
           </div>
         </div>
-        <div id="admin-ops-alerts" class="admin-ops-alerts"></div>
-        <div id="admin-ops-kpis" class="admin-ops-kpis"></div>
-        <div id="admin-ops-schedule" class="admin-ops-schedule"></div>
+        <div id="admin-ops-alerts" data-ui="admin-ops-alerts" class="admin-ops-alerts"></div>
+        <div id="admin-ops-kpis" data-ui="admin-ops-kpis" class="admin-ops-kpis"></div>
+        <div id="admin-ops-schedule" data-ui="admin-ops-schedule" class="admin-ops-schedule"></div>
         <h4 class="admin-section-title">Fetcher Metrics</h4>
-        <div id="admin-ops-fetcher-metrics" class="admin-ops-kpis"></div>
-        <div id="admin-ops-trends" class="results-summary">No run trend data yet.</div>
+        <div id="admin-ops-fetcher-metrics" data-ui="admin-ops-fetcher-metrics" class="admin-ops-kpis"></div>
+        <div id="admin-ops-trends" data-ui="admin-ops-trends" class="results-summary">No run trend data yet.</div>
         <h4 class="admin-section-title">Run History</h4>
-        <div id="admin-ops-history" class="jobs-list"></div>
+        <div id="admin-ops-history" data-ui="admin-ops-history" class="jobs-list"></div>
       </section>
 
       <section class="admin-fetcher-panel">
@@ -63,6 +63,7 @@
           <div class="admin-fetcher-actions">
             <button
               id="admin-clear-log-btn"
+              data-ui="admin-clear-log-btn"
               class="btn clear-filters-btn admin-fetcher-icon-btn"
               type="button"
               title="Clear output log"
@@ -72,21 +73,21 @@
                 <path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM8 9h2v9H8V9Z" />
               </svg>
             </button>
-            <button id="admin-retry-failed-btn" class="btn clear-filters-btn">Retry Failed Sources</button>
-            <button id="admin-copy-failures-btn" class="btn clear-filters-btn" title="Copy latest failed source names and errors from the current fetch report." aria-label="Copy failure summary">Copy Failures</button>
-            <button id="admin-run-fetcher-btn" class="btn clear-filters-btn">Run Jobs Fetcher</button>
-            <button id="admin-run-fetcher-incremental-btn" class="btn clear-filters-btn">Run Incremental</button>
-            <button id="admin-run-fetcher-force-btn" class="btn clear-filters-btn">Force Ignore Circuit</button>
-            <button id="admin-refresh-report-btn" class="btn clear-filters-btn" title="Reload the latest jobs fetch report and append per-source details to this output log." aria-label="Load latest fetch report">Load Latest Report</button>
+            <button id="admin-retry-failed-btn" data-ui="admin-retry-failed-btn" class="btn clear-filters-btn">Retry Failed Sources</button>
+            <button id="admin-copy-failures-btn" data-ui="admin-copy-failures-btn" class="btn clear-filters-btn" title="Copy latest failed source names and errors from the current fetch report." aria-label="Copy failure summary">Copy Failures</button>
+            <button id="admin-run-fetcher-btn" data-ui="admin-run-fetcher-btn" class="btn clear-filters-btn">Run Jobs Fetcher</button>
+            <button id="admin-run-fetcher-incremental-btn" data-ui="admin-run-fetcher-incremental-btn" class="btn clear-filters-btn">Run Incremental</button>
+            <button id="admin-run-fetcher-force-btn" data-ui="admin-run-fetcher-force-btn" class="btn clear-filters-btn">Force Ignore Circuit</button>
+            <button id="admin-refresh-report-btn" data-ui="admin-refresh-report-btn" class="btn clear-filters-btn" title="Reload the latest jobs fetch report and append per-source details to this output log." aria-label="Load latest fetch report">Load Latest Report</button>
           </div>
         </div>
-        <div id="admin-fetcher-progress" class="admin-task-progress hidden" role="progressbar" aria-label="Fetcher progress" aria-valuemin="0" aria-valuemax="100">
+        <div id="admin-fetcher-progress" data-ui="admin-fetcher-progress" class="admin-task-progress hidden" role="progressbar" aria-label="Fetcher progress" aria-valuemin="0" aria-valuemax="100">
           <div class="admin-task-progress-track">
-            <div id="admin-fetcher-progress-bar" class="admin-task-progress-bar"></div>
+            <div id="admin-fetcher-progress-bar" data-ui="admin-fetcher-progress-bar" class="admin-task-progress-bar"></div>
           </div>
-          <div id="admin-fetcher-progress-label" class="admin-task-progress-label"></div>
+          <div id="admin-fetcher-progress-label" data-ui="admin-fetcher-progress-label" class="admin-task-progress-label"></div>
         </div>
-        <div id="admin-fetcher-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
+        <div id="admin-fetcher-log" data-ui="admin-fetcher-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
       </section>
 
       <section class="admin-fetcher-panel admin-discovery-panel">
@@ -97,16 +98,16 @@
           <div class="admin-discovery-top-row">
             <div class="admin-discovery-card admin-discovery-run-card">
               <div class="admin-fetcher-actions">
-                <button id="admin-run-discovery-btn" class="btn clear-filters-btn">Run Discovery</button>
-                <button id="admin-load-discovery-btn" class="btn clear-filters-btn">Load Discovery Report</button>
+                <button id="admin-run-discovery-btn" data-ui="admin-run-discovery-btn" class="btn clear-filters-btn">Run Discovery</button>
+                <button id="admin-load-discovery-btn" data-ui="admin-load-discovery-btn" class="btn clear-filters-btn">Load Discovery Report</button>
               </div>
-              <div id="admin-discovery-progress" class="admin-task-progress hidden" role="progressbar" aria-label="Discovery progress" aria-valuemin="0" aria-valuemax="100">
+              <div id="admin-discovery-progress" data-ui="admin-discovery-progress" class="admin-task-progress hidden" role="progressbar" aria-label="Discovery progress" aria-valuemin="0" aria-valuemax="100">
                 <div class="admin-task-progress-track">
-                  <div id="admin-discovery-progress-bar" class="admin-task-progress-bar"></div>
+                  <div id="admin-discovery-progress-bar" data-ui="admin-discovery-progress-bar" class="admin-task-progress-bar"></div>
                 </div>
-                <div id="admin-discovery-progress-label" class="admin-task-progress-label"></div>
+                <div id="admin-discovery-progress-label" data-ui="admin-discovery-progress-label" class="admin-task-progress-label"></div>
               </div>
-              <div id="admin-discovery-summary" class="results-summary">No discovery report loaded yet.</div>
+              <div id="admin-discovery-summary" data-ui="admin-discovery-summary" class="results-summary">No discovery report loaded yet.</div>
             </div>
 
             <div class="admin-discovery-card admin-discovery-manual-card">
@@ -114,22 +115,24 @@
               <div class="admin-manual-source-row">
                 <input
                   id="admin-manual-source-url"
+                  data-ui="admin-manual-source-url"
                   type="url"
                   class="admin-pin-input admin-manual-source-input"
                   placeholder="https://company.teamtailor.com/jobs"
                   autocomplete="off"
                 >
-                <button id="admin-add-manual-source-btn" class="btn clear-filters-btn" type="button">Add Source</button>
+                <button id="admin-add-manual-source-btn" data-ui="admin-add-manual-source-btn" class="btn clear-filters-btn" type="button">Add Source</button>
               </div>
-              <div id="admin-manual-source-feedback" class="results-summary admin-manual-source-feedback"></div>
+              <div id="admin-manual-source-feedback" data-ui="admin-manual-source-feedback" class="results-summary admin-manual-source-feedback"></div>
             </div>
           </div>
 
-          <details id="admin-discovery-log-details" class="admin-discovery-card admin-discovery-log-card" open>
+          <details id="admin-discovery-log-details" data-ui="admin-discovery-log-details" class="admin-discovery-card admin-discovery-log-card" open>
             <summary class="admin-discovery-log-summary">
               <span>Discovery Log</span>
               <button
                 id="admin-clear-discovery-log-btn"
+                data-ui="admin-clear-discovery-log-btn"
                 class="btn clear-filters-btn admin-fetcher-icon-btn"
                 type="button"
                 title="Clear discovery log"
@@ -140,19 +143,19 @@
                 </svg>
               </button>
             </summary>
-            <div id="admin-discovery-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
+            <div id="admin-discovery-log" data-ui="admin-discovery-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
           </details>
 
           <div class="admin-discovery-content">
             <div class="admin-discovery-card admin-discovery-bulk-card">
               <h4 class="admin-section-title">Bulk Actions</h4>
               <div class="admin-fetcher-actions">
-                <button id="admin-approve-sources-btn" class="btn clear-filters-btn">Approve Selected</button>
-                <button id="admin-reject-sources-btn" class="btn clear-filters-btn">Reject Selected</button>
-                <button id="admin-restore-rejected-btn" class="btn clear-filters-btn" type="button">Restore Selected</button>
+                <button id="admin-approve-sources-btn" data-ui="admin-approve-sources-btn" class="btn clear-filters-btn">Approve Selected</button>
+                <button id="admin-reject-sources-btn" data-ui="admin-reject-sources-btn" class="btn clear-filters-btn">Reject Selected</button>
+                <button id="admin-restore-rejected-btn" data-ui="admin-restore-rejected-btn" class="btn clear-filters-btn" type="button">Restore Selected</button>
               </div>
               <div class="admin-fetcher-actions">
-                <button id="admin-delete-sources-btn" class="btn clear-filters-btn admin-delete-sources-btn">Delete Selected</button>
+                <button id="admin-delete-sources-btn" data-ui="admin-delete-sources-btn" class="btn clear-filters-btn admin-delete-sources-btn">Delete Selected</button>
               </div>
             </div>
 
@@ -171,18 +174,18 @@
                   </div>
                 </div>
                 <label class="backup-toggle admin-zero-toggle">
-                  <input id="admin-show-zero-jobs-toggle" type="checkbox">
+                  <input id="admin-show-zero-jobs-toggle" data-ui="admin-show-zero-jobs-toggle" type="checkbox">
                   Show zero-jobs pending sources
                 </label>
               </details>
             </div>
             <h4 class="admin-section-title">Pending Sources</h4>
-            <div id="admin-pending-sources" class="jobs-list"></div>
+            <div id="admin-pending-sources" data-ui="admin-pending-sources" class="jobs-list"></div>
             <h4 class="admin-section-title">Active Sources</h4>
-            <div id="admin-active-sources" class="jobs-list"></div>
+            <div id="admin-active-sources" data-ui="admin-active-sources" class="jobs-list"></div>
             <details class="admin-rejected-section">
               <summary class="admin-rejected-summary">Rejected Sources</summary>
-              <div id="admin-rejected-sources" class="jobs-list"></div>
+              <div id="admin-rejected-sources" data-ui="admin-rejected-sources" class="jobs-list"></div>
             </details>
           </div>
         </div>
@@ -195,9 +198,9 @@
             <p class="admin-sync-subtitle">Shared source registry sync powered by the packaged GitHub App.</p>
           </div>
           <div class="admin-fetcher-actions admin-sync-actions">
-            <button id="admin-sync-test-btn" class="btn clear-filters-btn admin-sync-action-btn" data-tooltip="Verify GitHub App access and confirm the remote registry is reachable.">Test Connection</button>
-            <button id="admin-sync-pull-btn" class="btn clear-filters-btn admin-sync-action-btn" data-tooltip="Pull the latest remote registry and replace local source buckets with the shared state.">Pull Latest</button>
-            <button id="admin-sync-push-btn" class="btn clear-filters-btn admin-sync-action-btn" data-tooltip="Push the current local registry to GitHub as the latest shared source state.">Push Current</button>
+            <button id="admin-sync-test-btn" data-ui="admin-sync-test-btn" class="btn clear-filters-btn admin-sync-action-btn" data-tooltip="Verify GitHub App access and confirm the remote registry is reachable.">Test Connection</button>
+            <button id="admin-sync-pull-btn" data-ui="admin-sync-pull-btn" class="btn clear-filters-btn admin-sync-action-btn" data-tooltip="Pull the latest remote registry and replace local source buckets with the shared state.">Pull Latest</button>
+            <button id="admin-sync-push-btn" data-ui="admin-sync-push-btn" class="btn clear-filters-btn admin-sync-action-btn" data-tooltip="Push the current local registry to GitHub as the latest shared source state.">Push Current</button>
           </div>
         </div>
         <div class="admin-sync-layout">
@@ -207,12 +210,12 @@
               <span class="admin-sync-inline-note">Saved immediately on change</span>
             </div>
             <label class="backup-toggle admin-zero-toggle admin-sync-toggle">
-              <input id="admin-sync-enabled" type="checkbox">
+              <input id="admin-sync-enabled" data-ui="admin-sync-enabled" type="checkbox">
               Enable packaged GitHub source sync
             </label>
-            <div id="admin-sync-config-hint" class="results-summary admin-manual-source-feedback admin-sync-config-hint">GitHub App credentials are packaged with the app. Only local sync enablement is configurable here.</div>
+            <div id="admin-sync-config-hint" data-ui="admin-sync-config-hint" class="results-summary admin-manual-source-feedback admin-sync-config-hint">GitHub App credentials are packaged with the app. Only local sync enablement is configurable here.</div>
           </div>
-          <div id="admin-sync-status" class="admin-sync-card admin-sync-status-card">Sync status unavailable.</div>
+          <div id="admin-sync-status" data-ui="admin-sync-status" class="admin-sync-card admin-sync-status-card">Sync status unavailable.</div>
         </div>
       </section>
     </section>
@@ -222,4 +225,3 @@
   <script type="module" src="frontend/admin/index.js"></script>
 </body>
 </html>
-

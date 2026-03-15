@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts import packaged_desktop_smoke as smoke
-from scripts.ship.startup_profile import summarize_startup_metrics
+from src import packaged_desktop_smoke as smoke
+from src.ship.startup_profile import summarize_startup_metrics
 from tests.helpers.temp_paths import workspace_tmpdir
 
 

@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts import jobs_fetcher
+from src import jobs_fetcher
 
 class PipelineGuardTests(unittest.TestCase):
     def test_pipeline_output_contract_preserves_camelcase_schema(self) -> None:
@@ -70,3 +70,4 @@ class PipelineGuardTests(unittest.TestCase):
             
 if __name__ == "__main__":
     unittest.main()
+

@@ -17,14 +17,14 @@ DIST_DIR = ROOT / "dist" / "baluffo-ship"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.app_version import APP_VERSION
-from scripts.baluffo_config import get_sync_defaults
+from src.app_version import APP_VERSION
+from src.baluffo_config import get_sync_defaults
 from scripts.build_frontend_runtime_config import (
     build_frontend_runtime_config_payload,
     render_frontend_runtime_config_js,
     write_frontend_runtime_config,
 )
-from scripts.python_version_guard import ensure_required_python
+from src.python_version_guard import ensure_required_python
 
 DEFAULT_BUNDLE_VERSION = APP_VERSION
 
@@ -66,9 +66,11 @@ APP_RUNTIME_SCRIPTS = (
     "source_sync.py",
     "local_data_store.py",
     "discovery_seed_catalog.json",
+    "python_version_guard.py",
 )
 APP_RUNTIME_SCRIPT_DIRS = (
     "jobs",
+    "scrapers",
 )
 PACKAGING_FILES = (
     "README.md",
@@ -165,7 +167,7 @@ def _manifest_payload(version: str, sha256: str) -> dict:
 
 
 def _seed_runtime_data(data_dir: Path) -> None:
-    from scripts.jobs.registry import DEFAULT_SOCIAL_CONFIG, DEFAULT_STUDIO_SOURCE_REGISTRY  # local import to keep script lightweight
+    from src.jobs.registry import DEFAULT_SOCIAL_CONFIG, DEFAULT_STUDIO_SOURCE_REGISTRY  # local import to keep script lightweight
 
     data_dir.mkdir(parents=True, exist_ok=True)
     payloads = {
@@ -174,7 +176,7 @@ def _seed_runtime_data(data_dir: Path) -> None:
         "source-registry-rejected.json": [],
         "source-discovery-candidates.json": [],
         "source-discovery-report.json": {"summary": {}, "candidates": [], "failures": []},
-        "source-discovery-config.json": __import__("scripts.source_discovery", fromlist=["DEFAULT_DISCOVERY_CONFIG"]).DEFAULT_DISCOVERY_CONFIG,
+        "source-discovery-config.json": __import__("src.source_discovery", fromlist=["DEFAULT_DISCOVERY_CONFIG"]).DEFAULT_DISCOVERY_CONFIG,
         "source-approval-state.json": {"approvedSinceLastRun": 0},
         "jobs-fetch-report.json": {"summary": {}, "sources": [], "runtime": {}, "outputs": {}},
         "jobs-fetch-tasks.json": {"summary": {}, "tasks": [], "outputs": {}},
@@ -226,7 +228,7 @@ def _normalize_private_key_pem(raw_value: str) -> str:
 
 
 def _validate_private_key_pem(private_key_pem: str, *, source: str) -> None:
-    from scripts import source_sync
+    from src import source_sync
 
     normalized = _normalize_private_key_pem(private_key_pem)
     if not normalized:
@@ -322,7 +324,7 @@ def _maybe_generate_packaged_sync_config() -> Path | None:
         )
 
     from scripts.build_sync_app_config import build_packaged_sync_payload, write_packaged_sync_config
-    from scripts import source_sync
+    from src import source_sync
 
     branch = _env_value(PACKAGED_SYNC_BUILD_ENV["branch"]) or str(SYNC_DEFAULTS["default_branch"])
     remote_path = _env_value(PACKAGED_SYNC_BUILD_ENV["path"]) or str(SYNC_DEFAULTS["default_path"])
@@ -361,10 +363,10 @@ def _copy_app_version(version_dir: Path) -> None:
 
     _copy_tree(ROOT / "frontend", version_dir / "frontend")
     for rel in APP_RUNTIME_SCRIPTS:
-        _copy_file(ROOT / "scripts" / rel, version_dir / "scripts" / rel)
+        _copy_file(ROOT / "src" / rel, version_dir / "src" / rel)
     for rel in APP_RUNTIME_SCRIPT_DIRS:
-        _copy_tree(ROOT / "scripts" / rel, version_dir / "scripts" / rel)
-    _copy_file(ROOT / "scripts" / "ship" / "__init__.py", version_dir / "scripts" / "ship" / "__init__.py")
+        _copy_tree(ROOT / "src" / rel, version_dir / "src" / rel)
+    _copy_file(ROOT / "src" / "ship" / "__init__.py", version_dir / "src" / "ship" / "__init__.py")
     for rel in PACKAGING_FILES:
         _copy_file(ROOT / "packaging" / rel, version_dir / "packaging" / rel)
     _copy_file(packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json")
@@ -401,7 +403,7 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     versions_dir = app_dir / "versions"
     version_dir = versions_dir / version
     staging_dir = app_dir / "staging"
-    tooling_dir = output_dir / "scripts" / "ship"
+    tooling_dir = output_dir / "src" / "ship"
     logs_dir = output_dir / "logs"
 
     version_dir.mkdir(parents=True, exist_ok=True)
@@ -410,17 +412,17 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     _copy_app_version(version_dir)
-    _copy_file(ROOT / "scripts" / "ship" / "update_manager.py", tooling_dir / "update_manager.py")
-    _copy_file(ROOT / "scripts" / "ship" / "migrations.py", tooling_dir / "migrations.py")
-    _copy_file(ROOT / "scripts" / "ship" / "runtime_launcher.py", tooling_dir / "runtime_launcher.py")
+    _copy_file(ROOT / "src" / "ship" / "update_manager.py", tooling_dir / "update_manager.py")
+    _copy_file(ROOT / "src" / "ship" / "migrations.py", tooling_dir / "migrations.py")
+    _copy_file(ROOT / "src" / "ship" / "runtime_launcher.py", tooling_dir / "runtime_launcher.py")
 
     # Launcher scripts + ship runbook.
-    _copy_file(ROOT / "scripts" / "ship" / "run-bridge.ps1", output_dir / "run-bridge.ps1")
-    _copy_file(ROOT / "scripts" / "ship" / "run-site.ps1", output_dir / "run-site.ps1")
-    _copy_file(ROOT / "scripts" / "ship" / "run-all.ps1", output_dir / "run-all.ps1")
-    _copy_file(ROOT / "scripts" / "ship" / "apply-update.ps1", output_dir / "apply-update.ps1")
-    _copy_file(ROOT / "scripts" / "ship" / "recover-previous.ps1", output_dir / "recover-previous.ps1")
-    _copy_file(ROOT / "scripts" / "ship" / "create-support-bundle.ps1", output_dir / "create-support-bundle.ps1")
+    _copy_file(ROOT / "src" / "ship" / "run-bridge.ps1", output_dir / "run-bridge.ps1")
+    _copy_file(ROOT / "src" / "ship" / "run-site.ps1", output_dir / "run-site.ps1")
+    _copy_file(ROOT / "src" / "ship" / "run-all.ps1", output_dir / "run-all.ps1")
+    _copy_file(ROOT / "src" / "ship" / "apply-update.ps1", output_dir / "apply-update.ps1")
+    _copy_file(ROOT / "src" / "ship" / "recover-previous.ps1", output_dir / "recover-previous.ps1")
+    _copy_file(ROOT / "src" / "ship" / "create-support-bundle.ps1", output_dir / "create-support-bundle.ps1")
     _copy_file(ROOT / "docs" / "RELEASE.md", output_dir / "RELEASE_GUIDE.md")
     _copy_file(ROOT / "docs" / "update-manifest.schema.json", output_dir / "UPDATE_MANIFEST_SCHEMA.json")
 
@@ -462,3 +464,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

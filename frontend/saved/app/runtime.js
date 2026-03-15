@@ -46,6 +46,7 @@ import {
   persistSavedTimelinePreferences,
   readSavedLastJobsUrl
 } from "../state-sync/index.js";
+import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { cacheSavedDom } from "./dom.js";
 import { setSavedAuthControlsReady, setSavedAuthStatus, toggleSavedAuthButtons } from "./auth.js";
 import { requestConfirmationDialog, requestTextInputDialog } from "../../local-data/profile-name-dialog.js";
@@ -610,14 +611,16 @@ function renderSavedJobs(jobs) {
     </div>
   `;
 
-  savedJobsListEl.querySelectorAll(".remove-saved-btn").forEach(btn => {
+  const t = UI_TOKENS.saved;
+
+  savedJobsListEl.querySelectorAll(ui(t.removeBtn)).forEach(btn => {
     btn.addEventListener("click", async () => {
       setSelectedJobKey(btn.dataset.jobKey || "", { rerenderTimeline: false });
       await removeSavedJob(btn.dataset.jobKey || "");
     });
   });
 
-  savedJobsListEl.querySelectorAll(".phase-step-btn").forEach(btn => {
+  savedJobsListEl.querySelectorAll(ui(t.phaseBtn)).forEach(btn => {
     btn.addEventListener("click", async () => {
       const jobKey = btn.dataset.jobKey || "";
       const phase = btn.dataset.phase || "";
@@ -626,7 +629,7 @@ function renderSavedJobs(jobs) {
     });
   });
 
-  savedJobsListEl.querySelectorAll(".details-toggle-btn").forEach(btn => {
+  savedJobsListEl.querySelectorAll(ui(t.detailsToggle)).forEach(btn => {
     btn.addEventListener("click", () => {
       const jobKey = btn.dataset.jobKey || "";
       setSelectedJobKey(jobKey, { rerenderTimeline: false });
@@ -634,7 +637,7 @@ function renderSavedJobs(jobs) {
     });
   });
 
-  savedJobsListEl.querySelectorAll(".personal-edit-btn").forEach(btn => {
+  savedJobsListEl.querySelectorAll(ui(t.personalEditBtn)).forEach(btn => {
     btn.addEventListener("click", () => {
       const jobKey = btn.dataset.jobKey || "";
       setSelectedJobKey(jobKey, { rerenderTimeline: false });
@@ -642,7 +645,7 @@ function renderSavedJobs(jobs) {
     });
   });
 
-  savedJobsListEl.querySelectorAll(".personal-duplicate-btn").forEach(btn => {
+  savedJobsListEl.querySelectorAll(ui(t.personalDuplicateBtn)).forEach(btn => {
     btn.addEventListener("click", () => {
       const jobKey = btn.dataset.jobKey || "";
       setSelectedJobKey(jobKey, { rerenderTimeline: false });
@@ -650,7 +653,7 @@ function renderSavedJobs(jobs) {
     });
   });
 
-  savedJobsListEl.querySelectorAll(".saved-details-tab-btn").forEach(btn => {
+  savedJobsListEl.querySelectorAll(ui(t.detailsTabBtn)).forEach(btn => {
     btn.addEventListener("click", () => {
       const jobKey = btn.dataset.jobKey || "";
       const tab = btn.dataset.detailsTab || "notes";
@@ -660,7 +663,7 @@ function renderSavedJobs(jobs) {
     });
   });
 
-  savedJobsListEl.querySelectorAll(".job-history-refresh-btn").forEach(btn => {
+  savedJobsListEl.querySelectorAll(ui(t.historyRefreshBtn)).forEach(btn => {
     btn.addEventListener("click", async () => {
       setSelectedJobKey(btn.dataset.jobKey || "", { rerenderTimeline: false });
       await refreshActivityLog();
@@ -668,7 +671,7 @@ function renderSavedJobs(jobs) {
     });
   });
 
-  savedJobsListEl.querySelectorAll(".job-notes-input").forEach(textarea => {
+  savedJobsListEl.querySelectorAll(ui(t.noteInput)).forEach(textarea => {
     textarea.addEventListener("input", () => {
       setSelectedJobKey(textarea.dataset.jobKey || "", { rerenderTimeline: false });
       queueNotesSave(textarea.dataset.jobKey || "", textarea.value);
@@ -679,7 +682,7 @@ function renderSavedJobs(jobs) {
     });
   });
 
-  savedJobsListEl.querySelectorAll(".attach-upload-btn").forEach(btn => {
+  savedJobsListEl.querySelectorAll(ui(t.attachUploadBtn)).forEach(btn => {
     btn.addEventListener("click", () => {
       const key = btn.dataset.jobKey || "";
       setSelectedJobKey(key, { rerenderTimeline: false });
@@ -698,7 +701,7 @@ function renderSavedJobs(jobs) {
     });
   });
 
-  savedJobsListEl.querySelectorAll(".saved-job-block").forEach(block => {
+  savedJobsListEl.querySelectorAll(ui(t.itemBlock)).forEach(block => {
     block.addEventListener("click", event => {
       const target = event.target;
       if (!(target instanceof Element)) return;

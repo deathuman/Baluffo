@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Tuple
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.local_data_store import LocalDataPaths, LocalDataStore
+from src.local_data_store import LocalDataPaths, LocalDataStore
 
 
 def now_iso() -> str:
@@ -498,3 +498,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

@@ -57,7 +57,7 @@ export function renderUserRowHtml(user, formatBytes) {
       <div class="admin-cell" data-label="Attachment Size">${formatBytes(user.attachmentsBytes || 0)}</div>
       <div class="admin-cell" data-label="Total Size">${formatBytes(user.totalBytes || 0)}</div>
       <div class="admin-cell" data-label="Actions">
-        <button class="btn back-btn admin-wipe-btn" data-uid="${uid}" data-name="${name}">Wipe Account</button>
+        <button class="btn back-btn admin-wipe-btn" data-ui="admin-wipe-btn" data-uid="${uid}" data-name="${name}">Wipe Account</button>
       </div>
     </div>
   `;
@@ -150,11 +150,11 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
         const sourceIdAria = escapeHtml(`Source ID: ${sourceIdRaw || "missing source id"}`);
         const idIconHtml = `<span class="admin-source-id-inline" title="${sourceIdTitle}" aria-label="${sourceIdAria}">i</span>`;
         const leadCell = isPending
-          ? `<span class="admin-select-cell-inner"><input type="checkbox" class="pending-source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
+          ? `<span class="admin-select-cell-inner"><input type="checkbox" class="pending-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
           : isRejected
-            ? `<span class="admin-select-cell-inner"><input type="checkbox" class="rejected-source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
+            ? `<span class="admin-select-cell-inner"><input type="checkbox" class="rejected-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
             : isActive
-              ? `<span class="admin-select-cell-inner"><input type="checkbox" class="active-source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
+              ? `<span class="admin-select-cell-inner"><input type="checkbox" class="active-source-checkbox" data-ui="source-checkbox" data-source-id="${sourceId}" data-source-url="${sourceUrl}">${idIconHtml}</span>`
               : `<span class="muted">N/A</span>`;
         return `
           <div class="admin-user-row admin-source-row">
@@ -316,7 +316,7 @@ export function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
     return `
       <div class="admin-alert-banner ${cls}">
         <div class="admin-alert-message">${escapeHtml(String(alert?.message || id))}</div>
-        <button class="btn back-btn admin-alert-ack-btn" data-alert-id="${id}">Dismiss</button>
+        <button class="btn back-btn admin-alert-ack-btn" data-ui="admin-alert-ack-btn" data-alert-id="${id}">Dismiss</button>
       </div>
     `;
   }).join("");

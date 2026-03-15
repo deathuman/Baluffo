@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest import mock
 from zipfile import ZipFile
 
-from scripts.app_version import APP_VERSION
+from src.app_version import APP_VERSION
 from scripts import build_ship_bundle
 from scripts.build_portable_exe import (
     DEFAULT_BUNDLE_VERSION,
@@ -27,7 +27,7 @@ class BuildPortableExeTests(unittest.TestCase):
                 output = build_portable_layout(Path(tmp) / "dist" / "baluffo-portable", "9.9.9")
             self.assertTrue((output / "ship" / "app" / "current.txt").exists())
             self.assertTrue((output / "ship" / "run-site.ps1").exists())
-            self.assertTrue((output / "ship" / "scripts" / "ship" / "runtime_launcher.py").exists())
+            self.assertTrue((output / "ship" / "src" / "ship" / "runtime_launcher.py").exists())
 
     def test_create_zip_packages_portable_folder(self) -> None:
         with workspace_tmpdir("build-portable-exe") as tmp:

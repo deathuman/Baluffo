@@ -1,7 +1,7 @@
 import html
 import json
 
-from scripts import admin_bridge
+from src import admin_bridge
 from tests.admin.admin_bridge_ops_base import AdminBridgeOpsTestCase
 
 

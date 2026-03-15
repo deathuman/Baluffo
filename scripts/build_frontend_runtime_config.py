@@ -13,8 +13,8 @@ DEFAULT_OUTPUT_PATH = ROOT / "frontend-runtime-config.js"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.baluffo_config import get_bridge_defaults, get_security_defaults
-from scripts.python_version_guard import ensure_required_python
+from src.baluffo_config import get_bridge_defaults, get_security_defaults
+from src.python_version_guard import ensure_required_python
 
 
 def build_frontend_runtime_config_payload() -> Dict[str, Dict[str, Any]]:
@@ -60,3 +60,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

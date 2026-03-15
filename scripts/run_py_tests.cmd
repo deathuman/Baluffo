@@ -20,5 +20,5 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b %ERRORLEVEL%
 )
 
-%PYTHON_CMD% -m unittest discover -s tests -p "test_*.py" -v
+%PYTHON_CMD% -m pytest tests -q --color=no
 exit /b %ERRORLEVEL%

@@ -87,7 +87,7 @@ Release preparation:
 
 ```powershell
 $env:BALUFFO_UPDATE_SIGNING_KEY="replace-with-release-key"
-python scripts/ship/update_manager.py sign-manifest --version 1.2.4 --sha256 <artifact_sha256>
+python src/ship/update_manager.py sign-manifest --version 1.2.4 --sha256 <artifact_sha256>
 ```
 
 Ship-bundle update/apply path:

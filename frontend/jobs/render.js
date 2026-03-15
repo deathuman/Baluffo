@@ -113,6 +113,7 @@ export function renderJobRowHtml(job, options = {}) {
       class="save-job-btn job-inline-save-btn ${isSaved ? "saved" : ""}"
       data-job-id="${job.id}"
       data-job-key="${jobKey}"
+      data-ui="save-job-btn"
       ${!isJobsApiReady() ? "disabled" : ""}
       aria-label="${isSaved ? "Remove saved job" : "Save job"}"
     >
@@ -145,7 +146,7 @@ export function renderJobRowHtml(job, options = {}) {
       <span class="job-tag ${job.workType.toLowerCase()}">${capitalizeFirst(job.workType)}</span>
     </div>
   `;
-  return `<div class="${rowClasses}" data-job-link="${safeJobLink}" data-job-key="${escapeHtml(jobKey)}">${content}</div>`;
+  return `<div class="${rowClasses}" data-job-link="${safeJobLink}" data-job-key="${escapeHtml(jobKey)}" data-ui="job-row">${content}</div>`;
 }
 
 export function showJobsLoading(jobsListEl, text) {

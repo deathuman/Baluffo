@@ -19,28 +19,28 @@ DIST_DIR = ROOT / "dist" / "baluffo-portable"
 DEFAULT_EXE_NAME = "Baluffo"
 DEFAULT_ICON_SIZE = 256
 RUNTIME_HIDDEN_IMPORTS = (
-    "scripts.admin_bridge",
-    "scripts.app_version",
-    "scripts.baluffo_config",
-    "scripts.contracts",
-    "scripts.fetcher_metrics",
-    "scripts.jobs_fetcher",
-    "scripts.jobs_fetcher_registry",
-    "scripts.local_data_store",
-    "scripts.pipeline_io",
-    "scripts.ship.migrations",
-    "scripts.ship.runtime_launcher",
-    "scripts.ship.startup_profile",
-    "scripts.ship.update_manager",
-    "scripts.source_discovery",
-    "scripts.source_registry",
-    "scripts.source_sync",
+    "src.admin_bridge",
+    "src.app_version",
+    "src.baluffo_config",
+    "src.contracts",
+    "src.fetcher_metrics",
+    "src.jobs_fetcher",
+    "src.jobs_fetcher_registry",
+    "src.local_data_store",
+    "src.pipeline_io",
+    "src.ship.migrations",
+    "src.ship.runtime_launcher",
+    "src.ship.startup_profile",
+    "src.ship.update_manager",
+    "src.source_discovery",
+    "src.source_registry",
+    "src.source_sync",
 )
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.build_ship_bundle import DEFAULT_BUNDLE_VERSION, build_bundle
-from scripts.python_version_guard import ensure_required_python
+from src.python_version_guard import ensure_required_python
 
 
 def _copy_tree_contents(src: Path, dst: Path) -> None:
@@ -346,7 +346,7 @@ def run_pyinstaller(output_dir: Path, *, exe_name: str, icon_path: Path) -> Path
     ]
     for module_name in RUNTIME_HIDDEN_IMPORTS:
         command.extend(["--hidden-import", module_name])
-    command.append(str(ROOT / "scripts" / "ship" / "desktop_app.py"))
+    command.append(str(ROOT / "src" / "ship" / "desktop_app.py"))
     subprocess.run(command, check=True, cwd=str(ROOT))
     built_dir = pyinstaller_dist / exe_name
     if not built_dir.exists():
@@ -397,3 +397,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

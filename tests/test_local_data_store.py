@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from scripts.local_data_store import LocalDataPaths, LocalDataStore
+from src.local_data_store import LocalDataPaths, LocalDataStore
 from tests.helpers.temp_paths import workspace_tmpdir
 
 

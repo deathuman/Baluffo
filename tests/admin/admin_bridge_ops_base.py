@@ -5,7 +5,7 @@ import unittest
 import uuid
 from pathlib import Path
 
-from scripts import admin_bridge
+from src import admin_bridge
 
 
 class AdminBridgeOpsTestCase(unittest.TestCase):
