@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
-  "startedAt": "2026-03-15T22:26:05.132808+00:00",
-  "finishedAt": "2026-03-15T22:26:13.336934+00:00",
+  "startedAt": "2026-03-16T09:58:28.181660+00:00",
+  "finishedAt": "2026-03-16T09:58:36.223647+00:00",
   "runtime": {
     "maxWorkers": 6,
     "maxPerDomain": 2,
@@ -139,9 +139,9 @@
     "activeSourceCount": 15,
     "pendingSourceCount": 1,
     "newlyApprovedSinceLastRun": 2,
-    "jsonBytes": 42776934,
-    "csvBytes": 22923111,
-    "lightJsonBytes": 20246690,
+    "jsonBytes": 42776931,
+    "csvBytes": 22923108,
+    "lightJsonBytes": 20246687,
     "sizeGuardrailExceeded": false,
     "recordGuardrailExceeded": false,
     "lifecycleActiveCount": 34885,

@@ -1,0 +1,267 @@
+from __future__ import annotations
+
+import threading
+import uuid
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Optional
+
+
+@dataclass
+class PipelineRuntime:
+    active_run_id: str = ""
+    active_thread: threading.Thread | None = None
+
+
+class PipelineService:
+    def __init__(
+        self,
+        *,
+        pipeline_state_lock: threading.RLock,
+        pipeline_status: Dict[str, Any],
+        runtime: PipelineRuntime,
+        bridge_log: Callable[..., None],
+        now_iso: Callable[[], str],
+        parse_iso: Callable[[Any], Any],
+        append_run_history: Callable[[Dict[str, Any]], Dict[str, Any]],
+        upsert_run_history: Callable[..., Dict[str, Any]],
+        task_running_from_state: Callable[[str], bool],
+        sync_task_running: Callable[[], bool],
+        current_fetch_output_count: Callable[[], int],
+        wait_for_report_completion: Callable[..., Dict[str, Any]],
+        wait_for_sync_completion: Callable[[str, float], Dict[str, Any]],
+        discovery_report_path: Any,
+        fetch_report_path: Any,
+        trigger_discovery_task: Callable[..., Any],
+        start_fetcher_task: Callable[..., Dict[str, Any]],
+        start_sync_task: Callable[..., Dict[str, Any]],
+        get_app_version: Callable[[], str],
+    ) -> None:
+        self._lock = pipeline_state_lock
+        self._status = pipeline_status
+        self._runtime = runtime
+        self._bridge_log = bridge_log
+        self._now_iso = now_iso
+        self._parse_iso = parse_iso
+        self._append_run_history = append_run_history
+        self._upsert_run_history = upsert_run_history
+        self._task_running_from_state = task_running_from_state
+        self._sync_task_running = sync_task_running
+        self._current_fetch_output_count = current_fetch_output_count
+        self._wait_for_report_completion = wait_for_report_completion
+        self._wait_for_sync_completion = wait_for_sync_completion
+        self._discovery_report_path = discovery_report_path
+        self._fetch_report_path = fetch_report_path
+        self._trigger_discovery_task = trigger_discovery_task
+        self._start_fetcher_task = start_fetcher_task
+        self._start_sync_task = start_sync_task
+        self._get_app_version = get_app_version
+
+    @staticmethod
+    def _pipeline_progress(current_step: int, total_steps: int, label: str) -> Dict[str, Any]:
+        safe_total = max(1, int(total_steps or 1))
+        safe_current = max(0, min(int(current_step or 0), safe_total))
+        return {
+            "currentStep": safe_current,
+            "totalSteps": safe_total,
+            "percent": int(round((safe_current / safe_total) * 100)),
+            "label": str(label or ""),
+        }
+
+    def _mark_stage(self, *, stage: str, current_step: int, total_steps: int, label: str, error: str = "") -> None:
+        with self._lock:
+            self._status["stage"] = str(stage or "unknown")
+            self._status["progress"] = self._pipeline_progress(current_step, total_steps, label)
+            if error:
+                self._status["error"] = str(error)
+
+    def _set_completed(self, *, status: str, final_output_count: int = 0, error: str = "") -> None:
+        with self._lock:
+            run_id = str(self._status.get("runId") or "")
+            started_at = str(self._status.get("startedAt") or "")
+            baseline = int(self._status.get("baselineOutputCount") or 0)
+            loaded = int(self._status.get("jobsPageLoadedCount") or 0)
+            compare_base = max(baseline, loaded)
+            updates_found = int(final_output_count or 0) > compare_base
+            self._status.update(
+                {
+                    "active": False,
+                    "stage": "completed" if status != "error" else "error",
+                    "progress": self._pipeline_progress(
+                        3, 3, "Pipeline completed" if status != "error" else "Pipeline failed"
+                    ),
+                    "finishedAt": self._now_iso(),
+                    "error": str(error or ""),
+                    "finalOutputCount": int(final_output_count or 0),
+                    "updatesFound": bool(updates_found),
+                    "refreshRecommended": bool(updates_found),
+                }
+            )
+            finished_at = str(self._status.get("finishedAt") or "")
+            if run_id:
+                started_dt = self._parse_iso(started_at)
+                finished_dt = self._parse_iso(finished_at)
+                duration_ms = (
+                    int(max(0.0, (finished_dt - started_dt).total_seconds() * 1000))
+                    if started_dt and finished_dt
+                    else 0
+                )
+                self._upsert_run_history(
+                    {
+                        "id": run_id,
+                        "type": "pipeline",
+                        "status": "error" if status == "error" else "ok",
+                        "startedAt": started_at,
+                        "finishedAt": finished_at,
+                        "durationMs": duration_ms,
+                        "summary": {
+                            "error": str(error or ""),
+                            "baselineOutputCount": baseline,
+                            "jobsPageLoadedCount": loaded,
+                            "finalOutputCount": int(final_output_count or 0),
+                            "updatesFound": bool(updates_found),
+                        },
+                    },
+                    dedupe_fields=("id",),
+                )
+            self._runtime.active_run_id = ""
+
+    def get_status_payload(self) -> Dict[str, Any]:
+        with self._lock:
+            payload = dict(self._status)
+            progress = payload.get("progress")
+            payload["progress"] = (
+                dict(progress) if isinstance(progress, dict) else self._pipeline_progress(0, 3, "Idle")
+            )
+            payload["active"] = bool(payload.get("active"))
+            payload["appVersion"] = self._get_app_version()
+            return payload
+
+    def _run_worker(self, run_id: str) -> None:
+        try:
+            self._mark_stage(stage="discovery", current_step=1, total_steps=3, label="Running discovery...")
+            discovery_status, discovery_result = self._trigger_discovery_task(
+                route_name="/tasks/run-jobs-pipeline",
+                enable_auto_sync_watch=False,
+            )
+            if int(discovery_status) >= 300 or not bool(discovery_result.get("started")):
+                raise RuntimeError(str(discovery_result.get("error") or "discovery start failed"))
+            discovery_started_at = str(discovery_result.get("startedAt") or self._now_iso())
+            self._wait_for_report_completion(
+                report_path=self._discovery_report_path,
+                started_at=discovery_started_at,
+                timeout_s=900.0,
+                report_name="discovery report",
+            )
+
+            self._mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
+            fetch_result = self._start_fetcher_task({"preset": "default"})
+            fetch_started_at = str(fetch_result.get("startedAt") or self._now_iso())
+            self._wait_for_report_completion(
+                report_path=self._fetch_report_path,
+                started_at=fetch_started_at,
+                timeout_s=1200.0,
+                report_name="fetch report",
+            )
+
+            self._mark_stage(stage="sync_push", current_step=3, total_steps=3, label="Running sync push...")
+            sync_result = self._start_sync_task("push", reason="jobs_pipeline", automatic=False)
+            if not bool(sync_result.get("started")):
+                raise RuntimeError(str(sync_result.get("error") or "sync push failed to start"))
+            sync_row = self._wait_for_sync_completion(str(sync_result.get("runId") or ""), 900.0)
+            sync_status = str(sync_row.get("status") or "").strip().lower()
+            if sync_status == "error":
+                sync_error = str((sync_row.get("summary") or {}).get("error") or "sync push failed")
+                raise RuntimeError(sync_error)
+
+            final_output_count = self._current_fetch_output_count()
+            self._set_completed(status="ok", final_output_count=final_output_count)
+        except Exception as exc:  # noqa: BLE001
+            self._bridge_log("error", "jobs_pipeline_failed", runId=run_id, error=str(exc))
+            self._set_completed(
+                status="error",
+                final_output_count=self._current_fetch_output_count(),
+                error=str(exc),
+            )
+
+    def start_task(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        with self._lock:
+            if bool(self._status.get("active")) and str(self._status.get("runId") or ""):
+                return {
+                    "started": False,
+                    "error": "Jobs pipeline already running",
+                    "runId": str(self._status.get("runId") or ""),
+                    "stage": str(self._status.get("stage") or "running"),
+                }
+            if (
+                self._task_running_from_state("fetch")
+                or self._task_running_from_state("discovery")
+                or self._sync_task_running()
+            ):
+                return {
+                    "started": False,
+                    "error": "Another fetch/discovery/sync task is already running",
+                    "runId": "",
+                    "stage": "blocked",
+                }
+
+            run_id = f"pipeline_{uuid.uuid4().hex[:10]}"
+            started_at = self._now_iso()
+            jobs_page_loaded_count = int((payload or {}).get("jobsPageLoadedCount") or 0)
+            baseline_output_count = self._current_fetch_output_count()
+            self._status.update(
+                {
+                    "active": True,
+                    "runId": run_id,
+                    "stage": "starting",
+                    "progress": self._pipeline_progress(0, 3, "Starting pipeline..."),
+                    "startedAt": started_at,
+                    "finishedAt": "",
+                    "error": "",
+                    "updatesFound": False,
+                    "refreshRecommended": False,
+                    "baselineOutputCount": int(baseline_output_count),
+                    "finalOutputCount": 0,
+                    "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
+                }
+            )
+            self._append_run_history(
+                {
+                    "id": run_id,
+                    "type": "pipeline",
+                    "status": "started",
+                    "startedAt": started_at,
+                    "finishedAt": "",
+                    "durationMs": 0,
+                    "summary": {
+                        "baselineOutputCount": int(baseline_output_count),
+                        "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
+                        "stage": "starting",
+                    },
+                }
+            )
+            worker = threading.Thread(
+                target=self._run_worker,
+                args=(run_id,),
+                name=f"jobs-pipeline-{run_id}",
+                daemon=True,
+            )
+            self._runtime.active_run_id = run_id
+            self._runtime.active_thread = worker
+            worker.start()
+            self._bridge_log(
+                "info",
+                "jobs_pipeline_started",
+                runId=run_id,
+                baseline=baseline_output_count,
+                jobsPageLoadedCount=jobs_page_loaded_count,
+            )
+            return {
+                "started": True,
+                "runId": run_id,
+                "stage": "starting",
+                "progress": dict(self._status.get("progress") or {}),
+            }
+
+
+__all__ = ["PipelineRuntime", "PipelineService"]
+

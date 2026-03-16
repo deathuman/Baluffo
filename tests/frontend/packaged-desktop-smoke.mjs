@@ -288,9 +288,29 @@ async function main() {
       );
     }, scenarios);
 
+    await runScenario("Admin discovery run launches without immediate error", async () => {
+      const discoveryBtn = page.locator("#admin-run-discovery-btn");
+      if (!(await discoveryBtn.isVisible())) {
+        throw new Error("Admin discovery button is not visible.");
+      }
+      if (!(await discoveryBtn.isEnabled())) {
+        throw new Error("Admin discovery button is not enabled.");
+      }
+      await discoveryBtn.click();
+      await assertNoImmediateAdminError(page, { buttonLocator: discoveryBtn, observeMs: 8_000 });
+    }, scenarios);
+
     await runScenario("Trigger first available admin action with no immediate error", async () => {
       const trigger = await triggerFirstAvailableAdminAction(page);
-      await assertNoImmediateAdminError(page, { buttonLocator: trigger.locator, observeMs: 8_000 });
+      const errorToast = page.locator(".toast.error").first();
+      let toastSeen = false;
+      try {
+        await errorToast.waitFor({ state: "visible", timeout: 8_000 });
+        toastSeen = true;
+      } catch {
+        toastSeen = false;
+      }
+      assert.equal(toastSeen, false, "unexpected admin error toast appeared");
     }, scenarios);
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));

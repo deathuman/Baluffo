@@ -1,0 +1,204 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+
+def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]) -> bool:
+    """Handle GET routes for the admin bridge.
+
+    Important: `api` must be the currently running admin bridge module (which may
+    be `__main__` when launched via `runpy`), not a fresh `import src.admin_bridge`.
+    """
+
+    if path == "/desktop-local-data/session":
+        try:
+            handler._send_json(  # noqa: SLF001
+                {
+                    "ok": True,
+                    "user": api.desktop_local_data_store().get_current_user(),
+                    "lastActivityAt": str(api.DESKTOP_SESSION_ACTIVITY_AT or ""),
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+        return True
+
+    if path == "/desktop-local-data/saved-jobs":
+        try:
+            uid = (query.get("uid") or [""])[0]
+            handler._send_json({"ok": True, "rows": api.desktop_local_data_store().list_saved_jobs(uid)})  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+        return True
+
+    if path == "/desktop-local-data/saved-job-keys":
+        try:
+            uid = (query.get("uid") or [""])[0]
+            handler._send_json({"ok": True, "keys": api.desktop_local_data_store().get_saved_job_keys(uid)})  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+        return True
+
+    if path == "/desktop-local-data/attachments":
+        try:
+            uid = (query.get("uid") or [""])[0]
+            job_key = (query.get("jobKey") or [""])[0]
+            handler._send_json({"ok": True, "rows": api.desktop_local_data_store().list_attachments_for_job(uid, job_key)})  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+        return True
+
+    if path == "/desktop-local-data/attachments/content":
+        try:
+            uid = (query.get("uid") or [""])[0]
+            job_key = (query.get("jobKey") or [""])[0]
+            attachment_id = (query.get("attachmentId") or [""])[0]
+            download_flag = str((query.get("download") or [""])[0]).strip().lower()
+            body, content_type, filename = api.desktop_local_data_store().get_attachment_blob(uid, job_key, attachment_id)
+            handler._send_bytes(  # noqa: SLF001
+                body,
+                content_type=content_type,
+                filename=filename,
+                disposition="attachment" if download_flag in {"1", "true", "yes"} else "inline",
+            )
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+        return True
+
+    if path == "/desktop-local-data/backup/export-file":
+        try:
+            uid = (query.get("uid") or [""])[0]
+            include_files_raw = str((query.get("includeFiles") or ["0"])[0]).strip().lower()
+            include_files = include_files_raw in {"1", "true", "yes", "on"}
+            payload = api.desktop_local_data_store().export_profile_data(uid, include_files=include_files)
+            date_token = api.datetime.now(api.timezone.utc).strftime("%Y-%m-%d")
+            safe_uid = api.re.sub(r"[^a-zA-Z0-9_-]+", "_", str(uid or "profile")).strip("_") or "profile"
+            if include_files:
+                backup_json = api.json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+                buffer = api.io.BytesIO()
+                with api.zipfile.ZipFile(buffer, mode="w", compression=api.zipfile.ZIP_STORED) as zf:
+                    zf.writestr("backup.json", backup_json)
+                body = buffer.getvalue()
+                filename = f"baluffo-backup-{safe_uid}-{date_token}.zip"
+                handler._send_bytes(body, content_type="application/zip", filename=filename, disposition="attachment")  # noqa: SLF001
+            else:
+                body = api.json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+                filename = f"baluffo-backup-{safe_uid}-{date_token}.json"
+                handler._send_bytes(body, content_type="application/json; charset=utf-8", filename=filename, disposition="attachment")  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+        return True
+
+    if path == "/desktop-local-data/activity":
+        try:
+            uid = (query.get("uid") or [""])[0]
+            limit = int((query.get("limit") or ["300"])[0])
+            handler._send_json({"ok": True, "rows": api.desktop_local_data_store().list_activity_for_user(uid, limit)})  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+        return True
+
+    if path == "/desktop-local-data/startup-metrics":
+        try:
+            limit_raw = (query.get("limit") or ["200"])[0]
+            try:
+                limit = int(limit_raw)
+            except ValueError:
+                limit = 200
+            handler._send_json({"ok": True, "rows": api.read_startup_metrics(limit)})  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+        return True
+
+    if path == "/registry/active":
+        state = api.load_state()
+        handler._send_json({"sources": state["active"], "summary": api.summarize_state(state)})  # noqa: SLF001
+        return True
+
+    if path == "/registry/pending":
+        state = api.load_state()
+        handler._send_json({"sources": state["pending"], "summary": api.summarize_state(state)})  # noqa: SLF001
+        return True
+
+    if path == "/registry/rejected":
+        state = api.load_state()
+        handler._send_json({"sources": state["rejected"], "summary": api.summarize_state(state)})  # noqa: SLF001
+        return True
+
+    if path == "/discovery/report":
+        report = api.normalize_discovery_report_contract(api.load_json_object(api.DISCOVERY_REPORT_PATH, {}))
+        handler._send_json(report or {"summary": {}, "candidates": [], "failures": []})  # noqa: SLF001
+        return True
+
+    if path == "/discovery/log":
+        offset_raw = (query.get("offset") or ["0"])[0]
+        try:
+            offset = max(0, int(offset_raw))
+        except ValueError:
+            offset = 0
+        try:
+            text = api.DISCOVERY_LOG_PATH.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        chunk = text[offset:]
+        next_offset = len(text)
+        handler._send_json({"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False})  # noqa: SLF001
+        return True
+
+    if path == "/fetcher/log":
+        offset_raw = (query.get("offset") or ["0"])[0]
+        try:
+            offset = max(0, int(offset_raw))
+        except ValueError:
+            offset = 0
+        try:
+            text = api.FETCHER_LOG_PATH.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        chunk = text[offset:]
+        next_offset = len(text)
+        handler._send_json({"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False})  # noqa: SLF001
+        return True
+
+    if path == "/registry/summary":
+        state = api.load_state()
+        handler._send_json({"summary": api.summarize_state(state)})  # noqa: SLF001
+        return True
+
+    if path == "/ops/health":
+        handler._send_json(api.compute_ops_health())  # noqa: SLF001
+        return True
+
+    if path == "/ops/history":
+        limit_raw = (query.get("limit") or ["30"])[0]
+        try:
+            limit = max(1, min(200, int(limit_raw)))
+        except ValueError:
+            limit = 30
+        rows = api.sync_history_from_reports()
+        handler._send_json({"runs": rows[-limit:], "count": len(rows)})  # noqa: SLF001
+        return True
+
+    if path == "/ops/fetcher-metrics":
+        window_raw = (query.get("windowRuns") or ["20"])[0]
+        try:
+            window_runs = max(1, min(200, int(window_raw)))
+        except ValueError:
+            window_runs = 20
+        handler._send_json(api.compute_fetcher_metrics(window_runs=window_runs))  # noqa: SLF001
+        return True
+
+    if path == "/ops/fetch-report":
+        handler._send_json(api.normalize_fetch_report_contract(api.load_json_object(api.JOBS_FETCH_REPORT_PATH, {})))  # noqa: SLF001
+        return True
+
+    if path == "/sync/status":
+        handler._send_json(api.get_sync_status_payload())  # noqa: SLF001
+        return True
+
+    if path == "/tasks/run-jobs-pipeline-status":
+        handler._send_json(api.get_jobs_pipeline_status_payload())  # noqa: SLF001
+        return True
+
+    return False
+

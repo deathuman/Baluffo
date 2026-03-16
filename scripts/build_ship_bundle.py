@@ -70,6 +70,7 @@ APP_RUNTIME_SCRIPTS = (
 )
 APP_RUNTIME_SCRIPT_DIRS = (
     "jobs",
+    "bridge",
     "scrapers",
 )
 PACKAGING_FILES = (

@@ -15,6 +15,13 @@ C_GREEN = "\033[92m"
 C_RED = "\033[91m"
 C_RESET = "\033[0m"
 
+def _safe_print(text: str) -> None:
+    try:
+        print(text)
+        return
+    except UnicodeEncodeError:
+        print(text.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8", errors="replace"))
+
 def color_msg(msg: str, color_code: str) -> str:
     if sys.stdout.isatty():
         return f"{color_code}{msg}{C_RESET}"
@@ -84,7 +91,7 @@ def update_manifest(status: str, summary: str, artifacts: Optional[Dict[str, Any
     MANIFEST_PATH.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 def run_proc(command: List[str], name: str, allow_stream: bool = False) -> tuple[bool, str]:
-    print(f">>> [{name}] Running: {' '.join(command)}")
+    _safe_print(f">>> [{name}] Running: {' '.join(command)}")
     full_output = []
     try:
         # Use shell=True for npm on Windows to avoid FileNotFoundError
@@ -107,7 +114,7 @@ def run_proc(command: List[str], name: str, allow_stream: bool = False) -> tuple
         # We'll read line by line but look for dots at the start of lines or specific markers.
         # Actually, let's try reading character by character from the raw stream if possible.
         
-        progress_chars = {'.', 'F', 'E', 's', 'x', 'X', '✘'}
+        progress_chars = {'.', 'F', 'E', 's', 'x', 'X', '!', 'X'}
         
         while True:
             if process.stdout is None:
@@ -124,15 +131,15 @@ def run_proc(command: List[str], name: str, allow_stream: bool = False) -> tuple
         output_str = "".join(full_output)
         
         # Ensure we are on a new line after the dots
-        print("") 
+        _safe_print("") 
         
         if process.returncode != 0:
-            print(color_msg(f"✘ [{name}] Failed with exit code {process.returncode}", C_RED))
+            _safe_print(color_msg(f"X [{name}] Failed with exit code {process.returncode}", C_RED))
             return False, output_str
-        print(color_msg(f"● [{name}] Success", C_GREEN))
+        _safe_print(color_msg(f"OK [{name}] Success", C_GREEN))
         return True, output_str
     except Exception as e:
-        print(color_msg(f"✘ [{name}] Subprocess error: {e}", C_RED))
+        _safe_print(color_msg(f"X [{name}] Subprocess error: {e}", C_RED))
         return False, str(e)
 
 def build(args: argparse.Namespace, run_dir: Optional[Path] = None, is_verify: bool = False) -> tuple[bool, Optional[Path]]:
@@ -239,8 +246,8 @@ def verify(args: argparse.Namespace):
     update_manifest(status, summary, artifacts=artifacts, run_id=run_dir.name)
     
     final_color = C_GREEN if total_ok else C_RED
-    indicator = "●" if total_ok else "✘"
-    print(color_msg(f"\n{indicator} {summary} (ID: {run_dir.name})", final_color))
+    indicator = "OK" if total_ok else "X"
+    _safe_print(color_msg(f"\n{indicator} {summary} (ID: {run_dir.name})", final_color))
 
 def main():
     parser = argparse.ArgumentParser(description="Baluffo AI-Native Orchestrator")

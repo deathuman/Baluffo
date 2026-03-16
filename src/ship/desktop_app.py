@@ -1108,7 +1108,9 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         if existing_session:
             _append_startup_trace(config.data_dir, "desktop_session_reused", bridgePort=int(existing_session.get("bridgePort") or 0))
             raise RuntimeError(ALREADY_RUNNING_ERROR)
-        child_env = {"BALUFFO_DATA_DIR": str(config.data_dir)}
+        # Desktop runtime must always enable desktop-local-data endpoints in the bridge.
+        # Child processes inherit this environment (even when using child-mode argv flags).
+        child_env = {"BALUFFO_DATA_DIR": str(config.data_dir), "BALUFFO_DESKTOP_MODE": "1"}
         if bool(config.startup_probe):
             child_env["BALUFFO_STARTUP_PROBE"] = "1"
         ensure_runtime_ports(config)
@@ -1293,12 +1295,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.child_mode == "__child_bridge__":
         from src.ship.runtime_launcher import run_bridge_server
 
+        # Belt-and-suspenders: the parent process should pass `--desktop-runtime`,
+        # but accept the environment flag as well so desktop-local-data endpoints
+        # don't silently disable themselves in packaged builds.
+        desktop_mode = bool(args.desktop_runtime) or _truthy_env(os.environ.get("BALUFFO_DESKTOP_MODE"))
         run_bridge_server(
             args.root or None,
             bind_host=str(args.bind_host),
             port=int(args.port),
             data_dir=args.data_dir or None,
-            desktop_mode=bool(args.desktop_runtime),
+            desktop_mode=desktop_mode,
         )
         return 0
     if args.child_mode == "__child_script__":

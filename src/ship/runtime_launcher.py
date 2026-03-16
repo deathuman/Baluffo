@@ -233,8 +233,7 @@ def run_bridge_server(
         os.environ["BALUFFO_DESKTOP_MODE"] = "1"
     else:
         os.environ.pop("BALUFFO_DESKTOP_MODE", None)
-    with _pushd(layout.active_root), _patched_syspath(layout.active_root), _isolated_src_package(), _patched_argv(
-        [
+    argv = [
             str(bridge_script),
             "--host",
             str(bind_host),
@@ -242,12 +241,14 @@ def run_bridge_server(
             str(port),
             "--data-dir",
             str(layout.data_dir),
+            "--desktop-mode" if desktop_mode else "",
             "--log-format",
             "human",
             "--log-level",
             "info",
         ]
-    ):
+    argv = [item for item in argv if str(item).strip()]
+    with _pushd(layout.active_root), _patched_syspath(layout.active_root), _isolated_src_package(), _patched_argv(argv):
         runpy.run_path(str(bridge_script), run_name="__main__")
 
 

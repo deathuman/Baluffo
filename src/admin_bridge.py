@@ -55,6 +55,12 @@ from src.source_registry import (
     source_url_fingerprint,
     unique_sources,
 )
+# Bridge module imports (sync state extracted from admin_bridge.py)
+from src.bridge import SYNC_CONFIG_LOCK, SYNC_STATE_LOCK, SyncService, SyncState
+from src.bridge.sync_state import ACTIVE_SYNC_RUNS, ACTIVE_SYNC_THREADS, SYNC_STATUS
+from src.bridge.registry_service import RegistryPaths, RegistryService
+from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
+from src.bridge.pipeline_service import PipelineRuntime, PipelineService
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
 OPS_ALERT_STATE_PATH = ROOT / "data" / "admin-alert-state.json"
@@ -77,9 +83,6 @@ SOCIAL_LOW_CONFIDENCE_SPIKE_THRESHOLD = 120
 OPS_SCHEMA_VERSION = 1
 OPS_STATE_LOCK = threading.RLock()
 LOG_LEVEL_ORDER = {"debug": 10, "info": 20, "warn": 30, "error": 40}
-SYNC_STATE_LOCK = threading.RLock()
-ACTIVE_SYNC_RUNS: set[str] = set()
-ACTIVE_SYNC_THREADS: Dict[str, threading.Thread] = {}
 PIPELINE_STATE_LOCK = threading.RLock()
 ACTIVE_PIPELINE_RUN_ID = ""
 ACTIVE_PIPELINE_THREAD: Optional[threading.Thread] = None
@@ -97,18 +100,138 @@ PIPELINE_STATUS: Dict[str, Any] = {
     "finalOutputCount": 0,
     "jobsPageLoadedCount": 0,
 }
-SYNC_STATUS: Dict[str, Any] = {
-    "lastPullAt": "",
-    "lastPushAt": "",
-    "lastError": "",
-    "lastAction": "",
-    "lastResult": "",
-}
-SYNC_CONFIG = source_sync_module.resolve_sync_config()
-SYNC_CONFIG_LOCK = threading.RLock()
 DESKTOP_LOCAL_DATA_STORE: LocalDataStore | None = None
 STARTUP_METRICS_LOCK = threading.RLock()
 DESKTOP_SESSION_ACTIVITY_AT = ""
+
+SYNC_CONFIG: Any = None
+_SYNC_SERVICE: SyncService | None = None
+_SYNC_SERVICE_DATA_DIR: Path | None = None
+_SYNC_SERVICE_LOCK = threading.RLock()
+_REGISTRY_SERVICE: RegistryService | None = None
+_REGISTRY_SERVICE_PATHS: tuple[Path, Path, Path] | None = None
+_REGISTRY_SERVICE_LOCK = threading.RLock()
+_DISCOVERY_SERVICE: DiscoveryService | None = None
+_DISCOVERY_SERVICE_PATHS: tuple[Path, Path, Path, Path] | None = None
+_DISCOVERY_SERVICE_LOCK = threading.RLock()
+_PIPELINE_RUNTIME = PipelineRuntime()
+_PIPELINE_SERVICE: PipelineService | None = None
+_PIPELINE_SERVICE_LOCK = threading.RLock()
+
+
+class _RunHistoryAdapter:
+    def append(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        return append_run_history(row)
+
+    def upsert(self, entry: Dict[str, Any], *, dedupe_fields: Tuple[str, ...]) -> Dict[str, Any]:
+        return upsert_run_history(entry, dedupe_fields=dedupe_fields)
+
+    def load(self) -> List[Dict[str, Any]]:
+        return load_run_history()
+
+    def prune_started_rows_for_type(self, entry_type: str, finished_at: str) -> None:
+        prune_started_rows_for_type(entry_type, finished_at=finished_at)
+
+
+def _get_sync_service() -> SyncService:
+    global _SYNC_SERVICE, _SYNC_SERVICE_DATA_DIR
+    data_dir = Path(RUNTIME_CONFIG.data_dir).resolve()
+    with _SYNC_SERVICE_LOCK:
+        if _SYNC_SERVICE is not None and _SYNC_SERVICE_DATA_DIR == data_dir:
+            return _SYNC_SERVICE
+        _SYNC_SERVICE_DATA_DIR = data_dir
+        _SYNC_SERVICE = SyncService(
+            data_dir=data_dir,
+            source_sync=source_sync_module,
+            bridge_log=bridge_log,
+            load_state=load_state,
+            persist_state=persist_state,
+            summarize_state=summarize_state,
+            run_history=_RunHistoryAdapter(),
+            ops_state_lock=OPS_STATE_LOCK,
+            get_security_defaults=get_security_defaults,
+            sync_state=SyncState(data_dir=data_dir),
+        )
+        return _SYNC_SERVICE
+
+
+def _get_sync_state() -> SyncState:
+    return _get_sync_service()._sync_state  # noqa: SLF001
+
+
+def _get_registry_service() -> RegistryService:
+    global _REGISTRY_SERVICE, _REGISTRY_SERVICE_PATHS
+    current_paths = (Path(ACTIVE_PATH), Path(PENDING_PATH), Path(REJECTED_PATH))
+    with _REGISTRY_SERVICE_LOCK:
+        if _REGISTRY_SERVICE is None or _REGISTRY_SERVICE_PATHS != current_paths:
+            _REGISTRY_SERVICE_PATHS = current_paths
+            _REGISTRY_SERVICE = RegistryService(
+                paths=RegistryPaths(active=ACTIVE_PATH, pending=PENDING_PATH, rejected=REJECTED_PATH),
+                default_active=[dict(row) for row in DEFAULT_STUDIO_SOURCE_REGISTRY],
+                normalize_manual_static=normalize_manual_static_studio_fields,
+            )
+        return _REGISTRY_SERVICE
+
+
+def _get_discovery_service() -> DiscoveryService:
+    global _DISCOVERY_SERVICE, _DISCOVERY_SERVICE_PATHS
+    current_paths = (Path(DISCOVERY_REPORT_PATH), Path(DISCOVERY_CANDIDATES_PATH), Path(PENDING_PATH), Path(DISCOVERY_LOG_PATH))
+    with _DISCOVERY_SERVICE_LOCK:
+        if _DISCOVERY_SERVICE is None or _DISCOVERY_SERVICE_PATHS != current_paths:
+            _DISCOVERY_SERVICE_PATHS = current_paths
+            _DISCOVERY_SERVICE = DiscoveryService(
+                paths=DiscoveryPaths(
+                    report=DISCOVERY_REPORT_PATH,
+                    candidates=DISCOVERY_CANDIDATES_PATH,
+                    pending=PENDING_PATH,
+                    log=DISCOVERY_LOG_PATH,
+                ),
+                deps=DiscoveryDeps(
+                    schema_version=SCHEMA_VERSION,
+                    now_iso=now_iso,
+                    now_utc=now_utc,
+                    parse_iso=parse_iso,
+                    pid_is_running=pid_is_running,
+                    bridge_log=bridge_log,
+                    load_json_object=load_json_object,
+                    save_json_atomic=save_json_atomic,
+                    run_background_script=run_background_script,
+                    append_run_history=append_run_history,
+                    normalize_discovery_report_contract=normalize_discovery_report_contract,
+                    load_sync_runtime_state=load_sync_runtime_state,
+                    maybe_trigger_auto_sync_push=_maybe_trigger_auto_sync_push,
+                    mark_discovery_sync_finished=_mark_discovery_sync_finished,
+                ),
+            )
+        return _DISCOVERY_SERVICE
+
+
+def _get_pipeline_service() -> PipelineService:
+    global _PIPELINE_SERVICE
+    with _PIPELINE_SERVICE_LOCK:
+        if _PIPELINE_SERVICE is None:
+            _PIPELINE_SERVICE = PipelineService(
+                pipeline_state_lock=PIPELINE_STATE_LOCK,
+                pipeline_status=PIPELINE_STATUS,
+                runtime=_PIPELINE_RUNTIME,
+                bridge_log=bridge_log,
+                now_iso=now_iso,
+                parse_iso=parse_iso,
+                append_run_history=append_run_history,
+                upsert_run_history=upsert_run_history,
+                task_running_from_state=task_running_from_state,
+                sync_task_running=sync_task_running,
+                current_fetch_output_count=_current_fetch_output_count,
+                wait_for_report_completion=_wait_for_report_completion,
+                wait_for_sync_completion=_wait_for_sync_completion,
+                discovery_report_path=DISCOVERY_REPORT_PATH,
+                fetch_report_path=JOBS_FETCH_REPORT_PATH,
+                trigger_discovery_task=trigger_discovery_task,
+                start_fetcher_task=start_fetcher_task,
+                start_sync_task=start_sync_task,
+                get_app_version=get_app_version,
+            )
+        return _PIPELINE_SERVICE
 
 
 @dataclass
@@ -164,6 +287,7 @@ def resolve_runtime_config(
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--data-dir", default=None)
+    parser.add_argument("--desktop-mode", action="store_true", default=False)
     parser.add_argument("--log-format", choices=("human", "jsonl"), default=None)
     parser.add_argument("--log-level", choices=("info", "debug"), default=None)
     parser.add_argument("--quiet-requests", action="store_true", default=None)
@@ -183,7 +307,9 @@ def resolve_runtime_config(
         if str(env_map.get("BALUFFO_BRIDGE_QUIET_REQUESTS") or "").strip()
         else bridge_defaults["quiet_requests"]
     )
-    desktop_mode = str(env_map.get("BALUFFO_DESKTOP_MODE") or "").strip().lower() in {"1", "true", "yes", "on"}
+    desktop_mode = bool(args.desktop_mode) or (
+        str(env_map.get("BALUFFO_DESKTOP_MODE") or "").strip().lower() in {"1", "true", "yes", "on"}
+    )
     return RuntimeConfig(
         root=ROOT,
         data_dir=data_dir,
@@ -228,6 +354,8 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
     global TASKS_CONFIG_PATH, SYNC_CONFIG_PATH, SYNC_RUNTIME_PATH, STARTUP_METRICS_PATH
     global DESKTOP_LOCAL_DATA_STORE, DESKTOP_SESSION_ACTIVITY_AT
+    global _REGISTRY_SERVICE, _REGISTRY_SERVICE_PATHS
+    global _DISCOVERY_SERVICE, _DISCOVERY_SERVICE_PATHS
 
     RUNTIME_CONFIG = config
     data_dir = Path(config.data_dir).resolve()
@@ -255,8 +383,17 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     source_registry_module.REJECTED_PATH = REJECTED_PATH
     source_registry_module.DISCOVERY_REPORT_PATH = DISCOVERY_REPORT_PATH
     source_registry_module.APPROVAL_STATE_PATH = APPROVAL_STATE_PATH
-    DESKTOP_LOCAL_DATA_STORE = LocalDataStore(LocalDataPaths.from_data_dir(data_dir)) if config.desktop_mode else None
-    DESKTOP_SESSION_ACTIVITY_AT = now_iso() if config.desktop_mode else ""
+    # Desktop local-data APIs are safe to keep available on localhost and are required
+    # for the packaged desktop experience. Treat the LocalDataStore as the feature flag,
+    # rather than relying exclusively on environment toggles.
+    DESKTOP_LOCAL_DATA_STORE = LocalDataStore(LocalDataPaths.from_data_dir(data_dir))
+    DESKTOP_SESSION_ACTIVITY_AT = now_iso()
+    with _REGISTRY_SERVICE_LOCK:
+        _REGISTRY_SERVICE = None
+        _REGISTRY_SERVICE_PATHS = None
+    with _DISCOVERY_SERVICE_LOCK:
+        _DISCOVERY_SERVICE = None
+        _DISCOVERY_SERVICE_PATHS = None
 
 
 def startup_banner(config: RuntimeConfig) -> None:
@@ -292,10 +429,7 @@ def _normalize_sync_settings(payload: Optional[Dict[str, Any]] = None) -> Dict[s
 
 
 def load_saved_sync_settings() -> Dict[str, Any]:
-    raw = load_json_object(SYNC_CONFIG_PATH, {})
-    if isinstance(raw, dict) and "enabled" in raw:
-        return _normalize_sync_settings(raw)
-    return {}
+    return _get_sync_service().load_saved_sync_settings()
 
 
 def append_startup_metric(event: str, payload: Optional[Dict[str, Any]] = None) -> None:
@@ -334,14 +468,13 @@ def read_startup_metrics(limit: int = 200) -> List[Dict[str, Any]]:
 
 
 def resolve_effective_sync_config() -> source_sync_module.SyncConfig:
-    return source_sync_module.resolve_sync_config(settings=load_saved_sync_settings(), env=os.environ)
+    return _get_sync_service()._resolve_effective_sync_config()  # noqa: SLF001
 
 
 def refresh_sync_config() -> source_sync_module.SyncConfig:
     global SYNC_CONFIG
-    with SYNC_CONFIG_LOCK:
-        SYNC_CONFIG = resolve_effective_sync_config()
-        return SYNC_CONFIG
+    SYNC_CONFIG = _get_sync_service().refresh_sync_config()
+    return SYNC_CONFIG
 
 
 def _mask_sync_token(token: str) -> str:
@@ -352,51 +485,23 @@ def _mask_sync_token(token: str) -> str:
 
 
 def get_saved_sync_config_payload() -> Dict[str, Any]:
-    settings = load_saved_sync_settings()
-    if "enabled" in settings:
-        return {"enabled": bool(settings.get("enabled"))}
-    return {"enabled": bool(source_sync_module.config_status(refresh_sync_config()).get("enabled"))}
+    return _get_sync_service().get_saved_sync_config_payload()
 
 
 def update_saved_sync_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
-    normalized = _normalize_sync_settings(payload)
-    save_json_atomic(SYNC_CONFIG_PATH, normalized)
-    refresh_sync_config()
-    return normalized
+    return _get_sync_service().update_saved_sync_settings(payload)
 
 
 def load_sync_runtime_state() -> Dict[str, Any]:
-    payload = load_json_object(SYNC_RUNTIME_PATH, {})
-    raw = payload if isinstance(payload, dict) else {}
-    return {
-        "lastPullAt": str(raw.get("lastPullAt") or ""),
-        "lastPushAt": str(raw.get("lastPushAt") or ""),
-        "lastError": str(raw.get("lastError") or ""),
-        "lastAction": str(raw.get("lastAction") or ""),
-        "lastResult": str(raw.get("lastResult") or ""),
-        "lastDiscoverySyncFinishedAt": str(raw.get("lastDiscoverySyncFinishedAt") or ""),
-    }
+    return _get_sync_state().load_sync_runtime_state()
 
 
 def save_sync_runtime_state(payload: Dict[str, Any]) -> Dict[str, Any]:
-    normalized = load_sync_runtime_state()
-    normalized.update({key: value for key, value in payload.items() if key in normalized})
-    save_json_atomic(SYNC_RUNTIME_PATH, normalized)
-    return normalized
+    return _get_sync_state().save_sync_runtime_state(payload)
 
 
 def test_sync_config() -> Dict[str, Any]:
-    cfg = refresh_sync_config()
-    guard = _sync_guard()
-    if guard:
-        return guard
-    remote = source_sync_module.read_remote_snapshot(cfg)
-    return {
-        "ok": True,
-        "remoteFound": bool(remote.get("exists")),
-        "remoteSha": str(remote.get("sha") or ""),
-        "message": "GitHub sync connection verified.",
-    }
+    return _get_sync_service().test_sync_config()
 
 
 def read_json_from_request(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
@@ -412,54 +517,23 @@ def read_json_from_request(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
 
 
 def ensure_active_registry() -> List[Dict[str, Any]]:
-    active = load_json_array(ACTIVE_PATH, [])
-    if active:
-        return active
-    active = [dict(row) for row in DEFAULT_STUDIO_SOURCE_REGISTRY]
-    save_json_atomic(ACTIVE_PATH, active)
-    return active
+    return _get_registry_service().ensure_active_registry()
 
 
 def normalize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
-    # Precedence is explicit: active > pending > rejected.
-    seen = set()
-    normalized: Dict[str, List[Dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
-    for bucket in ("active", "pending", "rejected"):
-        for row in state.get(bucket, []):
-            if not isinstance(row, dict):
-                continue
-            if str(row.get("adapter") or "").strip().lower() == "static":
-                row = normalize_manual_static_studio_fields(row)
-            key = source_identity(row)
-            if key in seen:
-                continue
-            seen.add(key)
-            normalized[bucket].append(ensure_source_id(row))
-    return normalized
+    return _get_registry_service().normalize_state(state)
 
 
 def load_state() -> Dict[str, List[Dict[str, Any]]]:
-    return normalize_state({
-        "active": ensure_active_registry(),
-        "pending": load_json_array(PENDING_PATH, []),
-        "rejected": load_json_array(REJECTED_PATH, []),
-    })
+    return _get_registry_service().load_state()
 
 
 def summarize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, int]:
-    return {
-        "activeCount": len(state["active"]),
-        "pendingCount": len(state["pending"]),
-        "rejectedCount": len(state["rejected"]),
-    }
+    return RegistryService.summarize_state(state)
 
 
 def persist_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
-    normalized = normalize_state(state)
-    save_json_atomic(ACTIVE_PATH, normalized["active"])
-    save_json_atomic(PENDING_PATH, normalized["pending"])
-    save_json_atomic(REJECTED_PATH, normalized["rejected"])
-    return normalized
+    return _get_registry_service().persist_state(state)
 
 
 def persist_state_and_auto_sync(state: Dict[str, List[Dict[str, Any]]], *, reason: str) -> Dict[str, List[Dict[str, Any]]]:
@@ -469,15 +543,7 @@ def persist_state_and_auto_sync(state: Dict[str, List[Dict[str, Any]]], *, reaso
 
 
 def move_entries(pending: List[Dict[str, Any]], selected_ids: List[str]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    selected = set(str(item) for item in selected_ids)
-    moved: List[Dict[str, Any]] = []
-    remaining: List[Dict[str, Any]] = []
-    for row in pending:
-        if source_identity(row) in selected:
-            moved.append(row)
-        else:
-            remaining.append(row)
-    return moved, remaining
+    return RegistryService.move_entries(pending, selected_ids)
 
 
 def infer_studio_name_from_host(url: str) -> str:
@@ -2435,7 +2501,7 @@ def compute_ops_health() -> Dict[str, Any]:
 
     return {
         "service": "baluffo-bridge",
-        "desktopMode": bool(RUNTIME_CONFIG.desktop_mode),
+        "desktopMode": bool(DESKTOP_LOCAL_DATA_STORE is not None),
         "generatedAt": now_iso(),
         "desktopLastActivityAt": str(DESKTOP_SESSION_ACTIVITY_AT or ""),
         "status": severity,
@@ -2469,129 +2535,38 @@ def compute_fetcher_metrics(window_runs: int = 20) -> Dict[str, Any]:
 
 
 def _set_sync_status(*, action: str = "", result: str = "", error: str = "", pulled: bool = False, pushed: bool = False) -> None:
-    with SYNC_STATE_LOCK:
-        runtime_state = load_sync_runtime_state()
-        if action:
-            SYNC_STATUS["lastAction"] = str(action)
-            runtime_state["lastAction"] = str(action)
-        if result:
-            SYNC_STATUS["lastResult"] = str(result)
-            runtime_state["lastResult"] = str(result)
-        if error:
-            SYNC_STATUS["lastError"] = str(error)
-            runtime_state["lastError"] = str(error)
-        elif action:
-            SYNC_STATUS["lastError"] = ""
-            runtime_state["lastError"] = ""
-        stamp = now_iso()
-        if pulled:
-            SYNC_STATUS["lastPullAt"] = stamp
-            runtime_state["lastPullAt"] = stamp
-        if pushed:
-            SYNC_STATUS["lastPushAt"] = stamp
-            runtime_state["lastPushAt"] = stamp
-        save_sync_runtime_state(runtime_state)
+    _get_sync_state().set_sync_status(
+        action=action,
+        result=result,
+        error=error,
+        pulled=bool(pulled),
+        pushed=bool(pushed),
+    )
 
 
 def get_sync_status_payload() -> Dict[str, Any]:
-    cfg = source_sync_module.config_status(refresh_sync_config())
-    with SYNC_STATE_LOCK:
-        runtime_state = {**dict(SYNC_STATUS), **load_sync_runtime_state()}
-    return {
-        "ok": True,
-        "appVersion": get_app_version(),
-        "config": cfg,
-        "savedConfig": get_saved_sync_config_payload(),
-        "runtime": runtime_state,
-    }
+    return _get_sync_service().get_sync_status_payload()
 
 
 def _sync_guard() -> Optional[Dict[str, Any]]:
-    cfg = source_sync_module.config_status(refresh_sync_config())
-    if not cfg.get("enabled"):
-        return {"ok": False, "error": "Sync is disabled", "config": cfg}
-    if not cfg.get("ready"):
-        return {"ok": False, "error": "Sync is not configured", "config": cfg}
-    return None
+    return _get_sync_service()._sync_guard()  # noqa: SLF001
 
 
 def sync_pull_sources() -> Dict[str, Any]:
-    guard = _sync_guard()
-    if guard:
-        return guard
-    local_state = load_state()
-    result = source_sync_module.pull_and_merge_sources(SYNC_CONFIG, local_state)
-    merged_state = result.get("mergedState") if isinstance(result.get("mergedState"), dict) else local_state
-    if bool(result.get("changed")):
-        persist_state(merged_state)
-    _set_sync_status(
-        action="pull",
-        result="ok",
-        pulled=True,
-        error="",
-    )
-    summary = summarize_state(load_state())
-    return {
-        "ok": True,
-        "changed": bool(result.get("changed")),
-        "remoteFound": bool(result.get("remoteFound")),
-        "remoteSha": str(result.get("remoteSha") or ""),
-        "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
-        "summary": summary,
-    }
+    return _get_sync_service().sync_pull_sources()
 
 
 def sync_push_sources() -> Dict[str, Any]:
-    guard = _sync_guard()
-    if guard:
-        return guard
-    state = load_state()
-    result = source_sync_module.push_sources_snapshot(SYNC_CONFIG, state)
-    snapshot = result.get("snapshot") if isinstance(result.get("snapshot"), dict) else {}
-    _set_sync_status(
-        action="push",
-        result="ok",
-        pushed=True,
-        error="",
-    )
-    return {
-        "ok": True,
-        "remoteSha": str(result.get("remoteSha") or ""),
-        "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
-        "counts": {
-            "active": len(snapshot.get("active") or []),
-            "pending": len(snapshot.get("pending") or []),
-            "rejected": len(snapshot.get("rejected") or []),
-        },
-    }
+    return _get_sync_service().sync_push_sources()
 
 
 def startup_sync_pull() -> None:
-    cfg = source_sync_module.config_status(refresh_sync_config())
-    if not cfg.get("enabled"):
-        return
-    if not cfg.get("ready"):
-        missing = ",".join(cfg.get("missing") or [])
-        bridge_log("warn", "sync_startup_skipped", reason="misconfigured", missing=missing)
-        return
-    try:
-        result = sync_pull_sources()
-        bridge_log(
-            "info",
-            "sync_startup_pull_done",
-            changed=bool(result.get("changed")),
-            remoteFound=bool(result.get("remoteFound")),
-            active=int((result.get("summary") or {}).get("activeCount") or 0),
-            pending=int((result.get("summary") or {}).get("pendingCount") or 0),
-            rejected=int((result.get("summary") or {}).get("rejectedCount") or 0),
-        )
-    except Exception as exc:  # noqa: BLE001
-        _set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
-        bridge_log("warn", "sync_startup_pull_failed", error=str(exc))
+    _get_sync_service().startup_sync_pull()
 
 
 def _reconcile_sync_history_locked() -> None:
     history = load_run_history()
+    active_runs = SyncState.get_active_sync_runs()
     next_rows: List[Dict[str, Any]] = []
     changed = False
     for row in history:
@@ -2605,7 +2580,7 @@ def _reconcile_sync_history_locked() -> None:
             next_rows.append(row)
             continue
         run_id = str(row.get("id") or "").strip()
-        if run_id and run_id in ACTIVE_SYNC_RUNS:
+        if run_id and run_id in active_runs:
             next_rows.append(row)
             continue
         changed = True
@@ -2616,41 +2591,16 @@ def _reconcile_sync_history_locked() -> None:
 def sync_task_running() -> bool:
     with OPS_STATE_LOCK:
         _reconcile_sync_history_locked()
-        history = load_run_history()
-        return any(
-            str(row.get("type") or "").strip().lower() == "sync"
-            and str(row.get("status") or "").strip().lower() == "started"
-            and not str(row.get("finishedAt") or "").strip()
-            for row in history
-        )
+    return _get_sync_service().sync_task_running()
 
 
 def wait_for_sync_tasks(timeout_s: float = 5.0) -> None:
-    deadline = datetime.now(timezone.utc).timestamp() + max(0.0, float(timeout_s))
-    while True:
-        with OPS_STATE_LOCK:
-            items = list(ACTIVE_SYNC_THREADS.items())
-        pending = False
-        for run_id, worker in items:
-            remaining = max(0.0, deadline - datetime.now(timezone.utc).timestamp())
-            is_alive = getattr(worker, "is_alive", None)
-            join = getattr(worker, "join", None)
-            alive = bool(is_alive()) if callable(is_alive) else False
-            if alive and callable(join) and remaining > 0.0:
-                join(timeout=min(0.2, remaining))
-                alive = bool(is_alive()) if callable(is_alive) else False
-            if alive:
-                pending = True
-                continue
-            with OPS_STATE_LOCK:
-                ACTIVE_SYNC_THREADS.pop(run_id, None)
-        if not pending or datetime.now(timezone.utc).timestamp() >= deadline:
-            return
+    _get_sync_service().wait_for_sync_tasks(timeout_s=float(timeout_s))
 
 
 def _mark_discovery_sync_finished(finished_at: str) -> None:
     with SYNC_STATE_LOCK:
-        save_sync_runtime_state({"lastDiscoverySyncFinishedAt": str(finished_at or "")})
+        _get_sync_state().save_sync_runtime_state({"lastDiscoverySyncFinishedAt": str(finished_at or "")})
 
 
 def _maybe_trigger_auto_sync_push(reason: str) -> bool:
@@ -2664,28 +2614,7 @@ def _maybe_trigger_auto_sync_push(reason: str) -> bool:
 
 
 def _watch_discovery_run_for_auto_sync(run_id: str, pid: int, started_at: str) -> None:
-    started_dt = parse_iso(started_at) or now_utc()
-    while pid_is_running(pid):
-        threading.Event().wait(0.8)
-    try:
-        report = normalize_discovery_report_contract(load_json_object(DISCOVERY_REPORT_PATH, {}))
-        finished_at = str(report.get("finishedAt") or "")
-        finished_dt = parse_iso(finished_at)
-        if not finished_dt or finished_dt < started_dt:
-            return
-        summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
-        queued = int(summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0)
-        if queued <= 0:
-            _mark_discovery_sync_finished(finished_at)
-            return
-        runtime_state = load_sync_runtime_state()
-        if str(runtime_state.get("lastDiscoverySyncFinishedAt") or "") == finished_at:
-            return
-        if _maybe_trigger_auto_sync_push("discovery_completed"):
-            _mark_discovery_sync_finished(finished_at)
-            bridge_log("info", "sync_auto_push_started", runId=run_id, reason="discovery_completed", queued=queued)
-    except Exception as exc:  # noqa: BLE001
-        bridge_log("warn", "sync_auto_push_skipped", runId=run_id, reason="discovery_completed", error=str(exc))
+    _get_discovery_service().watch_discovery_run_for_auto_sync(run_id, pid, started_at)
 
 
 def _run_sync_task_worker(run_id: str, action: str, started_at: str, *, reason: str = "", automatic: bool = False) -> None:
@@ -2730,21 +2659,23 @@ def _run_sync_task_worker(run_id: str, action: str, started_at: str, *, reason: 
         summary["error"] = str(exc)
         _set_sync_status(action=action, result="error", error=str(exc))
     finally:
-        with OPS_STATE_LOCK:
-            ACTIVE_SYNC_RUNS.discard(str(run_id or ""))
-            ACTIVE_SYNC_THREADS.pop(str(run_id or ""), None)
+        SyncState.remove_active_sync_run(str(run_id or ""))
+        SyncState.remove_active_sync_thread(str(run_id or ""))
     finished_dt = now_utc()
     duration_ms = int(max(0.0, (finished_dt - started_dt).total_seconds() * 1000))
     prune_started_rows_for_type("sync", finished_at=finished_dt.isoformat())
-    upsert_run_history({
-        "id": run_id,
-        "type": "sync",
-        "status": status,
-        "startedAt": started_at,
-        "finishedAt": finished_dt.isoformat(),
-        "durationMs": duration_ms,
-        "summary": summary,
-    }, dedupe_fields=("type", "finishedAt"))
+    upsert_run_history(
+        {
+            "id": run_id,
+            "type": "sync",
+            "status": status,
+            "startedAt": started_at,
+            "finishedAt": finished_dt.isoformat(),
+            "durationMs": duration_ms,
+            "summary": summary,
+        },
+        dedupe_fields=("type", "finishedAt"),
+    )
     bridge_log(
         "info" if status != "error" else "error",
         "sync_task_finished",
@@ -2759,128 +2690,13 @@ def _run_sync_task_worker(run_id: str, action: str, started_at: str, *, reason: 
 
 
 def start_sync_task(action: str, *, reason: str = "", automatic: bool = False) -> Dict[str, Any]:
-    normalized_action = str(action or "").strip().lower()
-    if normalized_action not in {"pull", "push"}:
-        raise ValueError("Invalid sync action")
-    if sync_task_running():
-        return {"started": False, "task": "source_sync", "action": normalized_action, "error": "Sync task already running"}
-    run_id = f"sync_{uuid.uuid4().hex[:10]}"
-    started_at = now_iso()
-    append_run_history({
-        "id": run_id,
-        "type": "sync",
-        "status": "started",
-        "startedAt": started_at,
-        "finishedAt": "",
-        "durationMs": 0,
-        "summary": {"action": normalized_action, "reason": str(reason or ""), "automatic": bool(automatic)},
-    })
-    with OPS_STATE_LOCK:
-        ACTIVE_SYNC_RUNS.add(run_id)
-    worker = threading.Thread(
-        target=_run_sync_task_worker,
-        args=(run_id, normalized_action, started_at),
-        kwargs={"reason": str(reason or ""), "automatic": bool(automatic)},
-        name=f"sync-task-{normalized_action}-{run_id}",
-        daemon=True,
-    )
-    with OPS_STATE_LOCK:
-        ACTIVE_SYNC_THREADS[run_id] = worker
-    worker.start()
-    bridge_log("info", "sync_task_started", runId=run_id, action=normalized_action, reason=reason, automatic=automatic)
-    return {"started": True, "runId": run_id, "task": "source_sync", "action": normalized_action, "automatic": bool(automatic), "reason": str(reason or "")}
+    return _get_sync_service().start_sync_task(action, reason=reason, automatic=bool(automatic))
 
 
 def trigger_discovery_task(*, route_name: str, enable_auto_sync_watch: bool = True) -> Tuple[int, Dict[str, Any]]:
-    run_id = f"discovery_{uuid.uuid4().hex[:10]}"
-    started_at = now_iso()
-    save_json_atomic(
-        DISCOVERY_REPORT_PATH,
-        {
-            "schemaVersion": SCHEMA_VERSION,
-            "mode": "dynamic",
-            "startedAt": started_at,
-            "finishedAt": "",
-            "summary": {
-                "foundEndpointCount": 0,
-                "probedCandidateCount": 0,
-                "queuedCandidateCount": 0,
-                "failedProbeCount": 0,
-                "skippedDuplicateCount": 0,
-                "skippedLowEvidenceProbeCount": 0,
-            },
-            "candidates": [],
-            "failures": [],
-            "topFailures": [],
-            "outputs": {
-                "report": str(DISCOVERY_REPORT_PATH),
-                "candidates": str(DISCOVERY_CANDIDATES_PATH),
-                "pending": str(PENDING_PATH),
-            },
-        },
+    return _get_discovery_service().trigger_discovery_task(
+        route_name=route_name, enable_auto_sync_watch=enable_auto_sync_watch
     )
-    DISCOVERY_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DISCOVERY_LOG_PATH.write_text(f"[{started_at}] Launching source discovery task...\n", encoding="utf-8")
-    append_run_history({
-        "id": run_id,
-        "type": "discovery",
-        "status": "started",
-        "startedAt": started_at,
-        "finishedAt": "",
-        "durationMs": 0,
-        "summary": {},
-    })
-    try:
-        pid = run_background_script("source_discovery.py", ["--mode", "dynamic"])
-    except Exception as exc:  # noqa: BLE001
-        save_json_atomic(
-            DISCOVERY_REPORT_PATH,
-            {
-                "schemaVersion": SCHEMA_VERSION,
-                "mode": "dynamic",
-                "startedAt": started_at,
-                "finishedAt": now_iso(),
-                "summary": {
-                    "foundEndpointCount": 0,
-                    "probedCandidateCount": 0,
-                    "queuedCandidateCount": 0,
-                    "failedProbeCount": 1,
-                },
-                "candidates": [],
-                "failures": [{"name": "source_discovery.py", "adapter": "bridge", "error": str(exc), "stage": "launch"}],
-                "topFailures": [{"key": "bridge:launch", "count": 1}],
-                "outputs": {
-                    "report": str(DISCOVERY_REPORT_PATH),
-                    "candidates": str(DISCOVERY_CANDIDATES_PATH),
-                    "pending": str(PENDING_PATH),
-                },
-            },
-        )
-        try:
-            with DISCOVERY_LOG_PATH.open("a", encoding="utf-8") as handle:
-                handle.write(f"[{now_iso()}] Launch failed: {str(exc)}\n")
-        except OSError:
-            pass
-        bridge_log("error", "task_start_failed", runId=run_id, task="source_discovery", mode="dynamic", route=route_name, error=str(exc))
-        return 500, {"started": False, "task": "source_discovery", "mode": "dynamic", "route": route_name, "error": str(exc)}
-    if enable_auto_sync_watch:
-        watcher = threading.Thread(
-            target=_watch_discovery_run_for_auto_sync,
-            args=(run_id, pid, started_at),
-            name=f"discovery-sync-watch-{run_id}",
-            daemon=True,
-        )
-        watcher.start()
-    bridge_log("info", "task_started", runId=run_id, task="source_discovery", mode="dynamic", route=route_name, pid=pid)
-    return 200, {
-        "started": True,
-        "runId": run_id,
-        "task": "source_discovery",
-        "mode": "dynamic",
-        "route": route_name,
-        "startedAt": started_at,
-        "pid": int(pid),
-    }
 
 
 def _current_fetch_output_count() -> int:
@@ -2948,13 +2764,7 @@ def _pipeline_set_completed(*, status: str, final_output_count: int = 0, error: 
 
 
 def get_jobs_pipeline_status_payload() -> Dict[str, Any]:
-    with PIPELINE_STATE_LOCK:
-        payload = dict(PIPELINE_STATUS)
-        progress = payload.get("progress")
-        payload["progress"] = dict(progress) if isinstance(progress, dict) else _pipeline_progress(0, 3, "Idle")
-        payload["active"] = bool(payload.get("active"))
-        payload["appVersion"] = get_app_version()
-        return payload
+    return _get_pipeline_service().get_status_payload()
 
 
 def _wait_for_report_completion(
@@ -3043,118 +2853,16 @@ def start_fetcher_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, An
 
 
 def _run_jobs_pipeline_worker(run_id: str) -> None:
-    try:
-        _pipeline_mark_stage(stage="discovery", current_step=1, total_steps=3, label="Running discovery...")
-        discovery_status, discovery_result = trigger_discovery_task(
-            route_name="/tasks/run-jobs-pipeline",
-            enable_auto_sync_watch=False,
-        )
-        if int(discovery_status) >= 300 or not bool(discovery_result.get("started")):
-            raise RuntimeError(str(discovery_result.get("error") or "discovery start failed"))
-        discovery_started_at = str(discovery_result.get("startedAt") or now_iso())
-        _wait_for_report_completion(
-            report_path=DISCOVERY_REPORT_PATH,
-            started_at=discovery_started_at,
-            timeout_s=900.0,
-            report_name="discovery report",
-        )
-
-        _pipeline_mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
-        fetch_result = start_fetcher_task({"preset": "default"})
-        fetch_started_at = str(fetch_result.get("startedAt") or now_iso())
-        _wait_for_report_completion(
-            report_path=JOBS_FETCH_REPORT_PATH,
-            started_at=fetch_started_at,
-            timeout_s=1200.0,
-            report_name="fetch report",
-        )
-
-        _pipeline_mark_stage(stage="sync_push", current_step=3, total_steps=3, label="Running sync push...")
-        sync_result = start_sync_task("push", reason="jobs_pipeline", automatic=False)
-        if not bool(sync_result.get("started")):
-            raise RuntimeError(str(sync_result.get("error") or "sync push failed to start"))
-        sync_row = _wait_for_sync_completion(str(sync_result.get("runId") or ""), timeout_s=900.0)
-        sync_status = str(sync_row.get("status") or "").strip().lower()
-        if sync_status == "error":
-            sync_error = str((sync_row.get("summary") or {}).get("error") or "sync push failed")
-            raise RuntimeError(sync_error)
-
-        final_output_count = _current_fetch_output_count()
-        _pipeline_set_completed(status="ok", final_output_count=final_output_count)
-    except Exception as exc:  # noqa: BLE001
-        bridge_log("error", "jobs_pipeline_failed", runId=run_id, error=str(exc))
-        _pipeline_set_completed(status="error", final_output_count=_current_fetch_output_count(), error=str(exc))
+    # Legacy worker retained for backward compatibility; PipelineService owns pipeline execution.
+    return
 
 
 def start_jobs_pipeline_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    global ACTIVE_PIPELINE_RUN_ID, ACTIVE_PIPELINE_THREAD
-    with PIPELINE_STATE_LOCK:
-        if bool(PIPELINE_STATUS.get("active")) and str(PIPELINE_STATUS.get("runId") or ""):
-            return {
-                "started": False,
-                "error": "Jobs pipeline already running",
-                "runId": str(PIPELINE_STATUS.get("runId") or ""),
-                "stage": str(PIPELINE_STATUS.get("stage") or "running"),
-            }
-        if task_running_from_state("fetch") or task_running_from_state("discovery") or sync_task_running():
-            return {
-                "started": False,
-                "error": "Another fetch/discovery/sync task is already running",
-                "runId": "",
-                "stage": "blocked",
-            }
-
-        run_id = f"pipeline_{uuid.uuid4().hex[:10]}"
-        started_at = now_iso()
-        jobs_page_loaded_count = int((payload or {}).get("jobsPageLoadedCount") or 0)
-        baseline_output_count = _current_fetch_output_count()
-        PIPELINE_STATUS.update({
-            "active": True,
-            "runId": run_id,
-            "stage": "starting",
-            "progress": _pipeline_progress(0, 3, "Starting pipeline..."),
-            "startedAt": started_at,
-            "finishedAt": "",
-            "error": "",
-            "updatesFound": False,
-            "refreshRecommended": False,
-            "baselineOutputCount": int(baseline_output_count),
-            "finalOutputCount": 0,
-            "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
-        })
-        append_run_history({
-            "id": run_id,
-            "type": "pipeline",
-            "status": "started",
-            "startedAt": started_at,
-            "finishedAt": "",
-            "durationMs": 0,
-            "summary": {
-                "baselineOutputCount": int(baseline_output_count),
-                "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
-                "stage": "starting",
-            },
-        })
-        worker = threading.Thread(
-            target=_run_jobs_pipeline_worker,
-            args=(run_id,),
-            name=f"jobs-pipeline-{run_id}",
-            daemon=True,
-        )
-        ACTIVE_PIPELINE_RUN_ID = run_id
-        ACTIVE_PIPELINE_THREAD = worker
-        worker.start()
-        bridge_log("info", "jobs_pipeline_started", runId=run_id, baseline=baseline_output_count, jobsPageLoadedCount=jobs_page_loaded_count)
-        return {
-            "started": True,
-            "runId": run_id,
-            "stage": "starting",
-            "progress": dict(PIPELINE_STATUS.get("progress") or {}),
-        }
+    return _get_pipeline_service().start_task(payload)
 
 
 def desktop_local_data_store() -> LocalDataStore:
-    if not RUNTIME_CONFIG.desktop_mode or DESKTOP_LOCAL_DATA_STORE is None:
+    if DESKTOP_LOCAL_DATA_STORE is None:
         raise RuntimeError("Desktop local data API is unavailable.")
     return DESKTOP_LOCAL_DATA_STORE
 
@@ -3215,170 +2923,10 @@ class Handler(BaseHTTPRequestHandler):
         path = self._route_path()
         query = self._route_query()
         mark_desktop_session_activity(path)
-        if path == "/desktop-local-data/session":
-            try:
-                self._send_json({"ok": True, "user": desktop_local_data_store().get_current_user(), "lastActivityAt": str(DESKTOP_SESSION_ACTIVITY_AT or "")})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/saved-jobs":
-            try:
-                uid = (query.get("uid") or [""])[0]
-                self._send_json({"ok": True, "rows": desktop_local_data_store().list_saved_jobs(uid)})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/saved-job-keys":
-            try:
-                uid = (query.get("uid") or [""])[0]
-                self._send_json({"ok": True, "keys": desktop_local_data_store().get_saved_job_keys(uid)})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/attachments":
-            try:
-                uid = (query.get("uid") or [""])[0]
-                job_key = (query.get("jobKey") or [""])[0]
-                self._send_json({"ok": True, "rows": desktop_local_data_store().list_attachments_for_job(uid, job_key)})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/attachments/content":
-            try:
-                uid = (query.get("uid") or [""])[0]
-                job_key = (query.get("jobKey") or [""])[0]
-                attachment_id = (query.get("attachmentId") or [""])[0]
-                download_flag = str((query.get("download") or [""])[0]).strip().lower()
-                body, content_type, filename = desktop_local_data_store().get_attachment_blob(uid, job_key, attachment_id)
-                self._send_bytes(
-                    body,
-                    content_type=content_type,
-                    filename=filename,
-                    disposition="attachment" if download_flag in {"1", "true", "yes"} else "inline",
-                )
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/backup/export-file":
-            try:
-                uid = (query.get("uid") or [""])[0]
-                include_files_raw = str((query.get("includeFiles") or ["0"])[0]).strip().lower()
-                include_files = include_files_raw in {"1", "true", "yes", "on"}
-                payload = desktop_local_data_store().export_profile_data(uid, include_files=include_files)
-                date_token = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                safe_uid = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(uid or "profile")).strip("_") or "profile"
-                if include_files:
-                    backup_json = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-                    buffer = io.BytesIO()
-                    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_STORED) as zf:
-                        zf.writestr("backup.json", backup_json)
-                    body = buffer.getvalue()
-                    filename = f"baluffo-backup-{safe_uid}-{date_token}.zip"
-                    self._send_bytes(body, content_type="application/zip", filename=filename, disposition="attachment")
-                else:
-                    body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-                    filename = f"baluffo-backup-{safe_uid}-{date_token}.json"
-                    self._send_bytes(body, content_type="application/json; charset=utf-8", filename=filename, disposition="attachment")
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/activity":
-            try:
-                uid = (query.get("uid") or [""])[0]
-                limit = int((query.get("limit") or ["300"])[0])
-                self._send_json({"ok": True, "rows": desktop_local_data_store().list_activity_for_user(uid, limit)})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/startup-metrics":
-            try:
-                limit_raw = (query.get("limit") or ["200"])[0]
-                try:
-                    limit = int(limit_raw)
-                except ValueError:
-                    limit = 200
-                self._send_json({"ok": True, "rows": read_startup_metrics(limit)})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/registry/active":
-            state = load_state()
-            self._send_json({"sources": state["active"], "summary": summarize_state(state)})
-            return
-        if path == "/registry/pending":
-            state = load_state()
-            self._send_json({"sources": state["pending"], "summary": summarize_state(state)})
-            return
-        if path == "/registry/rejected":
-            state = load_state()
-            self._send_json({"sources": state["rejected"], "summary": summarize_state(state)})
-            return
-        if path == "/discovery/report":
-            report = normalize_discovery_report_contract(load_json_object(DISCOVERY_REPORT_PATH, {}))
-            self._send_json(report or {"summary": {}, "candidates": [], "failures": []})
-            return
-        if path == "/discovery/log":
-            offset_raw = (query.get("offset") or ["0"])[0]
-            try:
-                offset = max(0, int(offset_raw))
-            except ValueError:
-                offset = 0
-            try:
-                text = DISCOVERY_LOG_PATH.read_text(encoding="utf-8")
-            except OSError:
-                text = ""
-            next_offset = min(len(text), offset)
-            chunk = text[offset:]
-            next_offset = len(text)
-            self._send_json({"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False})
-            return
-        if path == "/fetcher/log":
-            offset_raw = (query.get("offset") or ["0"])[0]
-            try:
-                offset = max(0, int(offset_raw))
-            except ValueError:
-                offset = 0
-            try:
-                text = FETCHER_LOG_PATH.read_text(encoding="utf-8")
-            except OSError:
-                text = ""
-            next_offset = min(len(text), offset)
-            chunk = text[offset:]
-            next_offset = len(text)
-            self._send_json({"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False})
-            return
-        if path == "/registry/summary":
-            state = load_state()
-            self._send_json({"summary": summarize_state(state)})
-            return
-        if path == "/ops/health":
-            self._send_json(compute_ops_health())
-            return
-        if path == "/ops/history":
-            limit_raw = (query.get("limit") or ["30"])[0]
-            try:
-                limit = max(1, min(200, int(limit_raw)))
-            except ValueError:
-                limit = 30
-            rows = sync_history_from_reports()
-            self._send_json({"runs": rows[-limit:], "count": len(rows)})
-            return
-        if path == "/ops/fetcher-metrics":
-            window_raw = (query.get("windowRuns") or ["20"])[0]
-            try:
-                window_runs = max(1, min(200, int(window_raw)))
-            except ValueError:
-                window_runs = 20
-            self._send_json(compute_fetcher_metrics(window_runs=window_runs))
-            return
-        if path == "/ops/fetch-report":
-            self._send_json(normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {})))
-            return
-        if path == "/sync/status":
-            self._send_json(get_sync_status_payload())
-            return
-        if path == "/tasks/run-jobs-pipeline-status":
-            self._send_json(get_jobs_pipeline_status_payload())
+        from src.bridge.routes.get_routes import handle_get
+        import sys
+
+        if handle_get(self, api=sys.modules[__name__], path=path, query=query):
             return
         self._send_json({"error": "Not found"}, status=404)
 
@@ -3386,297 +2934,24 @@ class Handler(BaseHTTPRequestHandler):
         path = self._route_path()
         payload = read_json_from_request(self)
         mark_desktop_session_activity(path)
-        if path == "/desktop-local-data/sign-in":
-            try:
-                user = desktop_local_data_store().sign_in(str(payload.get("name") or ""))
-                self._send_json({"ok": True, "user": user})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/sign-out":
-            try:
-                desktop_local_data_store().sign_out()
-                self._send_json({"ok": True})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/saved-jobs/save":
-            try:
-                job_key = desktop_local_data_store().save_job_for_user(
-                    str(payload.get("uid") or ""),
-                    payload.get("job") if isinstance(payload.get("job"), dict) else {},
-                    payload.get("options") if isinstance(payload.get("options"), dict) else {},
-                )
-                self._send_json({"ok": True, "jobKey": job_key})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/saved-jobs/remove":
-            try:
-                desktop_local_data_store().remove_saved_job_for_user(str(payload.get("uid") or ""), str(payload.get("jobKey") or ""))
-                self._send_json({"ok": True})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/saved-jobs/status":
-            try:
-                desktop_local_data_store().update_application_status(
-                    str(payload.get("uid") or ""),
-                    str(payload.get("jobKey") or ""),
-                    str(payload.get("status") or ""),
-                    payload.get("options") if isinstance(payload.get("options"), dict) else {},
-                )
-                self._send_json({"ok": True})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/saved-jobs/notes":
-            try:
-                desktop_local_data_store().update_job_notes(str(payload.get("uid") or ""), str(payload.get("jobKey") or ""), str(payload.get("notes") or ""))
-                self._send_json({"ok": True})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/attachments/add":
-            try:
-                attachment_id = desktop_local_data_store().add_attachment_for_job(
-                    str(payload.get("uid") or ""),
-                    str(payload.get("jobKey") or ""),
-                    payload.get("fileMeta") if isinstance(payload.get("fileMeta"), dict) else {},
-                    str(payload.get("blobDataUrl") or ""),
-                )
-                self._send_json({"ok": True, "attachmentId": attachment_id})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/attachments/delete":
-            try:
-                desktop_local_data_store().delete_attachment_for_job(str(payload.get("uid") or ""), str(payload.get("jobKey") or ""), str(payload.get("attachmentId") or ""))
-                self._send_json({"ok": True})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/backup/export":
-            try:
-                result = desktop_local_data_store().export_profile_data(str(payload.get("uid") or ""), bool((payload.get("options") or {}).get("includeFiles")))
-                self._send_json({"ok": True, "payload": result})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/backup/import":
-            try:
-                result = desktop_local_data_store().import_profile_data(str(payload.get("uid") or ""), payload.get("payload") if isinstance(payload.get("payload"), dict) else {})
-                self._send_json({"ok": True, "result": result})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/admin/overview":
-            try:
-                self._send_json({"ok": True, "overview": desktop_local_data_store().get_admin_overview(str(payload.get("pin") or ""))})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/admin/wipe":
-            try:
-                desktop_local_data_store().wipe_account_admin(str(payload.get("pin") or ""), str(payload.get("uid") or ""))
-                self._send_json({"ok": True, "user": desktop_local_data_store().get_current_user()})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        if path == "/desktop-local-data/startup-metric":
-            try:
-                event = str(payload.get("event") or "").strip() or "unknown"
-                details = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
-                append_startup_metric(event, details)
-                self._send_json({"ok": True})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
-            return
-        state = load_state()
+        from src.bridge.routes.post_routes import handle_post
+        import sys
+        import traceback
 
-        if path == "/sources/manual":
-            result = add_manual_source(str(payload.get("url") or ""))
-            self._send_json(result)
-            return
-
-        if path == "/discovery/check-source":
-            result = trigger_source_check(str(payload.get("sourceId") or ""))
-            status = 200 if bool(result.get("started")) else 400
-            self._send_json(result, status=status)
-            return
-
-        if path == "/registry/approve":
-            ids = payload.get("ids") if isinstance(payload.get("ids"), list) else []
-            moved, remaining = move_entries(state["pending"], [str(item) for item in ids])
-            for row in moved:
-                row["enabledByDefault"] = True
-            state["pending"] = remaining
-            state["active"] = unique_sources([*state["active"], *moved])
-            state = persist_state_and_auto_sync(state, reason="registry_approve")
-            approval = load_json_object(APPROVAL_STATE_PATH, {"approvedSinceLastRun": 0})
-            approval["approvedSinceLastRun"] = int(approval.get("approvedSinceLastRun") or 0) + len(moved)
-            save_json_atomic(APPROVAL_STATE_PATH, approval)
-            self._send_json({"approved": len(moved), "summary": summarize_state(state)})
-            return
-
-        if path == "/registry/reject":
-            ids = payload.get("ids") if isinstance(payload.get("ids"), list) else []
-            moved, remaining = move_entries(state["pending"], [str(item) for item in ids])
-            state["pending"] = remaining
-            state["rejected"] = unique_sources([*state["rejected"], *moved])
-            state = persist_state_and_auto_sync(state, reason="registry_reject")
-            self._send_json({"rejected": len(moved), "summary": summarize_state(state)})
-            return
-
-        if path == "/registry/rollback":
-            ids = payload.get("ids") if isinstance(payload.get("ids"), list) else []
-            selected = set(str(item) for item in ids)
-            moved: List[Dict[str, Any]] = []
-            active_remaining: List[Dict[str, Any]] = []
-            for row in state["active"]:
-                if source_identity(row) in selected:
-                    moved.append(row)
-                else:
-                    active_remaining.append(row)
-            state["active"] = active_remaining
-            state["pending"] = unique_sources([*state["pending"], *moved])
-            state = persist_state_and_auto_sync(state, reason="registry_rollback")
-            self._send_json({"rolledBack": len(moved), "summary": summarize_state(state)})
-            return
-
-        if path == "/registry/restore-rejected":
-            ids = payload.get("ids") if isinstance(payload.get("ids"), list) else []
-            moved, remaining = move_entries(state["rejected"], [str(item) for item in ids])
-            state["rejected"] = remaining
-            for row in moved:
-                row["enabledByDefault"] = False
-            state["pending"] = unique_sources([*state["pending"], *moved])
-            state = persist_state_and_auto_sync(state, reason="registry_restore_rejected")
-            self._send_json({"restored": len(moved), "summary": summarize_state(state)})
-            return
-
-        if path == "/registry/delete":
-            ids = payload.get("ids") if isinstance(payload.get("ids"), list) else []
-            urls = payload.get("urls") if isinstance(payload.get("urls"), list) else []
-            selected = {str(item).strip().lower() for item in ids if str(item).strip()}
-            selected_urls = {
-                normalize_source_url(str(item))
-                for item in urls
-                if normalize_source_url(str(item))
-            }
-            if not selected:
-                selected = set()
-            if not selected and not selected_urls:
-                self._send_json({"deleted": 0, "summary": summarize_state(state)})
+        try:
+            if handle_post(self, api=sys.modules[__name__], path=path, payload=payload):
                 return
-            before = (
-                len(state.get("active", []))
-                + len(state.get("pending", []))
-                + len(state.get("rejected", []))
+            self._send_json({"error": "Not found"}, status=404)
+        except Exception as exc:  # noqa: BLE001
+            bridge_log("error", "http_post_handler_failed", path=path, error=str(exc))
+            self._send_json(
+                {
+                    "error": "Internal server error",
+                    "detail": str(exc),
+                    "traceback": traceback.format_exc(),
+                },
+                status=500,
             )
-            def keep_row(row: Dict[str, Any]) -> bool:
-                row_id = source_identity(row)
-                row_url = source_url_fingerprint(row)
-                if row_id in selected:
-                    return False
-                if row_url and row_url in selected_urls:
-                    return False
-                return True
-
-            state["active"] = [row for row in state["active"] if keep_row(row)]
-            state["pending"] = [row for row in state["pending"] if keep_row(row)]
-            state["rejected"] = [row for row in state["rejected"] if keep_row(row)]
-            state = persist_state_and_auto_sync(state, reason="registry_delete")
-            after = (
-                len(state.get("active", []))
-                + len(state.get("pending", []))
-                + len(state.get("rejected", []))
-            )
-            self._send_json({"deleted": max(0, before - after), "summary": summarize_state(state)})
-            return
-
-        if path == "/tasks/run-discovery":
-            status_code, result = trigger_discovery_task(route_name=path)
-            self._send_json(result, status=status_code)
-            return
-
-        if path == "/tasks/run-jobs-pipeline":
-            result = start_jobs_pipeline_task(payload if isinstance(payload, dict) else {})
-            status_code = 200 if bool(result.get("started")) else 409
-            self._send_json(result, status=status_code)
-            return
-
-        if path == "/tasks/run-sync-pull":
-            try:
-                result = start_sync_task("pull", reason="manual_pull", automatic=False)
-                status_code = 200 if bool(result.get("started")) else 409
-                self._send_json(result, status=status_code)
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"started": False, "task": "source_sync", "action": "pull", "error": str(exc)}, status=500)
-            return
-
-        if path == "/tasks/run-sync-push":
-            try:
-                result = start_sync_task("push", reason="manual_push", automatic=False)
-                status_code = 200 if bool(result.get("started")) else 409
-                self._send_json(result, status=status_code)
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"started": False, "task": "source_sync", "action": "push", "error": str(exc)}, status=500)
-            return
-
-        if path == "/tasks/run-fetcher":
-            try:
-                result = start_fetcher_task(payload if isinstance(payload, dict) else {})
-                self._send_json(result)
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"started": False, "task": "jobs_fetcher", "error": str(exc)}, status=500)
-            return
-
-        if path == "/ops/alerts/ack":
-            alert_id = str(payload.get("id") or "").strip()
-            if not alert_id:
-                self._send_json({"error": "Missing alert id"}, status=400)
-                return
-            state_alert = load_alert_state()
-            acked = dict(state_alert.get("acked") or {})
-            acked[alert_id] = now_iso()
-            save_alert_state({"acked": acked})
-            self._send_json({"acked": alert_id, "ok": True})
-            return
-
-        if path == "/sync/config":
-            try:
-                update_saved_sync_settings(payload if isinstance(payload, dict) else {})
-                self._send_json(get_sync_status_payload())
-            except Exception as exc:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc), "config": source_sync_module.config_status(refresh_sync_config())}, status=400)
-            return
-
-        if path == "/sync/test":
-            try:
-                self._send_json(test_sync_config())
-            except Exception as exc:  # noqa: BLE001
-                _set_sync_status(action="test", result="error", error=str(exc), pulled=False, pushed=False)
-                self._send_json({"ok": False, "error": str(exc), "config": source_sync_module.config_status(refresh_sync_config())}, status=500)
-            return
-
-        if path == "/sync/pull":
-            try:
-                self._send_json(sync_pull_sources())
-            except Exception as exc:  # noqa: BLE001
-                _set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
-                self._send_json({"ok": False, "error": str(exc), "config": source_sync_module.config_status(refresh_sync_config())}, status=500)
-            return
-
-        if path == "/sync/push":
-            try:
-                self._send_json(sync_push_sources())
-            except Exception as exc:  # noqa: BLE001
-                _set_sync_status(action="push", result="error", error=str(exc), pushed=False)
-                self._send_json({"ok": False, "error": str(exc), "config": source_sync_module.config_status(refresh_sync_config())}, status=500)
-            return
-
-        self._send_json({"error": "Not found"}, status=404)
 
 
 def parse_args(argv: Optional[List[str]] = None) -> RuntimeConfig:
