@@ -1,33 +1,25 @@
 {
   "schemaVersion": "1.0",
-  "updatedAt": "2026-03-16T09:58:38.666411+00:00",
+  "updatedAt": "2026-03-16T15:28:56.842962+00:00",
   "sources": {
     "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 3220,
-      "lastFetchedCount": 28,
-      "lastKeptCount": 28,
-      "lastCandidateLinksFound": 28,
-      "lastDetailPagesVisited": 28,
-      "lastDetailYieldPct": 100,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
+      "lastCandidateLinksFound": 0,
+      "lastDetailPagesVisited": 0,
+      "lastDetailYieldPct": 0,
       "lastRedirectCandidates": 0,
       "lastRedirectResolved": 0,
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "a4d0a5b8b3fdd61dc16029318aad62ee22823219",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 582,
-        "parseCsv": 0,
-        "candidateExtraction": 4,
-        "detailFetch": 14409,
-        "redirectResolve": 0,
-        "canonicalization": 3
-      }
+      "consecutiveFailures": 0
     },
     "lever_sources": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -43,7 +35,7 @@
       "consecutiveFailures": 0
     },
     "remote_ok": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -59,7 +51,7 @@
       "consecutiveFailures": 0
     },
     "gamesindustry": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -75,7 +67,7 @@
       "consecutiveFailures": 0
     },
     "smartrecruiters_sources": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -91,7 +83,7 @@
       "consecutiveFailures": 0
     },
     "google_sheets": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -107,7 +99,7 @@
       "consecutiveFailures": 0
     },
     "ashby_sources": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -123,7 +115,7 @@
       "consecutiveFailures": 0
     },
     "personio_sources": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -139,7 +131,7 @@
       "consecutiveFailures": 0
     },
     "greenhouse_boards": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -155,7 +147,7 @@
       "consecutiveFailures": 0
     },
     "workable_sources": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -171,7 +163,7 @@
       "consecutiveFailures": 0
     },
     "epic_games_careers": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -267,33 +259,25 @@
       "consecutiveFailures": 0
     },
     "static_source::static:name:little chicken": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 5914,
-      "lastFetchedCount": 4,
-      "lastKeptCount": 4,
-      "lastCandidateLinksFound": 4,
-      "lastDetailPagesVisited": 4,
-      "lastDetailYieldPct": 100,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
+      "lastCandidateLinksFound": 0,
+      "lastDetailPagesVisited": 0,
+      "lastDetailYieldPct": 0,
       "lastRedirectCandidates": 0,
       "lastRedirectResolved": 0,
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "dc1457bf9876a222acac406b0298afcf7420a9cd",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 2641,
-        "parseCsv": 0,
-        "candidateExtraction": 8,
-        "detailFetch": 5187,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://careers.activision.com": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 649,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -304,18 +288,10 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 643,
-        "parseCsv": 0,
-        "candidateExtraction": 6,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "teamtailor_sources": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -347,28 +323,20 @@
       "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.riotgames.com/en/work-with-us/jobs": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 44781,
-      "lastFetchedCount": 161,
-      "lastKeptCount": 161,
-      "lastCandidateLinksFound": 161,
-      "lastDetailPagesVisited": 161,
-      "lastDetailYieldPct": 100,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
+      "lastCandidateLinksFound": 0,
+      "lastDetailPagesVisited": 0,
+      "lastDetailYieldPct": 0,
       "lastRedirectCandidates": 0,
       "lastRedirectResolved": 0,
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "db4bf98b43cbbb499f0a7ffe0ab76e84f3d765e2",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 297,
-        "parseCsv": 0,
-        "candidateExtraction": 12,
-        "detailFetch": 262796,
-        "redirectResolve": 0,
-        "canonicalization": 16
-      }
+      "consecutiveFailures": 0
     },
     "wellfound": {
       "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
@@ -401,9 +369,9 @@
       "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.naconstudiomilan.com/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1192,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -414,20 +382,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1187,
-        "parseCsv": 0,
-        "candidateExtraction": 5,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://supercell.com/en/careers/": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 2625,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -438,20 +398,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 2594,
-        "parseCsv": 0,
-        "candidateExtraction": 26,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.remedygames.com/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 876,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -462,20 +414,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 862,
-        "parseCsv": 0,
-        "candidateExtraction": 14,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://milestone.it/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 810,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -486,92 +430,60 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 777,
-        "parseCsv": 0,
-        "candidateExtraction": 29,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.littlechicken.nl/about-us/jobs/": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 3899,
-      "lastFetchedCount": 3,
-      "lastKeptCount": 3,
-      "lastCandidateLinksFound": 3,
-      "lastDetailPagesVisited": 3,
-      "lastDetailYieldPct": 100,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
+      "lastCandidateLinksFound": 0,
+      "lastDetailPagesVisited": 0,
+      "lastDetailYieldPct": 0,
       "lastRedirectCandidates": 0,
       "lastRedirectResolved": 0,
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "4c5e988314491922d0df5abe7674047085c7c0ec",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 2280,
-        "parseCsv": 0,
-        "candidateExtraction": 20,
-        "detailFetch": 3571,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://larian.com/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 4877,
-      "lastFetchedCount": 18,
-      "lastKeptCount": 18,
-      "lastCandidateLinksFound": 18,
-      "lastDetailPagesVisited": 18,
-      "lastDetailYieldPct": 100,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
+      "lastCandidateLinksFound": 0,
+      "lastDetailPagesVisited": 0,
+      "lastDetailYieldPct": 0,
       "lastRedirectCandidates": 0,
       "lastRedirectResolved": 0,
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "5a1f1ad3f40b023a6aa218d3dad0f9af60882ce5",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 3355,
-        "parseCsv": 0,
-        "candidateExtraction": 61,
-        "detailFetch": 5279,
-        "redirectResolve": 0,
-        "canonicalization": 1
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://ioi.dk/careers/": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 2805,
-      "lastFetchedCount": 1,
-      "lastKeptCount": 1,
-      "lastCandidateLinksFound": 1,
-      "lastDetailPagesVisited": 1,
-      "lastDetailYieldPct": 100,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
+      "lastCandidateLinksFound": 0,
+      "lastDetailPagesVisited": 0,
+      "lastDetailYieldPct": 0,
       "lastRedirectCandidates": 0,
       "lastRedirectResolved": 0,
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "45944bc4237175638911cada32bf223af6ba5c7a",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 2425,
-        "parseCsv": 0,
-        "candidateExtraction": 56,
-        "detailFetch": 317,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://jobs.zenimax.com": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "error",
-      "lastDurationMs": 5740,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -587,9 +499,9 @@
       "lastError": "static_source::static:listing_url:https://jobs.zenimax.com: static:Zenimax (Manual Website):https://jobs.zenimax.com: HTTP 403 for https://jobs.zenimax.com"
     },
     "static_source::static:listing_url:https://www.kojimaproductions.jp/en/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1757,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -600,20 +512,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1062,
-        "parseCsv": 0,
-        "candidateExtraction": 4,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.aweinteractive.com/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 856,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -624,20 +528,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 853,
-        "parseCsv": 0,
-        "candidateExtraction": 3,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://gamejobs.work/category/environment-artist": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1282,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -648,20 +544,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1270,
-        "parseCsv": 0,
-        "candidateExtraction": 10,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.workwithindies.com/careers/angry-mob-games-stylized-environment-artist": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 445,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -672,44 +560,28 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 440,
-        "parseCsv": 0,
-        "candidateExtraction": 4,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://careers.wbd.com/global/en/job/r000087820/lead-environment-artist": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 2691,
-      "lastFetchedCount": 2,
-      "lastKeptCount": 2,
-      "lastCandidateLinksFound": 1,
-      "lastDetailPagesVisited": 1,
-      "lastDetailYieldPct": 200,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
+      "lastCandidateLinksFound": 0,
+      "lastDetailPagesVisited": 0,
+      "lastDetailYieldPct": 0,
       "lastRedirectCandidates": 0,
       "lastRedirectResolved": 0,
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "4b8525a5f2e57a09e204cc5cd105fdd93428558c",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 2287,
-        "parseCsv": 0,
-        "candidateExtraction": 6,
-        "detailFetch": 398,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.pixelmafia.com/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 932,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -720,66 +592,42 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 927,
-        "parseCsv": 0,
-        "candidateExtraction": 4,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 14160,
-      "lastFetchedCount": 21,
-      "lastKeptCount": 21,
-      "lastCandidateLinksFound": 26,
-      "lastDetailPagesVisited": 26,
-      "lastDetailYieldPct": 81,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
+      "lastCandidateLinksFound": 0,
+      "lastDetailPagesVisited": 0,
+      "lastDetailYieldPct": 0,
       "lastRedirectCandidates": 0,
       "lastRedirectResolved": 0,
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "d50b20f769cca8056b2b8f45688e0b6aaba10f4a",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1288,
-        "parseCsv": 0,
-        "candidateExtraction": 4,
-        "detailFetch": 49873,
-        "redirectResolve": 0,
-        "canonicalization": 5
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://careers.nintendo.com/jobs": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 34456,
-      "lastFetchedCount": 56,
-      "lastKeptCount": 56,
-      "lastCandidateLinksFound": 56,
-      "lastDetailPagesVisited": 56,
-      "lastDetailYieldPct": 100,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
+      "lastFetchedCount": 0,
+      "lastKeptCount": 0,
+      "lastCandidateLinksFound": 0,
+      "lastDetailPagesVisited": 0,
+      "lastDetailYieldPct": 0,
       "lastRedirectCandidates": 0,
       "lastRedirectResolved": 0,
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "ee4390bdd8a2fc9c50fe41b51fc6eba8e49b0018",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1203,
-        "parseCsv": 0,
-        "candidateExtraction": 9,
-        "detailFetch": 187699,
-        "redirectResolve": 0,
-        "canonicalization": 6
-      }
+      "consecutiveFailures": 0
     },
     "scrapy_static_sources": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -795,9 +643,9 @@
       "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.impactreality.com/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 601,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -808,20 +656,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 595,
-        "parseCsv": 0,
-        "candidateExtraction": 5,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://digitalbros.com/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1529,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -832,20 +672,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1523,
-        "parseCsv": 0,
-        "candidateExtraction": 5,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://cdprojektred.com/en/jobs": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1585,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -856,20 +688,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1581,
-        "parseCsv": 0,
-        "candidateExtraction": 4,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://34bigthings.com/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1457,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -880,20 +704,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1452,
-        "parseCsv": 0,
-        "candidateExtraction": 5,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.ubisoft.com/en-us/company/careers/locations/milan": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1329,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -904,20 +720,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1273,
-        "parseCsv": 0,
-        "candidateExtraction": 55,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.quanticdream.com/en/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 679,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -928,20 +736,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 677,
-        "parseCsv": 0,
-        "candidateExtraction": 1,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.rockstargames.com/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1143,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -952,20 +752,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1142,
-        "parseCsv": 0,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.stormindgames.com/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 2253,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -976,20 +768,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 2247,
-        "parseCsv": 0,
-        "candidateExtraction": 6,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://jobs.nintendo.de": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1279,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -1000,18 +784,10 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1279,
-        "parseCsv": 0,
-        "candidateExtraction": 0,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -1030,7 +806,7 @@
       "lastError": "static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs: static:Epic Games (Manual Website):https://www.epicgames.com/site/en-US/careers/jobs: HTTP 403 for https://www.epicgames.com/site/en-US/careers/jobs"
     },
     "static_source::static:listing_url:https://www.arkane-studios.com/en/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -1047,9 +823,9 @@
       "lastError": "static_source::static:listing_url:https://www.arkane-studios.com/en/careers: static:Arkane Studios (Manual Website):https://www.arkane-studios.com/en/careers: HTTP 404 for https://www.arkane-studios.com/en/careers"
     },
     "static_source::static:listing_url:http://www.astragon.de/unternehmen/jobs": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 661,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -1060,20 +836,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 658,
-        "parseCsv": 0,
-        "candidateExtraction": 2,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:http://jobs.andarion-games.com": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1792,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -1084,20 +852,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1787,
-        "parseCsv": 0,
-        "candidateExtraction": 4,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.articy.com/en/company/jobs/": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1199,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -1108,20 +868,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1194,
-        "parseCsv": 0,
-        "candidateExtraction": 5,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://www.augmented-minds.com/de/unternehmen/karriere/": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1700,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -1132,20 +884,12 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1693,
-        "parseCsv": 0,
-        "candidateExtraction": 6,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:http://www.ahoiii.com/jobs": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 348,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -1156,18 +900,10 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 339,
-        "parseCsv": 0,
-        "candidateExtraction": 8,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://tequilaworks.com/en/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -1184,7 +920,7 @@
       "lastError": "static_source::static:listing_url:https://tequilaworks.com/en/careers: static:Tequilaworks (Manual Website):https://tequilaworks.com/en/careers: Network error for https://tequilaworks.com/en/careers: timed out"
     },
     "google_sheets_1mvqhxat": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -1200,7 +936,7 @@
       "consecutiveFailures": 0
     },
     "google_sheets_1er2oaxo": {
-      "lastRunAt": "2026-03-16T09:58:36.223647+00:00",
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
       "lastStatus": "excluded",
       "lastDurationMs": 0,
       "lastFetchedCount": 0,
@@ -1216,9 +952,9 @@
       "consecutiveFailures": 0
     },
     "static_source::static:listing_url:https://insomniac.games/careers": {
-      "lastRunAt": "2026-03-13T16:18:27.939021+00:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 1395,
+      "lastRunAt": "2026-03-16T15:28:54.409928+00:00",
+      "lastStatus": "excluded",
+      "lastDurationMs": 0,
       "lastFetchedCount": 0,
       "lastKeptCount": 0,
       "lastCandidateLinksFound": 0,
@@ -1229,15 +965,7 @@
       "lastRedirectCacheHits": 0,
       "lastSuccessAt": "2026-03-13T16:18:27.939021+00:00",
       "lastFingerprint": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
-      "consecutiveFailures": 0,
-      "lastStageTimingsMs": {
-        "listingFetch": 1394,
-        "parseCsv": 0,
-        "candidateExtraction": 1,
-        "detailFetch": 0,
-        "redirectResolve": 0,
-        "canonicalization": 0
-      }
+      "consecutiveFailures": 0
     }
   }
 }
