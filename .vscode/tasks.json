@@ -60,7 +60,7 @@
     {
       "label": "Run jobs fetcher",
       "type": "shell",
-      "command": "python scripts/jobs_fetcher.py",
+      "command": "python -m src.jobs_fetcher",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -70,7 +70,7 @@
     {
       "label": "Run source discovery",
       "type": "shell",
-      "command": "python scripts/source_discovery.py --mode dynamic",
+      "command": "python src/source_discovery.py --mode dynamic",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -80,7 +80,7 @@
     {
       "label": "Run admin bridge",
       "type": "shell",
-      "command": "python scripts/admin_bridge.py --host 127.0.0.1 --port 8877",
+      "command": "python src/admin_bridge.py --host 127.0.0.1 --port 8877",
       "isBackground": true,
       "problemMatcher": {
         "owner": "custom",
@@ -102,7 +102,7 @@
     {
       "label": "Stop admin bridge",
       "type": "shell",
-      "command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'python(\\.exe)?' -and $_.CommandLine -match 'scripts\\\\admin_bridge.py' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+      "command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'python(\\.exe)?' -and $_.CommandLine -match 'src\\\\admin_bridge.py' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
       "problemMatcher": []
     },
     {

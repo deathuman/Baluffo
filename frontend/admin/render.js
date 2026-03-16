@@ -171,11 +171,19 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
   `;
 }
 
+function safeFormatLogTimestamp(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) return "";
+  return new Date(parsed).toLocaleTimeString();
+}
+
 export function appendAdminLogRow(container, event, options = {}) {
   if (!container) return;
   const maxRows = Number(options.maxRows || 220);
   const normalizeLogLevel = options.normalizeLogLevel || (value => value);
-  const toLocalTime = options.toLocalTime || (value => String(value));
+  const toLocalTime = options.toLocalTime || safeFormatLogTimestamp;
   const formatLogEventText = options.formatLogEventText || (row => String(row?.message || ""));
 
   const row = document.createElement("div");
@@ -187,7 +195,13 @@ export function appendAdminLogRow(container, event, options = {}) {
 
   const stamp = document.createElement("span");
   stamp.className = "admin-fetcher-time";
-  stamp.textContent = toLocalTime(new Date(event.timestamp));
+  // If a custom toLocalTime formatter was provided, it expects a Date instance
+  // (existing behavior from runtime.js). Otherwise, we use the built-in
+  // safeFormatLogTimestamp on the raw timestamp string.
+  const timestampText = options.toLocalTime
+    ? toLocalTime(new Date(event.timestamp || ""))
+    : toLocalTime(event.timestamp);
+  stamp.textContent = timestampText;
 
   const text = document.createElement("span");
   text.className = "admin-fetcher-text";

@@ -119,7 +119,7 @@ Recovery and diagnostics:
 Prerequisites:
 
 ```powershell
-python -m pip install -r requirements-desktop.txt
+python -m pip install -r requirements.txt
 ```
 
 Preferred build command:

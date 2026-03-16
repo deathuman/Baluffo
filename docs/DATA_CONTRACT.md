@@ -107,3 +107,35 @@ The Admin Bridge ([admin_bridge.py](file:///c:/Users/Andrea/Documents/GitHubRepo
 2. Environment Variables (`BALUFFO_*`)
 3. `baluffo.config.local.json` (machine-local overrides)
 4. `baluffo.config.json` (committed defaults)
+
+---
+
+## 6. Configuration Schema
+
+### baluffo.config.json
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| **bridge.host** | `"127.0.0.1"` | Admin bridge listen host |
+| **bridge.port** | `8877` | Admin bridge listen port |
+| **bridge.log_format** | `"human"` | Log format (`human` or `jsonl`) |
+| **bridge.log_level** | `"info"` | Log level (`info` or `debug`) |
+| **bridge.quiet_requests** | `false` | Suppress request logging |
+| **storage.data_dir** | `"data"` | Runtime data directory |
+| **security.admin_pin_default** | `"1234"` | Default admin PIN |
+| **security.github_app_enabled_default** | `true` | GitHub App sync enabled by default |
+| **sync.packaged_config_path** | `"packaging/github-app-sync-config.json"` | GitHub App sync config |
+| **sync.local_enabled_default** | `true` | Source sync enabled by default |
+| **sync.default_repo** | `""` | Default sync repo (e.g. `owner/repo`) |
+| **sync.default_branch** | `"main"` | Default sync branch |
+| **sync.default_path** | `"baluffo/source-sync.json"` | Default sync file path |
+| **sync.build_key_derivation_default** | `"embedded"` | Key derivation mode |
+| **desktop.site_port** | `8080` | Local site port |
+| **desktop.bridge_port** | `8877` | Desktop mode bridge port |
+| **desktop.bridge_host** | `"127.0.0.1"` | Desktop mode bridge host |
+| **desktop.open_path** | `"jobs.html"` | Desktop startup page |
+| **desktop.title** | `"Baluffo"` | Desktop window title |
+
+**Config precedence:** CLI args → Environment (`BALUFFO_*`) → `baluffo.config.local.json` → `baluffo.config.json` → code defaults
+
+**Machine-local overrides:** Use `baluffo.config.local.json` for settings that must not be committed.

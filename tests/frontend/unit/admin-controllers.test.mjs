@@ -5,6 +5,7 @@ import { createAdminDiscoveryController } from "../../../frontend/admin/app/disc
 import { createAdminFetcherController } from "../../../frontend/admin/app/fetcher.js";
 import { createAdminRegistryController } from "../../../frontend/admin/app/registry.js";
 import { createAdminSyncController } from "../../../frontend/admin/app/sync.js";
+import { appendAdminLogRow } from "../../../frontend/admin/render.js";
 
 class FakeInputElement {
   constructor({ checked = false, sourceId = "", sourceUrl = "" } = {}) {
@@ -901,7 +902,7 @@ test("admin fetcher controller emits summary-first progress and updates progress
       fetchReportPollIntervalMs: 5000,
       fetchReportPollTimeoutMs: 600000,
       jobsAutoRefreshSignalKey: "k",
-      jobsFetcherCommand: "python scripts/jobs_fetcher.py",
+      jobsFetcherCommand: "python -m src.jobs_fetcher",
       jobsFetcherTaskLabel: "Run jobs fetcher",
       jobsFetchReportUrl: "data/jobs-fetch-report.json",
       createLogEvent(scope, message, level) {
@@ -1027,4 +1028,77 @@ test("admin sync controller hydrates status and runs save/test/pull/push flows",
     "syncRun:true",
     "syncRun:false"
   ]);
+});
+
+test("appendAdminLogRow passes Date to custom toLocalTime and renders its result", () => {
+  const created = [];
+  const previousDocument = global.document;
+  global.document = {
+    createElement(tagName) {
+      const el = createElement({
+        tagName,
+        dataset: {},
+        children: [],
+        append(...nodes) {
+          this.children.push(...nodes);
+        },
+        appendChild(node) {
+          this.children.push(node);
+        },
+        removeChild(node) {
+          const index = this.children.indexOf(node);
+          if (index >= 0) this.children.splice(index, 1);
+        },
+        scrollTop: 0,
+        scrollHeight: 0
+      });
+      created.push(el);
+      return el;
+    }
+  };
+
+  try {
+    const container = createElement({
+      children: [],
+      appendChild(node) {
+        this.children.push(node);
+      },
+      removeChild(node) {
+        const index = this.children.indexOf(node);
+        if (index >= 0) this.children.splice(index, 1);
+      },
+      scrollTop: 0,
+      scrollHeight: 0
+    });
+
+    const event = {
+      timestamp: "2026-03-08T10:00:00.000Z",
+      level: "info",
+      scope: "fetcher",
+      sourceId: "",
+      message: "START source=test"
+    };
+
+    let receivedValue = null;
+    function toLocalTimeSpy(value) {
+      receivedValue = value;
+      return "10:00:00";
+    }
+
+    appendAdminLogRow(container, event, {
+      normalizeLogLevel: value => value,
+      toLocalTime: toLocalTimeSpy,
+      formatLogEventText: row => String(row?.message || "")
+    });
+
+    assert.ok(receivedValue instanceof Date);
+    assert.equal(container.children.length, 1);
+    const rowEl = container.children[0];
+    assert.ok(Array.isArray(rowEl.children));
+    assert.ok(rowEl.children.length >= 1);
+    const stampEl = rowEl.children[0];
+    assert.equal(String(stampEl.textContent), "10:00:00");
+  } finally {
+    global.document = previousDocument;
+  }
 });

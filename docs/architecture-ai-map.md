@@ -35,6 +35,21 @@ runtime data roots:
   - desktop local user data: ship/data/local-user-data/
 ```
 
+## CLI Scripts
+
+| Script | Location | Purpose |
+|--------|----------|---------|
+| `src/jobs_fetcher.py` | `src/` | Build unified jobs feed |
+| `src/source_discovery.py` | `src/` | Discover candidate sources |
+| `src/admin_bridge.py` | `src/` | Local admin HTTP server |
+| `src/jobs/pipeline.py` | `src/jobs/` | Core job processing |
+| `scripts/orchestrator.py` | `scripts/` | Build/verify orchestration |
+| `scripts/build_ship_bundle.py` | `scripts/` | Create ship bundle |
+| `scripts/build_portable_exe.py` | `scripts/` | Create portable EXE |
+| `scripts/backup_e2e_validate.py` | `scripts/` | Validate backup flow |
+
+For bridge API endpoints, see `docs/admin-bridge-api.md`.
+
 ## 2) Frontend topology (current)
 
 ### Jobs page
@@ -122,6 +137,29 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 - **`data/local-user-data/users/{uid}/activity.json`**: A log of a user's activity.
 - **`data/local-user-data/users/{uid}/attachments.json`**: A list of attachments that a user has uploaded.
 
+## Data Flow
+
+```
+Sources (Google Sheets, Remote OK, Greenhouse, etc.)
+    ↓
+Adapters (static, provider_api, social) → fetch & parse
+    ↓
+Pipeline → aggregate, normalize
+    ↓
+Dedup → deduplicate by dedupKey
+    ↓
+Output → jobs-unified.json (primary), jobs-unified.csv, jobs-fetch-report.json
+    ↓
+Frontend (jobs.html) ← reads unified feed
+```
+
+Key stages:
+- **Sources:** Defined in `source-registry-active.json`, fetched by adapter type
+- **Adapters:** `src/jobs/adapters/` - fetch and parse each source type
+- **Pipeline:** `src/jobs/pipeline.py` - core processing
+- **Dedup:** `src/jobs/dedup.py` - collapse duplicates
+- **Output:** `data/jobs-unified.*` - primary feed for Jobs UI
+
 ## 3) Task -> minimal files
 
 | Task | Start here (minimal) | Then load only if needed |
@@ -133,7 +171,7 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 | Saved attachments flow | `frontend/saved/app/attachments.js` | `frontend/saved/app/runtime.js`, `frontend/saved/services.js` |
 | Saved timeline/activity | `frontend/saved/app/activity.js` | `frontend/saved/app/runtime.js` |
 | Admin unlock/ops/fetch/discovery/sync | `frontend/admin/app/{auth,ops,fetcher,discovery,sync}.js` | `frontend/admin/app/runtime.js`, `frontend/admin/services.js` |
-| Job processing pipeline | `src/jobs/pipeline.py` | `src/jobs/adapters`, `src/jobs/canonicalize.py`, `src.jobs.dedup.py` |
+| Job processing pipeline | `src/jobs/pipeline.py` | `src/jobs/adapters`, `src/jobs/canonicalize.py`, `src/jobs/dedup.py` |
 | Bridge API/runtime behavior | `src/admin_bridge.py` | `frontend/admin/services.js`, `frontend/jobs/services.js`, `frontend/saved/services.js` |
 | Bridge sync state management | `src/bridge/sync_state.py` | `src/bridge/sync_service.py`, `src/admin_bridge.py` |
 | Bridge sync operations | `src/bridge/sync_service.py` | `src/source_sync.py`, `src/admin_bridge.py` |
@@ -177,9 +215,6 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 ## 6) Related deep-dive docs
 
 - Release and packaging process: `docs/RELEASE.md`
-- Ship bundle packaging runbook: `docs/ship-bundle-runbook.md`
-- Portable EXE runbook: `docs/portable-executable-runbook.md`
-- Deployment/update flow: `docs/deployment-and-update-guide.md`
 
 ## Key Libraries and Frameworks
 

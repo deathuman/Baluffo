@@ -50,7 +50,7 @@ Saved job record fields:
 `local-data-client.js` intentionally keeps a compatibility boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
 
 ## Unified jobs feed generation
-- Run `python src/jobs_fetcher.py` to aggregate listings into:
+- Run `python -m src.jobs_fetcher` to aggregate listings into:
   - `data/jobs-unified.json` (primary feed used by Jobs page modules)
   - `data/jobs-unified.csv` (CSV fallback + inspection)
   - `data/jobs-fetch-report.json` (per-source diagnostics)
@@ -82,7 +82,7 @@ Saved job record fields:
   - `POST /sync/pull`, `POST /sync/push`
   - `POST /tasks/run-discovery`, `POST /tasks/run-fetcher`
   - `POST /tasks/run-sync-pull`, `POST /tasks/run-sync-push` (preferred for UI task/history tracking)
-- If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback and shows a manual command fallback (`python src/jobs_fetcher.py`).
+- If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback and shows a manual command fallback (`python -m src.jobs_fetcher`).
 
 - Optional bridge runtime options:
   - CLI:
@@ -143,7 +143,7 @@ Saved job record fields:
 ## Portable executable (Windows)
 
 - Install dependencies:
-  - `python -m pip install -r requirements-desktop.txt`
+  - `python -m pip install -r requirements.txt`
 - Build:
   - `npm run build:portable-exe -- --bundle-version 1.2.3`
   - direct Python entrypoint: `python scripts/build_portable_exe.py --bundle-version 1.2.3`

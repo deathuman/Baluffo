@@ -2,7 +2,7 @@ import { deriveFetcherProgressModel } from "../domain.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
 
 export const FETCHER_FALLBACK_MESSAGES = {
-  bridgeUnavailable: "Admin bridge unavailable, using VS Code task fallback.",
+  bridgeUnavailable: "Bridge is offline; using VS Code task fallback for this run.",
   presetNeedsBridge: "VS Code task fallback supports default fetcher runs only. Start admin bridge and retry.",
   launchPrimary: taskLabel => `Triggered VS Code task URI (primary): ${taskLabel}`,
   launchSecondary: "Triggered VS Code task URI fallback (quoted task label).",
@@ -149,7 +149,7 @@ export function createAdminFetcherController({
       state.fetcherLiveProgressState?.serverLogSignatures?.add(normalizedLine.message);
       if (match) {
         const event = {
-          timestamp: match[1],
+          timestamp: String(match[1] || new Date().toISOString()),
           level: normalizedLine.level,
           scope: "fetcher",
           sourceId: "",
@@ -517,6 +517,7 @@ export function createAdminFetcherController({
     const preset = String(runOptions?.preset || "default");
     const presetMeta = getFetcherPresetMeta(preset);
     const payload = { ...runOptions };
+    let usedFallback = false;
     try {
       const bridge = await postBridge("/tasks/run-fetcher", payload);
       if (bridge && bridge.started) {
@@ -533,7 +534,10 @@ export function createAdminFetcherController({
         return;
       }
     } catch {
-      appendFetcherLog(FETCHER_FALLBACK_MESSAGES.bridgeUnavailable, "warn");
+      if (!usedFallback) {
+        appendFetcherLog(FETCHER_FALLBACK_MESSAGES.bridgeUnavailable, "warn");
+        usedFallback = true;
+      }
     } finally {
       setBusyFlag("fetcherRun", false);
     }

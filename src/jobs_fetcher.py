@@ -4,19 +4,41 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
+import sys
 
-from src.jobs import common as _common
-from src.jobs import dedup as _dedup
-from src.jobs import parsers as _parsers
-from src.jobs import pipeline as _pipeline
-from src.jobs import registry as _registry
-from src.jobs import reporting as _reporting
-from src.jobs import state as _state
-from src.jobs import transport as _transport
-from src.jobs.adapters import community as _community
-from src.jobs.adapters import provider_api as _provider_api
-from src.jobs.adapters import social as _social
-from src.jobs.adapters import static as _static
+try:
+    from src.jobs import common as _common
+    from src.jobs import dedup as _dedup
+    from src.jobs import parsers as _parsers
+    from src.jobs import pipeline as _pipeline
+    from src.jobs import registry as _registry
+    from src.jobs import reporting as _reporting
+    from src.jobs import state as _state
+    from src.jobs import transport as _transport
+    from src.jobs.adapters import community as _community
+    from src.jobs.adapters import provider_api as _provider_api
+    from src.jobs.adapters import social as _social
+    from src.jobs.adapters import static as _static
+except ModuleNotFoundError:
+    # When executed via `python src/jobs_fetcher.py` from a directory that does
+    # not have the repository root on sys.path, fall back to resolving the root
+    # from this file location to make the `src` package importable.
+    root = Path(__file__).resolve().parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from src.jobs import common as _common
+    from src.jobs import dedup as _dedup
+    from src.jobs import parsers as _parsers
+    from src.jobs import pipeline as _pipeline
+    from src.jobs import registry as _registry
+    from src.jobs import reporting as _reporting
+    from src.jobs import state as _state
+    from src.jobs import transport as _transport
+    from src.jobs.adapters import community as _community
+    from src.jobs.adapters import provider_api as _provider_api
+    from src.jobs.adapters import social as _social
+    from src.jobs.adapters import static as _static
 from src.jobs.canonicalize import (
     LIGHTWEIGHT_OUTPUT_FIELDS,
     OPTIONAL_FIELDS,
@@ -38,7 +60,28 @@ from src.jobs.registry import (
     read_approved_since_last_run,
 )
 
-run_pipeline = _pipeline.run_pipeline
+
+def run_pipeline(*args, **kwargs):
+    """Compatibility wrapper that keeps redirect stats testable.
+
+    Older tests patch `jobs_fetcher.build_redirect_resolver` to inject a fake
+    resolver and assert on `redirect_candidates` / `redirect_resolved` stats
+    inside the fetch report. After the refactor to `src.jobs.pipeline`, the
+    pipeline module started using its own `build_redirect_resolver` binding,
+    which bypassed that patch.
+
+    To preserve the external contract, we temporarily route the pipeline's
+    `build_redirect_resolver` through this module-level function, so that
+    tests (and callers) can continue to override it via
+    `patch.object(jobs_fetcher, "build_redirect_resolver", ...)`.
+    """
+    previous = getattr(_pipeline, "build_redirect_resolver", None)
+    try:
+        _pipeline.build_redirect_resolver = build_redirect_resolver  # type: ignore[assignment]
+        return _pipeline.run_pipeline(*args, **kwargs)
+    finally:
+        if previous is not None:
+            _pipeline.build_redirect_resolver = previous  # type: ignore[assignment]
 parse_args = _pipeline.parse_args
 main = _pipeline.main
 default_source_loaders = _pipeline.default_source_loaders

@@ -1688,8 +1688,22 @@ def run_background_script(script_name: str, args: List[str] | None = None) -> in
         ]
         command.extend(args or [])
     else:
-        command = [sys.executable, str(Path(RUNTIME_CONFIG.root) / "scripts" / script_name)]
-        command.extend(args or [])
+        # When running from source, prefer module execution so that the `src`
+        # package can be imported reliably regardless of how the script path is
+        # resolved on sys.path.
+        script_lower = str(script_name).lower()
+        module = None
+        if script_lower.endswith("jobs_fetcher.py"):
+            module = "src.jobs_fetcher"
+        elif script_lower.endswith("source_discovery.py"):
+            module = "src.source_discovery"
+
+        if module:
+            command = [sys.executable, "-m", module]
+            command.extend(args or [])
+        else:
+            command = [sys.executable, str(Path(RUNTIME_CONFIG.root) / "src" / script_name)]
+            command.extend(args or [])
     script = Path(script_name).name.lower()
     task_type = "discovery" if "discovery" in script else ("fetch" if "fetcher" in script else script)
     child_env = os.environ.copy()
@@ -2061,14 +2075,18 @@ def pid_is_running(pid: int) -> bool:
     return True
 
 
+def _clear_task_state_locked(task_type: str) -> None:
+    state = load_json_object(TASK_STATE_PATH, {})
+    if not isinstance(state, dict):
+        return
+    if str(task_type) in state:
+        state.pop(str(task_type), None)
+        save_json_atomic(TASK_STATE_PATH, state)
+
+
 def clear_task_state(task_type: str) -> None:
     with OPS_STATE_LOCK:
-        state = load_json_object(TASK_STATE_PATH, {})
-        if not isinstance(state, dict):
-            return
-        if str(task_type) in state:
-            state.pop(str(task_type), None)
-            save_json_atomic(TASK_STATE_PATH, state)
+        _clear_task_state_locked(task_type)
 
 
 def task_running_from_state(task_type: str) -> bool:
@@ -2237,6 +2255,8 @@ def summarize_discovery_report(report: Dict[str, Any]) -> Dict[str, Any]:
 def sync_history_from_reports() -> List[Dict[str, Any]]:
     with OPS_STATE_LOCK:
         _reconcile_sync_history_locked()
+        _reconcile_started_task_history_locked("fetch")
+        _reconcile_started_task_history_locked("discovery")
         fetch_report = normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {}))
         fetch_started_at = str(fetch_report.get("startedAt") or "")
         fetch_finished_at = str(fetch_report.get("finishedAt") or "")
@@ -2501,7 +2521,7 @@ def compute_ops_health() -> Dict[str, Any]:
 
     return {
         "service": "baluffo-bridge",
-        "desktopMode": bool(DESKTOP_LOCAL_DATA_STORE is not None),
+        "desktopMode": bool(RUNTIME_CONFIG.desktop_mode),
         "generatedAt": now_iso(),
         "desktopLastActivityAt": str(DESKTOP_SESSION_ACTIVITY_AT or ""),
         "status": severity,
@@ -2584,6 +2604,53 @@ def _reconcile_sync_history_locked() -> None:
             next_rows.append(row)
             continue
         changed = True
+    if changed:
+        save_run_history(next_rows)
+
+
+def _reconcile_started_task_history_locked(run_type: str) -> None:
+    """Drop or finalize stale started rows when no task process is running.
+
+    Fetch/discovery tasks can exit early (or be killed) without always updating their
+    report `finishedAt` field. We use `admin-task-state.json` as the authoritative
+    "is a process running" signal and finalize stale started placeholders.
+    """
+    history = load_run_history()
+    now_dt = now_utc()
+    next_rows: List[Dict[str, Any]] = []
+    changed = False
+    for row in history:
+        if str(row.get("type") or "").strip().lower() != str(run_type or "").strip().lower():
+            next_rows.append(row)
+            continue
+        if str(row.get("status") or "").strip().lower() != "started":
+            next_rows.append(row)
+            continue
+        if str(row.get("finishedAt") or "").strip():
+            next_rows.append(row)
+            continue
+        started_dt = parse_iso(row.get("startedAt"))
+        if task_running_from_state(run_type):
+            next_rows.append(row)
+            continue
+        if not started_dt:
+            changed = True
+            continue
+        age_minutes = (now_dt - started_dt).total_seconds() / 60.0
+        if age_minutes < 0.5:
+            next_rows.append(row)
+            continue
+        changed = True
+        finished_at = now_iso()
+        next_rows.append(
+            {
+                **dict(row),
+                "status": "error",
+                "finishedAt": finished_at,
+                "summary": {**(row.get("summary") if isinstance(row.get("summary"), dict) else {}), "error": "stale_started_run_pruned"},
+            }
+        )
+        _clear_task_state_locked(run_type)
     if changed:
         save_run_history(next_rows)
 
