@@ -108,7 +108,7 @@ parse_smartrecruiters_jobs_payload = _parsers.parse_smartrecruiters_jobs_payload
 parse_workable_jobs_payload = _parsers.parse_workable_jobs_payload
 parse_ashby_jobs_from_html = _parsers.parse_ashby_jobs_from_html
 parse_personio_feed_xml = _parsers.parse_personio_feed_xml
-parse_wellfound_html = _common.parse_wellfound_html
+parse_wellfound_html = _parsers.parse_wellfound_html
 
 normalize_source_report_row = _reporting.normalize_source_report_row
 normalize_fetch_report_payload = _reporting.normalize_fetch_report_payload
@@ -203,8 +203,9 @@ def build_redirect_resolver(*args, **kwargs):
 
 
 def maybe_fetch_kojima_job_listing_html(*args, **kwargs):
-    _common.urlopen = urlopen
-    return _common.maybe_fetch_kojima_job_listing_html(*args, **kwargs)
+    import src.jobs.adapters.html_parsers as _html_parsers
+    _html_parsers.urlopen = urlopen
+    return _html_parsers.maybe_fetch_kojima_job_listing_html(*args, **kwargs)
 
 
 def canonicalize_job(*args, **kwargs):

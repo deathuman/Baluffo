@@ -102,13 +102,13 @@ def test_trigger_source_check_static_fallback_attempts_browser_on_403(admin_brid
     assert source_id
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
-    original_browser_fetch = admin_bridge._try_fetch_with_playwright
+    original_browser_fetch = admin_bridge._source_check_http.try_fetch_with_playwright
     try:
         def fake_fetch(_url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
             raise RuntimeError("HTTP Error 403: Forbidden")
 
         admin_bridge.discovery.fetch_text_with_retry = fake_fetch
-        admin_bridge._try_fetch_with_playwright = lambda *_args, **_kwargs: ('<a href="/jobs/gameplay-programmer">Role</a>', "")
+        admin_bridge._source_check_http.try_fetch_with_playwright = lambda *_args, **_kwargs: ('<a href="/jobs/gameplay-programmer">Role</a>', "")
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]
         assert result["ok"]
@@ -118,7 +118,7 @@ def test_trigger_source_check_static_fallback_attempts_browser_on_403(admin_brid
         assert bool(result.get("browserFallbackUsed"))
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
-        admin_bridge._try_fetch_with_playwright = original_browser_fetch
+        admin_bridge._source_check_http.try_fetch_with_playwright = original_browser_fetch
 
 def test_trigger_source_check_static_fallback_attempts_browser_on_challenge_page(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://jobs.zenimax.com/jobs")
@@ -126,13 +126,13 @@ def test_trigger_source_check_static_fallback_attempts_browser_on_challenge_page
     assert source_id
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
-    original_browser_fetch = admin_bridge._try_fetch_with_playwright
+    original_browser_fetch = admin_bridge._source_check_http.try_fetch_with_playwright
     try:
         admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: (
             '<html><head><script src="/cdn-cgi/challenge-platform/h/g/scripts/jsd/main.js"></script></head>'
             '<body>Just a moment...</body></html>'
         )
-        admin_bridge._try_fetch_with_playwright = lambda *_args, **_kwargs: (
+        admin_bridge._source_check_http.try_fetch_with_playwright = lambda *_args, **_kwargs: (
             '<a href="/requisitions/view/3472">Associate DevOps Programmer</a>'
             '<a href="/requisitions/view/3479">Development QA Manager</a>',
             "",
@@ -145,7 +145,7 @@ def test_trigger_source_check_static_fallback_attempts_browser_on_challenge_page
         assert bool(result.get("browserFallbackUsed"))
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
-        admin_bridge._try_fetch_with_playwright = original_browser_fetch
+        admin_bridge._source_check_http.try_fetch_with_playwright = original_browser_fetch
 
 def test_trigger_source_check_static_parses_embedded_job_filter_payload(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://jobs.zenimax.com/jobs")
@@ -166,10 +166,10 @@ def test_trigger_source_check_static_parses_embedded_job_filter_payload(admin_br
     )
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
-    original_browser_fetch = admin_bridge._try_fetch_with_playwright
+    original_browser_fetch = admin_bridge._source_check_http.try_fetch_with_playwright
     try:
         admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: listing_html
-        admin_bridge._try_fetch_with_playwright = lambda *_args, **_kwargs: ("", "unexpected browser fallback")
+        admin_bridge._source_check_http.try_fetch_with_playwright = lambda *_args, **_kwargs: ("", "unexpected browser fallback")
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]
         assert result["ok"]
@@ -179,7 +179,7 @@ def test_trigger_source_check_static_parses_embedded_job_filter_payload(admin_br
         assert not bool(result.get("browserFallbackUsed"))
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
-        admin_bridge._try_fetch_with_playwright = original_browser_fetch
+        admin_bridge._source_check_http.try_fetch_with_playwright = original_browser_fetch
 
 def test_trigger_source_check_static_fallback_reports_unavailable_browser_fallback(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://careers.rebellion.com/")
@@ -187,10 +187,10 @@ def test_trigger_source_check_static_fallback_reports_unavailable_browser_fallba
     assert source_id
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
-    original_browser_fetch = admin_bridge._try_fetch_with_playwright
+    original_browser_fetch = admin_bridge._source_check_http.try_fetch_with_playwright
     try:
         admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("HTTP Error 403: Forbidden"))
-        admin_bridge._try_fetch_with_playwright = lambda *_args, **_kwargs: ("", "browser fallback unavailable (playwright is not installed)")
+        admin_bridge._source_check_http.try_fetch_with_playwright = lambda *_args, **_kwargs: ("", "browser fallback unavailable (playwright is not installed)")
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]
         assert not result["ok"]
@@ -199,7 +199,7 @@ def test_trigger_source_check_static_fallback_reports_unavailable_browser_fallba
         assert not bool(result.get("browserFallbackUsed"))
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
-        admin_bridge._try_fetch_with_playwright = original_browser_fetch
+        admin_bridge._source_check_http.try_fetch_with_playwright = original_browser_fetch
 
 def test_trigger_source_check_static_fallback_returns_404_hints(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://www.king.com/careers")
@@ -248,7 +248,7 @@ def test_trigger_source_check_static_fallback_uses_parent_redirect_candidates_on
     assert source_id
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
-    original_redirect = admin_bridge._discover_redirect_career_candidates
+    original_redirect = admin_bridge._source_check_http.discover_redirect_career_candidates
     try:
         def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
             if url == "https://www.fatsharkgames.com/career":
@@ -258,14 +258,14 @@ def test_trigger_source_check_static_fallback_uses_parent_redirect_candidates_on
             raise RuntimeError(f"unexpected URL: {url}")
 
         admin_bridge.discovery.fetch_text_with_retry = fake_fetch
-        admin_bridge._discover_redirect_career_candidates = lambda *_args, **_kwargs: ["https://jobs.fatsharkgames.com"]
+        admin_bridge._source_check_http.discover_redirect_career_candidates = lambda *_args, **_kwargs: ["https://jobs.fatsharkgames.com"]
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]
         assert result["ok"]
         assert int(result["jobsFound"]) >= 1
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
-        admin_bridge._discover_redirect_career_candidates = original_redirect
+        admin_bridge._source_check_http.discover_redirect_career_candidates = original_redirect
 
 def test_trigger_source_check_static_fallback_returns_ssl_error_code(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://careers.11bitstudios.com/")

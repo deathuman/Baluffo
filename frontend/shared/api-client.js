@@ -2,6 +2,8 @@
  * Unified bridge API client. Single place for fetch calls to the admin bridge
  * and consistent error handling (401 Unauthorized, 5xx Bridge error, network errors).
  * Callers pass baseUrl (from admin config) so config remains per-page.
+ * Bridge paths used by frontend: see docs/admin-bridge-api.md; jobs/saved/admin use
+ * fetch, pipeline, saved-jobs, ops, sync, discovery endpoints via this module.
  */
 
 const DEFAULT_TIMEOUT_MS = 18000;

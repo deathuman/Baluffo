@@ -1,3 +1,5 @@
+import { setStatusText as setStatusTextFromShared } from "../../../shared/ui/index.js";
+
 export function toLocalTime(value) {
   try {
     return value.toLocaleTimeString([], {
@@ -11,6 +13,4 @@ export function toLocalTime(value) {
   }
 }
 
-export function setStatusText(setText, element, text) {
-  setText(element, text);
-}
+export const setStatusText = setStatusTextFromShared;

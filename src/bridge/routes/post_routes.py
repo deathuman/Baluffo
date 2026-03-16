@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import ValidationError as PydanticValidationError
+
+from src.core.schemas import SavedJobSchema
+
 
 def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
     """Handle POST routes for the admin bridge.
@@ -28,12 +32,26 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
 
     if path == "/desktop-local-data/saved-jobs/save":
         try:
+            job = (payload or {}).get("job") if isinstance((payload or {}).get("job"), dict) else {}
+            if job:
+                SavedJobSchema.model_validate(job)
             job_key = api.desktop_local_data_store().save_job_for_user(
                 str((payload or {}).get("uid") or ""),
-                (payload or {}).get("job") if isinstance((payload or {}).get("job"), dict) else {},
+                job,
                 (payload or {}).get("options") if isinstance((payload or {}).get("options"), dict) else {},
             )
             handler._send_json({"ok": True, "jobKey": job_key})  # noqa: SLF001
+        except PydanticValidationError as exc:  # noqa: BLE001
+            details = exc.errors()
+            first_msg = details[0].get("msg", str(exc)) if details else str(exc)
+            handler._send_json(  # noqa: SLF001
+                {
+                    "ok": False,
+                    "error": f"Invalid saved job shape: {first_msg}",
+                    "details": details,
+                },
+                status=400,
+            )
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True

@@ -10,6 +10,14 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from pydantic import ValidationError as PydanticValidationError
+
+from src.core.schemas import ManifestSchema
+
 # Colors
 C_GREEN = "\033[92m"
 C_RED = "\033[91m"
@@ -28,7 +36,6 @@ def color_msg(msg: str, color_code: str) -> str:
     return msg
 
 # Paths
-ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 OUT = ROOT / "_out"
 RUNS = OUT / "runs"
@@ -78,17 +85,18 @@ def sync_latest(run_dir: Path):
         print(f"!!! Latest sync failed: {e}")
 
 def update_manifest(status: str, summary: str, artifacts: Optional[Dict[str, Any]] = None, run_id: Optional[str] = None):
-    """Updates the machine-readable manifest HUD."""
+    """Updates the machine-readable manifest HUD. Validates shape with ManifestSchema before writing."""
     manifest = {
-        "last_run_id": run_id,
+        "last_run_id": run_id or "",
         "last_run_time": time.strftime("%Y-%m-%d %H:%M:%S"),
         "status": status,
         "summary": summary,
         "src_hash": get_src_hash(),
-        "artifacts_root": f"_out/runs/{run_id}" if run_id else None,
-        "artifacts": artifacts or {}
+        "artifacts_root": f"_out/runs/{run_id}" if run_id else "",
+        "artifacts": artifacts or {},
     }
-    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    manifest_model = ManifestSchema.model_validate(manifest)
+    MANIFEST_PATH.write_text(manifest_model.model_dump_json(indent=2), encoding="utf-8")
 
 def run_proc(command: List[str], name: str, allow_stream: bool = False) -> tuple[bool, str]:
     _safe_print(f">>> [{name}] Running: {' '.join(command)}")
@@ -154,11 +162,12 @@ def build(args: argparse.Namespace, run_dir: Optional[Path] = None, is_verify: b
         if MANIFEST_PATH.exists():
             try:
                 manifest = json.loads(MANIFEST_PATH.read_text())
-                if manifest.get("status") == "success" and manifest.get("artifacts_root"):
-                    prev_run = ROOT / manifest["artifacts_root"]
+                manifest_model = ManifestSchema.model_validate(manifest)
+                if manifest_model.status == "success" and manifest_model.artifacts_root:
+                    prev_run = ROOT / manifest_model.artifacts_root
                     if prev_run.exists():
                         return True, prev_run
-            except Exception:
+            except (json.JSONDecodeError, PydanticValidationError, TypeError):
                 pass
         # If manifest missing or invalid but hash matched, we still rebuild to be safe
     

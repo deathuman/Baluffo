@@ -29,7 +29,7 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await page.goto("/jobs.html");
 
   await expect(page.locator("#jobs-list")).toBeVisible();
-  await expect(page.locator("#source-status")).toHaveText(/./);
+  await expect(page.locator("#source-status")).toHaveText(/.+/, { timeout: 10000 });
   await page.selectOption("#work-type-filter", "Remote");
   await page.click("#refresh-jobs-btn");
   await expect(page.locator("#source-status")).toHaveText(/Fetching|Loaded|Could not/i);

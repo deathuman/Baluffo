@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List
+
+from pydantic import ValidationError as PydanticValidationError
+
+from src.core.schemas import SavedJobSchema
+
+logger = logging.getLogger(__name__)
 
 
 def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]) -> bool:
@@ -26,7 +33,15 @@ def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]
     if path == "/desktop-local-data/saved-jobs":
         try:
             uid = (query.get("uid") or [""])[0]
-            handler._send_json({"ok": True, "rows": api.desktop_local_data_store().list_saved_jobs(uid)})  # noqa: SLF001
+            raw_rows = api.desktop_local_data_store().list_saved_jobs(uid)
+            rows = []
+            for row in raw_rows:
+                try:
+                    SavedJobSchema.model_validate(row)
+                    rows.append(row)
+                except PydanticValidationError as exc:
+                    logger.warning("Saved job row validation failed, skipping: %s", exc)
+            handler._send_json({"ok": True, "rows": rows})  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True

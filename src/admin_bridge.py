@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import ast
 import html as html_module
 import io
 import json
@@ -64,7 +63,22 @@ from src.bridge.pipeline_service import PipelineRuntime, PipelineService
 from src.bridge import html_extractor as _html_extractor
 from src.bridge import source_checker as _source_checker
 from src.bridge import task_history as _task_history_module
+from src.bridge.request_utils import read_json_from_request
+from src.bridge.source_helpers import (
+    find_existing_source_by_url,
+    find_existing_static_source_by_studio_domain,
+    infer_studio_name_from_host,
+)
+from src.bridge import report_normalizer
+from src.bridge import ops_health as _ops_health
+from src.bridge import run_history_api as _run_history_api
+from src.bridge import source_check_fetch as _source_check_fetch
+from src.bridge import source_check_http as _source_check_http
 from src.shared.regex import find_urls_in_text
+
+normalize_fetch_report_contract = report_normalizer.normalize_fetch_report_contract
+normalize_discovery_report_contract = report_normalizer.normalize_discovery_report_contract
+_safe_int = report_normalizer.safe_int
 from src.shared.utils import coerce_port as _coerce_port, now_iso, now_utc
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
@@ -79,12 +93,6 @@ SYNC_RUNTIME_PATH = ROOT / "data" / "source-sync-runtime.json"
 STARTUP_METRICS_PATH = ROOT / "data" / "desktop-startup-metrics.jsonl"
 
 MAX_HISTORY_ROWS = 240
-STALE_FETCH_HOURS = 12
-DEGRADED_FAILURE_RATIO = 0.25
-OUTPUT_DROP_RATIO = 0.40
-SOCIAL_ZERO_MATCH_THRESHOLD = 2
-SOCIAL_FAILURE_THRESHOLD = 2
-SOCIAL_LOW_CONFIDENCE_SPIKE_THRESHOLD = 120
 OPS_SCHEMA_VERSION = 1
 OPS_STATE_LOCK = threading.RLock()
 _TASK_HISTORY_MANAGER: Optional[Any] = None
@@ -521,18 +529,6 @@ def test_sync_config() -> Dict[str, Any]:
     return _get_sync_service().test_sync_config()
 
 
-def read_json_from_request(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
-    length = int(handler.headers.get("Content-Length") or 0)
-    if length <= 0:
-        return {}
-    raw = handler.rfile.read(length)
-    try:
-        payload = json.loads(raw.decode("utf-8"))
-        return payload if isinstance(payload, dict) else {}
-    except json.JSONDecodeError:
-        return {}
-
-
 def ensure_active_registry() -> List[Dict[str, Any]]:
     return _get_registry_service().ensure_active_registry()
 
@@ -561,27 +557,6 @@ def persist_state_and_auto_sync(state: Dict[str, List[Dict[str, Any]]], *, reaso
 
 def move_entries(pending: List[Dict[str, Any]], selected_ids: List[str]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     return RegistryService.move_entries(pending, selected_ids)
-
-
-def infer_studio_name_from_host(url: str) -> str:
-    host = (urlparse(url).netloc or "").lower().strip()
-    if ":" in host:
-        host = host.split(":", 1)[0]
-    labels = [part for part in host.split(".") if part]
-    while labels and labels[0] in {"www", "w", "ww", "www2", "jobs", "job", "careers", "career", "apply", "join"}:
-        labels.pop(0)
-    token = labels[0] if labels else ""
-    # Fallback if first remaining label still looks like a placeholder.
-    if token in {"www", "w", "ww", "www2"} and len(labels) > 1:
-        token = labels[1]
-    split_token = token
-    for marker in ("interactive", "entertainment", "software", "studios", "studio", "games", "game"):
-        split_token = re.sub(rf"(?<!\s){marker}(?!\s)", f" {marker} ", split_token)
-    token = split_token
-    cleaned = re.sub(r"[^a-z0-9]+", " ", token).strip()
-    if not cleaned:
-        return "Manual Source"
-    return " ".join(part.capitalize() for part in cleaned.split())
 
 
 def build_manual_candidate(normalized_url: str) -> Dict[str, Any] | None:
@@ -615,59 +590,6 @@ def build_manual_candidate(normalized_url: str) -> Dict[str, Any] | None:
     row["discoveredAt"] = now_iso()
     row["manualAddedAt"] = now_iso()
     return row
-
-
-def find_existing_source_by_url(state: Dict[str, List[Dict[str, Any]]], normalized_url: str) -> Dict[str, Any] | None:
-    if not normalized_url:
-        return None
-    for bucket in ("active", "pending", "rejected"):
-        for row in state.get(bucket, []):
-            if source_url_fingerprint(row) == normalized_url:
-                return row
-    return None
-
-
-def _normalized_host_token(raw_url: str) -> str:
-    host = (urlparse(str(raw_url or "")).netloc or "").lower().strip()
-    if ":" in host:
-        host = host.split(":", 1)[0]
-    labels = [part for part in host.split(".") if part]
-    while labels and labels[0] in {"www", "w", "ww", "www2", "jobs", "job", "careers", "career", "apply", "join"}:
-        labels.pop(0)
-    return ".".join(labels)
-
-
-def find_existing_static_source_by_studio_domain(
-    state: Dict[str, List[Dict[str, Any]]],
-    *,
-    studio: str,
-    normalized_url: str,
-) -> Tuple[str, int, Dict[str, Any]] | None:
-    studio_key = str(studio or "").strip().lower()
-    host_key = _normalized_host_token(normalized_url)
-    if not studio_key or not host_key:
-        return None
-    for bucket in ("active", "pending", "rejected"):
-        rows = state.get(bucket, [])
-        if not isinstance(rows, list):
-            continue
-        for idx, row in enumerate(rows):
-            if str(row.get("adapter") or "").strip().lower() != "static":
-                continue
-            row_studio = str(row.get("studio") or "").strip().lower()
-            if row_studio != studio_key:
-                continue
-            endpoint = str(
-                row.get("listing_url")
-                or row.get("api_url")
-                or row.get("feed_url")
-                or row.get("board_url")
-                or (row.get("pages")[0] if isinstance(row.get("pages"), list) and row.get("pages") else "")
-                or ""
-            )
-            if _normalized_host_token(endpoint) == host_key:
-                return bucket, idx, row
-    return None
 
 
 def add_manual_source(raw_url: str) -> Dict[str, Any]:
@@ -732,244 +654,43 @@ def add_manual_source(raw_url: str) -> Dict[str, Any]:
     }
 
 
-def _try_fetch_with_playwright(url: str, timeout_s: int) -> Tuple[str, str]:
-    """Best-effort browser fallback for anti-bot pages; returns (html, error)."""
-    try:
-        from playwright.sync_api import sync_playwright  # type: ignore
-    except Exception:
-        return "", "browser fallback unavailable (playwright is not installed)"
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=max(1, int(timeout_s)) * 1000)
-            html = page.content() or ""
-            browser.close()
-            if not html:
-                return "", "browser fallback returned empty content"
-            return html, ""
-    except Exception as exc:  # noqa: BLE001
-        return "", str(exc)
-
-
-def _is_http_forbidden_error(exc: Exception) -> bool:
-    return bool(re.search(r"\bHTTP Error 403\b", str(exc), flags=re.I))
-
-
-def _normalize_error_code(error_text: str) -> str:
-    text = str(error_text or "").lower()
-    if "browser fallback unavailable" in text or "playwright is not installed" in text:
-        return "browser_fallback_unavailable"
-    if "http error 404" in text:
-        return "not_found"
-    if "http error 403" in text:
-        return "forbidden"
-    if "certificate verify failed" in text or "hostname mismatch" in text or "[ssl:" in text:
-        return "ssl_error"
-    if "getaddrinfo failed" in text or "name or service not known" in text or "nodename nor servname provided" in text:
-        return "dns_error"
-    if "timed out" in text:
-        return "timeout"
-    if "no job postings found" in text:
-        return "no_jobs"
-    return "probe_failed"
-
-
-def _suggest_alternate_career_urls(url: str) -> List[str]:
-    parsed = urlparse(str(url or "").strip())
-    host = (parsed.netloc or "").strip().lower()
-    if not host:
-        return []
-    if ":" in host:
-        host = host.split(":", 1)[0]
-    labels = [part for part in host.split(".") if part]
-    base_host = ".".join(labels[1:]) if labels[:1] == ["www"] and len(labels) > 2 else host
-    path = parsed.path or ""
-    if path.endswith("/") and path != "/":
-        path = path[:-1]
-    path = path or "/"
-    source_norm = normalize_source_url(url)
-
-    candidates_raw = [
-        f"https://careers.{base_host}/",
-        f"https://jobs.{base_host}/",
-        f"https://{base_host}/careers",
-        f"https://{base_host}/jobs",
-        f"https://{base_host}/vacancies",
-    ]
-    if host != base_host:
-        candidates_raw.append(f"https://{base_host}{path}")
-    else:
-        candidates_raw.append(f"https://www.{base_host}{path}")
-
-    out: List[str] = []
-    seen = set()
-    for raw in candidates_raw:
-        normalized = normalize_source_url(raw)
-        if not normalized or normalized == source_norm or normalized in seen:
-            continue
-        seen.add(normalized)
-        out.append(normalized)
-    return out[:5]
-
-
-def _discover_redirect_career_candidates(source_url: str, timeout_s: int) -> List[str]:
-    parsed = urlparse(str(source_url or "").strip())
-    host = (parsed.netloc or "").strip().lower()
-    if not host:
-        return []
-    if ":" in host:
-        host = host.split(":", 1)[0]
-    labels = [part for part in host.split(".") if part]
-    base_host = ".".join(labels[1:]) if labels[:1] == ["www"] and len(labels) > 2 else host
-    roots = [f"https://{base_host}/"]
-    if not base_host.startswith("www."):
-        roots.append(f"https://www.{base_host}/")
-
-    out: List[str] = []
-    seen = set()
-    for root in roots:
-        body = ""
-        try:
-            req = Request(root, headers={"User-Agent": "Mozilla/5.0 Baluffo/1.0"})
-            with urlopen(req, timeout=max(4, int(timeout_s))) as resp:
-                final_url = normalize_source_url(resp.geturl() or "")
-                charset = resp.headers.get_content_charset() or "utf-8"
-                body = resp.read().decode(charset, errors="replace")
-        except Exception:
-            continue
-        if final_url and final_url not in seen:
-            low = final_url.lower()
-            parsed_final = urlparse(final_url)
-            path = (parsed_final.path or "").lower()
-            if any(token in low for token in ("jobs.", "careers.", "/jobs", "/career", "/careers", "/vacancies")) or path in {"/jobs", "/career", "/careers", "/vacancies"}:
-                seen.add(final_url)
-                out.append(final_url)
-        for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', str(body or "")):
-            candidate = normalize_source_url(urljoin(root, str(href or "").strip()))
-            if not candidate or candidate in seen:
-                continue
-            low_candidate = candidate.lower()
-            if not any(
-                token in low_candidate
-                for token in (
-                    "jobs.",
-                    "careers.",
-                    "apply.workable.com/",
-                    "jobs.lever.co/",
-                    "boards.greenhouse.io/",
-                    "jobs.ashbyhq.com/",
-                    "jobs.smartrecruiters.com/",
-                    ".jobs.personio.de/",
-                    "intervieweb.it/",
-                    "/jobs",
-                    "/career",
-                    "/careers",
-                    "/vacancies",
-                    "/vacancy",
-                )
-            ):
-                continue
-            seen.add(candidate)
-            out.append(candidate)
-    return out[:6]
-
-
-def _build_check_failure_details(error_text: str, source_url: str, *, browser_fallback_attempted: bool = False) -> Dict[str, Any]:
-    code = _normalize_error_code(error_text)
-    details: Dict[str, Any] = {
-        "errorCode": code,
-        "browserFallbackAttempted": bool(browser_fallback_attempted),
-    }
-    if code == "not_found":
-        details["suggestedUrls"] = _suggest_alternate_career_urls(source_url)
-    else:
-        details["suggestedUrls"] = []
-    return details
-
-
-def _is_not_found_error_text(error_text: str) -> bool:
-    return "http error 404" in str(error_text or "").lower()
-
-
-def _looks_like_browser_challenge_page(html: str) -> bool:
-    low = str(html or "").lower()
-    if not low:
-        return False
-    challenge_tokens = (
-        "challenge-platform",
-        "/cdn-cgi/challenge-platform/",
-        "cf-chl-",
-        "cloudflare",
-        "just a moment...",
-        "enable javascript and cookies to continue",
+def _fetch_html_with_fallback_bound(url: str, timeout_s: int) -> Tuple[str, str, bool, bool]:
+    return _source_check_fetch.fetch_html_with_fallback(
+        url,
+        timeout_s,
+        fetch_text=lambda u, t: discovery.fetch_text_with_retry(u, t, adapter="static"),
+        looks_like_challenge=_source_check_http.looks_like_browser_challenge_page,
+        has_extractable_job_data=lambda html, page_url: _source_check_fetch.html_has_extractable_job_data(
+            html, page_url, html_extractor=_html_extractor
+        ),
+        try_playwright=_source_check_http.try_fetch_with_playwright,
+        is_http_forbidden=_source_check_http.is_http_forbidden_error,
     )
-    return any(token in low for token in challenge_tokens)
 
 
-def _fetch_html_with_fallback(url: str, timeout_s: int) -> Tuple[str, str, bool, bool]:
-    """Return (html, error, browser_attempted, browser_used)."""
-    try:
-        html = discovery.fetch_text_with_retry(url, timeout_s, adapter="static")
-        if not _looks_like_browser_challenge_page(html) or _html_has_extractable_job_data(html, url):
-            return html, "", False, False
-        browser_html, browser_error = _try_fetch_with_playwright(url, timeout_s)
-        if browser_html:
-            return browser_html, "", True, True
-        if browser_error:
-            return "", f"{url}: {browser_error}", True, False
-        return html, "", True, False
-    except Exception as exc:  # noqa: BLE001
-        if not _is_http_forbidden_error(exc):
-            return "", f"{url}: {exc}", False, False
-        browser_html, browser_error = _try_fetch_with_playwright(url, timeout_s)
-        if browser_html:
-            return browser_html, "", True, True
-        if browser_error:
-            return "", f"{url}: {browser_error}", True, False
-        return "", f"{url}: {exc}", True, False
-
-
-def _html_has_extractable_job_data(html: str, page_url: str) -> bool:
-    if _html_extractor.extract_job_like_links(html, page_url):
-        return True
-    if _html_extractor.extract_embedded_job_urls(html, page_url):
-        return True
-    embedded_links, embedded_signals = _html_extractor.extract_embedded_job_filter_signals(html, page_url)
-    return bool(embedded_links or embedded_signals)
-
-
-def _fetch_static_page_with_alternates(page_url: str, timeout_s: int) -> Tuple[str, str, bool, bool, str]:
-    html, fetch_error, attempted, used = _fetch_html_with_fallback(page_url, timeout_s)
-    if not fetch_error or not _is_not_found_error_text(fetch_error):
-        return html, fetch_error, attempted, used, ""
-
-    alt_candidates = list(_suggest_alternate_career_urls(page_url)[:3])
-    for redirect_candidate in _discover_redirect_career_candidates(page_url, timeout_s):
-        if redirect_candidate not in alt_candidates:
-            alt_candidates.append(redirect_candidate)
-    for alt_url in alt_candidates[:6]:
-        alt_html, alt_error, alt_attempted, alt_used = _fetch_html_with_fallback(alt_url, timeout_s)
-        attempted = attempted or alt_attempted
-        used = used or alt_used
-        if alt_error:
-            continue
-        return alt_html, "", attempted, used, alt_url
-    return html, fetch_error, attempted, used, ""
+def _fetch_static_page_with_alternates_bound(page_url: str, timeout_s: int) -> Tuple[str, str, bool, bool, str]:
+    return _source_check_fetch.fetch_static_page_with_alternates(
+        page_url,
+        timeout_s,
+        fetch_html_with_fallback_fn=_fetch_html_with_fallback_bound,
+        suggest_alternate_urls=_source_check_http.suggest_alternate_career_urls,
+        discover_redirect_career_candidates=_source_check_http.discover_redirect_career_candidates,
+        is_not_found_error_text=_source_check_http.is_not_found_error_text,
+    )
 
 
 def check_static_source(row: Dict[str, Any], timeout_s: int = 12) -> Tuple[bool, int, str, bool, Dict[str, Any]]:
     return _source_checker.check_static_source(
         row,
         timeout_s,
-        fetch_page_with_alternates=_fetch_static_page_with_alternates,
-        fetch_page=_fetch_html_with_fallback,
+        fetch_page_with_alternates=_fetch_static_page_with_alternates_bound,
+        fetch_page=_fetch_html_with_fallback_bound,
         fetch_text=lambda url, timeout: discovery.fetch_text_with_retry(url, timeout, adapter="static"),
         html_extractor=_html_extractor,
         parse_jobpostings_from_html=parse_jobpostings_from_html,
         normalize_job_url=normalize_job_url,
         source_identity=source_identity,
-        suggest_alternate_career_urls=_suggest_alternate_career_urls,
+        suggest_alternate_career_urls=_source_check_http.suggest_alternate_career_urls,
     )
 
 
@@ -1043,7 +764,7 @@ def trigger_source_check(source_id: str, timeout_s: int = 12) -> Dict[str, Any]:
                 ) or normalize_source_url(
                     str((updated.get("pages") or [""])[0] if isinstance(updated.get("pages"), list) else "")
                 ) or ""
-                failure_details = _build_check_failure_details(
+                failure_details = _source_check_http.build_check_failure_details(
                     str(error or "probe failed"),
                     source_url,
                     browser_fallback_attempted=bool((probe_meta or {}).get("browserFallbackAttempted")),
@@ -1104,7 +825,7 @@ def trigger_source_check(source_id: str, timeout_s: int = 12) -> Dict[str, Any]:
                 or row.get("board_url")
                 or ""
             )) or endpoint_url
-            failure_details = _build_check_failure_details(str(error or "probe failed"), str(source_url or ""))
+            failure_details = _source_check_http.build_check_failure_details(str(error or "probe failed"), str(source_url or ""))
             return {
                 "started": True,
                 "runId": run_id,
@@ -1189,153 +910,11 @@ def run_background_script(script_name: str, args: List[str] | None = None) -> in
     return int(proc.pid)
 
 
-def _safe_int(value: Any, default: int, minimum: int, maximum: int) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = int(default)
-    return max(minimum, min(maximum, parsed))
-
-
-def _safe_schema_version(value: Any) -> int:
-    try:
-        parsed = int(float(value))
-    except (TypeError, ValueError):
-        parsed = 1
-    return max(1, parsed)
-
-
-def _coerce_fetch_report_detail_row(detail: Any) -> Dict[str, Any] | None:
-    candidate: Dict[str, Any] | None = None
-    if isinstance(detail, dict):
-        candidate = detail
-    elif isinstance(detail, str):
-        raw = str(detail).strip()
-        if raw.startswith("{") and raw.endswith("}"):
-            parsed: Any = None
-            try:
-                parsed = json.loads(raw)
-            except json.JSONDecodeError:
-                try:
-                    parsed = ast.literal_eval(raw)
-                except Exception:  # noqa: BLE001
-                    parsed = None
-            if isinstance(parsed, dict):
-                candidate = parsed
-    if not isinstance(candidate, dict):
-        return None
-    return {
-        "name": str(candidate.get("name") or "").strip(),
-        "status": str(candidate.get("status") or "").strip().lower(),
-        "adapter": str(candidate.get("adapter") or "").strip().lower(),
-        "studio": str(candidate.get("studio") or "").strip(),
-        "fetchedCount": _safe_int(candidate.get("fetchedCount"), 0, 0, 1_000_000),
-        "keptCount": _safe_int(candidate.get("keptCount"), 0, 0, 1_000_000),
-        "lowConfidenceDropped": _safe_int(candidate.get("lowConfidenceDropped"), 0, 0, 1_000_000),
-        "error": str(candidate.get("error") or "").strip(),
-    }
-
-
-def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
-    summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
-    runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
-    sources = src.get("sources")
-    if not isinstance(sources, list):
-        sources = []
-    normalized_sources: List[Dict[str, Any]] = []
-    for row in sources:
-        if not isinstance(row, dict):
-            continue
-        details_raw = row.get("details")
-        details = details_raw if isinstance(details_raw, list) else []
-        normalized_details: List[Dict[str, Any]] = []
-        for detail in details:
-            parsed_detail = _coerce_fetch_report_detail_row(detail)
-            if parsed_detail:
-                normalized_details.append(parsed_detail)
-        normalized_sources.append({
-            "name": str(row.get("name") or "").strip(),
-            "status": str(row.get("status") or "").strip().lower(),
-            "adapter": str(row.get("adapter") or "").strip().lower(),
-            "studio": str(row.get("studio") or "").strip(),
-            "fetchedCount": _safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
-            "keptCount": _safe_int(row.get("keptCount"), 0, 0, 1_000_000),
-            "lowConfidenceDropped": _safe_int(row.get("lowConfidenceDropped"), 0, 0, 1_000_000),
-            "error": str(row.get("error") or "").strip(),
-            "durationMs": _safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-            "details": normalized_details,
-        })
-    return {
-        "schemaVersion": _safe_schema_version(src.get("schemaVersion")),
-        "startedAt": str(src.get("startedAt") or "").strip(),
-        "finishedAt": str(src.get("finishedAt") or "").strip(),
-        "runtime": dict(runtime),
-        "summary": dict(summary),
-        "sources": normalized_sources,
-        "outputs": dict(src.get("outputs") or {}),
-    }
-
-
-def _derive_discovery_queued_count(report: Dict[str, Any], summary: Dict[str, Any]) -> int:
-    queued = int(summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0)
-    candidates = report.get("candidates")
-    if not isinstance(candidates, list):
-        return max(0, queued)
-    derived = len([
-        row for row in candidates
-        if isinstance(row, dict) and not bool(row.get("deferred"))
-    ])
-    return max(0, max(queued, derived))
-
-
-def normalize_discovery_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
-    summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
-    candidates = src.get("candidates")
-    failures = src.get("failures")
-    top_failures = src.get("topFailures")
-    normalized = {
-        "schemaVersion": _safe_schema_version(src.get("schemaVersion")),
-        "mode": str(src.get("mode") or "").strip(),
-        "startedAt": str(src.get("startedAt") or "").strip(),
-        "finishedAt": str(src.get("finishedAt") or "").strip(),
-        "summary": dict(summary),
-        "candidates": list(candidates) if isinstance(candidates, list) else [],
-        "failures": list(failures) if isinstance(failures, list) else [],
-        "topFailures": list(top_failures) if isinstance(top_failures, list) else [],
-        "outputs": dict(src.get("outputs") or {}),
-    }
-    normalized["summary"]["queuedCandidateCount"] = _derive_discovery_queued_count(normalized, normalized["summary"])
-    return normalized
-
-
 def _failed_source_names_from_latest_report(*, allowed_names: set[str] | None = None) -> List[str]:
     report = normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {}))
-    sources = report.get("sources")
-    if not isinstance(sources, list):
-        return []
-    names: List[str] = []
-    for row in sources:
-        if not isinstance(row, dict):
-            continue
-        if str(row.get("status") or "").strip().lower() != "error":
-            continue
-        name = str(row.get("name") or "").strip()
-        if allowed_names is not None and name not in allowed_names:
-            continue
-        if name:
-            names.append(name)
-    # Keep deterministic order and remove duplicates.
-    seen = set()
-    out: List[str] = []
-    for name in sorted(names, key=lambda item: item.lower()):
-        key = name.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(name)
-    return out
+    return report_normalizer.failed_source_names_from_report(
+        report, allowed_names=allowed_names
+    )
 
 
 def build_fetcher_args_from_payload(payload: Dict[str, Any]) -> Tuple[List[str], str]:
@@ -1414,33 +993,6 @@ def parse_iso(value: Any) -> datetime | None:
         return None
 
 
-def load_run_history() -> List[Dict[str, Any]]:
-    return _get_task_history_manager().load_run_history()
-
-
-def save_run_history(rows: List[Dict[str, Any]]) -> None:
-    _get_task_history_manager().save_run_history(rows)
-
-
-def append_run_history(row: Dict[str, Any]) -> Dict[str, Any]:
-    return _get_task_history_manager().append_run_history(row)
-
-
-def upsert_run_history(entry: Dict[str, Any], *, dedupe_fields: Tuple[str, ...]) -> Dict[str, Any]:
-    return _get_task_history_manager().upsert_run_history(entry, dedupe_fields=dedupe_fields)
-
-
-def prune_started_rows_for_type(
-    run_type: str,
-    *,
-    keep_started_at: str = "",
-    finished_at: str = "",
-) -> None:
-    _get_task_history_manager().prune_started_rows_for_type(
-        run_type, keep_started_at=keep_started_at, finished_at=finished_at
-    )
-
-
 def pid_is_running(pid: int) -> bool:
     if int(pid or 0) <= 0:
         return False
@@ -1451,175 +1003,100 @@ def pid_is_running(pid: int) -> bool:
     return True
 
 
+def load_run_history() -> List[Dict[str, Any]]:
+    return _run_history_api.load_run_history(_get_task_history_manager())
+
+
+def save_run_history(rows: List[Dict[str, Any]]) -> None:
+    _run_history_api.save_run_history(_get_task_history_manager(), rows)
+
+
+def append_run_history(row: Dict[str, Any]) -> Dict[str, Any]:
+    return _run_history_api.append_run_history(_get_task_history_manager(), row)
+
+
+def upsert_run_history(entry: Dict[str, Any], *, dedupe_fields: Tuple[str, ...]) -> Dict[str, Any]:
+    return _run_history_api.upsert_run_history(
+        _get_task_history_manager(), entry, dedupe_fields=dedupe_fields
+    )
+
+
+def prune_started_rows_for_type(
+    run_type: str,
+    *,
+    keep_started_at: str = "",
+    finished_at: str = "",
+) -> None:
+    _run_history_api.prune_started_rows_for_type(
+        _get_task_history_manager(),
+        run_type,
+        keep_started_at=keep_started_at,
+        finished_at=finished_at,
+    )
+
+
 def _clear_task_state_locked(task_type: str) -> None:
     _get_task_history_manager()._clear_task_state_locked(task_type)
 
 
 def clear_task_state(task_type: str) -> None:
-    _get_task_history_manager().clear_task_state(task_type)
+    _run_history_api.clear_task_state(_get_task_history_manager(), task_type)
 
 
 def task_running_from_state(task_type: str) -> bool:
-    state = load_json_object(TASK_STATE_PATH, {})
-    if not isinstance(state, dict):
-        return False
-    entry = state.get(str(task_type))
-    if not isinstance(entry, dict):
-        return False
-    pid = int(entry.get("pid") or 0)
-    return pid_is_running(pid)
+    return _run_history_api.task_running_from_state(
+        task_type, load_json_object, TASK_STATE_PATH, pid_is_running
+    )
 
 
 def report_is_stale_in_progress(task_type: str, path: Path, report: Dict[str, Any], *, max_age_minutes: int = 5, max_mtime_idle_minutes: float = 0.35) -> bool:
-    started_raw = str(report.get("startedAt") or "")
-    finished_raw = str(report.get("finishedAt") or "")
-    if not started_raw or finished_raw:
-        return False
-    started_dt = parse_iso(started_raw)
-    if not started_dt:
-        return False
-    age_minutes = (now_utc() - started_dt).total_seconds() / 60.0
-    if task_running_from_state(task_type):
-        return False
-    # If we have explicit task state but process is gone, clear stale quickly.
-    state = load_json_object(TASK_STATE_PATH, {})
-    if isinstance(state, dict) and isinstance(state.get(task_type), dict):
-        return age_minutes >= 0.5
+    return _run_history_api.report_is_stale_in_progress(
+        task_type,
+        path,
+        report,
+        load_json_object=load_json_object,
+        task_state_path=TASK_STATE_PATH,
+        parse_iso=parse_iso,
+        now_utc=now_utc,
+        pid_is_running=pid_is_running,
+        max_age_minutes=max_age_minutes,
+        max_mtime_idle_minutes=max_mtime_idle_minutes,
+    )
+
+
+def _read_tasks_config() -> Dict[str, Any]:
     try:
-        mtime_dt = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-        idle_minutes = (now_utc() - mtime_dt).total_seconds() / 60.0
-        if idle_minutes >= float(max_mtime_idle_minutes):
-            return True
-    except OSError:
-        pass
-    return age_minutes >= float(max_age_minutes)
+        return json.loads(TASKS_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
 
 
 def load_alert_state() -> Dict[str, Any]:
-    state = load_json_object(OPS_ALERT_STATE_PATH, {})
-    acked = state.get("acked")
-    if not isinstance(acked, dict):
-        acked = {}
-    return {
-        "schemaVersion": OPS_SCHEMA_VERSION,
-        "acked": {str(k): str(v) for k, v in acked.items()},
-    }
+    return _ops_health.load_alert_state(load_json_object, OPS_ALERT_STATE_PATH, OPS_SCHEMA_VERSION)
 
 
 def save_alert_state(state: Dict[str, Any]) -> None:
-    payload = {
-        "schemaVersion": OPS_SCHEMA_VERSION,
-        "acked": dict(state.get("acked") or {}),
-        "updatedAt": now_iso(),
-    }
-    save_json_atomic(OPS_ALERT_STATE_PATH, payload)
+    _ops_health.save_alert_state(
+        save_json_atomic, OPS_ALERT_STATE_PATH, state, OPS_SCHEMA_VERSION, now_iso
+    )
 
 
 def detect_task_interval_hours(task: Dict[str, Any]) -> float | None:
-    text = " ".join([
-        str(task.get("label") or ""),
-        str(task.get("command") or ""),
-        str(task.get("detail") or ""),
-    ]).lower()
-    match_hours = re.search(r"every\s+(\d+(?:\.\d+)?)\s*(h|hour|hours)\b", text)
-    if match_hours:
-        return max(0.1, float(match_hours.group(1)))
-    match_minutes = re.search(r"every\s+(\d+(?:\.\d+)?)\s*(m|min|minute|minutes)\b", text)
-    if match_minutes:
-        return max(1.0, float(match_minutes.group(1))) / 60.0
-    match_flag = re.search(r"--every-hours\s+(\d+(?:\.\d+)?)", text)
-    if match_flag:
-        return max(0.1, float(match_flag.group(1)))
-    return None
+    return _ops_health.detect_task_interval_hours(task)
 
 
 def parse_schedule_metadata() -> Dict[str, Any]:
-    fallback = {
-        "fetcher": {"intervalHours": None, "nextRunAt": "", "note": "unknown"},
-        "discovery": {"intervalHours": None, "nextRunAt": "", "note": "unknown"},
-    }
-    try:
-        payload = json.loads(TASKS_CONFIG_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return fallback
-    tasks = payload.get("tasks")
-    if not isinstance(tasks, list):
-        return fallback
-
-    by_type: Dict[str, Dict[str, Any]] = {
-        "fetcher": dict(fallback["fetcher"]),
-        "discovery": dict(fallback["discovery"]),
-    }
-    for task in tasks:
-        if not isinstance(task, dict):
-            continue
-        command = str(task.get("command") or "").lower()
-        label = str(task.get("label") or "").lower()
-        interval = detect_task_interval_hours(task)
-        if "jobs_fetcher.py" in command or "run jobs fetcher" in label:
-            by_type["fetcher"]["intervalHours"] = interval
-            by_type["fetcher"]["note"] = "inferred" if interval else "manual_task"
-        if "source_discovery.py" in command or "run source discovery" in label:
-            by_type["discovery"]["intervalHours"] = interval
-            by_type["discovery"]["note"] = "inferred" if interval else "manual_task"
-    return by_type
-
-
-def median(values: List[float]) -> float:
-    if not values:
-        return 0.0
-    ordered = sorted(values)
-    mid = len(ordered) // 2
-    if len(ordered) % 2:
-        return float(ordered[mid])
-    return float((ordered[mid - 1] + ordered[mid]) / 2.0)
+    return _ops_health.parse_schedule_metadata(_read_tasks_config)
 
 
 def summarize_fetch_report(report: Dict[str, Any]) -> Dict[str, Any]:
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
-    output = int(summary.get("outputCount") or summary.get("uniqueOutputCount") or 0)
-    failed = int(summary.get("failedSources") or 0)
-    source_count = int(summary.get("sourceCount") or 0)
-    duration_ms = 0
-    sources = report.get("sources")
-    if isinstance(sources, list):
-        duration_ms = sum(int(item.get("durationMs") or 0) for item in sources if isinstance(item, dict))
-    status = "ok"
-    if source_count > 0 and failed >= source_count:
-        status = "error"
-    elif failed > 0:
-        status = "warning"
-    return {
-        "outputCount": output,
-        "failedSources": failed,
-        "sourceCount": source_count,
-        "durationMs": duration_ms,
-        "failedRatio": (failed / source_count) if source_count > 0 else 0.0,
-    }
+    return _ops_health.summarize_fetch_report(report)
 
 
-def summarize_discovery_report(report: Dict[str, Any]) -> Dict[str, Any]:
-    normalized = normalize_discovery_report_contract(report)
-    summary = normalized.get("summary") if isinstance(normalized.get("summary"), dict) else {}
-    queued = int(summary.get("queuedCandidateCount") or 0)
-    failed = int(summary.get("failedProbeCount") or 0)
-    probed = int(summary.get("probedCandidateCount") or summary.get("probedCount") or 0)
-    duration_ms = 0
-    started = parse_iso(report.get("startedAt"))
-    finished = parse_iso(report.get("finishedAt"))
-    if started and finished:
-        duration_ms = int(max(0.0, (finished - started).total_seconds() * 1000))
-    status = "ok"
-    if probed > 0 and failed >= probed:
-        status = "error"
-    elif failed > 0:
-        status = "warning"
-    return {
-        "queuedCandidateCount": queued,
-        "failedProbeCount": failed,
-        "probedCandidateCount": probed,
-        "durationMs": duration_ms,
-    }, status
+def summarize_discovery_report(report: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+    return _ops_health.summarize_discovery_report(
+        report, normalize_discovery_report_contract, parse_iso
+    )
 
 
 def sync_history_from_reports() -> List[Dict[str, Any]]:
@@ -1706,212 +1183,24 @@ def sync_history_from_reports() -> List[Dict[str, Any]]:
         return load_run_history()
 
 
-def evaluate_alerts(*, history: List[Dict[str, Any]], latest_fetch_report: Dict[str, Any], pending_count: int) -> Dict[str, Any]:
-    alert_state = load_alert_state()
-    acked = dict(alert_state.get("acked") or {})
-    active_conditions: List[Dict[str, Any]] = []
-    now = now_utc()
-    fetch_rows = [row for row in history if str(row.get("type")) == "fetch" and row.get("finishedAt")]
-    latest_fetch = fetch_rows[-1] if fetch_rows else None
-    last_success_fetch = next(
-        (row for row in reversed(fetch_rows) if str(row.get("status")) in {"ok", "warning"}),
-        None
-    )
-    stale_hours = None
-    if last_success_fetch:
-        finished = parse_iso(last_success_fetch.get("finishedAt"))
-        if finished:
-            stale_hours = (now - finished).total_seconds() / 3600.0
-    if stale_hours is None or stale_hours > STALE_FETCH_HOURS:
-        active_conditions.append({
-            "id": "stale_fetch",
-            "severity": "critical",
-            "message": f"No successful fetch in the last {STALE_FETCH_HOURS}h.",
-            "value": None if stale_hours is None else round(stale_hours, 2),
-            "triggeredAt": now_iso(),
-        })
-
-    fetch_summary = summarize_fetch_report(latest_fetch_report)
-    failed_ratio = float(fetch_summary["failedRatio"])
-    if failed_ratio > DEGRADED_FAILURE_RATIO:
-        active_conditions.append({
-            "id": "degraded_reliability",
-            "severity": "warning" if failed_ratio < 0.5 else "critical",
-            "message": f"Failed source ratio is {failed_ratio:.0%} (threshold {DEGRADED_FAILURE_RATIO:.0%}).",
-            "value": round(failed_ratio, 4),
-            "triggeredAt": now_iso(),
-        })
-
-    outputs = [int((row.get("summary") or {}).get("outputCount") or 0) for row in fetch_rows if int((row.get("summary") or {}).get("outputCount") or 0) > 0]
-    if len(outputs) >= 4 and latest_fetch:
-        baseline_values = outputs[:-1] if len(outputs) > 1 else outputs
-        baseline = median([float(v) for v in baseline_values[-10:]])
-        latest_output = float(outputs[-1])
-        if baseline > 0 and latest_output < baseline * (1.0 - OUTPUT_DROP_RATIO):
-            drop_ratio = 1.0 - (latest_output / baseline)
-            active_conditions.append({
-                "id": "output_drop",
-                "severity": "warning" if drop_ratio < 0.6 else "critical",
-                "message": f"Output dropped {drop_ratio:.0%} vs rolling median.",
-                "value": round(drop_ratio, 4),
-                "triggeredAt": now_iso(),
-            })
-
-    source_rows = latest_fetch_report.get("sources") if isinstance(latest_fetch_report.get("sources"), list) else []
-    social_rows = [
-        row for row in source_rows
-        if isinstance(row, dict) and str(row.get("name") or "").strip().lower().startswith("social_")
-    ]
-    if social_rows:
-        social_failures = [
-            row for row in social_rows
-            if str(row.get("status") or "").strip().lower() == "error"
-        ]
-        if len(social_failures) >= SOCIAL_FAILURE_THRESHOLD:
-            active_conditions.append({
-                "id": "social_sources_failing",
-                "severity": "warning" if len(social_failures) < 3 else "critical",
-                "message": f"{len(social_failures)} social sources failed in the latest run.",
-                "value": int(len(social_failures)),
-                "triggeredAt": now_iso(),
-            })
-
-        zero_rows = [
-            row for row in social_rows
-            if str(row.get("status") or "").strip().lower() in {"ok", "error"}
-            and int(row.get("keptCount") or 0) == 0
-        ]
-        if len(zero_rows) >= SOCIAL_ZERO_MATCH_THRESHOLD:
-            active_conditions.append({
-                "id": "social_zero_matches",
-                "severity": "warning",
-                "message": f"{len(zero_rows)} social sources produced zero matches in the latest run.",
-                "value": int(len(zero_rows)),
-                "triggeredAt": now_iso(),
-            })
-
-        low_conf_dropped = sum(int(row.get("lowConfidenceDropped") or 0) for row in social_rows)
-        if low_conf_dropped >= SOCIAL_LOW_CONFIDENCE_SPIKE_THRESHOLD:
-            active_conditions.append({
-                "id": "social_low_confidence_spike",
-                "severity": "warning",
-                "message": "Social ingestion dropped an unusually high number of low-confidence posts.",
-                "value": int(low_conf_dropped),
-                "triggeredAt": now_iso(),
-            })
-
-    # Clear ack for alerts no longer active.
-    active_ids = {row["id"] for row in active_conditions}
-    for key in list(acked.keys()):
-        if key not in active_ids:
-            acked.pop(key, None)
-
-    visible_alerts = [row for row in active_conditions if row["id"] not in acked]
-    save_alert_state({"acked": acked})
-    return {
-        "alerts": visible_alerts,
-        "suppressedCount": max(0, len(active_conditions) - len(visible_alerts)),
-        "pendingApprovals": int(pending_count),
-    }
-
-
-def format_age(finished_at: str) -> str:
-    dt = parse_iso(finished_at)
-    if not dt:
-        return "unknown"
-    delta = now_utc() - dt
-    total_minutes = int(max(0.0, delta.total_seconds() // 60))
-    if total_minutes < 60:
-        return f"{total_minutes}m"
-    hours = total_minutes // 60
-    if hours < 48:
-        return f"{hours}h"
-    return f"{hours // 24}d"
-
-
-def _collect_fetch_history_metrics(history: List[Dict[str, Any]]) -> Dict[str, Any]:
-    now = now_utc()
-    seven_days_ago = now - timedelta(days=7)
-    fetch_rows = [row for row in history if str(row.get("type")) == "fetch" and row.get("finishedAt")]
-    fetch_7d = [
-        row for row in fetch_rows
-        if (parse_iso(row.get("finishedAt")) or datetime.min.replace(tzinfo=timezone.utc)) >= seven_days_ago
-    ]
-    success_7d = [row for row in fetch_7d if str(row.get("status")) in {"ok", "warning"}]
-    success_rate = (len(success_7d) / len(fetch_7d)) if fetch_7d else 0.0
-    avg_duration = int(sum(int(row.get("durationMs") or 0) for row in fetch_7d) / len(fetch_7d)) if fetch_7d else 0
-    latest_fetch = fetch_rows[-1] if fetch_rows else None
-    last_success = next((row for row in reversed(fetch_rows) if str(row.get("status")) in {"ok", "warning"}), None)
-    return {
-        "fetchRows": fetch_rows,
-        "successRate7d": success_rate,
-        "avgDurationMs7d": avg_duration,
-        "latestFetch": latest_fetch,
-        "lastSuccessFetch": last_success,
-    }
-
-
-def _populate_schedule_next_run(schedule: Dict[str, Any], history: List[Dict[str, Any]]) -> Dict[str, Any]:
-    for run_type, key in (("fetch", "fetcher"), ("discovery", "discovery")):
-        interval_hours = schedule[key].get("intervalHours")
-        if not interval_hours:
-            schedule[key]["nextRunAt"] = ""
-            continue
-        last_type_row = next((row for row in reversed(history) if str(row.get("type")) == run_type and row.get("finishedAt")), None)
-        last_finished = parse_iso(last_type_row.get("finishedAt")) if last_type_row else None
-        if last_finished:
-            schedule[key]["nextRunAt"] = (last_finished + timedelta(hours=float(interval_hours))).isoformat()
-        else:
-            schedule[key]["nextRunAt"] = ""
-    return schedule
-
-
-def _derive_ops_severity(alerts: List[Dict[str, Any]]) -> str:
-    if any(alert.get("severity") == "critical" for alert in alerts):
-        return "critical"
-    if alerts:
-        return "warning"
-    return "healthy"
+def _build_ops_health_deps() -> Any:
+    deps = type("OpsHealthDeps", (), {})()
+    deps.get_history = lambda: sync_history_from_reports()
+    deps.get_fetch_report = lambda: normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {}))
+    deps.get_state = load_state
+    deps.now_iso = now_iso
+    deps.desktop_mode = RUNTIME_CONFIG.desktop_mode
+    deps.desktop_last_activity_at = DESKTOP_SESSION_ACTIVITY_AT
+    deps.load_alert_state_fn = load_alert_state
+    deps.save_alert_state_fn = save_alert_state
+    deps.parse_schedule_metadata_fn = parse_schedule_metadata
+    deps.parse_iso = parse_iso
+    deps.now_utc = now_utc
+    return deps
 
 
 def compute_ops_health() -> Dict[str, Any]:
-    history = sync_history_from_reports()
-    latest_fetch_report = normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {}))
-    state = load_state()
-    schedule = _populate_schedule_next_run(parse_schedule_metadata(), history)
-    alerts_meta = evaluate_alerts(history=history, latest_fetch_report=latest_fetch_report, pending_count=len(state["pending"]))
-
-    metrics = _collect_fetch_history_metrics(history)
-    last_success = metrics["lastSuccessFetch"]
-    latest_fetch_summary = summarize_fetch_report(latest_fetch_report)
-    failed_ratio_latest = latest_fetch_summary["failedRatio"]
-
-    latest_run = history[-1] if history else {}
-    severity = _derive_ops_severity(alerts_meta["alerts"])
-
-    return {
-        "service": "baluffo-bridge",
-        "desktopMode": bool(RUNTIME_CONFIG.desktop_mode),
-        "generatedAt": now_iso(),
-        "desktopLastActivityAt": str(DESKTOP_SESSION_ACTIVITY_AT or ""),
-        "status": severity,
-        "kpis": {
-            "lastSuccessfulFetchAge": format_age(last_success.get("finishedAt") if last_success else ""),
-            "sevenDayFetchSuccessRate": round(float(metrics["successRate7d"]), 4),
-            "avgFetchDurationMs7d": int(metrics["avgDurationMs7d"]),
-            "failedSourceRatioLatest": round(float(failed_ratio_latest), 4),
-            "pendingApprovalsCount": len(state["pending"]),
-            "lastRunResult": {
-                "type": str(latest_run.get("type") or ""),
-                "status": str(latest_run.get("status") or "unknown"),
-                "finishedAt": str(latest_run.get("finishedAt") or latest_run.get("startedAt") or ""),
-            },
-        },
-        "schedule": schedule,
-        "alerts": alerts_meta["alerts"],
-        "suppressedAlertsCount": int(alerts_meta["suppressedCount"]),
-        "historyCount": len(history),
-    }
+    return _ops_health.compute_ops_health(_build_ops_health_deps())
 
 
 def compute_fetcher_metrics(window_runs: int = 20) -> Dict[str, Any]:

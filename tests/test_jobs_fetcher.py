@@ -823,20 +823,21 @@ def test_run_static_studio_pages_source_with_fixture() -> None:
         listing = _fixture("littlechicken_jobs_page.html")
         detail = _fixture("littlechicken_job_detail.html")
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        # Use example.net so the generic fallback runs (no static plugin handles it)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
-                "name": "Little Chicken",
-                "studio": "Little Chicken",
+                "name": "Fallback Test Studio",
+                "studio": "Fallback Test Studio",
                 "adapter": "static",
-                "company": "Little Chicken",
-                "pages": ["https://www.littlechicken.nl/about-us/jobs/"],
+                "company": "Fallback Test Studio",
+                "pages": ["https://example.net/about-us/jobs/"],
                 "enabledByDefault": True,
             }
         ]
 
         try:
             def fake_fetch(url: str, _: int) -> str:
-                if url == "https://www.littlechicken.nl/about-us/jobs/":
+                if url == "https://example.net/about-us/jobs/":
                     return listing
                 if "/job/" in url:
                     return detail
@@ -844,7 +845,7 @@ def test_run_static_studio_pages_source_with_fixture() -> None:
 
             rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
             assert len(rows) == 2
-            assert any("littlechicken.nl/job/" in row["jobLink"] for row in rows)
+            assert any("/job/" in (row.get("jobLink") or "") for row in rows)
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
@@ -915,6 +916,7 @@ def test_run_static_studio_pages_source_loads_kojima_dynamic_listing() -> None:
 
 def test_run_static_studio_pages_source_accepts_larian_uuid_paths_and_rejects_location_pages() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        # Use larian.com so fallback runs and applies /careers/location/ exclusion heuristic (no plugin for larian)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
                 "name": "Larian Studios (Manual Website)",
@@ -1035,13 +1037,14 @@ def test_run_static_studio_pages_source_accepts_ubisoft_query_key_override() -> 
 
 def test_run_static_studio_pages_source_dedupes_candidate_links_before_fetch() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        # Use example.net so the generic fallback runs (no static plugin)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
                 "name": "Dedup Test Studio",
                 "studio": "Dedup Test Studio",
                 "adapter": "static",
                 "company": "Dedup Test Studio",
-                "pages": ["https://example.com/careers"],
+                "pages": ["https://example.net/careers"],
                 "enabledByDefault": True,
             }
         ]
@@ -1049,7 +1052,7 @@ def test_run_static_studio_pages_source_dedupes_candidate_links_before_fetch() -
             '<html><body>'
             '<div class="job-listing-item"><a href="/job/engine-programmer">Engine Programmer</a></div>'
             '<a href="/job/engine-programmer">Engine Programmer</a>'
-            '<script>var detail = "https://example.com/job/engine-programmer";</script>'
+            '<script>var detail = "https://example.net/job/engine-programmer";</script>'
             '</body></html>'
         )
         detail = "<html><body><h1>Engine Programmer</h1></body></html>"
@@ -1057,9 +1060,9 @@ def test_run_static_studio_pages_source_dedupes_candidate_links_before_fetch() -
 
         try:
             def fake_fetch(url: str, _: int) -> str:
-                if url == "https://example.com/careers":
+                if url == "https://example.net/careers":
                     return listing
-                if url == "https://example.com/job/engine-programmer":
+                if url == "https://example.net/job/engine-programmer":
                     fetch_counts["detail"] += 1
                     return detail
                 raise RuntimeError(f"Unexpected URL: {url}")
@@ -1072,13 +1075,14 @@ def test_run_static_studio_pages_source_dedupes_candidate_links_before_fetch() -
 
 def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        # Use example.net so the generic fallback runs (no static plugin)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
                 "name": "Parallel Static Studio",
                 "studio": "Parallel Static Studio",
                 "adapter": "static",
                 "company": "Parallel Static Studio",
-                "pages": ["https://example.com/careers"],
+                "pages": ["https://example.net/careers"],
                 "enabledByDefault": True,
             }
         ]
@@ -1096,12 +1100,12 @@ def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
         try:
             def fake_fetch(url: str, _: int) -> str:
                 nonlocal active, peak
-                if url == "https://example.com/careers":
+                if url == "https://example.net/careers":
                     return listing
                 if url in {
-                    "https://example.com/job/a",
-                    "https://example.com/job/b",
-                    "https://example.com/job/c",
+                    "https://example.net/job/a",
+                    "https://example.net/job/b",
+                    "https://example.net/job/c",
                 }:
                     with active_lock:
                         active += 1
@@ -1196,8 +1200,10 @@ def test_scrapy_runner_jobylon_v1_extracts_jobs() -> None:
         </div>
         """
 
-        with mock.patch.object(scrapy_runner, "_http_text", side_effect=[source_html, embed_html]):
-            jobs, stats, errors, reject_reasons = scrapy_runner._extract_jobylon_v1_jobs(
+        from src.scrapers.providers import jobylon_v1
+
+        with mock.patch.object(jobylon_v1, "_http_text", side_effect=[source_html, embed_html]):
+            jobs, stats, errors, reject_reasons = jobylon_v1.extract_jobylon_v1_jobs(
                 source_name="Remedy",
                 studio="Remedy Entertainment",
                 page_url="https://www.remedygames.com/careers",

@@ -3,8 +3,13 @@ Register static-family plugins with the default registry.
 Static plugins receive pages and source_row via kwargs in run().
 Optional: parse_jobpostings_from_html (passed by static adapter) for HTML parsing.
 
-To add a new static site plugin: add a module under static/ with can_handle(ctx) and run(...),
-then register it here with default_registry.register(SimpleAdapterPlugin(...)).
+To add a new static site plugin:
+  1. Add a module under src/jobs/adapters/plugins/static/ with:
+     - can_handle(ctx: AdapterPluginContext) -> bool  (e.g. by ctx.source_identity host)
+     - run(..., fetch_text, timeout_s, retries, backoff_s, pages, source_row,
+           parse_jobpostings_from_html=..., **kwargs) -> Sequence[RawJob]
+  2. Register it here with default_registry.register(SimpleAdapterPlugin(...)).
+  3. See docs/architecture-ai-map.md § Static adapter / How to add a static plugin.
 """
 from __future__ import annotations
 
@@ -15,6 +20,8 @@ from src.jobs.adapters.plugins.types import AdapterPluginContext, SimpleAdapterP
 from src.jobs.models import RawJob
 
 from . import example_com
+from . import example_org
+from . import littlechicken
 
 
 def _pilot_can_handle(ctx: AdapterPluginContext) -> bool:
@@ -39,14 +46,20 @@ def _pilot_run(
 
 def register_static_plugins() -> None:
     """Register static adapter plugins. Call once at adapter load."""
-    example_com_plugin = SimpleAdapterPlugin(
-        name="example_com",
-        family="static",
-        priority=90,
-        can_handle_fn=example_com.can_handle,
-        run_fn=example_com.run,
-    )
-    default_registry.register(example_com_plugin)
+    for mod, name, priority in [
+        (example_com, "example_com", 90),
+        (example_org, "example_org", 90),
+        (littlechicken, "littlechicken", 90),
+    ]:
+        default_registry.register(
+            SimpleAdapterPlugin(
+                name=name,
+                family="static",
+                priority=priority,
+                can_handle_fn=mod.can_handle,
+                run_fn=mod.run,
+            )
+        )
     pilot = SimpleAdapterPlugin(
         name="static_pilot",
         family="static",

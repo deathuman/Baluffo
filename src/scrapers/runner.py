@@ -7,9 +7,7 @@ from collections import Counter
 import hashlib
 import json
 import os
-import re
 import sys
-from html import unescape
 from pathlib import Path
 
 # Allow importing src when runner is executed as script (e.g. by static adapter subprocess).
@@ -17,203 +15,17 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-from src.shared.regex import find_urls_in_text
+from src.scrapers import domain_profiles
+from src.scrapers.helpers import clean_text as _clean_text, safe_id as _safe_id, to_float as _to_float, to_int as _to_int
+from src.scrapers.providers.jobylon_v1 import extract_jobylon_v1_jobs
+from src.scrapers.settings import SCRAPY_SETTINGS_DEFAULTS
+from src.scrapers.spiders.generic_careers import GenericCareersSpider
 from typing import Any, Dict, List, Tuple
-from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlparse
-from urllib.request import Request, urlopen
-
-
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _to_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return int(default)
-
-
-def _to_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return float(default)
-
-
-DOMAIN_PROFILES: Dict[str, Dict[str, Any]] = {
-    "www.valvesoftware.com": {
-        "include_query_keys": ["job_id"],
-        "exclude_path_tokens": ["/faq", "/team", "/about"],
-        "title_selectors": ["h1::text", "title::text"],
-        "max_detail_links": 80,
-    },
-    "www.riotgames.com": {
-        "include_path_tokens": ["/jobs", "/job"],
-        "exclude_path_tokens": ["/internships", "/events", "/news", "/esports"],
-        "title_selectors": ["h1::text", "h2::text", "title::text"],
-        "max_detail_links": 50,
-    },
-    "cdprojektred.com": {
-        "include_path_tokens": ["/jobs", "/careers"],
-        "exclude_path_tokens": ["/news", "/about"],
-        "title_selectors": ["h1::text", "title::text"],
-        "max_detail_links": 60,
-    },
-    "supercell.com": {
-        "include_path_tokens": ["/careers", "/jobs"],
-        "exclude_path_tokens": ["/blog", "/news"],
-        "title_selectors": ["h1::text", "h2::text", "title::text"],
-        "max_detail_links": 50,
-    },
-    "larian.com": {
-        "include_path_tokens": ["/careers/"],
-        "exclude_path_tokens": ["/careers/location/"],
-        "title_selectors": ["h1::text", "title::text"],
-        "max_detail_links": 40,
-    },
-    "www.remedygames.com": {
-        "include_path_tokens": ["/careers", "/jobs"],
-        "exclude_path_tokens": ["/news", "/blog"],
-        "title_selectors": ["h1::text", "title::text"],
-        "max_detail_links": 40,
-        "job_provider": "jobylon_v1",
-    },
-    "www.ubisoft.com": {
-        "include_path_tokens": ["/careers", "/jobs"],
-        "exclude_path_tokens": ["/locations", "/teams"],
-        "title_selectors": ["h1::text", "title::text"],
-        "max_detail_links": 60,
-    },
-    "www.epicgames.com": {
-        "include_path_tokens": ["/careers", "/jobs"],
-        "exclude_path_tokens": ["/newsroom", "/store", "/site/en-us/home"],
-        "title_selectors": ["h1::text", "title::text"],
-        "max_detail_links": 60,
-    },
-}
-
-
-def _domain_profile_for_url(url: str) -> Dict[str, Any]:
-    host = _clean_text(urlparse(url).netloc).lower()
-    return dict(DOMAIN_PROFILES.get(host) or {})
 
 
 def _source_id(name: str, studio: str, pages: List[str]) -> str:
     seed = "|".join([_clean_text(name), _clean_text(studio), *[_clean_text(p) for p in pages]])
     return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
-
-
-def _http_text(url: str, *, timeout_s: int = 20) -> str:
-    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urlopen(req, timeout=max(1, int(timeout_s))) as resp:
-        return resp.read().decode("utf-8", errors="replace")
-
-
-def _extract_jobylon_company_id(html: str) -> str:
-    match = re.search(r"jbl_company_id\s*=\s*([0-9]+)", html, flags=re.I)
-    return _clean_text(match.group(1)) if match else ""
-
-
-def _extract_jobylon_v1_jobs(
-    *,
-    source_name: str,
-    studio: str,
-    page_url: str,
-    timeout_s: int,
-) -> Tuple[List[Dict[str, Any]], Dict[str, int], List[str], Counter[str]]:
-    jobs: List[Dict[str, Any]] = []
-    stats = {
-        "candidate_links_found": 0,
-        "detail_pages_visited": 0,
-        "jobs_emitted": 0,
-        "jobs_rejected_validation": 0,
-    }
-    errors: List[str] = []
-    reject_reasons: Counter[str] = Counter()
-    seen = set()
-    try:
-        source_html = _http_text(page_url, timeout_s=timeout_s)
-        company_id = _extract_jobylon_company_id(source_html)
-        if not company_id:
-            return jobs, stats, errors, reject_reasons
-        embed_url = f"https://cdn.jobylon.com/jobs/companies/{company_id}/embed/v1/?target=jobylon-jobs-widget&page_size=50"
-        payload = _http_text(embed_url, timeout_s=timeout_s)
-        chunks = payload.split('<div id="jobylon-job-')
-        for raw in chunks[1:]:
-            job_id = _clean_text(raw.split('"', 1)[0])
-            title_match = re.search(r'(?is)<div class="jobylon-job-title[^"]*">\s*(.*?)\s*</div>', raw)
-            href_match = re.search(r'(?is)<a class="jobylon-apply-btn"\s+href="([^"]+)"', raw)
-            loc_match = re.search(r'(?is)<li class="jobylon-location"><strong>[^<]*</strong>\s*([^<]+)</li>', raw)
-            title = _clean_text(unescape(title_match.group(1))) if title_match else ""
-            job_link = _clean_text(href_match.group(1)) if href_match else ""
-            city = _clean_text(unescape(loc_match.group(1))) if loc_match else ""
-            if not title or not job_link:
-                stats["jobs_rejected_validation"] += 1
-                reject_reasons["missing_title_or_link"] += 1
-                continue
-            if "jobylon-open-application" in job_link:
-                reject_reasons["open_application"] += 1
-                continue
-            if job_link in seen:
-                reject_reasons["duplicate_job_link"] += 1
-                continue
-            seen.add(job_link)
-            stats["candidate_links_found"] += 1
-            stats["detail_pages_visited"] += 1
-            source_job_id = job_id or _safe_id(job_link)
-            jobs.append(
-                _build_job(
-                    source_name=source_name,
-                    studio=studio,
-                    title=title,
-                    company=studio,
-                    city=city,
-                    country="Unknown",
-                    work_type="",
-                    contract_type="",
-                    job_link=job_link,
-                    source_job_id=source_job_id,
-                )
-            )
-            stats["jobs_emitted"] += 1
-    except (HTTPError, URLError, TimeoutError, OSError) as exc:
-        errors.append(f"{source_name}: jobylon_v1 fetch failed: {exc}")
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"{source_name}: jobylon_v1 parse failed: {exc}")
-    return jobs, stats, errors, reject_reasons
-
-
-def _is_probable_job_detail_url(url: str, profile: Dict[str, Any]) -> bool:
-    parsed = urlparse(url)
-    path = _clean_text(parsed.path).lower()
-    query = _clean_text(parsed.query).lower()
-    if not path:
-        return False
-    exclude_path_tokens = [str(token).lower() for token in (profile.get("exclude_path_tokens") or [])]
-    for token in exclude_path_tokens:
-        if token and token in path:
-            return False
-    if "/jobs/" in path or "/job/" in path or "/jobdetail/" in path:
-        return True
-    if "job_id=" in query or "gh_jid=" in query or "lever-via=" in query:
-        return True
-    include_query_keys = [str(token).lower() for token in (profile.get("include_query_keys") or [])]
-    for key in include_query_keys:
-        if key and f"{key}=" in query:
-            return True
-    include_path_tokens = [str(token).lower() for token in (profile.get("include_path_tokens") or [])]
-    for token in include_path_tokens:
-        if token and token in path and (re.search(r"/[0-9]+", path) or re.search(r"/[0-9a-f]{8}-[0-9a-f-]{27,36}", path)):
-            return True
-    if "/careers/" in path and re.search(r"/[0-9a-f]{8}-[0-9a-f-]{27,36}$", path):
-        return True
-    if "/careers/location/" in path or "/careers/locations/" in path:
-        return False
-    if "location=" in query:
-        return False
-    return False
 
 
 def _classify_result(*, ok: bool, fetched_count: int, kept_count: int, partial_errors: List[str]) -> str:
@@ -335,51 +147,6 @@ def _validate_input(payload: Any) -> Tuple[Dict[str, Any] | None, str]:
     }, ""
 
 
-def _build_job(
-    *,
-    source_name: str,
-    studio: str,
-    title: str,
-    company: str,
-    job_link: str,
-    source_job_id: str,
-    city: str = "",
-    country: str = "Unknown",
-    work_type: str = "",
-    contract_type: str = "",
-    posted_at: str = "",
-) -> Dict[str, Any]:
-    return {
-        "sourceJobId": source_job_id,
-        "title": title,
-        "company": company,
-        "city": city,
-        "country": country or "Unknown",
-        "workType": work_type,
-        "contractType": contract_type,
-        "jobLink": job_link,
-        "sector": "Game",
-        "postedAt": posted_at,
-        "source": source_name,
-        "studio": studio,
-        "adapter": "scrapy_static",
-        "sourceBundle": [
-            {
-                "source": source_name,
-                "sourceJobId": source_job_id,
-                "jobLink": job_link,
-                "postedAt": posted_at,
-                "adapter": "scrapy_static",
-                "studio": studio,
-            }
-        ],
-    }
-
-
-def _safe_id(seed: str) -> str:
-    return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]
-
-
 def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
     source = validated["source"]
     runtime = validated["runtime"]
@@ -387,7 +154,7 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
     studio = _clean_text(source.get("studio")) or "unknown"
     pages = source.get("pages") or []
     source_id_value = _source_id(source_name, studio, list(pages))
-    domain_profile = _domain_profile_for_url(_clean_text(pages[0]) if pages else "")
+    domain_profile = domain_profiles.domain_profile_for_url(_clean_text(pages[0]) if pages else "")
     partial_errors: List[str] = []
     jobs: List[Dict[str, Any]] = []
     seen_links = set()
@@ -424,194 +191,18 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
             "stats": _stats_subset({"finish_reason": "selftest"}),
         }
 
-    try:
-        import scrapy
-        from scrapy.crawler import CrawlerProcess
-        from scrapy.settings import Settings
-    except Exception as exc:  # noqa: BLE001
-        return _json_error_envelope(f"Scrapy import failed: {exc}", source_name=source_name, studio=studio)
-
-    class GenericCareersSpider(scrapy.Spider):
-        name = "generic_careers"
-
-        def __init__(
-            self,
-            *,
-            start_urls: List[str],
-            studio_name: str,
-            source_name_value: str,
-            profile: Dict[str, Any],
-            **kwargs: Any,
-        ) -> None:
-            super().__init__(**kwargs)
-            self.start_urls = start_urls
-            self.studio_name = studio_name
-            self.source_name_value = source_name_value
-            self.profile = profile or {}
-            self._detail_seen = set()
-
-        def parse(self, response: scrapy.http.Response):  # type: ignore[name-defined]
-            for script in response.css('script[type="application/ld+json"]::text').getall():
-                try:
-                    payload = json.loads(unescape(script))
-                except json.JSONDecodeError:
-                    continue
-                for item in self._flatten_jobposting_items(payload):
-                    job = self._jsonld_to_job(item=item, page_url=response.url)
-                    if job:
-                        self._append_job(job)
-
-            for href in self._extract_job_links(response):
-                if href in self._detail_seen:
-                    continue
-                self._detail_seen.add(href)
-                extraction_stats["candidate_links_found"] += 1
-                yield scrapy.Request(url=href, callback=self.parse_job_detail)
-
-        def parse_job_detail(self, response: scrapy.http.Response):  # type: ignore[name-defined]
-            extraction_stats["detail_pages_visited"] += 1
-            for script in response.css('script[type="application/ld+json"]::text').getall():
-                try:
-                    payload = json.loads(unescape(script))
-                except json.JSONDecodeError:
-                    continue
-                for item in self._flatten_jobposting_items(payload):
-                    job = self._jsonld_to_job(item=item, page_url=response.url)
-                    if job:
-                        self._append_job(job)
-                        return
-
-            raw_title = response.css("h1::text, [class*='title']::text").get("")
-            if not _clean_text(raw_title):
-                selectors = self.profile.get("title_selectors") if isinstance(self.profile, dict) else []
-                if isinstance(selectors, list):
-                    for selector in selectors:
-                        raw_title = response.css(_clean_text(selector)).get("")
-                        if _clean_text(raw_title):
-                            break
-            title = _clean_text(raw_title)
-            if not title:
-                reject_reasons["missing_title"] += 1
-                return
-            job_link = _clean_text(response.url)
-            if not _is_probable_job_detail_url(job_link, self.profile):
-                reject_reasons["non_job_url"] += 1
-                return
-            self._append_job(
-                _build_job(
-                    source_name=self.source_name_value,
-                    studio=self.studio_name,
-                    title=title,
-                    company=self.studio_name,
-                    job_link=job_link,
-                    source_job_id=_safe_id(job_link),
-                )
-            )
-
-        def _flatten_jobposting_items(self, payload: Any) -> List[Dict[str, Any]]:
-            rows: List[Dict[str, Any]] = []
-            if isinstance(payload, dict):
-                if _clean_text(payload.get("@type")) == "JobPosting":
-                    rows.append(payload)
-                graph = payload.get("@graph")
-                if isinstance(graph, list):
-                    for item in graph:
-                        if isinstance(item, dict) and _clean_text(item.get("@type")) == "JobPosting":
-                            rows.append(item)
-            elif isinstance(payload, list):
-                for item in payload:
-                    if isinstance(item, dict) and _clean_text(item.get("@type")) == "JobPosting":
-                        rows.append(item)
-            return rows
-
-        def _jsonld_to_job(self, *, item: Dict[str, Any], page_url: str) -> Dict[str, Any] | None:
-            org = item.get("hiringOrganization")
-            org = org if isinstance(org, dict) else {}
-            loc = item.get("jobLocation")
-            if isinstance(loc, list):
-                loc = loc[0] if loc else {}
-            loc = loc if isinstance(loc, dict) else {}
-            addr = loc.get("address")
-            addr = addr if isinstance(addr, dict) else {}
-            job_url = urljoin(page_url, _clean_text(item.get("url")))
-            if not job_url:
-                job_url = page_url
-            title = _clean_text(item.get("title"))
-            if not title:
-                return None
-            source_job_id = _clean_text((item.get("identifier") or {}).get("value") if isinstance(item.get("identifier"), dict) else "")
-            if not source_job_id:
-                source_job_id = _safe_id(job_url or title)
-            return _build_job(
-                source_name=self.source_name_value,
-                studio=self.studio_name,
-                title=title,
-                company=_clean_text(org.get("name")) or self.studio_name,
-                city=_clean_text(addr.get("addressLocality")),
-                country=_clean_text(addr.get("addressCountry")) or "Unknown",
-                work_type=_clean_text(item.get("jobLocationType")),
-                contract_type=_clean_text(item.get("employmentType")),
-                job_link=job_url,
-                source_job_id=source_job_id,
-                posted_at=_clean_text(item.get("datePosted")),
-            )
-
-        def _extract_job_links(self, response: scrapy.http.Response) -> List[str]:  # type: ignore[name-defined]
-            patterns = [
-                'a[href*="/job"]::attr(href)',
-                'a[href*="/jobs/"]::attr(href)',
-                'a[href*="/careers"]::attr(href)',
-                '[class*="job-listing"] a::attr(href)',
-            ]
-            links = set()
-            for pattern in patterns:
-                for href in response.css(pattern).getall():
-                    absolute = urljoin(response.url, _clean_text(href))
-                    if not absolute:
-                        continue
-                    if urlparse(absolute).netloc != urlparse(response.url).netloc:
-                        continue
-                    if not _is_probable_job_detail_url(absolute, self.profile):
-                        continue
-                    links.add(absolute)
-            # Also mine raw URLs in scripts/html for query-based job links.
-            for raw in find_urls_in_text(response.text or ""):
-                absolute = _clean_text(raw)
-                if urlparse(absolute).netloc != urlparse(response.url).netloc:
-                    continue
-                if not _is_probable_job_detail_url(absolute, self.profile):
-                    continue
-                links.add(absolute)
-            max_detail_links = _to_int(self.profile.get("max_detail_links"), 60)
-            return sorted(links)[: max(1, max_detail_links)]
-
-        def _append_job(self, job: Dict[str, Any]) -> None:
-            job_link = _clean_text(job.get("jobLink"))
-            title = _clean_text(job.get("title"))
-            company = _clean_text(job.get("company"))
-            source_job_id = _clean_text(job.get("sourceJobId"))
-            if not title or not company or not job_link:
-                extraction_stats["jobs_rejected_validation"] += 1
-                reject_reasons["missing_required_fields"] += 1
-                partial_errors.append(f"{self.source_name_value}: dropped incomplete job payload")
-                return
-            if not source_job_id:
-                job["sourceJobId"] = _safe_id(f"{job_link}|{title}|{company}")
-            if job_link in seen_links:
-                reject_reasons["duplicate_job_link"] += 1
-                return
-            if not _is_probable_job_detail_url(job_link, self.profile):
-                extraction_stats["jobs_rejected_validation"] += 1
-                reject_reasons["non_job_url"] += 1
-                return
-            seen_links.add(job_link)
-            jobs.append(job)
-            extraction_stats["jobs_emitted"] += 1
+    container = {
+        "jobs": jobs,
+        "seen_links": seen_links,
+        "reject_reasons": reject_reasons,
+        "extraction_stats": extraction_stats,
+        "partial_errors": partial_errors,
+    }
 
     job_provider = _clean_text(domain_profile.get("job_provider"))
     if job_provider == "jobylon_v1":
         for page_url in pages:
-            provider_jobs, provider_stats, provider_errors, provider_rejects = _extract_jobylon_v1_jobs(
+            provider_jobs, provider_stats, provider_errors, provider_rejects = extract_jobylon_v1_jobs(
                 source_name=source_name,
                 studio=studio,
                 page_url=_clean_text(page_url),
@@ -639,7 +230,7 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
                     extraction_stats["jobs_rejected_validation"] += 1
                     reject_reasons["duplicate_job_link"] += 1
                     continue
-                if not _is_probable_job_detail_url(job_link, domain_profile):
+                if not domain_profiles.is_probable_job_detail_url(job_link, domain_profile):
                     extraction_stats["jobs_rejected_validation"] += 1
                     reject_reasons["non_job_url"] += 1
                     continue
@@ -647,20 +238,20 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
                 jobs.append(job)
                 extraction_stats["jobs_emitted"] += 1
 
-    settings = Settings(
-        {
-            "ROBOTSTXT_OBEY": True,
-            "DOWNLOAD_DELAY": runtime.get("download_delay", 1.0),
-            "DOWNLOAD_TIMEOUT": runtime.get("timeout_s"),
-            "RETRY_TIMES": runtime.get("retries"),
-            "LOG_LEVEL": "WARNING",
-            "TELNETCONSOLE_ENABLED": False,
-            "WEBSOCKETS_ENABLED": False,
-            "REACTOR_THREADPOOL_MAXSIZE": 10,
-            "DEPTH_LIMIT": 1,
-            "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        }
-    )
+    try:
+        from scrapy.crawler import CrawlerProcess
+        from scrapy.settings import Settings
+    except Exception as exc:  # noqa: BLE001
+        return _json_error_envelope(f"Scrapy import failed: {exc}", source_name=source_name, studio=studio)
+
+    settings_dict = dict(SCRAPY_SETTINGS_DEFAULTS)
+    if runtime.get("download_delay") is not None:
+        settings_dict["DOWNLOAD_DELAY"] = runtime.get("download_delay")
+    if runtime.get("timeout_s") is not None:
+        settings_dict["DOWNLOAD_TIMEOUT"] = runtime.get("timeout_s")
+    if runtime.get("retries") is not None:
+        settings_dict["RETRY_TIMES"] = runtime.get("retries")
+    settings = Settings(settings_dict)
 
     crawler_process = CrawlerProcess(settings=settings)
     crawler = crawler_process.create_crawler(GenericCareersSpider)
@@ -674,6 +265,7 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
             studio_name=studio,
             source_name_value=source_name,
             profile=domain_profile,
+            container=container,
         )
         crawler_process.start(stop_after_crawl=True)
     except Exception as exc:  # noqa: BLE001
