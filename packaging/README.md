@@ -34,7 +34,7 @@ Runtime requirement for passphrase mode:
 
 ## Encryption format
 
-The encrypted key supports three derivation modes implemented in `scripts/source_sync.py`:
+The encrypted key supports three derivation modes implemented in `src/source_sync.py`:
 
 - `machine`: key material is derived from machine identity, app id, installation id, and `keySalt`
 - `passphrase`: key material is derived from app id, installation id, `keySalt`, and `BALUFFO_SYNC_KEY_PASSPHRASE`

@@ -1,8 +1,8 @@
 # Baluffo Data Contracts
 
-This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`scripts/jobs/`) and the Vanilla JS frontend (`frontend/`).
+This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
 
-**CRITICAL:** The frontend expects `camelCase` keys in all `data/*.json` files. The Python backend maps these explicitly in `scripts/jobs/models.py`.
+**CRITICAL:** The frontend expects `camelCase` keys in all `data/*.json` files. The Python backend maps these explicitly in `src/jobs/models.py`.
 
 ## 1. CanonicalJob
 Represents a single job posting retrieved from the external sources.

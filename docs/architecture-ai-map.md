@@ -133,7 +133,7 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 | Saved attachments flow | `frontend/saved/app/attachments.js` | `frontend/saved/app/runtime.js`, `frontend/saved/services.js` |
 | Saved timeline/activity | `frontend/saved/app/activity.js` | `frontend/saved/app/runtime.js` |
 | Admin unlock/ops/fetch/discovery/sync | `frontend/admin/app/{auth,ops,fetcher,discovery,sync}.js` | `frontend/admin/app/runtime.js`, `frontend/admin/services.js` |
-| Job processing pipeline | `scripts/jobs/pipeline.py` | `scripts/jobs/adapters`, `scripts/jobs/canonicalize.py`, `scripts.jobs.dedup.py` |
+| Job processing pipeline | `src/jobs/pipeline.py` | `src/jobs/adapters`, `src/jobs/canonicalize.py`, `src.jobs.dedup.py` |
 | Bridge API/runtime behavior | `src/admin_bridge.py` | `frontend/admin/services.js`, `frontend/jobs/services.js`, `frontend/saved/services.js` |
 | Bridge sync state management | `src/bridge/sync_state.py` | `src/bridge/sync_service.py`, `src/admin_bridge.py` |
 | Bridge sync operations | `src/bridge/sync_service.py` | `src/source_sync.py`, `src/admin_bridge.py` |
@@ -142,7 +142,7 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 | Bridge pipeline operations | `src/bridge/pipeline_service.py` | `src/admin_bridge.py` |
 | Bridge HTTP routes | `src/bridge/routes/get_routes.py` | `src/bridge/routes/post_routes.py`, `src/admin_bridge.py` |
 | UI Selection & Interaction | `frontend/shared/ui/selectors.js` | `frontend/*/app/dom.js`, `frontend/*/app/runtime.js` |
-| Desktop startup/runtime behavior | `scripts/ship/desktop_app.py` | `tests/test_desktop_app.py`, `scripts/ship/runtime_launcher.py` |
+| Desktop startup/runtime behavior | `src/ship/desktop_app.py` | `tests/test_desktop_app.py`, `src/ship/runtime_launcher.py` |
 | Add new filter to jobs page | `frontend/jobs/app/filters.js` | `frontend/jobs/render.js`, `frontend/jobs/app/runtime.js` |
 | Add new field to custom job form | `frontend/saved/app/custom-job.js` | `frontend/saved/render.js`, `frontend/saved/app/runtime.js` |
 

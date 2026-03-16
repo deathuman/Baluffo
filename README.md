@@ -87,7 +87,7 @@ It combines:
 - `frontend/*/app/runtime.js`: orchestration root for page flow, state transitions, and service calls
 - `frontend/*/app/*.js`: focused modules for feature logic (`feed`, `filters`, `notes`, `attachments`, `auth`, `ops`, etc.)
 - `frontend/*/{render,domain,data-source,services,state-sync,actions}.js`: shared page-layer primitives still composed by runtime
-- Desktop runtime launcher and contracts: `scripts/ship/desktop_app.py`
+- Desktop runtime launcher and contracts: `src/ship/desktop_app.py`
 
 ## Getting Started
 
@@ -197,7 +197,7 @@ Optional version override:
 ```powershell
 python scripts/build_ship_bundle.py --bundle-version 1.2.3
 
-Default build version comes from `scripts/app_version.py`.
+Default build version comes from `src/app_version.py`.
 ```
 
 Bundle output: `dist/baluffo-ship` with launcher scripts:
@@ -246,7 +246,7 @@ Optional custom icon override:
 ```powershell
 python scripts/build_portable_exe.py --bundle-version 1.2.3 --icon C:\path\to\Baluffo.ico
 
-Without `--bundle-version`, portable packaging uses the shared app version from `scripts/app_version.py`.
+Without `--bundle-version`, portable packaging uses the shared app version from `src/app_version.py`.
 ```
 
 Build/test workflows are standardized on Python 3.13.x for deterministic local and CI behavior.
