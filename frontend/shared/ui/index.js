@@ -60,7 +60,9 @@ export function bindUi(el, eventName, handler) {
 export function bindAsyncClick(el, handler) {
   if (!el) return;
   el.addEventListener("click", () => {
-    Promise.resolve(handler()).catch(() => {});
+    Promise.resolve(handler()).catch(err => {
+      console.error("[async click]", err);
+    });
   });
 }
 

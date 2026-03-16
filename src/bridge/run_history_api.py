@@ -76,6 +76,7 @@ def report_is_stale_in_progress(
 ) -> bool:
     started_raw = str(report.get("startedAt") or "")
     finished_raw = str(report.get("finishedAt") or "")
+    # Not stale when: no start (not an in-progress report) or task already finished.
     if not started_raw or finished_raw:
         return False
     started_dt = parse_iso(started_raw)

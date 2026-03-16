@@ -7,3 +7,8 @@
 {"ts": "2026-03-13T15:02:16.367685+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
 {"ts": "2026-03-13T15:02:16.369381+00:00", "event": "admin_pin_gate_ready", "payload": {"elapsedMs": 4}}
 {"ts": "2026-03-13T15:02:16.370150+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready", "elapsedMs": 4}}
+{"ts": "2026-03-16T21:24:23.340826+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-16T21:24:23.341053+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-16T21:24:23.634466+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 10}}
+{"ts": "2026-03-16T21:24:23.635707+00:00", "event": "admin_pin_gate_ready", "payload": {"elapsedMs": 10}}
+{"ts": "2026-03-16T21:24:23.635905+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready", "elapsedMs": 11}}

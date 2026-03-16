@@ -57,6 +57,7 @@ APP_RUNTIME_SCRIPTS = (
     "app_version.py",
     "baluffo_config.py",
     "contracts.py",
+    "exceptions.py",
     "fetcher_metrics.py",
     "jobs_fetcher.py",
     "jobs_fetcher_registry.py",
@@ -69,9 +70,11 @@ APP_RUNTIME_SCRIPTS = (
     "python_version_guard.py",
 )
 APP_RUNTIME_SCRIPT_DIRS = (
-    "jobs",
     "bridge",
+    "core",
+    "jobs",
     "scrapers",
+    "shared",
 )
 PACKAGING_FILES = (
     "README.md",

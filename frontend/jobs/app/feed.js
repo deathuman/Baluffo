@@ -30,55 +30,65 @@ export async function initJobsFeed(deps) {
   if (!hasJobsList) return;
   emitMetric("jobs_init_start");
 
-  initAuth();
+  try {
+    initAuth();
 
-  const cached = isDesktopRuntimeMode() ? null : await readCachedJobs();
-  emitMetric("jobs_cache_checked", {
-    desktopMode: isDesktopRuntimeMode(),
-    hasCache: Boolean(cached?.jobs && cached.jobs.length > 0)
-  });
-  emitMetric(cached?.jobs && cached.jobs.length > 0 ? "jobs_cache_hit" : "jobs_cache_miss");
+    const cached = isDesktopRuntimeMode() ? null : await readCachedJobs();
+    emitMetric("jobs_cache_checked", {
+      desktopMode: isDesktopRuntimeMode(),
+      hasCache: Boolean(cached?.jobs && cached.jobs.length > 0)
+    });
+    emitMetric(cached?.jobs && cached.jobs.length > 0 ? "jobs_cache_hit" : "jobs_cache_miss");
 
-  if (cached?.jobs && cached.jobs.length > 0) {
-    normalizeRows(cached.jobs);
-    recalculateItemsPerPage();
-    updateFilterOptions();
-    applyStateToFilters();
-    applyFiltersAndRender({ resetPage: false });
-    stateHubSet("jobsFeedCount", getAllJobs().length);
-    stateHubSet("jobsLastUpdated", Date.now());
-    markStartupRendered("cache", getAllJobs().length);
-    markJobsFirstInteractive("cache");
+    if (cached?.jobs && cached.jobs.length > 0) {
+      normalizeRows(cached.jobs);
+      recalculateItemsPerPage();
+      updateFilterOptions();
+      applyStateToFilters();
+      applyFiltersAndRender({ resetPage: false });
+      stateHubSet("jobsFeedCount", getAllJobs().length);
+      stateHubSet("jobsLastUpdated", Date.now());
+      markStartupRendered("cache", getAllJobs().length);
+      markJobsFirstInteractive("cache");
 
-    if (isJobsCacheStale(cached.savedAt, cacheTtlMs)) {
-      setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from cache. Updating stale cache...`);
-      refreshJobsNow({ manual: false }).catch(() => {});
-    } else {
-      setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from local cache.`);
+      if (isJobsCacheStale(cached.savedAt, cacheTtlMs)) {
+        setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from cache. Updating stale cache...`);
+        refreshJobsNow({ manual: false }).catch(() => {});
+      } else {
+        setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from local cache.`);
+      }
+      updateLastUpdatedText(cached.savedAt);
+      setHasInitializedJobsFeed(true);
+      scheduleNonCriticalStartupWork();
+      await applyPendingAutoRefreshSignal();
+      return;
     }
-    updateLastUpdatedText(cached.savedAt);
+
+    const previewLoaded = await loadStartupPreviewJobs();
+    if (previewLoaded) {
+      setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from startup snapshot. Syncing full feed...`);
+      setHasInitializedJobsFeed(true);
+      scheduleNonCriticalStartupWork();
+      await applyPendingAutoRefreshSignal();
+      refreshJobsNow({ manual: false }).catch(() => {});
+      return;
+    }
+
+    const ok = await refreshJobsNow({ manual: false, firstLoad: true });
     setHasInitializedJobsFeed(true);
     scheduleNonCriticalStartupWork();
     await applyPendingAutoRefreshSignal();
-    return;
-  }
-
-  const previewLoaded = await loadStartupPreviewJobs();
-  if (previewLoaded) {
-    setSourceStatus(`Loaded ${getAllJobs().length.toLocaleString()} jobs from startup snapshot. Syncing full feed...`);
+    if (!ok) {
+      showError("Unable to load job listings right now.");
+    }
+  } catch (err) {
     setHasInitializedJobsFeed(true);
-    scheduleNonCriticalStartupWork();
-    await applyPendingAutoRefreshSignal();
-    refreshJobsNow({ manual: false }).catch(() => {});
-    return;
-  }
-
-  const ok = await refreshJobsNow({ manual: false, firstLoad: true });
-  setHasInitializedJobsFeed(true);
-  scheduleNonCriticalStartupWork();
-  await applyPendingAutoRefreshSignal();
-  if (!ok) {
     showError("Unable to load job listings right now.");
+    if (typeof deps.logError === "function") {
+      deps.logError("Jobs feed init failed", err);
+    } else {
+      console.error("[jobs] init failed:", err);
+    }
   }
 }
 
