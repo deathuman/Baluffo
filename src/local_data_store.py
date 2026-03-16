@@ -18,14 +18,11 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from src.baluffo_config import get_security_defaults
+from src.shared.utils import now_iso
 
 ADMIN_PIN = str(get_security_defaults()["admin_pin_default"])
 APPLICATION_STATUSES = ["bookmark", "applied", "interview_1", "interview_2", "offer", "rejected"]
 LOCK = threading.RLock()
-
-
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _read_json(path: Path, fallback: Any) -> Any:

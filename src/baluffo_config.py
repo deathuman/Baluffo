@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from src.shared.utils import coerce_bool as _coerce_bool, coerce_int as _coerce_int, coerce_str as _coerce_str
+
 ROOT = Path(__file__).resolve().parents[1]
 BASE_CONFIG_PATH = ROOT / "baluffo.config.json"
 LOCAL_CONFIG_PATH = ROOT / "baluffo.config.local.json"
@@ -72,30 +74,6 @@ def _merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, An
         else:
             merged[key] = value
     return merged
-
-
-def _coerce_bool(value: Any, default: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    text = str(value or "").strip().lower()
-    if text in {"1", "true", "yes", "on"}:
-        return True
-    if text in {"0", "false", "no", "off"}:
-        return False
-    return bool(default)
-
-
-def _coerce_int(value: Any, default: int, *, minimum: int = 1, maximum: int = 65535) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = int(default)
-    return max(minimum, min(maximum, parsed))
-
-
-def _coerce_str(value: Any, default: str) -> str:
-    text = str(value or "").strip()
-    return text or str(default)
 
 
 def load_config() -> Dict[str, Any]:

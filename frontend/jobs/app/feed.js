@@ -1,3 +1,5 @@
+import { set as stateHubSet } from "../shared/state-hub.js";
+
 export async function initJobsFeed(deps) {
   const {
     hasJobsList,
@@ -43,6 +45,8 @@ export async function initJobsFeed(deps) {
     updateFilterOptions();
     applyStateToFilters();
     applyFiltersAndRender({ resetPage: false });
+    stateHubSet("jobsFeedCount", getAllJobs().length);
+    stateHubSet("jobsLastUpdated", Date.now());
     markStartupRendered("cache", getAllJobs().length);
     markJobsFirstInteractive("cache");
 
@@ -138,10 +142,13 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     const previousLength = getAllJobs().length;
     setAllJobs(normalizeRows(result.jobs));
     setRefreshJobsNeedsAttention(false);
+    const now = Date.now();
+    stateHubSet("jobsFeedCount", getAllJobs().length);
+    stateHubSet("jobsLastUpdated", now);
     if (!isDesktopRuntimeMode()) {
       await writeCachedJobs(getAllJobs());
     }
-    updateLastUpdatedText(Date.now());
+    updateLastUpdatedText(now);
     recalculateItemsPerPage();
     updateFilterOptions();
     applyStateToFilters();

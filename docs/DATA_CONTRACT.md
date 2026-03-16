@@ -4,6 +4,8 @@ This document serves as the absolute boundary and source of truth for data struc
 
 **CRITICAL:** The frontend expects `camelCase` keys in all `data/*.json` files. The Python backend maps these explicitly in `src/jobs/models.py`.
 
+**Runtime source of truth:** `src/jobs/models.py` defines the canonical dataclasses (e.g. `CanonicalJob`). `src/core/contracts.py` provides validation at pipeline output (e.g. before writing `jobs-unified.json`). New fields or contract changes require updating the schema here, `models.py`, and any validation in `src/core/` as needed.
+
 ## 1. CanonicalJob
 Represents a single job posting retrieved from the external sources.
 

@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.shared.utils import utc_now_iso
 from src.ship.startup_profile import render_startup_summary, summarize_startup_metrics, write_startup_summary
 from src.python_version_guard import ensure_required_python
 
@@ -73,10 +74,6 @@ def startup_profile_required_events(page: str) -> tuple[str, ...]:
         "jobs": ("jobs_first_render", "jobs_first_interactive"),
     }.get(normalized, ("jobs_first_render", "jobs_first_interactive"))
     return STARTUP_REQUIRED_EVENTS + (f"{normalized}_module_boot_start",) + tuple(page_events)
-
-
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def slugify_token(value: str) -> str:

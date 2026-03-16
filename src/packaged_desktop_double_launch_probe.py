@@ -17,13 +17,14 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.shared.utils import utc_now_iso
+
 DEFAULT_EXE_PATH = ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
 DEFAULT_ARTIFACT_DIR = ROOT / ".codex-tmp" / "double-launch-probe"
 DEFAULT_TIMEOUT_S = 20.0
-
-
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def choose_free_port() -> int:

@@ -10,7 +10,6 @@ import re
 import sys
 import time
 from collections import Counter
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.error import HTTPError
@@ -22,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.shared.regex import find_urls_in_text
+from src.shared.utils import now_iso
 from src.source_registry import (
     ACTIVE_PATH,
     DATA_DIR,
@@ -161,10 +162,6 @@ def load_studio_seeds() -> List[Dict[str, Any]]:
 
 
 STUDIO_SEEDS: List[Dict[str, Any]] = load_studio_seeds()
-
-
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def emit_log(message: str) -> None:
@@ -1197,7 +1194,7 @@ def infer_provider_candidates_from_html(page_url: str, html: str, *, studio: str
         page_candidate["careersUrl"] = page_url
         candidates.append(page_candidate)
     embedded_urls = extract_links_from_html(html)
-    embedded_urls.extend(re.findall(r'https?://[^"\')\s]+', str(html or "")))
+    embedded_urls.extend(find_urls_in_text(str(html or "")))
     text = str(html or "").lower()
     if "teamtailor" in text and careers_keyword_count(page_url):
         embedded_urls.append(page_url)

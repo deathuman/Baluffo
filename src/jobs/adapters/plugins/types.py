@@ -33,6 +33,7 @@ class AdapterPlugin(Protocol):
         timeout_s: int,
         retries: int,
         backoff_s: float,
+        **kwargs: Any,
     ) -> Sequence[RawJob]: ...
 
 
@@ -56,6 +57,13 @@ class SimpleAdapterPlugin:
         timeout_s: int,
         retries: int,
         backoff_s: float,
+        **kwargs: Any,
     ) -> Sequence[RawJob]:
-        return self.run_fn(fetch_text=fetch_text, timeout_s=timeout_s, retries=retries, backoff_s=backoff_s)
+        return self.run_fn(
+            fetch_text=fetch_text,
+            timeout_s=timeout_s,
+            retries=retries,
+            backoff_s=backoff_s,
+            **kwargs,
+        )
 

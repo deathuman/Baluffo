@@ -89,26 +89,15 @@ export function scheduleJobsPipelineStatusPoll(state, delayMs, pollFn, minDelayM
   }, Math.max(Number(minDelayMs) || 600, Number(delayMs) || Number(minDelayMs) || 600));
 }
 
+import { fetchBridge } from "../../shared/api-client.js";
+
 export async function callJobsBridge(baseUrl, path, options = {}) {
-  const controller = new AbortController();
   const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 1800;
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(`${baseUrl}${path}?t=${Date.now()}`, {
-      method: options.method || "GET",
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {})
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal
-    });
-    if (!response.ok) {
-      throw new Error(`Bridge ${options.method || "GET"} ${path} failed with HTTP ${response.status}`);
-    }
-    return await response.json();
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  const response = await fetchBridge(baseUrl, path, {
+    method: options.method || "GET",
+    body: options.body,
+    headers: options.headers,
+    timeoutMs
+  });
+  return response.json();
 }

@@ -10,6 +10,7 @@ from src import admin_bridge
 def admin_bridge_ops_root(make_test_root, monkeypatch) -> Path:
     root = make_test_root("admin-bridge")
 
+    monkeypatch.setattr(admin_bridge, "_TASK_HISTORY_MANAGER", None)
     monkeypatch.setattr(admin_bridge, "OPS_HISTORY_PATH", root / "admin-run-history.json")
     monkeypatch.setattr(admin_bridge, "OPS_ALERT_STATE_PATH", root / "admin-alert-state.json")
     monkeypatch.setattr(admin_bridge, "JOBS_FETCH_REPORT_PATH", root / "jobs-fetch-report.json")

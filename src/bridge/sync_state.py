@@ -15,10 +15,10 @@ State Variables:
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from src.shared.utils import now_iso, now_utc
 from src.source_registry import load_json_object, save_json_atomic
 
 
@@ -46,16 +46,6 @@ SYNC_STATUS: Dict[str, Any] = {
 
 # Current sync configuration (will be set by SyncService)
 SYNC_CONFIG: Any = None
-
-
-def now_utc() -> datetime:
-    """Return current UTC datetime."""
-    return datetime.now(timezone.utc)
-
-
-def now_iso() -> str:
-    """Return current UTC datetime as ISO string."""
-    return now_utc().isoformat()
 
 
 class SyncState:

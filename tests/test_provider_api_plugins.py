@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List
 import pytest
 
 from src.jobs import common
-from src.jobs.adapters import provider_api, _runtime
+from src.jobs.adapters import provider_api, provider_parsers, _runtime
 
 
 class _FakeDeps:
@@ -97,7 +97,7 @@ def _legacy_greenhouse(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: 
         try:
             text = fake.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)
-            parsed = common.parse_greenhouse_jobs_payload(payload, slug, fallback_company=label)
+            parsed = provider_parsers.parse_greenhouse_jobs_payload(payload, slug, fallback_company=label)
             for row in parsed:
                 row["adapter"] = "greenhouse"
                 row["studio"] = common.clean_text(board.get("studio")) or label

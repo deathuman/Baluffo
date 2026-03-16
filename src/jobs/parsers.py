@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.jobs import common
+from src.jobs.adapters import provider_parsers as _provider_parsers
+from src.jobs.adapters import social_parsers as _social_parsers
 from src.jobs.models import RawJob
 
 extract_json_ld_blocks = common.extract_json_ld_blocks
@@ -19,18 +21,18 @@ parse_teamtailor_listing_links = common.parse_teamtailor_listing_links
 parse_gamesindustry_html = common.parse_gamesindustry_html
 parse_google_sheets_csv = common.parse_google_sheets_csv
 parse_remote_ok_payload = common.parse_remote_ok_payload
-parse_reddit_json_payload = common.parse_reddit_json_payload
-parse_reddit_rss_payload = common.parse_reddit_rss_payload
-parse_x_payload = common.parse_x_payload
-parse_x_rss_payload = common.parse_x_rss_payload
-parse_mastodon_payload = common.parse_mastodon_payload
-parse_greenhouse_jobs_payload = common.parse_greenhouse_jobs_payload
-parse_lever_jobs_payload = common.parse_lever_jobs_payload
-parse_smartrecruiters_jobs_payload = common.parse_smartrecruiters_jobs_payload
-parse_workable_jobs_payload = common.parse_workable_jobs_payload
-parse_epic_games_jobs_payload = common.parse_epic_games_jobs_payload
-parse_ashby_jobs_from_html = common.parse_ashby_jobs_from_html
-parse_personio_feed_xml = common.parse_personio_feed_xml
+parse_reddit_json_payload = _social_parsers.parse_reddit_json_payload
+parse_reddit_rss_payload = _social_parsers.parse_reddit_rss_payload
+parse_x_payload = _social_parsers.parse_x_payload
+parse_x_rss_payload = _social_parsers.parse_x_rss_payload
+parse_mastodon_payload = _social_parsers.parse_mastodon_payload
+parse_greenhouse_jobs_payload = _provider_parsers.parse_greenhouse_jobs_payload
+parse_lever_jobs_payload = _provider_parsers.parse_lever_jobs_payload
+parse_smartrecruiters_jobs_payload = _provider_parsers.parse_smartrecruiters_jobs_payload
+parse_workable_jobs_payload = _provider_parsers.parse_workable_jobs_payload
+parse_epic_games_jobs_payload = _provider_parsers.parse_epic_games_jobs_payload
+parse_ashby_jobs_from_html = _provider_parsers.parse_ashby_jobs_from_html
+parse_personio_feed_xml = _provider_parsers.parse_personio_feed_xml
 
 
 def parse_jobpostings_from_html(

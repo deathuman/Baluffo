@@ -10,6 +10,14 @@ import os
 import re
 import sys
 from html import unescape
+from pathlib import Path
+
+# Allow importing src when runner is executed as script (e.g. by static adapter subprocess).
+# Use repo root (parents[2]) so "from src.shared.regex" resolves; parents[1] would be src/ and would not contain a package "src".
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+from src.shared.regex import find_urls_in_text
 from typing import Any, Dict, List, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
@@ -567,7 +575,7 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
                         continue
                     links.add(absolute)
             # Also mine raw URLs in scripts/html for query-based job links.
-            for raw in re.findall(r'https?://[^\s"\'<>]+', response.text or "", flags=re.I):
+            for raw in find_urls_in_text(response.text or ""):
                 absolute = _clean_text(raw)
                 if urlparse(absolute).netloc != urlparse(response.url).netloc:
                     continue

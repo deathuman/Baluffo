@@ -61,6 +61,11 @@ from src.bridge.sync_state import ACTIVE_SYNC_RUNS, ACTIVE_SYNC_THREADS, SYNC_ST
 from src.bridge.registry_service import RegistryPaths, RegistryService
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
 from src.bridge.pipeline_service import PipelineRuntime, PipelineService
+from src.bridge import html_extractor as _html_extractor
+from src.bridge import source_checker as _source_checker
+from src.bridge import task_history as _task_history_module
+from src.shared.regex import find_urls_in_text
+from src.shared.utils import coerce_port as _coerce_port, now_iso, now_utc
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
 OPS_ALERT_STATE_PATH = ROOT / "data" / "admin-alert-state.json"
@@ -82,6 +87,24 @@ SOCIAL_FAILURE_THRESHOLD = 2
 SOCIAL_LOW_CONFIDENCE_SPIKE_THRESHOLD = 120
 OPS_SCHEMA_VERSION = 1
 OPS_STATE_LOCK = threading.RLock()
+_TASK_HISTORY_MANAGER: Optional[Any] = None
+
+
+def _get_task_history_manager() -> Any:
+    global _TASK_HISTORY_MANAGER
+    if _TASK_HISTORY_MANAGER is None:
+        _TASK_HISTORY_MANAGER = _task_history_module.TaskHistoryManager(
+            OPS_HISTORY_PATH,
+            TASK_STATE_PATH,
+            MAX_HISTORY_ROWS,
+            OPS_STATE_LOCK,
+            load_json_array=load_json_array,
+            save_json_atomic=save_json_atomic,
+            load_json_object=load_json_object,
+        )
+    return _TASK_HISTORY_MANAGER
+
+
 LOG_LEVEL_ORDER = {"debug": 10, "info": 20, "warn": 30, "error": 40}
 PIPELINE_STATE_LOCK = threading.RLock()
 ACTIVE_PIPELINE_RUN_ID = ""
@@ -258,14 +281,6 @@ RUNTIME_CONFIG = RuntimeConfig(
 )
 
 
-def _coerce_port(value: Any, default: int = 8877) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = int(default)
-    return max(1, min(65535, parsed))
-
-
 def _normalize_log_level(value: Any, default: str = "info") -> str:
     token = str(value or "").strip().lower()
     return token if token in LOG_LEVEL_ORDER else str(default)
@@ -350,6 +365,7 @@ def bridge_log(level: str, message: str, **fields: Any) -> None:
 
 def configure_runtime_paths(config: RuntimeConfig) -> None:
     global RUNTIME_CONFIG
+    global _TASK_HISTORY_MANAGER
     global OPS_HISTORY_PATH, OPS_ALERT_STATE_PATH, JOBS_FETCH_REPORT_PATH, TASK_STATE_PATH, DISCOVERY_LOG_PATH, FETCHER_LOG_PATH
     global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
     global TASKS_CONFIG_PATH, SYNC_CONFIG_PATH, SYNC_RUNTIME_PATH, STARTUP_METRICS_PATH
@@ -365,6 +381,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     OPS_ALERT_STATE_PATH = data_dir / "admin-alert-state.json"
     JOBS_FETCH_REPORT_PATH = data_dir / "jobs-fetch-report.json"
     TASK_STATE_PATH = data_dir / "admin-task-state.json"
+    _TASK_HISTORY_MANAGER = None  # force new manager with updated paths
     DISCOVERY_LOG_PATH = data_dir / "source-discovery.log"
     FETCHER_LOG_PATH = data_dir / "jobs-fetcher.log"
     SYNC_CONFIG_PATH = data_dir / "source-sync-config.json"
@@ -715,327 +732,6 @@ def add_manual_source(raw_url: str) -> Dict[str, Any]:
     }
 
 
-def _extract_job_like_links(html: str, base_url: str) -> List[str]:
-    links: List[str] = []
-    seen = set()
-    for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html):
-        absolute = ""
-        try:
-            absolute = urljoin(base_url, str(href or "").strip())
-        except Exception:  # noqa: BLE001
-            absolute = str(href or "").strip()
-        parsed = urlparse(absolute)
-        path = (parsed.path or "").lower()
-        is_job_path = "/job/" in path or "/jobs/" in path or "/career/posting/" in path
-        if not is_job_path and path.startswith("/requisitions/view/"):
-            is_job_path = bool(re.search(r"/requisitions/view/\d+/?$", path))
-        # Many studio websites expose role pages under /careers/<role>/ rather than /jobs/.
-        if not is_job_path and "/careers/" in path:
-            tail = path.rstrip("/")
-            is_job_path = not (
-                tail == "/careers"
-                or tail.endswith("/careers-category")
-                or "/careers-category/" in tail
-            )
-        # Some sites use singular /career/<role>/ paths.
-        if not is_job_path and "/career/" in path:
-            tail = path.rstrip("/")
-            is_job_path = tail != "/career"
-        if not is_job_path and path.startswith("/open-positions/"):
-            # WordPress-style careers listing/detail pages.
-            is_job_path = True
-        if not is_job_path and ("/job-offers/" in path or path.rstrip("/") == "/job-offers"):
-            # Some studios publish opportunities under /job-offers.
-            is_job_path = True
-        if not is_job_path and path.startswith("/vacancy/"):
-            # Vacancy detail pages used by some studio sites.
-            is_job_path = bool(re.search(r"/vacancy/\d+/?$", path))
-        if not is_job_path and path.startswith("/vacancies/"):
-            # Some sites expose listings/details under /vacancies.
-            is_job_path = True
-        if not is_job_path and path.rstrip("/") == "/vacancies":
-            is_job_path = True
-        if not is_job_path and path.startswith("/join/"):
-            # Some studios expose job pages under /join/<slug>/<numeric-id>.
-            is_job_path = bool(re.search(r"/join/[^/]+/\d+/?$", path))
-        if not is_job_path:
-            continue
-        normalized = normalize_job_url(absolute)
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        links.append(normalized)
-    return links
-
-
-def _extract_embedded_job_urls(html: str, base_url: str) -> List[str]:
-    links: List[str] = []
-    seen = set()
-    for raw in re.findall(r'https?://[^\s"\'<>]+', html, flags=re.I):
-        absolute = normalize_job_url(raw)
-        if not absolute or absolute in seen:
-            continue
-        low = absolute.lower()
-        if any(token in low for token in ("jobs.lever.co/", "boards.greenhouse.io/", "jobs.ashbyhq.com/")):
-            seen.add(absolute)
-            links.append(absolute)
-            continue
-        if ".jobs.personio.de/" in low:
-            seen.add(absolute)
-            links.append(absolute)
-            if not low.endswith("/search.json"):
-                search_url = normalize_job_url(absolute.rstrip("/") + "/search.json")
-                if search_url and search_url not in seen:
-                    seen.add(search_url)
-                    links.append(search_url)
-            continue
-        if "jobs.smartrecruiters.com/" in low:
-            seen.add(absolute)
-            links.append(absolute)
-            continue
-        if "apply.workable.com/" in low:
-            seen.add(absolute)
-            links.append(absolute)
-            continue
-        parsed = urlparse(absolute)
-        path = (parsed.path or "").lower()
-        if "/career/posting/" in path or "/jobs/" in path or "/job/" in path:
-            seen.add(absolute)
-            links.append(absolute)
-    for raw in re.findall(r'(?is)href=["\']([^"\']+)["\']', html):
-        absolute = normalize_job_url(urljoin(base_url, str(raw or "").strip()))
-        if not absolute or absolute in seen:
-            continue
-        path = (urlparse(absolute).path or "").lower()
-        if "/career/posting/" in path:
-            seen.add(absolute)
-            links.append(absolute)
-    # JSON-heavy pages can embed relative detail URLs not exposed as <a href=...>.
-    for raw in re.findall(r'(?is)["\'](/[^"\']{3,260})["\']', html):
-        absolute = normalize_job_url(urljoin(base_url, str(raw or "").strip()))
-        if not absolute or absolute in seen:
-            continue
-        path = (urlparse(absolute).path or "").lower()
-        is_job_path = "/job/" in path or "/jobs/" in path or "/career/posting/" in path
-        if not is_job_path and "/careers/" in path:
-            tail = path.rstrip("/")
-            is_job_path = tail != "/careers" and "/careers-category/" not in tail
-        if not is_job_path and "/career/" in path:
-            is_job_path = path.rstrip("/") != "/career"
-        if not is_job_path and any(token in path for token in ("/vacancy/", "/open-positions/", "/join/")):
-            is_job_path = True
-        if not is_job_path and ("/vacancies/" in path or path.rstrip("/") == "/vacancies"):
-            is_job_path = True
-        if not is_job_path and ("/job-offers/" in path or path.rstrip("/") == "/job-offers"):
-            is_job_path = True
-        if not is_job_path:
-            continue
-        seen.add(absolute)
-        links.append(absolute)
-    return links
-
-
-def _extract_workable_account(url: str) -> str:
-    parsed = urlparse(str(url or "").strip())
-    if "apply.workable.com" not in (parsed.netloc or "").lower():
-        return ""
-    parts = [part for part in (parsed.path or "").split("/") if part]
-    if not parts:
-        return ""
-    account = str(parts[0] or "").strip()
-    return account if re.match(r"^[a-z0-9][a-z0-9-]{1,80}$", account, flags=re.I) else ""
-
-
-def _count_workable_jobs(account: str, timeout_s: int) -> int:
-    token = str(account or "").strip()
-    if not token:
-        return 0
-    api_url = f"https://apply.workable.com/api/v1/widget/accounts/{token}?details=true"
-    payload_text = discovery.fetch_text_with_retry(api_url, timeout_s, adapter="static")
-    try:
-        payload = json.loads(payload_text)
-    except json.JSONDecodeError:
-        return 0
-    if not isinstance(payload, dict):
-        return 0
-    jobs = payload.get("jobs")
-    return len(jobs) if isinstance(jobs, list) else 0
-
-
-def _parse_personio_search_count(text: str) -> int:
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        return 0
-    if isinstance(payload, list):
-        return len(payload)
-    if isinstance(payload, dict):
-        for key in ("data", "positions", "items", "results"):
-            rows = payload.get(key)
-            if isinstance(rows, list):
-                return len(rows)
-        if isinstance(payload.get("jobs"), list):
-            return len(payload.get("jobs") or [])
-    return 0
-
-
-def _extract_jobylon_embed_urls(html: str) -> List[str]:
-    out: List[str] = []
-    seen = set()
-    if "cdn.jobylon.com/embedder.js" not in html.lower():
-        return out
-    company_ids = re.findall(r"jbl_company_id\s*=\s*([0-9]+)", html, flags=re.I)
-    versions = re.findall(r"jbl_version\s*=\s*['\"]([^'\"]+)['\"]", html, flags=re.I)
-    page_sizes = re.findall(r"jbl_page_size\s*=\s*([0-9]+)", html, flags=re.I)
-    version = versions[0].strip() if versions else "v2"
-    page_size = page_sizes[0].strip() if page_sizes else "30"
-    for company_id in company_ids:
-        company = str(company_id or "").strip()
-        if not company:
-            continue
-        url = (
-            f"https://cdn.jobylon.com/jobs/companies/{company}/embed/{version}/"
-            f"?target=jobylon-jobs-widget&page_size={page_size}"
-        )
-        normalized = normalize_job_url(url)
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        out.append(normalized)
-    return out
-
-
-def _extract_script_sources(html: str, base_url: str) -> List[str]:
-    out: List[str] = []
-    seen = set()
-    for src in re.findall(r'(?is)<script[^>]+src=["\']([^"\']+)["\']', html):
-        absolute = normalize_job_url(urljoin(base_url, str(src or "").strip()))
-        if not absolute or absolute in seen:
-            continue
-        seen.add(absolute)
-        out.append(absolute)
-    return out
-
-
-def _build_intervieweb_iframe_url(script_url: str, page_url: str) -> str:
-    parsed = urlparse(script_url)
-    if "intervieweb.it" not in (parsed.netloc or "").lower():
-        return ""
-    if "announces_js.php" not in (parsed.path or "").lower():
-        return ""
-    query = parse_qs(parsed.query, keep_blank_values=True)
-    k = (query.get("k") or [""])[0]
-    lac = (query.get("LAC") or [""])[0]
-    lang = (query.get("lang") or ["en"])[0] or "en"
-    ann_type = (query.get("annType") or ["published"])[0] or "published"
-    type_view = (query.get("typeView") or ["large"])[0] or "large"
-    d_value = (query.get("d") or [""])[0] or (urlparse(page_url).netloc or "")
-    if not k or not lac or not d_value:
-        return ""
-    params = {
-        "module": "iframeAnnunci",
-        "lang": lang,
-        "k": k,
-        "d": d_value,
-        "LAC": lac,
-        "utype": (query.get("utype") or [""])[0],
-        "act1": "23",
-        "defgroup": (query.get("defgroup") or ["name"])[0],
-        "gnavenable": (query.get("gnavenable") or ["1"])[0],
-        "desc": (query.get("desc") or ["1"])[0],
-        "annType": ann_type,
-        "h": (query.get("h") or [""])[0],
-        "typeView": type_view,
-    }
-    return f"{parsed.scheme}://{parsed.netloc}/app.php?{urlencode(params)}"
-
-
-def _extract_intervieweb_job_links(html: str, base_url: str) -> List[str]:
-    links: List[str] = []
-    seen = set()
-    for href in re.findall(r'(?is)href=["\']([^"\']+)["\']', html):
-        absolute = normalize_job_url(urljoin(base_url, str(href or "").strip()))
-        if not absolute or absolute in seen:
-            continue
-        lower = absolute.lower()
-        if "idannuncio=" in lower or ("module=iframeannunci" in lower and "act1=1" in lower):
-            seen.add(absolute)
-            links.append(absolute)
-    return links
-
-
-def _extract_external_job_links_from_scripts(html: str, page_url: str, timeout_s: int) -> Tuple[List[str], List[str]]:
-    job_links: List[str] = []
-    errors: List[str] = []
-    seen = set()
-    script_sources = _extract_script_sources(html, page_url)
-    for script_url in script_sources:
-        lower = script_url.lower()
-        intervieweb_iframe = _build_intervieweb_iframe_url(script_url, page_url)
-        if intervieweb_iframe:
-            try:
-                iframe_html = discovery.fetch_text_with_retry(intervieweb_iframe, timeout_s, adapter="static")
-                for link in _extract_intervieweb_job_links(iframe_html, intervieweb_iframe):
-                    if link in seen:
-                        continue
-                    seen.add(link)
-                    job_links.append(link)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"{intervieweb_iframe}: {exc}")
-            continue
-        if not any(token in lower for token in ("career", "job", "vacanc", "recruit", "announc")):
-            continue
-        try:
-            script_text = discovery.fetch_text_with_retry(script_url, timeout_s, adapter="static")
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{script_url}: {exc}")
-            continue
-        for raw in re.findall(r'https?://[^\s"\'<>]+', script_text, flags=re.I):
-            absolute = normalize_job_url(raw)
-            if not absolute or absolute in seen:
-                continue
-            low_abs = absolute.lower()
-            if not any(token in low_abs for token in ("job", "career", "vacanc", "recruit", "annunci")):
-                continue
-            seen.add(absolute)
-            job_links.append(absolute)
-    return job_links, errors
-
-
-def _extract_text_job_signals(html: str, page_url: str) -> List[str]:
-    """Fallback weak signals for pages that render role text without stable job links."""
-    # Remove script/style blocks so token counts come from visible content.
-    sanitized = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", html)
-    sanitized = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", sanitized)
-    text = re.sub(r"(?is)<[^>]+>", " ", sanitized)
-    text = re.sub(r"\s+", " ", text).strip().lower()
-    if not text:
-        return []
-
-    parsed = urlparse(page_url)
-    path = (parsed.path or "").lower()
-    on_careers_page = "/career" in path or "/careers" in path
-    apply_count = len(re.findall(r"\bapply(?:\s+now)?\b", text))
-    role_keywords = (
-        "programmer",
-        "engineer",
-        "designer",
-        "artist",
-        "animator",
-        "producer",
-        "director",
-        "qa",
-        "tester",
-        "technical",
-    )
-    role_count = sum(len(re.findall(rf"\b{re.escape(token)}\b", text)) for token in role_keywords)
-    if not on_careers_page or apply_count < 4 or role_count < 4:
-        return []
-    signal_count = max(1, min(24, role_count // 2))
-    page_norm = normalize_source_url(page_url) or page_url
-    return [f"signal:text_jobs:{page_norm}:{idx}" for idx in range(signal_count)]
-
-
 def _try_fetch_with_playwright(url: str, timeout_s: int) -> Tuple[str, str]:
     """Best-effort browser fallback for anti-bot pages; returns (html, error)."""
     try:
@@ -1234,79 +930,13 @@ def _fetch_html_with_fallback(url: str, timeout_s: int) -> Tuple[str, str, bool,
         return "", f"{url}: {exc}", True, False
 
 
-def _looks_like_not_found_page(html: str) -> bool:
-    low = str(html or "").lower()
-    if not low:
-        return False
-    if "<title>404" in low or "404 not found" in low:
-        return True
-    if "/404.json?index=" in low:
-        return True
-    if '"notfound":true' in low or '"not_found":true' in low:
-        return True
-    return False
-
-
-def _extract_static_module_signals(html: str, page_url: str) -> List[str]:
-    low = str(html or "").lower()
-    signals: List[str] = []
-    if "job_openings_module" in low or '"slice_type":"job_openings_module"' in low:
-        signals.append(f"signal:job_openings_module:{normalize_source_url(page_url) or page_url}")
-    if "sumo-lever-integration" in low or "sumo_lever_filter" in low:
-        signals.append(f"signal:sumo_lever_module:{normalize_source_url(page_url) or page_url}")
-    if "apply.workable.com/" in low:
-        signals.append(f"signal:workable_embed:{normalize_source_url(page_url) or page_url}")
-    return signals
-
-
-def _extract_embedded_job_filter_signals(html: str, page_url: str) -> Tuple[List[str], List[str]]:
-    structured_links: List[str] = []
-    weak_signals: List[str] = []
-    seen_links = set()
-    page_norm = normalize_source_url(page_url) or page_url
-    matches = re.findall(r'(?is)<job-filter\b[^>]+:raw-data=["\'](.*?)["\']', html)
-    for raw_payload in matches:
-        payload_text = html_module.unescape(str(raw_payload or "").strip())
-        if not payload_text:
-            continue
-        try:
-            payload = json.loads(payload_text)
-        except json.JSONDecodeError:
-            continue
-        jobs = payload.get("jobs") if isinstance(payload, dict) else []
-        if not isinstance(jobs, list):
-            continue
-        for idx, job in enumerate(jobs):
-            if not isinstance(job, dict):
-                continue
-            raw_link = str(job.get("link") or job.get("url") or "").strip()
-            if raw_link:
-                absolute = normalize_job_url(urljoin(page_url, raw_link))
-                if absolute and absolute not in seen_links:
-                    seen_links.add(absolute)
-                    structured_links.append(absolute)
-                    continue
-            job_id = str(job.get("id") or idx).strip() or str(idx)
-            weak_signals.append(f"signal:embedded_job_filter:{page_norm}:{job_id}")
-    return structured_links, weak_signals
-
-
 def _html_has_extractable_job_data(html: str, page_url: str) -> bool:
-    if _extract_job_like_links(html, page_url):
+    if _html_extractor.extract_job_like_links(html, page_url):
         return True
-    if _extract_embedded_job_urls(html, page_url):
+    if _html_extractor.extract_embedded_job_urls(html, page_url):
         return True
-    embedded_links, embedded_signals = _extract_embedded_job_filter_signals(html, page_url)
+    embedded_links, embedded_signals = _html_extractor.extract_embedded_job_filter_signals(html, page_url)
     return bool(embedded_links or embedded_signals)
-
-
-def _resolve_static_source_pages(row: Dict[str, Any]) -> List[str]:
-    pages_raw = row.get("pages") if isinstance(row.get("pages"), list) else []
-    pages = [normalize_source_url(page) for page in pages_raw if normalize_source_url(page)]
-    if pages:
-        return pages
-    listing_url = normalize_source_url(str(row.get("listing_url") or ""))
-    return [listing_url] if listing_url else []
 
 
 def _fetch_static_page_with_alternates(page_url: str, timeout_s: int) -> Tuple[str, str, bool, bool, str]:
@@ -1328,207 +958,19 @@ def _fetch_static_page_with_alternates(page_url: str, timeout_s: int) -> Tuple[s
     return html, fetch_error, attempted, used, ""
 
 
-def _collect_embedded_signals(
-    html: str,
-    page_url: str,
-    timeout_s: int,
-    *,
-    weak_links: set[str],
-    errors: List[str],
-) -> None:
-    for embedded_link in _extract_embedded_job_urls(html, page_url):
-        weak_links.add(embedded_link)
-        low_embedded = str(embedded_link or "").lower()
-        if low_embedded.endswith("/search.json") and ".jobs.personio.de/" in low_embedded:
-            try:
-                personio_json = discovery.fetch_text_with_retry(embedded_link, timeout_s, adapter="static")
-                personio_count = _parse_personio_search_count(personio_json)
-                for idx in range(max(0, personio_count)):
-                    weak_links.add(f"signal:personio_search:{embedded_link}:{idx}")
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"{embedded_link}: {exc}")
-        workable_account = _extract_workable_account(embedded_link)
-        if workable_account:
-            try:
-                workable_count = _count_workable_jobs(workable_account, timeout_s)
-                for idx in range(max(0, workable_count)):
-                    weak_links.add(f"signal:workable_jobs:{workable_account}:{idx}")
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"workable:{workable_account}: {exc}")
-
-
-def _collect_detail_page_structured_links(
-    html: str,
-    page_url: str,
-    timeout_s: int,
-    *,
-    company: str,
-    source_id: str,
-    structured_links: set[str],
-    weak_links: set[str],
-    errors: List[str],
-) -> Tuple[bool, bool]:
-    browser_fallback_attempted = False
-    browser_fallback_used = False
-    detail_links = _extract_job_like_links(html, page_url)
-    for link in detail_links:
-        weak_links.add(link)
-        detail_html, detail_error, attempted, used = _fetch_html_with_fallback(link, timeout_s)
-        browser_fallback_attempted = browser_fallback_attempted or attempted
-        browser_fallback_used = browser_fallback_used or used
-        if detail_error:
-            errors.append(detail_error)
-            continue
-        detail_rows = parse_jobpostings_from_html(
-            detail_html,
-            base_url=link,
-            fallback_company=company,
-            fallback_source_id_prefix=f"static:{source_id}",
-        )
-        for parsed in detail_rows:
-            parsed_link = normalize_job_url(parsed.get("jobLink"))
-            if parsed_link:
-                structured_links.add(parsed_link)
-    return browser_fallback_attempted, browser_fallback_used
-
-
-def _expand_static_alt_pages(
-    *,
-    page_url: str,
-    pages_to_visit: List[str],
-    seen_pages: set[str],
-    max_pages_to_visit: int,
-) -> None:
-    low_page = str(page_url or "").lower()
-    if not any(token in low_page for token in ("/career", "/careers", "/jobs", "/job", "/vacancies", "/vacancy")):
-        return
-    for alt_url in _suggest_alternate_career_urls(page_url):
-        if len(pages_to_visit) >= max_pages_to_visit:
-            break
-        alt_normalized = normalize_source_url(alt_url)
-        if not alt_normalized or alt_normalized in seen_pages:
-            continue
-        seen_pages.add(alt_normalized)
-        pages_to_visit.append(alt_normalized)
-
-
 def check_static_source(row: Dict[str, Any], timeout_s: int = 12) -> Tuple[bool, int, str, bool, Dict[str, Any]]:
-    pages = _resolve_static_source_pages(row)
-    if not pages:
-        return False, 0, "missing source pages", False, {
-            "browserFallbackAttempted": False,
-            "browserFallbackUsed": False,
-        }
-
-    company = str(row.get("company") or row.get("studio") or row.get("name") or "Unknown")
-    structured_links = set()
-    weak_links = set()
-    errors: List[str] = []
-    browser_fallback_attempted = False
-    browser_fallback_used = False
-    pages_to_visit = list(pages)
-    seen_pages = set(pages_to_visit)
-    max_pages_to_visit = 18
-    idx = 0
-    while idx < len(pages_to_visit):
-        page_url = pages_to_visit[idx]
-        idx += 1
-        before_structured_count = len(structured_links)
-        before_weak_count = len(weak_links)
-        html, fetch_error, attempted, used, redirected_url = _fetch_static_page_with_alternates(page_url, timeout_s)
-        browser_fallback_attempted = browser_fallback_attempted or attempted
-        browser_fallback_used = browser_fallback_used or used
-        if redirected_url:
-            weak_links.add(redirected_url)
-        if fetch_error:
-            errors.append(fetch_error)
-            continue
-        if _looks_like_not_found_page(html):
-            errors.append(f"{page_url}: HTTP Error 404: Not Found")
-            continue
-
-        _collect_embedded_signals(
-            html,
-            page_url,
-            timeout_s,
-            weak_links=weak_links,
-            errors=errors,
-        )
-        embedded_structured_links, embedded_weak_signals = _extract_embedded_job_filter_signals(html, page_url)
-        for link in embedded_structured_links:
-            structured_links.add(link)
-        for signal in embedded_weak_signals:
-            weak_links.add(signal)
-        for signal in _extract_static_module_signals(html, page_url):
-            weak_links.add(signal)
-        for signal in _extract_text_job_signals(html, page_url):
-            weak_links.add(signal)
-        for jobylon_link in _extract_jobylon_embed_urls(html):
-            weak_links.add(jobylon_link)
-            try:
-                jobylon_html = discovery.fetch_text_with_retry(jobylon_link, timeout_s, adapter="static")
-                for embedded_job_link in _extract_embedded_job_urls(jobylon_html, jobylon_link):
-                    weak_links.add(embedded_job_link)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"{jobylon_link}: {exc}")
-
-        parsed_rows = parse_jobpostings_from_html(
-            html,
-            base_url=page_url,
-            fallback_company=company,
-            fallback_source_id_prefix=f"static:{source_identity(row)}",
-        )
-        for parsed in parsed_rows:
-            link = normalize_job_url(parsed.get("jobLink"))
-            if link:
-                structured_links.add(link)
-
-        external_links, external_errors = _extract_external_job_links_from_scripts(html, page_url, timeout_s)
-        for err in external_errors:
-            errors.append(err)
-        for ext_link in external_links:
-            weak_links.add(ext_link)
-
-        detail_attempted, detail_used = _collect_detail_page_structured_links(
-            html,
-            page_url,
-            timeout_s,
-            company=company,
-            source_id=source_identity(row),
-            structured_links=structured_links,
-            weak_links=weak_links,
-            errors=errors,
-        )
-        browser_fallback_attempted = browser_fallback_attempted or detail_attempted
-        browser_fallback_used = browser_fallback_used or detail_used
-        page_has_signals = len(structured_links) > before_structured_count or len(weak_links) > before_weak_count
-        if not page_has_signals:
-            _expand_static_alt_pages(
-                page_url=page_url,
-                pages_to_visit=pages_to_visit,
-                seen_pages=seen_pages,
-                max_pages_to_visit=max_pages_to_visit,
-            )
-
-    if structured_links:
-        return True, len(structured_links), "", False, {
-            "browserFallbackAttempted": browser_fallback_attempted,
-            "browserFallbackUsed": browser_fallback_used,
-        }
-    if weak_links:
-        return True, len(weak_links), "", True, {
-            "browserFallbackAttempted": browser_fallback_attempted,
-            "browserFallbackUsed": browser_fallback_used,
-        }
-    if errors:
-        return False, 0, "; ".join(errors[:4]), False, {
-            "browserFallbackAttempted": browser_fallback_attempted,
-            "browserFallbackUsed": browser_fallback_used,
-        }
-    return False, 0, "no job postings found", False, {
-        "browserFallbackAttempted": browser_fallback_attempted,
-        "browserFallbackUsed": browser_fallback_used,
-    }
+    return _source_checker.check_static_source(
+        row,
+        timeout_s,
+        fetch_page_with_alternates=_fetch_static_page_with_alternates,
+        fetch_page=_fetch_html_with_fallback,
+        fetch_text=lambda url, timeout: discovery.fetch_text_with_retry(url, timeout, adapter="static"),
+        html_extractor=_html_extractor,
+        parse_jobpostings_from_html=parse_jobpostings_from_html,
+        normalize_job_url=normalize_job_url,
+        source_identity=source_identity,
+        suggest_alternate_career_urls=_suggest_alternate_career_urls,
+    )
 
 
 def normalize_manual_static_studio_fields(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -1952,14 +1394,6 @@ def build_fetcher_args_from_payload(payload: Dict[str, Any]) -> Tuple[List[str],
     return args, preset
 
 
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def now_iso() -> str:
-    return now_utc().isoformat()
-
-
 def mark_desktop_session_activity(path: str) -> None:
     global DESKTOP_SESSION_ACTIVITY_AT
     if not RUNTIME_CONFIG.desktop_mode:
@@ -1981,49 +1415,19 @@ def parse_iso(value: Any) -> datetime | None:
 
 
 def load_run_history() -> List[Dict[str, Any]]:
-    rows = load_json_array(OPS_HISTORY_PATH, [])
-    cleaned: List[Dict[str, Any]] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        if not row.get("type"):
-            continue
-        cleaned.append(dict(row))
-    cleaned.sort(key=lambda item: str(item.get("finishedAt") or item.get("startedAt") or ""))
-    return cleaned[-MAX_HISTORY_ROWS:]
+    return _get_task_history_manager().load_run_history()
 
 
 def save_run_history(rows: List[Dict[str, Any]]) -> None:
-    save_json_atomic(OPS_HISTORY_PATH, rows[-MAX_HISTORY_ROWS:])
+    _get_task_history_manager().save_run_history(rows)
 
 
 def append_run_history(row: Dict[str, Any]) -> Dict[str, Any]:
-    with OPS_STATE_LOCK:
-        history = load_run_history()
-        entry = dict(row)
-        entry.setdefault("id", f"run_{uuid.uuid4().hex[:12]}")
-        history.append(entry)
-        save_run_history(history)
-        return entry
+    return _get_task_history_manager().append_run_history(row)
 
 
 def upsert_run_history(entry: Dict[str, Any], *, dedupe_fields: Tuple[str, ...]) -> Dict[str, Any]:
-    with OPS_STATE_LOCK:
-        history = load_run_history()
-        match_idx = -1
-        for idx, row in enumerate(history):
-            if all(str(row.get(field) or "") == str(entry.get(field) or "") for field in dedupe_fields):
-                match_idx = idx
-                break
-        if match_idx >= 0:
-            merged = {**history[match_idx], **entry}
-            merged.setdefault("id", history[match_idx].get("id") or f"run_{uuid.uuid4().hex[:12]}")
-            history[match_idx] = merged
-            save_run_history(history)
-            return merged
-        history.append({**entry, "id": str(entry.get("id") or f"run_{uuid.uuid4().hex[:12]}")})
-        save_run_history(history)
-        return history[-1]
+    return _get_task_history_manager().upsert_run_history(entry, dedupe_fields=dedupe_fields)
 
 
 def prune_started_rows_for_type(
@@ -2032,37 +1436,9 @@ def prune_started_rows_for_type(
     keep_started_at: str = "",
     finished_at: str = "",
 ) -> None:
-    with OPS_STATE_LOCK:
-        history = load_run_history()
-        keep_started_token = str(keep_started_at or "")
-        finished_dt = parse_iso(finished_at) if finished_at else None
-        next_rows: List[Dict[str, Any]] = []
-        for row in history:
-            if str(row.get("type") or "") != run_type:
-                next_rows.append(row)
-                continue
-            if str(row.get("status") or "").lower() != "started":
-                next_rows.append(row)
-                continue
-            row_started = str(row.get("startedAt") or "")
-            if keep_started_token and row_started == keep_started_token:
-                next_rows.append(row)
-                continue
-            if finished_dt:
-                row_started_dt = parse_iso(row_started)
-                # If a run of this type has finished, older/parallel started placeholders are stale.
-                if not row_started_dt or row_started_dt <= finished_dt:
-                    continue
-                next_rows.append(row)
-                continue
-            if not keep_started_token:
-                # Explicit prune-all mode for this type.
-                continue
-            # While a run is active, keep only the current startedAt marker.
-            if keep_started_token and row_started and row_started < keep_started_token:
-                continue
-            next_rows.append(row)
-        save_run_history(next_rows)
+    _get_task_history_manager().prune_started_rows_for_type(
+        run_type, keep_started_at=keep_started_at, finished_at=finished_at
+    )
 
 
 def pid_is_running(pid: int) -> bool:
@@ -2076,17 +1452,11 @@ def pid_is_running(pid: int) -> bool:
 
 
 def _clear_task_state_locked(task_type: str) -> None:
-    state = load_json_object(TASK_STATE_PATH, {})
-    if not isinstance(state, dict):
-        return
-    if str(task_type) in state:
-        state.pop(str(task_type), None)
-        save_json_atomic(TASK_STATE_PATH, state)
+    _get_task_history_manager()._clear_task_state_locked(task_type)
 
 
 def clear_task_state(task_type: str) -> None:
-    with OPS_STATE_LOCK:
-        _clear_task_state_locked(task_type)
+    _get_task_history_manager().clear_task_state(task_type)
 
 
 def task_running_from_state(task_type: str) -> bool:
@@ -2917,11 +2287,6 @@ def start_fetcher_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, An
         "pid": int(pid),
         "startedAt": started_at,
     }
-
-
-def _run_jobs_pipeline_worker(run_id: str) -> None:
-    # Legacy worker retained for backward compatibility; PipelineService owns pipeline execution.
-    return
 
 
 def start_jobs_pipeline_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

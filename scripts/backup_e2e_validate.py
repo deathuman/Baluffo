@@ -21,10 +21,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.local_data_store import LocalDataPaths, LocalDataStore
-
-
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from src.shared.utils import now_iso
 
 
 def _normalize_iso_text(value: Any) -> str:

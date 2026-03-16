@@ -18,6 +18,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from src.baluffo_config import get_security_defaults, get_sync_defaults
+from src.shared.utils import now_iso, now_utc
 from src.source_registry import ensure_source_id, source_identity
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -135,14 +136,6 @@ class SyncConfig:
     packaged_config: Optional[PackagedGitHubAppConfig]
     timeout_s: int = DEFAULT_TIMEOUT_S
     disabled_reason: str = ""
-
-
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _truthy(value: Any) -> bool:

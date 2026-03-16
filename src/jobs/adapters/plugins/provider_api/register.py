@@ -4,8 +4,10 @@ import json
 from typing import Callable, Dict, List
 from urllib.parse import urlparse
 
+from src.exceptions import AdapterValidationError
 from src.jobs import common
 from src.jobs.adapters import _runtime
+from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import AdapterPluginContext, SimpleAdapterPlugin
 from src.jobs.models import RawJob
@@ -36,7 +38,7 @@ def _run_greenhouse_boards(*, fetch_text: Callable[[str, int], str], timeout_s: 
         try:
             text = deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)
-            parsed = common.parse_greenhouse_jobs_payload(payload, slug, fallback_company=label)
+            parsed = _provider_parsers.parse_greenhouse_jobs_payload(payload, slug, fallback_company=label)
             for row in parsed:
                 row["adapter"] = "greenhouse"
                 row["studio"] = common.clean_text(board.get("studio")) or label
@@ -52,7 +54,7 @@ def _run_greenhouse_boards(*, fetch_text: Callable[[str, int], str], timeout_s: 
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 
@@ -138,7 +140,7 @@ def _run_teamtailor_sources(*, fetch_text: Callable[[str, int], str], timeout_s:
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 
@@ -197,7 +199,7 @@ def _run_json_feed_sources(
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 
@@ -205,7 +207,7 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
     registry_adapter = adapter_name
     if adapter_name == "smartrecruiters":
         default_error = "missing company_id/api_url"
-        parse_payload = lambda source, payload, studio: common.parse_smartrecruiters_jobs_payload(
+        parse_payload = lambda source, payload, studio: _provider_parsers.parse_smartrecruiters_jobs_payload(
             payload, common.clean_text(source.get("company_id")), fallback_company=studio
         )
         build_url = lambda source: common.clean_text(source.get("api_url")) or (
@@ -216,7 +218,7 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
         payload_count = lambda payload, parsed: len(payload.get("content", [])) if isinstance(payload, dict) else len(parsed)
     elif adapter_name == "workable":
         default_error = "missing account/api_url"
-        parse_payload = lambda source, payload, studio: common.parse_workable_jobs_payload(
+        parse_payload = lambda source, payload, studio: _provider_parsers.parse_workable_jobs_payload(
             payload, common.clean_text(source.get("account")), fallback_company=studio
         )
         build_url = lambda source: common.clean_text(source.get("api_url")) or (
@@ -228,7 +230,7 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
     else:
         # lever
         default_error = "missing account/api_url"
-        parse_payload = lambda source, payload, studio: common.parse_lever_jobs_payload(
+        parse_payload = lambda source, payload, studio: _provider_parsers.parse_lever_jobs_payload(
             payload, common.clean_text(source.get("account")), fallback_company=studio
         )
         build_url = lambda source: common.clean_text(source.get("api_url")) or (

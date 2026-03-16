@@ -22,6 +22,7 @@ from src.jobs import reporting as reporting_pkg
 from src.jobs import state as state_pkg
 from src.jobs import transport as transport_pkg
 from src.jobs.adapters import default_source_loaders as package_default_source_loaders
+from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob
 
@@ -745,6 +746,7 @@ def run_pipeline(
     wrote_csv = False
     wrote_light_json = False
     if deduped_payload_rows:
+        validate_canonical_jobs_payload(deduped_payload_rows)
         wrote_json = write_text_if_changed(json_path, serialize_rows_for_json(deduped_payload_rows, OUTPUT_FIELDS))
         wrote_csv = write_text_if_changed(csv_path, serialize_rows_for_csv(deduped_payload_rows, OUTPUT_FIELDS))
         wrote_light_json = write_text_if_changed(

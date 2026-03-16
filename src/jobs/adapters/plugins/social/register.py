@@ -4,8 +4,10 @@ import json
 from typing import Any, Callable, Dict, List
 from urllib.parse import quote
 
+from src.exceptions import AdapterValidationError
 from src.jobs import common
 from src.jobs.adapters import _runtime
+from src.jobs.adapters import social_parsers as _social_parsers
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
 from src.jobs.models import RawJob
@@ -40,7 +42,7 @@ def _run_reddit(*, fetch_text: Callable[[str, int], str], timeout_s: int, retrie
         try:
             text = deps.fetch_with_retries(json_url, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)
-            parsed_rows, low_conf_sub = common.parse_reddit_json_payload(
+            parsed_rows, low_conf_sub = _social_parsers.parse_reddit_json_payload(
                 payload,
                 subreddit=sub,
                 min_confidence=min_conf,
@@ -51,7 +53,7 @@ def _run_reddit(*, fetch_text: Callable[[str, int], str], timeout_s: int, retrie
             if bool(cfg.get("rssFallback", True)):
                 try:
                     rss_text = deps.fetch_with_retries(rss_url, fetch_text, timeout_s, retries, backoff_s)
-                    parsed_rows, low_conf_sub = common.parse_reddit_rss_payload(
+                    parsed_rows, low_conf_sub = _social_parsers.parse_reddit_rss_payload(
                         rss_text,
                         subreddit=sub,
                         min_confidence=min_conf,
@@ -76,7 +78,7 @@ def _run_reddit(*, fetch_text: Callable[[str, int], str], timeout_s: int, retrie
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 

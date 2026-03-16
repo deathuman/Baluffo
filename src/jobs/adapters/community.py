@@ -7,6 +7,7 @@ import time
 from typing import Any, Callable, Dict, List
 from urllib.parse import quote
 
+from src.exceptions import AdapterValidationError
 from src.jobs import common
 from src.jobs.adapters import _runtime
 from src.jobs.models import RawJob
@@ -77,7 +78,7 @@ def run_google_sheets_source(
             details=details,
             partial_errors=errors,
         )
-    raise RuntimeError("; ".join(errors) if errors else "Google Sheets source failed")
+    raise AdapterValidationError.from_errors(errors) if errors else AdapterValidationError("Google Sheets source failed")
 
 
 def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
@@ -92,7 +93,7 @@ def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: in
             errors.append(f"{url}: empty/invalid payload")
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{url}: {exc}")
-    raise RuntimeError("; ".join(errors) if errors else "Remote OK source failed")
+    raise AdapterValidationError.from_errors(errors) if errors else AdapterValidationError("Remote OK source failed")
 
 
 def run_gamesindustry_source(
@@ -114,7 +115,7 @@ def run_gamesindustry_source(
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 
@@ -168,7 +169,7 @@ def run_wellfound_source(*, fetch_text: Callable[[str, int], str], timeout_s: in
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 

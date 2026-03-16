@@ -8,8 +8,10 @@ from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import quote, urlparse
 from urllib.request import Request
 
+from src.exceptions import AdapterValidationError
 from src.jobs import common
 from src.jobs.adapters import _runtime
+from src.jobs.adapters import social_parsers as _social_parsers
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.social.register import ensure_registered as ensure_social_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
@@ -100,8 +102,8 @@ def run_social_x_source(
                     except Exception as rss_exc:  # noqa: BLE001
                         rss_errors.append(f"{instance}: {rss_exc}")
                 if not rss_payload_text:
-                    raise RuntimeError("; ".join(rss_errors) if rss_errors else "x rss fallback failed")
-                parsed_rows, low_conf_query = common.parse_x_rss_payload(
+                    raise AdapterValidationError.from_errors(rss_errors) if rss_errors else AdapterValidationError("x rss fallback failed")
+                parsed_rows, low_conf_query = _social_parsers.parse_x_rss_payload(
                     rss_payload_text,
                     query_label=query,
                     min_confidence=min_conf,
@@ -120,7 +122,7 @@ def run_social_x_source(
                 details.append(entry)
                 continue
 
-            parsed_rows, low_conf_query = common.parse_x_payload(
+            parsed_rows, low_conf_query = _social_parsers.parse_x_payload(
                 payload,
                 query_label=query,
                 min_confidence=min_conf,
@@ -144,7 +146,7 @@ def run_social_x_source(
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 
@@ -186,7 +188,7 @@ def run_social_mastodon_source(
                 url = f"{instance}/api/v1/timelines/tag/{quote(tag, safe='')}?limit={max_posts}"
                 text = deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
                 payload = json.loads(text)
-                parsed_rows, low_conf_tag = common.parse_mastodon_payload(
+                parsed_rows, low_conf_tag = _social_parsers.parse_mastodon_payload(
                     payload,
                     instance=instance,
                     tag=tag,
@@ -208,7 +210,7 @@ def run_social_mastodon_source(
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 

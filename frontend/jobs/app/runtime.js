@@ -45,6 +45,7 @@ import {
   rememberJobsUrl
 } from "../state-sync/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
+import { postJson } from "../../shared/api-client.js";
 import { cacheJobsDom } from "./dom.js";
 import {
   toggleJobsAuthButtons,
@@ -417,15 +418,9 @@ const jobsPipelineUiState = createJobsPipelineUiState();
 const startupMetrics = createJobsStartupMetrics({
   emitMetric: (event, payload) => {
     if (!isDesktopRuntimeMode()) return;
-    fetch(`${ADMIN_BRIDGE_BASE}/desktop-local-data/startup-metric?t=${Date.now()}`, {
-      method: "POST",
-      cache: "no-store",
-      keepalive: true,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        event: String(event || "").trim() || "unknown",
-        payload: payload && typeof payload === "object" ? payload : {}
-      })
+    postJson(ADMIN_BRIDGE_BASE, "/desktop-local-data/startup-metric", {
+      event: String(event || "").trim() || "unknown",
+      payload: payload && typeof payload === "object" ? payload : {}
     }).catch(() => {});
   }
 });

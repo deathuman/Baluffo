@@ -15,9 +15,18 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
+from src.exceptions import AdapterValidationError
 from src.jobs import common
 from src.jobs.adapters import _runtime
+from src.jobs.adapters.plugins import default_registry
+from src.jobs.adapters.plugins.errors import NoPluginFoundError
+from src.jobs.adapters.plugins.static import register_static_plugins
+from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.shared.regex import find_urls_in_text
+from src.shared.utils import coerce_int
 from src.jobs.models import RawJob
+
+register_static_plugins()
 
 
 def run_scrapy_static_source(
@@ -73,10 +82,7 @@ def run_scrapy_static_source(
         }
 
     def _coerce_int(value: Any) -> int:
-        try:
-            return max(0, int(value))
-        except (TypeError, ValueError):
-            return 0
+        return coerce_int(value, 0, minimum=0, maximum=2**31 - 1)
 
     def _normalize_job(raw: Any, source_row: Dict[str, Any]) -> Optional[RawJob]:
         if not isinstance(raw, dict):
@@ -466,6 +472,34 @@ def run_static_studio_pages_source(
         link_rejections: Counter[str] = Counter()
         stats = entry_report["stats"]
 
+        host = ""
+        if pages:
+            try:
+                parsed = urlparse(common.clean_text(pages[0]) or "")
+                host = (parsed.netloc or "").strip().lower()
+            except Exception:  # noqa: BLE001
+                pass
+        ctx = AdapterPluginContext(family="static", adapter_key="static", source_identity=host or source_name)
+        try:
+            plugin, _ = default_registry.select(ctx)
+            plugin_jobs = plugin.run(
+                fetch_text=fetch_text,
+                timeout_s=timeout_s,
+                retries=retries,
+                backoff_s=backoff_s,
+                pages=pages,
+                source_row=source,
+                parse_jobpostings_from_html=deps.parse_jobpostings_from_html,
+            )
+            jobs.extend(plugin_jobs)
+            entry_report["fetchedCount"] = len(pages)
+            entry_report["keptCount"] = len(plugin_jobs)
+            entry_report["status"] = "ok"
+            details.append(entry_report)
+            continue
+        except NoPluginFoundError:
+            pass
+
         def add_detail_link(
             detail_links: List[Tuple[str, str]],
             detail_seen: set[str],
@@ -604,7 +638,7 @@ def run_static_studio_pages_source(
                         anchor_inner = match.group(2) or ""
                         anchor_text = common.strip_html_text(common.re.sub(r"(?is)<[^>]+>", " ", anchor_inner))
                         add_detail_link(detail_links, detail_seen, href, anchor_text, enforce_heuristics=True, page_url=page_url)
-                    for raw in common.re.findall(r'https?://[^\s"\'<>]+', listing_html, flags=common.re.I):
+                    for raw in find_urls_in_text(listing_html):
                         add_detail_link(detail_links, detail_seen, common.clean_text(raw), "", enforce_heuristics=True, page_url=page_url)
                 stats["candidate_links_found"] += len(detail_links)
                 stats["candidate_extraction_ms"] += int((time.perf_counter() - extraction_started) * 1000)
@@ -673,7 +707,7 @@ def run_static_studio_pages_source(
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 

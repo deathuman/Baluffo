@@ -10,6 +10,7 @@ import json
 from typing import Callable, Dict, List
 from urllib.parse import urlparse
 
+from src.exceptions import AdapterValidationError
 from src.jobs import common
 from src.jobs.adapters import _runtime
 from src.jobs.adapters.plugins import default_registry
@@ -109,7 +110,7 @@ def _run_json_feed_sources(
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 
@@ -188,7 +189,7 @@ def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 
@@ -237,7 +238,7 @@ def run_personio_sources_source(*, fetch_text: Callable[[str, int], str], timeou
     if jobs:
         return jobs
     if errors:
-        raise RuntimeError("; ".join(errors))
+        raise AdapterValidationError.from_errors(errors)
     return []
 
 

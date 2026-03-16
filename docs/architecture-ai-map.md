@@ -12,6 +12,7 @@ jobs.html / saved.html / admin.html
       -> page modules (app/*.js + actions/services/state-sync/render/domain/data-source)
       -> shared helpers (frontend/shared/*, root utils)
       -> UI registry (frontend/shared/ui/selectors.js)
+      -> API client (frontend/shared/api-client.js), state hub (frontend/shared/state-hub.js), shared UI components (frontend/shared/ui/)
 
 admin bridge (local HTTP API): src/admin_bridge.py
   -> src/bridge/ (modular components)
@@ -112,14 +113,23 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 - **`pipeline_service.py`**: Jobs pipeline orchestration and status payload
   - `start_task()` / `get_status_payload()`
 
+- **`source_checker.py`**: Static source validation (check_static_source and helpers); used by admin bridge for source testing/validation.
+
+- **`task_history.py`**: Run history and task-state persistence; `TaskHistoryManager` (load/save/append/upsert run_history, prune_started_rows_for_type, clear_task_state). Admin bridge wires it via `_get_task_history_manager()` and resets it in `configure_runtime_paths`.
+
+- **`html_extractor.py`**: Job-link extraction from HTML/scripts (_extract_embedded_job_urls, script URL extraction); used by admin bridge and static adapter.
+
 - **`routes/`**: HTTP route handlers extracted from `admin_bridge.py`
   - `routes/get_routes.py`: GET routes
   - `routes/post_routes.py`: POST routes
 
 ### Remaining in `admin_bridge.py`
 - HTTP server + request handler class, plus wiring to route handlers
-- Service composition/wiring for `SyncService`, `RegistryService`, `DiscoveryService`, `PipelineService`
-- Utility functions: `bridge_log()`, run history management, runtime config/paths, data normalization
+- Service composition/wiring for `SyncService`, `RegistryService`, `DiscoveryService`, `PipelineService`, source checker, task history
+- Utility functions: `bridge_log()`, runtime config/paths, data normalization (run history lives in `bridge/task_history.py`)
+
+### Refactoring status (complete)
+Backend refactoring is considered complete. **Done:** shared utils/regex/exceptions (`src/shared/`), bridge extractions (source_checker, task_history, html_extractor), jobs extractions (social/provider parsers, normalizers, text_utils, game_detection), dead-code removal, coerce centralization; adapter validation uses `AdapterValidationError` from `src/exceptions.py`; **API client** (`frontend/shared/api-client.js`) for backend calls; **state hub** (`frontend/shared/state-hub.js`) for cross-module state (jobsFeedCount, jobsLastUpdated, savedCount, savedLastUpdated—new shared state can be added via new keys and set/read locations documented in that file); **shared UI components** in `frontend/shared/ui/`; **static plugin family** in `src/jobs/adapters/plugins/static/` (plugins selected by host/source_identity; core validation and adapter flow in `src/jobs/adapters/static.py`). **How to add a static plugin:** add a module under `src/jobs/adapters/plugins/static/` with `can_handle(ctx)` and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`, then register it in `register.py` (see docstring there). New static sites are added by implementing such plugins; new shared frontend state by adding keys and wiring in state-hub. **Deliberately not done:** `jobs/validation.py` and `bridge/contracts.py` (intent satisfied by normalizers/text_utils/state); `jobs/adapters/html_parsers.py` extraction (deferred—boundaries unclear); Pydantic migration (separate effort, align with `docs/DATA_CONTRACT.md` and `src/jobs/models.py`).
 
 ## Data Model Overview
 

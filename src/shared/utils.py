@@ -1,0 +1,71 @@
+"""Shared utilities used across Baluffo (no imports from jobs/bridge/admin_bridge)."""
+from __future__ import annotations
+
+import os
+import re
+from datetime import datetime, timezone
+from typing import Any
+
+
+def now_utc() -> datetime:
+    """Return current UTC datetime."""
+    return datetime.now(timezone.utc)
+
+
+def now_iso() -> str:
+    """Return current UTC datetime as ISO 8601 string."""
+    return now_utc().isoformat()
+
+
+def utc_now_iso() -> str:
+    """Alias for now_iso(); same behavior for scripts and packaged probes."""
+    return now_iso()
+
+
+def env_flag(name: str, default: bool) -> bool:
+    """Parse env var as boolean: 1/true/yes/on -> True, 0/false/no/off -> False, else default."""
+    raw = str(os.getenv(name) or "").strip()
+    raw = re.sub(r"\s+", " ", raw).strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return bool(default)
+
+
+def coerce_bool(value: Any, default: bool) -> bool:
+    """Coerce value to bool; 1/true/yes/on -> True, 0/false/no/off -> False, else default."""
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return bool(default)
+
+
+def coerce_int(
+    value: Any,
+    default: int,
+    *,
+    minimum: int = 1,
+    maximum: int = 65535,
+) -> int:
+    """Coerce value to int and clamp to [minimum, maximum]."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = int(default)
+    return max(minimum, min(maximum, parsed))
+
+
+def coerce_str(value: Any, default: str) -> str:
+    """Coerce value to non-empty str; return default if stripped empty."""
+    text = str(value or "").strip()
+    return text or str(default)
+
+
+def coerce_port(value: Any, default: int = 8877) -> int:
+    """Coerce value to port number in [1, 65535]."""
+    return coerce_int(value, default, minimum=1, maximum=65535)

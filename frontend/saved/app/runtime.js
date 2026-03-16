@@ -47,6 +47,8 @@ import {
   readSavedLastJobsUrl
 } from "../state-sync/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
+import { set as stateHubSet } from "../../shared/state-hub.js";
+import { postJson } from "../../shared/api-client.js";
 import { cacheSavedDom } from "./dom.js";
 import { setSavedAuthControlsReady, setSavedAuthStatus, toggleSavedAuthButtons } from "./auth.js";
 import { requestConfirmationDialog, requestTextInputDialog } from "../../local-data/profile-name-dialog.js";
@@ -225,14 +227,7 @@ const noteSaveState = pageState.noteSaveState;
 const attachmentPreviewUrls = pageState.attachmentPreviewUrls;
 const startupMetrics = createSavedStartupMetrics({
   emitMetric: (event, payload) => {
-    fetch(`${ADMIN_BRIDGE_BASE}/desktop-local-data/startup-metric?t=${Date.now()}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        event,
-        payload
-      })
-    }).catch(() => {});
+    postJson(ADMIN_BRIDGE_BASE, "/desktop-local-data/startup-metric", { event, payload: payload || {} }).catch(() => {});
   }
 });
 
@@ -518,7 +513,10 @@ function subscribeToSavedJobs(uid) {
   unsubscribeSavedJobs = savedPageService.subscribeSavedJobs(
     uid,
     jobs => {
-      setSourceStatus(`Loaded ${jobs.length} saved jobs.`);
+      const count = Array.isArray(jobs) ? jobs.length : 0;
+      stateHubSet("savedCount", count);
+      stateHubSet("savedLastUpdated", Date.now());
+      setSourceStatus(`Loaded ${count} saved jobs.`);
       const isEditingNotes = isEditingNotesField();
       lastSavedJobsByKey = new Map(
         (jobs || [])
