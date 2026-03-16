@@ -99,6 +99,7 @@ To minimize token consumption and exploration overhead, AI agents MUST favor the
 - **Architecture Map**: Reference `docs/architecture-ai-map.md` to understand system boundaries before suggesting structural changes.
 - **Data Contracts**: Refer to `docs/DATA_CONTRACT.md` for `data-ui` attribute rules, JSON shapes, and the Manifest HUD schema.
 - **UI Registry**: Refer to `frontend/shared/ui/selectors.js` before adding new UI interaction logic.
+- **Test layout and runs:** Python tests are 100% pytest. Use `docs/testing.md` for test layout, fixtures, and targeted run commands. Use `workspace_tmpdir` from `tests/helpers/temp_paths.py` for temp dirs; admin tests use `admin_bridge_ops_root` from `tests/admin/conftest.py`. The "Fast verification matrix" in `docs/architecture-ai-map.md` (section 5) lists the fastest command per change area.
 
 ## Command Cheat Sheet
 

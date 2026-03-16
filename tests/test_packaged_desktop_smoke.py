@@ -1,165 +1,152 @@
 import json
-import unittest
 from pathlib import Path
 from unittest import mock
+
+import pytest
 
 from src import packaged_desktop_smoke as smoke
 from src.ship.startup_profile import summarize_startup_metrics
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
-class PackagedDesktopSmokeTests(unittest.TestCase):
-    def test_read_startup_metrics_file_reads_jsonl_rows(self) -> None:
-        with workspace_tmpdir("packaged-smoke") as tmp:
-            metrics_path = Path(tmp) / "runtime-data" / "desktop-startup-metrics.jsonl"
-            metrics_path.parent.mkdir(parents=True, exist_ok=True)
-            metrics_path.write_text(
-                "\n".join(
-                    [
-                        json.dumps({"event": "desktop_launch_start", "fields": {"elapsedMs": 0}}),
-                        json.dumps({"event": "desktop_window_shown", "fields": {"elapsedMs": 10}}),
-                    ]
-                ),
-                encoding="utf-8",
-            )
-            rows = smoke.read_startup_metrics_file(metrics_path.parent, limit=10)
-            self.assertEqual([row["event"] for row in rows], ["desktop_launch_start", "desktop_window_shown"])
-
-    def test_startup_profile_required_events_include_window_and_page_ready_markers(self) -> None:
-        self.assertEqual(
-            smoke.startup_profile_required_events("jobs"),
-            (
-                "desktop_launch_start",
-                "desktop_site_ready",
-                "desktop_window_created",
-                "desktop_shell_window_shown",
-                "jobs_module_boot_start",
-                "jobs_first_render",
-                "jobs_first_interactive",
+def test_read_startup_metrics_file_reads_jsonl_rows() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        metrics_path = Path(tmp) / "runtime-data" / "desktop-startup-metrics.jsonl"
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        metrics_path.write_text(
+            "\n".join(
+                [
+                    json.dumps({"event": "desktop_launch_start", "fields": {"elapsedMs": 0}}),
+                    json.dumps({"event": "desktop_window_shown", "fields": {"elapsedMs": 10}}),
+                ]
             ),
+            encoding="utf-8",
         )
-        self.assertEqual(smoke.startup_profile_required_events("admin")[-1], "admin_pin_gate_ready")
-        self.assertEqual(
-            smoke.startup_profile_required_events("desktop-probe"),
-            (
-                "desktop_launch_start",
-                "desktop_site_ready",
-                "desktop_window_created",
-                "desktop_shell_window_shown",
-                "desktop_probe_html_parse_start",
-                "desktop_probe_ready",
-            ),
-        )
-        self.assertEqual(
-            smoke.startup_profile_required_events("desktop-probe-head"),
-            (
-                "desktop_launch_start",
-                "desktop_site_ready",
-                "desktop_window_created",
-                "desktop_shell_window_shown",
-                "desktop_probe_head_html_parse_start",
-                "desktop_probe_head_ready",
-            ),
-        )
-        self.assertEqual(
-            smoke.startup_profile_required_events("desktop-probe-css"),
-            (
-                "desktop_launch_start",
-                "desktop_site_ready",
-                "desktop_window_created",
-                "desktop_shell_window_shown",
-                "desktop_probe_css_html_parse_start",
-                "desktop_probe_css_ready",
-            ),
-        )
-        self.assertEqual(
-            smoke.startup_profile_required_events("desktop-probe-inline"),
-            (
-                "desktop_launch_start",
-                "desktop_site_ready",
-                "desktop_window_created",
-                "desktop_shell_window_shown",
-                "desktop_probe_inline_html_parse_start",
-                "desktop_probe_inline_ready",
-            ),
-        )
+        rows = smoke.read_startup_metrics_file(metrics_path.parent, limit=10)
+        assert [row["event"] for row in rows] == ["desktop_launch_start", "desktop_window_shown"]
 
-    def test_startup_profile_summary_classifies_blank_probe_page_load_delay(self) -> None:
-        rows = [
-            {"ts": "2026-03-10T12:00:00+00:00", "event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
-            {"ts": "2026-03-10T12:00:01+00:00", "event": "desktop_site_ready", "fields": {"elapsedMs": 1000}},
-            {"ts": "2026-03-10T12:00:01.100000+00:00", "event": "desktop_window_created", "fields": {"elapsedMs": 1100}},
-            {"ts": "2026-03-10T12:00:01.300000+00:00", "event": "desktop_shell_window_shown", "fields": {"elapsedMs": 1300}},
-            {"ts": "2026-03-10T12:00:08+00:00", "event": "desktop_probe_html_parse_start", "payload": {"elapsedMs": 8000}},
-            {"ts": "2026-03-10T12:00:08.050000+00:00", "event": "desktop_probe_ready", "payload": {"elapsedMs": 8050}},
-        ]
-        summary = summarize_startup_metrics(rows, page="desktop-probe", profile_mode="cold")
-        self.assertEqual(summary["classification"], "desktop page load delayed")
-        self.assertEqual(summary["firstUsableMs"], 8050)
 
-    def test_startup_profile_summary_supports_head_probe_page(self) -> None:
-        rows = [
-            {"ts": "2026-03-10T12:00:00+00:00", "event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
-            {"ts": "2026-03-10T12:00:01+00:00", "event": "desktop_site_ready", "fields": {"elapsedMs": 1000}},
-            {"ts": "2026-03-10T12:00:01.100000+00:00", "event": "desktop_window_created", "fields": {"elapsedMs": 1100}},
-            {"ts": "2026-03-10T12:00:01.300000+00:00", "event": "desktop_shell_window_shown", "fields": {"elapsedMs": 1300}},
-            {"ts": "2026-03-10T12:00:02.500000+00:00", "event": "desktop_probe_head_html_parse_start", "payload": {"elapsedMs": 2500}},
-            {"ts": "2026-03-10T12:00:02.550000+00:00", "event": "desktop_probe_head_ready", "payload": {"elapsedMs": 2550}},
-        ]
-        summary = summarize_startup_metrics(rows, page="desktop-probe-head", profile_mode="cold")
-        self.assertEqual(summary["firstUsableEvent"], "desktop_probe_head_ready")
-        self.assertEqual(summary["firstUsableMs"], 2550)
+def test_startup_profile_required_events_include_window_and_page_ready_markers() -> None:
+    assert smoke.startup_profile_required_events("jobs") == (
+        "desktop_launch_start",
+        "desktop_site_ready",
+        "desktop_window_created",
+        "desktop_shell_window_shown",
+        "jobs_module_boot_start",
+        "jobs_first_render",
+        "jobs_first_interactive",
+    )
+    assert smoke.startup_profile_required_events("admin")[-1] == "admin_pin_gate_ready"
+    assert smoke.startup_profile_required_events("desktop-probe") == (
+        "desktop_launch_start",
+        "desktop_site_ready",
+        "desktop_window_created",
+        "desktop_shell_window_shown",
+        "desktop_probe_html_parse_start",
+        "desktop_probe_ready",
+    )
+    assert smoke.startup_profile_required_events("desktop-probe-head") == (
+        "desktop_launch_start",
+        "desktop_site_ready",
+        "desktop_window_created",
+        "desktop_shell_window_shown",
+        "desktop_probe_head_html_parse_start",
+        "desktop_probe_head_ready",
+    )
+    assert smoke.startup_profile_required_events("desktop-probe-css") == (
+        "desktop_launch_start",
+        "desktop_site_ready",
+        "desktop_window_created",
+        "desktop_shell_window_shown",
+        "desktop_probe_css_html_parse_start",
+        "desktop_probe_css_ready",
+    )
+    assert smoke.startup_profile_required_events("desktop-probe-inline") == (
+        "desktop_launch_start",
+        "desktop_site_ready",
+        "desktop_window_created",
+        "desktop_shell_window_shown",
+        "desktop_probe_inline_html_parse_start",
+        "desktop_probe_inline_ready",
+    )
 
-    def test_startup_profile_summary_supports_css_probe_page(self) -> None:
-        rows = [
-            {"ts": "2026-03-10T12:00:00+00:00", "event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
-            {"ts": "2026-03-10T12:00:01+00:00", "event": "desktop_site_ready", "fields": {"elapsedMs": 1000}},
-            {"ts": "2026-03-10T12:00:01.100000+00:00", "event": "desktop_window_created", "fields": {"elapsedMs": 1100}},
-            {"ts": "2026-03-10T12:00:01.300000+00:00", "event": "desktop_shell_window_shown", "fields": {"elapsedMs": 1300}},
-            {"ts": "2026-03-10T12:00:03+00:00", "event": "desktop_probe_css_html_parse_start", "payload": {"elapsedMs": 3000}},
-            {"ts": "2026-03-10T12:00:03.020000+00:00", "event": "desktop_probe_css_ready", "payload": {"elapsedMs": 3020}},
-        ]
-        summary = summarize_startup_metrics(rows, page="desktop-probe-css", profile_mode="cold")
-        self.assertEqual(summary["firstUsableEvent"], "desktop_probe_css_ready")
-        self.assertEqual(summary["firstUsableMs"], 3020)
 
-    def test_startup_profile_summary_supports_inline_probe_page(self) -> None:
-        rows = [
-            {"ts": "2026-03-10T12:00:00+00:00", "event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
-            {"ts": "2026-03-10T12:00:01+00:00", "event": "desktop_site_ready", "fields": {"elapsedMs": 1000}},
-            {"ts": "2026-03-10T12:00:01.100000+00:00", "event": "desktop_window_created", "fields": {"elapsedMs": 1100}},
-            {"ts": "2026-03-10T12:00:01.300000+00:00", "event": "desktop_shell_window_shown", "fields": {"elapsedMs": 1300}},
-            {"ts": "2026-03-10T12:00:02.100000+00:00", "event": "desktop_probe_inline_html_parse_start", "payload": {"elapsedMs": 2100}},
-            {"ts": "2026-03-10T12:00:02.120000+00:00", "event": "desktop_probe_inline_ready", "payload": {"elapsedMs": 2120}},
-        ]
-        summary = summarize_startup_metrics(rows, page="desktop-probe-inline", profile_mode="cold")
-        self.assertEqual(summary["firstUsableEvent"], "desktop_probe_inline_ready")
-        self.assertEqual(summary["firstUsableMs"], 2120)
+def test_startup_profile_summary_classifies_blank_probe_page_load_delay() -> None:
+    rows = [
+        {"ts": "2026-03-10T12:00:00+00:00", "event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
+        {"ts": "2026-03-10T12:00:01+00:00", "event": "desktop_site_ready", "fields": {"elapsedMs": 1000}},
+        {"ts": "2026-03-10T12:00:01.100000+00:00", "event": "desktop_window_created", "fields": {"elapsedMs": 1100}},
+        {"ts": "2026-03-10T12:00:01.300000+00:00", "event": "desktop_shell_window_shown", "fields": {"elapsedMs": 1300}},
+        {"ts": "2026-03-10T12:00:08+00:00", "event": "desktop_probe_html_parse_start", "payload": {"elapsedMs": 8000}},
+        {"ts": "2026-03-10T12:00:08.050000+00:00", "event": "desktop_probe_ready", "payload": {"elapsedMs": 8050}},
+    ]
+    summary = summarize_startup_metrics(rows, page="desktop-probe", profile_mode="cold")
+    assert summary["classification"] == "desktop page load delayed"
+    assert summary["firstUsableMs"] == 8050
 
-    def test_startup_profile_summary_classifies_local_auth_delay(self) -> None:
-        rows = [
-            {"ts": "2026-03-10T12:00:00+00:00", "event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
-            {"ts": "2026-03-10T12:00:01+00:00", "event": "desktop_site_ready", "fields": {"elapsedMs": 1000}},
-            {"ts": "2026-03-10T12:00:01.200000+00:00", "event": "desktop_window_created", "fields": {"elapsedMs": 1200}},
-            {"ts": "2026-03-10T12:00:01.400000+00:00", "event": "desktop_window_shown", "fields": {"elapsedMs": 1400}},
-            {"ts": "2026-03-10T12:00:02+00:00", "event": "desktop_page_loaded", "fields": {"elapsedMs": 2000}},
-            {"ts": "2026-03-10T12:00:02.100000+00:00", "event": "jobs_local_data_init_ready", "payload": {"elapsedMs": 2100}},
-            {"ts": "2026-03-10T12:00:07.500000+00:00", "event": "jobs_auth_ready", "payload": {"elapsedMs": 7500}},
-            {"ts": "2026-03-10T12:00:08+00:00", "event": "jobs_first_render", "payload": {"elapsedMs": 8000}},
-            {"ts": "2026-03-10T12:00:08.200000+00:00", "event": "jobs_first_interactive", "payload": {"elapsedMs": 8200}},
-        ]
-        summary = summarize_startup_metrics(rows, page="jobs", profile_mode="cold")
-        self.assertEqual(summary["classification"], "local auth bootstrap delayed")
-        self.assertEqual(summary["status"], "failed")
+def test_startup_profile_summary_supports_head_probe_page() -> None:
+    rows = [
+        {"ts": "2026-03-10T12:00:00+00:00", "event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
+        {"ts": "2026-03-10T12:00:01+00:00", "event": "desktop_site_ready", "fields": {"elapsedMs": 1000}},
+        {"ts": "2026-03-10T12:00:01.100000+00:00", "event": "desktop_window_created", "fields": {"elapsedMs": 1100}},
+        {"ts": "2026-03-10T12:00:01.300000+00:00", "event": "desktop_shell_window_shown", "fields": {"elapsedMs": 1300}},
+        {"ts": "2026-03-10T12:00:02.500000+00:00", "event": "desktop_probe_head_html_parse_start", "payload": {"elapsedMs": 2500}},
+        {"ts": "2026-03-10T12:00:02.550000+00:00", "event": "desktop_probe_head_ready", "payload": {"elapsedMs": 2550}},
+    ]
+    summary = summarize_startup_metrics(rows, page="desktop-probe-head", profile_mode="cold")
+    assert summary["firstUsableEvent"] == "desktop_probe_head_ready"
+    assert summary["firstUsableMs"] == 2550
 
-    def test_ensure_portable_exe_raises_when_missing_and_build_still_missing(self) -> None:
+def test_startup_profile_summary_supports_css_probe_page() -> None:
+    rows = [
+        {"ts": "2026-03-10T12:00:00+00:00", "event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
+        {"ts": "2026-03-10T12:00:01+00:00", "event": "desktop_site_ready", "fields": {"elapsedMs": 1000}},
+        {"ts": "2026-03-10T12:00:01.100000+00:00", "event": "desktop_window_created", "fields": {"elapsedMs": 1100}},
+        {"ts": "2026-03-10T12:00:01.300000+00:00", "event": "desktop_shell_window_shown", "fields": {"elapsedMs": 1300}},
+        {"ts": "2026-03-10T12:00:03+00:00", "event": "desktop_probe_css_html_parse_start", "payload": {"elapsedMs": 3000}},
+        {"ts": "2026-03-10T12:00:03.020000+00:00", "event": "desktop_probe_css_ready", "payload": {"elapsedMs": 3020}},
+    ]
+    summary = summarize_startup_metrics(rows, page="desktop-probe-css", profile_mode="cold")
+    assert summary["firstUsableEvent"] == "desktop_probe_css_ready"
+    assert summary["firstUsableMs"] == 3020
+
+def test_startup_profile_summary_supports_inline_probe_page() -> None:
+    rows = [
+        {"ts": "2026-03-10T12:00:00+00:00", "event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
+        {"ts": "2026-03-10T12:00:01+00:00", "event": "desktop_site_ready", "fields": {"elapsedMs": 1000}},
+        {"ts": "2026-03-10T12:00:01.100000+00:00", "event": "desktop_window_created", "fields": {"elapsedMs": 1100}},
+        {"ts": "2026-03-10T12:00:01.300000+00:00", "event": "desktop_shell_window_shown", "fields": {"elapsedMs": 1300}},
+        {"ts": "2026-03-10T12:00:02.100000+00:00", "event": "desktop_probe_inline_html_parse_start", "payload": {"elapsedMs": 2100}},
+        {"ts": "2026-03-10T12:00:02.120000+00:00", "event": "desktop_probe_inline_ready", "payload": {"elapsedMs": 2120}},
+    ]
+    summary = summarize_startup_metrics(rows, page="desktop-probe-inline", profile_mode="cold")
+    assert summary["firstUsableEvent"] == "desktop_probe_inline_ready"
+    assert summary["firstUsableMs"] == 2120
+
+def test_startup_profile_summary_classifies_local_auth_delay() -> None:
+    rows = [
+        {"ts": "2026-03-10T12:00:00+00:00", "event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
+        {"ts": "2026-03-10T12:00:01+00:00", "event": "desktop_site_ready", "fields": {"elapsedMs": 1000}},
+        {"ts": "2026-03-10T12:00:01.200000+00:00", "event": "desktop_window_created", "fields": {"elapsedMs": 1200}},
+        {"ts": "2026-03-10T12:00:01.400000+00:00", "event": "desktop_window_shown", "fields": {"elapsedMs": 1400}},
+        {"ts": "2026-03-10T12:00:02+00:00", "event": "desktop_page_loaded", "fields": {"elapsedMs": 2000}},
+        {"ts": "2026-03-10T12:00:02.100000+00:00", "event": "jobs_local_data_init_ready", "payload": {"elapsedMs": 2100}},
+        {"ts": "2026-03-10T12:00:07.500000+00:00", "event": "jobs_auth_ready", "payload": {"elapsedMs": 7500}},
+        {"ts": "2026-03-10T12:00:08+00:00", "event": "jobs_first_render", "payload": {"elapsedMs": 8000}},
+        {"ts": "2026-03-10T12:00:08.200000+00:00", "event": "jobs_first_interactive", "payload": {"elapsedMs": 8200}},
+    ]
+    summary = summarize_startup_metrics(rows, page="jobs", profile_mode="cold")
+    assert summary["classification"] == "local auth bootstrap delayed"
+    assert summary["status"] == "failed"
+
+def test_ensure_portable_exe_raises_when_missing_and_build_still_missing() -> None:
         with workspace_tmpdir("packaged-smoke") as tmp, mock.patch.object(smoke, "run_portable_build") as build_mock:
             exe_path = Path(tmp) / "dist" / "baluffo-portable" / "Baluffo.exe"
-            with self.assertRaisesRegex(RuntimeError, "Packaged desktop executable not found"):
+            with pytest.raises(RuntimeError, match="Packaged desktop executable not found"):
                 smoke.ensure_portable_exe(exe_path, rebuild=False)
             build_mock.assert_called_once()
 
-    def test_ensure_portable_exe_uses_rebuild_output_dir_when_requested(self) -> None:
+def test_ensure_portable_exe_uses_rebuild_output_dir_when_requested() -> None:
         with workspace_tmpdir("packaged-smoke") as tmp:
             root = Path(tmp)
             requested_exe = root / "dist" / "baluffo-portable" / "Baluffo.exe"
@@ -169,10 +156,10 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
             rebuilt_exe.write_text("exe", encoding="utf-8")
             with mock.patch.object(smoke, "run_portable_build", return_value=rebuilt_exe) as build_mock:
                 resolved = smoke.ensure_portable_exe(requested_exe, rebuild=True, rebuild_output_dir=rebuilt_dir)
-            self.assertEqual(resolved, rebuilt_exe.resolve())
+            assert resolved == rebuilt_exe.resolve()
             build_mock.assert_called_once_with(rebuilt_dir)
 
-    def test_parse_packaged_node_smoke_report_reads_scenarios(self) -> None:
+def test_parse_packaged_node_smoke_report_reads_scenarios() -> None:
         with workspace_tmpdir("packaged-smoke") as tmp:
             report_path = Path(tmp) / "smoke-report.json"
             report_path.write_text(
@@ -188,11 +175,11 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 encoding="utf-8",
             )
             rows = smoke.parse_packaged_node_smoke_report(report_path)
-            self.assertEqual(len(rows), 2)
-            self.assertEqual(rows[0]["name"], "Jobs startup")
-            self.assertEqual(rows[1]["error"], "unlock failed")
+            assert len(rows) == 2
+            assert rows[0]["name"] == "Jobs startup"
+            assert rows[1]["error"] == "unlock failed"
 
-    def test_collect_packaged_smoke_env_diagnostics_reports_paths_and_elevation(self) -> None:
+def test_collect_packaged_smoke_env_diagnostics_reports_paths_and_elevation() -> None:
         with workspace_tmpdir("packaged-smoke") as tmp:
             root = Path(tmp)
             exe_path = root / "dist" / "baluffo-portable" / "Baluffo.exe"
@@ -206,20 +193,21 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                     node_command=["C:/Program Files/nodejs/node.exe"],
                     env=env,
                 )
-            self.assertTrue(diagnostics["artifactsDirWritable"])
-            self.assertTrue(diagnostics["exeParentWritable"])
-            self.assertEqual(diagnostics["nodePath"], "C:/Program Files/nodejs/node.exe")
-            self.assertEqual(diagnostics["tmp"], str(root / "tmp"))
-            self.assertEqual(diagnostics["temp"], str(root / "temp"))
-            self.assertTrue(diagnostics["isElevated"])
+            assert diagnostics["artifactsDirWritable"]
+            assert diagnostics["exeParentWritable"]
+            assert diagnostics["nodePath"] == "C:/Program Files/nodejs/node.exe"
+            assert diagnostics["tmp"] == str(root / "tmp")
+            assert diagnostics["temp"] == str(root / "temp")
+            assert diagnostics["isElevated"]
 
-    def test_classify_subprocess_error_marks_spawn_eperm(self) -> None:
-        error = PermissionError("spawn EPERM")
-        self.assertEqual(smoke.classify_subprocess_error(error), "node_process_spawn_blocked")
-        self.assertEqual(smoke.classify_subprocess_error("Error: spawn EPERM"), "playwright_worker_spawn_blocked")
-        self.assertEqual(smoke.classify_subprocess_error("browserType.launch: spawn EPERM"), "node_process_spawn_blocked")
+def test_classify_subprocess_error_marks_spawn_eperm() -> None:
+    error = PermissionError("spawn EPERM")
+    assert smoke.classify_subprocess_error(error) == "node_process_spawn_blocked"
+    assert smoke.classify_subprocess_error("Error: spawn EPERM") == "playwright_worker_spawn_blocked"
+    assert smoke.classify_subprocess_error("browserType.launch: spawn EPERM") == "node_process_spawn_blocked"
 
-    def test_run_packaged_smoke_writes_failure_report_on_runtime_timeout(self) -> None:
+@pytest.mark.slow
+def test_run_packaged_smoke_writes_failure_report_on_runtime_timeout() -> None:
         with workspace_tmpdir("packaged-smoke") as tmp:
             root = Path(tmp)
             report_path = root / "data" / "latest.json"
@@ -251,20 +239,20 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 smoke, "collect_packaged_smoke_env_diagnostics", return_value={"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False}
             ):
                 payload = smoke.run_packaged_smoke(args)
-            self.assertFalse(payload["ok"])
-            self.assertEqual(payload["failure"]["step"], "runner")
-            self.assertIn("timed out waiting for bridge", payload["failure"]["message"])
-            self.assertEqual(payload["environment"]["tmp"], "C:/tmp")
-            self.assertTrue(report_path.exists())
+            assert not payload["ok"]
+            assert payload["failure"]["step"] == "runner"
+            assert "timed out waiting for bridge" in payload["failure"]["message"]
+            assert payload["environment"]["tmp"] == "C:/tmp"
+            assert report_path.exists()
             saved = json.loads(report_path.read_text(encoding="utf-8"))
-            self.assertFalse(saved["ok"])
-            self.assertTrue(Path(saved["artifacts"]["reportPath"]).exists())
-            self.assertGreaterEqual(terminate_mock.call_count, 1)
-            self.assertEqual(terminate_mock.call_args_list[-1], mock.call(process))
-            self.assertGreaterEqual(stdout_handle.close.call_count, 1)
-            self.assertGreaterEqual(stderr_handle.close.call_count, 1)
+            assert not saved["ok"]
+            assert Path(saved["artifacts"]["reportPath"]).exists()
+            assert terminate_mock.call_count >= 1
+            assert terminate_mock.call_args_list[-1] == mock.call(process)
+            assert stdout_handle.close.call_count >= 1
+            assert stderr_handle.close.call_count >= 1
 
-    def test_run_packaged_smoke_writes_success_report_and_artifacts(self) -> None:
+def test_run_packaged_smoke_writes_success_report_and_artifacts() -> None:
         with workspace_tmpdir("packaged-smoke") as tmp:
             root = Path(tmp)
             report_path = root / "data" / "latest.json"
@@ -331,23 +319,23 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 "write_startup_summary",
             ), mock.patch.object(smoke, "terminate_process_tree") as terminate_mock:
                 payload = smoke.run_packaged_smoke(args)
-            self.assertTrue(payload["ok"])
-            self.assertEqual(payload["scenarios"][0]["name"], "Startup Profile")
-            self.assertEqual(payload["scenarios"][1:], scenarios)
-            self.assertEqual(payload["startupMetrics"], startup_metrics)
-            self.assertEqual(payload["environment"]["tmp"], str(artifacts_dir / "tmp"))
-            self.assertTrue(report_path.exists())
+            assert (payload["ok"])
+            assert payload["scenarios"][0]["name"] == "Startup Profile"
+            assert payload["scenarios"][1:] == scenarios
+            assert payload["startupMetrics"] == startup_metrics
+            assert payload["environment"]["tmp"] == str(artifacts_dir / "tmp")
+            assert report_path.exists()
             saved = json.loads(report_path.read_text(encoding="utf-8"))
-            self.assertTrue(saved["ok"])
-            self.assertEqual(saved["artifacts"]["smokeReport"], str(artifacts_dir / "smoke-report.json"))
-            self.assertEqual(saved["artifacts"]["smokeRunnerStdout"], str(artifacts_dir / "smoke-runner-stdout.log"))
-            self.assertEqual(saved["artifacts"]["playwrightReport"], str(artifacts_dir / "smoke-report.json"))
-            self.assertEqual(saved["artifacts"]["playwrightStdout"], str(artifacts_dir / "smoke-runner-stdout.log"))
+            assert saved["ok"]
+            assert saved["artifacts"]["smokeReport"] == str(artifacts_dir / "smoke-report.json")
+            assert saved["artifacts"]["smokeRunnerStdout"] == str(artifacts_dir / "smoke-runner-stdout.log")
+            assert saved["artifacts"]["playwrightReport"] == str(artifacts_dir / "smoke-report.json")
+            assert saved["artifacts"]["playwrightStdout"] == str(artifacts_dir / "smoke-runner-stdout.log")
             terminate_mock.assert_called_once_with(process)
             stdout_handle.close.assert_called_once()
             stderr_handle.close.assert_called_once()
 
-    def test_run_packaged_smoke_classifies_spawn_failure_from_node_runner(self) -> None:
+def test_run_packaged_smoke_classifies_spawn_failure_from_node_runner() -> None:
         with workspace_tmpdir("packaged-smoke") as tmp:
             root = Path(tmp)
             report_path = root / "data" / "latest.json"
@@ -393,13 +381,13 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 },
             ), mock.patch.object(smoke, "terminate_process_tree"):
                 payload = smoke.run_packaged_smoke(args)
-            self.assertFalse(payload["ok"])
-            self.assertEqual(payload["failure"]["step"], "playwright")
-            self.assertEqual(payload["failure"]["category"], "node_process_spawn_blocked")
-            self.assertEqual(payload["failure"]["message"], "spawn EPERM")
-            self.assertEqual(payload["environment"]["isElevated"], True)
+            assert not payload["ok"]
+            assert payload["failure"]["step"] == "playwright"
+            assert payload["failure"]["category"] == "node_process_spawn_blocked"
+            assert payload["failure"]["message"] == "spawn EPERM"
+            assert payload["environment"]["isElevated"] is True
 
-    def test_run_packaged_smoke_fails_when_embedded_probe_fails(self) -> None:
+def test_run_packaged_smoke_fails_when_embedded_probe_fails() -> None:
         with workspace_tmpdir("packaged-smoke") as tmp:
             root = Path(tmp)
             report_path = root / "data" / "latest.json"
@@ -428,12 +416,10 @@ class PackagedDesktopSmokeTests(unittest.TestCase):
                 smoke, "run_embedded_runtime_probe", return_value=failing_probe
             ), mock.patch.object(smoke, "terminate_process_tree") as terminate_mock:
                 payload = smoke.run_packaged_smoke(args)
-            self.assertFalse(payload["ok"])
-            self.assertEqual(payload["scenarios"], [failing_probe, failing_probe, failing_probe])
-            self.assertEqual(payload["failure"]["step"], "runner")
-            self.assertIn("Embedded Jobs Ready failed", payload["failure"]["message"])
+            assert not payload["ok"]
+            assert payload["scenarios"] == [failing_probe, failing_probe, failing_probe]
+            assert payload["failure"]["step"] == "runner"
+            assert "Embedded Jobs Ready failed" in payload["failure"]["message"]
             terminate_mock.assert_called_once_with(None)
 
 
-if __name__ == "__main__":
-    unittest.main()

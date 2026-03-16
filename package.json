@@ -25,7 +25,8 @@
     "test:frontend:unit": "npm run check:test-manifest && node --test --test-reporter=dot tests/frontend/unit/all.test.mjs",
     "test:frontend:headed": "playwright test --headed",
     "test:frontend:ci": "playwright test --reporter=line",
-    "test:py": "scripts\\run_py_tests.cmd"
+    "test:py": "scripts\\run_py_tests.cmd",
+    "test:py:timing": "npm run check:python-version && python -m pytest tests -q --durations=25 --durations-min=0.2 --color=no"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0"

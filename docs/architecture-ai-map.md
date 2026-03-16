@@ -207,10 +207,14 @@ Key stages:
 | Frontend module wiring/syntax | `node --check frontend/jobs/app.js frontend/saved/app.js frontend/admin/app.js` |
 | Full Workspace Verification | `npm run verify` (Orchestrated Rebuild + All Tests) |
 | Frontend behavior/unit coverage | `npm run test:unit` |
-| Desktop launcher/runtime behavior | `python -m pytest tests/test_desktop_app.py` |
+| Desktop launcher/runtime behavior | `python -m pytest tests/test_desktop_app.py -q` |
 | Packaged desktop smoke contract | `npm run test:smoke` |
-| Bridge behavior changes | `python -m pytest tests/admin/` |
-| Bridge sync state/service | `python -m pytest tests/admin/test_admin_bridge_ops_sync.py` |
+| Bridge behavior changes | `python -m pytest tests/admin/ -q` |
+| Bridge sync state/service | `python -m pytest tests/admin/test_admin_bridge_ops_sync.py -q` |
+| Jobs pipeline / jobs_fetcher | `python -m pytest tests/test_jobs_fetcher.py -q` |
+| Source discovery | `python -m pytest tests/test_source_discovery.py -q` |
+
+For more targeted runs and fixture list, see `docs/testing.md`.
 
 ## 6) Related deep-dive docs
 

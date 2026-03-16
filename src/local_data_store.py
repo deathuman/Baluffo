@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -41,10 +42,18 @@ def _write_atomic(path: Path, payload: str) -> None:
     tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(payload, encoding="utf-8")
     try:
-        os.replace(tmp, path)
+        for attempt in range(6):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt >= 5:
+                    raise
+                time.sleep(0.03 * (attempt + 1))
     finally:
-        with contextlib.suppress(OSError):
-            tmp.unlink()
+        if tmp.exists():
+            with contextlib.suppress(OSError):
+                tmp.unlink()
 
 
 def _write_json(path: Path, payload: Any) -> None:

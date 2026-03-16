@@ -1,8 +1,9 @@
 import json
-import unittest
 from pathlib import Path
 from unittest import mock
 from zipfile import ZIP_DEFLATED, ZipFile
+
+import pytest
 
 from src.ship import update_manager as um
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -52,114 +53,114 @@ def _build_update_zip(work: Path, version: str) -> Path:
     return bundle
 
 
-class ShipUpdateManagerTests(unittest.TestCase):
-    def test_write_json_atomic_retries_transient_permission_error(self) -> None:
-        with workspace_tmpdir("ship-update") as tmp:
-            target = Path(tmp) / "ship" / "app" / "update-state.json"
-            calls = {"count": 0}
-            original_replace = um.os.replace
+def test_write_json_atomic_retries_transient_permission_error() -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        target = Path(tmp) / "ship" / "app" / "update-state.json"
+        calls = {"count": 0}
+        original_replace = um.os.replace
 
-            def flaky_replace(src, dst):  # noqa: ANN001
-                calls["count"] += 1
-                if calls["count"] == 1:
-                    raise PermissionError(32, "sharing violation")
-                return original_replace(src, dst)
+        def flaky_replace(src, dst):  # noqa: ANN001
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise PermissionError(32, "sharing violation")
+            return original_replace(src, dst)
 
-            with mock.patch.object(um.os, "replace", side_effect=flaky_replace):
-                um.write_json_atomic(target, {"ok": True})
+        with mock.patch.object(um.os, "replace", side_effect=flaky_replace):
+            um.write_json_atomic(target, {"ok": True})
 
-            self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["ok"], True)
-            self.assertEqual(calls["count"], 2)
+        assert json.loads(target.read_text(encoding="utf-8"))["ok"] is True
+        assert calls["count"] == 2
 
-    def test_startup_check_rejects_data_dir_inside_versions(self) -> None:
-        with workspace_tmpdir("ship-update") as tmp:
-            root = Path(tmp) / "ship"
-            _seed_root(root)
-            bad_data_dir = root / "app" / "versions" / "1.0.0" / "data"
-            bad_data_dir.mkdir(parents=True, exist_ok=True)
-            with self.assertRaises(ValueError):
-                um.startup_check(root, bad_data_dir)
 
-    def test_apply_update_success_switches_current_version_and_keeps_data(self) -> None:
-        with workspace_tmpdir("ship-update") as tmp:
-            root = Path(tmp) / "ship"
-            _seed_root(root, version="1.0.0")
-            bundle = _build_update_zip(Path(tmp), "1.1.0")
-            sha256 = um.compute_sha256(bundle)
-            key = "test-key"
-            manifest = {
-                "version": "1.1.0",
-                "artifact_url": "file://local",
-                "sha256": sha256,
-                "signature": um.sign_manifest("1.1.0", sha256, key),
-                "min_updater_version": "1.0.0",
-                "migration_plan": ["noop"],
-                "rollback_allowed": False,
-            }
-            manifest_path = Path(tmp) / "update-manifest.json"
-            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+def test_startup_check_rejects_data_dir_inside_versions() -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root)
+        bad_data_dir = root / "app" / "versions" / "1.0.0" / "data"
+        bad_data_dir.mkdir(parents=True, exist_ok=True)
+        with pytest.raises(ValueError):
+            um.startup_check(root, bad_data_dir)
 
-            result = um.apply_update(root, bundle, manifest_path, key)
-            self.assertTrue(result["ok"])
-            self.assertEqual((root / "app" / "current.txt").read_text(encoding="utf-8").strip(), "1.1.0")
-            self.assertEqual(json.loads((root / "data" / "user-settings.json").read_text(encoding="utf-8"))["theme"], "dark")
 
-    def test_apply_update_rejects_checksum_mismatch(self) -> None:
-        with workspace_tmpdir("ship-update") as tmp:
-            root = Path(tmp) / "ship"
-            _seed_root(root, version="1.0.0")
-            bundle = _build_update_zip(Path(tmp), "1.1.0")
-            key = "test-key"
-            manifest = {
-                "version": "1.1.0",
-                "artifact_url": "file://local",
-                "sha256": "0" * 64,
-                "signature": um.sign_manifest("1.1.0", "0" * 64, key),
-                "min_updater_version": "1.0.0",
-                "migration_plan": [],
-                "rollback_allowed": False,
-            }
-            manifest_path = Path(tmp) / "update-manifest.json"
-            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-            with self.assertRaises(ValueError):
-                um.apply_update(root, bundle, manifest_path, key)
-            self.assertEqual((root / "app" / "current.txt").read_text(encoding="utf-8").strip(), "1.0.0")
-
-    def test_recover_previous_swaps_versions(self) -> None:
-        with workspace_tmpdir("ship-update") as tmp:
-            root = Path(tmp) / "ship"
-            _seed_root(root, version="1.1.0")
-            (root / "app" / "versions" / "1.0.0" / "src").mkdir(parents=True, exist_ok=True)
-            _write(root / "app" / "versions" / "1.0.0" / "src" / "admin_bridge.py", "print('ok')\n")
-            _write(root / "app" / "versions" / "1.0.0" / "index.html", "<html></html>\n")
-            _write(root / "app" / "versions" / "1.0.0" / "jobs.html", "<html></html>\n")
-            _write(root / "app" / "versions" / "1.0.0" / "saved.html", "<html></html>\n")
-            state = json.loads((root / "app" / "update-state.json").read_text(encoding="utf-8"))
-            state["previous_version"] = "1.0.0"
-            (root / "app" / "update-state.json").write_text(json.dumps(state), encoding="utf-8")
-
-            result = um.recover_previous(root)
-            self.assertTrue(result["ok"])
-            self.assertEqual((root / "app" / "current.txt").read_text(encoding="utf-8").strip(), "1.0.0")
-
-    def test_validate_manifest_uses_numeric_semver_for_min_updater_version(self) -> None:
-        previous = um.UPDATER_VERSION
+def test_apply_update_success_switches_current_version_and_keeps_data() -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="1.0.0")
+        bundle = _build_update_zip(Path(tmp), "1.1.0")
+        sha256 = um.compute_sha256(bundle)
+        key = "test-key"
         manifest = {
-            "version": "2.0.0",
+            "version": "1.1.0",
             "artifact_url": "file://local",
-            "sha256": "1" * 64,
-            "signature": "2" * 64,
-            "min_updater_version": "1.0.10",
+            "sha256": sha256,
+            "signature": um.sign_manifest("1.1.0", sha256, key),
+            "min_updater_version": "1.0.0",
+            "migration_plan": ["noop"],
+            "rollback_allowed": False,
+        }
+        manifest_path = Path(tmp) / "update-manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        result = um.apply_update(root, bundle, manifest_path, key)
+        assert result["ok"]
+        assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "1.1.0"
+        assert json.loads((root / "data" / "user-settings.json").read_text(encoding="utf-8"))["theme"] == "dark"
+
+
+def test_apply_update_rejects_checksum_mismatch() -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="1.0.0")
+        bundle = _build_update_zip(Path(tmp), "1.1.0")
+        key = "test-key"
+        manifest = {
+            "version": "1.1.0",
+            "artifact_url": "file://local",
+            "sha256": "0" * 64,
+            "signature": um.sign_manifest("1.1.0", "0" * 64, key),
+            "min_updater_version": "1.0.0",
             "migration_plan": [],
             "rollback_allowed": False,
         }
-        um.UPDATER_VERSION = "1.0.12"
-        try:
-            um.validate_manifest(manifest)
-        finally:
-            um.UPDATER_VERSION = previous
+        manifest_path = Path(tmp) / "update-manifest.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        with pytest.raises(ValueError):
+            um.apply_update(root, bundle, manifest_path, key)
+        assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "1.0.0"
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_recover_previous_swaps_versions() -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="1.1.0")
+        (root / "app" / "versions" / "1.0.0" / "src").mkdir(parents=True, exist_ok=True)
+        _write(root / "app" / "versions" / "1.0.0" / "src" / "admin_bridge.py", "print('ok')\n")
+        _write(root / "app" / "versions" / "1.0.0" / "index.html", "<html></html>\n")
+        _write(root / "app" / "versions" / "1.0.0" / "jobs.html", "<html></html>\n")
+        _write(root / "app" / "versions" / "1.0.0" / "saved.html", "<html></html>\n")
+        state = json.loads((root / "app" / "update-state.json").read_text(encoding="utf-8"))
+        state["previous_version"] = "1.0.0"
+        (root / "app" / "update-state.json").write_text(json.dumps(state), encoding="utf-8")
+
+        result = um.recover_previous(root)
+        assert result["ok"]
+        assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "1.0.0"
+
+
+def test_validate_manifest_uses_numeric_semver_for_min_updater_version() -> None:
+    previous = um.UPDATER_VERSION
+    manifest = {
+        "version": "2.0.0",
+        "artifact_url": "file://local",
+        "sha256": "1" * 64,
+        "signature": "2" * 64,
+        "min_updater_version": "1.0.10",
+        "migration_plan": [],
+        "rollback_allowed": False,
+    }
+    um.UPDATER_VERSION = "1.0.12"
+    try:
+        um.validate_manifest(manifest)
+    finally:
+        um.UPDATER_VERSION = previous

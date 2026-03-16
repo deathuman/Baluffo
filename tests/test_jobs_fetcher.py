@@ -4,7 +4,6 @@ import subprocess
 import sys
 import threading
 import time
-import unittest
 from pathlib import Path
 from unittest import mock
 
@@ -14,82 +13,85 @@ from src.scrapers import runner as scrapy_runner
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
-class JobsFetcherTests(unittest.TestCase):
-    def fixture(self, name: str) -> str:
-        path = Path(__file__).parent / "fixtures" / name
-        return path.read_text(encoding="utf-8")
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
-    def fixture_json(self, name: str):
-        return json.loads(self.fixture(name))
 
-    def test_parse_google_sheets_csv_fixture(self) -> None:
-        rows = jf.parse_google_sheets_csv(self.fixture("google_sheets.csv"))
-        self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[0]["title"], "Gameplay Programmer")
-        self.assertEqual(rows[0]["company"], "Pixel Forge")
+def _fixture(name: str) -> str:
+    return (FIXTURES_DIR / name).read_text(encoding="utf-8")
 
-    def test_parse_google_sheets_csv_supports_job_type_link_headers(self) -> None:
+
+def _fixture_json(name: str):
+    return json.loads(_fixture(name))
+
+
+def test_parse_google_sheets_csv_fixture() -> None:
+    rows = jf.parse_google_sheets_csv(_fixture("google_sheets.csv"))
+    assert len(rows) == 2
+    assert rows[0]["title"] == "Gameplay Programmer"
+    assert rows[0]["company"] == "Pixel Forge"
+
+def test_parse_google_sheets_csv_supports_job_type_link_headers() -> None:
         csv_text = (
             "Intro row,,,,,,,,,\n"
             "Company,Company Category,Job Category,Job,Job Type,Postal Code,City,Fully Remote?,Link,Added\n"
             "Studio A,Developer,Programming,Gameplay Programmer,Full-Time,10115,Berlin,Yes,https://example.com/jobs/1,2026-03-10\n"
         )
         rows = jf.parse_google_sheets_csv(csv_text)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["title"], "Gameplay Programmer")
-        self.assertEqual(rows[0]["company"], "Studio A")
-        self.assertEqual(rows[0]["contractType"], "Full-Time")
-        self.assertEqual(rows[0]["jobLink"], "https://example.com/jobs/1")
-        self.assertEqual(rows[0]["sector"], "Developer")
+        assert len(rows) == 1
+        assert rows[0]["title"] == "Gameplay Programmer"
+        assert rows[0]["company"] == "Studio A"
+        assert rows[0]["contractType"] == "Full-Time"
+        assert rows[0]["jobLink"] == "https://example.com/jobs/1"
+        assert rows[0]["sector"] == "Developer"
 
-    def test_parse_google_sheets_csv_supports_studio_header_alias(self) -> None:
+def test_parse_google_sheets_csv_supports_studio_header_alias() -> None:
         csv_text = (
             "Studio,Country,Job Title,Experience Level,Link\n"
             "Acme Games,Germany,Senior Gameplay Engineer,Senior,https://example.com/jobs/42\n"
         )
         rows = jf.parse_google_sheets_csv(csv_text)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["company"], "Acme Games")
-        self.assertEqual(rows[0]["country"], "Germany")
-        self.assertEqual(rows[0]["title"], "Senior Gameplay Engineer")
+        assert len(rows) == 1
+        assert rows[0]["company"] == "Acme Games"
+        assert rows[0]["country"] == "Germany"
+        assert rows[0]["title"] == "Senior Gameplay Engineer"
 
-    def test_parse_google_sheets_csv_skips_known_bad_company_labels(self) -> None:
+def test_parse_google_sheets_csv_skips_known_bad_company_labels() -> None:
         csv_text = (
             "Company,Company Name,City,Country,Job Title,Link\n"
             "giant enemy crab,Actual Studio,Amsterdam,NL,Gameplay Engineer,https://example.com/jobs/77\n"
         )
         rows = jf.parse_google_sheets_csv(csv_text)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["company"], "Actual Studio")
+        assert len(rows) == 1
+        assert rows[0]["company"] == "Actual Studio"
 
-    def test_parse_google_sheets_csv_preserves_untrustworthy_company_as_unknown(self) -> None:
+def test_parse_google_sheets_csv_preserves_untrustworthy_company_as_unknown() -> None:
         csv_text = (
             "Company,City,Country,Job Title,Link\n"
             "FarBridge,Amsterdam,NL,Gameplay Engineer,https://example.com/jobs/88\n"
         )
         rows = jf.parse_google_sheets_csv(csv_text)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["company"], jf.UNKNOWN_COMPANY_LABEL)
+        assert len(rows) == 1
+        assert rows[0]["company"] == jf.UNKNOWN_COMPANY_LABEL
 
-    def test_parse_google_sheets_csv_recovers_job_link_from_source_contact(self) -> None:
+def test_parse_google_sheets_csv_recovers_job_link_from_source_contact() -> None:
         csv_text = (
             "Company,City,Country,Job Title,Job Link,Source/Contact\n"
             "Insomniac Games,Burbank,US,Character TD,,https://insomniac.games/careers/character-td\n"
         )
         rows = jf.parse_google_sheets_csv(csv_text)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["jobLink"], "https://insomniac.games/careers/character-td")
+        assert len(rows) == 1
+        assert rows[0]["jobLink"] == "https://insomniac.games/careers/character-td"
 
-    def test_parse_google_sheets_csv_ignores_email_only_source_contact(self) -> None:
+def test_parse_google_sheets_csv_ignores_email_only_source_contact() -> None:
         csv_text = (
             "Company,City,Country,Job Title,Source/Contact\n"
             "Studio A,Amsterdam,NL,Gameplay Engineer,jobs@example.com\n"
         )
         rows = jf.parse_google_sheets_csv(csv_text)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["jobLink"], "")
+        assert len(rows) == 1
+        assert rows[0]["jobLink"] == ""
 
-    def test_canonicalize_job_with_reason_preserves_known_bad_company_labels_as_unknown(self) -> None:
+def test_canonicalize_job_with_reason_preserves_known_bad_company_labels_as_unknown() -> None:
         normalized, reason = jf.canonicalize_job_with_reason(
             {
                 "title": "Gameplay Engineer",
@@ -99,30 +101,29 @@ class JobsFetcherTests(unittest.TestCase):
             source="google_sheets",
             fetched_at="2026-03-13T10:00:00Z",
         )
-        self.assertIsNotNone(normalized)
         assert normalized is not None
-        self.assertEqual(normalized["company"], jf.UNKNOWN_COMPANY_LABEL)
-        self.assertEqual(reason, "")
+        assert normalized["company"] == jf.UNKNOWN_COMPANY_LABEL
+        assert reason == ""
 
-    def test_parse_args_uses_config_backed_output_and_social_defaults(self) -> None:
+def test_parse_args_uses_config_backed_output_and_social_defaults() -> None:
         prev_argv = list(sys.argv)
         try:
             sys.argv = ["jobs_fetcher.py"]
             args = jf.parse_args()
         finally:
             sys.argv = prev_argv
-        self.assertEqual(Path(args.output_dir), jf.DEFAULT_OUTPUT_DIR)
-        self.assertEqual(Path(args.social_config_path), jf.DEFAULT_SOCIAL_CONFIG_PATH)
+        assert Path(args.output_dir) == jf.DEFAULT_OUTPUT_DIR
+        assert Path(args.social_config_path) == jf.DEFAULT_SOCIAL_CONFIG_PATH
 
-    def test_parse_remote_ok_payload_filters_game_roles(self) -> None:
-        payload = json.loads(self.fixture("remoteok.json"))
+def test_parse_remote_ok_payload_filters_game_roles() -> None:
+        payload = json.loads(_fixture("remoteok.json"))
         rows = jf.parse_remote_ok_payload(payload)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["sourceJobId"], "101")
-        self.assertEqual(rows[0]["company"], "Nebula Games")
+        assert len(rows) == 1
+        assert rows[0]["sourceJobId"] == "101"
+        assert rows[0]["company"] == "Nebula Games"
 
-    def test_run_remote_ok_source_falls_back_to_secondary_endpoint(self) -> None:
-        payload = self.fixture("remoteok.json")
+def test_run_remote_ok_source_falls_back_to_secondary_endpoint() -> None:
+        payload = _fixture("remoteok.json")
         calls = []
 
         def fake_fetch(url: str, _: int) -> str:
@@ -134,12 +135,12 @@ class JobsFetcherTests(unittest.TestCase):
             raise RuntimeError(f"Unhandled URL: {url}")
 
         rows = jf.run_remote_ok_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(len(calls), 2)
-        self.assertIn("remoteok.com/api", calls[0])
-        self.assertIn("remoteok.io/api", calls[1])
+        assert len(rows) == 1
+        assert len(calls) == 2
+        assert "remoteok.com/api" in calls[0]
+        assert "remoteok.io/api" in calls[1]
 
-    def test_parse_reddit_json_payload_filters_and_normalizes(self) -> None:
+def test_parse_reddit_json_payload_filters_and_normalizes() -> None:
         payload = {
             "data": {
                 "children": [
@@ -176,12 +177,12 @@ class JobsFetcherTests(unittest.TestCase):
             min_confidence=20,
             reject_for_hire_posts=True,
         )
-        self.assertEqual(len(rows), 1)
-        self.assertGreaterEqual(dropped, 1)
-        self.assertEqual(rows[0]["company"], "Nebula Games")
-        self.assertIn("jobs.nebula.dev", rows[0]["jobLink"])
+        assert len(rows) == 1
+        assert dropped >= 1
+        assert rows[0]["company"] == "Nebula Games"
+        assert "jobs.nebula.dev" in rows[0]["jobLink"]
 
-    def test_parse_x_payload_and_mastodon_payload(self) -> None:
+def test_parse_x_payload_and_mastodon_payload() -> None:
         x_rows, x_dropped = jf.parse_x_payload(
             {
                 "data": [
@@ -196,9 +197,9 @@ class JobsFetcherTests(unittest.TestCase):
             min_confidence=20,
             reject_for_hire_posts=True,
         )
-        self.assertEqual(len(x_rows), 1)
-        self.assertEqual(x_dropped, 0)
-        self.assertIn("pixelforge", x_rows[0]["jobLink"].lower())
+        assert len(x_rows) == 1
+        assert x_dropped == 0
+        assert "pixelforge" in x_rows[0]["jobLink"].lower()
 
         mastodon_rows, mastodon_dropped = jf.parse_mastodon_payload(
             [
@@ -215,11 +216,11 @@ class JobsFetcherTests(unittest.TestCase):
             min_confidence=20,
             reject_for_hire_posts=True,
         )
-        self.assertEqual(len(mastodon_rows), 1)
-        self.assertEqual(mastodon_dropped, 0)
-        self.assertIn("aurora.dev", mastodon_rows[0]["jobLink"])
+        assert len(mastodon_rows) == 1
+        assert mastodon_dropped == 0
+        assert "aurora.dev" in mastodon_rows[0]["jobLink"]
 
-    def test_parse_x_rss_payload(self) -> None:
+def test_parse_x_rss_payload() -> None:
         rss = """<?xml version="1.0" encoding="UTF-8"?>
 <rss><channel>
   <item>
@@ -235,11 +236,11 @@ class JobsFetcherTests(unittest.TestCase):
             min_confidence=20,
             reject_for_hire_posts=True,
         )
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(dropped, 0)
-        self.assertIn("jobs.orbit.dev", rows[0]["jobLink"])
+        assert len(rows) == 1
+        assert dropped == 0
+        assert "jobs.orbit.dev" in rows[0]["jobLink"]
 
-    def test_run_social_x_source_uses_rss_fallback_without_credentials(self) -> None:
+def test_run_social_x_source_uses_rss_fallback_without_credentials() -> None:
         social_cfg = {
             "enabled": True,
             "minConfidence": 20,
@@ -275,10 +276,10 @@ class JobsFetcherTests(unittest.TestCase):
             backoff_s=0,
             social_config=social_cfg,
         )
-        self.assertEqual(len(rows), 1)
-        self.assertIn("careers.nova.dev", rows[0]["jobLink"])
+        assert len(rows) == 1
+        assert "careers.nova.dev" in rows[0]["jobLink"]
 
-    def test_deduplicate_jobs_uses_social_source_id_fallback(self) -> None:
+def test_deduplicate_jobs_uses_social_source_id_fallback() -> None:
         row_a = {
             "id": "",
             "title": "Technical Artist",
@@ -305,10 +306,10 @@ class JobsFetcherTests(unittest.TestCase):
         row_b = dict(row_a)
         row_b["jobLink"] = "https://www.reddit.com/r/gamedev/comments/abc"
         deduped, stats = jf.deduplicate_jobs([row_a, row_b])
-        self.assertEqual(len(deduped), 1)
-        self.assertEqual(stats["mergedCount"], 1)
+        assert len(deduped) == 1
+        assert stats["mergedCount"] == 1
 
-    def test_deduplicate_jobs_merges_resolved_redirect_with_direct_job(self) -> None:
+def test_deduplicate_jobs_merges_resolved_redirect_with_direct_job() -> None:
         redirect_target = "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-technical-director-level-design-m-f-nb-projet-non-annonce"
         redirect_resolver = lambda url: redirect_target if "gracklehq.com/rd/372393" in str(url) else str(url)
         redirect_row = jf.canonicalize_job(
@@ -342,16 +343,16 @@ class JobsFetcherTests(unittest.TestCase):
             source="google_sheets",
             fetched_at=jf.now_iso(),
         )
-        self.assertIsNotNone(redirect_row)
-        self.assertIsNotNone(direct_row)
+        assert redirect_row is not None
+        assert direct_row is not None
         rows, stats = jf.deduplicate_jobs([redirect_row, direct_row])
-        self.assertEqual(stats["outputCount"], 1)
-        self.assertEqual(int(stats.get("mergedByPrimaryUrl") or 0), 1)
-        self.assertEqual(rows[0]["company"], "Ubisoft")
-        self.assertEqual(rows[0]["jobLink"], redirect_target)
-        self.assertGreaterEqual(int(rows[0].get("sourceBundleCount") or 0), 2)
+        assert stats["outputCount"] == 1
+        assert int(stats.get("mergedByPrimaryUrl") or 0) == 1
+        assert rows[0]["company"] == "Ubisoft"
+        assert rows[0]["jobLink"] == redirect_target
+        assert int(rows[0].get("sourceBundleCount") or 0) == 2
 
-    def test_deduplicate_jobs_keeps_unresolved_redirect_separate(self) -> None:
+def test_deduplicate_jobs_keeps_unresolved_redirect_separate() -> None:
         redirect_row = jf.canonicalize_job(
             {
                 "title": "Technical Director Level Design - M/F/NB - unannounced project",
@@ -383,13 +384,13 @@ class JobsFetcherTests(unittest.TestCase):
             source="google_sheets",
             fetched_at=jf.now_iso(),
         )
-        self.assertIsNotNone(redirect_row)
-        self.assertIsNotNone(direct_row)
+        assert redirect_row is not None
+        assert direct_row is not None
         rows, stats = jf.deduplicate_jobs([redirect_row, direct_row])
-        self.assertEqual(stats["outputCount"], 2)
-        self.assertEqual(int(stats.get("mergedByPrimaryUrl") or 0), 0)
+        assert stats["outputCount"] == 2
+        assert int(stats.get("mergedByPrimaryUrl") or 0) == 0
 
-    def test_pooled_redirect_resolver_reuses_cached_resolution_and_headers(self) -> None:
+def test_pooled_redirect_resolver_reuses_cached_resolution_and_headers() -> None:
         calls = []
         fake_httpx = type(
             "_FakeHttpxModule",
@@ -406,7 +407,7 @@ class JobsFetcherTests(unittest.TestCase):
                 calls.append((method, url))
                 return type("_Resp", (), {"url": "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-role"})()
 
-            def close(self) -> None:
+            def close() -> None:
                 return None
 
         with mock.patch.object(fake_httpx, "Client", return_value=_FakeClient()) as client_ctor:
@@ -418,12 +419,12 @@ class JobsFetcherTests(unittest.TestCase):
                 finally:
                     resolver.close()
 
-        self.assertEqual(first, "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-role")
-        self.assertEqual(second, first)
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(client_ctor.call_args.kwargs.get("headers"), jf.DEFAULT_REDIRECT_HEADERS)
+        assert first == "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-role"
+        assert second == first
+        assert len(calls) == 1
+        assert client_ctor.call_args.kwargs.get("headers") == jf.DEFAULT_REDIRECT_HEADERS
 
-    def test_canonicalize_google_sheets_rows_uses_redirect_cache_once_for_duplicates(self) -> None:
+def test_canonicalize_google_sheets_rows_uses_redirect_cache_once_for_duplicates() -> None:
         rows = [
             {
                 "sourceJobId": "sheet-1",
@@ -474,14 +475,14 @@ class JobsFetcherTests(unittest.TestCase):
             redirect_resolver=_FakeResolver(),
             redirect_concurrency=4,
         )
-        self.assertEqual(len(canonical_rows), 2)
-        self.assertFalse(drop_reasons)
-        self.assertEqual(stats["redirect_candidates"], 2)
-        self.assertEqual(stats["redirect_resolved"], 2)
-        self.assertEqual(stats["redirect_cache_hits"], 1)
-        self.assertTrue(all("smartrecruiters.com" in row["jobLink"] for row in canonical_rows))
+        assert len(canonical_rows) == 2
+        assert not drop_reasons
+        assert stats["redirect_candidates"] == 2
+        assert stats["redirect_resolved"] == 2
+        assert stats["redirect_cache_hits"] == 1
+        assert all("smartrecruiters.com" in row["jobLink"] for row in canonical_rows)
 
-    def test_canonicalize_google_sheets_rows_falls_back_when_redirect_resolution_fails(self) -> None:
+def test_canonicalize_google_sheets_rows_falls_back_when_redirect_resolution_fails() -> None:
         rows = [
             {
                 "sourceJobId": "sheet-1",
@@ -510,19 +511,19 @@ class JobsFetcherTests(unittest.TestCase):
             redirect_resolver=_FakeResolver(),
             redirect_concurrency=2,
         )
-        self.assertEqual(len(canonical_rows), 1)
-        self.assertFalse(drop_reasons)
-        self.assertEqual(canonical_rows[0]["jobLink"], "https://gracklehq.com/rd/999999")
-        self.assertEqual(stats["redirect_resolved"], 0)
+        assert len(canonical_rows) == 1
+        assert not drop_reasons
+        assert canonical_rows[0]["jobLink"] == "https://gracklehq.com/rd/999999"
+        assert stats["redirect_resolved"] == 0
 
-    def test_fingerprint_url_matches_smartrecruiters_short_and_slugged_urls(self) -> None:
+def test_fingerprint_url_matches_smartrecruiters_short_and_slugged_urls() -> None:
         short = "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145"
         slugged = "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-technical-director-level-design-m-f-nb-projet-non-annonce"
         api = "https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings/744000108777145"
-        self.assertEqual(jf.fingerprint_url(short), jf.fingerprint_url(slugged))
-        self.assertEqual(jf.fingerprint_url(short), jf.fingerprint_url(api))
+        assert jf.fingerprint_url(short) == jf.fingerprint_url(slugged)
+        assert jf.fingerprint_url(short) == jf.fingerprint_url(api)
 
-    def test_run_pipeline_social_sources_report_and_output(self) -> None:
+def test_run_pipeline_social_sources_report_and_output() -> None:
         social_cfg = {
             "enabled": True,
             "minConfidence": 20,
@@ -607,90 +608,90 @@ class JobsFetcherTests(unittest.TestCase):
                 backoff_s=0,
             )
             sources = {row["name"]: row for row in report["sources"]}
-            self.assertEqual(sources["social_reddit"]["status"], "ok")
-            self.assertEqual(sources["social_x"]["status"], "ok")
-            self.assertEqual(sources["social_mastodon"]["status"], "ok")
-            self.assertGreaterEqual(sources["social_reddit"]["keptCount"], 1)
+            assert sources["social_reddit"]["status"] == "ok"
+            assert sources["social_x"]["status"] == "ok"
+            assert sources["social_mastodon"]["status"] == "ok"
+            assert sources["social_reddit"]["keptCount"] == 1
             rows = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
-            self.assertTrue(any(str(row.get("source") or "").startswith("social_") for row in rows))
+            assert any(str(row.get("source") or "").startswith("social_") for row in rows)
 
-    def test_parse_gamesindustry_html_fixture(self) -> None:
-        rows = jf.parse_gamesindustry_html(self.fixture("gamesindustry_jobs.html"), base_url="https://jobs.gamesindustry.biz")
-        self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[0]["title"], "Senior Quality Analyst")
-        self.assertEqual(rows[0]["company"], "Sharkmob")
-        self.assertEqual(rows[0]["sourceJobId"], "43821")
-        self.assertTrue(rows[0]["jobLink"].startswith("https://jobs.gamesindustry.biz/job/"))
+def test_parse_gamesindustry_html_fixture() -> None:
+        rows = jf.parse_gamesindustry_html(_fixture("gamesindustry_jobs.html"), base_url="https://jobs.gamesindustry.biz")
+        assert len(rows) == 2
+        assert rows[0]["title"] == "Senior Quality Analyst"
+        assert rows[0]["company"] == "Sharkmob"
+        assert rows[0]["sourceJobId"] == "43821"
+        assert rows[0]["jobLink"].startswith("https://jobs.gamesindustry.biz/job/")
         titles = {row["title"] for row in rows}
-        self.assertNotIn("Read more", titles)
-        self.assertNotIn("Programming (6)", titles)
+        assert "Read more" not in titles
+        assert "Programming (6)" not in titles
 
-    def test_parse_greenhouse_jobs_payload_fixture(self) -> None:
-        payload = json.loads(self.fixture("greenhouse_guerrilla_jobs.json"))
+def test_parse_greenhouse_jobs_payload_fixture() -> None:
+        payload = json.loads(_fixture("greenhouse_guerrilla_jobs.json"))
         rows = jf.parse_greenhouse_jobs_payload(payload, "guerrilla-games")
-        self.assertEqual(len(rows), 2)
-        self.assertTrue(all(row["sourceJobId"].startswith("greenhouse:guerrilla-games:") for row in rows))
-        self.assertEqual(rows[0]["company"], "Guerrilla Games")
-        self.assertEqual(rows[0]["country"], "Netherlands")
+        assert len(rows) == 2
+        assert all(row["sourceJobId"].startswith("greenhouse:guerrilla-games:") for row in rows)
+        assert rows[0]["company"] == "Guerrilla Games"
+        assert rows[0]["country"] == "Netherlands"
 
-    def test_parse_teamtailor_listing_links_fixture(self) -> None:
+def test_parse_teamtailor_listing_links_fixture() -> None:
         rows = jf.parse_teamtailor_listing_links(
-            self.fixture("teamtailor_listing.html"),
+            _fixture("teamtailor_listing.html"),
             base_url="https://career.paradoxplaza.com",
         )
-        self.assertEqual(len(rows), 2)
-        self.assertTrue(all("/jobs/" in row for row in rows))
-        self.assertTrue(all("show_more" not in row for row in rows))
+        assert len(rows) == 2
+        assert all("/jobs/" in row for row in rows)
+        assert all("show_more" not in row for row in rows)
 
-    def test_parse_jobpostings_from_html_teamtailor_fixture(self) -> None:
+def test_parse_jobpostings_from_html_teamtailor_fixture() -> None:
         rows = jf.parse_jobpostings_from_html(
-            self.fixture("teamtailor_job.html"),
+            _fixture("teamtailor_job.html"),
             base_url="https://career.paradoxplaza.com/jobs/6926996-game-programmer",
             fallback_company="Paradox Interactive",
             fallback_source_id_prefix="teamtailor:test",
         )
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["title"], "Game Programmer")
-        self.assertEqual(rows[0]["city"], "Delft")
-        self.assertEqual(rows[0]["country"], "NL")
+        assert len(rows) == 1
+        assert rows[0]["title"] == "Game Programmer"
+        assert rows[0]["city"] == "Delft"
+        assert rows[0]["country"] == "NL"
 
-    def test_parse_wellfound_html_fixture(self) -> None:
-        rows = jf.parse_wellfound_html(self.fixture("wellfound.html"))
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["sourceJobId"], "wf-1")
-        self.assertEqual(rows[0]["workType"], "Remote")
+def test_parse_wellfound_html_fixture() -> None:
+        rows = jf.parse_wellfound_html(_fixture("wellfound.html"))
+        assert len(rows) == 1
+        assert rows[0]["sourceJobId"] == "wf-1"
+        assert rows[0]["workType"] == "Remote"
 
-    def test_parse_lever_jobs_payload_fixture(self) -> None:
-        payload = json.loads(self.fixture("lever_jobs.json"))
+def test_parse_lever_jobs_payload_fixture() -> None:
+        payload = json.loads(_fixture("lever_jobs.json"))
         rows = jf.parse_lever_jobs_payload(payload, "sandboxvr", fallback_company="Sandbox VR")
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["title"], "Technical Artist")
-        self.assertEqual(rows[0]["country"], "NL")
+        assert len(rows) == 1
+        assert rows[0]["title"] == "Technical Artist"
+        assert rows[0]["country"] == "NL"
 
-    def test_parse_smartrecruiters_jobs_payload_fixture(self) -> None:
-        payload = json.loads(self.fixture("smartrecruiters_jobs.json"))
+def test_parse_smartrecruiters_jobs_payload_fixture() -> None:
+        payload = json.loads(_fixture("smartrecruiters_jobs.json"))
         rows = jf.parse_smartrecruiters_jobs_payload(payload, "CDPROJEKTRED", fallback_company="CD PROJEKT RED")
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["title"], "Environment Artist")
-        self.assertEqual(rows[0]["company"], "CD PROJEKT RED")
+        assert len(rows) == 1
+        assert rows[0]["title"] == "Environment Artist"
+        assert rows[0]["company"] == "CD PROJEKT RED"
 
-    def test_parse_workable_jobs_payload_fixture(self) -> None:
-        payload = json.loads(self.fixture("workable_jobs.json"))
+def test_parse_workable_jobs_payload_fixture() -> None:
+        payload = json.loads(_fixture("workable_jobs.json"))
         rows = jf.parse_workable_jobs_payload(payload, "hutch", fallback_company="Hutch")
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["workType"], "Remote")
+        assert len(rows) == 1
+        assert rows[0]["workType"] == "Remote"
 
-    def test_parse_ashby_jobs_from_html_fixture(self) -> None:
-        rows = jf.parse_ashby_jobs_from_html(self.fixture("ashby_jobs.html"), "https://jobs.ashbyhq.com/jagex/jobs", "Jagex")
-        self.assertEqual(len(rows), 2)
-        self.assertTrue(all("jobs.ashbyhq.com" in row["jobLink"] for row in rows))
+def test_parse_ashby_jobs_from_html_fixture() -> None:
+        rows = jf.parse_ashby_jobs_from_html(_fixture("ashby_jobs.html"), "https://jobs.ashbyhq.com/jagex/jobs", "Jagex")
+        assert len(rows) == 2
+        assert all("jobs.ashbyhq.com" in row["jobLink"] for row in rows)
 
-    def test_parse_personio_feed_xml_fixture(self) -> None:
-        rows = jf.parse_personio_feed_xml(self.fixture("personio_feed.xml"), source_name="InnoGames")
-        self.assertGreaterEqual(len(rows), 1)
-        self.assertTrue(any(row["title"] == "Environment Artist" for row in rows))
+def test_parse_personio_feed_xml_fixture() -> None:
+        rows = jf.parse_personio_feed_xml(_fixture("personio_feed.xml"), source_name="InnoGames")
+        assert len(rows) >= 1
+        assert any(row["title"] == "Environment Artist" for row in rows)
 
-    def test_normalize_source_report_row_preserves_structured_details(self) -> None:
+def test_normalize_source_report_row_preserves_structured_details() -> None:
         row = jf.normalize_source_report_row({
             "name": "lever_sources",
             "status": "ok",
@@ -707,12 +708,12 @@ class JobsFetcherTests(unittest.TestCase):
             ],
         })
         details = row.get("details")
-        self.assertIsInstance(details, list)
-        self.assertIsInstance(details[0], dict)
-        self.assertEqual(details[0]["name"], "Jagex (Lever)")
-        self.assertEqual(int(details[0]["keptCount"]), 2)
+        assert isinstance(details, list)
+        assert isinstance(details[0], dict)
+        assert details[0]["name"] == "Jagex (Lever)"
+        assert int(details[0]["keptCount"]) == 2
 
-    def test_normalize_source_report_row_preserves_static_stage_timings(self) -> None:
+def test_normalize_source_report_row_preserves_static_stage_timings() -> None:
         row = jf.normalize_source_report_row({
             "name": "static_source::test",
             "status": "ok",
@@ -742,12 +743,12 @@ class JobsFetcherTests(unittest.TestCase):
                 }
             ],
         })
-        self.assertEqual((row.get("stageTimingsMs") or {}).get("detailFetch"), 310)
+        assert (row.get("stageTimingsMs") or {}).get("detailFetch") == 310
         detail_stats = ((row.get("details") or [{}])[0].get("stats") or {})
-        self.assertEqual(int(detail_stats.get("fetch_cache_hits") or 0), 2)
-        self.assertEqual(int(detail_stats.get("detail_yield_percent") or 0), 75)
+        assert int(detail_stats.get("fetch_cache_hits") or 0) == 2
+        assert int(detail_stats.get("detail_yield_percent") or 0) == 75
 
-    def test_normalize_source_report_row_preserves_google_sheets_redirect_stats(self) -> None:
+def test_normalize_source_report_row_preserves_google_sheets_redirect_stats() -> None:
         row = jf.normalize_source_report_row({
             "name": "google_sheets",
             "status": "ok",
@@ -773,13 +774,13 @@ class JobsFetcherTests(unittest.TestCase):
                 }
             ],
         })
-        self.assertEqual((row.get("stageTimingsMs") or {}).get("redirectResolve"), 91)
+        assert (row.get("stageTimingsMs") or {}).get("redirectResolve") == 91
         detail_stats = ((row.get("details") or [{}])[0].get("stats") or {})
-        self.assertEqual(int(detail_stats.get("redirect_candidates") or 0), 7)
-        self.assertEqual(int(detail_stats.get("redirect_cache_hits") or 0), 2)
+        assert int(detail_stats.get("redirect_candidates") or 0) == 7
+        assert int(detail_stats.get("redirect_cache_hits") or 0) == 2
 
-    def test_run_greenhouse_boards_source_with_fixture(self) -> None:
-        payload = self.fixture("greenhouse_guerrilla_jobs.json")
+def test_run_greenhouse_boards_source_with_fixture() -> None:
+        payload = _fixture("greenhouse_guerrilla_jobs.json")
         previous = list(jf.STUDIO_SOURCE_REGISTRY)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
@@ -793,19 +794,19 @@ class JobsFetcherTests(unittest.TestCase):
 
         try:
             def fake_fetch(url: str, _: int) -> str:
-                self.assertIn("boards-api.greenhouse.io", url)
-                self.assertIn("guerrilla-games", url)
+                assert "boards-api.greenhouse.io" in url
+                assert "guerrilla-games" in url
                 return payload
 
             rows = jf.run_greenhouse_boards_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
-            self.assertEqual(len(rows), 2)
-            self.assertTrue(any("guerrilla-games/jobs/" in row["jobLink"] for row in rows))
+            assert len(rows) == 2
+            assert any("guerrilla-games/jobs/" in row["jobLink"] for row in rows)
         finally:
             jf.STUDIO_SOURCE_REGISTRY = previous
 
-    def test_run_teamtailor_source_with_fixture(self) -> None:
-        listing = self.fixture("teamtailor_listing.html")
-        detail = self.fixture("teamtailor_job.html")
+def test_run_teamtailor_source_with_fixture() -> None:
+        listing = _fixture("teamtailor_listing.html")
+        detail = _fixture("teamtailor_job.html")
 
         def fake_fetch(url: str, _: int) -> str:
             if url == "https://career.paradoxplaza.com/jobs":
@@ -814,13 +815,13 @@ class JobsFetcherTests(unittest.TestCase):
                 return detail
             raise RuntimeError(f"Unexpected URL: {url}")
 
-        rows = jf.run_teamtailor_sources_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
-        self.assertGreaterEqual(len(rows), 1)
-        self.assertTrue(any("career.paradoxplaza.com/jobs/" in row["jobLink"] for row in rows))
+            rows = jf.run_teamtailor_sources_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
+            assert len(rows) >= 1
+            assert any("career.paradoxplaza.com/jobs/" in row["jobLink"] for row in rows)
 
-    def test_run_static_studio_pages_source_with_fixture(self) -> None:
-        listing = self.fixture("littlechicken_jobs_page.html")
-        detail = self.fixture("littlechicken_job_detail.html")
+def test_run_static_studio_pages_source_with_fixture() -> None:
+        listing = _fixture("littlechicken_jobs_page.html")
+        detail = _fixture("littlechicken_job_detail.html")
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
@@ -842,12 +843,12 @@ class JobsFetcherTests(unittest.TestCase):
                 raise RuntimeError(f"Unexpected URL: {url}")
 
             rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
-            self.assertGreaterEqual(len(rows), 2)
-            self.assertTrue(any("littlechicken.nl/job/" in row["jobLink"] for row in rows))
+            assert len(rows) == 2
+            assert any("littlechicken.nl/job/" in row["jobLink"] for row in rows)
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
-    def test_run_static_studio_pages_source_loads_kojima_dynamic_listing(self) -> None:
+def test_run_static_studio_pages_source_loads_kojima_dynamic_listing() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
@@ -906,13 +907,13 @@ class JobsFetcherTests(unittest.TestCase):
                     backoff_s=0,
                 )
             titles = {str(row.get("title") or "") for row in rows}
-            self.assertIn("Game Programmer", titles)
-            self.assertIn("Ai Programmer", titles)
-            self.assertGreaterEqual(len(rows), 2)
+            assert "Game Programmer" in titles
+            assert "Ai Programmer" in titles
+            assert len(rows) == 2
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
-    def test_run_static_studio_pages_source_accepts_larian_uuid_paths_and_rejects_location_pages(self) -> None:
+def test_run_static_studio_pages_source_accepts_larian_uuid_paths_and_rejects_location_pages() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
@@ -940,12 +941,12 @@ class JobsFetcherTests(unittest.TestCase):
                 raise RuntimeError(f"Unexpected URL: {url}")
 
             rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]["jobLink"], "https://larian.com/careers/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+            assert len(rows) == 1
+            assert rows[0]["jobLink"] == "https://larian.com/careers/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
-    def test_run_static_studio_pages_source_accepts_cdpr_query_key_override(self) -> None:
+def test_run_static_studio_pages_source_accepts_cdpr_query_key_override() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
@@ -969,12 +970,12 @@ class JobsFetcherTests(unittest.TestCase):
                 raise RuntimeError(f"Unexpected URL: {url}")
 
             rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]["jobLink"], "https://cdprojektred.com/en/jobs?gh_jid=1234")
+            assert len(rows) == 1
+            assert rows[0]["jobLink"] == "https://cdprojektred.com/en/jobs?gh_jid=1234"
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
-    def test_run_static_studio_pages_source_accepts_remedy_query_key_override(self) -> None:
+def test_run_static_studio_pages_source_accepts_remedy_query_key_override() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
@@ -998,12 +999,12 @@ class JobsFetcherTests(unittest.TestCase):
                 raise RuntimeError(f"Unexpected URL: {url}")
 
             rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]["jobLink"], "https://www.remedygames.com/careers/open?jobid=42")
+            assert len(rows) == 1
+            assert rows[0]["jobLink"] == "https://www.remedygames.com/careers/open?jobid=42"
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
-    def test_run_static_studio_pages_source_accepts_ubisoft_query_key_override(self) -> None:
+def test_run_static_studio_pages_source_accepts_ubisoft_query_key_override() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
@@ -1027,12 +1028,12 @@ class JobsFetcherTests(unittest.TestCase):
                 raise RuntimeError(f"Unexpected URL: {url}")
 
             rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]["jobLink"], "https://www.ubisoft.com/en-us/company/careers/search?jobid=99")
+            assert len(rows) == 1
+            assert rows[0]["jobLink"] == "https://www.ubisoft.com/en-us/company/careers/search?jobid=99"
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
-    def test_run_static_studio_pages_source_dedupes_candidate_links_before_fetch(self) -> None:
+def test_run_static_studio_pages_source_dedupes_candidate_links_before_fetch() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
@@ -1064,12 +1065,12 @@ class JobsFetcherTests(unittest.TestCase):
                 raise RuntimeError(f"Unexpected URL: {url}")
 
             rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(fetch_counts["detail"], 1)
+            assert len(rows) == 1
+            assert fetch_counts["detail"] == 1
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
-    def test_run_static_studio_pages_source_parallelizes_detail_fetches(self) -> None:
+def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
@@ -1119,12 +1120,12 @@ class JobsFetcherTests(unittest.TestCase):
                 backoff_s=0,
                 static_detail_concurrency=3,
             )
-            self.assertEqual(len(rows), 3)
-            self.assertGreaterEqual(peak, 2)
+            assert len(rows) == 3
+            assert peak >= 2
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
-    def test_scrapy_runner_emits_valid_envelope_selftest(self) -> None:
+def test_scrapy_runner_emits_valid_envelope_selftest() -> None:
         runner_path = Path(jf.__file__).resolve().parent / "scrapers" / "runner.py"
         config = {
             "source": {
@@ -1151,18 +1152,18 @@ class JobsFetcherTests(unittest.TestCase):
             env=env,
         )
         envelope = json.loads(result.stdout)
-        self.assertIn("ok", envelope)
-        self.assertIsInstance(envelope.get("jobs"), list)
-        self.assertIsInstance(envelope.get("details"), list)
-        self.assertIsInstance(envelope.get("partialErrors"), list)
-        self.assertIsInstance(envelope.get("stats"), dict)
+        assert "ok" in envelope
+        assert isinstance(envelope.get("jobs"), list)
+        assert isinstance(envelope.get("details"), list)
+        assert isinstance(envelope.get("partialErrors"), list)
+        assert isinstance(envelope.get("stats"), dict)
         detail = (envelope.get("details") or [{}])[0]
-        self.assertIn("classification", detail)
-        self.assertIn("browserFallbackRecommended", detail)
-        self.assertIn("sourceId", detail)
-        self.assertIn("candidate_links_found", envelope.get("stats") or {})
+        assert "classification" in detail
+        assert "browserFallbackRecommended" in detail
+        assert "sourceId" in detail
+        assert "candidate_links_found" in (envelope.get("stats") or {})
 
-    def test_scrapy_runner_invalid_schema_emits_error_envelope(self) -> None:
+def test_scrapy_runner_invalid_schema_emits_error_envelope() -> None:
         runner_path = Path(jf.__file__).resolve().parent / "scrapers" / "runner.py"
         result = subprocess.run(  # noqa: S603
             [sys.executable, str(runner_path)],
@@ -1172,11 +1173,11 @@ class JobsFetcherTests(unittest.TestCase):
             check=False,
         )
         envelope = json.loads(result.stdout)
-        self.assertFalse(bool(envelope.get("ok")))
-        self.assertIsInstance(envelope.get("partialErrors"), list)
-        self.assertNotEqual(result.returncode, 0)
+        assert not bool(envelope.get("ok"))
+        assert isinstance(envelope.get("partialErrors"), list)
+        assert result.returncode != 0
 
-    def test_scrapy_runner_jobylon_v1_extracts_jobs(self) -> None:
+def test_scrapy_runner_jobylon_v1_extracts_jobs() -> None:
         source_html = "<html><script>window.jbl_company_id = 2986;</script></html>"
         embed_html = """
         <div id="jobylon-job-329202">
@@ -1203,18 +1204,18 @@ class JobsFetcherTests(unittest.TestCase):
                 timeout_s=20,
             )
 
-        self.assertEqual(len(jobs), 2)
-        self.assertEqual(stats.get("jobs_emitted"), 2)
-        self.assertEqual(stats.get("candidate_links_found"), 2)
-        self.assertEqual(stats.get("detail_pages_visited"), 2)
-        self.assertEqual(errors, [])
-        self.assertEqual(int(reject_reasons.get("open_application", 0)), 1)
-        self.assertTrue(all(isinstance(row.get("sourceBundle"), list) and row.get("sourceBundle") for row in jobs))
+        assert len(jobs) == 2
+        assert stats.get("jobs_emitted") == 2
+        assert stats.get("candidate_links_found") == 2
+        assert stats.get("detail_pages_visited") == 2
+        assert errors == []
+        assert int(reject_reasons.get("open_application", 0)) == 1
+        assert all(isinstance(row.get("sourceBundle"), list) and row.get("sourceBundle") for row in jobs)
         links = {str(row.get("jobLink") or "") for row in jobs}
-        self.assertIn("https://emp.jobylon.com/jobs/329202-remedy-entertainment-senior-support-engineer/", links)
-        self.assertIn("https://emp.jobylon.com/jobs/322343-remedy-entertainment-development-director/", links)
+        assert "https://emp.jobylon.com/jobs/329202-remedy-entertainment-senior-support-engineer/" in links
+        assert "https://emp.jobylon.com/jobs/322343-remedy-entertainment-development-director/" in links
 
-    def test_run_scrapy_static_source_handles_malformed_json(self) -> None:
+def test_run_scrapy_static_source_handles_malformed_json() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
         jf.STUDIO_SOURCE_REGISTRY = [
             {
@@ -1238,30 +1239,30 @@ class JobsFetcherTests(unittest.TestCase):
                         retries=1,
                         backoff_s=1.0,
                     )
-                    self.assertEqual(rows, [])
+                    assert rows == []
                     diag.assert_called_once()
                     args, kwargs = diag.call_args
-                    self.assertEqual(args[0], "scrapy_static_sources")
-                    self.assertEqual(kwargs.get("adapter"), "scrapy_static")
+                    assert args[0] == "scrapy_static_sources"
+                    assert kwargs.get("adapter") == "scrapy_static"
                     details = kwargs.get("details") or []
-                    self.assertTrue(details)
-                    self.assertEqual(str(details[0].get("classification") or ""), "parse_error")
+                    assert details
+                    assert str(details[0].get("classification") or "") == "parse_error"
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
-    def test_scrapy_static_registration_in_default_loaders(self) -> None:
-        self.assertIn("scrapy_static_sources", jfr.DEFAULT_SOURCE_LOADER_NAMES)
-        self.assertIn("google_sheets_1er2oaxo", jfr.DEFAULT_SOURCE_LOADER_NAMES)
-        self.assertIn("google_sheets_1mvqhxat", jfr.DEFAULT_SOURCE_LOADER_NAMES)
-        self.assertEqual(jfr.SOURCE_REPORT_META["scrapy_static_sources"]["adapter"], "scrapy_static")
-        self.assertEqual(jfr.SOURCE_REPORT_META["google_sheets_1er2oaxo"]["adapter"], "csv")
-        self.assertEqual(jfr.SOURCE_REPORT_META["google_sheets_1mvqhxat"]["adapter"], "csv")
+def test_scrapy_static_registration_in_default_loaders() -> None:
+        assert "scrapy_static_sources" in jfr.DEFAULT_SOURCE_LOADER_NAMES
+        assert "google_sheets_1er2oaxo" in jfr.DEFAULT_SOURCE_LOADER_NAMES
+        assert "google_sheets_1mvqhxat" in jfr.DEFAULT_SOURCE_LOADER_NAMES
+        assert jfr.SOURCE_REPORT_META["scrapy_static_sources"]["adapter"] == "scrapy_static"
+        assert jfr.SOURCE_REPORT_META["google_sheets_1er2oaxo"]["adapter"] == "csv"
+        assert jfr.SOURCE_REPORT_META["google_sheets_1mvqhxat"]["adapter"] == "csv"
         names = [name for name, _ in jf.default_source_loaders()]
-        self.assertIn("scrapy_static_sources", names)
-        self.assertIn("google_sheets_1er2oaxo", names)
-        self.assertIn("google_sheets_1mvqhxat", names)
+        assert "scrapy_static_sources" in names
+        assert "google_sheets_1er2oaxo" in names
+        assert "google_sheets_1mvqhxat" in names
 
-    def test_run_pipeline_writes_browser_fallback_queue(self) -> None:
+def test_run_pipeline_writes_browser_fallback_queue() -> None:
         def scraper_loader(**_: object):
             jf.set_source_diagnostics(
                 "scrapy_static_sources",
@@ -1307,28 +1308,28 @@ class JobsFetcherTests(unittest.TestCase):
                 show_progress=False,
             )
             queue_path = out / "jobs-browser-fallback-queue.json"
-            self.assertTrue(queue_path.exists())
+            assert queue_path.exists()
             queue_rows = json.loads(queue_path.read_text(encoding="utf-8"))
-            self.assertEqual(len(queue_rows), 1)
-            self.assertEqual(str(queue_rows[0].get("adapter") or ""), "scrapy_static")
-            self.assertEqual(str(queue_rows[0].get("classification") or ""), "fetch_ok_extract_zero")
-            self.assertEqual(str((report.get("outputs") or {}).get("browserFallbackQueue") or ""), str(queue_path))
+            assert len(queue_rows) == 1
+            assert str(queue_rows[0].get("adapter") or "") == "scrapy_static"
+            assert str(queue_rows[0].get("classification") or "") == "fetch_ok_extract_zero"
+            assert str((report.get("outputs") or {}).get("browserFallbackQueue") or "") == str(queue_path)
             details = ((report.get("sources") or [{}])[0].get("details") or [{}])[0]
-            self.assertEqual(str(details.get("classification") or ""), "fetch_ok_extract_zero")
-            self.assertTrue(bool(details.get("browserFallbackRecommended")))
+            assert str(details.get("classification") or "") == "fetch_ok_extract_zero"
+            assert bool(details.get("browserFallbackRecommended"))
 
-    def test_map_profession_recognizes_focus_synonyms(self) -> None:
-        self.assertEqual(jf.map_profession("Senior Tech Artist"), "technical-artist")
-        self.assertEqual(jf.map_profession("Material Artist"), "technical-artist")
-        self.assertEqual(jf.map_profession("World Artist"), "environment-artist")
-        self.assertEqual(jf.map_profession("Terrain Artist"), "environment-artist")
-        self.assertEqual(jf.map_profession("Technical Director"), "technical-director")
-        self.assertEqual(jf.map_profession("Associate Technical Director"), "technical-director")
-        self.assertEqual(jf.map_profession("Senior Animation TD"), "technical-director")
-        self.assertEqual(jf.map_profession("Pipeline TD"), "technical-director")
-        self.assertEqual(jf.map_profession("TDengine Programmer"), "engine")
+def test_map_profession_recognizes_focus_synonyms() -> None:
+        assert jf.map_profession("Senior Tech Artist") == "technical-artist"
+        assert jf.map_profession("Material Artist") == "technical-artist"
+        assert jf.map_profession("World Artist") == "environment-artist"
+        assert jf.map_profession("Terrain Artist") == "environment-artist"
+        assert jf.map_profession("Technical Director") == "technical-director"
+        assert jf.map_profession("Associate Technical Director") == "technical-director"
+        assert jf.map_profession("Senior Animation TD") == "technical-director"
+        assert jf.map_profession("Pipeline TD") == "technical-director"
+        assert jf.map_profession("TDengine Programmer") == "engine"
 
-    def test_compute_focus_score_prioritizes_target_nl_and_remote(self) -> None:
+def test_compute_focus_score_prioritizes_target_nl_and_remote() -> None:
         ta_nl = jf.canonicalize_job(
             {
                 "title": "Technical Artist",
@@ -1374,13 +1375,13 @@ class JobsFetcherTests(unittest.TestCase):
             source="x",
             fetched_at=jf.now_iso(),
         )
-        self.assertIsNotNone(ta_nl)
-        self.assertIsNotNone(ta_remote)
-        self.assertIsNotNone(non_target)
-        self.assertGreater(ta_nl["focusScore"], ta_remote["focusScore"])
-        self.assertGreater(ta_remote["focusScore"], non_target["focusScore"])
+        assert ta_nl
+        assert ta_remote
+        assert non_target
+        assert ta_nl["focusScore"] > ta_remote["focusScore"]
+        assert ta_remote["focusScore"] > non_target["focusScore"]
 
-    def test_dedup_primary_key_prefers_richer_latest_record(self) -> None:
+def test_dedup_primary_key_prefers_richer_latest_record() -> None:
         first = jf.canonicalize_job(
             {
                 "title": "Gameplay Programmer",
@@ -1412,17 +1413,17 @@ class JobsFetcherTests(unittest.TestCase):
             source="b",
             fetched_at=jf.now_iso(),
         )
-        self.assertIsNotNone(first)
-        self.assertIsNotNone(second)
+        assert first is not None
+        assert second is not None
         rows, stats = jf.deduplicate_jobs([first, second])
-        self.assertEqual(stats["outputCount"], 1)
-        self.assertEqual(int(stats.get("mergedByPrimaryUrl") or 0), 1)
-        self.assertEqual(int(stats.get("mergedBySecondaryKey") or 0), 0)
-        self.assertEqual(int(stats.get("mergedBySocialKey") or 0), 0)
-        self.assertEqual(rows[0]["sourceJobId"], "r-2")
-        self.assertTrue(rows[0]["dedupKey"].startswith("url:"))
+        assert stats["outputCount"] == 1
+        assert int(stats.get("mergedByPrimaryUrl") or 0) == 1
+        assert int(stats.get("mergedBySecondaryKey") or 0) == 0
+        assert int(stats.get("mergedBySocialKey") or 0) == 0
+        assert rows[0]["sourceJobId"] == "r-2"
+        assert rows[0]["dedupKey"].startswith("url:")
 
-    def test_canonicalize_job_rejects_linkless_rows_before_dedup(self) -> None:
+def test_canonicalize_job_rejects_linkless_rows_before_dedup() -> None:
         first = jf.canonicalize_job(
             {
                 "title": "Technical Artist",
@@ -1453,10 +1454,11 @@ class JobsFetcherTests(unittest.TestCase):
             source="b",
             fetched_at=jf.now_iso(),
         )
-        self.assertIsNone(first)
-        self.assertIsNone(second)
+        assert first is None
+        assert second is None
 
-    def test_canonicalize_job_with_reason_accounts_drop_reasons(self) -> None:
+
+def test_canonicalize_job_with_reason_accounts_drop_reasons() -> None:
         dropped_title, reason_title = jf.canonicalize_job_with_reason(
             {"company": "Studio A", "jobLink": "https://example.com/jobs/1"},
             source="x",
@@ -1472,23 +1474,23 @@ class JobsFetcherTests(unittest.TestCase):
             source="x",
             fetched_at=jf.now_iso(),
         )
-        self.assertIsNone(dropped_title)
-        self.assertIsNone(dropped_company)
-        self.assertIsNone(dropped_payload)
-        self.assertEqual(reason_title, "missing_title")
-        self.assertEqual(reason_company, "missing_company")
-        self.assertEqual(reason_payload, "invalid_payload")
+        assert dropped_title is None
+        assert dropped_company is None
+        assert dropped_payload is None
+        assert reason_title == "missing_title"
+        assert reason_company == "missing_company"
+        assert reason_payload == "invalid_payload"
 
-    def test_canonicalize_job_with_reason_requires_job_link(self) -> None:
+def test_canonicalize_job_with_reason_requires_job_link() -> None:
         dropped_link, reason_link = jf.canonicalize_job_with_reason(
             {"title": "Gameplay Engineer", "company": "Studio A", "jobLink": ""},
             source="x",
             fetched_at=jf.now_iso(),
         )
-        self.assertIsNone(dropped_link)
-        self.assertEqual(reason_link, "missing_job_link")
+        assert dropped_link is None
+        assert reason_link == "missing_job_link"
 
-    def test_pipeline_partial_success_when_one_source_fails(self) -> None:
+def test_pipeline_partial_success_when_one_source_fails() -> None:
         def failing_loader(**_: object):
             raise RuntimeError("timeout")
 
@@ -1514,14 +1516,14 @@ class JobsFetcherTests(unittest.TestCase):
                 source_loaders=[("failing", failing_loader), ("ok", ok_loader)],
             )
 
-            self.assertEqual(report["summary"]["failedSources"], 1)
-            self.assertEqual(report["summary"]["outputCount"], 1)
+            assert report["summary"]["failedSources"] == 1
+            assert report["summary"]["outputCount"] == 1
 
             output = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(output), 1)
-            self.assertEqual(output[0]["source"], "ok")
+            assert len(output) == 1
+            assert output[0]["source"] == "ok"
 
-    def test_pipeline_preserves_previous_output_when_current_is_empty(self) -> None:
+def test_pipeline_preserves_previous_output_when_current_is_empty() -> None:
         existing = [
             {
                 "id": 1,
@@ -1554,10 +1556,10 @@ class JobsFetcherTests(unittest.TestCase):
             report = jf.run_pipeline(output_dir=out, source_loaders=[("empty", empty_loader)])
 
             output = json.loads((out / "jobs-unified.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(output), 1)
-            self.assertTrue(report["summary"]["preservedPreviousOutput"])
+            assert len(output) == 1
+            assert report["summary"]["preservedPreviousOutput"]
 
-    def test_pipeline_tracks_likely_removed_jobs_in_lifecycle_state(self) -> None:
+def test_pipeline_tracks_likely_removed_jobs_in_lifecycle_state() -> None:
         def one_job_loader(**_: object):
             return [
                 {
@@ -1583,24 +1585,24 @@ class JobsFetcherTests(unittest.TestCase):
                 out = Path(tmp)
                 jf.default_source_loaders = lambda: [("only_source", one_job_loader)]
                 first = jf.run_pipeline(output_dir=out, preserve_previous_on_empty=False)
-                self.assertEqual(int(first["summary"].get("outputCount") or 0), 1)
-                self.assertEqual(int(first["summary"].get("lifecycleActiveCount") or 0), 1)
+                assert int(first["summary"].get("outputCount") or 0) == 1
+                assert int(first["summary"].get("lifecycleActiveCount") or 0) == 1
 
                 jf.default_source_loaders = lambda: [("only_source", empty_loader)]
                 second = jf.run_pipeline(output_dir=out, preserve_previous_on_empty=False)
-                self.assertEqual(int(second["summary"].get("outputCount") or 0), 0)
-                self.assertEqual(int(second["summary"].get("lifecycleLikelyRemovedCount") or 0), 1)
+                assert int(second["summary"].get("outputCount") or 0) == 0
+                assert int(second["summary"].get("lifecycleLikelyRemovedCount") or 0) == 1
 
                 lifecycle_payload = json.loads((out / "jobs-lifecycle-state.json").read_text(encoding="utf-8"))
                 jobs_map = lifecycle_payload.get("jobs") or {}
-                self.assertEqual(len(jobs_map), 1)
+                assert len(jobs_map) == 1
                 entry = list(jobs_map.values())[0]
-                self.assertEqual(str(entry.get("status") or ""), "likely_removed")
-                self.assertTrue(str(entry.get("removedAt") or ""))
+                assert str(entry.get("status") or "") == "likely_removed"
+                assert str(entry.get("removedAt") or "")
         finally:
             jf.default_source_loaders = previous_default_loaders
 
-    def test_pipeline_marks_missing_for_successful_sources_even_when_other_sources_fail(self) -> None:
+def test_pipeline_marks_missing_for_successful_sources_even_when_other_sources_fail() -> None:
         def one_job_loader(**_: object):
             return [
                 {
@@ -1629,24 +1631,24 @@ class JobsFetcherTests(unittest.TestCase):
                 out = Path(tmp)
                 jf.default_source_loaders = lambda: [("ok_source", one_job_loader), ("failing_source", failing_loader)]
                 first = jf.run_pipeline(output_dir=out, preserve_previous_on_empty=False)
-                self.assertEqual(int(first["summary"].get("outputCount") or 0), 1)
-                self.assertEqual(int(first["summary"].get("failedSources") or 0), 1)
+                assert int(first["summary"].get("outputCount") or 0) == 1
+                assert int(first["summary"].get("failedSources") or 0) == 1
 
                 jf.default_source_loaders = lambda: [("ok_source", empty_loader), ("failing_source", failing_loader)]
                 second = jf.run_pipeline(output_dir=out, preserve_previous_on_empty=False)
-                self.assertEqual(int(second["summary"].get("failedSources") or 0), 1)
-                self.assertEqual(int(second["summary"].get("lifecycleLikelyRemovedCount") or 0), 1)
+                assert int(second["summary"].get("failedSources") or 0) == 1
+                assert int(second["summary"].get("lifecycleLikelyRemovedCount") or 0) == 1
 
                 lifecycle_payload = json.loads((out / "jobs-lifecycle-state.json").read_text(encoding="utf-8"))
                 jobs_map = lifecycle_payload.get("jobs") or {}
-                self.assertEqual(len(jobs_map), 1)
+                assert len(jobs_map) == 1
                 entry = list(jobs_map.values())[0]
-                self.assertEqual(str(entry.get("status") or ""), "likely_removed")
-                self.assertTrue(str(entry.get("removedAt") or ""))
+                assert str(entry.get("status") or "") == "likely_removed"
+                assert str(entry.get("removedAt") or "")
         finally:
             jf.default_source_loaders = previous_default_loaders
 
-    def test_pipeline_output_contract_matches_frontend(self) -> None:
+def test_pipeline_output_contract_matches_frontend() -> None:
         def ok_loader(**_: object):
             return [
                 {
@@ -1666,30 +1668,30 @@ class JobsFetcherTests(unittest.TestCase):
         with workspace_tmpdir("jobs-fetcher") as tmp:
             jf.run_pipeline(output_dir=Path(tmp), source_loaders=[("ok", ok_loader)])
             rows = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(rows), 1)
+            assert len(rows) == 1
             row = rows[0]
             for field in jf.REQUIRED_FIELDS:
-                self.assertIn(field, row)
+                assert field in row
             for field in jf.OPTIONAL_FIELDS:
-                self.assertIn(field, row)
-            self.assertEqual(row["workType"], "Remote")
-            self.assertIsInstance(row["focusScore"], int)
+                assert field in row
+            assert row["workType"] == "Remote"
+            assert isinstance(row["focusScore"], int)
 
-    def test_pipeline_default_sources_exclude_wellfound_and_include_guerrilla(self) -> None:
-        google_csv = self.fixture("google_sheets.csv")
-        remote_json = self.fixture("remoteok.json")
-        gamesindustry_html = self.fixture("gamesindustry_jobs.html")
-        greenhouse_json = self.fixture("greenhouse_guerrilla_jobs.json")
-        greenhouse_playstation_json = self.fixture("greenhouse_playstation_jobs.json")
-        teamtailor_listing = self.fixture("teamtailor_listing.html")
-        teamtailor_job = self.fixture("teamtailor_job.html")
-        littlechicken_listing = self.fixture("littlechicken_jobs_page.html")
-        littlechicken_detail = self.fixture("littlechicken_job_detail.html")
-        lever_json = self.fixture("lever_jobs.json")
-        smart_json = self.fixture("smartrecruiters_jobs.json")
-        workable_json = self.fixture("workable_jobs.json")
-        ashby_html = self.fixture("ashby_jobs.html")
-        personio_xml = self.fixture("personio_feed.xml")
+def test_pipeline_default_sources_exclude_wellfound_and_include_guerrilla() -> None:
+        google_csv = _fixture("google_sheets.csv")
+        remote_json = _fixture("remoteok.json")
+        gamesindustry_html = _fixture("gamesindustry_jobs.html")
+        greenhouse_json = _fixture("greenhouse_guerrilla_jobs.json")
+        greenhouse_playstation_json = _fixture("greenhouse_playstation_jobs.json")
+        teamtailor_listing = _fixture("teamtailor_listing.html")
+        teamtailor_job = _fixture("teamtailor_job.html")
+        littlechicken_listing = _fixture("littlechicken_jobs_page.html")
+        littlechicken_detail = _fixture("littlechicken_job_detail.html")
+        lever_json = _fixture("lever_jobs.json")
+        smart_json = _fixture("smartrecruiters_jobs.json")
+        workable_json = _fixture("workable_jobs.json")
+        ashby_html = _fixture("ashby_jobs.html")
+        personio_xml = _fixture("personio_feed.xml")
 
         def fake_fetch(url: str, _: int) -> str:
             if "docs.google.com/spreadsheets" in url or "api.allorigins.win/raw" in url:
@@ -1732,51 +1734,51 @@ class JobsFetcherTests(unittest.TestCase):
             )
 
             sources = {row["name"]: row for row in report["sources"]}
-            self.assertEqual(sources["google_sheets"]["status"], "ok")
-            self.assertEqual(sources["google_sheets_1er2oaxo"]["status"], "ok")
-            self.assertEqual(sources["google_sheets_1mvqhxat"]["status"], "ok")
-            self.assertEqual(sources["remote_ok"]["status"], "ok")
-            self.assertEqual(sources["gamesindustry"]["status"], "ok")
-            self.assertEqual(sources["greenhouse_boards"]["status"], "ok")
-            self.assertEqual(sources["teamtailor_sources"]["status"], "ok")
-            self.assertEqual(sources["lever_sources"]["status"], "ok")
-            self.assertEqual(sources["smartrecruiters_sources"]["status"], "ok")
-            self.assertEqual(sources["workable_sources"]["status"], "ok")
-            self.assertEqual(sources["ashby_sources"]["status"], "ok")
-            self.assertEqual(sources["personio_sources"]["status"], "ok")
+            assert sources["google_sheets"]["status"] == "ok"
+            assert sources["google_sheets_1er2oaxo"]["status"] == "ok"
+            assert sources["google_sheets_1mvqhxat"]["status"] == "ok"
+            assert sources["remote_ok"]["status"] == "ok"
+            assert sources["gamesindustry"]["status"] == "ok"
+            assert sources["greenhouse_boards"]["status"] == "ok"
+            assert sources["teamtailor_sources"]["status"] == "ok"
+            assert sources["lever_sources"]["status"] == "ok"
+            assert sources["smartrecruiters_sources"]["status"] == "ok"
+            assert sources["workable_sources"]["status"] == "ok"
+            assert sources["ashby_sources"]["status"] == "ok"
+            assert sources["personio_sources"]["status"] == "ok"
             static_rows = [row for row in report["sources"] if str(row.get("adapter") or "").lower() == "static"]
-            self.assertTrue(static_rows)
-            self.assertTrue(any(str(row.get("status") or "").lower() == "ok" for row in static_rows))
-            self.assertEqual(sources["wellfound"]["status"], "excluded")
-            self.assertIn("disabled_by_default", sources["wellfound"]["error"])
-            self.assertEqual(sources["greenhouse_boards"]["adapter"], "greenhouse")
-            self.assertEqual(sources["teamtailor_sources"]["adapter"], "teamtailor")
-            self.assertEqual(sources["lever_sources"]["adapter"], "lever")
-            self.assertEqual(sources["smartrecruiters_sources"]["adapter"], "smartrecruiters")
-            self.assertEqual(sources["workable_sources"]["adapter"], "workable")
-            self.assertEqual(sources["ashby_sources"]["adapter"], "ashby")
-            self.assertEqual(sources["personio_sources"]["adapter"], "personio")
-            self.assertIn("failedSources", report["summary"])
-            self.assertGreaterEqual(report["summary"]["excludedSources"], 1)
-            self.assertIn("targetRoleCount", report["summary"])
-            self.assertIn("netherlandsCount", report["summary"])
-            self.assertIn("remoteCount", report["summary"])
-            self.assertIn("rawFetchedCount", report["summary"])
-            self.assertIn("uniqueOutputCount", report["summary"])
-            self.assertIn("sourceBundleCollisions", report["summary"])
+            assert static_rows
+            assert any(str(row.get("status") or "").lower() == "ok" for row in static_rows)
+            assert sources["wellfound"]["status"] == "excluded"
+            assert "disabled_by_default" in sources["wellfound"]["error"]
+            assert sources["greenhouse_boards"]["adapter"] == "greenhouse"
+            assert sources["teamtailor_sources"]["adapter"] == "teamtailor"
+            assert sources["lever_sources"]["adapter"] == "lever"
+            assert sources["smartrecruiters_sources"]["adapter"] == "smartrecruiters"
+            assert sources["workable_sources"]["adapter"] == "workable"
+            assert sources["ashby_sources"]["adapter"] == "ashby"
+            assert sources["personio_sources"]["adapter"] == "personio"
+            assert "failedSources" in report["summary"]
+            assert report["summary"]["excludedSources"] == 1
+            assert "targetRoleCount" in report["summary"]
+            assert "netherlandsCount" in report["summary"]
+            assert "remoteCount" in report["summary"]
+            assert "rawFetchedCount" in report["summary"]
+            assert "uniqueOutputCount" in report["summary"]
+            assert "sourceBundleCollisions" in report["summary"]
 
             rows = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
-            self.assertTrue(any("guerrilla" in row.get("company", "").lower() for row in rows))
-            self.assertTrue(any("playstation" in row.get("company", "").lower() for row in rows))
-            self.assertTrue(any("paradox" in row.get("company", "").lower() for row in rows))
-            self.assertTrue(any("little chicken" in row.get("company", "").lower() for row in rows))
-            self.assertTrue(all("focusScore" in row for row in rows))
-            self.assertTrue(all("sourceBundleCount" in row for row in rows))
-            self.assertTrue(all("sourceBundle" in row for row in rows))
+            assert any("guerrilla" in row.get("company", "").lower() for row in rows)
+            assert any("playstation" in row.get("company", "").lower() for row in rows)
+            assert any("paradox" in row.get("company", "").lower() for row in rows)
+            assert any("little chicken" in row.get("company", "").lower() for row in rows)
+            assert all("focusScore" in row for row in rows)
+            assert all("sourceBundleCount" in row for row in rows)
+            assert all("sourceBundle" in row for row in rows)
             all_errors = " ".join(row.get("error", "") for row in report["sources"])
-            self.assertNotIn("403", all_errors)
+            assert "403" not in all_errors
 
-    def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts(self) -> None:
+def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts() -> None:
         def ok_loader(**_: object):
             return [
                 {
@@ -1801,40 +1803,37 @@ class JobsFetcherTests(unittest.TestCase):
                 max_workers=2,
                 max_per_domain=2,
             )
-            self.assertEqual(str(report.get("schemaVersion") or ""), str(jf.SCHEMA_VERSION))
+            assert str(report.get("schemaVersion") or "") == str(jf.SCHEMA_VERSION)
             runtime = report.get("runtime") or {}
-            self.assertEqual(int(runtime.get("maxWorkers") or 0), 2)
-            self.assertEqual(int(runtime.get("maxPerDomain") or 0), 2)
-            self.assertEqual(str(runtime.get("fetchStrategy") or ""), "auto")
-            self.assertIn(str(runtime.get("fetchClient") or ""), {"urllib", "httpx_async"})
-            self.assertEqual(int(runtime.get("adapterHttpConcurrency") or 0), jf.DEFAULT_ADAPTER_HTTP_CONCURRENCY)
-            self.assertEqual(int(runtime.get("staticDetailConcurrency") or 0), jf.DEFAULT_STATIC_DETAIL_CONCURRENCY)
-            self.assertEqual(
-                int(runtime.get("googleSheetsRedirectConcurrency") or 0),
-                jf.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
-            )
-            self.assertEqual(int(runtime.get("selectedSourceCount") or 0), 1)
-            self.assertIsInstance(runtime.get("slowestSources"), list)
-            self.assertIn("summary", report)
-            self.assertIn("sources", report)
-            self.assertEqual(str(report["sources"][0].get("fetchStrategy") or ""), "auto")
-            self.assertIn("loss", report["sources"][0])
-            self.assertIn("canonicalDropReasons", (report["sources"][0].get("loss") or {}))
+            assert int(runtime.get("maxWorkers") or 0) == 2
+            assert int(runtime.get("maxPerDomain") or 0) == 2
+            assert str(runtime.get("fetchStrategy") or "") == "auto"
+            assert str(runtime.get("fetchClient") or "") in {"urllib", "httpx_async"}
+            assert int(runtime.get("adapterHttpConcurrency") or 0) == jf.DEFAULT_ADAPTER_HTTP_CONCURRENCY
+            assert int(runtime.get("staticDetailConcurrency") or 0) == jf.DEFAULT_STATIC_DETAIL_CONCURRENCY
+            assert int(runtime.get("googleSheetsRedirectConcurrency") or 0) == jf.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
+            assert int(runtime.get("selectedSourceCount") or 0) == 1
+            assert isinstance(runtime.get("slowestSources"), list)
+            assert "summary" in report
+            assert "sources" in report
+            assert str(report["sources"][0].get("fetchStrategy") or "") == "auto"
+            assert "loss" in report["sources"][0]
+            assert "canonicalDropReasons" in (report["sources"][0].get("loss") or {})
 
             task_payload = json.loads((out / "jobs-fetch-tasks.json").read_text(encoding="utf-8"))
-            self.assertEqual(str(task_payload.get("schemaVersion") or ""), str(jf.SCHEMA_VERSION))
-            self.assertIn("summary", task_payload)
-            self.assertIn("tasks", task_payload)
-            self.assertIn("outputs", task_payload)
-            self.assertEqual(str((task_payload.get("outputs") or {}).get("report") or ""), str(out / "jobs-fetch-report.json"))
+            assert str(task_payload.get("schemaVersion") or "") == str(jf.SCHEMA_VERSION)
+            assert "summary" in task_payload
+            assert "tasks" in task_payload
+            assert "outputs" in task_payload
+            assert str((task_payload.get("outputs") or {}).get("report") or "") == str(out / "jobs-fetch-report.json")
 
             state_payload = json.loads((out / "jobs-source-state.json").read_text(encoding="utf-8"))
-            self.assertEqual(str(state_payload.get("schemaVersion") or ""), str(jf.SCHEMA_VERSION))
+            assert str(state_payload.get("schemaVersion") or "") == str(jf.SCHEMA_VERSION)
             sources_state = state_payload.get("sources") or {}
-            self.assertIn("ok_source", sources_state)
-            self.assertEqual(int((sources_state["ok_source"]).get("consecutiveFailures") or 0), 0)
+            assert "ok_source" in sources_state
+            assert int((sources_state["ok_source"]).get("consecutiveFailures") or 0) == 0
 
-    def test_run_pipeline_tracks_google_sheets_redirect_stats_in_report_and_state(self) -> None:
+def test_run_pipeline_tracks_google_sheets_redirect_stats_in_report_and_state() -> None:
         csv_text = (
             "Company,City,Country,Fully Remote?,Job Type,Job,Link\n"
             f"{jf.UNKNOWN_COMPANY_LABEL},Montpellier,France,No,Full-time,Technical Director,https://gracklehq.com/rd/372393\n"
@@ -1862,6 +1861,7 @@ class JobsFetcherTests(unittest.TestCase):
                 return {"cacheHits": self.cache_hits, "resolvedCount": self.resolved_count}
 
             def close(self) -> None:
+                """Match real resolver's close(self) signature."""
                 return None
 
         with workspace_tmpdir("jobs-fetcher-google") as tmp:
@@ -1880,20 +1880,20 @@ class JobsFetcherTests(unittest.TestCase):
                 )
 
             runtime = report.get("runtime") or {}
-            self.assertEqual(int(runtime.get("googleSheetsRedirectConcurrency") or 0), 3)
+            assert int(runtime.get("googleSheetsRedirectConcurrency") or 0) == 3
             source_row = report["sources"][0]
-            self.assertEqual(source_row.get("adapter"), "csv")
+            assert source_row.get("adapter") == "csv"
             detail_stats = ((source_row.get("details") or [{}])[0].get("stats") or {})
-            self.assertEqual(int(detail_stats.get("redirect_candidates") or 0), 1)
-            self.assertEqual(int(detail_stats.get("redirect_resolved") or 0), 1)
-            self.assertIn("redirect_resolve_ms", detail_stats)
+            assert int(detail_stats.get("redirect_candidates") or 0) == 1
+            assert int(detail_stats.get("redirect_resolved") or 0) == 1
+            assert "redirect_resolve_ms" in detail_stats
 
             state_payload = json.loads((out / "jobs-source-state.json").read_text(encoding="utf-8"))
             source_state = (state_payload.get("sources") or {}).get("google_sheets") or {}
-            self.assertEqual(int(source_state.get("lastRedirectCandidates") or 0), 1)
-            self.assertEqual(int(source_state.get("lastRedirectResolved") or 0), 1)
+            assert int(source_state.get("lastRedirectCandidates") or 0) == 1
+            assert int(source_state.get("lastRedirectResolved") or 0) == 1
 
-    def test_run_pipeline_includes_selection_exclusions(self) -> None:
+def test_run_pipeline_includes_selection_exclusions() -> None:
         def ok_loader(**_: object):
             return [
                 {
@@ -1931,19 +1931,19 @@ class JobsFetcherTests(unittest.TestCase):
                 ],
             )
             excluded_rows = [row for row in (report.get("sources") or []) if row.get("name") == "excluded_source"]
-            self.assertEqual(len(excluded_rows), 1)
-            self.assertEqual(str(excluded_rows[0].get("status") or ""), "excluded")
-            self.assertEqual(str(excluded_rows[0].get("exclusionReason") or ""), "only_sources_filter")
+            assert len(excluded_rows) == 1
+            assert str(excluded_rows[0].get("status") or "") == "excluded"
+            assert str(excluded_rows[0].get("exclusionReason") or "") == "only_sources_filter"
 
-    def test_should_skip_source_by_ttl_honors_recent_success_and_failure_state(self) -> None:
+def test_should_skip_source_by_ttl_honors_recent_success_and_failure_state() -> None:
         now = jf.now_iso()
         rows = {"source_a": {"lastSuccessAt": now, "consecutiveFailures": 0}}
-        self.assertTrue(jf.should_skip_source_by_ttl("source_a", rows, ttl_minutes=360))
+        assert jf.should_skip_source_by_ttl("source_a", rows, ttl_minutes=360)
 
         rows["source_a"]["consecutiveFailures"] = 2
-        self.assertFalse(jf.should_skip_source_by_ttl("source_a", rows, ttl_minutes=360))
+        assert not jf.should_skip_source_by_ttl("source_a", rows, ttl_minutes=360)
 
-    def test_should_skip_source_by_cadence_uses_hot_and_cold_windows(self) -> None:
+def test_should_skip_source_by_cadence_uses_hot_and_cold_windows() -> None:
         now = jf.datetime.now(jf.timezone.utc)
         rows = {
             "hot_source": {
@@ -1957,15 +1957,15 @@ class JobsFetcherTests(unittest.TestCase):
                 "consecutiveFailures": 0,
             },
         }
-        self.assertTrue(jf.should_skip_source_by_cadence("hot_source", rows, hot_minutes=15, cold_minutes=60))
-        self.assertTrue(jf.should_skip_source_by_cadence("cold_source", rows, hot_minutes=15, cold_minutes=60))
+        assert jf.should_skip_source_by_cadence("hot_source", rows, hot_minutes=15, cold_minutes=60)
+        assert jf.should_skip_source_by_cadence("cold_source", rows, hot_minutes=15, cold_minutes=60)
 
         rows["hot_source"]["lastSuccessAt"] = (now - jf.timedelta(minutes=20)).isoformat()
         rows["cold_source"]["lastSuccessAt"] = (now - jf.timedelta(minutes=70)).isoformat()
-        self.assertFalse(jf.should_skip_source_by_cadence("hot_source", rows, hot_minutes=15, cold_minutes=60))
-        self.assertFalse(jf.should_skip_source_by_cadence("cold_source", rows, hot_minutes=15, cold_minutes=60))
+        assert not jf.should_skip_source_by_cadence("hot_source", rows, hot_minutes=15, cold_minutes=60)
+        assert not jf.should_skip_source_by_cadence("cold_source", rows, hot_minutes=15, cold_minutes=60)
 
-    def test_run_pipeline_excludes_quarantined_source_unless_ignored(self) -> None:
+def test_run_pipeline_excludes_quarantined_source_unless_ignored() -> None:
         calls = {"count": 0}
 
         def ok_loader(**_: object):
@@ -2007,10 +2007,10 @@ class JobsFetcherTests(unittest.TestCase):
                 ignore_circuit_breaker=False,
             )
             blocked_rows = [row for row in blocked_report.get("sources", []) if row.get("name") == "blocked_source"]
-            self.assertEqual(calls["count"], 0)
-            self.assertEqual(len(blocked_rows), 1)
-            self.assertEqual(str(blocked_rows[0].get("status") or ""), "excluded")
-            self.assertIn("circuit_breaker_active_until", str(blocked_rows[0].get("error") or ""))
+            assert calls["count"] == 0
+            assert len(blocked_rows) == 1
+            assert str(blocked_rows[0].get("status") or "") == "excluded"
+            assert "circuit_breaker_active_until" in str(blocked_rows[0].get("error") or "")
 
             unblocked_report = jf.run_pipeline(
                 output_dir=out,
@@ -2020,11 +2020,11 @@ class JobsFetcherTests(unittest.TestCase):
                 ignore_circuit_breaker=True,
             )
             unblocked_rows = [row for row in unblocked_report.get("sources", []) if row.get("name") == "blocked_source"]
-            self.assertGreaterEqual(calls["count"], 1)
-            self.assertEqual(len(unblocked_rows), 1)
-            self.assertEqual(str(unblocked_rows[0].get("status") or ""), "ok")
+            assert calls["count"] == 1
+            assert len(unblocked_rows) == 1
+            assert str(unblocked_rows[0].get("status") or "") == "ok"
 
-    def test_pipeline_report_snapshot_contract(self) -> None:
+def test_pipeline_report_snapshot_contract() -> None:
         def ok_loader(**_: object):
             return [
                 {
@@ -2071,8 +2071,6 @@ class JobsFetcherTests(unittest.TestCase):
                     }
                 ],
             }
-            self.assertEqual(snapshot, self.fixture_json("jobs_fetch_report_snapshot.json"))
+            assert snapshot == _fixture_json("jobs_fetch_report_snapshot.json")
 
 
-if __name__ == "__main__":
-    unittest.main()
