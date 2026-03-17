@@ -237,7 +237,10 @@ const UNIFIED_JSON_SOURCES = [
   { name: "Unified JSON (root)", url: "jobs-unified.json" }
 ];
 const STARTUP_PREVIEW_JSON_URLS = [
+  "data/jobs-unified.json",
+  "data/jobs-unified-light.json",
   "data/jobs-unified-startup.json",
+  "jobs-unified.json",
   "jobs-unified-startup.json"
 ];
 const UNIFIED_CSV_SOURCES = [

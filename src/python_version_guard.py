@@ -8,6 +8,8 @@ from typing import Sequence
 
 REQUIRED_MAJOR = 3
 REQUIRED_MINOR = 13
+# Allow 3.13+ (e.g. 3.14) for build/test
+MIN_VERSION = (REQUIRED_MAJOR, REQUIRED_MINOR)
 
 
 def _version_text(info: Sequence[int]) -> str:
@@ -19,7 +21,7 @@ def _version_text(info: Sequence[int]) -> str:
 
 def is_required_python(version_info: Sequence[int] | None = None) -> bool:
     info = version_info if version_info is not None else sys.version_info
-    return (int(info[0]), int(info[1])) == (REQUIRED_MAJOR, REQUIRED_MINOR)
+    return (int(info[0]), int(info[1])) >= MIN_VERSION
 
 
 def ensure_required_python(
@@ -34,6 +36,6 @@ def ensure_required_python(
     exe = executable or sys.executable or "python"
     raise RuntimeError(
         "Baluffo build/test workflows require Python "
-        f"{REQUIRED_MAJOR}.{REQUIRED_MINOR}.x. "
+        f"{REQUIRED_MAJOR}.{REQUIRED_MINOR}.x or newer. "
         f"Current interpreter: {current} ({exe})."
     )

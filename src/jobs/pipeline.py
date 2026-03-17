@@ -21,6 +21,7 @@ from src.jobs import common
 from src.jobs import reporting as reporting_pkg
 from src.jobs import state as state_pkg
 from src.jobs import transport as transport_pkg
+from src.jobs.adapters import community as community_adapter
 from src.jobs.adapters import default_source_loaders as package_default_source_loaders
 from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs.interfaces import SourceLoader
@@ -34,7 +35,7 @@ DEFAULT_RETRIES = common.DEFAULT_RETRIES
 DEFAULT_BACKOFF_S = common.DEFAULT_BACKOFF_S
 DEFAULT_FETCH_STRATEGY = common.DEFAULT_FETCH_STRATEGY
 DEFAULT_ADAPTER_HTTP_CONCURRENCY = common.DEFAULT_ADAPTER_HTTP_CONCURRENCY
-DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = common.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
+DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community_adapter.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
 DEFAULT_STATIC_DETAIL_CONCURRENCY = common.DEFAULT_STATIC_DETAIL_CONCURRENCY
 DEFAULT_HOT_SOURCE_CADENCE_MINUTES = common.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
 DEFAULT_COLD_SOURCE_CADENCE_MINUTES = common.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
@@ -59,6 +60,7 @@ default_fetch_text = transport_pkg.default_fetch_text
 resolve_fetch_text_impl = transport_pkg.resolve_fetch_text_impl
 build_redirect_resolver = transport_pkg.build_redirect_resolver
 write_text_if_changed = common.write_text_if_changed
+write_atomic_if_changed = common.write_atomic_if_changed
 serialize_rows_for_json = common.serialize_rows_for_json
 serialize_rows_for_csv = common.serialize_rows_for_csv
 read_existing_output_from_file = common.read_existing_output_from_file
@@ -646,6 +648,7 @@ def run_pipeline(
                 "canonicalDropReasons": {
                     "missing_title": 0,
                     "missing_company": 0,
+                    "missing_job_link": 0,
                     "invalid_url": 0,
                     "invalid_payload": 0,
                 },
@@ -747,9 +750,9 @@ def run_pipeline(
     wrote_light_json = False
     if deduped_payload_rows:
         validate_canonical_jobs_payload(deduped_payload_rows)
-        wrote_json = write_text_if_changed(json_path, serialize_rows_for_json(deduped_payload_rows, OUTPUT_FIELDS))
-        wrote_csv = write_text_if_changed(csv_path, serialize_rows_for_csv(deduped_payload_rows, OUTPUT_FIELDS))
-        wrote_light_json = write_text_if_changed(
+        wrote_json = write_atomic_if_changed(json_path, serialize_rows_for_json(deduped_payload_rows, OUTPUT_FIELDS))
+        wrote_csv = write_atomic_if_changed(csv_path, serialize_rows_for_csv(deduped_payload_rows, OUTPUT_FIELDS))
+        wrote_light_json = write_atomic_if_changed(
             light_json_path,
             serialize_rows_for_json(deduped_payload_rows, LIGHTWEIGHT_OUTPUT_FIELDS),
         )

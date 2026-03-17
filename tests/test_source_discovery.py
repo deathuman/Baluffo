@@ -1,5 +1,6 @@
 import json
 import sys
+import asyncio
 from pathlib import Path
 from unittest import mock
 
@@ -96,6 +97,23 @@ def test_probe_candidate_uses_fallback_when_primary_fails() -> None:
     ok, count, error = sd.probe_candidate(greenhouse, timeout_s=5, fetcher=fake_fetch)
     assert ok
     assert count == 1
+    assert error == ""
+
+
+def test_async_probe_candidate_mirrors_sync_probe_count() -> None:
+    greenhouse = {
+        "adapter": "greenhouse",
+        "slug": "example",
+        "api_url": "https://boards-api.greenhouse.io/v1/boards/example/jobs?content=true",
+    }
+
+    async def fake_async_fetch(url: str, _timeout: int) -> str:
+        assert "boards-api.greenhouse.io" in url
+        return json.dumps({"jobs": [{}, {}, {}]})
+
+    ok, count, error = asyncio.run(sd.async_probe_candidate(greenhouse, timeout_s=5, fetcher=fake_async_fetch))
+    assert ok
+    assert count == 3
     assert error == ""
 
 
@@ -937,6 +955,89 @@ def test_parse_args_supports_manual_gamesmap_mode() -> None:
         sys.argv = prev_argv
     assert bool(args.gamesmap_website_only_fallback)
     assert int(args.gamesmap_max_detail_pages or 0) == 25
+
+
+def test_parse_game_studio_sheet_csv_handles_metadata_rows_and_openings_flag() -> None:
+    csv_text = """,,,,
+,Studios Hiring now,,,Last update: 18 Feb 2026
+,, ,,
+,Studio,Hiring Location,Roles open (as of 18 Feb),Link
+,Example Studio,Remote,yes,https://boards.greenhouse.io/example
+,Example Studio 2,Remote,no,https://jobs.lever.co/example2
+"""
+    rows = sd.parse_game_studio_sheet_csv(csv_text)
+    assert len(rows) == 2
+    assert rows[0]["studio"] == "Example Studio"
+    assert rows[0]["careersUrl"] == "https://boards.greenhouse.io/example"
+    assert rows[0]["openingsFlag"] == "yes"
+    assert rows[1]["openingsFlag"] == "no"
+
+
+def test_run_discovery_sheet_directory_candidates_flow_into_queue() -> None:
+    with workspace_tmpdir("source-discovery") as root:
+        prev_paths = (
+            sd.ACTIVE_PATH,
+            sd.PENDING_PATH,
+            sd.REJECTED_PATH,
+            sd.DISCOVERY_CANDIDATES_PATH,
+            sd.DISCOVERY_REPORT_PATH,
+        )
+        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+        prev_seeds = list(sd.STUDIO_SEEDS)
+        prev_sheet = (sd.GAME_STUDIOS_SHEET_ID, sd.GAME_STUDIOS_SHEET_GID)
+        try:
+            sd.ACTIVE_PATH = root / "active.json"
+            sd.PENDING_PATH = root / "pending.json"
+            sd.REJECTED_PATH = root / "rejected.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+            sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.STUDIO_SEEDS = []
+            sd.STATIC_DISCOVERY_CANDIDATES = []
+            sd.GAME_STUDIOS_SHEET_ID = "sheet_test"
+            sd.GAME_STUDIOS_SHEET_GID = "1"
+
+            sheet_url = sd.game_studios_sheet_candidate_urls(sd.GAME_STUDIOS_SHEET_ID, sd.GAME_STUDIOS_SHEET_GID)[0]
+            csv_text = """x,x,x,x
+x,Studio,Hiring Location,Roles open,Link
+x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
+"""
+
+            payloads = {
+                sheet_url: csv_text,
+                "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true": json.dumps({"jobs": [{}, {}]}),
+            }
+
+            def fake_fetch(url: str, _: int) -> str:
+                if url not in payloads:
+                    raise RuntimeError(f"unexpected URL: {url}")
+                return payloads[url]
+
+            report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=False,
+                discovery_config={"gamesmap": {"enabled": False}},
+                fetcher=fake_fetch,
+            )
+            assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
+            assert int((report["summary"].get("generatedCountByStage") or {}).get("sheet_directory") or 0) >= 1
+            queued = json.loads(sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8"))
+            assert len(queued) == 1
+            assert str(queued[0].get("discoveryMethod") or "") == "sheet_directory"
+            assert str(queued[0].get("sourceDirectory") or "") == "game_studios_sheet"
+            assert str(queued[0].get("adapter") or "") == "greenhouse"
+        finally:
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+            ) = prev_paths
+            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+            sd.STUDIO_SEEDS = prev_seeds
+            sd.GAME_STUDIOS_SHEET_ID, sd.GAME_STUDIOS_SHEET_GID = prev_sheet
 
 def test_load_discovery_config_uses_configured_path() -> None:
     with workspace_tmpdir("source-discovery") as root:

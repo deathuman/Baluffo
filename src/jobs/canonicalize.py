@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from src.jobs import common
+from src.jobs.adapters import community
 from src.jobs.interfaces import JobProcessor
 from src.jobs.models import CanonicalJob, RawJob
 from src.jobs.transport import PooledRedirectResolver
@@ -20,7 +21,7 @@ OPTIONAL_FIELDS = common.OPTIONAL_FIELDS
 OUTPUT_FIELDS = common.OUTPUT_FIELDS
 LIGHTWEIGHT_OUTPUT_FIELDS = common.LIGHTWEIGHT_OUTPUT_FIELDS
 TARGET_PROFESSIONS = common.TARGET_PROFESSIONS
-DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = common.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
+DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
 DEFAULT_CANONICAL_STRICT_URL = common.DEFAULT_CANONICAL_STRICT_URL
 
 parse_datetime = common.parse_datetime

@@ -175,6 +175,7 @@ def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s
             if not parsed:
                 entry_report["status"] = "error"
                 entry_report["error"] = "no jobs extracted from ashby board html"
+                errors.append(f"ashby:{source_name}: no jobs extracted from ashby board html")
             for row in parsed:
                 row["adapter"] = "ashby"
                 row["studio"] = studio

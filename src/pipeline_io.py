@@ -76,3 +76,23 @@ def write_text_if_changed(path: Path, text: str) -> bool:
         pass
     path.write_text(text, encoding="utf-8")
     return True
+
+
+def write_atomic_if_changed(path: Path, text: str) -> bool:
+    """Write text to path atomically (via .tmp + rename) so readers never see partial content."""
+    try:
+        existing = path.read_text(encoding="utf-8")
+        if existing == text:
+            return False
+    except OSError:
+        pass
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        tmp_path.write_text(text, encoding="utf-8")
+        tmp_path.replace(path)
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return True

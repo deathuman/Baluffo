@@ -21,6 +21,7 @@
   },
   "generatedCountByStage": {
     "curated_seed": 2,
+    "sheet_directory": 0,
     "provider_pattern": 0,
     "web_provider": 0,
     "generic_static": 0

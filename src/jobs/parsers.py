@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.jobs import common
+from src.jobs.adapters import community
 from src.jobs.adapters import html_parsers as _html_parsers
 from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.adapters import social_parsers as _social_parsers
@@ -38,7 +39,7 @@ def parse_jobpostings_from_html(
     )
 
 
-parse_google_sheets_csv = common.parse_google_sheets_csv
+parse_google_sheets_csv = community.parse_google_sheets_csv
 parse_remote_ok_payload = common.parse_remote_ok_payload
 parse_reddit_json_payload = _social_parsers.parse_reddit_json_payload
 parse_reddit_rss_payload = _social_parsers.parse_reddit_rss_payload

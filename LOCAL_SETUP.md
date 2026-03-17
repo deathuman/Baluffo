@@ -73,6 +73,13 @@ Saved job record fields:
 - Optional flags:
   - `--mode static` to probe only static seed list
   - `--no-web-search` to skip lightweight web search expansion
+- Probe concurrency tuning (env vars; defaults benchmarked via `python scripts/benchmark_discovery_probe.py`):
+  - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TOTAL` (default `25`)
+  - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_PROVIDER` (default `25`)
+  - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TEAMTAILOR` (default `15`)
+  - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_STATIC` (default `10`)
+  For faster runs on reliable networks, try total/provider 50–80 and teamtailor 25–40.
+  - Optional: `BALUFFO_SHEET_DIRECTORY_MAX_ROWS` to cap how many game studio sheet rows are considered (no cap by default).
 - Run `python src/admin_bridge.py` to expose localhost admin endpoints used by `admin.html`:
   - `GET /discovery/report`
   - `GET /registry/pending`

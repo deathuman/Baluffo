@@ -60,19 +60,13 @@ from src.pipeline_io import (
     read_existing_output as read_existing_output_from_file,
     serialize_rows_for_csv,
     serialize_rows_for_json,
+    write_atomic_if_changed,
     write_text_if_changed,
 )
 
 RawJob = Dict[str, Any]
 SourceLoader = Callable[..., List[RawJob]]
 
-DEFAULT_GOOGLE_SHEET_ID = "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE"
-DEFAULT_GOOGLE_SHEET_GID = "1560329579"
-GOOGLE_SHEETS_SOURCES = [
-    {"name": "google_sheets", "sheetId": DEFAULT_GOOGLE_SHEET_ID, "gid": DEFAULT_GOOGLE_SHEET_GID},
-    {"name": "google_sheets_1er2oaxo", "sheetId": "1eR2oAXOuflr8CZeGoz3JTrsgNj3KuefbdXJOmNtjEVM", "gid": "0"},
-    {"name": "google_sheets_1mvqhxat", "sheetId": "1MvqHXAtXP_6ogtfrLM0g_RzGdJQyx5Q8mhPX4lZECkI", "gid": "0"},
-]
 REMOTE_OK_URLS = [
     "https://remoteok.com/api",
     "https://remoteok.io/api",
@@ -134,6 +128,14 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "slug": "larian-studios",
         "nlPriority": True,
         "enabledByDefault": False,
+    },
+    {
+        "name": "Bandai Namco Entertainment America (Greenhouse)",
+        "studio": "Bandai Namco Entertainment America Inc.",
+        "adapter": "greenhouse",
+        "slug": "bandainamco",
+        "nlPriority": False,
+        "enabledByDefault": True,
     },
     {
         "name": "Jagex (Lever)",
@@ -230,6 +232,44 @@ DEFAULT_STUDIO_SOURCE_REGISTRY = [
         "nlPriority": False,
         "enabledByDefault": True,
     },
+    {
+        "name": "Ubisoft (SmartRecruiters)",
+        "studio": "Ubisoft",
+        "adapter": "smartrecruiters",
+        "company_id": "Ubisoft2",
+        "api_url": "https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+]
+
+# Static sources whose host matches one of these are skipped when the registry
+# already has the corresponding provider source (avoids duplicate extract-zero static runs).
+REDUNDANT_STATIC_IF_PROVIDER: List[Dict[str, Any]] = [
+    {
+        "hosts": ["cdprojektred.com", "www.cdprojektred.com"],
+        "adapter": "smartrecruiters",
+        "provider_id_field": "company_id",
+        "provider_id_value": "CDPROJEKTRED",
+    },
+    {
+        "hosts": ["ubisoft.com", "www.ubisoft.com"],
+        "adapter": "smartrecruiters",
+        "provider_id_field": "company_id",
+        "provider_id_value": "Ubisoft2",
+    },
+    {
+        "hosts": ["xsolla.com", "www.xsolla.com"],
+        "adapter": "lever",
+        "provider_id_field": "account",
+        "provider_id_value": "xsolla",
+    },
+    {
+        "hosts": ["bandainamcoent.com", "www.bandainamcoent.com"],
+        "adapter": "greenhouse",
+        "provider_id_field": "slug",
+        "provider_id_value": "bandainamco",
+    },
 ]
 
 DEFAULT_TIMEOUT_S = 20
@@ -265,6 +305,15 @@ DEFAULT_CANONICAL_STRICT_URL = False
 SOURCE_REGISTRY_ACTIVE_PATH = DEFAULT_OUTPUT_DIR / "source-registry-active.json"
 SOURCE_REGISTRY_PENDING_PATH = DEFAULT_OUTPUT_DIR / "source-registry-pending.json"
 SOURCE_APPROVAL_STATE_PATH = DEFAULT_OUTPUT_DIR / "source-approval-state.json"
+SCRAPY_BROWSER_QUEUE_PATH = DEFAULT_OUTPUT_DIR / "jobs-browser-fallback-queue.json"
+
+# Classifications that cause a static/scrapy_static source to be added to the browser fallback queue.
+# Keep in sync with plugins/static/_heuristics.py CLASSIFICATION_* constants.
+STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE: frozenset = frozenset({
+    "fetch_ok_extract_zero",
+    "blocked_or_challenge",
+    "timeout",
+})
 
 DEFAULT_SOCIAL_CONFIG: Dict[str, Any] = {
     "enabled": False,
@@ -408,7 +457,90 @@ TARGET_PROFESSIONS = {"technical-artist", "environment-artist"}
 SOURCE_DIAGNOSTICS: Dict[str, Dict[str, Any]] = {}
 
 
+def _static_source_primary_host(row: Dict[str, Any]) -> str:
+    """Return the host of the first page URL for a static source, normalized (lower, no leading www.)."""
+    pages = row.get("pages") if isinstance(row.get("pages"), list) else []
+    url = (pages[0] if pages else None) or clean_text(row.get("listing_url")) or ""
+    if not url:
+        return ""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = (parsed.netloc or "").strip().lower()
+        if host.startswith("www."):
+            host = host[4:]
+        return host
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _provider_keys_present_in_registry(*, enabled_only: bool = True) -> set:
+    """Return set of (adapter, provider_id_value) for provider sources in the registry."""
+    out: set = set()
+    for rule in REDUNDANT_STATIC_IF_PROVIDER:
+        ad = clean_text(rule.get("adapter"))
+        field = clean_text(rule.get("provider_id_field"))
+        val = clean_text(rule.get("provider_id_value"))
+        if not ad or not field or not val:
+            continue
+        for row in STUDIO_SOURCE_REGISTRY:
+            if clean_text(row.get("adapter")) != ad:
+                continue
+            if enabled_only and not bool(row.get("enabledByDefault", True)):
+                continue
+            if clean_text(row.get(field)) == val:
+                out.add((ad, val))
+                break
+    return out
+
+
+def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> List[Dict[str, Any]]:
+    """Build synthetic scrapy_static registry rows from the browser fallback queue.
+
+    This lets the scrapy_static_sources adapter run a browser-capable pass for
+    sources that the static adapter has already classified as browser-required.
+    """
+    try:
+        if not SCRAPY_BROWSER_QUEUE_PATH.exists():
+            return []
+        payload = json.loads(SCRAPY_BROWSER_QUEUE_PATH.read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            return []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        if clean_text(row.get("adapter")) != "scrapy_static":
+            continue
+        page = clean_text(row.get("page"))
+        if not page:
+            continue
+        source_id = clean_text(row.get("sourceId")) or f"scrapy_static:{hashlib.sha1(page.encode('utf-8')).hexdigest()[:12]}"
+        name = clean_text(row.get("name")) or clean_text(row.get("studio")) or "scrapy_static_source"
+        studio = clean_text(row.get("studio")) or name
+        normalized = {
+            "name": name,
+            "studio": studio,
+            "adapter": "scrapy_static",
+            "pages": [page],
+            "id": source_id,
+            "enabledByDefault": True,
+            "fetchStrategy": "http",
+            "cadenceMinutes": 0,
+        }
+        rows.append(normalized)
+    return rows
+
+
 def registry_entries(adapter: str, *, enabled_only: bool = True) -> List[Dict[str, Any]]:
+    if adapter == "scrapy_static":
+        # For scrapy_static we currently derive sources from the browser fallback
+        # queue rather than the studio source registry.
+        return _scrapy_static_registry_from_browser_queue(enabled_only=enabled_only)
+
     rows = []
     for row in STUDIO_SOURCE_REGISTRY:
         if clean_text(row.get("adapter")) != adapter:
@@ -419,6 +551,29 @@ def registry_entries(adapter: str, *, enabled_only: bool = True) -> List[Dict[st
         normalized["fetchStrategy"] = clean_text(row.get("fetchStrategy")) or "auto"
         normalized["cadenceMinutes"] = _clamped_int(row.get("cadenceMinutes"), 0, 0)
         rows.append(normalized)
+    if adapter == "static" and REDUNDANT_STATIC_IF_PROVIDER:
+        provider_keys = _provider_keys_present_in_registry(enabled_only=enabled_only)
+        filtered = []
+        for r in rows:
+            host = _static_source_primary_host(r)
+            if not host:
+                filtered.append(r)
+                continue
+            skip = False
+            for rule in REDUNDANT_STATIC_IF_PROVIDER:
+                hosts = rule.get("hosts")
+                if not isinstance(hosts, list):
+                    continue
+                if host not in [str(h).strip().lower() for h in hosts]:
+                    continue
+                ad = clean_text(rule.get("adapter"))
+                val = clean_text(rule.get("provider_id_value"))
+                if (ad, val) in provider_keys:
+                    skip = True
+                    break
+            if not skip:
+                filtered.append(r)
+        rows = filtered
     return rows
 
 
@@ -680,106 +835,6 @@ def map_profession(title: Any) -> str:
     return "other"
 
 
-def find_column_index(headers: Sequence[str], exact_names: Sequence[str], contains_names: Sequence[str]) -> int:
-    normalized = [norm_text(header) for header in headers]
-    for name in exact_names:
-        needle = norm_text(name)
-        if needle in normalized:
-            return normalized.index(needle)
-    for idx, header in enumerate(normalized):
-        if any(norm_text(name) in header for name in contains_names):
-            return idx
-    return -1
-
-
-def find_company_column(headers: Sequence[str]) -> int:
-    normalized = [norm_text(header) for header in headers]
-    for idx, header in enumerate(normalized):
-        if header in {"company", "company name", "studio", "employer", "organization", "organisation"}:
-            return idx
-    for idx, header in enumerate(normalized):
-        if (
-            ("company" in header or "studio" in header or "employer" in header or "organization" in header or "organisation" in header)
-            and not any(part in header for part in ("type", "category", "sector", "industry"))
-        ):
-            return idx
-    return -1
-
-
-def company_name_candidate_indexes(headers: Sequence[str], primary_idx: int) -> List[int]:
-    normalized = [norm_text(header) for header in headers]
-    seen = set()
-    candidates: List[int] = []
-
-    def push(index: int) -> None:
-        if index < 0 or index >= len(headers) or index in seen:
-            return
-        seen.add(index)
-        candidates.append(index)
-
-    push(primary_idx)
-    for idx, header in enumerate(normalized):
-        name_like = (
-            "company name" in header
-            or header == "company"
-            or "studio" in header
-            or "employer" in header
-            or "organization" in header
-            or "organisation" in header
-        )
-        type_like = any(part in header for part in ("type", "category", "sector", "industry"))
-        if name_like and not type_like:
-            push(idx)
-    return candidates
-
-
-def google_sheets_link_candidate_indexes(headers: Sequence[str], primary_idx: int) -> List[int]:
-    normalized = [norm_text(header) for header in headers]
-    seen = set()
-    candidates: List[int] = []
-
-    def push(index: int) -> None:
-        if index < 0 or index >= len(headers) or index in seen:
-            return
-        seen.add(index)
-        candidates.append(index)
-
-    push(primary_idx)
-    for idx, header in enumerate(normalized):
-        if header in {"job link", "url", "apply", "link", "source/contact", "source / contact", "source", "contact"}:
-            push(idx)
-            continue
-        if any(token in header for token in ("job link", "apply", "source/contact", "source / contact")):
-            push(idx)
-            continue
-        if header == "url":
-            push(idx)
-            continue
-        if header == "link":
-            push(idx)
-            continue
-        if header == "source" or header == "contact":
-            push(idx)
-    return candidates
-
-
-def resolve_google_sheets_job_link(row: Sequence[str], candidate_indexes: Sequence[int]) -> str:
-    for idx in candidate_indexes:
-        if idx < 0 or idx >= len(row):
-            continue
-        raw_value = clean_text(row[idx])
-        if not raw_value:
-            continue
-        if raw_value.lower().startswith("mailto:"):
-            continue
-        if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", raw_value):
-            continue
-        normalized = normalize_url(raw_value)
-        if normalized:
-            return normalized
-    return ""
-
-
 def is_untrustworthy_company_label(value: str) -> bool:
     return norm_text(value) in UNTRUSTWORTHY_COMPANY_LABELS
 
@@ -792,103 +847,6 @@ def normalize_company_value(value: Any) -> str:
         return UNKNOWN_COMPANY_LABEL
     return company
 
-
-def resolve_company_name(row: Sequence[str], primary_idx: int, candidate_indexes: Sequence[int]) -> str:
-    values: List[str] = []
-    if 0 <= primary_idx < len(row):
-        values.append(clean_text(row[primary_idx]))
-    for idx in candidate_indexes:
-        if 0 <= idx < len(row):
-            values.append(clean_text(row[idx]))
-    for value in values:
-        if value and not is_untrustworthy_company_label(value):
-            return value
-    for value in values:
-        normalized = normalize_company_value(value)
-        if normalized:
-            return normalized
-    return ""
-
-
-def parse_google_sheets_csv(csv_text: str) -> List[RawJob]:
-    rows = list(csv.reader(StringIO(csv_text)))
-    if len(rows) < 2:
-        return []
-
-    header_idx = -1
-    for idx, row in enumerate(rows[:250]):
-        normalized = [norm_text(cell) for cell in row if norm_text(cell)]
-        if not normalized:
-            continue
-        has_title = any(
-            token in header
-            for header in normalized
-            for token in ("title", "role", "job", "position")
-        )
-        has_company = any(
-            token in header
-            for header in normalized
-            for token in ("company", "studio", "employer", "organization", "organisation")
-        )
-        has_location = "city" in normalized or "country" in normalized or "postal code" in normalized or "location" in normalized
-        if has_title and has_company and has_location:
-            header_idx = idx
-            break
-    if header_idx < 0:
-        return []
-
-    headers = [clean_text(header) for header in rows[header_idx]]
-    company_idx = find_company_column(headers)
-    company_candidates = company_name_candidate_indexes(headers, company_idx)
-    title_idx = find_column_index(headers, ["title", "role", "job", "position"], ["title", "role", "job", "position"])
-    city_idx = find_column_index(headers, ["city"], ["city"])
-    country_idx = find_column_index(headers, ["country"], ["country"])
-    location_idx = find_column_index(
-        headers,
-        ["location type", "work type", "fully remote", "remote"],
-        ["location", "work type", "remote", "fully remote"],
-    )
-    contract_idx = find_column_index(
-        headers,
-        ["employment type", "contract type", "employment", "contract", "job type"],
-        ["employment", "contract", "job type"],
-    )
-    link_idx = find_column_index(headers, ["job link", "url", "apply", "link"], ["job link", "url", "apply", "link"])
-    link_candidates = google_sheets_link_candidate_indexes(headers, link_idx)
-    sector_idx = find_column_index(
-        headers,
-        ["sector", "industry", "company type", "company category", "job category"],
-        ["sector", "industry", "company type", "company category", "job category"],
-    )
-
-    default_country = "Unknown"
-    if country_idx < 0 and "german games industry" in norm_text(csv_text[:3000]):
-        default_country = "Germany"
-
-    if title_idx < 0 or company_idx < 0:
-        return []
-
-    jobs: List[RawJob] = []
-    for idx in range(header_idx + 1, len(rows)):
-        row = rows[idx]
-        title = clean_text(row[title_idx] if title_idx < len(row) else "")
-        company = resolve_company_name(row, company_idx, company_candidates)
-        if not title or not company:
-            continue
-        jobs.append(
-            {
-                "sourceJobId": f"sheet-{idx}",
-                "title": title,
-                "company": company,
-                "city": clean_text(row[city_idx] if 0 <= city_idx < len(row) else ""),
-                "country": clean_text(row[country_idx] if 0 <= country_idx < len(row) else default_country),
-                "workType": clean_text(row[location_idx] if 0 <= location_idx < len(row) else "On-site"),
-                "contractType": clean_text(row[contract_idx] if 0 <= contract_idx < len(row) else ""),
-                "jobLink": resolve_google_sheets_job_link(row, link_candidates),
-                "sector": clean_text(row[sector_idx] if 0 <= sector_idx < len(row) else ""),
-            }
-        )
-    return jobs
 
 def parse_remote_ok_payload(payload: Any) -> List[RawJob]:
     if isinstance(payload, list):
@@ -989,7 +947,13 @@ def fetch_with_retries(url: str, fetch_text: Callable[[str, int], str], timeout_
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             if attempt < attempts - 1:
-                time.sleep(backoff_s * (2 ** attempt))
+                message = str(exc) if exc is not None else ""
+                # Special-case rate limiting. Async fetcher raises RuntimeError("HTTP 429 for <url>").
+                if "HTTP 429" in message:
+                    # Back off more aggressively so we don't hammer the provider.
+                    time.sleep(max(backoff_s * (2 ** attempt), 8.0 * (attempt + 1)))
+                else:
+                    time.sleep(backoff_s * (2 ** attempt))
     raise RuntimeError(str(last_error) if last_error else f"Unknown fetch error for {url}")
 
 
@@ -1015,31 +979,6 @@ def _static_adapter():
     from src.jobs.adapters import static
 
     return static
-
-
-def google_sheet_candidate_urls(sheet_id: str, gid: str) -> List[str]:
-    return _community_adapter().google_sheet_candidate_urls(sheet_id, gid)
-
-
-def run_google_sheets_source(
-    *,
-    fetch_text: Callable[[str, int], str],
-    timeout_s: int,
-    retries: int,
-    backoff_s: float,
-    sheet_id: str = DEFAULT_GOOGLE_SHEET_ID,
-    gid: str = DEFAULT_GOOGLE_SHEET_GID,
-    diagnostics_name: str = "",
-) -> List[RawJob]:
-    return _community_adapter().run_google_sheets_source(
-        fetch_text=fetch_text,
-        timeout_s=timeout_s,
-        retries=retries,
-        backoff_s=backoff_s,
-        sheet_id=sheet_id,
-        gid=gid,
-        diagnostics_name=diagnostics_name,
-    )
 
 
 def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
@@ -1362,26 +1301,6 @@ def canonicalize_job(
         resolved_job_link=resolved_job_link,
     )
     return normalized.to_dict() if normalized is not None else None
-
-
-def canonicalize_google_sheets_rows(
-    raw_rows: Sequence[RawJob],
-    *,
-    source: str,
-    fetched_at: str,
-    redirect_resolver: Optional[PooledRedirectResolver] = None,
-    redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
-) -> Tuple[List[RawJob], Counter, Dict[str, int]]:
-    from src.jobs import canonicalize as canonicalize_pkg
-
-    rows, drop_reasons, stats = canonicalize_pkg.canonicalize_google_sheets_rows(
-        raw_rows,
-        source=source,
-        fetched_at=fetched_at,
-        redirect_resolver=redirect_resolver,
-        redirect_concurrency=redirect_concurrency,
-    )
-    return [row.to_dict() for row in rows], drop_reasons, stats
 
 
 def compute_quality_score(job: RawJob) -> int:

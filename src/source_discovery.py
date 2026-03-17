@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import csv
 import json
 import os
 import re
 import sys
 import time
 from collections import Counter
+from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.error import HTTPError
@@ -20,6 +23,8 @@ from xml.etree import ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+import httpx
 
 from src.shared.regex import find_urls_in_text
 from src.shared.utils import now_iso
@@ -41,7 +46,7 @@ from src.baluffo_config import get_storage_defaults
 _STORAGE_DEFAULTS = get_storage_defaults()
 
 SEED_CATALOG_PATH = ROOT / "scripts" / "discovery_seed_catalog.json"
-DISCOVERY_STAGES = ("curated_seed", "provider_pattern", "web_provider", "generic_static")
+DISCOVERY_STAGES = ("curated_seed", "sheet_directory", "provider_pattern", "web_provider", "generic_static")
 SUPPORTED_PROVIDERS = ("greenhouse", "lever", "smartrecruiters", "workable", "teamtailor", "ashby", "personio")
 DISCOVERY_CONFIG_PATH = _STORAGE_DEFAULTS["source_discovery_config_path"]
 CAREERS_URL_HINTS = ("careers", "career", "jobs", "join-us", "open-positions", "vacancies", "work-with-us")
@@ -94,6 +99,256 @@ DISCOVERY_LOG_PATH = str(
     os.getenv("BALUFFO_DISCOVERY_LOG_PATH") or _STORAGE_DEFAULTS["source_discovery_log_path"]
 ).strip()
 
+GAME_STUDIOS_SHEET_ID = "1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4"
+GAME_STUDIOS_SHEET_GID = "567781753"
+GAME_STUDIOS_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{GAME_STUDIOS_SHEET_ID}/edit?gid={GAME_STUDIOS_SHEET_GID}"
+
+
+def game_studios_sheet_candidate_urls(sheet_id: str, gid: str) -> List[str]:
+    csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+    gviz_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+    pub_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv"
+    return [csv_url, gviz_csv_url, pub_csv_url]
+
+
+def _norm_header(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def _parse_sheet_openings_flag(value: Any) -> str:
+    raw = _norm_header(value)
+    if not raw:
+        return "unknown"
+    if raw in {"y", "yes", "true", "open", "hiring", "hiring now"}:
+        return "yes"
+    if raw in {"n", "no", "false", "closed", "not hiring"}:
+        return "no"
+    if "speculative" in raw or "speculativ" in raw:
+        return "speculative"
+    if "only" in raw and "speculative" in raw:
+        return "speculative"
+    if "?" in raw or "unknown" in raw:
+        return "unknown"
+    return "unknown"
+
+
+def parse_game_studio_sheet_csv(csv_text: str) -> List[Dict[str, Any]]:
+    rows = list(csv.reader(StringIO(str(csv_text or ""))))
+    if len(rows) < 2:
+        return []
+
+    header_idx = -1
+    for idx, row in enumerate(rows[:250]):
+        normalized_full = [_norm_header(cell) for cell in row]
+        normalized = [cell for cell in normalized_full if cell]
+        if not normalized:
+            continue
+        has_studio = "studio" in normalized_full or "company" in normalized_full
+        has_link = "link" in normalized_full or "url" in normalized_full
+        has_roles = any("roles" in cell or "hiring" in cell for cell in normalized_full if cell)
+        if has_studio and has_link and has_roles:
+            header_idx = idx
+            break
+    if header_idx < 0:
+        return []
+
+    headers = [_norm_header(cell) for cell in rows[header_idx]]
+    studio_idx = -1
+    link_idx = -1
+    openings_idx = -1
+    for i, h in enumerate(headers):
+        if studio_idx < 0 and (h == "studio" or "studio" in h or "company" in h):
+            studio_idx = i
+        if link_idx < 0 and (h == "link" or "link" in h or h == "url" or "website" in h):
+            link_idx = i
+        if openings_idx < 0 and ("roles open" in h or "roles" == h or "openings" in h or h == "open"):
+            openings_idx = i
+    if studio_idx < 0 or link_idx < 0:
+        return []
+
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for row in rows[header_idx + 1 :]:
+        studio = str(row[studio_idx]).strip() if studio_idx < len(row) else ""
+        link = str(row[link_idx]).strip() if link_idx < len(row) else ""
+        if not studio or not link:
+            continue
+        if _norm_header(studio) in {"studio", "studios", "company"}:
+            continue
+        if not (link.startswith("http://") or link.startswith("https://")):
+            continue
+        openings_flag = _parse_sheet_openings_flag(row[openings_idx]) if 0 <= openings_idx < len(row) else "unknown"
+        key = f"{studio}|{link}".lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"studio": studio, "careersUrl": link, "openingsFlag": openings_flag})
+    return out
+
+
+def discover_game_studio_sheet_candidates(
+    timeout_s: int,
+    *,
+    sheet_id: Optional[str] = None,
+    gid: Optional[str] = None,
+    fetcher=None,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    fetcher = fetcher or fetch_text
+    sheet_id = str(sheet_id or GAME_STUDIOS_SHEET_ID)
+    gid = str(gid or GAME_STUDIOS_SHEET_GID)
+    provider_candidates: List[Dict[str, Any]] = []
+    static_candidates: List[Dict[str, Any]] = []
+    failures: List[Dict[str, Any]] = []
+
+    csv_text = ""
+    last_error = ""
+    for url in game_studios_sheet_candidate_urls(sheet_id, gid):
+        try:
+            csv_text = fetcher(url, timeout_s)
+            if str(csv_text or "").strip():
+                break
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc)
+            continue
+    if not str(csv_text or "").strip():
+        failures.append(
+            {
+                "name": "game_studios_sheet",
+                "adapter": "sheet_directory",
+                "error": last_error or "sheet CSV fetch failed",
+                "stage": "directory_index_fetch",
+            }
+        )
+        return [], [], failures
+
+    raw_entries = parse_game_studio_sheet_csv(csv_text)
+    total_raw = len(raw_entries)
+    # Prefer rows explicitly marked as hiring/open. By default there is no cap;
+    # an optional BALUFFO_SHEET_DIRECTORY_MAX_ROWS env var can be used to limit
+    # the number of sheet rows considered.
+    def _entry_priority(row: Dict[str, Any]) -> int:
+        return 0 if str(row.get("openingsFlag") or "") == "yes" else 1
+
+    limit_raw = os.getenv("BALUFFO_SHEET_DIRECTORY_MAX_ROWS")
+    if limit_raw:
+        try:
+            max_rows = max(1, int(limit_raw))
+        except ValueError:
+            max_rows = None
+    else:
+        max_rows = None
+
+    entries_unsliced = sorted(raw_entries, key=_entry_priority)
+    entries = entries_unsliced[:max_rows] if max_rows is not None else entries_unsliced
+
+    # Emit a summary so we can correlate sheet size with candidates.
+    yes_count = sum(1 for row in entries if str(row.get("openingsFlag") or "") == "yes")
+    speculative_count = sum(1 for row in entries if str(row.get("openingsFlag") or "") == "speculative")
+    no_count = sum(1 for row in entries if str(row.get("openingsFlag") or "") == "no")
+    unknown_count = sum(1 for row in entries if str(row.get("openingsFlag") or "") not in ("yes", "speculative", "no"))
+    emit_log(
+        "Game studios sheet directory rows parsed: "
+        f"raw={total_raw}, usable={len(entries)}, "
+        f"openings=yes/{yes_count}, speculative/{speculative_count}, "
+        f"no/{no_count}, unknown/{unknown_count}."
+    )
+
+    invalid_url_count = 0
+    for entry in entries:
+        studio = str(entry.get("studio") or "").strip()
+        careers_url = str(entry.get("careersUrl") or "").strip()
+        openings_flag = str(entry.get("openingsFlag") or "unknown")
+        if not studio or not careers_url:
+            continue
+        try:
+            _ = urlparse(careers_url)
+        except ValueError as exc:
+            failures.append(
+                {
+                    "name": careers_url,
+                    "adapter": "sheet_directory",
+                    "error": f"invalid careers url: {exc}",
+                    "stage": "directory_detail_parse",
+                }
+            )
+            invalid_url_count += 1
+            continue
+        except Exception as exc:  # noqa: BLE001
+            failures.append(
+                {
+                    "name": careers_url or studio or "unknown",
+                    "adapter": "sheet_directory",
+                    "error": f"unexpected error validating careers url: {exc}",
+                    "stage": "directory_detail_parse",
+                }
+            )
+            invalid_url_count += 1
+            continue
+
+        evidence_types = ["sheet_directory", "sheet_row"]
+        evidence_score = 18
+        weak_signal = False
+        if openings_flag == "yes":
+            evidence_types.append("sheet_roles_open_yes")
+            evidence_score = 46
+        elif openings_flag == "speculative":
+            evidence_types.append("sheet_roles_open_speculative")
+            evidence_score = 18
+            weak_signal = True
+        elif openings_flag == "no":
+            evidence_types.append("sheet_roles_open_no")
+            evidence_score = 12
+            weak_signal = True
+        else:
+            evidence_types.append("sheet_roles_open_unknown")
+            evidence_score = 16
+            weak_signal = True
+
+        inferred = infer_web_candidate(careers_url, studio, nl_priority=False, discovery_method="sheet_directory")
+        if inferred:
+            inferred["discoveryStage"] = "sheet_directory"
+            inferred["discoveryMethod"] = "sheet_directory"
+            inferred["sourceDirectory"] = "game_studios_sheet"
+            inferred["sourceDirectoryUrl"] = GAME_STUDIOS_SHEET_URL
+            inferred["sourceDirectoryEntryUrl"] = careers_url
+            inferred["evidenceTypes"] = unique_string_list([*(inferred.get("evidenceTypes") or []), *evidence_types])
+            inferred["evidenceScore"] = max(int(inferred.get("evidenceScore") or 0), evidence_score)
+            inferred["weakSignal"] = bool(inferred.get("weakSignal")) or weak_signal
+            inferred["careersUrl"] = careers_url
+            provider_candidates.append(inferred)
+            continue
+        # For non-provider URLs, avoid fetching many career pages during candidate generation.
+        # We'll let the probe phase (limited by evidence thresholds) do the heavier fetching.
+        static_candidates.append(
+            {
+                "name": f"{studio} (Sheet)",
+                "studio": studio,
+                "company": studio,
+                "adapter": "static",
+                "pages": [careers_url],
+                "listing_url": careers_url,
+                "nlPriority": False,
+                "enabledByDefault": False,
+                "discoveryMethod": "sheet_directory",
+                "discoveryStage": "sheet_directory",
+                "careersUrl": careers_url,
+                "evidenceSource": "game_studios_sheet",
+                "evidenceTypes": unique_string_list(evidence_types),
+                "evidenceScore": int(evidence_score),
+                "weakSignal": bool(weak_signal),
+                "sourceDirectory": "game_studios_sheet",
+                "sourceDirectoryUrl": GAME_STUDIOS_SHEET_URL,
+                "sourceDirectoryEntryUrl": careers_url,
+            }
+        )
+
+    emit_log(
+        "Game studios sheet directory candidates after validation: "
+        f"provider={len(provider_candidates)}, static={len(static_candidates)}, invalid_urls={invalid_url_count}."
+    )
+
+    return collapse_competing_candidates(provider_candidates), unique_sources(static_candidates), failures
+
 STATIC_DISCOVERY_CANDIDATES: List[Dict[str, Any]] = [
     {"name": "Sandbox VR (Lever)", "studio": "Sandbox VR", "adapter": "lever", "account": "sandboxvr", "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json", "nlPriority": False},
     {"name": "Voodoo (Lever)", "studio": "Voodoo", "adapter": "lever", "account": "voodoo", "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json", "nlPriority": False},
@@ -105,6 +360,8 @@ STATIC_DISCOVERY_CANDIDATES: List[Dict[str, Any]] = [
     {"name": "Travian (Personio)", "studio": "Travian", "adapter": "personio", "feed_url": "https://travian.jobs.personio.de/xml", "nlPriority": True},
     {"name": "Jagex (Ashby)", "studio": "Jagex", "adapter": "ashby", "board_url": "https://jobs.ashbyhq.com/jagex/jobs", "nlPriority": False},
     {"name": "Scopely (Ashby)", "studio": "Scopely", "adapter": "ashby", "board_url": "https://jobs.ashbyhq.com/scopely/jobs", "nlPriority": False},
+    {"name": "Ubisoft (SmartRecruiters)", "studio": "Ubisoft", "adapter": "smartrecruiters", "company_id": "Ubisoft2", "api_url": "https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings", "nlPriority": False},
+    {"name": "Bandai Namco Entertainment America (Greenhouse)", "studio": "Bandai Namco Entertainment America Inc.", "adapter": "greenhouse", "slug": "bandainamco", "nlPriority": False},
 ]
 
 DEFAULT_STUDIO_SEEDS: List[Dict[str, Any]] = [
@@ -291,6 +548,27 @@ def fetch_text(url: str, timeout_s: int) -> str:
         return resp.read().decode(charset, errors="replace")
 
 
+def discovery_request_headers() -> Dict[str, str]:
+    return {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/131.0.0.0 Safari/537.36 BaluffoSourceDiscovery/2.1"
+        ),
+        "Accept": "application/json,text/html,text/xml,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+    }
+
+
+async def async_fetch_text_httpx(client: httpx.AsyncClient, url: str, timeout_s: int) -> str:
+    resp = await client.get(url, headers=discovery_request_headers())
+    resp.raise_for_status()
+    # Keep behavior similar to urlopen decode(errors=\"replace\").
+    resp.encoding = resp.encoding or "utf-8"
+    return resp.text
+
+
 def _http_code_from_error(exc: Exception) -> Optional[int]:
     if isinstance(exc, HTTPError):
         return int(exc.code)
@@ -322,6 +600,59 @@ def fetch_text_with_retry(url: str, timeout_s: int, *, adapter: str, fetcher=fet
     if last_exc:
         raise last_exc
     raise RuntimeError("fetch failed without an explicit error")
+
+
+async def async_fetch_text_with_retry(
+    url: str,
+    timeout_s: int,
+    *,
+    adapter: str,
+    fetcher,
+) -> str:
+    # Preserve small throttles for sensitive adapters.
+    if adapter in {"workable", "personio", "ashby"}:
+        await asyncio.sleep(0.18)
+    attempts = FETCH_MAX_RETRIES + 1
+    last_exc: Optional[Exception] = None
+    for attempt in range(attempts):
+        try:
+            return await fetcher(url, timeout_s)
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc if isinstance(exc, Exception) else Exception(str(exc))
+            if attempt >= FETCH_MAX_RETRIES or not _is_retryable_error(last_exc):
+                break
+            await asyncio.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("fetch failed without an explicit error")
+
+
+async def async_probe_candidate(
+    candidate: Dict[str, Any],
+    timeout_s: int,
+    *,
+    fetcher,
+) -> Tuple[bool, int, str]:
+    adapter = str(candidate.get("adapter") or "").strip().lower()
+    url = endpoint_url(candidate)
+    if not adapter or not url:
+        return False, 0, "missing adapter or URL"
+    valid, reason = validate_candidate_for_probe(candidate)
+    if not valid:
+        return False, 0, reason
+    probe_urls = [url, *fallback_probe_urls(candidate)]
+    seen_urls = set()
+    last_error = "probe failed"
+    for probe_url in probe_urls:
+        if not probe_url or probe_url in seen_urls:
+            continue
+        seen_urls.add(probe_url)
+        try:
+            text = await async_fetch_text_with_retry(probe_url, timeout_s, adapter=adapter, fetcher=fetcher)
+            return True, max(0, int(parse_probe_count(adapter, text))), ""
+        except Exception as exc:  # noqa: BLE001
+            last_error = f"{probe_url}: {exc}"
+    return False, 0, last_error
 
 
 def _is_valid_identity_token(token: str) -> bool:
@@ -359,6 +690,34 @@ def validate_candidate_for_probe(candidate: Dict[str, Any]) -> Tuple[bool, str]:
         valid = bool(listing) or bool(isinstance(pages, list) and any(str(item or "").strip() for item in pages))
         return (valid, "" if valid else "invalid static source")
     return True, ""
+
+
+def probe_concurrency_defaults() -> Dict[str, int]:
+    # Benchmarked defaults (scripts/benchmark_discovery_probe.py): moderate preset
+    # gives best speed vs stability; static kept lower to avoid blocking on slow sites.
+    def _env_int(name: str, default: int) -> int:
+        raw = str(os.getenv(name) or "").strip()
+        try:
+            return max(1, int(raw)) if raw else int(default)
+        except ValueError:
+            return int(default)
+
+    return {
+        "total": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TOTAL", 25),
+        "static": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_STATIC", 10),
+        "provider": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_PROVIDER", 25),
+        "teamtailor": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TEAMTAILOR", 15),
+    }
+
+
+def _probe_bucket_for(candidate: Dict[str, Any]) -> str:
+    adapter = str(candidate.get("adapter") or "").strip().lower()
+    if adapter == "static":
+        return "static"
+    if adapter == "teamtailor":
+        return "teamtailor"
+    # Everything else (greenhouse/lever/workable/smartrecruiters/ashby/personio) treated as provider.
+    return "provider"
 
 
 def fallback_probe_urls(candidate: Dict[str, Any]) -> List[str]:
@@ -1162,7 +1521,10 @@ def collapse_competing_candidates(candidates: Iterable[Dict[str, Any]]) -> List[
 
 
 def infer_web_candidate(url: str, studio: str, *, nl_priority: bool, discovery_method: str = "web_search") -> Optional[Dict[str, Any]]:
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
     host = (parsed.netloc or "").lower()
     path = parsed.path or ""
     evidence_types = ["provider_url"]
@@ -1466,6 +1828,16 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
     curated_seed_candidates = stage_curated_seed_candidates()
     emit_log(f"Curated seed generation complete: {len(curated_seed_candidates)} candidate(s).")
     streams.append(("curated_seed", curated_seed_candidates))
+    emit_log("Scanning game studios sheet directory for candidate sources.")
+    stage_status["phaseLabel"] = "Scanning game studios sheet directory"
+    provider_sheet_candidates, static_sheet_candidates, sheet_failures = discover_game_studio_sheet_candidates(timeout_s, fetcher=fetcher)
+    emit_log(
+        "Game studios sheet scan complete: "
+        f"provider={len(provider_sheet_candidates)}, static={len(static_sheet_candidates)}, failures={len(sheet_failures)}."
+    )
+    web_failures.extend(sheet_failures)
+    streams.append(("sheet_directory", provider_sheet_candidates))
+    streams.append(("sheet_directory", static_sheet_candidates))
     if mode == "dynamic":
         emit_log("Generating provider-pattern candidates from the studio seed catalog.")
         provider_pattern_candidates = build_pattern_candidates()
@@ -1701,6 +2073,9 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
     stage_status["phase"] = "probe"
     stage_status["phaseLabel"] = f"Probing {len(filtered)} candidate(s)"
     write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
+
+    # Build probe task set after cheap synchronous checks.
+    probe_inputs: List[Dict[str, Any]] = []
     for raw in filtered:
         processed_count += 1
         stage = str(raw.get("discoveryStage") or "provider_pattern")
@@ -1708,51 +2083,129 @@ def run_discovery(timeout_s: int, top_n: int, *, mode: str = "dynamic", include_
         if not valid:
             skipped_invalid += 1
             validation_skipped_count += 1
-            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": invalid_reason, "stage": "validation", "dropStage": "validation", "dropReason": "validation"})
-            if processed_count % 5 == 0:
-                write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
+            failures.append(
+                {
+                    "name": raw.get("name"),
+                    "adapter": raw.get("adapter"),
+                    "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                    "error": invalid_reason,
+                    "stage": "validation",
+                    "dropStage": "validation",
+                    "dropReason": "validation",
+                }
+            )
             continue
         evidence_score = int(raw.get("evidenceScore") or 0)
         threshold = _evidence_threshold_for_probe(raw, thresholds)
         if evidence_score < threshold:
             if stage == "provider_pattern":
                 skipped_low_evidence_probe_count += 1
-                failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"pattern evidence score {evidence_score} below probe threshold {threshold}", "stage": "probe_skipped", "dropStage": "low_evidence_skipped", "dropReason": "probe_threshold"})
-                if processed_count % 5 == 0:
-                    write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
+                failures.append(
+                    {
+                        "name": raw.get("name"),
+                        "adapter": raw.get("adapter"),
+                        "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                        "error": f"pattern evidence score {evidence_score} below probe threshold {threshold}",
+                        "stage": "probe_skipped",
+                        "dropStage": "low_evidence_skipped",
+                        "dropReason": "probe_threshold",
+                    }
+                )
                 continue
             if low_evidence_probes_used >= int(thresholds.get("lowEvidenceProbeLimit", LOW_EVIDENCE_PROBE_LIMIT)):
                 skipped_low_evidence_probe_count += 1
-                failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"evidence score {evidence_score} below probe threshold {threshold}", "stage": "probe_skipped", "dropStage": "low_evidence_skipped", "dropReason": "low_evidence_probe_cap"})
-                if processed_count % 5 == 0:
-                    write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
+                failures.append(
+                    {
+                        "name": raw.get("name"),
+                        "adapter": raw.get("adapter"),
+                        "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                        "error": f"evidence score {evidence_score} below probe threshold {threshold}",
+                        "stage": "probe_skipped",
+                        "dropStage": "low_evidence_skipped",
+                        "dropReason": "low_evidence_probe_cap",
+                    }
+                )
                 continue
             low_evidence_probes_used += 1
+        probe_inputs.append(raw)
+
+    async def _run_probe_batch(rows: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], bool, int, str]]:
+        limits = probe_concurrency_defaults()
+        total_sem = asyncio.Semaphore(int(limits["total"]))
+        bucket_sems = {
+            "static": asyncio.Semaphore(int(limits["static"])),
+            "provider": asyncio.Semaphore(int(limits["provider"])),
+            "teamtailor": asyncio.Semaphore(int(limits["teamtailor"])),
+        }
+
+        async def _call_fetch(url: str, t: int) -> str:
+            # If the caller provided a custom fetcher (tests), run it in a thread.
+            if fetcher is not fetch_text:
+                return await asyncio.to_thread(fetcher, url, t)
+            return await async_fetch_text_httpx(client, url, t)
+
+        async def _probe_one(row: Dict[str, Any]) -> Tuple[Dict[str, Any], bool, int, str]:
+            bucket = _probe_bucket_for(row)
+            bucket_sem = bucket_sems.get(bucket, bucket_sems["provider"])
+            async with total_sem:
+                async with bucket_sem:
+                    ok, jobs_found, error = await async_probe_candidate(row, timeout_s, fetcher=_call_fetch)
+                    return row, ok, jobs_found, error
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
+            tasks = [asyncio.create_task(_probe_one(row)) for row in rows]
+            results: List[Tuple[Dict[str, Any], bool, int, str]] = []
+            for fut in asyncio.as_completed(tasks):
+                results.append(await fut)
+            return results
+
+    # Execute probe batch concurrently.
+    completed = 0
+    for raw, ok, jobs_found, error in asyncio.run(_run_probe_batch(probe_inputs)):
+        completed += 1
+        stage = str(raw.get("discoveryStage") or "provider_pattern")
+        evidence_score = int(raw.get("evidenceScore") or 0)
         probed += 1
         probed_count_by_stage[stage] += 1
-        ok, jobs_found, error = probe_candidate(raw, timeout_s, fetcher=fetcher)
+
         if not ok:
             probe_failed_count += 1
             probe_stage = classify_probe_failure_stage(error)
-            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": error, "stage": probe_stage, "dropStage": "probe_failed", "dropReason": probe_stage})
-            if processed_count % 5 == 0:
-                write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
-            continue
-        if not _should_queue_candidate(raw, jobs_found, thresholds):
+            failures.append(
+                {
+                    "name": raw.get("name"),
+                    "adapter": raw.get("adapter"),
+                    "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                    "error": error,
+                    "stage": probe_stage,
+                    "dropStage": "probe_failed",
+                    "dropReason": probe_stage,
+                }
+            )
+        elif not _should_queue_candidate(raw, jobs_found, thresholds):
             queue_filtered_count += 1
-            failures.append({"name": raw.get("name"), "adapter": raw.get("adapter"), "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(), "error": f"candidate passed probe but evidence {evidence_score} is below queue threshold", "stage": "queue_filtered", "dropStage": "queue_filtered", "dropReason": "queue_threshold"})
-            if processed_count % 5 == 0:
-                write_progress_report(queueable_candidates, phase="probe", phase_label=str(stage_status.get("phaseLabel") or "Probing discovery candidates"))
-            continue
-        healthy += 1
-        score, reasons = compute_candidate_score(raw, jobs_found)
-        normalized = normalize_candidate(raw, score, reasons, jobs_found, probed_at=now_iso())
-        queueable_candidates.append(normalized)
-        adapter_counter[str(normalized.get("adapter") or "unknown")] += 1
-        method_counter[str(normalized.get("discoveryMethod") or "unknown")] += 1
-        if processed_count % 5 == 0:
+            failures.append(
+                {
+                    "name": raw.get("name"),
+                    "adapter": raw.get("adapter"),
+                    "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                    "error": f"candidate passed probe but evidence {evidence_score} is below queue threshold",
+                    "stage": "queue_filtered",
+                    "dropStage": "queue_filtered",
+                    "dropReason": "queue_threshold",
+                }
+            )
+        else:
+            healthy += 1
+            score, reasons = compute_candidate_score(raw, jobs_found)
+            normalized = normalize_candidate(raw, score, reasons, jobs_found, probed_at=now_iso())
+            queueable_candidates.append(normalized)
+            adapter_counter[str(normalized.get("adapter") or "unknown")] += 1
+            method_counter[str(normalized.get("discoveryMethod") or "unknown")] += 1
+
+        if completed % 10 == 0:
             emit_log(
-                f"Progress: processed={processed_count}/{len(filtered)}, probed={probed}, queued={len(queueable_candidates)}, "
+                f"Progress: completed={completed}/{len(probe_inputs)}, probed={probed}, queued={len(queueable_candidates)}, "
                 f"probe_misses={len([row for row in failures if str(row.get('stage')) == 'probe_miss'])}, "
                 f"skipped_low_evidence={skipped_low_evidence_probe_count}."
             )

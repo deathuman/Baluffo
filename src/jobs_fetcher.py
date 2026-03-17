@@ -38,6 +38,7 @@ except ModuleNotFoundError:
     from src.jobs.adapters import provider_api as _provider_api
     from src.jobs.adapters import social as _social
     from src.jobs.adapters import static as _static
+from src.jobs import canonicalize as _canonicalize
 from src.jobs.canonicalize import (
     LIGHTWEIGHT_OUTPUT_FIELDS,
     OPTIONAL_FIELDS,
@@ -106,6 +107,7 @@ parse_jobpostings_from_html = _parsers.parse_jobpostings_from_html
 parse_lever_jobs_payload = _parsers.parse_lever_jobs_payload
 parse_smartrecruiters_jobs_payload = _parsers.parse_smartrecruiters_jobs_payload
 parse_workable_jobs_payload = _parsers.parse_workable_jobs_payload
+parse_epic_games_jobs_payload = _parsers.parse_epic_games_jobs_payload
 parse_ashby_jobs_from_html = _parsers.parse_ashby_jobs_from_html
 parse_personio_feed_xml = _parsers.parse_personio_feed_xml
 parse_wellfound_html = _parsers.parse_wellfound_html
@@ -145,15 +147,16 @@ SOURCE_REPORT_META = _common.SOURCE_REPORT_META
 STUDIO_SOURCE_REGISTRY = _common.STUDIO_SOURCE_REGISTRY
 REMOTE_OK_URLS = _common.REMOTE_OK_URLS
 GAMES_INDUSTRY_URLS = _common.GAMES_INDUSTRY_URLS
+EPIC_CAREERS_API_URL = _common.EPIC_CAREERS_API_URL
 GREENHOUSE_JOBS_URL_TEMPLATE = _common.GREENHOUSE_JOBS_URL_TEMPLATE
-DEFAULT_GOOGLE_SHEET_ID = _common.DEFAULT_GOOGLE_SHEET_ID
-DEFAULT_GOOGLE_SHEET_GID = _common.DEFAULT_GOOGLE_SHEET_GID
+DEFAULT_GOOGLE_SHEET_ID = _community.DEFAULT_GOOGLE_SHEET_ID
+DEFAULT_GOOGLE_SHEET_GID = _community.DEFAULT_GOOGLE_SHEET_GID
 DEFAULT_TIMEOUT_S = _common.DEFAULT_TIMEOUT_S
 DEFAULT_RETRIES = _common.DEFAULT_RETRIES
 DEFAULT_BACKOFF_S = _common.DEFAULT_BACKOFF_S
 DEFAULT_FETCH_STRATEGY = _common.DEFAULT_FETCH_STRATEGY
 DEFAULT_ADAPTER_HTTP_CONCURRENCY = _common.DEFAULT_ADAPTER_HTTP_CONCURRENCY
-DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = _common.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
+DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = _community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
 DEFAULT_STATIC_DETAIL_CONCURRENCY = _common.DEFAULT_STATIC_DETAIL_CONCURRENCY
 DEFAULT_HOT_SOURCE_CADENCE_MINUTES = _common.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
 DEFAULT_COLD_SOURCE_CADENCE_MINUTES = _common.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
@@ -219,7 +222,7 @@ def canonicalize_job_with_reason(*args, **kwargs):
 
 
 def canonicalize_google_sheets_rows(*args, **kwargs):
-    rows, drop_reasons, stats = _common.canonicalize_google_sheets_rows(*args, **kwargs)
+    rows, drop_reasons, stats = _canonicalize.canonicalize_google_sheets_rows(*args, **kwargs)
     return [_legacy_row(row) for row in rows], drop_reasons, stats
 
 
@@ -290,6 +293,7 @@ __all__ = [
     "now_iso",
     "parse_args",
     "parse_ashby_jobs_from_html",
+    "parse_epic_games_jobs_payload",
     "parse_gamesindustry_html",
     "parse_google_sheets_csv",
     "parse_greenhouse_jobs_payload",

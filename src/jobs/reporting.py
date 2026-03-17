@@ -6,6 +6,7 @@ import hashlib
 from typing import Any, Dict, List, Sequence
 
 from src.jobs import common
+from src.jobs.adapters import community
 from src.jobs.models import CanonicalJob
 
 SCHEMA_VERSION = common.SCHEMA_VERSION
@@ -13,7 +14,7 @@ TARGET_PROFESSIONS = common.TARGET_PROFESSIONS
 DEFAULT_FETCH_STRATEGY = common.DEFAULT_FETCH_STRATEGY
 DEFAULT_ADAPTER_HTTP_CONCURRENCY = common.DEFAULT_ADAPTER_HTTP_CONCURRENCY
 DEFAULT_STATIC_DETAIL_CONCURRENCY = common.DEFAULT_STATIC_DETAIL_CONCURRENCY
-DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = common.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
+DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
 DEFAULT_HOT_SOURCE_CADENCE_MINUTES = common.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
 DEFAULT_COLD_SOURCE_CADENCE_MINUTES = common.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
 DEFAULT_SOCIAL_LOOKBACK_MINUTES = common.DEFAULT_SOCIAL_LOOKBACK_MINUTES
@@ -117,7 +118,7 @@ def build_browser_fallback_queue(
                 continue
             classification = norm_text(item.get("classification"))
             recommend = bool(item.get("browserFallbackRecommended"))
-            if not recommend or classification not in {"fetch_ok_extract_zero", "blocked_or_challenge", "timeout"}:
+            if not recommend or classification not in common.STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE:
                 continue
             source_id = clean_text(item.get("sourceId"))
             name = clean_text(item.get("name"))

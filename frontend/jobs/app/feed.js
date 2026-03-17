@@ -1,4 +1,4 @@
-import { set as stateHubSet } from "../shared/state-hub.js";
+import { set as stateHubSet } from "../../shared/state-hub.js";
 
 export async function initJobsFeed(deps) {
   const {

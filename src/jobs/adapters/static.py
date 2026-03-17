@@ -58,6 +58,7 @@ def run_static_studio_pages_source(
     deps = _runtime.facade()
     jobs: List[RawJob] = []
     errors: List[str] = []
+    warnings: List[str] = []
     seen_links = set()
     details: List[Dict[str, Any]] = []
     ignored_link_titles = {
@@ -92,7 +93,7 @@ def run_static_studio_pages_source(
     fetch_cache: Dict[str, str] = {}
     fetch_cache_lock = threading.Lock()
 
-    def fetch_html_cached(url: str) -> Tuple[str, bool]:
+    def fetch_html_cached(url: str, *, remaining_budget_s: float | None = None) -> Tuple[str, bool]:
         normalized = common.normalize_url(url) or common.clean_text(url)
         if not normalized:
             return "", False
@@ -101,7 +102,16 @@ def run_static_studio_pages_source(
         if cached is not None:
             return cached, True
         fetch_url = common.clean_text(url) or normalized
-        text = deps.fetch_with_retries(fetch_url, fetch_text, timeout_s, retries, backoff_s)
+        effective_timeout_s = int(timeout_s or 1)
+        effective_retries = int(retries or 0)
+        if remaining_budget_s is not None:
+            # Clamp request timeout so we don't exceed the per-source budget on one call.
+            remaining = float(max(0.0, remaining_budget_s))
+            effective_timeout_s = max(3, min(effective_timeout_s, int(remaining)))
+            # If retries could exceed the remaining budget, disable them.
+            if remaining <= float(effective_timeout_s) * float(max(1, effective_retries + 1)):
+                effective_retries = 0
+        text = deps.fetch_with_retries(fetch_url, fetch_text, effective_timeout_s, effective_retries, backoff_s)
         with fetch_cache_lock:
             fetch_cache[normalized] = text
         return text, False
@@ -132,7 +142,9 @@ def run_static_studio_pages_source(
         return False
 
     selected_sources = sources if isinstance(sources, list) else deps.registry_entries("static")
+    static_source_time_budget_s = max(5, int(os.getenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S") or 25))
     for source in selected_sources:
+        source_started = time.perf_counter()
         if shard and static_source_shard(source) != shard:
             continue
         source_name = common.clean_text(source.get("name")) or "static_source"
@@ -142,6 +154,8 @@ def run_static_studio_pages_source(
             "adapter": "static",
             "studio": common.clean_text(source.get("studio")) or company or source_name,
             "name": source_name,
+            "sourceId": common.clean_text(source.get("id")),
+            "pages": list(pages),
             "status": "ok",
             "fetchedCount": len(pages),
             "keptCount": 0,
@@ -184,11 +198,47 @@ def run_static_studio_pages_source(
                 pages=pages,
                 source_row=source,
                 parse_jobpostings_from_html=deps.parse_jobpostings_from_html,
+                maybe_fetch_kojima_job_listing_html=getattr(deps, "maybe_fetch_kojima_job_listing_html", None),
             )
             jobs.extend(plugin_jobs)
             entry_report["fetchedCount"] = len(pages)
             entry_report["keptCount"] = len(plugin_jobs)
-            entry_report["status"] = "ok"
+            plugin_meta = source.get("_staticPluginMeta") if isinstance(source, dict) else None
+            if isinstance(plugin_meta, dict):
+                entry_report["classification"] = common.clean_text(plugin_meta.get("classification"))
+                entry_report["browserFallbackRecommended"] = bool(plugin_meta.get("browserFallbackRecommended"))
+                entry_report["extractorHint"] = common.clean_text(plugin_meta.get("extractorHint"))
+                if plugin_meta.get("emptyConfirmed"):
+                    entry_report["emptyConfirmed"] = True
+                ats_links = plugin_meta.get("atsLinks")
+                if isinstance(ats_links, list):
+                    entry_report["atsLinks"] = [common.clean_text(v) for v in ats_links if common.clean_text(v)][:5]
+                meta_error = common.clean_text(plugin_meta.get("error"))
+                if meta_error and not entry_report.get("error"):
+                    entry_report["error"] = meta_error
+
+            # If plugin extracted nothing, treat as error unless it proved an explicit empty state
+            # or a non-fatal browser escalation classification.
+            if not plugin_jobs:
+                classification = common.clean_text(entry_report.get("classification"))
+                empty_confirmed = bool(entry_report.get("emptyConfirmed")) or classification == "empty_confirmed"
+                browser_recommended = bool(entry_report.get("browserFallbackRecommended"))
+                if not empty_confirmed:
+                    entry_report["status"] = "error"
+                    if not entry_report.get("error"):
+                        entry_report["error"] = "no jobs extracted from source pages"
+                    if not classification:
+                        entry_report["classification"] = "fetch_ok_extract_zero"
+                    if browser_recommended:
+                        warn_page = common.clean_text(pages[0]) if pages else ""
+                        warnings.append(f"static:{source_name}:{warn_page}: {entry_report.get('error')}")
+                    else:
+                        errors.append(f"static:{source_name}: {entry_report.get('error')}")
+                else:
+                    entry_report["status"] = "ok"
+                    entry_report["error"] = ""
+            else:
+                entry_report["status"] = "ok"
             details.append(entry_report)
             continue
         except NoPluginFoundError:
@@ -218,7 +268,8 @@ def run_static_studio_pages_source(
 
         def process_detail_link(detail: str, detail_title: str) -> Dict[str, Any]:
             fetch_started = time.perf_counter()
-            detail_html, cache_hit = fetch_html_cached(detail)
+            remaining_budget_s = float(static_source_time_budget_s) - float(time.perf_counter() - source_started)
+            detail_html, cache_hit = fetch_html_cached(detail, remaining_budget_s=remaining_budget_s)
             fetch_ms = int((time.perf_counter() - fetch_started) * 1000)
             parse_started = time.perf_counter()
             detail_jobs = deps.parse_jobpostings_from_html(
@@ -276,9 +327,17 @@ def run_static_studio_pages_source(
             page_url = common.clean_text(page)
             if not page_url:
                 continue
+            if (time.perf_counter() - source_started) > float(static_source_time_budget_s):
+                entry_report["status"] = "error"
+                entry_report["classification"] = "timeout"
+                entry_report["browserFallbackRecommended"] = True
+                entry_report["error"] = f"time budget exceeded ({static_source_time_budget_s}s)"
+                warnings.append(f"static:{source_name}:{page_url}: time_budget_exceeded")
+                break
             try:
                 listing_fetch_started = time.perf_counter()
-                html, cache_hit = fetch_html_cached(page_url)
+                remaining_budget_s = float(static_source_time_budget_s) - float(time.perf_counter() - source_started)
+                html, cache_hit = fetch_html_cached(page_url, remaining_budget_s=remaining_budget_s)
                 stats["listing_fetch_ms"] += int((time.perf_counter() - listing_fetch_started) * 1000)
                 if cache_hit:
                     stats["fetch_cache_hits"] += 1
@@ -352,7 +411,14 @@ def run_static_studio_pages_source(
                         try:
                             detail_result = future.result()
                         except Exception as exc:  # noqa: BLE001
-                            errors.append(f"static:{source_name}:{detail}: {exc}")
+                            msg = str(exc)
+                            if "HTTP 403" in msg:
+                                entry_report["classification"] = "blocked_or_challenge"
+                                entry_report["browserFallbackRecommended"] = True
+                                entry_report["error"] = msg
+                                warnings.append(f"static:{source_name}:{detail}: {msg}")
+                            else:
+                                errors.append(f"static:{source_name}:{detail}: {exc}")
                             continue
                         stats["fetch_cache_hits"] += 1 if detail_result.get("cacheHit") else 0
                         stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
@@ -366,7 +432,21 @@ def run_static_studio_pages_source(
                             jobs.append(row)
                 stats["detail_fetch_ms"] += max(0, int((time.perf_counter() - detail_fetch_started) * 1000) - int(stats["detail_fetch_ms"] or 0))
             except Exception as exc:  # noqa: BLE001
-                errors.append(f"static:{source_name}:{page_url}: {exc}")
+                msg = str(exc)
+                if "HTTP 403" in msg:
+                    entry_report["status"] = "error"
+                    entry_report["classification"] = "blocked_or_challenge"
+                    entry_report["browserFallbackRecommended"] = True
+                    entry_report["error"] = msg
+                    warnings.append(f"static:{source_name}:{page_url}: {msg}")
+                elif "Network error" in msg or "timed out" in msg or "Timeout" in msg:
+                    entry_report["status"] = "error"
+                    entry_report["classification"] = "timeout"
+                    entry_report["browserFallbackRecommended"] = True
+                    entry_report["error"] = msg
+                    warnings.append(f"static:{source_name}:{page_url}: {msg}")
+                else:
+                    errors.append(f"static:{source_name}:{page_url}: {exc}")
         entry_report["keptCount"] = max(0, len(jobs) - kept_before)
         stats["jobs_emitted"] = int(entry_report["keptCount"])
         if int(stats["detail_pages_visited"] or 0) > 0:
@@ -376,9 +456,15 @@ def run_static_studio_pages_source(
             "staticDuplicateLinkRejected": int(link_rejections.get("duplicate_link", 0)),
             "staticDetailParseEmpty": int(link_rejections.get("detail_parse_empty", 0)),
         }
-        if entry_report["keptCount"] == 0 and pages:
+        if entry_report["keptCount"] == 0 and pages and not common.clean_text(entry_report.get("classification")):
             entry_report["status"] = "error"
+            entry_report["classification"] = "fetch_ok_extract_zero"
+            entry_report["browserFallbackRecommended"] = True
             entry_report["error"] = "no jobs extracted from source pages"
+            # If we're running a single static source loader, treat this as a hard error
+            # so it isn't silently reported as ok-with-zero.
+            if len(selected_sources) == 1:
+                errors.append(f"static:{source_name}: no jobs extracted from source pages")
         details.append(entry_report)
 
     diag_studio = "multiple"
@@ -396,7 +482,7 @@ def run_static_studio_pages_source(
         adapter="static",
         studio=diag_studio,
         details=details,
-        partial_errors=errors,
+        partial_errors=(warnings + errors),
     )
     if jobs:
         return jobs

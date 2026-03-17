@@ -9,8 +9,12 @@ from unittest import mock
 
 from src import jobs_fetcher as jf
 from src import jobs_fetcher_registry as jfr
+from src.jobs import common as jobs_common
 from src.scrapers import runner as scrapy_runner
 from tests.helpers.temp_paths import workspace_tmpdir
+from src.jobs.adapters import _runtime as runtime_resolver
+from src.jobs.adapters.plugins import default_registry
+from src.jobs.adapters.plugins.types import AdapterPluginContext
 
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -29,6 +33,68 @@ def test_parse_google_sheets_csv_fixture() -> None:
     assert len(rows) == 2
     assert rows[0]["title"] == "Gameplay Programmer"
     assert rows[0]["company"] == "Pixel Forge"
+
+
+def test_runtime_facade_falls_back_to_main_module_for_jobs_fetcher_runs() -> None:
+    prev = runtime_resolver.sys.modules.get("src.jobs_fetcher")
+    try:
+        runtime_resolver.sys.modules.pop("src.jobs_fetcher", None)
+        main_mod = runtime_resolver.sys.modules.get("__main__")
+        class _Spec:
+            name = "src.jobs_fetcher"
+        if main_mod is None:
+            raise RuntimeError("__main__ module missing")
+        prev_spec = getattr(main_mod, "__spec__", None)
+        main_mod.__spec__ = _Spec()  # type: ignore[attr-defined]
+        resolved = runtime_resolver.facade()
+        assert resolved is main_mod
+        assert callable(getattr(resolved, "parse_ashby_jobs_from_html", None))
+        assert callable(getattr(resolved, "parse_personio_feed_xml", None))
+        assert callable(getattr(resolved, "parse_epic_games_jobs_payload", None))
+        main_mod.__spec__ = prev_spec  # type: ignore[attr-defined]
+    finally:
+        if prev is not None:
+            runtime_resolver.sys.modules["src.jobs_fetcher"] = prev
+
+
+def test_static_plugin_registry_selects_supercell_plugin() -> None:
+    ctx = AdapterPluginContext(family="static", adapter_key="static", source_identity="supercell.com")
+    plugin, selection = default_registry.select(ctx)
+    assert selection.plugin_name in {"supercell"}
+
+
+def test_registry_entries_static_filters_redundant_when_provider_present() -> None:
+    """When the registry has both a provider source (e.g. SmartRecruiters CD PROJEKT RED) and a static source for the same careers host, static entries for that host are excluded."""
+    provider_entry = {
+        "name": "CD PROJEKT RED (SmartRecruiters)",
+        "studio": "CD PROJEKT RED",
+        "adapter": "smartrecruiters",
+        "company_id": "CDPROJEKTRED",
+        "api_url": "https://api.smartrecruiters.com/v1/companies/CDPROJEKTRED/postings",
+        "enabledByDefault": True,
+    }
+    static_cdprojekt = {
+        "name": "Cdprojektred (Manual Website)",
+        "studio": "Cdprojektred",
+        "adapter": "static",
+        "pages": ["https://www.cdprojektred.com/en/jobs"],
+        "enabledByDefault": True,
+    }
+    static_other = {
+        "name": "Other Studio (Manual Website)",
+        "studio": "Other",
+        "adapter": "static",
+        "pages": ["https://other.com/careers"],
+        "enabledByDefault": True,
+    }
+    patched_registry = [provider_entry, static_cdprojekt, static_other]
+    with mock.patch.object(jobs_common, "STUDIO_SOURCE_REGISTRY", patched_registry):
+        static_entries = jobs_common.registry_entries("static")
+    # Redundant static (cdprojektred) must be filtered out; other static must remain.
+    names = [e.get("name") for e in static_entries]
+    assert "Other Studio (Manual Website)" in names
+    assert "Cdprojektred (Manual Website)" not in names
+
 
 def test_parse_google_sheets_csv_supports_job_type_link_headers() -> None:
         csv_text = (
@@ -114,6 +180,20 @@ def test_parse_args_uses_config_backed_output_and_social_defaults() -> None:
             sys.argv = prev_argv
         assert Path(args.output_dir) == jf.DEFAULT_OUTPUT_DIR
         assert Path(args.social_config_path) == jf.DEFAULT_SOCIAL_CONFIG_PATH
+
+
+def test_default_source_loaders_includes_all_registry_sources() -> None:
+    """All DEFAULT_SOURCE_LOADER_NAMES (except static_studio_pages*) are attempted via loaders or static shards."""
+    base_expected = {
+        n for n in jfr.DEFAULT_SOURCE_LOADER_NAMES
+        if n not in {"static_studio_pages", "static_studio_pages_a_i", "static_studio_pages_j_r", "static_studio_pages_s_z"}
+    }
+    loaders_with_social = jf.default_source_loaders(social_enabled=True)
+    loader_names = {name for name, _ in loaders_with_social}
+    for name in base_expected:
+        assert name in loader_names, f"Registry source {name} should be in default loaders when social_enabled=True"
+    assert len(loaders_with_social) >= len(base_expected), "Loaders should include all base sources plus static shards"
+
 
 def test_parse_remote_ok_payload_filters_game_roles() -> None:
         payload = json.loads(_fixture("remoteok.json"))

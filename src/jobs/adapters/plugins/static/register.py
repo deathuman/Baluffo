@@ -21,7 +21,15 @@ from src.jobs.models import RawJob
 
 from . import example_com
 from . import example_org
+from . import activision
+from . import blizzard
+from . import kojima
+from . import larian
 from . import littlechicken
+from . import milestone
+from . import remedy
+from . import sheet_studios
+from . import supercell
 
 
 def _pilot_can_handle(ctx: AdapterPluginContext) -> bool:
@@ -49,7 +57,15 @@ def register_static_plugins() -> None:
     for mod, name, priority in [
         (example_com, "example_com", 90),
         (example_org, "example_org", 90),
+        (supercell, "supercell", 90),
+        (remedy, "remedy", 90),
+        (milestone, "milestone", 90),
+        (kojima, "kojima", 90),
+        (activision, "activision", 90),
+        (blizzard, "blizzard", 90),
+        (larian, "larian", 90),
         (littlechicken, "littlechicken", 90),
+        (sheet_studios, "sheet_studios", 90),
     ]:
         default_registry.register(
             SimpleAdapterPlugin(

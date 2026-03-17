@@ -21,7 +21,7 @@ def default_source_loaders(
     )
 
     google_sheet_loaders: Dict[str, common.SourceLoader] = {}
-    for source in common.GOOGLE_SHEETS_SOURCES:
+    for source in community.GOOGLE_SHEETS_SOURCES:
         source_name = common.clean_text(source.get("name"))
         sheet_id = common.clean_text(source.get("sheetId"))
         gid = common.clean_text(source.get("gid") or "0")
