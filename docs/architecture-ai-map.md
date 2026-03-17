@@ -24,6 +24,10 @@ admin bridge (local HTTP API): src/admin_bridge.py
       -> routes/: HTTP route handlers (GET/POST)
   -> remaining: server startup/wiring + some legacy compatibility wrappers
 jobs feed + discovery/sync scripts: src/jobs_fetcher.py, src/source_discovery.py, src/source_sync.py
+  -> source discovery: `import src.source_discovery` loads the package (src/source_discovery/);
+      CLI and full run_discovery still delegate to the legacy script (source_discovery.py) via orchestrator.
+  -> Package modules: config, sheet_directory, web_search, provider_patterns, static_candidates,
+      scoring, io_runtime, reporting, probe, orchestrator.
 
 desktop launcher/runtime: src/ship/desktop_app.py
   -> spawns local site + bridge
@@ -242,7 +246,7 @@ Key stages:
 | Bridge sync state management | `src/bridge/sync_state.py` | `src/bridge/sync_service.py`, `src/admin_bridge.py` |
 | Bridge sync operations | `src/bridge/sync_service.py` | `src/source_sync.py`, `src/admin_bridge.py` |
 | Bridge registry operations | `src/bridge/registry_service.py` | `src/admin_bridge.py`, `src/source_registry.py` |
-| Bridge discovery operations | `src/bridge/discovery_service.py` | `src/admin_bridge.py`, `src/source_discovery.py` |
+| Bridge discovery operations | `src/bridge/discovery_service.py` | `src/admin_bridge.py`, `src/source_discovery/` (package), `src/source_discovery.py` (CLI/legacy) |
 | Bridge pipeline operations | `src/bridge/pipeline_service.py` | `src/admin_bridge.py` |
 | Bridge HTTP routes | `src/bridge/routes/get_routes.py` | `src/bridge/routes/post_routes.py`, `src/admin_bridge.py` |
 | UI Selection & Interaction | `frontend/shared/ui/selectors.js` | `frontend/*/app/dom.js`, `frontend/*/app/runtime.js` |

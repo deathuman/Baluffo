@@ -100,6 +100,29 @@ Saved job record fields:
   - precedence: `CLI > env > defaults`
   - default file source: `baluffo.config.json` plus optional `baluffo.config.local.json`
 
+### Source discovery package (Python implementation)
+
+- Core modules live under `src/source_discovery/`:
+  - `config.py`: paths, global constants, thresholds, default config, studio seeds.
+  - `sheet_directory.py`: Google Sheet parsing and sheet-directory candidates.
+  - `web_search.py`: HTTP fetch/retry helpers, DuckDuckGo queries, web-search candidates.
+  - `provider_patterns.py`: seed-based \"likely provider\" patterns for Greenhouse/Lever/etc.
+  - `static_candidates.py`: static-site heuristics (HTML-only jobs pages).
+  - `gamesmap.py`: Gamesmap index/detail parsing and Gamesmap candidates.
+  - `probe.py`: candidate validation, probe URL selection, job-count parsing.
+  - `core.py`: scoring, confidence, queue balancing, fingerprint helpers.
+  - `io_runtime.py`: registry IO + endpoint URL helpers.
+  - `reporting.py`: logging and candidate-stream merging.
+  - `orchestrator.py`: `parse_args`, `run_discovery`, and the end-to-end discovery flow.
+- To extend discovery:
+  - Add/adjust thresholds or default config in `config.py`.
+  - Add new HTML/provider parsing in `web_search.py`, `static_candidates.py`, or `gamesmap.py`.
+  - Keep the public surface (`run_discovery`, `discover_gamesmap_candidates`, `probe_candidate`, etc.) stable; tests rely on it.
+- Python tests that define the discovery contract:
+  - `tests/test_source_discovery.py::test_discovery_report_snapshot_contract`
+  - `tests/test_source_discovery.py::test_run_discovery_*`
+  - `tests/test_source_discovery.py::test_parse_gamesmap_*` and related helpers.
+
 ### GitHub source sync (multi-PC)
 - Source sync is now packaged GitHub App based.
 - Ship or local package the GitHub App config JSON as `packaging/github-app-sync-config.json`, or override with `BALUFFO_SYNC_APP_CONFIG_PATH`.

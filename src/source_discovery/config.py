@@ -1,0 +1,235 @@
+from __future__ import annotations
+
+"""Configuration and static defaults for source discovery.
+
+This module owns:
+- paths (seed catalog, discovery config/log files)
+- global discovery constants (stages, thresholds, adapter caps)
+- default studio seeds and discovery config payload
+"""
+
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, List
+
+from src.baluffo_config import get_storage_defaults
+
+
+ROOT = Path(__file__).resolve().parents[1]
+# For SEED_CATALOG_PATH we need repo root (parent of src)
+_REPO_ROOT = ROOT.parent
+_STORAGE_DEFAULTS = get_storage_defaults()
+
+SEED_CATALOG_PATH = _REPO_ROOT / "scripts" / "discovery_seed_catalog.json"
+DISCOVERY_STAGES: tuple[str, ...] = (
+    "curated_seed",
+    "sheet_directory",
+    "provider_pattern",
+    "web_provider",
+    "generic_static",
+)
+SUPPORTED_PROVIDERS: tuple[str, ...] = (
+    "greenhouse",
+    "lever",
+    "smartrecruiters",
+    "workable",
+    "teamtailor",
+    "ashby",
+    "personio",
+)
+DISCOVERY_CONFIG_PATH = Path(str(_STORAGE_DEFAULTS["source_discovery_config_path"]))
+CAREERS_URL_HINTS: tuple[str, ...] = (
+    "careers",
+    "career",
+    "jobs",
+    "join-us",
+    "open-positions",
+    "vacancies",
+    "work-with-us",
+)
+GENERIC_STATIC_BLOCKED_DOMAINS: tuple[str, ...] = (
+    "linkedin.com",
+    "indeed.com",
+    "glassdoor.com",
+    "ziprecruiter.com",
+    "monster.com",
+    "welcome to the jungle.com",
+    "welcometothejungle.com",
+)
+FOCUS_KEYWORDS: tuple[str, ...] = (
+    "technical artist",
+    "tech artist",
+    "environment artist",
+    "environment art",
+    "world artist",
+    "terrain artist",
+)
+DUCKDUCKGO_HTML_SEARCH = "https://duckduckgo.com/html/?q={query}"
+WEB_SEARCH_QUERY_SUFFIX: tuple[str, ...] = ("careers", "jobs")
+FETCH_MAX_RETRIES = 2
+RETRY_BACKOFF_SECONDS = 1.2
+RETRYABLE_HTTP_CODES = {429, 500, 502, 503, 504}
+MAX_SEARCH_LINKS_PER_QUERY = 8
+MIN_PROVIDER_EVIDENCE_TO_PROBE = 18
+MIN_STATIC_EVIDENCE_TO_PROBE = 22
+MIN_PROVIDER_EVIDENCE_TO_QUEUE = 26
+MIN_STATIC_EVIDENCE_TO_QUEUE = 34
+LOW_EVIDENCE_PROBE_LIMIT = 12
+PATTERN_PROVIDER_PROBE_THRESHOLD = 30
+PATTERN_PROVIDER_QUEUE_THRESHOLD = 40
+DOMAIN_QUEUE_CAP_DEFAULT = 2
+ADAPTER_QUEUE_CAPS: Dict[str, int] = {
+    "greenhouse": 4,
+    "lever": 4,
+    "smartrecruiters": 4,
+    "workable": 4,
+    "teamtailor": 4,
+    "ashby": 4,
+    "personio": 3,
+    "static": 6,
+}
+
+DEFAULT_DISCOVERY_THRESHOLDS: Dict[str, int] = {
+    "minProviderEvidenceToProbe": MIN_PROVIDER_EVIDENCE_TO_PROBE,
+    "minStaticEvidenceToProbe": MIN_STATIC_EVIDENCE_TO_PROBE,
+    "minProviderEvidenceToQueue": MIN_PROVIDER_EVIDENCE_TO_QUEUE,
+    "minStaticEvidenceToQueue": MIN_STATIC_EVIDENCE_TO_QUEUE,
+    "lowEvidenceProbeLimit": LOW_EVIDENCE_PROBE_LIMIT,
+    "patternProviderProbeThreshold": PATTERN_PROVIDER_PROBE_THRESHOLD,
+    "patternProviderQueueThreshold": PATTERN_PROVIDER_QUEUE_THRESHOLD,
+}
+
+DISCOVERY_LOG_PATH = str(
+    os.getenv("BALUFFO_DISCOVERY_LOG_PATH") or _STORAGE_DEFAULTS["source_discovery_log_path"]
+).strip()
+
+GAME_STUDIOS_SHEET_ID = "1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4"
+GAME_STUDIOS_SHEET_GID = "567781753"
+GAME_STUDIOS_SHEET_URL = (
+    f"https://docs.google.com/spreadsheets/d/{GAME_STUDIOS_SHEET_ID}/edit?gid={GAME_STUDIOS_SHEET_GID}"
+)
+
+DEFAULT_STUDIO_SEEDS: List[Dict[str, Any]] = [
+    {
+        "studio": "Guerrilla Games",
+        "aliases": ["guerrilla-games", "guerrillagames"],
+        "nlPriority": True,
+        "likelyProviders": ["greenhouse"],
+        "careersUrl": "https://www.guerrilla-games.com/join",
+    },
+    {
+        "studio": "Nixxes",
+        "aliases": ["nixxes"],
+        "nlPriority": True,
+        "likelyProviders": ["static"],
+        "careersUrl": "https://www.nixxes.com/careers",
+    },
+    {
+        "studio": "Vertigo Games",
+        "aliases": ["vertigo-games", "vertigogames"],
+        "nlPriority": True,
+        "likelyProviders": ["workable", "smartrecruiters"],
+        "careersUrl": "https://vertigo-games.com/careers",
+    },
+    {
+        "studio": "Triumph Studios",
+        "aliases": ["triumph-studios", "triumphstudios"],
+        "nlPriority": True,
+        "likelyProviders": ["static"],
+        "careersUrl": "https://www.triumphstudios.com/careers",
+    },
+    {
+        "studio": "Little Chicken",
+        "aliases": ["littlechicken", "little-chicken"],
+        "nlPriority": True,
+        "likelyProviders": ["static"],
+        "careersUrl": "https://www.littlechicken.nl/about-us/jobs/",
+    },
+]
+
+DEFAULT_DISCOVERY_CONFIG: Dict[str, Any] = {
+    "gamesmap": {
+        "enabled": False,
+        "baseUrl": "https://www.gamesmap.de",
+        "indexUrls": [
+            "https://www.gamesmap.de/en",
+        ],
+        "preferEnglish": True,
+        "websiteOnlyFallback": False,
+        "maxDetailPages": 60,
+        "allowedCategoryTokens": [
+            "developer",
+            "publisher",
+            "developer and publisher",
+            "pc",
+            "console",
+            "mobile",
+            "browser",
+            "online",
+            "vr",
+            "ar",
+            "serious games",
+        ],
+        "blockedCategoryTokens": [
+            "association",
+            "university",
+            "education",
+            "public institution",
+            "government",
+            "service provider",
+        ],
+    },
+    "thresholds": dict(DEFAULT_DISCOVERY_THRESHOLDS),
+}
+
+STATIC_DISCOVERY_CANDIDATES: List[Dict[str, Any]] = [
+    {"name": "Sandbox VR (Lever)", "studio": "Sandbox VR", "adapter": "lever", "account": "sandboxvr", "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json", "nlPriority": False},
+    {"name": "Voodoo (Lever)", "studio": "Voodoo", "adapter": "lever", "account": "voodoo", "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json", "nlPriority": False},
+    {"name": "CD PROJEKT RED (SmartRecruiters)", "studio": "CD PROJEKT RED", "adapter": "smartrecruiters", "company_id": "CDPROJEKTRED", "api_url": "https://api.smartrecruiters.com/v1/companies/CDPROJEKTRED/postings", "nlPriority": False},
+    {"name": "Gameloft (SmartRecruiters)", "studio": "Gameloft", "adapter": "smartrecruiters", "company_id": "Gameloft", "api_url": "https://api.smartrecruiters.com/v1/companies/Gameloft/postings", "nlPriority": False},
+    {"name": "Hutch (Workable)", "studio": "Hutch", "adapter": "workable", "account": "hutch", "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true", "nlPriority": False},
+    {"name": "Wargaming (Workable)", "studio": "Wargaming", "adapter": "workable", "account": "wargaming", "api_url": "https://apply.workable.com/api/v1/widget/accounts/wargaming?details=true", "nlPriority": False},
+    {"name": "InnoGames (Personio)", "studio": "InnoGames", "adapter": "personio", "feed_url": "https://innogames.jobs.personio.de/xml", "nlPriority": True},
+    {"name": "Travian (Personio)", "studio": "Travian", "adapter": "personio", "feed_url": "https://travian.jobs.personio.de/xml", "nlPriority": True},
+    {"name": "Jagex (Ashby)", "studio": "Jagex", "adapter": "ashby", "board_url": "https://jobs.ashbyhq.com/jagex/jobs", "nlPriority": False},
+    {"name": "Scopely (Ashby)", "studio": "Scopely", "adapter": "ashby", "board_url": "https://jobs.ashbyhq.com/scopely/jobs", "nlPriority": False},
+    {"name": "Ubisoft (SmartRecruiters)", "studio": "Ubisoft", "adapter": "smartrecruiters", "company_id": "Ubisoft2", "api_url": "https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings", "nlPriority": False},
+    {"name": "Bandai Namco Entertainment America (Greenhouse)", "studio": "Bandai Namco Entertainment America Inc.", "adapter": "greenhouse", "slug": "bandainamco", "nlPriority": False},
+]
+
+
+def load_studio_seeds() -> List[Dict[str, Any]]:
+    try:
+        payload = json.loads(SEED_CATALOG_PATH.read_text(encoding="utf-8"))
+        if isinstance(payload, list):
+            return [row for row in payload if isinstance(row, dict)] or list(DEFAULT_STUDIO_SEEDS)
+    except (OSError, json.JSONDecodeError):
+        pass
+    return list(DEFAULT_STUDIO_SEEDS)
+
+
+def load_discovery_config(config_path: Path | str | None = None) -> Dict[str, Any]:
+    path = Path(config_path) if config_path is not None else Path(DISCOVERY_CONFIG_PATH)
+    payload = dict(DEFAULT_DISCOVERY_CONFIG)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raw = {}
+    if not isinstance(raw, dict):
+        return payload
+    gamesmap = raw.get("gamesmap")
+    if isinstance(gamesmap, dict):
+        merged = dict(payload.get("gamesmap") or {})
+        merged.update(gamesmap)
+        payload["gamesmap"] = merged
+    thresholds = raw.get("thresholds")
+    if isinstance(thresholds, dict):
+        merged_thresholds = dict(payload.get("thresholds") or DEFAULT_DISCOVERY_THRESHOLDS)
+        merged_thresholds.update(thresholds)
+        payload["thresholds"] = merged_thresholds
+    return payload
+
+
+STUDIO_SEEDS: List[Dict[str, Any]] = load_studio_seeds()
+
