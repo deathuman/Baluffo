@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Sequence
 
 from src.jobs import common
 from src.jobs.adapters import community
+from src.scrapers.domain_profiles import domain_profile_for_url, pick_canonical_listing_url
 from src.jobs.models import CanonicalJob
 
 SCHEMA_VERSION = common.SCHEMA_VERSION
@@ -124,25 +125,31 @@ def build_browser_fallback_queue(
             name = clean_text(item.get("name"))
             studio = clean_text(item.get("studio"))
             pages = item.get("pages") if isinstance(item.get("pages"), list) else []
-            clean_pages = [clean_text(page) for page in pages if clean_text(page)] or [""]
-            for page in clean_pages:
-                dedupe_key = hashlib.sha1("|".join(["scrapy_static", source_id or name, page]).encode("utf-8")).hexdigest()
-                if dedupe_key in seen:
-                    continue
-                seen.add(dedupe_key)
-                rows.append(
-                    {
-                        "dedupeKey": dedupe_key,
-                        "adapter": "scrapy_static",
-                        "sourceId": source_id,
-                        "name": name,
-                        "studio": studio,
-                        "page": page,
-                        "classification": classification,
-                        "reason": clean_text(item.get("error")) or classification,
-                        "generatedAt": clean_text(generated_at),
-                    }
-                )
+            clean_pages = [clean_text(page) for page in pages if clean_text(page)]
+            canonical = pick_canonical_listing_url(clean_pages) if clean_pages else None
+            if not canonical:
+                continue
+            # Do not add job_provider domains (e.g. Remedy/Jobylon) to the queue; they stay on static/specialized path.
+            profile = domain_profile_for_url(canonical)
+            if clean_text(profile.get("job_provider")):
+                continue
+            dedupe_key = hashlib.sha1("|".join(["scrapy_static", source_id or name, canonical]).encode("utf-8")).hexdigest()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            rows.append(
+                {
+                    "dedupeKey": dedupe_key,
+                    "adapter": "scrapy_static",
+                    "sourceId": source_id,
+                    "name": name,
+                    "studio": studio,
+                    "page": canonical,
+                    "classification": classification,
+                    "reason": clean_text(item.get("error")) or classification,
+                    "generatedAt": clean_text(generated_at),
+                }
+            )
     rows.sort(key=lambda row: (clean_text(row.get("studio")), clean_text(row.get("name")), clean_text(row.get("page"))))
     return rows
 

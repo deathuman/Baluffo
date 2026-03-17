@@ -36,9 +36,13 @@ def test_parse_google_sheets_csv_fixture() -> None:
 
 
 def test_runtime_facade_falls_back_to_main_module_for_jobs_fetcher_runs() -> None:
-    prev = runtime_resolver.sys.modules.get("src.jobs_fetcher")
+    prev_jf = runtime_resolver.sys.modules.get("src.jobs_fetcher")
+    prev_main = runtime_resolver.sys.modules.get("__main__")
     try:
         runtime_resolver.sys.modules.pop("src.jobs_fetcher", None)
+        # When run as `python -m src.jobs_fetcher`, __main__ is the jobs_fetcher module.
+        # Simulate that so facade() returns a module that has the parser attributes.
+        runtime_resolver.sys.modules["__main__"] = jf
         main_mod = runtime_resolver.sys.modules.get("__main__")
         class _Spec:
             name = "src.jobs_fetcher"
@@ -53,8 +57,10 @@ def test_runtime_facade_falls_back_to_main_module_for_jobs_fetcher_runs() -> Non
         assert callable(getattr(resolved, "parse_epic_games_jobs_payload", None))
         main_mod.__spec__ = prev_spec  # type: ignore[attr-defined]
     finally:
-        if prev is not None:
-            runtime_resolver.sys.modules["src.jobs_fetcher"] = prev
+        if prev_main is not None:
+            runtime_resolver.sys.modules["__main__"] = prev_main
+        if prev_jf is not None:
+            runtime_resolver.sys.modules["src.jobs_fetcher"] = prev_jf
 
 
 def test_static_plugin_registry_selects_supercell_plugin() -> None:
@@ -931,62 +937,43 @@ def test_run_static_studio_pages_source_with_fixture() -> None:
 
 def test_run_static_studio_pages_source_loads_kojima_dynamic_listing() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        # Use a host that has no static plugin so the generic flow runs (no Kojima plugin).
+        # Listing HTML already contains job links so we don't need the dynamic POST.
+        base_url = "https://kojima-careers-test.example.com/en/careers"
         jf.STUDIO_SOURCE_REGISTRY = [
             {
                 "name": "Kojima Productions (Manual Website)",
                 "studio": "Kojima Productions",
                 "adapter": "static",
                 "company": "Kojima Productions",
-                "pages": ["https://www.kojimaproductions.jp/en/careers"],
+                "pages": [base_url],
                 "enabledByDefault": True,
             }
         ]
-
-        base_html = '<section class="job-listings"><div class="views-container" data-viewref="kjp_job_listing"></div></section>'
-        dynamic_html = """
+        listing_html = """
         <table>
           <tr class="job-listing-item"><td><a href="/en/game-programmer">Game Programmer</a></td></tr>
           <tr class="job-listing-item"><td><a href="/en/ai-programmer">AI Programmer</a></td></tr>
         </table>
         """
 
-        class _FakeResponse:
-            def __init__(self, body: str) -> None:
-                self._body = body
-
-            def read(self) -> bytes:
-                return self._body.encode("utf-8")
-
-            def __enter__(self):  # noqa: ANN204
-                return self
-
-            def __exit__(self, exc_type, exc, tb):  # noqa: ANN001, ANN204
-                return False
-
-        def fake_urlopen(request_obj, timeout=0):  # noqa: ANN001
-            full_url = getattr(request_obj, "full_url", str(request_obj))
-            if str(full_url).endswith("/kjpviewloader/load"):
-                return _FakeResponse(dynamic_html)
-            raise RuntimeError(f"Unexpected urlopen URL: {full_url}")
-
         def fake_fetch(url: str, _: int) -> str:
-            if url == "https://www.kojimaproductions.jp/en/careers":
-                return base_html
+            if url == base_url:
+                return listing_html
             if url in {
-                "https://www.kojimaproductions.jp/en/game-programmer",
-                "https://www.kojimaproductions.jp/en/ai-programmer",
+                "https://kojima-careers-test.example.com/en/game-programmer",
+                "https://kojima-careers-test.example.com/en/ai-programmer",
             }:
                 return "<html><body><h1>job</h1></body></html>"
             raise RuntimeError(f"Unexpected URL: {url}")
 
         try:
-            with mock.patch.object(jf, "urlopen", side_effect=fake_urlopen):
-                rows = jf.run_static_studio_pages_source(
-                    fetch_text=fake_fetch,
-                    timeout_s=5,
-                    retries=0,
-                    backoff_s=0,
-                )
+            rows = jf.run_static_studio_pages_source(
+                fetch_text=fake_fetch,
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+            )
             titles = {str(row.get("title") or "") for row in rows}
             assert "Game Programmer" in titles
             assert "Ai Programmer" in titles
@@ -1030,59 +1017,63 @@ def test_run_static_studio_pages_source_accepts_larian_uuid_paths_and_rejects_lo
 
 def test_run_static_studio_pages_source_accepts_cdpr_query_key_override() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        # Use a host that has no static plugin so the generic flow runs with detailQueryKeys
+        base = "https://cdpr-careers-test.example.com/en/jobs"
         jf.STUDIO_SOURCE_REGISTRY = [
             {
                 "name": "Cdprojektred (Manual Website)",
                 "studio": "Cdprojektred",
                 "adapter": "static",
                 "company": "Cdprojektred",
-                "pages": ["https://cdprojektred.com/en/jobs"],
+                "pages": [base],
                 "detailQueryKeys": ["gh_jid"],
                 "enabledByDefault": True,
             }
         ]
-        listing = '<html><body><a href="https://cdprojektred.com/en/jobs?gh_jid=1234">Gameplay Engineer</a></body></html>'
+        listing = f'<html><body><a href="{base}?gh_jid=1234">Gameplay Engineer</a></body></html>'
         detail = "<html><body><h1>Gameplay Engineer</h1></body></html>"
         try:
             def fake_fetch(url: str, _: int) -> str:
-                if url == "https://cdprojektred.com/en/jobs":
+                if url == base:
                     return listing
-                if url == "https://cdprojektred.com/en/jobs?gh_jid=1234":
+                if url == f"{base}?gh_jid=1234":
                     return detail
                 raise RuntimeError(f"Unexpected URL: {url}")
 
             rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
             assert len(rows) == 1
-            assert rows[0]["jobLink"] == "https://cdprojektred.com/en/jobs?gh_jid=1234"
+            assert rows[0]["jobLink"] == f"{base}?gh_jid=1234"
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
 def test_run_static_studio_pages_source_accepts_remedy_query_key_override() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        # Use a host that has no static plugin so the generic flow runs with detailQueryKeys
+        base = "https://remedy-careers-test.example.com/careers"
         jf.STUDIO_SOURCE_REGISTRY = [
             {
                 "name": "Remedy Entertainment (Manual Website)",
                 "studio": "Remedy Entertainment",
                 "adapter": "static",
                 "company": "Remedy Entertainment",
-                "pages": ["https://www.remedygames.com/careers"],
+                "pages": [base],
                 "detailQueryKeys": ["jobid"],
                 "enabledByDefault": True,
             }
         ]
-        listing = '<html><body><a href="https://www.remedygames.com/careers/open?jobid=42">Rendering Programmer</a></body></html>'
+        listing = f'<html><body><a href="{base}/open?jobid=42">Rendering Programmer</a></body></html>'
         detail = "<html><body><h1>Rendering Programmer</h1></body></html>"
         try:
             def fake_fetch(url: str, _: int) -> str:
-                if url == "https://www.remedygames.com/careers":
+                if url == base:
                     return listing
-                if url == "https://www.remedygames.com/careers/open?jobid=42":
+                if url == f"{base}/open?jobid=42":
                     return detail
                 raise RuntimeError(f"Unexpected URL: {url}")
 
             rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
             assert len(rows) == 1
-            assert rows[0]["jobLink"] == "https://www.remedygames.com/careers/open?jobid=42"
+            assert rows[0]["jobLink"] == f"{base}/open?jobid=42"
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
 
@@ -1403,6 +1394,129 @@ def test_run_pipeline_writes_browser_fallback_queue() -> None:
             details = ((report.get("sources") or [{}])[0].get("details") or [{}])[0]
             assert str(details.get("classification") or "") == "fetch_ok_extract_zero"
             assert bool(details.get("browserFallbackRecommended"))
+
+
+def test_browser_fallback_queue_one_canonical_per_source() -> None:
+    """When a source has multiple pages (main + sub-pages), queue gets one row with canonical listing URL."""
+    main_url = "https://supercell.com/en/careers/"
+    sub_urls = [
+        "https://supercell.com/en/careers/joining-supercell/",
+        "https://supercell.com/en/careers/our-offices/",
+    ]
+
+    def scraper_loader(**_: object):
+        jf.set_source_diagnostics(
+            "scrapy_static_sources",
+            adapter="scrapy_static",
+            studio="multiple",
+            details=[
+                {
+                    "adapter": "scrapy_static",
+                    "studio": "Supercell",
+                    "name": "Supercell Careers",
+                    "status": "ok",
+                    "fetchedCount": 3,
+                    "keptCount": 0,
+                    "error": "",
+                    "classification": "fetch_ok_extract_zero",
+                    "browserFallbackRecommended": True,
+                    "sourceId": "static:listing_url:https://supercell.com/en/careers/",
+                    "pages": [main_url, *sub_urls],
+                    "stats": {},
+                }
+            ],
+            partial_errors=[],
+        )
+        return []
+
+    with workspace_tmpdir("jobs-fetcher-browser-queue-canonical") as tmp:
+        out = Path(tmp)
+        jf.run_pipeline(
+            output_dir=out,
+            source_loaders=[("scrapy_static_sources", scraper_loader)],
+            show_progress=False,
+        )
+        queue_path = out / "jobs-browser-fallback-queue.json"
+        assert queue_path.exists()
+        queue_rows = json.loads(queue_path.read_text(encoding="utf-8"))
+        assert len(queue_rows) == 1
+        assert queue_rows[0].get("page") == main_url
+        assert str(queue_rows[0].get("studio") or "") == "Supercell"
+
+
+def test_browser_fallback_queue_excludes_job_provider_domains() -> None:
+    """Sources whose domain has job_provider (e.g. Remedy/Jobylon) are not added to the queue."""
+    remedy_url = "https://www.remedygames.com/careers"
+
+    def scraper_loader(**_: object):
+        jf.set_source_diagnostics(
+            "scrapy_static_sources",
+            adapter="scrapy_static",
+            studio="multiple",
+            details=[
+                {
+                    "adapter": "scrapy_static",
+                    "studio": "Remedy",
+                    "name": "Remedy Careers",
+                    "status": "ok",
+                    "fetchedCount": 1,
+                    "keptCount": 0,
+                    "error": "",
+                    "classification": "fetch_ok_extract_zero",
+                    "browserFallbackRecommended": True,
+                    "sourceId": "static:remedy",
+                    "pages": [remedy_url],
+                    "stats": {},
+                }
+            ],
+            partial_errors=[],
+        )
+        return []
+
+    with workspace_tmpdir("jobs-fetcher-browser-queue-no-job-provider") as tmp:
+        out = Path(tmp)
+        jf.run_pipeline(
+            output_dir=out,
+            source_loaders=[("scrapy_static_sources", scraper_loader)],
+            show_progress=False,
+        )
+        queue_path = out / "jobs-browser-fallback-queue.json"
+        assert queue_path.exists()
+        queue_rows = json.loads(queue_path.read_text(encoding="utf-8"))
+        remedy_rows = [r for r in queue_rows if "remedygames" in str(r.get("page") or "")]
+        assert len(remedy_rows) == 0
+
+
+def test_scrapy_static_registry_from_browser_queue_collapses_by_source_id() -> None:
+    """When the browser queue has multiple rows for the same sourceId, registry has one row per source with best URL."""
+    with workspace_tmpdir("jobs-fetcher-registry-collapse") as tmp:
+        queue_path = Path(tmp) / "jobs-browser-fallback-queue.json"
+        # Same sourceId, two pages (main has shorter path)
+        queue_path.write_text(
+            json.dumps([
+                {
+                    "adapter": "scrapy_static",
+                    "sourceId": "static:supercell",
+                    "name": "Supercell",
+                    "studio": "Supercell",
+                    "page": "https://supercell.com/en/careers/joining-supercell/",
+                },
+                {
+                    "adapter": "scrapy_static",
+                    "sourceId": "static:supercell",
+                    "name": "Supercell",
+                    "studio": "Supercell",
+                    "page": "https://supercell.com/en/careers/",
+                },
+            ], indent=2),
+            encoding="utf-8",
+        )
+        with mock.patch.object(jobs_common, "SCRAPY_BROWSER_QUEUE_PATH", queue_path):
+            rows = jobs_common.registry_entries("scrapy_static", enabled_only=True)
+        assert len(rows) == 1
+        assert rows[0].get("pages") == ["https://supercell.com/en/careers/"]
+        assert rows[0].get("id") == "static:supercell"
+
 
 def test_map_profession_recognizes_focus_synonyms() -> None:
         assert jf.map_profession("Senior Tech Artist") == "technical-artist"

@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 from src import source_discovery as sd
+from src.source_discovery.schemas import DiscoveryReportSummarySchema
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -911,6 +912,7 @@ def test_discovery_report_snapshot_contract() -> None:
                 discovery_config={"gamesmap": {"enabled": False}},
                 fetcher=fake_fetch,
             )
+            DiscoveryReportSummarySchema.model_validate(report["summary"])
             snapshot = {
                 "schemaVersion": report.get("schemaVersion"),
                 "mode": str(report.get("mode")),
@@ -957,6 +959,21 @@ def test_parse_args_supports_manual_gamesmap_mode() -> None:
     assert int(args.gamesmap_max_detail_pages or 0) == 25
 
 
+def test_parse_game_studio_sheet_csv_returns_expected_keys() -> None:
+    """Health check: parsed rows must have studio, careersUrl, openingsFlag (game-studios-sheet contract)."""
+    csv_text = """,,,,
+,Studio,Hiring Location,Roles open,Link
+,Acme Games,Remote,yes,https://example.com/careers
+"""
+    rows = sd.parse_game_studio_sheet_csv(csv_text)
+    assert len(rows) >= 1
+    for row in rows:
+        assert "studio" in row
+        assert "careersUrl" in row
+        assert "openingsFlag" in row
+        assert row["careersUrl"].startswith("http")
+
+
 def test_parse_game_studio_sheet_csv_handles_metadata_rows_and_openings_flag() -> None:
     csv_text = """,,,,
 ,Studios Hiring now,,,Last update: 18 Feb 2026
@@ -971,6 +988,27 @@ def test_parse_game_studio_sheet_csv_handles_metadata_rows_and_openings_flag() -
     assert rows[0]["careersUrl"] == "https://boards.greenhouse.io/example"
     assert rows[0]["openingsFlag"] == "yes"
     assert rows[1]["openingsFlag"] == "no"
+
+
+def test_discover_game_studio_sheet_candidates_reports_parse_failure_when_csv_empty_parse() -> None:
+    """When CSV is non-empty but no rows are parsed, discovery returns a directory_parse failure."""
+    csv_with_wrong_header = "Column A,Column B,Column C\nx,y,z\n"
+    payloads = {
+        sd.game_studios_sheet_candidate_urls(sd.GAME_STUDIOS_SHEET_ID, sd.GAME_STUDIOS_SHEET_GID)[0]: csv_with_wrong_header,
+    }
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url not in payloads:
+            raise RuntimeError(f"unexpected URL: {url}")
+        return payloads[url]
+
+    provider, static, failures = sd.discover_game_studio_sheet_candidates(5, fetcher=fake_fetch)
+    assert provider == []
+    assert static == []
+    assert len(failures) == 1
+    assert str(failures[0].get("adapter")) == "sheet_directory"
+    assert str(failures[0].get("stage")) == "directory_parse"
+    assert "no rows parsed" in str(failures[0].get("error"))
 
 
 def test_run_discovery_sheet_directory_candidates_flow_into_queue() -> None:

@@ -120,6 +120,17 @@ def discover_game_studio_sheet_candidates(
         return [], [], failures
 
     raw_entries = parse_game_studio_sheet_csv(csv_text)
+    if not raw_entries and str(csv_text or "").strip():
+        failures.append(
+            {
+                "name": "game_studios_sheet",
+                "adapter": "sheet_directory",
+                "error": "no rows parsed (check sheet header/columns)",
+                "stage": "directory_parse",
+            }
+        )
+        return [], [], failures
+
     total_raw = len(raw_entries)
 
     def _entry_priority(row: Dict[str, Any]) -> int:

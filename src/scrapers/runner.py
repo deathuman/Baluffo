@@ -18,7 +18,7 @@ if str(_ROOT) not in sys.path:
 from src.scrapers import domain_profiles
 from src.scrapers.helpers import clean_text as _clean_text, safe_id as _safe_id, to_float as _to_float, to_int as _to_int
 from src.scrapers.providers.jobylon_v1 import extract_jobylon_v1_jobs
-from src.scrapers.settings import SCRAPY_SETTINGS_DEFAULTS
+from src.scrapers.settings import SCRAPY_PLAYWRIGHT_SETTINGS, SCRAPY_SETTINGS_DEFAULTS
 from src.scrapers.spiders.generic_careers import GenericCareersSpider
 from typing import Any, Dict, List, Tuple
 
@@ -49,6 +49,8 @@ def _stats_subset(stats: Dict[str, Any]) -> Dict[str, Any]:
         "downloader/response_count": _to_int(stats.get("downloader/response_count")),
         "downloader/response_status_count/200": _to_int(stats.get("downloader/response_status_count/200")),
         "retry/count": _to_int(stats.get("retry/count")),
+        "autothrottle/current_delay": _to_float(stats.get("autothrottle/current_delay")),
+        "autothrottle/start_delay": _to_float(stats.get("autothrottle/start_delay")),
         "item_scraped_count": _to_int(stats.get("item_scraped_count")),
         "finish_reason": _clean_text(stats.get("finish_reason")),
         "candidate_links_found": _to_int(stats.get("candidate_links_found")),
@@ -117,6 +119,8 @@ def _validate_input(payload: Any) -> Tuple[Dict[str, Any] | None, str]:
     if "backoff_s" not in runtime:
         return None, "Invalid schema: runtime.backoff_s is required"
 
+    use_browser = bool(runtime.get("use_browser", False))
+
     timeout_s = _to_int(runtime.get("timeout_s"), -1)
     retries = _to_int(runtime.get("retries"), -1)
     backoff_s = _to_float(runtime.get("backoff_s"), -1.0)
@@ -143,6 +147,7 @@ def _validate_input(payload: Any) -> Tuple[Dict[str, Any] | None, str]:
             "retries": retries,
             "backoff_s": backoff_s,
             "download_delay": download_delay,
+            "use_browser": use_browser,
         },
     }, ""
 
@@ -251,8 +256,17 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
         settings_dict["DOWNLOAD_TIMEOUT"] = runtime.get("timeout_s")
     if runtime.get("retries") is not None:
         settings_dict["RETRY_TIMES"] = runtime.get("retries")
-    settings = Settings(settings_dict)
 
+    use_browser = bool(runtime.get("use_browser", False))
+    if use_browser:
+        try:
+            import scrapy_playwright  # noqa: F401
+            for key, value in SCRAPY_PLAYWRIGHT_SETTINGS.items():
+                settings_dict[key] = value
+        except ImportError:
+            use_browser = False
+
+    settings = Settings(settings_dict)
     crawler_process = CrawlerProcess(settings=settings)
     crawler = crawler_process.create_crawler(GenericCareersSpider)
 
@@ -266,6 +280,7 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
             source_name_value=source_name,
             profile=domain_profile,
             container=container,
+            use_browser=use_browser,
         )
         crawler_process.start(stop_after_crawl=True)
     except Exception as exc:  # noqa: BLE001

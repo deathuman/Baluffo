@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List
+from urllib.parse import urlparse, urlunparse
 
 from src.jobs import common
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.scrapers.domain_profiles import domain_profile_for_url
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
@@ -30,6 +32,14 @@ def run(
     page_url = common.clean_text(pages[0])
     if not page_url:
         return []
+    # Jobs list is at /search-results; use it when the source only has the root URL.
+    profile = domain_profile_for_url(page_url)
+    canonical_path = common.clean_text(profile.get("canonical_listing_path"))
+    if canonical_path and canonical_path.startswith("/"):
+        parsed = urlparse(page_url)
+        path = common.clean_text(parsed.path)
+        if not path or path == "/":
+            page_url = urlunparse((parsed.scheme or "https", parsed.netloc, canonical_path, "", "", ""))
 
     company = common.clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Activision"
     source_id = (source_row.get("id") or "").strip() or "activision"

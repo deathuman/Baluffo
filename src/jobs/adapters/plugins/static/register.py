@@ -23,6 +23,7 @@ from . import example_com
 from . import example_org
 from . import activision
 from . import blizzard
+from . import cdprojektred
 from . import kojima
 from . import larian
 from . import littlechicken
@@ -63,6 +64,7 @@ def register_static_plugins() -> None:
         (kojima, "kojima", 90),
         (activision, "activision", 90),
         (blizzard, "blizzard", 90),
+        (cdprojektred, "cdprojektred", 90),
         (larian, "larian", 90),
         (littlechicken, "littlechicken", 90),
         (sheet_studios, "sheet_studios", 90),

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List
+import re
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
 
 from src.jobs import common
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.scrapers import domain_profiles
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
@@ -22,6 +25,7 @@ def run(
     pages: List[str],
     source_row: Dict[str, Any],
     parse_jobpostings_from_html: Callable[..., List[Dict[str, Any]]] | None = None,
+    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
     **kwargs: Any,
 ) -> List[RawJob]:
     _ = (retries, backoff_s, kwargs)
@@ -34,19 +38,28 @@ def run(
     company = common.clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Supercell"
     source_id = (source_row.get("id") or "").strip() or "supercell"
 
+    html = ""
     try:
         html = fetch_text(page_url, timeout_s)
     except Exception as exc:  # noqa: BLE001
-        classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = {
-            "classification": classification,
-            "browserFallbackRecommended": bool(recommend),
-            "extractorHint": "fetch_failed",
-            "error": str(exc),
-        }
-        return []
+        if try_playwright:
+            html, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
+        if not html:
+            classification, recommend = _heuristics.classify_fetch_exception(exc)
+            source_row["_staticPluginMeta"] = {
+                "classification": classification,
+                "browserFallbackRecommended": bool(recommend),
+                "extractorHint": "fetch_failed",
+                "error": str(exc),
+            }
+            return []
 
-    ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url)
+    ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url) if html else []
+    if html and _heuristics.detect_js_shell(html) and try_playwright:
+        html2, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
+        if html2:
+            html = html2
+            ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url)
     if _heuristics.detect_js_shell(html):
         source_row["_staticPluginMeta"] = {
             "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE,
@@ -62,6 +75,41 @@ def run(
         fallback_company=company,
         fallback_source_id_prefix=f"static:{source_id}",
     )
+    if not rows and html:
+        profile = domain_profiles.domain_profile_for_url(page_url)
+        base_host = (urlparse(page_url).netloc or "").lower()
+        seen_links: set[str] = set()
+        for match in re.finditer(
+            r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+            html,
+        ):
+            href = common.clean_text(match.group(1))
+            anchor_inner = match.group(2) or ""
+            anchor_text = common.strip_html_text(
+                re.sub(r"(?is)<[^>]+>", " ", anchor_inner)
+            ).strip() or "Job"
+            if not href:
+                continue
+            absolute = urljoin(page_url, href)
+            if (urlparse(absolute).netloc or "").lower() != base_host:
+                continue
+            if not domain_profiles.is_probable_job_detail_url(absolute, profile):
+                continue
+            if absolute in seen_links:
+                continue
+            seen_links.add(absolute)
+            rows.append({
+                "title": anchor_text[:200],
+                "company": company,
+                "jobLink": absolute,
+                "sourceJobId": f"{source_id}:{absolute}",
+                "city": "",
+                "country": "",
+                "workType": "",
+                "contractType": "",
+                "sector": "Game",
+                "postedAt": "",
+            })
     for row in rows:
         if isinstance(row, dict):
             row["adapter"] = "static"

@@ -23,6 +23,7 @@ from src.jobs import state as state_pkg
 from src.jobs import transport as transport_pkg
 from src.jobs.adapters import community as community_adapter
 from src.jobs.adapters import default_source_loaders as package_default_source_loaders
+from src.jobs.adapters import static as static_adapter
 from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob
@@ -409,6 +410,13 @@ def run_pipeline(
         finally:
             gate.release()
 
+    _try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None
+    try:
+        from src.bridge.source_check_http import try_fetch_with_playwright
+        _try_playwright = try_fetch_with_playwright
+    except ImportError:
+        pass
+
     def execute_loader(name: str, loader: SourceLoader) -> Tuple[Dict[str, Any], List[CanonicalJob]]:
         source_started = time.perf_counter()
         base_meta = SOURCE_REPORT_META.get(name, {})
@@ -455,6 +463,8 @@ def run_pipeline(
             if norm_text(report.get("adapter")) == "static":
                 loader_kwargs["static_detail_concurrency"] = static_detail_concurrency
                 loader_kwargs["source_state_rows"] = source_state_rows
+                if _try_playwright is not None:
+                    loader_kwargs["try_playwright"] = _try_playwright
             try:
                 signature = inspect.signature(loader)
                 accepts_var_kwargs = any(
@@ -690,6 +700,24 @@ def run_pipeline(
 
     if using_default_loaders:
         append_excluded_default_sources(source_reports)
+
+    # Attach provenance for static sources (e.g. game_studios_sheet) so fetch report can filter by sourceDirectory
+    _static_name_to_row: Dict[str, Dict[str, Any]] = {}
+    for _row in common.registry_entries("static"):
+        _name = static_adapter.static_source_name_for_registry_row(_row)
+        _static_name_to_row[_name] = _row
+    for _report in source_reports:
+        if not isinstance(_report, dict):
+            continue
+        _name = clean_text(_report.get("name"))
+        _reg = _static_name_to_row.get(_name)
+        if _reg is not None:
+            if clean_text(_reg.get("sourceDirectory")):
+                _report["sourceDirectory"] = clean_text(_reg.get("sourceDirectory"))
+            if clean_text(_reg.get("sourceDirectoryUrl")):
+                _report["sourceDirectoryUrl"] = clean_text(_reg.get("sourceDirectoryUrl"))
+            if clean_text(_reg.get("listing_url")):
+                _report["listingUrl"] = clean_text(_reg.get("listing_url"))
 
     deduplicator = CanonicalDeduplicator()
     deduped_rows = deduplicator.process(canonical_rows)

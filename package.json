@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev:bridge": "npm run check:python-version && python src/admin_bridge.py",
-    "dev:pipeline": "npm run check:python-version && python src/jobs/pipeline.py",
+    "dev:pipeline": "npm run check:python-version && node -e \"const {spawnSync}=require('child_process');const r=spawnSync('python',['src/jobs/pipeline.py'],{env:Object.assign({},process.env,{PYTHONPATH:process.cwd()}),stdio:'inherit'});process.exit(r.status||0)\"",
     "build": "python scripts/orchestrator.py build",
     "test": "npm run test:unit && npm run test:smoke",
     "verify": "python scripts/orchestrator.py verify",

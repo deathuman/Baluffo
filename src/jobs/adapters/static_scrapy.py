@@ -170,6 +170,7 @@ def run_scrapy_static_source(
                 "retries": int(retries),
                 "backoff_s": float(backoff_s),
                 "download_delay": 1.0,
+                "use_browser": True,
             },
         }
 

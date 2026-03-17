@@ -141,3 +141,27 @@ The Admin Bridge ([admin_bridge.py](file:///c:/Users/Andrea/Documents/GitHubRepo
 **Config precedence:** CLI args → Environment (`BALUFFO_*`) → `baluffo.config.local.json` → `baluffo.config.json` → code defaults
 
 **Machine-local overrides:** Use `baluffo.config.local.json` for settings that must not be committed.
+
+---
+
+## 7. Source discovery contract
+
+Source discovery writes `data/source-discovery-report.json` and `data/source-discovery-candidates.json`. Treat the following as stable until a dedicated plan.
+
+**Pydantic validation:** Report summary shape is defined and validated at the discovery output boundary. See **src/source_discovery/schemas.py** for `DiscoveryReportSummarySchema` and `DiscoveryReportSchema`. The orchestrator validates the summary with `DiscoveryReportSummarySchema.model_validate(report["summary"])` before writing the report; invalid shape raises `ValidationError`. The snapshot test `test_discovery_report_snapshot_contract` also validates the summary so the contract is enforced in CI.
+
+### Stable public APIs (`src/source_discovery`)
+
+Do not change signatures or remove without a dedicated plan:
+
+- `run_discovery(...)`
+- `discover_gamesmap_candidates(...)`
+- `probe_candidate(...)`, `async_probe_candidate(...)`, `validate_candidate_for_probe(...)`
+- `parse_gamesmap_detail_page(...)`, `parse_gamesmap_index_entries(...)`, `build_static_candidate_from_page(...)`
+
+### Data contracts
+
+- **source-discovery-report.json** and **source-discovery-candidates.json** must remain shape-compatible.
+- **Report summary** must retain: counts, stage maps (`generatedCountByStage`, `survivedDedupeCountByStage`, `probedCountByStage`, `queuedCountByStage`), `lossAccounting`, `adapterCounts`, `methodCounts`.
+- **Candidates** and **failures** objects must retain the fields asserted in `test_discovery_report_snapshot_contract`.
+- Any contract change requires: updated snapshot fixture (`tests/fixtures/source_discovery_report_snapshot.json`), doc update, and a focused PR.

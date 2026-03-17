@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import threading
 import time
 from collections import Counter
@@ -18,6 +19,7 @@ from src.jobs.adapters import _runtime
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.errors import NoPluginFoundError
 from src.jobs.adapters.plugins.static import register_static_plugins
+from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_scrapy import run_scrapy_static_source
 from src.shared.regex import find_urls_in_text
@@ -54,6 +56,7 @@ def run_static_studio_pages_source(
     diagnostics_name: str = "static_studio_pages",
     static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
     deps = _runtime.facade()
     jobs: List[RawJob] = []
@@ -199,6 +202,7 @@ def run_static_studio_pages_source(
                 source_row=source,
                 parse_jobpostings_from_html=deps.parse_jobpostings_from_html,
                 maybe_fetch_kojima_job_listing_html=getattr(deps, "maybe_fetch_kojima_job_listing_html", None),
+                try_playwright=try_playwright,
             )
             jobs.extend(plugin_jobs)
             entry_report["fetchedCount"] = len(pages)
@@ -337,10 +341,44 @@ def run_static_studio_pages_source(
             try:
                 listing_fetch_started = time.perf_counter()
                 remaining_budget_s = float(static_source_time_budget_s) - float(time.perf_counter() - source_started)
-                html, cache_hit = fetch_html_cached(page_url, remaining_budget_s=remaining_budget_s)
+                effective_timeout_s = max(3, min(int(timeout_s or 1), int(remaining_budget_s or timeout_s)))
+                html = ""
+                cache_hit = False
+                try:
+                    html, cache_hit = fetch_html_cached(page_url, remaining_budget_s=remaining_budget_s)
+                except Exception as exc:  # noqa: BLE001
+                    err_str = str(exc)
+                    err_lower = err_str.lower()
+                    if try_playwright and ("403" in err_str or "timeout" in err_lower or "timed out" in err_lower):
+                        reason = "403" if "403" in err_str else "timeout"
+                        html, _ = try_playwright(page_url, effective_timeout_s)
+                        print(
+                            f"[static] playwright_fallback_used url={page_url!r} reason={reason} got_html={bool(html)}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                    if not html:
+                        raise
                 stats["listing_fetch_ms"] += int((time.perf_counter() - listing_fetch_started) * 1000)
                 if cache_hit:
                     stats["fetch_cache_hits"] += 1
+                if try_playwright and html and detect_js_shell(html):
+                    parsed_pre = deps.parse_jobpostings_from_html(
+                        html,
+                        base_url=page_url,
+                        fallback_company=company,
+                        fallback_source_id_prefix=f"static:{source_name}",
+                    )
+                    link_count = len(common.re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html))
+                    if not parsed_pre and link_count < 3:
+                        html2, _ = try_playwright(page_url, effective_timeout_s)
+                        print(
+                            f"[static] playwright_fallback_used url={page_url!r} reason=js_shell got_html={bool(html2)}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        if html2:
+                            html = html2
                 detail_links: List[Tuple[str, str]] = []
                 detail_seen = set()
                 listing_htmls = [html]
@@ -501,6 +539,7 @@ def run_static_source_entry_source(
     backoff_s: float,
     static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
@@ -511,6 +550,7 @@ def run_static_source_entry_source(
         diagnostics_name=diagnostics_name,
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        try_playwright=try_playwright,
     )
 
 
@@ -522,6 +562,7 @@ def run_static_studio_pages_a_i_source(
     backoff_s: float,
     static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
@@ -532,19 +573,25 @@ def run_static_studio_pages_a_i_source(
         diagnostics_name="static_studio_pages_a_i",
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        try_playwright=try_playwright,
     )
+
+
+def static_source_name_for_registry_row(row: Dict[str, Any]) -> str:
+    """Return the pipeline source name for a static registry row (same as build_static_source_loaders)."""
+    source_id = common.clean_text(row.get("id"))
+    if not source_id:
+        listing_url = common.clean_text(row.get("listing_url"))
+        digest_seed = listing_url or common.clean_text(row.get("name")) or json.dumps(row, sort_keys=True, ensure_ascii=False)
+        source_id = f"auto:{hashlib.sha1(digest_seed.encode('utf-8')).hexdigest()[:12]}"
+    return f"static_source::{source_id}"
 
 
 def build_static_source_loaders() -> List[Tuple[str, common.SourceLoader]]:
     deps = _runtime.facade()
     loaders: List[Tuple[str, common.SourceLoader]] = []
     for row in deps.registry_entries("static"):
-        source_id = deps.clean_text(row.get("id"))
-        if not source_id:
-            listing_url = deps.clean_text(row.get("listing_url"))
-            digest_seed = listing_url or deps.clean_text(row.get("name")) or json.dumps(row, sort_keys=True, ensure_ascii=False)
-            source_id = f"auto:{hashlib.sha1(digest_seed.encode('utf-8')).hexdigest()[:12]}"
-        loader_name = f"static_source::{source_id}"
+        loader_name = static_source_name_for_registry_row(row)
 
         def _loader(
             *,
@@ -556,6 +603,7 @@ def build_static_source_loaders() -> List[Tuple[str, common.SourceLoader]]:
             _loader_name: str = loader_name,
             static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
             source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+            try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
         ) -> List[RawJob]:
             return run_static_source_entry_source(
                 source_row=_row,
@@ -566,6 +614,7 @@ def build_static_source_loaders() -> List[Tuple[str, common.SourceLoader]]:
                 backoff_s=backoff_s,
                 static_detail_concurrency=static_detail_concurrency,
                 source_state_rows=source_state_rows,
+                try_playwright=try_playwright,
             )
 
         loaders.append((loader_name, _loader))
@@ -580,6 +629,7 @@ def run_static_studio_pages_j_r_source(
     backoff_s: float,
     static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
@@ -590,6 +640,7 @@ def run_static_studio_pages_j_r_source(
         diagnostics_name="static_studio_pages_j_r",
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        try_playwright=try_playwright,
     )
 
 
@@ -601,6 +652,7 @@ def run_static_studio_pages_s_z_source(
     backoff_s: float,
     static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
@@ -611,6 +663,7 @@ def run_static_studio_pages_s_z_source(
         diagnostics_name="static_studio_pages_s_z",
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        try_playwright=try_playwright,
     )
 
 

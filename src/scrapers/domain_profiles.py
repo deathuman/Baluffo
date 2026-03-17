@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict
-from urllib.parse import urlparse
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse, urlunparse
 
 
 def _clean_text(value: Any) -> str:
@@ -27,12 +27,23 @@ DOMAIN_PROFILES: Dict[str, Dict[str, Any]] = {
     "cdprojektred.com": {
         "include_path_tokens": ["/jobs", "/careers"],
         "exclude_path_tokens": ["/news", "/about"],
+        "playwright_wait_selector": "[class*='job'], [class*='position'], [class*='open-positions'], [class*='smartrecruiters']",
+        "playwright_wait_timeout": 10000,
         "title_selectors": ["h1::text", "title::text"],
         "max_detail_links": 60,
     },
     "supercell.com": {
         "include_path_tokens": ["/careers", "/jobs"],
         "exclude_path_tokens": ["/blog", "/news"],
+        "exclude_listing_path_tokens": [
+            "/joining-supercell",
+            "/our-offices",
+            "/living-helsinki",
+            "/living-london",
+            "/why-you-might-love-it-here",
+        ],
+        "playwright_wait_selector": "[class*='job'], [class*='position'], [class*='open-positions']",
+        "playwright_wait_timeout": 10000,
         "title_selectors": ["h1::text", "h2::text", "title::text"],
         "max_detail_links": 50,
     },
@@ -60,6 +71,13 @@ DOMAIN_PROFILES: Dict[str, Dict[str, Any]] = {
         "exclude_path_tokens": ["/newsroom", "/store", "/site/en-us/home"],
         "title_selectors": ["h1::text", "title::text"],
         "max_detail_links": 60,
+    },
+    "careers.activision.com": {
+        "canonical_listing_path": "/search-results",
+        "playwright_wait_selector": "[class*='job'], [class*='search-result'], [class*='position'], [class*='listing']",
+        "playwright_wait_timeout": 12000,
+        "title_selectors": ["h1::text", "title::text"],
+        "max_detail_links": 80,
     },
 }
 
@@ -102,3 +120,39 @@ def is_probable_job_detail_url(url: str, profile: Dict[str, Any]) -> bool:
     if "location=" in query:
         return False
     return False
+
+
+def is_likely_listing_url(url: str, profile: Dict[str, Any]) -> bool:
+    """True if the URL looks like a job listing page (not a sub-page like 'our offices')."""
+    parsed = urlparse(url)
+    path = _clean_text(parsed.path).lower()
+    exclude_tokens = [str(t).lower() for t in (profile.get("exclude_listing_path_tokens") or [])]
+    for token in exclude_tokens:
+        if token and token in path:
+            return False
+    return True
+
+
+def pick_canonical_listing_url(pages: List[str]) -> Optional[str]:
+    """Pick one canonical listing URL from a list (shortest path among listing-like URLs)."""
+    if not pages:
+        return None
+    first = _clean_text(pages[0]) if pages else ""
+    if not first:
+        return None
+    profile = domain_profile_for_url(first)
+    listing_like = [p for p in pages if _clean_text(p) and is_likely_listing_url(_clean_text(p), profile)]
+    if not listing_like:
+        chosen = first
+    else:
+        def path_len(u: str) -> int:
+            return len(_clean_text(urlparse(u).path))
+        chosen = min(listing_like, key=path_len)
+    # If profile says the real listing is at a different path (e.g. Activision /search-results), use it.
+    canonical_path = _clean_text(profile.get("canonical_listing_path"))
+    if canonical_path and canonical_path.startswith("/"):
+        parsed = urlparse(chosen)
+        path = _clean_text(parsed.path)
+        if not path or path == "/":
+            chosen = urlunparse((parsed.scheme or "https", parsed.netloc, canonical_path, "", "", ""))
+    return chosen

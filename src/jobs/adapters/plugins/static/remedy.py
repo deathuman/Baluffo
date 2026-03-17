@@ -6,6 +6,7 @@ from src.jobs import common
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.scrapers.providers.jobylon_v1 import extract_jobylon_v1_jobs
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
@@ -33,6 +34,7 @@ def run(
 
     company = common.clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Remedy"
     source_id = (source_row.get("id") or "").strip() or "remedy"
+    source_name = common.clean_text(source_row.get("name")) or "remedy"
 
     try:
         html = fetch_text(page_url, timeout_s)
@@ -56,6 +58,22 @@ def run(
         }
         return []
 
+    jobylon_jobs, _stats, jobylon_errors, _rejects = extract_jobylon_v1_jobs(
+        source_name=source_name,
+        studio=company,
+        page_url=page_url,
+        timeout_s=max(15, min(timeout_s, 45)),
+    )
+    if jobylon_jobs:
+        rows = []
+        for job in jobylon_jobs:
+            if isinstance(job, dict):
+                job["adapter"] = "static"
+                job["studio"] = company
+                job["source"] = source_name
+                rows.append(job)
+        return [r for r in rows if isinstance(r, dict)]
+
     rows = parse_jobpostings_from_html(
         html,
         base_url=page_url,
@@ -66,7 +84,7 @@ def run(
         if isinstance(row, dict):
             row["adapter"] = "static"
             row["studio"] = company
-            row["source"] = common.clean_text(source_row.get("name")) or "remedy"
+            row["source"] = source_name
     cleaned = [r for r in rows if isinstance(r, dict)]
     if not cleaned:
         if _heuristics.detect_no_openings(html):

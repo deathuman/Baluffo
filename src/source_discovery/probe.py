@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from typing import Any, Dict, List, Tuple
+import sys
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
@@ -15,6 +16,28 @@ from .web_search import (
     fetch_text_with_retry,
     async_fetch_text_with_retry,
 )
+
+# Optional Playwright fallback: (url, timeout_s) -> (html, error). Used only for static adapter.
+TryPlaywrightFn = Callable[[str, int], Tuple[str, str]]
+
+
+def _is_playwright_fallback_error(error: str) -> bool:
+    """True if the probe failure is worth retrying with a browser (403, timeout, challenge)."""
+    if not error:
+        return False
+    lower = str(error).lower()
+    if "403" in lower or "http error 403" in lower:
+        return True
+    if "timed out" in lower or "timeout" in lower:
+        return True
+    challenge_tokens = (
+        "challenge",
+        "cloudflare",
+        "just a moment",
+        "enable javascript",
+        "captcha",
+    )
+    return any(tok in lower for tok in challenge_tokens)
 
 
 def _is_valid_identity_token(token: str) -> bool:
@@ -129,6 +152,7 @@ def probe_candidate(
     timeout_s: int,
     *,
     fetcher=fetch_text,
+    try_playwright: Optional[TryPlaywrightFn] = None,
 ) -> Tuple[bool, int, str]:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     url = endpoint_url(candidate)
@@ -149,6 +173,22 @@ def probe_candidate(
             return True, max(0, int(parse_probe_count(adapter, text))), ""
         except Exception as exc:  # noqa: BLE001
             last_error = f"{probe_url}: {exc}"
+    if adapter == "static" and try_playwright and _is_playwright_fallback_error(last_error):
+        for probe_url in probe_urls[:3]:
+            if not probe_url:
+                continue
+            html, pw_err = try_playwright(probe_url, timeout_s)
+            if html and not pw_err:
+                try:
+                    count = parse_probe_count("static", html)
+                    print(
+                        f"[discovery] probe_playwright_fallback url={probe_url!r} success=True count={count}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    return True, max(0, int(count)), ""
+                except Exception:  # noqa: S110
+                    continue
     return False, 0, last_error
 
 
@@ -157,6 +197,8 @@ async def async_probe_candidate(
     timeout_s: int,
     *,
     fetcher,
+    try_playwright: Optional[TryPlaywrightFn] = None,
+    playwright_semaphore: Optional[asyncio.Semaphore] = None,
 ) -> Tuple[bool, int, str]:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     url = endpoint_url(candidate)
@@ -177,4 +219,27 @@ async def async_probe_candidate(
             return True, max(0, int(parse_probe_count(adapter, text))), ""
         except Exception as exc:  # noqa: BLE001
             last_error = f"{probe_url}: {exc}"
+    if adapter == "static" and try_playwright and _is_playwright_fallback_error(last_error):
+        sem = playwright_semaphore
+        for probe_url in probe_urls[:3]:
+            if not probe_url:
+                continue
+            if sem is not None:
+                await sem.acquire()
+            try:
+                html, pw_err = await asyncio.to_thread(try_playwright, probe_url, timeout_s)
+                if html and not pw_err:
+                    try:
+                        count = parse_probe_count("static", html)
+                        print(
+                            f"[discovery] probe_playwright_fallback url={probe_url!r} success=True count={count}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        return True, max(0, int(count)), ""
+                    except Exception:  # noqa: S110
+                        pass
+            finally:
+                if sem is not None:
+                    sem.release()
     return False, 0, last_error

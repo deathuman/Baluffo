@@ -186,10 +186,12 @@ Backend refactoring is considered complete. **Done:** shared utils/regex/excepti
 
 ### Static adapter and plugins (how to add a static plugin)
 
-- **Orchestration:** `src/jobs/adapters/static.py` — `run_static_studio_pages_source` (and shards), `run_scrapy_static_source` (from `static_scrapy.py`). For each source, host is derived from the first page URL; plugin is selected by `AdapterPluginContext(family="static", source_identity=host)`.
-- **Scrapy path:** `src/jobs/adapters/static_scrapy.py` — subprocess runner, envelope parsing, job normalization; used when source type is scrapy_static.
+- **Orchestration:** `src/jobs/adapters/static.py` — `run_static_studio_pages_source` (and shards), `run_scrapy_static_source` (from `static_scrapy.py`). For each source, host is derived from the first page URL; plugin is selected by `AdapterPluginContext(family="static", source_identity=host)`. Optional Playwright fallback for listing-page fetch only (see **Scraping pipeline** below).
+- **Scrapy path:** `src/jobs/adapters/static_scrapy.py` — subprocess runner, envelope parsing, job normalization; used when source type is scrapy_static. Sources come from the browser fallback queue and run with `use_browser=True` (Scrapy-Playwright when installed).
 - **Plugins:** `src/jobs/adapters/plugins/static/` — one module per site (e.g. `example_com.py`, `example_org.py`, `littlechicken.py`; `larian.py` exists but is unregistered so larian.com uses the fallback and its heuristics). Each provides `can_handle(ctx)` and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`. Registered in `register.py`.
 - **To add a static plugin:** (1) Add a module under `src/jobs/adapters/plugins/static/` with `can_handle(ctx)` (e.g. `ctx.source_identity == "example.org"`) and `run(...)` that fetches/parses and returns `RawJob` dicts. (2) Register it in `register.py` with `default_registry.register(SimpleAdapterPlugin(name=..., family="static", priority=90, can_handle_fn=..., run_fn=...))`. (3) See `register.py` docstring and this map for the full contract.
+
+**Scraping pipeline and Playwright:** Flow (discovery → pipeline → static/scrapy_static → browser queue → Scrapy-Playwright), where Playwright is used (source check, discovery probe fallback, static listing fallback, Scrapy-Playwright), and how to compare job counts before/after: **docs/scraping-pipeline.md**.
 
 ## Data Model Overview
 
@@ -200,7 +202,7 @@ Backend refactoring is considered complete. **Done:** shared utils/regex/excepti
 - **`data/source-registry-pending.json`**: A list of new job sources that have been discovered but not yet approved.
 - **`data/source-registry-rejected.json`**: A list of job sources that have been rejected.
 - **`data/source-discovery-report.json`**: A report on the last run of the source discovery process.
-- **`data/source-discovery-candidates.json`**: A list of candidate job sources that have been discovered.
+- **`data/source-discovery-candidates.json`**: A list of candidate job sources that have been discovered. See **docs/DATA_CONTRACT.md** §7 for the source discovery contract (stable APIs and report/candidates shape).
 - **`data/local-user-data/profiles.json`**: A list of user profiles.
 - **`data/local-user-data/session.json`**: The current user session.
 - **`data/local-user-data/users/{uid}/saved-jobs.json`**: A list of jobs that a user has saved.

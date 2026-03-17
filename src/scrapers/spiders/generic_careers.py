@@ -21,6 +21,27 @@ class GenericCareersSpider(scrapy.Spider):
 
     name = "generic_careers"
 
+    def start_requests(self) -> Any:
+        for url in self.start_urls:
+            if not url:
+                continue
+            req = scrapy.Request(url, callback=self.parse)
+            if self._use_browser:
+                req.meta["playwright"] = True
+                req.meta["playwright_page_goto_kwargs"] = {"wait_until": "load", "timeout": 15000}
+                profile = self.profile or {}
+                wait_selector = profile.get("playwright_wait_selector")
+                wait_timeout = int(profile.get("playwright_wait_timeout") or 8000)
+                if wait_selector:
+                    try:
+                        from scrapy_playwright.page import PageMethod
+                        req.meta["playwright_page_methods"] = [
+                            PageMethod("wait_for_selector", wait_selector, timeout=wait_timeout),
+                        ]
+                    except ImportError:
+                        pass
+            yield req
+
     def __init__(
         self,
         *,
@@ -29,6 +50,7 @@ class GenericCareersSpider(scrapy.Spider):
         source_name_value: str,
         profile: Dict[str, Any],
         container: Dict[str, Any],
+        use_browser: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -38,6 +60,7 @@ class GenericCareersSpider(scrapy.Spider):
         self.profile = profile or {}
         self._container = container
         self._detail_seen = set()
+        self._use_browser = bool(use_browser)
 
     def parse(self, response: scrapy.http.Response) -> Any:
         for script in response.css('script[type="application/ld+json"]::text').getall():
@@ -55,7 +78,10 @@ class GenericCareersSpider(scrapy.Spider):
                 continue
             self._detail_seen.add(href)
             self._container["extraction_stats"]["candidate_links_found"] += 1
-            yield scrapy.Request(url=href, callback=self.parse_job_detail)
+            req = scrapy.Request(url=href, callback=self.parse_job_detail)
+            if self._use_browser:
+                req.meta["playwright"] = True
+            yield req
 
     def parse_job_detail(self, response: scrapy.http.Response) -> Any:
         self._container["extraction_stats"]["detail_pages_visited"] += 1

@@ -499,6 +499,8 @@ def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> 
 
     This lets the scrapy_static_sources adapter run a browser-capable pass for
     sources that the static adapter has already classified as browser-required.
+    Groups queue rows by sourceId and emits one registry row per source with
+    the single best URL (shortest path) so we run Scrapy once per source.
     """
     try:
         if not SCRAPY_BROWSER_QUEUE_PATH.exists():
@@ -509,7 +511,7 @@ def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> 
     except (OSError, json.JSONDecodeError):
         return []
 
-    rows: List[Dict[str, Any]] = []
+    by_source: Dict[str, List[Dict[str, Any]]] = {}
     for row in payload:
         if not isinstance(row, dict):
             continue
@@ -519,9 +521,19 @@ def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> 
         if not page:
             continue
         source_id = clean_text(row.get("sourceId")) or f"scrapy_static:{hashlib.sha1(page.encode('utf-8')).hexdigest()[:12]}"
-        name = clean_text(row.get("name")) or clean_text(row.get("studio")) or "scrapy_static_source"
-        studio = clean_text(row.get("studio")) or name
-        normalized = {
+        by_source.setdefault(source_id, []).append(row)
+
+    rows: List[Dict[str, Any]] = []
+    for source_id, group in by_source.items():
+        def path_len(r: Dict[str, Any]) -> int:
+            return len((urlparse(clean_text(r.get("page")) or "").path))
+        best = min(group, key=path_len)
+        page = clean_text(best.get("page")) or ""
+        if not page:
+            continue
+        name = clean_text(best.get("name")) or clean_text(best.get("studio")) or "scrapy_static_source"
+        studio = clean_text(best.get("studio")) or name
+        rows.append({
             "name": name,
             "studio": studio,
             "adapter": "scrapy_static",
@@ -530,8 +542,7 @@ def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> 
             "enabledByDefault": True,
             "fetchStrategy": "http",
             "cadenceMinutes": 0,
-        }
-        rows.append(normalized)
+        })
     return rows
 
 
@@ -1120,6 +1131,7 @@ def run_static_studio_pages_source(
     diagnostics_name: str = "static_studio_pages",
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
     return _static_adapter().run_static_studio_pages_source(
         fetch_text=fetch_text,
@@ -1131,6 +1143,7 @@ def run_static_studio_pages_source(
         diagnostics_name=diagnostics_name,
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        try_playwright=try_playwright,
     )
 
 
@@ -1144,6 +1157,7 @@ def run_static_source_entry_source(
     backoff_s: float,
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
     return _static_adapter().run_static_source_entry_source(
         source_row=source_row,
@@ -1154,6 +1168,7 @@ def run_static_source_entry_source(
         backoff_s=backoff_s,
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        try_playwright=try_playwright,
     )
 
 
@@ -1165,6 +1180,7 @@ def run_static_studio_pages_a_i_source(
     backoff_s: float,
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
     return _static_adapter().run_static_studio_pages_a_i_source(
         fetch_text=fetch_text,
@@ -1173,6 +1189,7 @@ def run_static_studio_pages_a_i_source(
         backoff_s=backoff_s,
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        try_playwright=try_playwright,
     )
 
 
@@ -1188,6 +1205,7 @@ def run_static_studio_pages_j_r_source(
     backoff_s: float,
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
     return _static_adapter().run_static_studio_pages_j_r_source(
         fetch_text=fetch_text,
@@ -1196,6 +1214,7 @@ def run_static_studio_pages_j_r_source(
         backoff_s=backoff_s,
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        try_playwright=try_playwright,
     )
 
 
@@ -1207,6 +1226,7 @@ def run_static_studio_pages_s_z_source(
     backoff_s: float,
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
+    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
     return _static_adapter().run_static_studio_pages_s_z_source(
         fetch_text=fetch_text,
@@ -1215,6 +1235,7 @@ def run_static_studio_pages_s_z_source(
         backoff_s=backoff_s,
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        try_playwright=try_playwright,
     )
 
 

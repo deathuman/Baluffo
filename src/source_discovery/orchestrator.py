@@ -36,7 +36,8 @@ from .core import (
 )
 from .gamesmap import discover_gamesmap_candidates
 from .probe import async_probe_candidate, validate_candidate_for_probe
-from .reporting import merge_candidate_streams, stage_curated_seed_candidates
+from .reporting import build_stage_summary, merge_candidate_streams, stage_curated_seed_candidates
+from .schemas import DiscoveryReportSummarySchema
 from .scoring import resolve_discovery_thresholds
 from .sheet_directory import discover_game_studio_sheet_candidates
 from .static_candidates import build_static_candidate_from_page
@@ -290,58 +291,31 @@ def run_discovery(
     queue_filtered_count = 0
     probe_failed_count = 0
 
-    def build_summary(
-        current_candidates: List[Dict[str, Any]],
-        deferred_candidates: int = 0,
-        deferred_counts: Optional[Dict[str, int]] = None,
-        *,
-        phase: str = "",
-        phase_label: str = "",
-    ) -> Dict[str, Any]:
-        deferred_reason_rows = deferred_counts or {}
-        deferred_by_cap = int(sum(int(value or 0) for value in deferred_reason_rows.values()))
-        return {
-            "phase": str(phase or ""),
-            "phaseLabel": str(phase_label or ""),
-            "probedCount": probed,
-            "healthyCount": healthy,
-            "newCandidateCount": len(current_candidates),
-            "taEnvCandidateCount": sum(
-                1 for row in current_candidates if "target_role_signal" in row.get("reasons", [])
-            ),
-            "nlCandidateCount": sum(1 for row in current_candidates if bool(row.get("nlPriority"))),
-            "failedProbeCount": len([row for row in failures if str(row.get("stage")) == "probe"]),
-            "probeMissCount": len([row for row in failures if str(row.get("stage")) == "probe_miss"]),
-            "foundEndpointCount": found_endpoint_count,
-            "probedCandidateCount": probed,
-            "queuedCandidateCount": len([row for row in current_candidates if not bool(row.get("deferred"))]),
-            "discoverableButDeferredCount": int(deferred_candidates),
-            "skippedDuplicateCount": skipped_duplicate_count,
-            "skippedInvalidCount": skipped_invalid,
-            "skippedLowEvidenceProbeCount": skipped_low_evidence_probe_count,
-            "adapterCounts": dict(adapter_counter),
-            "methodCounts": dict(method_counter),
-            "generatedCountByStage": dict(generated_count_by_stage),
-            "survivedDedupeCountByStage": dict(survived_dedupe_count_by_stage),
-            "probedCountByStage": dict(probed_count_by_stage),
-            "queuedCountByStage": dict(queued_count_by_stage),
-            "duplicateReasons": dict(duplicate_reasons),
-            "deferredReasons": dict(deferred_counts or {}),
-            "thresholds": dict(thresholds),
-            "lossAccounting": {
-                "generated": int(found_endpoint_count),
-                "dedupSkipped": int(skipped_duplicate_count),
-                "dedupSkippedReasons": dict(duplicate_reasons),
-                "validationSkipped": int(validation_skipped_count),
-                "lowEvidenceSkipped": int(skipped_low_evidence_probe_count),
-                "probeFailed": int(probe_failed_count),
-                "queueFiltered": int(queue_filtered_count),
-                "deferredByCap": deferred_by_cap,
-                "queued": int(len([row for row in current_candidates if not bool(row.get("deferred"))])),
-            },
-        }
-
     def write_progress_report(current_candidates: List[Dict[str, Any]], *, phase: str, phase_label: str) -> None:
+        summary = build_stage_summary(
+            current_candidates,
+            found_endpoint_count=found_endpoint_count,
+            generated_count_by_stage=generated_count_by_stage,
+            survived_dedupe_count_by_stage=survived_dedupe_count_by_stage,
+            probed_count_by_stage=probed_count_by_stage,
+            queued_count_by_stage=queued_count_by_stage,
+            probed=probed,
+            healthy=healthy,
+            failures=failures,
+            skipped_duplicate_count=skipped_duplicate_count,
+            skipped_invalid=skipped_invalid,
+            skipped_low_evidence_probe_count=skipped_low_evidence_probe_count,
+            validation_skipped_count=validation_skipped_count,
+            probe_failed_count=probe_failed_count,
+            queue_filtered_count=queue_filtered_count,
+            adapter_counter=adapter_counter,
+            method_counter=method_counter,
+            duplicate_reasons=duplicate_reasons,
+            deferred_counts=None,
+            thresholds=thresholds,
+            phase=phase,
+            phase_label=phase_label,
+        )
         save_json_atomic(
             sd.DISCOVERY_REPORT_PATH,
             {
@@ -349,7 +323,7 @@ def run_discovery(
                 "mode": mode,
                 "startedAt": started_at,
                 "finishedAt": "",
-                "summary": build_summary(current_candidates, phase=phase, phase_label=phase_label),
+                "summary": summary,
                 "candidates": current_candidates,
                 "failures": failures,
                 "topFailures": [],
@@ -418,6 +392,14 @@ def run_discovery(
             low_evidence_probes_used += 1
         probe_inputs.append(raw)
 
+    try_playwright = None
+    try:
+        from src.bridge.source_check_http import try_fetch_with_playwright as _try_pw
+        try_playwright = _try_pw
+    except Exception:  # noqa: S110
+        pass
+    playwright_semaphore = asyncio.Semaphore(5) if try_playwright else None
+
     async def _run_probe_batch(rows: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], bool, int, str]]:
         limits = probe_concurrency_defaults()
         total_sem = asyncio.Semaphore(int(limits["total"]))
@@ -437,7 +419,13 @@ def run_discovery(
             bucket_sem = bucket_sems.get(bucket, bucket_sems["provider"])
             async with total_sem:
                 async with bucket_sem:
-                    ok, jobs_found, error = await async_probe_candidate(row, timeout_s, fetcher=_call_fetch)
+                    ok, jobs_found, error = await async_probe_candidate(
+                        row,
+                        timeout_s,
+                        fetcher=_call_fetch,
+                        try_playwright=try_playwright,
+                        playwright_semaphore=playwright_semaphore,
+                    )
                     return row, ok, jobs_found, error
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
@@ -516,10 +504,27 @@ def run_discovery(
     save_json_atomic(sd.PENDING_PATH, unique_sources([*pending_existing, *queued_candidates]))
     save_json_atomic(sd.DISCOVERY_CANDIDATES_PATH, queued_candidates)
 
-    summary = build_summary(
+    summary = build_stage_summary(
         report_candidates,
-        deferred_candidates=len([row for row in report_candidates if bool(row.get("deferred"))]),
+        found_endpoint_count=found_endpoint_count,
+        generated_count_by_stage=generated_count_by_stage,
+        survived_dedupe_count_by_stage=survived_dedupe_count_by_stage,
+        probed_count_by_stage=probed_count_by_stage,
+        queued_count_by_stage=queued_count_by_stage,
+        probed=probed,
+        healthy=healthy,
+        failures=failures,
+        skipped_duplicate_count=skipped_duplicate_count,
+        skipped_invalid=skipped_invalid,
+        skipped_low_evidence_probe_count=skipped_low_evidence_probe_count,
+        validation_skipped_count=validation_skipped_count,
+        probe_failed_count=probe_failed_count,
+        queue_filtered_count=queue_filtered_count,
+        adapter_counter=adapter_counter,
+        method_counter=method_counter,
+        duplicate_reasons=duplicate_reasons,
         deferred_counts=deferred_reason_counts,
+        thresholds=thresholds,
         phase="completed",
         phase_label="Discovery completed",
     )
@@ -528,6 +533,14 @@ def run_discovery(
         adapter = str(row.get("adapter") or "unknown")
         domain = str(row.get("domain") or "").strip()
         failure_counter[f"{adapter}:{domain}" if domain else adapter] += 1
+
+    sheet_directory_failures = [f for f in failures if isinstance(f, dict) and str(f.get("adapter")) == "sheet_directory"]
+    sheet_directory_summary = {
+        "fetchFailed": any(str(f.get("stage")) == "directory_index_fetch" for f in sheet_directory_failures),
+        "parseFailed": any(str(f.get("stage")) == "directory_parse" for f in sheet_directory_failures),
+        "failureCount": len(sheet_directory_failures),
+        "generatedCount": int((summary.get("generatedCountByStage") or {}).get("sheet_directory", 0)),
+    }
 
     report = {
         "schemaVersion": SCHEMA_VERSION,
@@ -538,12 +551,14 @@ def run_discovery(
         "candidates": report_candidates,
         "failures": failures,
         "topFailures": [{"key": key, "count": count} for key, count in failure_counter.most_common(5)],
+        "sheetDirectorySummary": sheet_directory_summary,
         "outputs": {
             "report": str(sd.DISCOVERY_REPORT_PATH),
             "candidates": str(sd.DISCOVERY_CANDIDATES_PATH),
             "pending": str(sd.PENDING_PATH),
         },
     }
+    DiscoveryReportSummarySchema.model_validate(report["summary"])
     save_json_atomic(sd.DISCOVERY_REPORT_PATH, report)
     sd.emit_log(f"Discovery report written to {sd.DISCOVERY_REPORT_PATH}.")
     return report

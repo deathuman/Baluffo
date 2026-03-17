@@ -29,6 +29,17 @@ DISCOVERY_STAGES: tuple[str, ...] = (
     "web_provider",
     "generic_static",
 )
+# EVIDENCE_KEYS and stages vocabulary (canonical source of truth for discovery report shape):
+# - Stages: use DISCOVERY_STAGES above. Every discoveryStage write must be one of these.
+# - Note: "sheet_directory" is intentionally both a stage name and an evidence type.
+# - Evidence key families:
+#   - gamesmap_*: gamesmap_directory, gamesmap_category_match, gamesmap_website, gamesmap_website_only,
+#     gamesmap_manual_website_only, gamesmap_careers_url, gamesmap_location
+#   - sheet_*: sheet_directory, sheet_row, sheet_roles_open_yes/no/speculative/unknown
+#   - Shared structural (keep as-is): careers_keyword, structured_job_links, jobposting_jsonld,
+#     studio_domain_match, careers_page, html_embed
+#   - Outliers to rename later: provider_hint, seed_catalog, provider_reinforced, provider_url,
+#     and curated_seed when used as an evidence type
 SUPPORTED_PROVIDERS: tuple[str, ...] = (
     "greenhouse",
     "lever",
