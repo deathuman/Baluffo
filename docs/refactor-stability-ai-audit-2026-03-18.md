@@ -28,6 +28,12 @@ Since this audit was first written, the first tightening wave has been completed
 - `frontend/saved/app/runtime.js` was narrowed by moving filter/sort state logic into `frontend/saved/app/view-state.js`
 - `src/jobs/pipeline.py` now delegates bootstrap, loader selection, and runtime/task-state concerns to package-private helper modules
 - `src/jobs/adapters/static.py` now delegates report/config/fetch/link/detail internals to `src/jobs/adapters/static_helpers.py`
+- `src/jobs/common/__init__.py` now declares a curated compatibility surface explicitly, while package-internal hotspots (`pipeline.py`, `transport.py`, `adapters/__init__.py`) now prefer direct submodule imports over the broad barrel
+- `src/admin_bridge.py` now delegates registry auto-sync persistence/start logic to `src/bridge/registry_sync_flow.py`, and the stale local sync-normalization helper block has been removed
+- sync task worker logic is now shared in `src/bridge/sync_task_flow.py` instead of being duplicated across `admin_bridge.py` and `SyncService`
+- `build_bridge_api(...)` now relies on `SyncService` for sync-status wiring instead of entrypoint lambda/wrapper glue
+- `BridgeApi` now defaults registry identity/url helpers from `src.source_registry`, reducing reliance on entrypoint stub behavior for registry POST routes
+- `RegistryService` now exposes those identity/url helpers too, and `BridgeApi` prefers the typed registry service when present
 
 ## Audit Baseline
 
@@ -101,8 +107,8 @@ The current local repo is more stable than the manifest implies.
 | Subsystem | Stability | AI Access | Recommended action | Notes |
 | --- | --- | --- | --- | --- |
 | Frontend slice architecture | 5/5 | 5/5 | Keep as-is | Both large runtime entrypoints are now under guardrail and slimmer, with non-boot concerns moving into slice-local helpers. |
-| Jobs pipeline and adapters | 4/5 | 4/5 | Tighten | `pipeline.py` and `static.py` are materially narrower and now use package-private helpers, but `jobs/common` compatibility weight is still worth reducing over time. |
-| Admin bridge | 4/5 | 4/5 | Tighten | Runtime state and run-history seams are now extracted and guarded, but `admin_bridge.py` remains a large composition root with more wiring to trim over time. |
+| Jobs pipeline and adapters | 4/5 | 5/5 | Tighten | `pipeline.py` and `static.py` are materially narrower, and the remaining internal package hotspots now avoid the broad `jobs/common` barrel. |
+| Admin bridge | 4/5 | 4/5 | Tighten | Runtime state, run-history, registry auto-sync flow, and sync task worker flow are now extracted and guarded, but `admin_bridge.py` remains a large composition root with more wiring to trim over time. |
 | Source discovery | 4/5 | 4/5 | Keep as-is | Package split, schema validation, and focused tests look healthy. |
 | Desktop/runtime packaging | 3/5 | 2/5 | Tighten | Runtime tests pass, but docs have path drift and this area is still high-churn. |
 | Test organization and guardrails | 5/5 | 5/5 | Keep as-is | Pytest consolidation, structure tests, facade guardrails, bridge state guardrails, and runtime budget guardrails are strong improvements. |
@@ -180,10 +186,10 @@ Evidence:
 
 Impact:
 
-- modularization gains are real, but dependency clarity is not yet as strong as the rest of the extracted jobs package
-- higher risk of new code leaning on compatibility surfaces instead of explicit imports
+- modularization gains are real, but dependency clarity still depends on keeping the curated surface small
+- legacy convenience imports still exist for facade compatibility, so regrowth has to stay guarded
 
-Decision: tighten and cap compatibility spread
+Decision: tightening wave in progress; keep capping compatibility spread
 
 #### 2. `admin_bridge.py` is still a residual composition hotspot
 
@@ -198,7 +204,7 @@ Impact:
 - stability risk is lower than at audit start, but edits in this file still have a larger than ideal blast radius
 - AI coders still need more context than they should for some admin bridge changes
 
-Decision: tighten, not rollback
+Decision: tightening wave in progress; continue narrowing, not rollback
 
 ### Medium
 
@@ -269,15 +275,19 @@ Current local pending files should be treated as runtime artifacts, not architec
   - documented active compatibility seams in contributor-facing docs
   - added an explicit no-new bridge module-global patch-surface guardrail
   - added a frontend runtime size guardrail
+  - replaced the remaining package-internal broad `src.jobs.common` imports in `pipeline.py`, `transport.py`, and `adapters/__init__.py`
+  - made `src/jobs/common/__init__.py` declare its curated compatibility surface explicitly
+  - moved registry auto-sync persistence/start flow behind `src/bridge/registry_sync_flow.py`
+  - removed stale sync-normalization helper leftovers from `src/admin_bridge.py`
 - Current immediate targets:
-  - reduce compatibility-heavy re-export density in `src/jobs/common`
-  - keep `src/admin_bridge.py` as the next composition-root tightening target
+  - keep reducing legacy convenience re-exports in `src/jobs/common` only when repo-internal callers no longer need them
+  - keep `src/admin_bridge.py` on a composition-root diet by moving only real business seams out of the entrypoint
   - only revisit frontend runtime splits if new behavior starts regrowing the entrypoints
 
 ### Next
 
 - Simplify jobs compatibility surfaces:
-  - reduce re-export density in `src/jobs/common`
+  - reduce remaining legacy re-export density in `src/jobs/common`
   - keep `_runtime.facade()` usage capped to the current compatibility boundary
 - Continue bridge tightening only if it stays narrow:
   - move more handler/wiring behavior behind typed bridge modules or `BridgeApi`

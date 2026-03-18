@@ -335,8 +335,7 @@ compute_quality_score = _common_heuristics.compute_quality_score
 title_has_focus_role = _common_heuristics.title_has_focus_role
 compute_focus_score = _common_heuristics.compute_focus_score
 
-__all__ = [
-    # Submodules (preferred import surfaces).
+PREFERRED_IMPORT_SURFACES = [
     "config",
     "heuristics",
     "http",
@@ -345,7 +344,9 @@ __all__ = [
     "sources",
     "url",
     "fetch",
-    # Commonly-used constants/defaults.
+]
+
+CURATED_COMPAT_EXPORTS = [
     "DEFAULT_TIMEOUT_S",
     "DEFAULT_RETRIES",
     "DEFAULT_BACKOFF_S",
@@ -364,24 +365,22 @@ __all__ = [
     "SOURCE_APPROVAL_STATE_PATH",
     "TARGET_PROFESSIONS",
     "SOCIAL_SOURCE_NAMES",
-    # Registry helpers/objects.
     "DEFAULT_STUDIO_SOURCE_REGISTRY",
     "STUDIO_SOURCE_REGISTRY",
     "load_registry_from_file",
     "load_studio_source_registry",
     "read_approved_since_last_run",
-    # Social.
     "DEFAULT_SOCIAL_CONFIG",
     "load_social_config",
-    # URL + fetch helpers.
     "normalize_url",
     "fingerprint_url",
     "is_supported_redirect_url",
     "resolve_supported_redirect_url",
     "fetch_with_retries",
-    # Registry selection
     "registry_entries",
 ]
+
+__all__ = [*PREFERRED_IMPORT_SURFACES, *CURATED_COMPAT_EXPORTS]
 
 
 from src.jobs.common import registry as _common_registry
@@ -511,6 +510,10 @@ def normalize_company_value(value: Any) -> str:
 def parse_remote_ok_payload(payload: Any) -> List[RawJob]:
     return parsing.parse_remote_ok_payload(payload, looks_like_game_job=looks_like_game_job)
 
+
+# Legacy compatibility wrappers and re-exports live below this point.
+# Keep them stable for the jobs_fetcher facade, but prefer the submodules above
+# for new package-internal imports.
 
 # HTML/listing parsers moved to src.jobs.adapters.html_parsers; re-exported for backward compat.
 extract_json_ld_blocks = _html_parsers.extract_json_ld_blocks

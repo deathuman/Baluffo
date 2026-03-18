@@ -160,12 +160,32 @@ def test_pipeline_module_uses_package_private_helper_boundaries(repo_root: Path)
     assert "from src.jobs.pipeline_bootstrap import" in text
     assert "from src.jobs.pipeline_loader_selection import" in text
     assert "from src.jobs.pipeline_runtime import" in text
+    assert "from src.jobs import common as common" not in text
 
 
 def test_static_adapter_uses_package_private_helper_boundary(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "adapters" / "static.py"
     text = target.read_text(encoding="utf-8")
     assert "from src.jobs.adapters.static_helpers import" in text
+
+
+def test_jobs_modules_avoid_new_broad_common_barrel_imports(repo_root: Path) -> None:
+    targets = [
+        repo_root / "src" / "jobs" / "transport.py",
+        repo_root / "src" / "jobs" / "adapters" / "__init__.py",
+    ]
+    for target in targets:
+        text = target.read_text(encoding="utf-8")
+        assert "from src.jobs import common as common" not in text, str(target)
+        assert "import src.jobs.common as common" not in text, str(target)
+
+
+def test_jobs_common_declares_curated_compatibility_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "common" / "__init__.py"
+    text = target.read_text(encoding="utf-8")
+    assert "PREFERRED_IMPORT_SURFACES =" in text
+    assert "CURATED_COMPAT_EXPORTS =" in text
+    assert "Legacy compatibility wrappers and re-exports live below this point." in text
 
 
 def test_jobs_fetcher_exposes_curated_package_surface() -> None:

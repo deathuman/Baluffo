@@ -10,10 +10,11 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from src.jobs.adapters import community
 from src.jobs.common import config as common_config
+from src.jobs.common.fetch import fetch_with_retries as common_fetch_with_retries
+from src.jobs.common.http import default_fetch_text as common_default_fetch_text
 from src.jobs.common import url as common_url
 from src.jobs.models import RequestConfig
-from src.jobs.text_utils import normalize_url as normalize_url_impl
-from src.jobs import common as common
+from src.jobs.text_utils import norm_text, normalize_url as normalize_url_impl
 
 DEFAULT_TIMEOUT_S = common_config.DEFAULT_TIMEOUT_S
 DEFAULT_RETRIES = common_config.DEFAULT_RETRIES
@@ -186,7 +187,7 @@ def build_redirect_resolver(
 
 def default_fetch_text(url: str, timeout_s: int, request: RequestConfig | None = None) -> str:
     _ = request
-    return common.default_fetch_text(url, timeout_s)
+    return common_default_fetch_text(url, timeout_s)
 
 
 class AsyncHttpTextFetcher:
@@ -272,7 +273,7 @@ def fetch_with_retries(
     effective_fetch = fetch_text
     if request is not None:
         effective_fetch = make_fetch_text(fetch_text, request=request)
-    return common.fetch_with_retries(url, effective_fetch, timeout_s, retries, backoff_s)
+    return common_fetch_with_retries(url, effective_fetch, timeout_s, retries, backoff_s)
 
 
 def make_fetch_text(
@@ -294,10 +295,10 @@ def resolve_fetch_text_impl(
     fetch_strategy: str = DEFAULT_FETCH_STRATEGY,
     adapter_http_concurrency: int = DEFAULT_ADAPTER_HTTP_CONCURRENCY,
 ) -> Tuple[Callable[[str, int], str], str, Any]:
-    strategy = common.norm_text(fetch_strategy)
+    strategy = norm_text(fetch_strategy)
     chosen = "urllib"
     async_fetcher: Optional[AsyncHttpTextFetcher] = None
-    if fetch_text is not default_fetch_text and fetch_text is not common.default_fetch_text:
+    if fetch_text is not default_fetch_text and fetch_text is not common_default_fetch_text:
         return fetch_text, "custom", async_fetcher
     if strategy in {"http", "auto"} and httpx is not None:
         try:

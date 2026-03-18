@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, TYPE_CHECKING
+from src.source_registry import normalize_source_url as normalize_source_url_impl
+from src.source_registry import source_identity as source_identity_impl
+from src.source_registry import source_url_fingerprint as source_url_fingerprint_impl
+from src.source_registry import unique_sources as unique_sources_impl
 
 if TYPE_CHECKING:
     from src.bridge.discovery_service import DiscoveryService
@@ -89,10 +93,10 @@ class BridgeApi:
     move_entries: Callable[[List[Dict[str, Any]], List[str]], Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]] = (  # type: ignore[assignment]
         lambda pending, _ids: ([], list(pending))
     )
-    unique_sources: Callable[[List[Dict[str, Any]]], List[Dict[str, Any]]] = lambda rows: list(rows)  # type: ignore[assignment]
-    source_identity: Callable[[Dict[str, Any]], str] = lambda _row: ""  # type: ignore[assignment]
-    source_url_fingerprint: Callable[[Dict[str, Any]], str] = lambda _row: ""  # type: ignore[assignment]
-    normalize_source_url: Callable[[str], str] = lambda url: str(url or "")  # type: ignore[assignment]
+    unique_sources: Callable[[List[Dict[str, Any]]], List[Dict[str, Any]]] = unique_sources_impl  # type: ignore[assignment]
+    source_identity: Callable[[Dict[str, Any]], str] = source_identity_impl  # type: ignore[assignment]
+    source_url_fingerprint: Callable[[Dict[str, Any]], str] = source_url_fingerprint_impl  # type: ignore[assignment]
+    normalize_source_url: Callable[[str], str] = normalize_source_url_impl  # type: ignore[assignment]
 
     load_json_object: LoadJsonObjectFunc = lambda _path, default: default  # type: ignore[assignment]
     save_json_atomic: SaveJsonAtomicFunc = lambda _path, _payload: None  # type: ignore[assignment]
@@ -143,6 +147,14 @@ class BridgeApi:
                 self.summarize_state = self.registry.summarize_state  # type: ignore[assignment]
             if self._field_is_default("move_entries"):
                 self.move_entries = self.registry.move_entries  # type: ignore[assignment]
+            if self._field_is_default("unique_sources"):
+                self.unique_sources = self.registry.unique_sources  # type: ignore[assignment]
+            if self._field_is_default("source_identity"):
+                self.source_identity = self.registry.source_identity  # type: ignore[assignment]
+            if self._field_is_default("source_url_fingerprint"):
+                self.source_url_fingerprint = self.registry.source_url_fingerprint  # type: ignore[assignment]
+            if self._field_is_default("normalize_source_url"):
+                self.normalize_source_url = self.registry.normalize_source_url  # type: ignore[assignment]
         if self.sync is not None:
             if self._field_is_default("get_sync_status_payload"):
                 self.get_sync_status_payload = self.sync.get_sync_status_payload  # type: ignore[assignment]
@@ -156,6 +168,10 @@ class BridgeApi:
                 self.sync_push_sources = self.sync.sync_push_sources  # type: ignore[assignment]
             if self._field_is_default("update_saved_sync_settings"):
                 self.update_saved_sync_settings = self.sync.update_saved_sync_settings  # type: ignore[assignment]
+            if self._field_is_default("sync_config_status"):
+                self.sync_config_status = self.sync.sync_config_status  # type: ignore[assignment]
+            if self._field_is_default("set_sync_status"):
+                self.set_sync_status = self.sync.set_sync_status  # type: ignore[assignment]
         if self.pipeline is not None:
             if self._field_is_default("get_jobs_pipeline_status_payload"):
                 self.get_jobs_pipeline_status_payload = self.pipeline.get_status_payload  # type: ignore[assignment]

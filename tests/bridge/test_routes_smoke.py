@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.bridge.api import BridgeApi
+from src.bridge.registry_service import RegistryPaths, RegistryService
 from src.bridge.routes.get_routes import handle_get
 from src.bridge.routes.post_routes import handle_post
 
@@ -138,4 +139,41 @@ def test_post_routes_smoke_desktop_sign_in(tmp_path: Path) -> None:
     payload = handler.sent[-1]["payload"]
     assert payload["ok"] is True
     assert payload["user"]["name"] == "Alice"
+
+
+def test_bridge_api_defaults_expose_real_registry_identity_helpers(tmp_path: Path) -> None:
+    api = _make_api(tmp_path)
+    row = {"adapter": "static", "listing_url": "https://example.com/jobs?ref=1"}
+    assert api.source_identity(row)
+    assert api.source_url_fingerprint(row) == "https://example.com/jobs"
+    assert api.normalize_source_url("HTTPS://Example.com/jobs/?ref=1#frag") == "https://example.com/jobs"
+    assert len(api.unique_sources([row, dict(row)])) == 1
+
+
+def test_bridge_api_registry_service_wires_identity_helpers(tmp_path: Path) -> None:
+    registry = RegistryService(
+        paths=RegistryPaths(
+            active=tmp_path / "active.json",
+            pending=tmp_path / "pending.json",
+            rejected=tmp_path / "rejected.json",
+        ),
+        default_active=[],
+        normalize_manual_static=lambda row: row,
+    )
+    api = BridgeApi(
+        runtime_config=_RuntimeConfig(),
+        DISCOVERY_REPORT_PATH=tmp_path / "discovery-report.json",
+        JOBS_FETCH_REPORT_PATH=tmp_path / "jobs-fetch-report.json",
+        APPROVAL_STATE_PATH=tmp_path / "approval.json",
+        DISCOVERY_LOG_PATH=tmp_path / "discovery.log",
+        FETCHER_LOG_PATH=tmp_path / "fetcher.log",
+        STARTUP_METRICS_PATH=tmp_path / "startup-metrics.jsonl",
+        registry=registry,
+    )
+    row = {"adapter": "static", "listing_url": "https://example.com/jobs/"}
+    assert api.source_identity(row) == registry.source_identity(row)
+    assert api.source_url_fingerprint(row) == registry.source_url_fingerprint(row)
+    assert api.normalize_source_url("https://example.com/jobs/?ref=1") == registry.normalize_source_url(
+        "https://example.com/jobs/?ref=1"
+    )
 

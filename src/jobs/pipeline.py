@@ -26,8 +26,7 @@ from src.jobs.models import RawJob
 from src.jobs.common import config as common_config
 from src.jobs.common import social as common_social
 from src.jobs.common import sources as common_sources
-from src.jobs.common import STUDIO_SOURCE_REGISTRY, SOURCE_REPORT_META, SOURCE_DIAGNOSTICS
-from src.jobs import common as common
+from src.jobs.common import SOURCE_DIAGNOSTICS, SOURCE_REPORT_META, STUDIO_SOURCE_REGISTRY, registry_entries
 from src.contracts import SCHEMA_VERSION
 from src.pipeline_io import (
     read_existing_output as read_existing_output_from_file,
@@ -353,7 +352,7 @@ def run_pipeline(
 
     # Attach provenance for static sources (e.g. game_studios_sheet) so fetch report can filter by sourceDirectory
     _static_name_to_row: Dict[str, Dict[str, Any]] = {}
-    for _row in common.registry_entries("static"):
+    for _row in registry_entries("static"):
         _name = static_adapter.static_source_name_for_registry_row(_row)
         _static_name_to_row[_name] = _row
     for _report in source_reports:

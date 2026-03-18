@@ -3,7 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Tuple
 
-from src.source_registry import ensure_source_id, load_json_array, save_json_atomic, source_identity
+from src.source_registry import (
+    ensure_source_id,
+    load_json_array,
+    normalize_source_url,
+    save_json_atomic,
+    source_identity,
+    source_url_fingerprint,
+    unique_sources,
+)
 
 
 NormalizeManualStaticFunc = Callable[[Dict[str, Any]], Dict[str, Any]]
@@ -90,6 +98,22 @@ class RegistryService:
             else:
                 remaining.append(row)
         return moved, remaining
+
+    @staticmethod
+    def unique_sources(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return unique_sources(rows)
+
+    @staticmethod
+    def source_identity(row: Dict[str, Any]) -> str:
+        return source_identity(row)
+
+    @staticmethod
+    def source_url_fingerprint(row: Dict[str, Any]) -> str:
+        return source_url_fingerprint(row)
+
+    @staticmethod
+    def normalize_source_url(url: str) -> str:
+        return normalize_source_url(url)
 
 
 __all__ = ["RegistryPaths", "RegistryService"]

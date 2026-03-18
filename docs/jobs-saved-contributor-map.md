@@ -52,5 +52,7 @@ actions/domain/data-source/render/services/state-sync -> shared or root utilitie
 
 ## Transitional seams
 - Jobs adapter compatibility: `_runtime.facade()` is still intentionally limited to the jobs adapter compatibility layer.
+- Jobs package compatibility: `src/jobs/common/__init__.py` is compatibility-first; for new package work, import the direct `src/jobs/common/*` submodule you need instead of the barrel.
 - Local data compatibility: `window.JobAppLocalData` remains the temporary runtime boundary in `frontend/local-data/services.js`.
 - Bridge runtime state: mutable server-adjacent bridge state should live in `src/bridge/server/runtime_state.py` or `src/bridge/sync_state.py`, not new module globals elsewhere.
+- Bridge entrypoint shape: `src/admin_bridge.py` is the composition root; new sync/registry business logic should land under `src/bridge/*` and be wired in, not implemented inline there.

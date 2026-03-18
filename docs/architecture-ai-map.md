@@ -111,13 +111,18 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 - **`sync_service.py`**: Core sync business logic
   - `SyncService` class with dependency injection
   - Configuration methods: `load_saved_sync_settings()`, `update_saved_sync_settings()`, `test_sync_config()`
-  - Status methods: `get_sync_status_payload()`
+  - Status methods: `get_sync_status_payload()`, `sync_config_status()`, `set_sync_status()`
   - Sync operations: `sync_pull_sources()`, `sync_push_sources()`, `startup_sync_pull()`
   - Task management: `start_sync_task()`, `sync_task_running()`, `wait_for_sync_tasks()`
+
+- **`sync_task_flow.py`**: Shared sync-task worker flow
+  - keeps pull/push run-history/status/logging assembly in one place
+  - used by both `src.admin_bridge` compatibility wrappers and `SyncService`
 
 - **`registry_service.py`**: Registry business logic (active/pending/rejected)
   - `ensure_active_registry()`, `load_state()`, `persist_state()`, `normalize_state()`, `summarize_state()`
   - `move_entries()` helper
+  - source identity/url helpers now exposed there too, so `BridgeApi` can wire registry POST behavior from the typed service instead of entrypoint glue
 
 - **`discovery_service.py`**: Discovery task orchestration and optional sync auto-push watch
   - `trigger_discovery_task()`, `watch_discovery_run_for_auto_sync()`
@@ -136,6 +141,7 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
   - `routes/post_routes.py`: POST routes
 
 - **`request_utils.py`**: Request/response helpers (`read_json_from_request`); used by admin_bridge handler for POST body.
+- **`api.py`**: `BridgeApi` composition object; now defaults registry identity/url helpers to `src.source_registry` so POST registry routes do not depend on entrypoint stubs for those basics.
 
 - **`source_helpers.py`**: Source/URL helpers (`infer_studio_name_from_host`, `find_existing_source_by_url`, `find_existing_static_source_by_studio_domain`); used by add_manual_source and registry flows.
 
@@ -144,6 +150,9 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 ### Remaining in `admin_bridge.py`
 - HTTP server + request handler class, plus wiring to route handlers
 - Service composition/wiring for `SyncService`, `RegistryService`, `DiscoveryService`, `PipelineService`, source checker, task history
+- Registry auto-sync wrappers only; the persist/start logic now lives in `src/bridge/registry_sync_flow.py`
+- Sync task wrappers only; the shared worker logic now lives in `src/bridge/sync_task_flow.py`
+- Bridge API sync-status wiring now comes from `SyncService` directly instead of `admin_bridge.py` lambda/wrapper glue.
 - Utility functions: `bridge_log()`, runtime config/paths, data normalization (run history lives in `bridge/task_history.py`)
 - Request/response: delegated to `bridge/request_utils.py`. Source/URL helpers: delegated to `bridge/source_helpers.py`. Source-check fetch/error/URL helpers: delegated to `bridge/source_check_http.py`.
 
@@ -175,7 +184,9 @@ Backend refactoring is directionally strong and materially narrower than the ear
 ### Transitional boundaries (allowed for now)
 
 - `src.admin_bridge` remains the composition root and CLI entrypoint, but mutable server-adjacent state should live in `src/bridge/server/runtime_state.py` or `src/bridge/sync_state.py`.
+- `src.admin_bridge` should keep sync and registry behavior as thin wrappers over `src/bridge/*` modules; do not add new business-logic helper clusters there.
 - `src/jobs/adapters/_runtime.py` keeps `_runtime.facade()` as a legacy compatibility boundary; do not spread it to new jobs modules.
+- `src/jobs/common/__init__.py` is now a curated compatibility surface for the `src.jobs_fetcher` facade; new package-internal code should prefer direct `src/jobs/common/*` submodule imports.
 - `frontend/local-data/services.js` may keep `window.JobAppLocalData` as the compatibility boundary until the local-data runtime is fully formalized.
 
 **Deliberately not done:** `jobs/validation.py` and `bridge/contracts.py` (intent satisfied by normalizers/text_utils/state).
@@ -240,6 +251,7 @@ Key stages:
 - **Adapters:** `src/jobs/adapters/` - fetch and parse each source type
 - **Pipeline:** `src/jobs/pipeline.py` - core processing
 - **Pipeline helpers:** `src/jobs/pipeline_bootstrap.py`, `src/jobs/pipeline_loader_selection.py`, `src/jobs/pipeline_runtime.py` - package-private orchestration support
+- **Jobs compatibility layer:** `src/jobs/common/__init__.py` - curated compatibility surface; prefer `src/jobs/common/config.py`, `fetch.py`, `http.py`, `social.py`, `sources.py`, `url.py` for package-internal imports
 - **Dedup:** `src/jobs/dedup.py` - collapse duplicates
 - **Output:** `data/jobs-unified.*` - primary feed for Jobs UI
 

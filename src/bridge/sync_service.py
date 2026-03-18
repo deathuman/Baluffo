@@ -27,6 +27,7 @@ from src.bridge.sync_state import (
     now_iso,
     now_utc,
 )
+from src.bridge import sync_task_flow as _sync_task_flow
 from src.source_registry import load_json_object, save_json_atomic
 
 
@@ -267,6 +268,26 @@ class SyncService:
             "savedConfig": self.get_saved_sync_config_payload(),
             "runtime": runtime_state,
         }
+
+    def sync_config_status(self) -> Dict[str, Any]:
+        return self._source_sync.config_status(self.refresh_sync_config())
+
+    def set_sync_status(
+        self,
+        *,
+        action: str = "",
+        result: str = "",
+        error: str = "",
+        pulled: bool = False,
+        pushed: bool = False,
+    ) -> None:
+        self._sync_state.set_sync_status(
+            action=action,
+            result=result,
+            error=error,
+            pulled=bool(pulled),
+            pushed=bool(pushed),
+        )
     
     # === Sync Operations ===
     
@@ -287,12 +308,12 @@ class SyncService:
         if bool(result.get("changed")):
             self._persist_state(merged_state)
         
-        self._sync_state.set_sync_status(
-            action="pull",
-            result="ok",
-            pulled=True,
-            error="",
-        )
+            self.set_sync_status(
+                action="pull",
+                result="ok",
+                pulled=True,
+                error="",
+            )
         
         summary = self._summarize_state(self._load_state())
         return {
@@ -318,7 +339,7 @@ class SyncService:
         result = self._source_sync.push_sources_snapshot(self._sync_config, state)
         snapshot = result.get("snapshot") if isinstance(result.get("snapshot"), dict) else {}
         
-        self._sync_state.set_sync_status(
+        self.set_sync_status(
             action="push",
             result="ok",
             pushed=True,
@@ -360,7 +381,7 @@ class SyncService:
                 rejected=int((result.get("summary") or {}).get("rejectedCount") or 0),
             )
         except Exception as exc:  # noqa: BLE001
-            self._sync_state.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
+            self.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
             self._bridge_log("warn", "sync_startup_pull_failed", error=str(exc))
     
     # === Task Management ===
@@ -422,85 +443,24 @@ class SyncService:
     def _run_sync_task_worker(
         self, run_id: str, action: str, started_at: str, *, reason: str = "", automatic: bool = False
     ) -> None:
-        """Worker function for sync task execution.
-        
-        Args:
-            run_id: Unique run identifier
-            action: Action to perform (pull/push)
-            started_at: ISO timestamp of start time
-            reason: Optional reason for the sync
-            automatic: Whether this was automatically triggered
-        """
-        started_dt = self._parse_iso(started_at) or now_utc()
-        status = "ok"
-        summary: Dict[str, Any] = {"action": action}
-        
-        try:
-            if action == "pull":
-                result = self.sync_pull_sources()
-                if not bool(result.get("ok")):
-                    status = "warning"
-                    summary["error"] = str(result.get("error") or "sync pull not executed")
-                summary.update({
-                    "changed": bool(result.get("changed")),
-                    "remoteFound": bool(result.get("remoteFound")),
-                    "remoteSha": str(result.get("remoteSha") or ""),
-                    "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
-                })
-                state_summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
-                summary.update({
-                    "activeCount": int(state_summary.get("activeCount") or 0),
-                    "pendingCount": int(state_summary.get("pendingCount") or 0),
-                    "rejectedCount": int(state_summary.get("rejectedCount") or 0),
-                })
-            else:
-                result = self.sync_push_sources()
-                if not bool(result.get("ok")):
-                    status = "warning"
-                    summary["error"] = str(result.get("error") or "sync push not executed")
-                summary.update({
-                    "remoteSha": str(result.get("remoteSha") or ""),
-                    "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
-                })
-                counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
-                summary.update({
-                    "activeCount": int(counts.get("active") or 0),
-                    "pendingCount": int(counts.get("pending") or 0),
-                    "rejectedCount": int(counts.get("rejected") or 0),
-                })
-        except Exception as exc:  # noqa: BLE001
-            status = "error"
-            summary["error"] = str(exc)
-            self._sync_state.set_sync_status(action=action, result="error", error=str(exc))
-        finally:
-            with self._ops_state_lock:
-                self._sync_state.remove_active_sync_run(run_id)
-                self._sync_state.remove_active_sync_thread(run_id)
-        
-        finished_dt = now_utc()
-        duration_ms = int(max(0.0, (finished_dt - started_dt).total_seconds() * 1000))
-        
-        self._run_history.prune_started_rows_for_type("sync", finished_at=finished_dt.isoformat())
-        self._run_history.upsert({
-            "id": run_id,
-            "type": "sync",
-            "status": status,
-            "startedAt": started_at,
-            "finishedAt": finished_dt.isoformat(),
-            "durationMs": duration_ms,
-            "summary": summary,
-        }, dedupe_fields=("type", "finishedAt"))
-        
-        self._bridge_log(
-            "info" if status != "error" else "error",
-            "sync_task_finished",
-            runId=run_id,
+        _sync_task_flow.run_sync_task_worker(
+            run_id=run_id,
             action=action,
+            started_at=started_at,
             reason=reason,
             automatic=automatic,
-            status=status,
-            durationMs=duration_ms,
-            error=str(summary.get("error") or ""),
+            parse_iso=self._parse_iso,
+            now_utc=now_utc,
+            run_sync_pull=self.sync_pull_sources,
+            run_sync_push=self.sync_push_sources,
+            set_sync_status=self._sync_state.set_sync_status,
+            remove_active_sync_run=self._sync_state.remove_active_sync_run,
+            remove_active_sync_thread=self._sync_state.remove_active_sync_thread,
+            prune_started_rows_for_type=lambda entry_type, *, finished_at: self._run_history.prune_started_rows_for_type(
+                entry_type, finished_at=finished_at
+            ),
+            upsert_run_history=lambda entry: self._run_history.upsert(entry, dedupe_fields=("type", "finishedAt")),
+            bridge_log=self._bridge_log,
         )
     
     def start_sync_task(
