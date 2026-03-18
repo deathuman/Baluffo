@@ -10,8 +10,9 @@ from xml.etree import ElementTree as ET
 
 from src.jobs.models import RawJob
 
-# Import from common only what parsers need (avoid circular import).
-from src.jobs import common
+from src.jobs.game_detection import looks_like_game_job
+import src.jobs.common as common
+from src.jobs.text_utils import clean_text as _clean_text_impl, norm_text as _norm_text_impl, normalize_url
 from src.shared.regex import find_urls_in_text
 
 SOCIAL_HIRING_KEYWORDS = {
@@ -37,18 +38,18 @@ SOCIAL_FOR_HIRE_KEYWORDS = {
 
 
 def _clean_text(value: Any) -> str:
-    return common.clean_text(value)
+    return _clean_text_impl(value)
 
 
 def _norm_text(value: Any) -> str:
-    return common.norm_text(value)
+    return _norm_text_impl(value)
 
 
 def social_extract_urls(text: str) -> List[str]:
     return [
-        common.normalize_url(url)
+        normalize_url(url)
         for url in find_urls_in_text(_clean_text(text))
-        if common.normalize_url(url)
+        if normalize_url(url)
     ]
 
 
@@ -103,7 +104,7 @@ def social_compute_confidence(
     score = 0
     if any(token in text for token in SOCIAL_HIRING_KEYWORDS):
         score += 35
-    if common.looks_like_game_job(text):
+    if looks_like_game_job(text):
         score += 30
     if "job" in text or "role" in text or "position" in text:
         score += 10

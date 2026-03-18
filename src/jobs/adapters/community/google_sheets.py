@@ -8,14 +8,12 @@ from io import StringIO
 from typing import Any, Dict, List, Sequence
 from urllib.parse import quote
 
-from src.jobs import common
+from src.jobs.common import config as common_config
 from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text, norm_text, normalize_url
 
-clean_text = common.clean_text
-norm_text = common.norm_text
-normalize_url = common.normalize_url
-UNTRUSTWORTHY_COMPANY_LABELS = common.UNTRUSTWORTHY_COMPANY_LABELS
-UNKNOWN_COMPANY_LABEL = common.UNKNOWN_COMPANY_LABEL
+UNTRUSTWORTHY_COMPANY_LABELS = common_config.UNTRUSTWORTHY_COMPANY_LABELS
+UNKNOWN_COMPANY_LABEL = common_config.UNKNOWN_COMPANY_LABEL
 
 DEFAULT_GOOGLE_SHEET_ID = "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE"
 DEFAULT_GOOGLE_SHEET_GID = "1560329579"

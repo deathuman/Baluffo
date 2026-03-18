@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -14,23 +15,30 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 from src.exceptions import AdapterValidationError
-from src.jobs import common
-from src.jobs.adapters import _runtime
+from src.jobs.common import config as common_config
+from src.jobs.adapters.html_parsers import (
+    maybe_fetch_kojima_job_listing_html,
+    parse_jobpostings_from_html,
+    strip_html_text,
+)
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.errors import NoPluginFoundError
 from src.jobs.adapters.plugins.static import register_static_plugins
 from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_scrapy import run_scrapy_static_source
+from src.jobs.common import registry_entries, set_source_diagnostics
+from src.jobs.common.fetch import fetch_with_retries
+from src.jobs.interfaces import SourceLoader
 from src.shared.regex import find_urls_in_text
 from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text, norm_text, normalize_url
 
 register_static_plugins()
 
 
 def static_source_shard(row: Dict[str, Any]) -> str:
-    deps = _runtime.facade()
-    label = deps.clean_text(row.get("studio")) or deps.clean_text(row.get("name"))
+    label = clean_text(row.get("studio")) or clean_text(row.get("name"))
     first_alpha = ""
     for ch in label.lower():
         if "a" <= ch <= "z":
@@ -54,11 +62,10 @@ def run_static_studio_pages_source(
     sources: Optional[List[Dict[str, Any]]] = None,
     shard: Optional[str] = None,
     diagnostics_name: str = "static_studio_pages",
-    static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
+    static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
     try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
-    deps = _runtime.facade()
     jobs: List[RawJob] = []
     errors: List[str] = []
     warnings: List[str] = []
@@ -75,8 +82,8 @@ def run_static_studio_pages_source(
         "view job",
     }
 
-    static_profile = common.norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE")) or common.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
-    static_detail_concurrency = max(1, int(static_detail_concurrency or common.DEFAULT_STATIC_DETAIL_CONCURRENCY))
+    static_profile = norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE")) or common_config.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
+    static_detail_concurrency = max(1, int(static_detail_concurrency or common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY))
     default_path_tokens = ["/job/", "/jobs/", "/jobdetail/"]
     default_query_keys = ["job_id"]
     if static_profile == "broad":
@@ -97,14 +104,14 @@ def run_static_studio_pages_source(
     fetch_cache_lock = threading.Lock()
 
     def fetch_html_cached(url: str, *, remaining_budget_s: float | None = None) -> Tuple[str, bool]:
-        normalized = common.normalize_url(url) or common.clean_text(url)
+        normalized = normalize_url(url) or clean_text(url)
         if not normalized:
             return "", False
         with fetch_cache_lock:
             cached = fetch_cache.get(normalized)
         if cached is not None:
             return cached, True
-        fetch_url = common.clean_text(url) or normalized
+        fetch_url = clean_text(url) or normalized
         effective_timeout_s = int(timeout_s or 1)
         effective_retries = int(retries or 0)
         if remaining_budget_s is not None:
@@ -114,7 +121,7 @@ def run_static_studio_pages_source(
             # If retries could exceed the remaining budget, disable them.
             if remaining <= float(effective_timeout_s) * float(max(1, effective_retries + 1)):
                 effective_retries = 0
-        text = deps.fetch_with_retries(fetch_url, fetch_text, effective_timeout_s, effective_retries, backoff_s)
+        text = fetch_with_retries(fetch_url, fetch_text, effective_timeout_s, effective_retries, backoff_s)
         with fetch_cache_lock:
             fetch_cache[normalized] = text
         return text, False
@@ -131,12 +138,12 @@ def run_static_studio_pages_source(
         source_path_tokens = source_row.get("detailPathTokens")
         source_query_keys = source_row.get("detailQueryKeys")
         if isinstance(source_path_tokens, list):
-            path_tokens.extend([f"/{common.norm_text(token).strip('/')}/" for token in source_path_tokens if common.clean_text(token)])
+            path_tokens.extend([f"/{norm_text(token).strip('/')}/" for token in source_path_tokens if clean_text(token)])
         if isinstance(source_query_keys, list):
-            query_keys.extend([common.norm_text(token) for token in source_query_keys if common.clean_text(token)])
-        if common.re.search(r"/careers/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:/|$)", path):
+            query_keys.extend([norm_text(token) for token in source_query_keys if clean_text(token)])
+        if re.search(r"/careers/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:/|$)", path):
             return True
-        if any(token and token in path for token in path_tokens) or bool(common.re.search(r"/en/j/\d+", path)):
+        if any(token and token in path for token in path_tokens) or bool(re.search(r"/en/j/\d+", path)):
             return True
         if any(key and f"{key}=" in query for key in query_keys):
             return True
@@ -144,20 +151,30 @@ def run_static_studio_pages_source(
             return True
         return False
 
-    selected_sources = sources if isinstance(sources, list) else deps.registry_entries("static")
+    if isinstance(sources, list):
+        selected_sources = sources
+    else:
+        # Use the jobs_fetcher facade so tests (and admin ops) can override
+        # `STUDIO_SOURCE_REGISTRY` via `src.jobs_fetcher.STUDIO_SOURCE_REGISTRY`.
+        try:
+            from src import jobs_fetcher as jobs_fetcher_pkg
+
+            selected_sources = jobs_fetcher_pkg.registry_entries("static", enabled_only=True)
+        except Exception:  # noqa: BLE001
+            selected_sources = registry_entries("static")
     static_source_time_budget_s = max(5, int(os.getenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S") or 25))
     for source in selected_sources:
         source_started = time.perf_counter()
         if shard and static_source_shard(source) != shard:
             continue
-        source_name = common.clean_text(source.get("name")) or "static_source"
-        company = common.clean_text(source.get("company")) or source_name
+        source_name = clean_text(source.get("name")) or "static_source"
+        company = clean_text(source.get("company")) or source_name
         pages = source.get("pages") if isinstance(source.get("pages"), list) else []
         entry_report = {
             "adapter": "static",
-            "studio": common.clean_text(source.get("studio")) or company or source_name,
+            "studio": clean_text(source.get("studio")) or company or source_name,
             "name": source_name,
-            "sourceId": common.clean_text(source.get("id")),
+            "sourceId": clean_text(source.get("id")),
             "pages": list(pages),
             "status": "ok",
             "fetchedCount": len(pages),
@@ -186,7 +203,7 @@ def run_static_studio_pages_source(
         host = ""
         if pages:
             try:
-                parsed = urlparse(common.clean_text(pages[0]) or "")
+                parsed = urlparse(clean_text(pages[0]) or "")
                 host = (parsed.netloc or "").strip().lower()
             except Exception:  # noqa: BLE001
                 pass
@@ -200,8 +217,8 @@ def run_static_studio_pages_source(
                 backoff_s=backoff_s,
                 pages=pages,
                 source_row=source,
-                parse_jobpostings_from_html=deps.parse_jobpostings_from_html,
-                maybe_fetch_kojima_job_listing_html=getattr(deps, "maybe_fetch_kojima_job_listing_html", None),
+                parse_jobpostings_from_html=parse_jobpostings_from_html,
+                maybe_fetch_kojima_job_listing_html=maybe_fetch_kojima_job_listing_html,
                 try_playwright=try_playwright,
             )
             jobs.extend(plugin_jobs)
@@ -209,22 +226,22 @@ def run_static_studio_pages_source(
             entry_report["keptCount"] = len(plugin_jobs)
             plugin_meta = source.get("_staticPluginMeta") if isinstance(source, dict) else None
             if isinstance(plugin_meta, dict):
-                entry_report["classification"] = common.clean_text(plugin_meta.get("classification"))
+                entry_report["classification"] = clean_text(plugin_meta.get("classification"))
                 entry_report["browserFallbackRecommended"] = bool(plugin_meta.get("browserFallbackRecommended"))
-                entry_report["extractorHint"] = common.clean_text(plugin_meta.get("extractorHint"))
+                entry_report["extractorHint"] = clean_text(plugin_meta.get("extractorHint"))
                 if plugin_meta.get("emptyConfirmed"):
                     entry_report["emptyConfirmed"] = True
                 ats_links = plugin_meta.get("atsLinks")
                 if isinstance(ats_links, list):
-                    entry_report["atsLinks"] = [common.clean_text(v) for v in ats_links if common.clean_text(v)][:5]
-                meta_error = common.clean_text(plugin_meta.get("error"))
+                    entry_report["atsLinks"] = [clean_text(v) for v in ats_links if clean_text(v)][:5]
+                meta_error = clean_text(plugin_meta.get("error"))
                 if meta_error and not entry_report.get("error"):
                     entry_report["error"] = meta_error
 
             # If plugin extracted nothing, treat as error unless it proved an explicit empty state
             # or a non-fatal browser escalation classification.
             if not plugin_jobs:
-                classification = common.clean_text(entry_report.get("classification"))
+                classification = clean_text(entry_report.get("classification"))
                 empty_confirmed = bool(entry_report.get("emptyConfirmed")) or classification == "empty_confirmed"
                 browser_recommended = bool(entry_report.get("browserFallbackRecommended"))
                 if not empty_confirmed:
@@ -234,7 +251,7 @@ def run_static_studio_pages_source(
                     if not classification:
                         entry_report["classification"] = "fetch_ok_extract_zero"
                     if browser_recommended:
-                        warn_page = common.clean_text(pages[0]) if pages else ""
+                        warn_page = clean_text(pages[0]) if pages else ""
                         warnings.append(f"static:{source_name}:{warn_page}: {entry_report.get('error')}")
                     else:
                         errors.append(f"static:{source_name}: {entry_report.get('error')}")
@@ -257,7 +274,7 @@ def run_static_studio_pages_source(
             enforce_heuristics: bool,
             page_url: str,
         ) -> None:
-            absolute = common.normalize_url(urljoin(page_url, common.clean_text(candidate_url)))
+            absolute = normalize_url(urljoin(page_url, clean_text(candidate_url)))
             if not absolute:
                 link_rejections["non_job_url"] += 1
                 return
@@ -268,7 +285,7 @@ def run_static_studio_pages_source(
                 link_rejections["duplicate_link"] += 1
                 return
             detail_seen.add(absolute)
-            detail_links.append((absolute, common.clean_text(anchor_text)))
+            detail_links.append((absolute, clean_text(anchor_text)))
 
         def process_detail_link(detail: str, detail_title: str) -> Dict[str, Any]:
             fetch_started = time.perf_counter()
@@ -276,7 +293,7 @@ def run_static_studio_pages_source(
             detail_html, cache_hit = fetch_html_cached(detail, remaining_budget_s=remaining_budget_s)
             fetch_ms = int((time.perf_counter() - fetch_started) * 1000)
             parse_started = time.perf_counter()
-            detail_jobs = deps.parse_jobpostings_from_html(
+            detail_jobs = parse_jobpostings_from_html(
                 detail_html,
                 base_url=detail,
                 fallback_company=company,
@@ -289,7 +306,7 @@ def run_static_studio_pages_source(
             if detail_jobs:
                 for row in detail_jobs:
                     row["adapter"] = "static"
-                    row["studio"] = common.clean_text(source.get("studio")) or company or source_name
+                    row["studio"] = clean_text(source.get("studio")) or company or source_name
                     rows.append(row)
             else:
                 parse_empty = True
@@ -297,12 +314,12 @@ def run_static_studio_pages_source(
                 slug = path_parts[-1] if path_parts else ""
                 if slug.lower() == "apply" and len(path_parts) >= 2:
                     slug = path_parts[-2]
-                slug = common.re.sub(r"_[Rr]\d+(?:-\d+)?$", "", slug)
-                title = common.strip_html_text(common.re.sub(r"[-_]+", " ", slug))
-                parsed_title = common.clean_text(detail_title)
+                slug = re.sub(r"_[Rr]\d+(?:-\d+)?$", "", slug)
+                title = strip_html_text(re.sub(r"[-_]+", " ", slug))
+                parsed_title = clean_text(detail_title)
                 if parsed_title and parsed_title.lower() not in ignored_link_titles:
                     title = parsed_title
-                if title and not common.re.fullmatch(r"\d+", title):
+                if title and not re.fullmatch(r"\d+", title):
                     rows.append(
                         {
                             "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
@@ -316,7 +333,7 @@ def run_static_studio_pages_source(
                             "sector": "Game",
                             "postedAt": "",
                             "adapter": "static",
-                            "studio": common.clean_text(source.get("studio")) or company or source_name,
+                            "studio": clean_text(source.get("studio")) or company or source_name,
                         }
                     )
             return {
@@ -328,7 +345,7 @@ def run_static_studio_pages_source(
             }
 
         for page in pages:
-            page_url = common.clean_text(page)
+            page_url = clean_text(page)
             if not page_url:
                 continue
             if (time.perf_counter() - source_started) > float(static_source_time_budget_s):
@@ -363,13 +380,13 @@ def run_static_studio_pages_source(
                 if cache_hit:
                     stats["fetch_cache_hits"] += 1
                 if try_playwright and html and detect_js_shell(html):
-                    parsed_pre = deps.parse_jobpostings_from_html(
+                    parsed_pre = parse_jobpostings_from_html(
                         html,
                         base_url=page_url,
                         fallback_company=company,
                         fallback_source_id_prefix=f"static:{source_name}",
                     )
-                    link_count = len(common.re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html))
+                    link_count = len(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html))
                     if not parsed_pre and link_count < 3:
                         html2, _ = try_playwright(page_url, effective_timeout_s)
                         print(
@@ -383,7 +400,7 @@ def run_static_studio_pages_source(
                 detail_seen = set()
                 listing_htmls = [html]
                 try:
-                    dynamic_listing_html = deps.maybe_fetch_kojima_job_listing_html(
+                    dynamic_listing_html = maybe_fetch_kojima_job_listing_html(
                         page_url=page_url,
                         page_html=html,
                         timeout_s=timeout_s,
@@ -397,40 +414,40 @@ def run_static_studio_pages_source(
 
                 extraction_started = time.perf_counter()
                 for listing_html in listing_htmls:
-                    parsed = deps.parse_jobpostings_from_html(
+                    parsed = parse_jobpostings_from_html(
                         listing_html,
                         base_url=page_url,
                         fallback_company=company,
                         fallback_source_id_prefix=f"static:{source_name}",
                     )
                     for row in parsed:
-                        link = common.normalize_url(row.get("jobLink"))
+                        link = normalize_url(row.get("jobLink"))
                         if not link or link in seen_links:
                             continue
                         seen_links.add(link)
                         row["adapter"] = "static"
-                        row["studio"] = common.clean_text(source.get("studio")) or company or source_name
+                        row["studio"] = clean_text(source.get("studio")) or company or source_name
                         jobs.append(row)
 
-                    for row_match in common.re.finditer(
+                    for row_match in re.finditer(
                         r'(?is)<(?:div|tr)[^>]*class=["\'][^"\']*job-listing-item[^"\']*["\'][^>]*>(.*?)</(?:div|tr)>',
                         listing_html,
                     ):
                         row_html = row_match.group(1) or ""
-                        link_match = common.re.search(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', row_html)
+                        link_match = re.search(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', row_html)
                         if not link_match:
                             continue
-                        href = common.clean_text(link_match.group(1))
-                        anchor_text = common.strip_html_text(common.re.sub(r"(?is)<[^>]+>", " ", link_match.group(2) or ""))
+                        href = clean_text(link_match.group(1))
+                        anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", link_match.group(2) or ""))
                         add_detail_link(detail_links, detail_seen, href, anchor_text, enforce_heuristics=False, page_url=page_url)
 
-                    for match in common.re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', listing_html):
-                        href = common.clean_text(match.group(1))
+                    for match in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', listing_html):
+                        href = clean_text(match.group(1))
                         anchor_inner = match.group(2) or ""
-                        anchor_text = common.strip_html_text(common.re.sub(r"(?is)<[^>]+>", " ", anchor_inner))
+                        anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner))
                         add_detail_link(detail_links, detail_seen, href, anchor_text, enforce_heuristics=True, page_url=page_url)
                     for raw in find_urls_in_text(listing_html):
-                        add_detail_link(detail_links, detail_seen, common.clean_text(raw), "", enforce_heuristics=True, page_url=page_url)
+                        add_detail_link(detail_links, detail_seen, clean_text(raw), "", enforce_heuristics=True, page_url=page_url)
                 stats["candidate_links_found"] += len(detail_links)
                 stats["candidate_extraction_ms"] += int((time.perf_counter() - extraction_started) * 1000)
 
@@ -463,7 +480,7 @@ def run_static_studio_pages_source(
                         if detail_result.get("parseEmpty"):
                             link_rejections["detail_parse_empty"] += 1
                         for row in detail_result.get("rows") or []:
-                            link = common.normalize_url(row.get("jobLink"))
+                            link = normalize_url(row.get("jobLink"))
                             if not link or link in seen_links:
                                 continue
                             seen_links.add(link)
@@ -494,7 +511,7 @@ def run_static_studio_pages_source(
             "staticDuplicateLinkRejected": int(link_rejections.get("duplicate_link", 0)),
             "staticDetailParseEmpty": int(link_rejections.get("detail_parse_empty", 0)),
         }
-        if entry_report["keptCount"] == 0 and pages and not common.clean_text(entry_report.get("classification")):
+        if entry_report["keptCount"] == 0 and pages and not clean_text(entry_report.get("classification")):
             entry_report["status"] = "error"
             entry_report["classification"] = "fetch_ok_extract_zero"
             entry_report["browserFallbackRecommended"] = True
@@ -509,13 +526,13 @@ def run_static_studio_pages_source(
     if len(selected_sources) == 1:
         single = selected_sources[0]
         diag_studio = (
-            common.clean_text(single.get("studio"))
-            or common.clean_text(single.get("company"))
-            or common.clean_text(single.get("name"))
+            clean_text(single.get("studio"))
+            or clean_text(single.get("company"))
+            or clean_text(single.get("name"))
             or "multiple"
         )
 
-    deps.set_source_diagnostics(
+    set_source_diagnostics(
         diagnostics_name,
         adapter="static",
         studio=diag_studio,
@@ -537,7 +554,7 @@ def run_static_source_entry_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
+    static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
     try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
@@ -560,7 +577,7 @@ def run_static_studio_pages_a_i_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
+    static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
     try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
@@ -579,18 +596,17 @@ def run_static_studio_pages_a_i_source(
 
 def static_source_name_for_registry_row(row: Dict[str, Any]) -> str:
     """Return the pipeline source name for a static registry row (same as build_static_source_loaders)."""
-    source_id = common.clean_text(row.get("id"))
+    source_id = clean_text(row.get("id"))
     if not source_id:
-        listing_url = common.clean_text(row.get("listing_url"))
-        digest_seed = listing_url or common.clean_text(row.get("name")) or json.dumps(row, sort_keys=True, ensure_ascii=False)
+        listing_url = clean_text(row.get("listing_url"))
+        digest_seed = listing_url or clean_text(row.get("name")) or json.dumps(row, sort_keys=True, ensure_ascii=False)
         source_id = f"auto:{hashlib.sha1(digest_seed.encode('utf-8')).hexdigest()[:12]}"
     return f"static_source::{source_id}"
 
 
-def build_static_source_loaders() -> List[Tuple[str, common.SourceLoader]]:
-    deps = _runtime.facade()
-    loaders: List[Tuple[str, common.SourceLoader]] = []
-    for row in deps.registry_entries("static"):
+def build_static_source_loaders() -> List[Tuple[str, SourceLoader]]:
+    loaders: List[Tuple[str, SourceLoader]] = []
+    for row in registry_entries("static"):
         loader_name = static_source_name_for_registry_row(row)
 
         def _loader(
@@ -601,7 +617,7 @@ def build_static_source_loaders() -> List[Tuple[str, common.SourceLoader]]:
             backoff_s: float,
             _row: Dict[str, Any] = row,
             _loader_name: str = loader_name,
-            static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
+            static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
             source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
             try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
         ) -> List[RawJob]:
@@ -627,7 +643,7 @@ def run_static_studio_pages_j_r_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
+    static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
     try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:
@@ -650,7 +666,7 @@ def run_static_studio_pages_s_z_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    static_detail_concurrency: int = common.DEFAULT_STATIC_DETAIL_CONCURRENCY,
+    static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
     try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
 ) -> List[RawJob]:

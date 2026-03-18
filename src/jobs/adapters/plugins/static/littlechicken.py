@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List
 
-from src.jobs import common
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
@@ -29,10 +29,10 @@ def run(
 ) -> List[RawJob]:
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    page_url = common.clean_text(pages[0])
+    page_url = clean_text(pages[0])
     if not page_url:
         return []
-    company = common.clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Little Chicken"
+    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Little Chicken"
     source_id = (source_row.get("id") or "").strip() or "littlechicken"
     try:
         html = fetch_text(page_url, timeout_s)
@@ -48,5 +48,5 @@ def run(
         if isinstance(row, dict):
             row["adapter"] = "static"
             row["studio"] = company
-            row["source"] = common.clean_text(source_row.get("name")) or "littlechicken"
+            row["source"] = clean_text(source_row.get("name")) or "littlechicken"
     return [r for r in rows if isinstance(r, dict)]

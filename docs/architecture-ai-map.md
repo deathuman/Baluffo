@@ -182,7 +182,7 @@ Backend refactoring is considered complete. **Done:** shared utils/regex/excepti
 
 **Phase 3 (static adapter):** Scrapy path lives in `static_scrapy.py`; orchestration and plugin dispatch in `static.py`; site plugins in `plugins/static/` (see subsection below).
 
-**Phase 4 (frontend):** Saved app backup logic in `saved/app/backup.js`; status text helper shared in `frontend/shared/ui/index.js` (`setStatusText`); state-hub and api-client documented below.
+**Phase 4 (frontend):** Saved app backup logic in `saved/app/backup.js`; slice runtime `view.js` helpers implement `setStatusText` locally to keep runtime slice-local; state-hub and api-client documented below.
 
 ### Static adapter and plugins (how to add a static plugin)
 

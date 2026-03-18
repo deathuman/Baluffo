@@ -8,41 +8,35 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from src.jobs import common
 from src.jobs.adapters import community
 from src.jobs.interfaces import JobProcessor
+from src.jobs.common import config as common_config
+from src.jobs.common.heuristics import (
+    classify_company_type,
+    compute_focus_score,
+    compute_quality_score,
+    map_profession,
+    normalize_company_value,
+    title_has_focus_role,
+)
+from src.jobs.common import is_supported_redirect_url, parse_datetime, posted_ts, to_iso
 from src.jobs.models import CanonicalJob, RawJob
 from src.jobs.transport import PooledRedirectResolver
+from src.jobs.normalizers import normalize_country, normalize_sector, normalize_work_type
+from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.shared.utils import env_flag
 
-UNKNOWN_COMPANY_LABEL = common.UNKNOWN_COMPANY_LABEL
-UNTRUSTWORTHY_COMPANY_LABELS = common.UNTRUSTWORTHY_COMPANY_LABELS
-REQUIRED_FIELDS = common.REQUIRED_FIELDS
-OPTIONAL_FIELDS = common.OPTIONAL_FIELDS
-OUTPUT_FIELDS = common.OUTPUT_FIELDS
-LIGHTWEIGHT_OUTPUT_FIELDS = common.LIGHTWEIGHT_OUTPUT_FIELDS
-TARGET_PROFESSIONS = common.TARGET_PROFESSIONS
+UNKNOWN_COMPANY_LABEL = common_config.UNKNOWN_COMPANY_LABEL
+UNTRUSTWORTHY_COMPANY_LABELS = common_config.UNTRUSTWORTHY_COMPANY_LABELS
+REQUIRED_FIELDS = common_config.REQUIRED_FIELDS
+OPTIONAL_FIELDS = common_config.OPTIONAL_FIELDS
+OUTPUT_FIELDS = common_config.OUTPUT_FIELDS
+LIGHTWEIGHT_OUTPUT_FIELDS = common_config.LIGHTWEIGHT_OUTPUT_FIELDS
+TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
-DEFAULT_CANONICAL_STRICT_URL = common.DEFAULT_CANONICAL_STRICT_URL
+DEFAULT_CANONICAL_STRICT_URL = common_config.DEFAULT_CANONICAL_STRICT_URL
 
-parse_datetime = common.parse_datetime
-to_iso = common.to_iso
-posted_ts = common.posted_ts
-clean_text = common.clean_text
-norm_text = common.norm_text
-normalize_url = common.normalize_url
-normalize_country = common.normalize_country
-normalize_work_type = common.normalize_work_type
-normalize_contract_type = common.normalize_contract_type
-classify_company_type = common.classify_company_type
-normalize_sector = common.normalize_sector
-map_profession = common.map_profession
-looks_like_game_job = common.looks_like_game_job
-normalize_company_value = common.normalize_company_value
-compute_quality_score = common.compute_quality_score
-title_has_focus_role = common.title_has_focus_role
-compute_focus_score = common.compute_focus_score
-env_flag = common.env_flag
-is_supported_redirect_url = common.is_supported_redirect_url
+from src.jobs.common import looks_like_game_job, normalize_contract_type  # noqa: E402
 
 
 def canonicalize_job_with_reason(

@@ -27,10 +27,6 @@ if os.name == "nt":
     import ctypes
     import winreg
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 from src.ship.runtime_launcher import wait_for_url
 from src.ship.startup_profile import summarize_startup_metrics, write_startup_summary
 from src.app_version import get_app_version
@@ -1337,6 +1333,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+__all__ = [
+    "DesktopRuntimeConfig",
+    "InstanceLock",
+    "resolve_ship_root",
+    "build_child_command",
+    "start_child_process",
+    "terminate_process",
+    "read_startup_metrics",
+    "main",
+]
 

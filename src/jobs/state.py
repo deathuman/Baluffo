@@ -8,25 +8,21 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from src.jobs import common
+from src.contracts import SCHEMA_VERSION
+from src.jobs.common import config as common_config
+from src.jobs.common import url as common_url
+from src.jobs.common import _clamped_int, parse_datetime, to_iso
 from src.jobs.dedup import dedup_secondary_key
+from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob
+from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.pipeline_io import write_text_if_changed
+from src.shared.utils import now_iso
+from src.jobs_fetcher_registry import EXCLUDED_DEFAULT_SOURCES, SOURCE_REPORT_META
 
-LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = common.LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS
-LIFECYCLE_ARCHIVE_RETENTION_DAYS = common.LIFECYCLE_ARCHIVE_RETENTION_DAYS
-SCHEMA_VERSION = common.SCHEMA_VERSION
-SOURCE_REPORT_META = common.SOURCE_REPORT_META
-EXCLUDED_DEFAULT_SOURCES = common.EXCLUDED_DEFAULT_SOURCES
-
-clean_text = common.clean_text
-norm_text = common.norm_text
-normalize_url = common.normalize_url
-parse_datetime = common.parse_datetime
-to_iso = common.to_iso
-now_iso = common.now_iso
-write_text_if_changed = common.write_text_if_changed
-fingerprint_url = common.fingerprint_url
-_clamped_int = common._clamped_int
+LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = common_config.LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS
+LIFECYCLE_ARCHIVE_RETENTION_DAYS = common_config.LIFECYCLE_ARCHIVE_RETENTION_DAYS
+fingerprint_url = common_url.fingerprint_url
 
 
 def source_rows_fingerprint(rows: Sequence[Dict[str, Any]]) -> str:
@@ -252,13 +248,173 @@ def apply_job_lifecycle_state(
     return [CanonicalJob.from_mapping(row) for row in payload_rows], next_rows, counts
 
 
-normalize_task_state_payload = common.normalize_task_state_payload
-should_skip_source_by_ttl = common.should_skip_source_by_ttl
-should_skip_source_by_cadence = common.should_skip_source_by_cadence
-circuit_breaker_until = common.circuit_breaker_until
-apply_circuit_breaker_exclusions = common.apply_circuit_breaker_exclusions
-append_excluded_default_sources = common.append_excluded_default_sources
-update_source_state_rows = common.update_source_state_rows
+def should_skip_source_by_ttl(source_name: str, state_rows: Dict[str, Dict[str, Any]], ttl_minutes: int) -> bool:
+    if ttl_minutes <= 0:
+        return False
+    entry = state_rows.get(source_name)
+    if not isinstance(entry, dict):
+        return False
+    if int(entry.get("consecutiveFailures") or 0) > 0:
+        return False
+    last_success = parse_datetime(entry.get("lastSuccessAt"))
+    if not last_success:
+        return False
+    age_seconds = max(0.0, (datetime.now(timezone.utc) - last_success).total_seconds())
+    return age_seconds < float(ttl_minutes * 60)
+
+
+def should_skip_source_by_cadence(
+    source_name: str,
+    state_rows: Dict[str, Dict[str, Any]],
+    *,
+    hot_minutes: int,
+    cold_minutes: int,
+) -> bool:
+    entry = state_rows.get(source_name)
+    if not isinstance(entry, dict):
+        return False
+    if int(entry.get("consecutiveFailures") or 0) > 0:
+        return False
+    baseline = parse_datetime(entry.get("lastSuccessAt"))
+    if not baseline:
+        return False
+    cadence_minutes = max(1, int(cold_minutes or 1))
+    last_changed = parse_datetime(entry.get("lastChangedAt"))
+    if last_changed:
+        age_since_change_seconds = max(0.0, (datetime.now(timezone.utc) - last_changed).total_seconds())
+        if age_since_change_seconds <= 24 * 60 * 60:
+            cadence_minutes = max(1, int(hot_minutes or 1))
+    age_seconds = max(0.0, (datetime.now(timezone.utc) - baseline).total_seconds())
+    return age_seconds < float(cadence_minutes * 60)
+
+
+def circuit_breaker_until(source_name: str, state_rows: Dict[str, Dict[str, Any]], failure_threshold: int) -> Optional[datetime]:
+    if failure_threshold <= 0:
+        return None
+    entry = state_rows.get(source_name)
+    if not isinstance(entry, dict):
+        return None
+    if int(entry.get("consecutiveFailures") or 0) < failure_threshold:
+        return None
+    until = parse_datetime(entry.get("quarantinedUntilAt"))
+    if until:
+        return until
+    return None
+
+
+def _build_excluded_source_report(source_name: str, reason: str) -> Dict[str, Any]:
+    return {
+        "name": source_name,
+        "status": "excluded",
+        "adapter": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter")) or "custom",
+        "fetchStrategy": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy")) or "auto",
+        "studio": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("studio")) or "",
+        "fetchedCount": 0,
+        "keptCount": 0,
+        "error": clean_text(reason),
+        "exclusionReason": clean_text(reason),
+        "durationMs": 0,
+    }
+
+
+def apply_circuit_breaker_exclusions(
+    selected_loaders: List[Tuple[str, SourceLoader]],
+    *,
+    source_state_rows: Dict[str, Dict[str, Any]],
+    circuit_breaker_failures: int,
+    circuit_breaker_cooldown_minutes: int,
+    ignore_circuit_breaker: bool,
+) -> Tuple[List[Tuple[str, SourceLoader]], List[Dict[str, Any]]]:
+    if ignore_circuit_breaker or circuit_breaker_failures <= 0 or circuit_breaker_cooldown_minutes <= 0:
+        return list(selected_loaders), []
+    filtered: List[Tuple[str, SourceLoader]] = []
+    excluded_rows: List[Dict[str, Any]] = []
+    now_dt = datetime.now(timezone.utc)
+    for name, loader in selected_loaders:
+        blocked_until = circuit_breaker_until(name, source_state_rows, circuit_breaker_failures)
+        if blocked_until and blocked_until > now_dt:
+            excluded_rows.append(_build_excluded_source_report(name, f"circuit_breaker_active_until:{blocked_until.isoformat()}"))
+            continue
+        filtered.append((name, loader))
+    return filtered, excluded_rows
+
+
+def append_excluded_default_sources(source_reports: List[Dict[str, Any]]) -> None:
+    for source_name, reason in EXCLUDED_DEFAULT_SOURCES.items():
+        source_reports.append(_build_excluded_source_report(source_name, reason))
+
+
+def update_source_state_rows(
+    *,
+    source_state_rows: Dict[str, Dict[str, Any]],
+    source_reports: List[Dict[str, Any]],
+    canonical_rows: List[Dict[str, Any]],
+    finished_at: str,
+    circuit_breaker_failures: int,
+    circuit_breaker_cooldown_minutes: int,
+) -> Dict[str, Dict[str, Any]]:
+    for report in source_reports:
+        name = clean_text(report.get("name"))
+        if not name:
+            continue
+        entry = dict(source_state_rows.get(name) or {})
+        entry["lastRunAt"] = finished_at
+        entry["lastStatus"] = clean_text(report.get("status"))
+        entry["lastDurationMs"] = int(report.get("durationMs") or 0)
+        entry["lastFetchedCount"] = int(report.get("fetchedCount") or 0)
+        entry["lastKeptCount"] = int(report.get("keptCount") or 0)
+        details = report.get("details") if isinstance(report.get("details"), list) else []
+        static_detail = details[0] if len(details) == 1 and isinstance(details[0], dict) else {}
+        static_stats = static_detail.get("stats") if isinstance(static_detail, dict) and isinstance(static_detail.get("stats"), dict) else {}
+        entry["lastCandidateLinksFound"] = int(static_stats.get("candidate_links_found") or 0)
+        entry["lastDetailPagesVisited"] = int(static_stats.get("detail_pages_visited") or 0)
+        entry["lastDetailYieldPct"] = int(static_stats.get("detail_yield_percent") or 0)
+        entry["lastRedirectCandidates"] = int(static_stats.get("redirect_candidates") or 0)
+        entry["lastRedirectResolved"] = int(static_stats.get("redirect_resolved") or 0)
+        entry["lastRedirectCacheHits"] = int(static_stats.get("redirect_cache_hits") or 0)
+        stage_timings = report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
+        clean_stage_timings = {
+            "listingFetch": int(stage_timings.get("listingFetch") or 0),
+            "parseCsv": int(stage_timings.get("parseCsv") or 0),
+            "candidateExtraction": int(stage_timings.get("candidateExtraction") or 0),
+            "detailFetch": int(stage_timings.get("detailFetch") or 0),
+            "redirectResolve": int(stage_timings.get("redirectResolve") or 0),
+            "canonicalization": int(stage_timings.get("canonicalization") or 0),
+        }
+        if any(clean_stage_timings.values()):
+            entry["lastStageTimingsMs"] = clean_stage_timings
+        else:
+            entry.pop("lastStageTimingsMs", None)
+        if entry["lastStatus"] == "ok":
+            entry["lastSuccessAt"] = finished_at
+            reported_fingerprint = clean_text(report.get("sourceFingerprint"))
+            if not reported_fingerprint and entry["lastKeptCount"] > 0:
+                reported_fingerprint = source_rows_fingerprint(
+                    [row for row in canonical_rows if clean_text(row.get("source")) == name]
+                )
+            previous_fingerprint = clean_text(entry.get("lastFingerprint"))
+            if reported_fingerprint:
+                entry["lastFingerprint"] = reported_fingerprint
+                if reported_fingerprint != previous_fingerprint:
+                    entry["lastChangedAt"] = finished_at
+            entry["consecutiveFailures"] = 0
+            entry.pop("quarantinedUntilAt", None)
+            entry.pop("lastFailureAt", None)
+            entry.pop("lastError", None)
+        elif entry["lastStatus"] == "error":
+            failure_count = int(entry.get("consecutiveFailures") or 0) + 1
+            entry["consecutiveFailures"] = failure_count
+            entry["lastFailureAt"] = finished_at
+            entry["lastError"] = clean_text(report.get("error"))
+            if circuit_breaker_failures > 0 and failure_count >= circuit_breaker_failures and circuit_breaker_cooldown_minutes > 0:
+                entry["quarantinedUntilAt"] = (
+                    datetime.now(timezone.utc) + timedelta(minutes=circuit_breaker_cooldown_minutes)
+                ).isoformat()
+        source_state_rows[name] = entry
+    return source_state_rows
+
+
+from src.jobs.common.contracts import normalize_task_state_payload  # noqa: E402
 
 
 def read_previously_successful_sources(report_path: Path) -> set[str]:

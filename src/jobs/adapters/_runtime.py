@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import sys
 
-from src.jobs import common
+import src.jobs.common as common
 
 
 def facade():
-    """Return the public jobs_fetcher facade if loaded, else the legacy impl.
+    """Return the legacy jobs_fetcher facade (best-effort).
 
-    When invoked via `py -3 -m src.jobs_fetcher`, Python executes the module as
-    `__main__`, and `sys.modules["src.jobs_fetcher"]` may not be populated.
-    In that case we still want adapter code to resolve dependencies (parsers,
-    constants) from the jobs_fetcher facade module rather than `common`.
+    This exists for backward compatibility only. New code should use explicit
+    imports from `src.jobs.common`, `src.jobs.common.fetch`, `src.jobs.common.url`,
+    `src.jobs.parsers`, etc.
     """
     loaded = sys.modules.get("src.jobs_fetcher")
     if loaded is not None:

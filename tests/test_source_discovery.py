@@ -56,7 +56,7 @@ def test_build_pattern_candidates_adds_reinforcement_for_provider_matching_caree
         sd.STUDIO_SEEDS = previous
     assert len(rows) >= 1
     assert all(int(row.get("evidenceScore") or 0) >= 42 for row in rows)
-    assert all("provider_reinforced" in (row.get("evidenceTypes") or []) for row in rows)
+    assert all("seed_provider_reinforced" in (row.get("evidenceTypes") or []) for row in rows)
 
 
 def test_probe_candidate_maps_jobs_found_for_greenhouse_and_teamtailor() -> None:

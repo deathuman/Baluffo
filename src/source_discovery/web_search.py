@@ -332,7 +332,7 @@ def infer_web_candidate(
         return None
     host = (parsed.netloc or "").lower()
     path = parsed.path or ""
-    evidence_types = ["provider_url"]
+    evidence_types = ["web_provider_url"]
     evidence_score = 28 + (12 if studio_domain_match(studio, url) else 0) + (4 if careers_keyword_count(url) else 0)
     if "boards.greenhouse.io" in host or "jobs.greenhouse.io" in host or "boards-api.greenhouse.io" in host:
         return _provider_candidate(

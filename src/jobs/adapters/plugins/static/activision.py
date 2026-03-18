@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List
 from urllib.parse import urlparse, urlunparse
 
-from src.jobs import common
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text
 from src.scrapers.domain_profiles import domain_profile_for_url
 
 
@@ -29,19 +29,19 @@ def run(
     _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    page_url = common.clean_text(pages[0])
+    page_url = clean_text(pages[0])
     if not page_url:
         return []
     # Jobs list is at /search-results; use it when the source only has the root URL.
     profile = domain_profile_for_url(page_url)
-    canonical_path = common.clean_text(profile.get("canonical_listing_path"))
+    canonical_path = clean_text(profile.get("canonical_listing_path"))
     if canonical_path and canonical_path.startswith("/"):
         parsed = urlparse(page_url)
-        path = common.clean_text(parsed.path)
+        path = clean_text(parsed.path)
         if not path or path == "/":
             page_url = urlunparse((parsed.scheme or "https", parsed.netloc, canonical_path, "", "", ""))
 
-    company = common.clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Activision"
+    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Activision"
     source_id = (source_row.get("id") or "").strip() or "activision"
 
     try:
@@ -76,7 +76,7 @@ def run(
         if isinstance(row, dict):
             row["adapter"] = "static"
             row["studio"] = company
-            row["source"] = common.clean_text(source_row.get("name")) or "activision"
+            row["source"] = clean_text(source_row.get("name")) or "activision"
     cleaned = [r for r in rows if isinstance(r, dict)]
     if not cleaned:
         if _heuristics.detect_no_openings(html):

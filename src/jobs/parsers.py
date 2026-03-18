@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from src.jobs import common
 from src.jobs.adapters import community
 from src.jobs.adapters import html_parsers as _html_parsers
 from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.adapters import social_parsers as _social_parsers
+from src.jobs.common import parse_remote_ok_payload
 from src.jobs.models import RawJob
 
 extract_json_ld_blocks = _html_parsers.extract_json_ld_blocks
@@ -40,7 +40,6 @@ def parse_jobpostings_from_html(
 
 
 parse_google_sheets_csv = community.parse_google_sheets_csv
-parse_remote_ok_payload = common.parse_remote_ok_payload
 parse_reddit_json_payload = _social_parsers.parse_reddit_json_payload
 parse_reddit_rss_payload = _social_parsers.parse_reddit_rss_payload
 parse_x_payload = _social_parsers.parse_x_payload

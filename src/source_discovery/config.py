@@ -29,17 +29,48 @@ DISCOVERY_STAGES: tuple[str, ...] = (
     "web_provider",
     "generic_static",
 )
-# EVIDENCE_KEYS and stages vocabulary (canonical source of truth for discovery report shape):
-# - Stages: use DISCOVERY_STAGES above. Every discoveryStage write must be one of these.
+# Evidence types vocabulary (canonical source of truth for evidenceTypes values).
 # - Note: "sheet_directory" is intentionally both a stage name and an evidence type.
-# - Evidence key families:
+# - Evidence type families:
 #   - gamesmap_*: gamesmap_directory, gamesmap_category_match, gamesmap_website, gamesmap_website_only,
 #     gamesmap_manual_website_only, gamesmap_careers_url, gamesmap_location
 #   - sheet_*: sheet_directory, sheet_row, sheet_roles_open_yes/no/speculative/unknown
+#   - seed_*: seed_catalog, seed_provider_hint, seed_provider_reinforced, seed_curated
+#   - web_*: web_provider_url
 #   - Shared structural (keep as-is): careers_keyword, structured_job_links, jobposting_jsonld,
 #     studio_domain_match, careers_page, html_embed
-#   - Outliers to rename later: provider_hint, seed_catalog, provider_reinforced, provider_url,
-#     and curated_seed when used as an evidence type
+EVIDENCE_TYPES: tuple[str, ...] = (
+    # Gamesmap evidence
+    "gamesmap_directory",
+    "gamesmap_category_match",
+    "gamesmap_website",
+    "gamesmap_website_only",
+    "gamesmap_manual_website_only",
+    "gamesmap_careers_url",
+    "gamesmap_location",
+    # Sheet directory evidence
+    "sheet_directory",
+    "sheet_row",
+    "sheet_roles_open_yes",
+    "sheet_roles_open_no",
+    "sheet_roles_open_speculative",
+    "sheet_roles_open_unknown",
+    # Seed / pattern evidence
+    "seed_catalog",
+    "seed_provider_hint",
+    "seed_provider_reinforced",
+    "seed_curated",
+    # Web inference evidence
+    "web_provider_url",
+    # Shared structural evidence
+    "careers_keyword",
+    "structured_job_links",
+    "jobposting_jsonld",
+    "studio_domain_match",
+    "careers_page",
+    "html_embed",
+)
+EVIDENCE_TYPES_SET = set(EVIDENCE_TYPES)
 SUPPORTED_PROVIDERS: tuple[str, ...] = (
     "greenhouse",
     "lever",

@@ -7,10 +7,21 @@ import time
 from typing import Any, Callable, Dict, List
 
 from src.exceptions import AdapterValidationError
-from src.jobs import common
-from src.jobs.adapters import _runtime
 from src.jobs.adapters.community import google_sheets as _google_sheets
 from src.jobs.models import RawJob
+from src.jobs.common import (
+    EPIC_CAREERS_API_URL,
+    GAMES_INDUSTRY_URLS,
+    REMOTE_OK_URLS,
+    WELLFOUND_URLS,
+    parse_gamesindustry_html,
+    parse_remote_ok_payload,
+    parse_wellfound_html,
+    set_source_diagnostics,
+)
+from src.jobs.adapters.provider_parsers import parse_epic_games_jobs_payload
+from src.jobs.text_utils import clean_text
+from src.jobs.common.fetch import fetch_with_retries
 
 google_sheet_candidate_urls = _google_sheets.google_sheet_candidate_urls
 GOOGLE_SHEETS_SOURCES = _google_sheets.GOOGLE_SHEETS_SOURCES
@@ -30,12 +41,11 @@ def run_google_sheets_source(
     gid: str = DEFAULT_GOOGLE_SHEET_GID,
     diagnostics_name: str = "",
 ) -> List[RawJob]:
-    deps = _runtime.facade()
     errors: List[str] = []
     details: List[Dict[str, Any]] = []
     for url in google_sheet_candidate_urls(sheet_id, gid):
         try:
-            text = deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             parse_started = time.perf_counter()
             jobs = parse_google_sheets_csv(text)
             parse_csv_ms = int((time.perf_counter() - parse_started) * 1000)
@@ -53,7 +63,7 @@ def run_google_sheets_source(
             )
             if jobs:
                 if diagnostics_name:
-                    deps.set_source_diagnostics(
+                    set_source_diagnostics(
                         diagnostics_name,
                         adapter="csv",
                         studio="community_sheet",
@@ -65,7 +75,7 @@ def run_google_sheets_source(
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{url}: {exc}")
     if diagnostics_name:
-        deps.set_source_diagnostics(
+        set_source_diagnostics(
             diagnostics_name,
             adapter="csv",
             studio="community_sheet",
@@ -76,12 +86,11 @@ def run_google_sheets_source(
 
 
 def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
-    deps = _runtime.facade()
     errors: List[str] = []
-    for url in deps.REMOTE_OK_URLS:
+    for url in REMOTE_OK_URLS:
         try:
-            text = deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            parsed = deps.parse_remote_ok_payload(json.loads(text))
+            text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            parsed = parse_remote_ok_payload(json.loads(text))
             if parsed:
                 return parsed
             errors.append(f"{url}: empty/invalid payload")
@@ -97,13 +106,12 @@ def run_gamesindustry_source(
     retries: int,
     backoff_s: float,
 ) -> List[RawJob]:
-    deps = _runtime.facade()
     jobs: List[RawJob] = []
     errors: List[str] = []
-    for url in deps.GAMES_INDUSTRY_URLS:
+    for url in GAMES_INDUSTRY_URLS:
         try:
-            text = deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            jobs.extend(deps.parse_gamesindustry_html(text, base_url=url))
+            text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            jobs.extend(parse_gamesindustry_html(text, base_url=url))
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{url}: {exc}")
     if jobs:
@@ -120,7 +128,6 @@ def run_epic_games_careers_source(
     retries: int,
     backoff_s: float,
 ) -> List[RawJob]:
-    deps = _runtime.facade()
     jobs: List[RawJob] = []
     seen_source_ids = set()
     skip = 0
@@ -128,14 +135,14 @@ def run_epic_games_careers_source(
     max_pages = 40
 
     for _ in range(max_pages):
-        page_url = f"{deps.EPIC_CAREERS_API_URL}?skip={skip}&limit={limit}"
-        text = deps.fetch_with_retries(page_url, fetch_text, timeout_s, retries, backoff_s)
+        page_url = f"{EPIC_CAREERS_API_URL}?skip={skip}&limit={limit}"
+        text = fetch_with_retries(page_url, fetch_text, timeout_s, retries, backoff_s)
         payload = json.loads(text)
-        page_jobs = deps.parse_epic_games_jobs_payload(payload, fallback_company="Epic Games")
+        page_jobs = parse_epic_games_jobs_payload(payload, fallback_company="Epic Games")
         if not page_jobs:
             break
         for row in page_jobs:
-            source_job_id = deps.clean_text(row.get("sourceJobId"))
+            source_job_id = clean_text(row.get("sourceJobId"))
             if source_job_id and source_job_id in seen_source_ids:
                 continue
             if source_job_id:
@@ -151,13 +158,12 @@ def run_epic_games_careers_source(
 
 
 def run_wellfound_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
-    deps = _runtime.facade()
     jobs: List[RawJob] = []
     errors: List[str] = []
-    for url in deps.WELLFOUND_URLS:
+    for url in WELLFOUND_URLS:
         try:
-            text = deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            jobs.extend(deps.parse_wellfound_html(text, base_url=url))
+            text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            jobs.extend(parse_wellfound_html(text, base_url=url))
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{url}: {exc}")
     if jobs:

@@ -350,7 +350,8 @@ def run_pyinstaller(output_dir: Path, *, exe_name: str, icon_path: Path) -> Path
     ]
     for module_name in RUNTIME_HIDDEN_IMPORTS:
         command.extend(["--hidden-import", module_name])
-    command.append(str(ROOT / "src" / "ship" / "desktop_app.py"))
+    # Ship desktop app is a package; PyInstaller needs a real script entrypoint.
+    command.append(str(ROOT / "src" / "ship" / "desktop_app" / "__main__.py"))
     subprocess.run(command, check=True, cwd=str(ROOT))
     built_dir = pyinstaller_dist / exe_name
     if not built_dir.exists():

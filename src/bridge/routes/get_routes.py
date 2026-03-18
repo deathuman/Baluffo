@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import io
+import json
 import logging
+import re
+from datetime import datetime, timezone
 from typing import Any, Dict, List
+import zipfile
 
 from pydantic import ValidationError as PydanticValidationError
 
@@ -16,6 +21,65 @@ def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]
     Important: `api` must be the currently running admin bridge module (which may
     be `__main__` when launched via `runpy`), not a fresh `import src.admin_bridge`.
     """
+
+    if path == "/discovery/report":
+        # This route must never "silently" drop the connection; the admin UI
+        # treats network errors as bridge-availability failures.
+        try:
+            load_fn = getattr(api, "load_json_object", None)
+            raw = load_fn(getattr(api, "DISCOVERY_REPORT_PATH", None), {}) if callable(load_fn) else {}
+
+            normalizer_fn = getattr(api, "normalize_discovery_report_contract", None)
+            report = normalizer_fn(raw) if callable(normalizer_fn) else raw
+
+            try:
+                api.bridge_log(
+                    "info",
+                    "discovery_report_route_sending",
+                    reportType=type(report).__name__,
+                    summaryType=type((report or {}).get("summary", None)).__name__ if isinstance(report, dict) else "",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+            payload = report or {"summary": {}, "candidates": [], "failures": []}
+            # Prefer the bytes-writing helper to bypass any unexpected issues
+            # in `_send_json` for edge-case payloads.
+            if hasattr(handler, "_send_bytes"):
+                try:
+                    text = json.dumps(payload, ensure_ascii=False, default=str)
+                    body = text.encode("utf-8")
+                except UnicodeEncodeError:
+                    text = json.dumps(payload, ensure_ascii=True, default=str)
+                    body = text.encode("utf-8")
+                handler._send_bytes(  # type: ignore[attr-defined]  # noqa: SLF001
+                    body,
+                    content_type="application/json; charset=utf-8",
+                    status=200,
+                )
+            else:
+                handler._send_json(payload)  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            try:
+                api.bridge_log("error", "discovery_report_route_failed", error=str(exc))
+            except Exception:  # noqa: BLE001
+                pass
+            payload = {"error": "failed_to_load_discovery_report", "detail": str(exc)}
+            if hasattr(handler, "_send_bytes"):
+                try:
+                    text = json.dumps(payload, ensure_ascii=False, default=str)
+                    body = text.encode("utf-8")
+                except UnicodeEncodeError:
+                    text = json.dumps(payload, ensure_ascii=True, default=str)
+                    body = text.encode("utf-8")
+                handler._send_bytes(  # type: ignore[attr-defined]  # noqa: SLF001
+                    body,
+                    content_type="application/json; charset=utf-8",
+                    status=500,
+                )
+            else:
+                handler._send_json(payload, status=500)  # noqa: SLF001
+        return True
 
     if path == "/desktop-local-data/session":
         try:
@@ -86,18 +150,18 @@ def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]
             include_files_raw = str((query.get("includeFiles") or ["0"])[0]).strip().lower()
             include_files = include_files_raw in {"1", "true", "yes", "on"}
             payload = api.desktop_local_data_store().export_profile_data(uid, include_files=include_files)
-            date_token = api.datetime.now(api.timezone.utc).strftime("%Y-%m-%d")
-            safe_uid = api.re.sub(r"[^a-zA-Z0-9_-]+", "_", str(uid or "profile")).strip("_") or "profile"
+            date_token = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            safe_uid = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(uid or "profile")).strip("_") or "profile"
             if include_files:
-                backup_json = api.json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-                buffer = api.io.BytesIO()
-                with api.zipfile.ZipFile(buffer, mode="w", compression=api.zipfile.ZIP_STORED) as zf:
+                backup_json = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+                buffer = io.BytesIO()
+                with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_STORED) as zf:
                     zf.writestr("backup.json", backup_json)
                 body = buffer.getvalue()
                 filename = f"baluffo-backup-{safe_uid}-{date_token}.zip"
                 handler._send_bytes(body, content_type="application/zip", filename=filename, disposition="attachment")  # noqa: SLF001
             else:
-                body = api.json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+                body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
                 filename = f"baluffo-backup-{safe_uid}-{date_token}.json"
                 handler._send_bytes(body, content_type="application/json; charset=utf-8", filename=filename, disposition="attachment")  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
@@ -138,11 +202,6 @@ def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]
     if path == "/registry/rejected":
         state = api.load_state()
         handler._send_json({"sources": state["rejected"], "summary": api.summarize_state(state)})  # noqa: SLF001
-        return True
-
-    if path == "/discovery/report":
-        report = api.normalize_discovery_report_contract(api.load_json_object(api.DISCOVERY_REPORT_PATH, {}))
-        handler._send_json(report or {"summary": {}, "candidates": [], "failures": []})  # noqa: SLF001
         return True
 
     if path == "/discovery/log":

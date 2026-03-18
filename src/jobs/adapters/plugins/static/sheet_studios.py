@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List
 
-from src.jobs import common
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text
 
 # Hosts (netloc, lower) for which this plugin handles static extraction.
 # Ensures proper classification and browser fallback when extract fails.
@@ -47,11 +47,11 @@ def run(
     _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    page_url = common.clean_text(pages[0])
+    page_url = clean_text(pages[0])
     if not page_url:
         return []
 
-    company = common.clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Unknown"
+    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Unknown"
     source_id = (source_row.get("id") or "").strip() or "sheet_studio"
 
     try:
@@ -86,7 +86,7 @@ def run(
         if isinstance(row, dict):
             row["adapter"] = "static"
             row["studio"] = company
-            row["source"] = common.clean_text(source_row.get("name")) or company
+            row["source"] = clean_text(source_row.get("name")) or company
     cleaned = [r for r in rows if isinstance(r, dict)]
     if not cleaned:
         if _heuristics.detect_no_openings(html):

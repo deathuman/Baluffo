@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from src.jobs import common
+from src.jobs.common import config as common_config
+from src.jobs.common import social as common_social
+from src.jobs.common import url as common_url
 from src.jobs.canonicalize import (
     OUTPUT_FIELDS,
     clean_text,
@@ -19,8 +21,8 @@ from src.jobs.canonicalize import (
 from src.jobs.interfaces import JobProcessor
 from src.jobs.models import CanonicalJob
 
-fingerprint_url = common.fingerprint_url
-SOCIAL_SOURCE_NAMES = common.SOCIAL_SOURCE_NAMES
+fingerprint_url = common_url.fingerprint_url
+SOCIAL_SOURCE_NAMES = common_social.SOCIAL_SOURCE_NAMES
 
 
 def dedup_secondary_key(job: CanonicalJob | Dict[str, Any]) -> str:
@@ -58,7 +60,7 @@ def company_preference_score(job: CanonicalJob | Dict[str, Any]) -> int:
     company = clean_text(payload.get("company"))
     if not company:
         return 0
-    if norm_text(company) in {norm_text(common.UNKNOWN_COMPANY_LABEL), "unknown"}:
+    if norm_text(company) in {norm_text(common_config.UNKNOWN_COMPANY_LABEL), "unknown"}:
         return 1
     return 2
 

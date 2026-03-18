@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import List
 from urllib.parse import urljoin
 
-from src.jobs import common
+import re
+
+from src.jobs.adapters.html_parsers import strip_html_text
+from src.jobs.text_utils import clean_text, normalize_url
 
 # Canonical classification values for static/scrapy_static diagnostics and browser queue.
 # Use these when setting classification in plugins and adapter code so reporting stays consistent.
@@ -30,8 +33,8 @@ def normalize_html(html: str) -> str:
 
 
 def visible_text_len(html: str) -> int:
-    text = common.strip_html_text(common.re.sub(r"(?is)<[^>]+>", " ", normalize_html(html)))
-    return len(common.clean_text(text))
+    text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", normalize_html(html)))
+    return len(clean_text(text))
 
 
 def detect_js_shell(html: str) -> bool:
@@ -72,11 +75,11 @@ def detect_outbound_ats_links(html: str, *, base_url: str) -> List[str]:
     """Find outbound links to known ATS/job platforms."""
     s = normalize_html(html)
     links: List[str] = []
-    for m in common.re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', s):
-        href = common.clean_text(m.group(1))
+    for m in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', s):
+        href = clean_text(m.group(1))
         if not href:
             continue
-        absolute = common.normalize_url(urljoin(base_url, href)) or ""
+        absolute = normalize_url(urljoin(base_url, href)) or ""
         if not absolute:
             continue
         lower = absolute.lower()

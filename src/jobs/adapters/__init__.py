@@ -4,27 +4,32 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.jobs import common
 from src.jobs.adapters import community, provider_api, social, static
+from src.jobs import common as common
+from src.jobs.common import config as common_config
+from src.jobs.common import social as common_social
+from src.jobs_fetcher_registry import DEFAULT_SOURCE_LOADER_NAMES
+from src.jobs.interfaces import SourceLoader
 from src.jobs.models import FetchContext, FetchResult, SourceDiagnostics
+from src.jobs.text_utils import clean_text
 
 
 def default_source_loaders(
     *,
     social_enabled: bool = False,
     social_config: Optional[Dict[str, Any]] = None,
-) -> List[Tuple[str, common.SourceLoader]]:
-    social_cfg = social_config if isinstance(social_config, dict) else common.load_social_config(
-        config_path=common.DEFAULT_SOCIAL_CONFIG_PATH,
+) -> List[Tuple[str, SourceLoader]]:
+    social_cfg = social_config if isinstance(social_config, dict) else common_social.load_social_config(
+        config_path=common_config.DEFAULT_SOCIAL_CONFIG_PATH,
         enabled=bool(social_enabled),
-        lookback_minutes=common.DEFAULT_SOCIAL_LOOKBACK_MINUTES,
+        lookback_minutes=common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES,
     )
 
-    google_sheet_loaders: Dict[str, common.SourceLoader] = {}
+    google_sheet_loaders: Dict[str, SourceLoader] = {}
     for source in community.GOOGLE_SHEETS_SOURCES:
-        source_name = common.clean_text(source.get("name"))
-        sheet_id = common.clean_text(source.get("sheetId"))
-        gid = common.clean_text(source.get("gid") or "0")
+        source_name = clean_text(source.get("name"))
+        sheet_id = clean_text(source.get("sheetId"))
+        gid = clean_text(source.get("gid") or "0")
         if not source_name or not sheet_id:
             continue
 
@@ -50,7 +55,7 @@ def default_source_loaders(
 
         google_sheet_loaders[source_name] = _loader
 
-    available: Dict[str, common.SourceLoader] = {
+    available: Dict[str, SourceLoader] = {
         **google_sheet_loaders,
         "remote_ok": community.run_remote_ok_source,
         "gamesindustry": community.run_gamesindustry_source,
@@ -71,7 +76,7 @@ def default_source_loaders(
         "static_studio_pages_s_z": static.run_static_studio_pages_s_z_source,
         "static_studio_pages": static.run_static_studio_pages_source,
     }
-    base_loaders = [(name, available[name]) for name in common.DEFAULT_SOURCE_LOADER_NAMES if name in available]
+    base_loaders = [(name, available[name]) for name in DEFAULT_SOURCE_LOADER_NAMES if name in available]
     base_loaders = [
         (name, loader)
         for name, loader in base_loaders

@@ -5,27 +5,30 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, List, Sequence
 
-from src.jobs import common
 from src.jobs.adapters import community
 from src.scrapers.domain_profiles import domain_profile_for_url, pick_canonical_listing_url
+from src.jobs.common import config as common_config
+from src.jobs.common import _clamped_int
+from src.jobs.common import (
+    normalize_fetch_report_payload,
+    normalize_runtime_payload,
+    normalize_source_report_row,
+)
 from src.jobs.models import CanonicalJob
+from src.jobs.text_utils import clean_text, norm_text
+from src.contracts import SCHEMA_VERSION
+from src.jobs_fetcher_registry import SOURCE_REPORT_META
 
-SCHEMA_VERSION = common.SCHEMA_VERSION
-TARGET_PROFESSIONS = common.TARGET_PROFESSIONS
-DEFAULT_FETCH_STRATEGY = common.DEFAULT_FETCH_STRATEGY
-DEFAULT_ADAPTER_HTTP_CONCURRENCY = common.DEFAULT_ADAPTER_HTTP_CONCURRENCY
-DEFAULT_STATIC_DETAIL_CONCURRENCY = common.DEFAULT_STATIC_DETAIL_CONCURRENCY
+TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
+DEFAULT_FETCH_STRATEGY = common_config.DEFAULT_FETCH_STRATEGY
+DEFAULT_ADAPTER_HTTP_CONCURRENCY = common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY
+DEFAULT_STATIC_DETAIL_CONCURRENCY = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
-DEFAULT_HOT_SOURCE_CADENCE_MINUTES = common.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
-DEFAULT_COLD_SOURCE_CADENCE_MINUTES = common.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
-DEFAULT_SOCIAL_LOOKBACK_MINUTES = common.DEFAULT_SOCIAL_LOOKBACK_MINUTES
-DEFAULT_SOCIAL_MIN_CONFIDENCE = common.DEFAULT_SOCIAL_MIN_CONFIDENCE
-DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE = common.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
-SOURCE_REPORT_META = common.SOURCE_REPORT_META
-
-clean_text = common.clean_text
-norm_text = common.norm_text
-_clamped_int = common._clamped_int
+DEFAULT_HOT_SOURCE_CADENCE_MINUTES = common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
+DEFAULT_COLD_SOURCE_CADENCE_MINUTES = common_config.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
+DEFAULT_SOCIAL_LOOKBACK_MINUTES = common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES
+DEFAULT_SOCIAL_MIN_CONFIDENCE = common_config.DEFAULT_SOCIAL_MIN_CONFIDENCE
+DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE = common_config.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
 
 
 def format_source_error(source_name: str, error: Any) -> str:
@@ -119,7 +122,7 @@ def build_browser_fallback_queue(
                 continue
             classification = norm_text(item.get("classification"))
             recommend = bool(item.get("browserFallbackRecommended"))
-            if not recommend or classification not in common.STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE:
+            if not recommend or classification not in common_config.STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE:
                 continue
             source_id = clean_text(item.get("sourceId"))
             name = clean_text(item.get("name"))
@@ -153,8 +156,4 @@ def build_browser_fallback_queue(
     rows.sort(key=lambda row: (clean_text(row.get("studio")), clean_text(row.get("name")), clean_text(row.get("page"))))
     return rows
 
-
-normalize_runtime_payload = common.normalize_runtime_payload
-normalize_source_report_row = common.normalize_source_report_row
-normalize_fetch_report_payload = common.normalize_fetch_report_payload
 

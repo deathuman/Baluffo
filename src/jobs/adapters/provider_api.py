@@ -11,13 +11,14 @@ from typing import Callable, Dict, List
 from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
-from src.jobs import common
-from src.jobs.adapters import _runtime
+from src.jobs.common.fetch import fetch_with_retries
+from src.jobs.common import registry_entries, set_source_diagnostics
+from src.jobs.parsers import parse_ashby_jobs_from_html, parse_personio_feed_xml
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
-
+from src.jobs.text_utils import clean_text
 
 def _dispatch_provider_api(
     adapter_key: str,
@@ -68,13 +69,12 @@ def _run_json_feed_sources(
     retries: int,
     backoff_s: float,
 ) -> List[RawJob]:
-    deps = _runtime.facade()
     jobs: List[RawJob] = []
     errors: List[str] = []
     details: List[Dict[str, object]] = []
-    for source in deps.registry_entries(registry_adapter):
-        source_name = common.clean_text(source.get("name")) or f"{registry_adapter}_source"
-        studio = common.clean_text(source.get("studio")) or source_name
+    for source in registry_entries(registry_adapter):
+        source_name = clean_text(source.get("name")) or f"{registry_adapter}_source"
+        studio = clean_text(source.get("studio")) or source_name
         endpoint = build_url(source)
         entry_report = {
             "adapter": adapter_name,
@@ -91,7 +91,7 @@ def _run_json_feed_sources(
             details.append(entry_report)
             continue
         try:
-            text = deps.fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
+            text = fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)
             parsed = parse_payload(source, payload, studio)
             entry_report["fetchedCount"] = payload_count(payload, parsed)
@@ -106,7 +106,13 @@ def _run_json_feed_sources(
             errors.append(f"{registry_adapter}:{source_name}: {exc}")
         details.append(entry_report)
 
-    deps.set_source_diagnostics(f"{registry_adapter}_sources", adapter=adapter_name, studio="multiple", details=details, partial_errors=errors)
+    set_source_diagnostics(
+        f"{registry_adapter}_sources",
+        adapter=adapter_name,
+        studio="multiple",
+        details=details,
+        partial_errors=errors,
+    )
     if jobs:
         return jobs
     if errors:
@@ -145,14 +151,13 @@ def run_workable_sources_source(*, fetch_text: Callable[[str, int], str], timeou
 
 
 def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
-    deps = _runtime.facade()
     jobs: List[RawJob] = []
     errors: List[str] = []
     details: List[Dict[str, object]] = []
-    for source in deps.registry_entries("ashby"):
-        source_name = common.clean_text(source.get("name")) or "ashby_source"
-        studio = common.clean_text(source.get("studio")) or source_name
-        board_url = common.clean_text(source.get("board_url"))
+    for source in registry_entries("ashby"):
+        source_name = clean_text(source.get("name")) or "ashby_source"
+        studio = clean_text(source.get("studio")) or source_name
+        board_url = clean_text(source.get("board_url"))
         entry_report = {
             "adapter": "ashby",
             "studio": studio,
@@ -168,8 +173,8 @@ def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s
             details.append(entry_report)
             continue
         try:
-            text = deps.fetch_with_retries(board_url, fetch_text, timeout_s, retries, backoff_s)
-            parsed = deps.parse_ashby_jobs_from_html(text, board_url, fallback_company=studio)
+            text = fetch_with_retries(board_url, fetch_text, timeout_s, retries, backoff_s)
+            parsed = parse_ashby_jobs_from_html(text, board_url, fallback_company=studio)
             entry_report["fetchedCount"] = len(parsed)
             entry_report["keptCount"] = len(parsed)
             if not parsed:
@@ -186,7 +191,7 @@ def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s
             errors.append(f"ashby:{source_name}: {exc}")
         details.append(entry_report)
 
-    deps.set_source_diagnostics("ashby_sources", adapter="ashby", studio="multiple", details=details, partial_errors=errors)
+    set_source_diagnostics("ashby_sources", adapter="ashby", studio="multiple", details=details, partial_errors=errors)
     if jobs:
         return jobs
     if errors:
@@ -195,14 +200,13 @@ def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s
 
 
 def run_personio_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
-    deps = _runtime.facade()
     jobs: List[RawJob] = []
     errors: List[str] = []
     details: List[Dict[str, object]] = []
-    for source in deps.registry_entries("personio"):
-        source_name = common.clean_text(source.get("name")) or "personio_source"
-        studio = common.clean_text(source.get("studio")) or source_name
-        feed_url = common.clean_text(source.get("feed_url"))
+    for source in registry_entries("personio"):
+        source_name = clean_text(source.get("name")) or "personio_source"
+        studio = clean_text(source.get("studio")) or source_name
+        feed_url = clean_text(source.get("feed_url"))
         entry_report = {
             "adapter": "personio",
             "studio": studio,
@@ -218,8 +222,8 @@ def run_personio_sources_source(*, fetch_text: Callable[[str, int], str], timeou
             details.append(entry_report)
             continue
         try:
-            text = deps.fetch_with_retries(feed_url, fetch_text, timeout_s, retries, backoff_s)
-            parsed = deps.parse_personio_feed_xml(text, source_name=studio)
+            text = fetch_with_retries(feed_url, fetch_text, timeout_s, retries, backoff_s)
+            parsed = parse_personio_feed_xml(text, source_name=studio)
             entry_report["fetchedCount"] = len(parsed)
             entry_report["keptCount"] = len(parsed)
             if not parsed:
@@ -235,7 +239,7 @@ def run_personio_sources_source(*, fetch_text: Callable[[str, int], str], timeou
             errors.append(f"personio:{source_name}: {exc}")
         details.append(entry_report)
 
-    deps.set_source_diagnostics("personio_sources", adapter="personio", studio="multiple", details=details, partial_errors=errors)
+    set_source_diagnostics("personio_sources", adapter="personio", studio="multiple", details=details, partial_errors=errors)
     if jobs:
         return jobs
     if errors:

@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.shared.utils import now_iso
 
+from .config import EVIDENCE_TYPES_SET
 from .io_runtime import endpoint_url
 from .scoring import unique_string_list
 
@@ -84,6 +85,14 @@ def emit_log(message: str) -> None:
     print(line, flush=True)
 
 
+def _validate_evidence_types(values: List[str], *, context: str) -> List[str]:
+    cleaned = unique_string_list([str(item or "").strip() for item in (values or []) if str(item or "").strip()])
+    unknown = [item for item in cleaned if item not in EVIDENCE_TYPES_SET]
+    if unknown:
+        emit_log(f"Warning: dropping unknown evidenceTypes in {context}: {unknown}")
+    return [item for item in cleaned if item in EVIDENCE_TYPES_SET]
+
+
 def summarize_failures(failures: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     counter: Counter[str] = Counter()
     for row in failures:
@@ -104,7 +113,10 @@ def stage_curated_seed_candidates() -> List[Dict[str, Any]]:
         row["discoveryMethod"] = str(row.get("discoveryMethod") or "seed")
         row["discoveryStage"] = "curated_seed"
         row["evidenceScore"] = int(row.get("evidenceScore") or 52)
-        row["evidenceTypes"] = list(row.get("evidenceTypes") or ["curated_seed"])
+        row["evidenceTypes"] = _validate_evidence_types(
+            list(row.get("evidenceTypes") or ["seed_curated"]),
+            context="stage_curated_seed_candidates",
+        )
         row["evidenceSource"] = str(row.get("evidenceSource") or "seed")
         row["careersUrl"] = str(row.get("careersUrl") or endpoint_url(row) or "")
         rows.append(row)
@@ -123,7 +135,10 @@ def merge_candidate_streams(
             row["discoveryStage"] = str(row.get("discoveryStage") or stage)
             row["discoveryMethod"] = str(row.get("discoveryMethod") or ("seed" if stage == "curated_seed" else "pattern"))
             row["discoveredAt"] = str(row.get("discoveredAt") or now_iso())
-            row["evidenceTypes"] = unique_string_list(row.get("evidenceTypes") or [])
+            row["evidenceTypes"] = _validate_evidence_types(
+                list(row.get("evidenceTypes") or []),
+                context="merge_candidate_streams",
+            )
             row["evidenceScore"] = int(row.get("evidenceScore") or 0)
             rows.append(row)
     return rows

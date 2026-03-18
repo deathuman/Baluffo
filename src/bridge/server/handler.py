@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+import json
+import traceback
+from http.server import BaseHTTPRequestHandler
+from typing import Any, Dict, List
+from urllib.parse import parse_qs, urlparse
+
+from src.bridge.request_utils import read_json_from_request
+
+
+def make_handler(*, api: Any):
+    """Create a request handler bound to an API module/object.
+
+    The route handlers in `src.bridge.routes.*` expect an `api` object exposing
+    functions/state (historically the `src.admin_bridge` module).
+    """
+
+    class Handler(BaseHTTPRequestHandler):
+        def _route_path(self) -> str:
+            # Defensive normalization: some clients/environments can introduce
+            # whitespace/control characters that otherwise cause routes to miss.
+            return str(urlparse(self.path).path or "").strip()
+
+        def _route_query(self) -> Dict[str, List[str]]:
+            return parse_qs(urlparse(self.path).query)
+
+        def _send_json(self, payload: Any, status: int = 200) -> None:
+            # Some payloads may contain lone surrogates or other encoding edge
+            # cases; retry with `ensure_ascii=True` so we can always respond.
+            try:
+                body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+            except UnicodeEncodeError:
+                body = json.dumps(payload, ensure_ascii=True, default=str).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _send_bytes(
+            self,
+            body: bytes,
+            *,
+            content_type: str,
+            filename: str = "",
+            disposition: str = "inline",
+            status: int = 200,
+        ) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(body)))
+            if filename:
+                safe_filename = str(filename).replace('"', "")
+                safe_disposition = "attachment" if str(disposition).lower() == "attachment" else "inline"
+                self.send_header("Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"')
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+            runtime_config = getattr(api, "runtime_config", None)
+            if runtime_config is not None and bool(getattr(runtime_config, "quiet_requests", False)):
+                return
+            try:
+                message = format % args
+            except Exception:  # noqa: BLE001
+                message = format
+            api.bridge_log(
+                "debug",
+                "http_request",
+                method=getattr(self, "command", ""),
+                path=self.path,
+                detail=message,
+            )
+
+        def do_OPTIONS(self) -> None:  # noqa: N802
+            self._send_json({"ok": True})
+
+        def do_GET(self) -> None:  # noqa: N802
+            path = ""
+            try:
+                path = self._route_path()
+                query = self._route_query()
+                api.mark_desktop_session_activity(path)
+                try:
+                    api.bridge_log("info", "http_get_route", rawPath=getattr(self, "path", ""), routePath=path)
+                except Exception:
+                    pass
+
+                from src.bridge.routes.get_routes import handle_get
+
+                if handle_get(self, api=api, path=path, query=query):
+                    return
+                self._send_json({"error": "Not found"}, status=404)
+            except Exception as exc:  # noqa: BLE001
+                # Logging must never prevent the error response from being sent.
+                try:
+                    api.bridge_log("error", "http_get_handler_failed", path=path, error=str(exc))
+                except Exception:  # noqa: BLE001
+                    pass
+                self._send_json(
+                    {
+                        "error": "Internal server error",
+                        "detail": str(exc),
+                        "traceback": traceback.format_exc(),
+                    },
+                    status=500,
+                )
+
+        def do_POST(self) -> None:  # noqa: N802
+            path = self._route_path()
+            payload = read_json_from_request(self)
+            api.mark_desktop_session_activity(path)
+            from src.bridge.routes.post_routes import handle_post
+
+            try:
+                if handle_post(self, api=api, path=path, payload=payload):
+                    return
+                self._send_json({"error": "Not found"}, status=404)
+            except Exception as exc:  # noqa: BLE001
+                api.bridge_log("error", "http_post_handler_failed", path=path, error=str(exc))
+                self._send_json(
+                    {
+                        "error": "Internal server error",
+                        "detail": str(exc),
+                        "traceback": traceback.format_exc(),
+                    },
+                    status=500,
+                )
+
+    return Handler
+

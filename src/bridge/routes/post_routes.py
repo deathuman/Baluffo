@@ -313,31 +313,31 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             api.update_saved_sync_settings(payload if isinstance(payload, dict) else {})
             handler._send_json(api.get_sync_status_payload())  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc), "config": api.source_sync_module.config_status(api.refresh_sync_config())}, status=400)  # noqa: SLF001,E501
+            handler._send_json({"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=400)  # noqa: SLF001
         return True
 
     if path == "/sync/test":
         try:
             handler._send_json(api.test_sync_config())  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
-            api._set_sync_status(action="test", result="error", error=str(exc), pulled=False, pushed=False)  # noqa: SLF001
-            handler._send_json({"ok": False, "error": str(exc), "config": api.source_sync_module.config_status(api.refresh_sync_config())}, status=500)  # noqa: SLF001,E501
+            api.set_sync_status(action="test", result="error", error=str(exc), pulled=False, pushed=False)
+            handler._send_json({"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500)  # noqa: SLF001
         return True
 
     if path == "/sync/pull":
         try:
             handler._send_json(api.sync_pull_sources())  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
-            api._set_sync_status(action="pull", result="error", error=str(exc), pulled=False)  # noqa: SLF001
-            handler._send_json({"ok": False, "error": str(exc), "config": api.source_sync_module.config_status(api.refresh_sync_config())}, status=500)  # noqa: SLF001,E501
+            api.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
+            handler._send_json({"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500)  # noqa: SLF001
         return True
 
     if path == "/sync/push":
         try:
             handler._send_json(api.sync_push_sources())  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
-            api._set_sync_status(action="push", result="error", error=str(exc), pushed=False)  # noqa: SLF001
-            handler._send_json({"ok": False, "error": str(exc), "config": api.source_sync_module.config_status(api.refresh_sync_config())}, status=500)  # noqa: SLF001,E501
+            api.set_sync_status(action="push", result="error", error=str(exc), pushed=False)
+            handler._send_json({"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500)  # noqa: SLF001
         return True
 
     return False

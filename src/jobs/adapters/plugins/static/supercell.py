@@ -4,10 +4,11 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
-from src.jobs import common
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text
 from src.scrapers import domain_profiles
 
 
@@ -31,11 +32,11 @@ def run(
     _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    page_url = common.clean_text(pages[0])
+    page_url = clean_text(pages[0])
     if not page_url:
         return []
 
-    company = common.clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Supercell"
+    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Supercell"
     source_id = (source_row.get("id") or "").strip() or "supercell"
 
     html = ""
@@ -83,9 +84,9 @@ def run(
             r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
             html,
         ):
-            href = common.clean_text(match.group(1))
+            href = clean_text(match.group(1))
             anchor_inner = match.group(2) or ""
-            anchor_text = common.strip_html_text(
+            anchor_text = strip_html_text(
                 re.sub(r"(?is)<[^>]+>", " ", anchor_inner)
             ).strip() or "Job"
             if not href:
@@ -114,7 +115,7 @@ def run(
         if isinstance(row, dict):
             row["adapter"] = "static"
             row["studio"] = company
-            row["source"] = common.clean_text(source_row.get("name")) or "supercell"
+            row["source"] = clean_text(source_row.get("name")) or "supercell"
     cleaned = [r for r in rows if isinstance(r, dict)]
     if not cleaned:
         if _heuristics.detect_no_openings(html):

@@ -56,6 +56,7 @@ def build_pattern_candidates(studio_seeds=None):
 from .web_search import (  # noqa: F401
     discover_web_search_candidates,
     fetch_text,
+    fetch_text_with_retry,
     infer_provider_candidates_from_html,
     infer_web_candidate,
 )

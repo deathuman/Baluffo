@@ -7,26 +7,29 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree as ET
 
-from src.jobs import common
+import src.jobs.common as common
+
+from src.jobs.normalizers import COUNTRY_NAME_TO_CODE, normalize_country
+from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.jobs.models import RawJob
 
 
 def _looks_like_country_token(value: str) -> bool:
-    token = common.clean_text(value)
+    token = clean_text(value)
     lowered = token.lower()
-    if lowered in common.COUNTRY_NAME_TO_CODE:
+    if lowered in COUNTRY_NAME_TO_CODE:
         return True
     return len(token) == 2 and token.isalpha()
 
 
 def parse_greenhouse_location(location_name: Any) -> Tuple[str, str, str]:
-    text = common.clean_text(location_name)
+    text = clean_text(location_name)
     if not text:
         return "", "Unknown", ""
-    lower = common.norm_text(text)
+    lower = norm_text(text)
     if "remote" in lower:
         return "Remote", "Remote", "Remote"
-    parts = [common.clean_text(part) for part in text.split(",") if common.clean_text(part)]
+    parts = [clean_text(part) for part in text.split(",") if clean_text(part)]
     if not parts:
         return "", "Unknown", ""
     if len(parts) == 1:
@@ -43,22 +46,22 @@ def parse_greenhouse_location(location_name: Any) -> Tuple[str, str, str]:
 
 
 def parse_generic_location_fields(location_value: Any) -> Tuple[str, str, str]:
-    text = common.clean_text(location_value)
+    text = clean_text(location_value)
     if not text:
         return "", "Unknown", ""
-    lower = common.norm_text(text)
+    lower = norm_text(text)
     if "remote" in lower:
         return "Remote", "Remote", "Remote"
-    parts = [common.clean_text(part) for part in re.split(r"[,/|-]", text) if common.clean_text(part)]
+    parts = [clean_text(part) for part in re.split(r"[,/|-]", text) if clean_text(part)]
     if not parts:
         return "", "Unknown", ""
     if len(parts) == 1:
         token = parts[0]
         if _looks_like_country_token(token):
-            return "", common.normalize_country(token), ""
+            return "", normalize_country(token), ""
         return token, "Unknown", ""
     city = parts[0]
-    country = common.normalize_country(parts[-1])
+    country = normalize_country(parts[-1])
     return city, country, ""
 
 
@@ -68,25 +71,25 @@ def parse_greenhouse_jobs_payload(
     rows = payload.get("jobs") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return []
-    company_fallback = common.clean_text(fallback_company) or board_slug.replace("-", " ").title()
+    company_fallback = clean_text(fallback_company) or board_slug.replace("-", " ").title()
     jobs: List[RawJob] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
-        title = common.clean_text(row.get("title"))
-        job_link = common.clean_text(row.get("absolute_url") or row.get("url"))
+        title = clean_text(row.get("title"))
+        job_link = clean_text(row.get("absolute_url") or row.get("url"))
         if not title or not job_link:
             continue
-        company = common.clean_text(row.get("company_name")) or company_fallback
+        company = clean_text(row.get("company_name")) or company_fallback
         location_obj = row.get("location")
         location_name = (
-            common.clean_text(location_obj.get("name"))
+            clean_text(location_obj.get("name"))
             if isinstance(location_obj, dict)
-            else common.clean_text(location_obj)
+            else clean_text(location_obj)
         )
         city, country, work_type = parse_greenhouse_location(location_name)
         jobs.append({
-            "sourceJobId": f"greenhouse:{board_slug}:{common.clean_text(row.get('id') or row.get('internal_job_id'))}",
+            "sourceJobId": f"greenhouse:{board_slug}:{clean_text(row.get('id') or row.get('internal_job_id'))}",
             "title": title,
             "company": company,
             "city": city,
@@ -106,18 +109,18 @@ def parse_lever_jobs_payload(
     if not isinstance(payload, list):
         return []
     jobs: List[RawJob] = []
-    company = common.clean_text(fallback_company) or account.replace("-", " ").title()
+    company = clean_text(fallback_company) or account.replace("-", " ").title()
     for row in payload:
         if not isinstance(row, dict):
             continue
-        title = common.clean_text(row.get("text"))
-        link = common.clean_text(row.get("hostedUrl") or row.get("applyUrl") or row.get("url"))
+        title = clean_text(row.get("text"))
+        link = clean_text(row.get("hostedUrl") or row.get("applyUrl") or row.get("url"))
         if not title or not link:
             continue
         categories = row.get("categories") if isinstance(row.get("categories"), dict) else {}
-        location_text = common.clean_text(categories.get("location") or row.get("location"))
+        location_text = clean_text(categories.get("location") or row.get("location"))
         city, country, work_type = parse_generic_location_fields(location_text)
-        commitment = common.clean_text(categories.get("commitment") or row.get("commitment"))
+        commitment = clean_text(categories.get("commitment") or row.get("commitment"))
         tags_text = " ".join([
             common.clean_text(categories.get("team")),
             common.clean_text(categories.get("department")),

@@ -63,3 +63,12 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Desktop app / launcher | `tests/test_desktop_app.py` |
 | Source sync | `tests/test_source_sync.py` |
 | Local data store, backup, config, etc. | `tests/test_<module>.py` |
+
+## Frontend smoke tests (Playwright)
+
+Playwright smoke tests are run by `npm run test:smoke` / `npm run test`.
+
+`playwright.config.js` starts a local web server using `python -m http.server`.
+Make sure `python` on your machine resolves to Python 3 (not Python 2), otherwise the web server will fail to start.
+
+If needed for local development, set `PLAYWRIGHT_PYTHON=py` (or any Python 3 launcher) to override what Playwright uses.

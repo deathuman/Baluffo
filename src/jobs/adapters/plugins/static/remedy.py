@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List
 
-from src.jobs import common
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text
 from src.scrapers.providers.jobylon_v1 import extract_jobylon_v1_jobs
 
 
@@ -28,13 +28,13 @@ def run(
     _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    page_url = common.clean_text(pages[0])
+    page_url = clean_text(pages[0])
     if not page_url:
         return []
 
-    company = common.clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Remedy"
+    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Remedy"
     source_id = (source_row.get("id") or "").strip() or "remedy"
-    source_name = common.clean_text(source_row.get("name")) or "remedy"
+    source_name = clean_text(source_row.get("name")) or "remedy"
 
     try:
         html = fetch_text(page_url, timeout_s)

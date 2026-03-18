@@ -88,7 +88,7 @@ def build_pattern_candidates(studio_seeds: List[Dict[str, Any]]) -> List[Dict[st
             continue
         nl_priority = bool(seed.get("nlPriority"))
         careers_url = str(seed.get("careersUrl") or "").strip()
-        evidence_types = ["provider_hint", "seed_catalog"]
+        evidence_types = ["seed_provider_hint", "seed_catalog"]
         explicit = [str(item).strip().lower() for item in (seed.get("likelyProviders") or []) if str(item).strip()]
         for provider in likely_providers_for_seed(seed):
             reinforcement = provider_reinforcement_score(seed, provider)
@@ -101,7 +101,7 @@ def build_pattern_candidates(studio_seeds: List[Dict[str, Any]]) -> List[Dict[st
                     "careersUrl": careers_url,
                     "evidenceScore": 14 + (10 if provider in explicit else 0) + reinforcement,
                     "evidenceTypes": unique_string_list(
-                        [*evidence_types, "provider_reinforced"] if reinforcement else evidence_types
+                        [*evidence_types, "seed_provider_reinforced"] if reinforcement else evidence_types
                     ),
                     "evidenceSource": "pattern",
                 }

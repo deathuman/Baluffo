@@ -9,9 +9,13 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.jobs import common
-from src.jobs.adapters import _runtime
+from src.jobs.adapters import _runtime as runtime_deps
+from src.jobs.common import config as common_config
+from src.jobs.common import registry_entries, set_source_diagnostics
+from src.jobs.common import to_iso
 from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.shared.utils import env_flag
 from src.shared.utils import coerce_int
 
 
@@ -20,19 +24,19 @@ def _clean_errors(values: Any) -> List[str]:
         return []
     cleaned = []
     for item in values:
-        text = common.clean_text(item)
+        text = clean_text(item)
         if text:
             cleaned.append(text)
     return cleaned
 
 
 def _base_detail(source_row: Dict[str, Any], *, status: str = "error", error: str = "") -> Dict[str, Any]:
-    source_name = common.clean_text(source_row.get("name")) or "unknown"
-    studio_name = common.clean_text(source_row.get("studio")) or source_name
+    source_name = clean_text(source_row.get("name")) or "unknown"
+    studio_name = clean_text(source_row.get("studio")) or source_name
     pages = source_row.get("pages") if isinstance(source_row.get("pages"), list) else []
-    source_id = common.clean_text(source_row.get("id"))
+    source_id = clean_text(source_row.get("id"))
     if not source_id:
-        seed = "|".join([source_name, studio_name, *[common.clean_text(page) for page in pages]])
+        seed = "|".join([source_name, studio_name, *[clean_text(page) for page in pages]])
         source_id = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
     return {
         "adapter": "scrapy_static",
@@ -41,12 +45,12 @@ def _base_detail(source_row: Dict[str, Any], *, status: str = "error", error: st
         "status": status,
         "fetchedCount": 0,
         "keptCount": 0,
-        "error": common.clean_text(error),
-        "classification": "parse_error" if common.norm_text(status) == "error" else "ok_no_jobs",
+        "error": clean_text(error),
+        "classification": "parse_error" if norm_text(status) == "error" else "ok_no_jobs",
         "top_reject_reasons": [],
         "browserFallbackRecommended": False,
         "sourceId": source_id,
-        "pages": [common.clean_text(page) for page in pages if common.clean_text(page)],
+        "pages": [clean_text(page) for page in pages if clean_text(page)],
         "loss": {
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
@@ -61,13 +65,13 @@ def _coerce_int(value: Any) -> int:
 def _normalize_job(raw: Any, source_row: Dict[str, Any]) -> Optional[RawJob]:
     if not isinstance(raw, dict):
         return None
-    strict_validation = common.env_flag("BALUFFO_SCRAPY_VALIDATION_STRICT", common.DEFAULT_SCRAPY_VALIDATION_STRICT)
-    source_name = common.clean_text(raw.get("source")) or (common.clean_text(source_row.get("name")) or "scrapy_static")
-    studio_name = common.clean_text(raw.get("studio")) or (common.clean_text(source_row.get("studio")) or common.clean_text(source_row.get("name")) or "unknown")
-    title = common.clean_text(raw.get("title"))
-    company = common.clean_text(raw.get("company"))
-    job_link = common.normalize_url(raw.get("jobLink"))
-    source_job_id = common.clean_text(raw.get("sourceJobId"))
+    strict_validation = env_flag("BALUFFO_SCRAPY_VALIDATION_STRICT", common_config.DEFAULT_SCRAPY_VALIDATION_STRICT)
+    source_name = clean_text(raw.get("source")) or (clean_text(source_row.get("name")) or "scrapy_static")
+    studio_name = clean_text(raw.get("studio")) or (clean_text(source_row.get("studio")) or clean_text(source_row.get("name")) or "unknown")
+    title = clean_text(raw.get("title"))
+    company = clean_text(raw.get("company"))
+    job_link = normalize_url(raw.get("jobLink"))
+    source_job_id = clean_text(raw.get("sourceJobId"))
     if not title or not company:
         return None
     if not job_link and not strict_validation:
@@ -76,7 +80,7 @@ def _normalize_job(raw: Any, source_row: Dict[str, Any]) -> Optional[RawJob]:
             for item in source_bundle_raw:
                 if not isinstance(item, dict):
                     continue
-                candidate = common.normalize_url(item.get("jobLink"))
+                candidate = normalize_url(item.get("jobLink"))
                 if candidate:
                     job_link = candidate
                     break
@@ -84,7 +88,7 @@ def _normalize_job(raw: Any, source_row: Dict[str, Any]) -> Optional[RawJob]:
         return None
     if not source_job_id:
         source_job_id = hashlib.sha1(f"{title}|{company}|{job_link}".encode("utf-8")).hexdigest()[:12]
-    posted_at = common.to_iso(raw.get("postedAt"))
+    posted_at = to_iso(raw.get("postedAt"))
     source_bundle = raw.get("sourceBundle")
     if not isinstance(source_bundle, list) or not source_bundle:
         source_bundle = [
@@ -102,16 +106,16 @@ def _normalize_job(raw: Any, source_row: Dict[str, Any]) -> Optional[RawJob]:
         "sourceJobId": source_job_id,
         "title": title,
         "company": company,
-        "city": common.clean_text(raw.get("city")),
-        "country": common.clean_text(raw.get("country")) or "Unknown",
-        "workType": common.clean_text(raw.get("workType")),
-        "contractType": common.clean_text(raw.get("contractType")),
+        "city": clean_text(raw.get("city")),
+        "country": clean_text(raw.get("country")) or "Unknown",
+        "workType": clean_text(raw.get("workType")),
+        "contractType": clean_text(raw.get("contractType")),
         "jobLink": job_link,
-        "sector": common.clean_text(raw.get("sector")) or "Game",
+        "sector": clean_text(raw.get("sector")) or "Game",
         "postedAt": posted_at,
         "source": source_name,
         "studio": studio_name,
-        "adapter": common.clean_text(raw.get("adapter")) or "scrapy_static",
+        "adapter": clean_text(raw.get("adapter")) or "scrapy_static",
         "sourceBundle": source_bundle,
     }
 
@@ -123,10 +127,9 @@ def run_scrapy_static_source(
     retries: int,
     backoff_s: float,
 ) -> List[RawJob]:
-    deps = _runtime.facade()
-    subprocess_module = getattr(deps, "subprocess", subprocess)
     del fetch_text
 
+    deps = runtime_deps.facade()
     results_list: List[RawJob] = []
     errors_list: List[str] = []
     details: List[Dict[str, Any]] = []
@@ -155,8 +158,8 @@ def run_scrapy_static_source(
         return []
 
     for source in sources:
-        source_name = common.clean_text(source.get("name")) or "unknown"
-        studio_name = common.clean_text(source.get("studio")) or source_name
+        source_name = clean_text(source.get("name")) or "unknown"
+        studio_name = clean_text(source.get("studio")) or source_name
         pages = source.get("pages") if isinstance(source.get("pages"), list) else []
         config = {
             "source": {
@@ -177,14 +180,14 @@ def run_scrapy_static_source(
         source_detail = _base_detail(source)
         try:
             timeout_window = min(300, max(1, int(timeout_s)) * max(1, len(pages)) * 4)
-            result = subprocess_module.run(
+            result = subprocess.run(
                 [sys.executable, str(runner_path)],
                 input=json.dumps(config).encode("utf-8"),
                 capture_output=True,
                 timeout=timeout_window,
                 check=False,
             )
-            stderr_text = common.clean_text(result.stderr.decode("utf-8", errors="replace"))
+            stderr_text = clean_text(result.stderr.decode("utf-8", errors="replace"))
             if result.returncode != 0:
                 errors_list.append(f"{source_name}: subprocess exit {result.returncode}")
             if stderr_text and result.returncode != 0:
@@ -221,14 +224,14 @@ def run_scrapy_static_source(
                 if isinstance(detail_0, dict):
                     source_detail.update(
                         {
-                            "status": "ok" if common.clean_text(detail_0.get("status")).lower() == "ok" else "error",
+                            "status": "ok" if clean_text(detail_0.get("status")).lower() == "ok" else "error",
                             "fetchedCount": _coerce_int(detail_0.get("fetchedCount")),
                             "keptCount": _coerce_int(detail_0.get("keptCount")),
-                            "error": common.clean_text(detail_0.get("error")),
-                            "classification": common.clean_text(detail_0.get("classification")) or source_detail.get("classification"),
+                            "error": clean_text(detail_0.get("error")),
+                            "classification": clean_text(detail_0.get("classification")) or source_detail.get("classification"),
                             "browserFallbackRecommended": bool(detail_0.get("browserFallbackRecommended")),
                             "top_reject_reasons": detail_0.get("top_reject_reasons") if isinstance(detail_0.get("top_reject_reasons"), list) else [],
-                            "sourceId": common.clean_text(detail_0.get("sourceId")) or source_detail.get("sourceId"),
+                            "sourceId": clean_text(detail_0.get("sourceId")) or source_detail.get("sourceId"),
                             "pages": detail_0.get("pages") if isinstance(detail_0.get("pages"), list) else source_detail.get("pages"),
                         }
                     )
@@ -254,7 +257,7 @@ def run_scrapy_static_source(
                 source_detail["loss"] = source_detail_loss
                 source_detail["keptCount"] = max(int(source_detail.get("keptCount") or 0), kept)
                 source_detail["status"] = "ok"
-                if not common.clean_text(source_detail.get("classification")):
+                if not clean_text(source_detail.get("classification")):
                     source_detail["classification"] = "ok_with_jobs" if kept > 0 else "ok_no_jobs"
                 if source_detail.get("classification") == "ok_no_jobs" and int(source_detail.get("fetchedCount") or 0) > 0:
                     source_detail["classification"] = "fetch_ok_extract_zero"
@@ -264,7 +267,7 @@ def run_scrapy_static_source(
                 )
             else:
                 source_detail["status"] = "error"
-                if not common.clean_text(source_detail.get("error")):
+                if not clean_text(source_detail.get("error")):
                     source_detail["error"] = "crawl failed"
                 source_detail["classification"] = "parse_error"
                 errors_list.append(f"{source_name}: crawl failed")
@@ -281,7 +284,7 @@ def run_scrapy_static_source(
                     "detail_pages_visited": _coerce_int(stats.get("detail_pages_visited")),
                     "jobs_emitted": _coerce_int(stats.get("jobs_emitted")),
                     "jobs_rejected_validation": _coerce_int(stats.get("jobs_rejected_validation")),
-                    "finish_reason": common.clean_text(stats.get("finish_reason")),
+                    "finish_reason": clean_text(stats.get("finish_reason")),
                 }
                 source_detail_loss = source_detail.get("loss") if isinstance(source_detail.get("loss"), dict) else {}
                 source_detail_loss["scrapyRunnerRejectedValidation"] = _coerce_int(stats.get("jobs_rejected_validation"))
@@ -290,7 +293,7 @@ def run_scrapy_static_source(
                     source_detail["fetchedCount"] = int(source_detail["stats"]["downloader/response_count"])
 
             details.append(source_detail)
-        except subprocess_module.TimeoutExpired:
+        except subprocess.TimeoutExpired:
             source_detail.update(
                 {
                     "status": "error",
@@ -305,12 +308,12 @@ def run_scrapy_static_source(
             source_detail.update(
                 {
                     "status": "error",
-                    "error": common.clean_text(exc)[:500],
+                    "error": clean_text(exc)[:500],
                     "classification": "parse_error",
                     "browserFallbackRecommended": False,
                 }
             )
-            errors_list.append(f"{source_name}: {type(exc).__name__}: {common.clean_text(exc)[:200]}")
+            errors_list.append(f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}")
             details.append(source_detail)
 
     deps.set_source_diagnostics(

@@ -23,6 +23,10 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Allow running via `py src/admin_bridge.py` from repo root (or elsewhere).
+# When executed as a script, Python puts `.../Baluffo/src` on sys.path, not the repo root,
+# so absolute imports like `import src.jobs...` would fail without this.
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -64,6 +68,9 @@ from src.bridge import html_extractor as _html_extractor
 from src.bridge import source_checker as _source_checker
 from src.bridge import task_history as _task_history_module
 from src.bridge.request_utils import read_json_from_request
+from src.bridge.server import make_handler, run_http_server
+from src.bridge.api import BridgeApi
+from src.bridge import config as bridge_config
 from src.bridge.source_helpers import (
     find_existing_source_by_url,
     find_existing_static_source_by_studio_domain,
@@ -113,7 +120,7 @@ def _get_task_history_manager() -> Any:
     return _TASK_HISTORY_MANAGER
 
 
-LOG_LEVEL_ORDER = {"debug": 10, "info": 20, "warn": 30, "error": 40}
+LOG_LEVEL_ORDER = bridge_config.LOG_LEVEL_ORDER
 PIPELINE_STATE_LOCK = threading.RLock()
 ACTIVE_PIPELINE_RUN_ID = ""
 ACTIVE_PIPELINE_THREAD: Optional[threading.Thread] = None
@@ -265,16 +272,7 @@ def _get_pipeline_service() -> PipelineService:
         return _PIPELINE_SERVICE
 
 
-@dataclass
-class RuntimeConfig:
-    root: Path
-    data_dir: Path
-    host: str
-    port: int
-    log_format: str
-    log_level: str
-    quiet_requests: bool
-    desktop_mode: bool = False
+RuntimeConfig = bridge_config.RuntimeConfig
 
 
 RUNTIME_CONFIG = RuntimeConfig(
@@ -290,13 +288,11 @@ RUNTIME_CONFIG = RuntimeConfig(
 
 
 def _normalize_log_level(value: Any, default: str = "info") -> str:
-    token = str(value or "").strip().lower()
-    return token if token in LOG_LEVEL_ORDER else str(default)
+    return bridge_config._normalize_log_level(value, default)
 
 
 def _normalize_log_format(value: Any, default: str = "human") -> str:
-    token = str(value or "").strip().lower()
-    return token if token in {"human", "jsonl"} else str(default)
+    return bridge_config._normalize_log_format(value, default)
 
 
 def resolve_runtime_config(
@@ -304,44 +300,12 @@ def resolve_runtime_config(
     *,
     env: Optional[Dict[str, str]] = None,
 ) -> RuntimeConfig:
-    bridge_defaults = get_bridge_defaults()
-    storage_defaults = get_storage_defaults()
-    parser = argparse.ArgumentParser(description="Run local admin bridge API.")
-    parser.add_argument("--host", default=None)
-    parser.add_argument("--port", type=int, default=None)
-    parser.add_argument("--data-dir", default=None)
-    parser.add_argument("--desktop-mode", action="store_true", default=False)
-    parser.add_argument("--log-format", choices=("human", "jsonl"), default=None)
-    parser.add_argument("--log-level", choices=("info", "debug"), default=None)
-    parser.add_argument("--quiet-requests", action="store_true", default=None)
-    args = parser.parse_args(argv)
-    env_map = env if isinstance(env, dict) else os.environ
-
-    host = str(args.host or env_map.get("BALUFFO_BRIDGE_HOST") or bridge_defaults["host"]).strip() or str(bridge_defaults["host"])
-    port = _coerce_port(args.port if args.port is not None else env_map.get("BALUFFO_BRIDGE_PORT"), int(bridge_defaults["port"]))
-    data_dir_raw = str(args.data_dir or env_map.get("BALUFFO_DATA_DIR") or storage_defaults["data_dir"]).strip()
-    data_dir = Path(data_dir_raw).expanduser().resolve()
-    log_format = _normalize_log_format(args.log_format or env_map.get("BALUFFO_BRIDGE_LOG_FORMAT") or bridge_defaults["log_format"])
-    log_level = _normalize_log_level(args.log_level or env_map.get("BALUFFO_BRIDGE_LOG_LEVEL") or bridge_defaults["log_level"])
-    quiet_requests = bool(
-        args.quiet_requests
-        if args.quiet_requests is not None
-        else str(env_map.get("BALUFFO_BRIDGE_QUIET_REQUESTS") or "").strip().lower() in {"1", "true", "yes", "on"}
-        if str(env_map.get("BALUFFO_BRIDGE_QUIET_REQUESTS") or "").strip()
-        else bridge_defaults["quiet_requests"]
-    )
-    desktop_mode = bool(args.desktop_mode) or (
-        str(env_map.get("BALUFFO_DESKTOP_MODE") or "").strip().lower() in {"1", "true", "yes", "on"}
-    )
-    return RuntimeConfig(
+    return bridge_config.resolve_runtime_config(
         root=ROOT,
-        data_dir=data_dir,
-        host=host,
-        port=port,
-        log_format=log_format,
-        log_level=log_level,
-        quiet_requests=quiet_requests,
-        desktop_mode=desktop_mode,
+        get_bridge_defaults=get_bridge_defaults,
+        get_storage_defaults=get_storage_defaults,
+        argv=argv,
+        env=env,
     )
 
 
@@ -422,23 +386,42 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
 
 
 def startup_banner(config: RuntimeConfig) -> None:
-    bridge_log(
-        "info",
-        "admin_bridge_started",
-        url=f"http://{config.host}:{config.port}",
-        root=str(config.root),
-        data_dir=str(config.data_dir),
-        log_format=config.log_format,
-        log_level=config.log_level,
-        pid=os.getpid(),
-    )
-    bridge_log(
-        "info",
-        "admin_bridge_endpoints",
-        ops="GET /ops/health, GET /ops/history, GET /ops/fetcher-metrics, POST /ops/alerts/ack",
-        registry="GET /registry/*, POST /registry/*",
-        sync="GET /sync/status, POST /sync/config, POST /sync/test, POST /sync/pull, POST /sync/push",
-        tasks="POST /tasks/run-fetcher, POST /tasks/run-discovery, POST /tasks/run-sync-pull, POST /tasks/run-sync-push, POST /tasks/run-jobs-pipeline, GET /tasks/run-jobs-pipeline-status",
+    bridge_config.startup_banner(config=config, bridge_log=bridge_log)
+
+
+def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
+    # BridgeApi is dependency-injected to avoid importing `src.admin_bridge` from bridge modules.
+    return BridgeApi(
+        runtime_config=config,
+        registry=_get_registry_service(),
+        sync=_get_sync_service(),
+        pipeline=_get_pipeline_service(),
+        discovery=_get_discovery_service(),
+        normalize_fetch_report_contract=normalize_fetch_report_contract,
+        normalize_discovery_report_contract=normalize_discovery_report_contract,
+        DISCOVERY_REPORT_PATH=DISCOVERY_REPORT_PATH,
+        JOBS_FETCH_REPORT_PATH=JOBS_FETCH_REPORT_PATH,
+        APPROVAL_STATE_PATH=APPROVAL_STATE_PATH,
+        DISCOVERY_LOG_PATH=DISCOVERY_LOG_PATH,
+        FETCHER_LOG_PATH=FETCHER_LOG_PATH,
+        STARTUP_METRICS_PATH=STARTUP_METRICS_PATH,
+        DESKTOP_SESSION_ACTIVITY_AT=DESKTOP_SESSION_ACTIVITY_AT,
+        bridge_log=bridge_log,
+        now_iso=now_iso,
+        _mark_desktop_session_activity=mark_desktop_session_activity,
+        desktop_local_data_store=desktop_local_data_store,
+        read_startup_metrics=read_startup_metrics,
+        load_json_object=load_json_object,
+        save_json_atomic=save_json_atomic,
+        start_fetcher_task=start_fetcher_task,
+        start_sync_task=start_sync_task,
+        compute_ops_health=compute_ops_health,
+        compute_fetcher_metrics=compute_fetcher_metrics,
+        sync_history_from_reports=sync_history_from_reports,
+        sync_config_status=lambda: source_sync_module.config_status(refresh_sync_config()),
+        set_sync_status=_set_sync_status,
+        load_alert_state=load_alert_state,
+        save_alert_state=save_alert_state,
     )
 
 
@@ -1588,93 +1571,6 @@ def desktop_local_data_store() -> LocalDataStore:
     return DESKTOP_LOCAL_DATA_STORE
 
 
-class Handler(BaseHTTPRequestHandler):
-    def _route_path(self) -> str:
-        return urlparse(self.path).path
-
-    def _route_query(self) -> Dict[str, List[str]]:
-        return parse_qs(urlparse(self.path).query)
-
-    def _send_json(self, payload: Any, status: int = 200) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _send_bytes(
-        self,
-        body: bytes,
-        *,
-        content_type: str,
-        filename: str = "",
-        disposition: str = "inline",
-        status: int = 200,
-    ) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Content-Length", str(len(body)))
-        if filename:
-            safe_filename = str(filename).replace('"', "")
-            safe_disposition = "attachment" if str(disposition).lower() == "attachment" else "inline"
-            self.send_header("Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"')
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
-        if RUNTIME_CONFIG.quiet_requests:
-            return
-        try:
-            message = format % args
-        except Exception:  # noqa: BLE001
-            message = format
-        bridge_log("debug", "http_request", method=getattr(self, "command", ""), path=self.path, detail=message)
-
-    def do_OPTIONS(self) -> None:  # noqa: N802
-        self._send_json({"ok": True})
-
-    def do_GET(self) -> None:  # noqa: N802
-        path = self._route_path()
-        query = self._route_query()
-        mark_desktop_session_activity(path)
-        from src.bridge.routes.get_routes import handle_get
-        import sys
-
-        if handle_get(self, api=sys.modules[__name__], path=path, query=query):
-            return
-        self._send_json({"error": "Not found"}, status=404)
-
-    def do_POST(self) -> None:  # noqa: N802
-        path = self._route_path()
-        payload = read_json_from_request(self)
-        mark_desktop_session_activity(path)
-        from src.bridge.routes.post_routes import handle_post
-        import sys
-        import traceback
-
-        try:
-            if handle_post(self, api=sys.modules[__name__], path=path, payload=payload):
-                return
-            self._send_json({"error": "Not found"}, status=404)
-        except Exception as exc:  # noqa: BLE001
-            bridge_log("error", "http_post_handler_failed", path=path, error=str(exc))
-            self._send_json(
-                {
-                    "error": "Internal server error",
-                    "detail": str(exc),
-                    "traceback": traceback.format_exc(),
-                },
-                status=500,
-            )
-
-
 def parse_args(argv: Optional[List[str]] = None) -> RuntimeConfig:
     return resolve_runtime_config(argv)
 
@@ -1685,26 +1581,9 @@ def main() -> int:
     refresh_sync_config()
     ensure_active_registry()
     startup_sync_pull()
-    try:
-        server = ThreadingHTTPServer((config.host, config.port), Handler)
-    except OSError as exc:
-        bridge_log(
-            "error",
-            "admin_bridge_start_failed",
-            host=config.host,
-            port=config.port,
-            error=str(exc),
-        )
-        return 1
-    startup_banner(config)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        bridge_log("info", "admin_bridge_shutdown_requested", signal="keyboard_interrupt")
-    finally:
-        server.server_close()
-        bridge_log("info", "admin_bridge_stopped")
-    return 0
+    api = build_bridge_api(config)
+    handler_cls = make_handler(api=api)
+    return run_http_server(api=api, host=config.host, port=config.port, handler_cls=handler_cls)
 
 
 if __name__ == "__main__":

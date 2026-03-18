@@ -17,7 +17,6 @@ from urllib.parse import urlparse
 
 from src.jobs import canonicalize as canonicalize_pkg
 from src.jobs import dedup as dedup_pkg
-from src.jobs import common
 from src.jobs import reporting as reporting_pkg
 from src.jobs import state as state_pkg
 from src.jobs import transport as transport_pkg
@@ -27,47 +26,48 @@ from src.jobs.adapters import static as static_adapter
 from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob
+from src.jobs.models import RawJob
+from src.jobs.common import config as common_config
+from src.jobs.common import social as common_social
+from src.jobs.common import sources as common_sources
+from src.jobs.common import STUDIO_SOURCE_REGISTRY, SOURCE_REPORT_META, SOURCE_DIAGNOSTICS
+from src.jobs import common as common
+from src.contracts import SCHEMA_VERSION
+from src.pipeline_io import (
+    read_existing_output as read_existing_output_from_file,
+    serialize_rows_for_csv,
+    serialize_rows_for_json,
+    write_atomic_if_changed,
+    write_text_if_changed,
+)
+from src.shared.utils import env_flag, now_iso
+from src.jobs.text_utils import clean_text, norm_text
 
-RawJob = common.RawJob
-
-DEFAULT_OUTPUT_DIR = common.DEFAULT_OUTPUT_DIR
-DEFAULT_TIMEOUT_S = common.DEFAULT_TIMEOUT_S
-DEFAULT_RETRIES = common.DEFAULT_RETRIES
-DEFAULT_BACKOFF_S = common.DEFAULT_BACKOFF_S
-DEFAULT_FETCH_STRATEGY = common.DEFAULT_FETCH_STRATEGY
-DEFAULT_ADAPTER_HTTP_CONCURRENCY = common.DEFAULT_ADAPTER_HTTP_CONCURRENCY
+DEFAULT_OUTPUT_DIR = common_config.DEFAULT_OUTPUT_DIR
+DEFAULT_TIMEOUT_S = common_config.DEFAULT_TIMEOUT_S
+DEFAULT_RETRIES = common_config.DEFAULT_RETRIES
+DEFAULT_BACKOFF_S = common_config.DEFAULT_BACKOFF_S
+DEFAULT_FETCH_STRATEGY = common_config.DEFAULT_FETCH_STRATEGY
+DEFAULT_ADAPTER_HTTP_CONCURRENCY = common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community_adapter.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
-DEFAULT_STATIC_DETAIL_CONCURRENCY = common.DEFAULT_STATIC_DETAIL_CONCURRENCY
-DEFAULT_HOT_SOURCE_CADENCE_MINUTES = common.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
-DEFAULT_COLD_SOURCE_CADENCE_MINUTES = common.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
-DEFAULT_SOCIAL_CONFIG_PATH = common.DEFAULT_SOCIAL_CONFIG_PATH
-DEFAULT_SOCIAL_LOOKBACK_MINUTES = common.DEFAULT_SOCIAL_LOOKBACK_MINUTES
-DEFAULT_SOCIAL_MIN_CONFIDENCE = common.DEFAULT_SOCIAL_MIN_CONFIDENCE
-DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE = common.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
-DEFAULT_SCRAPY_VALIDATION_STRICT = common.DEFAULT_SCRAPY_VALIDATION_STRICT
-DEFAULT_CANONICAL_STRICT_URL = common.DEFAULT_CANONICAL_STRICT_URL
-SCHEMA_VERSION = common.SCHEMA_VERSION
-STUDIO_SOURCE_REGISTRY = common.STUDIO_SOURCE_REGISTRY
-SOURCE_REPORT_META = common.SOURCE_REPORT_META
-SOURCE_DIAGNOSTICS = common.SOURCE_DIAGNOSTICS
-OUTPUT_FIELDS = common.OUTPUT_FIELDS
-LIGHTWEIGHT_OUTPUT_FIELDS = common.LIGHTWEIGHT_OUTPUT_FIELDS
+DEFAULT_STATIC_DETAIL_CONCURRENCY = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY
+DEFAULT_HOT_SOURCE_CADENCE_MINUTES = common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
+DEFAULT_COLD_SOURCE_CADENCE_MINUTES = common_config.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
+DEFAULT_SOCIAL_CONFIG_PATH = common_config.DEFAULT_SOCIAL_CONFIG_PATH
+DEFAULT_SOCIAL_LOOKBACK_MINUTES = common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES
+DEFAULT_SOCIAL_MIN_CONFIDENCE = common_config.DEFAULT_SOCIAL_MIN_CONFIDENCE
+DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE = common_config.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
+DEFAULT_SCRAPY_VALIDATION_STRICT = common_config.DEFAULT_SCRAPY_VALIDATION_STRICT
+DEFAULT_CANONICAL_STRICT_URL = common_config.DEFAULT_CANONICAL_STRICT_URL
+OUTPUT_FIELDS = common_config.OUTPUT_FIELDS
+LIGHTWEIGHT_OUTPUT_FIELDS = common_config.LIGHTWEIGHT_OUTPUT_FIELDS
 
-clean_text = common.clean_text
-norm_text = common.norm_text
-now_iso = common.now_iso
-load_social_config = common.load_social_config
+load_social_config = common_social.load_social_config
 default_fetch_text = transport_pkg.default_fetch_text
 resolve_fetch_text_impl = transport_pkg.resolve_fetch_text_impl
 build_redirect_resolver = transport_pkg.build_redirect_resolver
-write_text_if_changed = common.write_text_if_changed
-write_atomic_if_changed = common.write_atomic_if_changed
-serialize_rows_for_json = common.serialize_rows_for_json
-serialize_rows_for_csv = common.serialize_rows_for_csv
-read_existing_output_from_file = common.read_existing_output_from_file
-load_registry_from_file = common.load_registry_from_file
-read_approved_since_last_run = common.read_approved_since_last_run
-env_flag = common.env_flag
+load_registry_from_file = common_sources.load_registry_from_file
+read_approved_since_last_run = common_sources.read_approved_since_last_run
 
 canonicalize_job = canonicalize_pkg.canonicalize_job
 CanonicalNormalizer = canonicalize_pkg.CanonicalNormalizer

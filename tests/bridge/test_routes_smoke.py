@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from src.bridge.api import BridgeApi
+from src.bridge.routes.get_routes import handle_get
+from src.bridge.routes.post_routes import handle_post
+
+
+@dataclass
+class _RuntimeConfig:
+    host: str = "127.0.0.1"
+    port: int = 0
+    quiet_requests: bool = True
+    desktop_mode: bool = True
+    root: Any = None
+    data_dir: Any = None
+
+
+class _FakeHandler:
+    def __init__(self) -> None:
+        self.sent: List[Dict[str, Any]] = []
+
+    def _send_json(self, payload: Any, status: int = 200) -> None:  # noqa: SLF001
+        self.sent.append({"status": int(status), "payload": payload})
+
+
+class _FakeDesktopLocalDataStore:
+    def __init__(self) -> None:
+        self.sign_in_calls: List[str] = []
+
+    def sign_in(self, name: str) -> Dict[str, Any]:
+        self.sign_in_calls.append(str(name))
+        return {"uid": "u1", "name": str(name)}
+
+
+def _make_api(tmp_path: Path) -> BridgeApi:
+    store = _FakeDesktopLocalDataStore()
+
+    def load_state() -> Dict[str, List[Dict[str, Any]]]:
+        return {"active": [{"adapter": "static", "listing_url": "https://example.com/jobs"}], "pending": [], "rejected": []}
+
+    def summarize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, int]:
+        return {
+            "activeCount": len(state.get("active") or []),
+            "pendingCount": len(state.get("pending") or []),
+            "rejectedCount": len(state.get("rejected") or []),
+        }
+
+    api = BridgeApi(
+        runtime_config=_RuntimeConfig(),
+        DISCOVERY_REPORT_PATH=tmp_path / "discovery-report.json",
+        JOBS_FETCH_REPORT_PATH=tmp_path / "jobs-fetch-report.json",
+        APPROVAL_STATE_PATH=tmp_path / "approval.json",
+        DISCOVERY_LOG_PATH=tmp_path / "discovery.log",
+        FETCHER_LOG_PATH=tmp_path / "fetcher.log",
+        STARTUP_METRICS_PATH=tmp_path / "startup-metrics.jsonl",
+    )
+    api.desktop_local_data_store = lambda: store  # type: ignore[assignment]
+    api.load_state = load_state  # type: ignore[assignment]
+    api.summarize_state = summarize_state  # type: ignore[assignment]
+    api.compute_ops_health = lambda: {"ok": True, "detail": "unit-test"}  # type: ignore[assignment]
+    return api
+
+
+def test_get_routes_smoke_ops_health_and_registry_summary(tmp_path: Path) -> None:
+    api = _make_api(tmp_path)
+    handler = _FakeHandler()
+
+    assert handle_get(handler, api=api, path="/ops/health", query={}) is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["ok"] is True
+
+    assert handle_get(handler, api=api, path="/registry/summary", query={}) is True
+    payload = handler.sent[-1]["payload"]
+    assert "summary" in payload
+    assert int(payload["summary"]["activeCount"]) == 1
+
+
+def test_get_routes_discovery_report_success_and_json_serializable(tmp_path: Path) -> None:
+    api = _make_api(tmp_path)
+    handler = _FakeHandler()
+
+    # Minimal report payload that matches the normalizer expectations.
+    (api.DISCOVERY_REPORT_PATH).write_text(
+        json.dumps(
+            {
+                "schemaVersion": "1.0",
+                "mode": "dynamic",
+                "startedAt": "2026-01-01T00:00:00Z",
+                "finishedAt": "2026-01-01T00:10:00Z",
+                "summary": {
+                    "queuedCandidateCount": 0,
+                    "foundEndpointCount": 0,
+                    "probedCandidateCount": 0,
+                    "failedProbeCount": 0,
+                },
+                "candidates": [],
+                "failures": [],
+                "topFailures": [],
+                "outputs": {},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert handle_get(handler, api=api, path="/discovery/report", query={}) is True
+    assert handler.sent[-1]["status"] == 200
+    # Ensure we can JSON-encode whatever the route returned.
+    json.dumps(handler.sent[-1]["payload"])
+
+
+def test_get_routes_discovery_report_never_drops_connection_on_error(tmp_path: Path) -> None:
+    api = _make_api(tmp_path)
+    handler = _FakeHandler()
+
+    # Force a failure in the loader so the route must return a 500 JSON body.
+    def _broken_loader(*_a: Any, **_kw: Any) -> Dict[str, Any]:  # noqa: ANN001
+        raise RuntimeError("boom")
+
+    api.load_json_object = _broken_loader  # type: ignore[assignment]
+
+    assert handle_get(handler, api=api, path="/discovery/report", query={}) is True
+    assert handler.sent[-1]["status"] == 500
+    assert handler.sent[-1]["payload"]["error"] == "failed_to_load_discovery_report"
+
+
+def test_post_routes_smoke_desktop_sign_in(tmp_path: Path) -> None:
+    api = _make_api(tmp_path)
+    handler = _FakeHandler()
+
+    assert handle_post(handler, api=api, path="/desktop-local-data/sign-in", payload={"name": "Alice"}) is True
+    assert handler.sent[-1]["status"] == 200
+    payload = handler.sent[-1]["payload"]
+    assert payload["ok"] is True
+    assert payload["user"]["name"] == "Alice"
+

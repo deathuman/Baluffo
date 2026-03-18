@@ -1,0 +1,234 @@
+"""Contract/payload normalization helpers shared across jobs pipeline/reporting."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+from src.contracts import SCHEMA_VERSION
+from src.jobs.common.numbers import _clamped_int
+from src.jobs.text_utils import clean_text, norm_text
+from src.jobs_fetcher_registry import SOURCE_REPORT_META
+
+
+def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count: int) -> Dict[str, Any]:
+    src = runtime if isinstance(runtime, dict) else {}
+    return {
+        "selectedSourceCount": int(selected_source_count),
+        "sourceTtlMinutes": _clamped_int(src.get("sourceTtlMinutes"), 0, 0),
+        "maxWorkers": _clamped_int(src.get("maxWorkers"), 1, 1),
+        "maxPerDomain": _clamped_int(src.get("maxPerDomain"), 1, 1),
+        "fetchStrategy": clean_text(src.get("fetchStrategy")) or "auto",
+        "fetchClient": clean_text(src.get("fetchClient")) or "urllib",
+        "adapterHttpConcurrency": _clamped_int(src.get("adapterHttpConcurrency"), 0, 1),
+        "staticDetailConcurrency": _clamped_int(src.get("staticDetailConcurrency"), 0, 1),
+        "googleSheetsRedirectConcurrency": _clamped_int(src.get("googleSheetsRedirectConcurrency"), 0, 1),
+        "respectSourceCadence": bool(src.get("respectSourceCadence")),
+        "hotSourceCadenceMinutes": _clamped_int(src.get("hotSourceCadenceMinutes"), 0, 1),
+        "coldSourceCadenceMinutes": _clamped_int(src.get("coldSourceCadenceMinutes"), 0, 1),
+        "circuitBreakerFailures": _clamped_int(src.get("circuitBreakerFailures"), 0, 0),
+        "circuitBreakerCooldownMinutes": _clamped_int(src.get("circuitBreakerCooldownMinutes"), 0, 0),
+        "ignoreCircuitBreaker": bool(src.get("ignoreCircuitBreaker")),
+        "socialEnabled": bool(src.get("socialEnabled")),
+        "socialLookbackMinutes": _clamped_int(src.get("socialLookbackMinutes"), 0, 1),
+        "socialMinConfidence": _clamped_int(src.get("socialMinConfidence"), 0, 0),
+        "staticDetailHeuristicsProfile": clean_text(src.get("staticDetailHeuristicsProfile")) or "",
+        "scrapyValidationStrict": bool(src.get("scrapyValidationStrict")),
+        "canonicalStrictUrl": bool(src.get("canonicalStrictUrl")),
+    }
+
+
+def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    src = row if isinstance(row, dict) else {}
+
+    def _normalize_loss(loss: Any) -> Dict[str, Any]:
+        payload = loss if isinstance(loss, dict) else {}
+        drop_reasons = payload.get("canonicalDropReasons") if isinstance(payload.get("canonicalDropReasons"), dict) else {}
+        return {
+            "rawFetched": _clamped_int(payload.get("rawFetched"), 0, 0),
+            "canonicalDropped": _clamped_int(payload.get("canonicalDropped"), 0, 0),
+            "canonicalKept": _clamped_int(payload.get("canonicalKept"), 0, 0),
+            "dedupMerged": _clamped_int(payload.get("dedupMerged"), 0, 0),
+            "finalOutput": _clamped_int(payload.get("finalOutput"), 0, 0),
+            "canonicalDropReasons": {
+                "missing_title": _clamped_int(drop_reasons.get("missing_title"), 0, 0),
+                "missing_company": _clamped_int(drop_reasons.get("missing_company"), 0, 0),
+                "missing_job_link": _clamped_int(drop_reasons.get("missing_job_link"), 0, 0),
+                "invalid_url": _clamped_int(drop_reasons.get("invalid_url"), 0, 0),
+                "invalid_payload": _clamped_int(drop_reasons.get("invalid_payload"), 0, 0),
+            },
+            "scrapyRunnerRejectedValidation": _clamped_int(payload.get("scrapyRunnerRejectedValidation"), 0, 0),
+            "scrapyParentInvalidPayload": _clamped_int(payload.get("scrapyParentInvalidPayload"), 0, 0),
+            "staticNonJobUrlRejected": _clamped_int(payload.get("staticNonJobUrlRejected"), 0, 0),
+            "staticDuplicateLinkRejected": _clamped_int(payload.get("staticDuplicateLinkRejected"), 0, 0),
+            "staticDetailParseEmpty": _clamped_int(payload.get("staticDetailParseEmpty"), 0, 0),
+        }
+
+    normalized: Dict[str, Any] = {
+        "name": clean_text(src.get("name")),
+        "status": norm_text(src.get("status")) or "error",
+        "adapter": clean_text(src.get("adapter")) or "custom",
+        "fetchStrategy": clean_text(src.get("fetchStrategy")) or "auto",
+        "studio": clean_text(src.get("studio")),
+        "fetchedCount": _clamped_int(src.get("fetchedCount"), 0, 0),
+        "keptCount": _clamped_int(src.get("keptCount"), 0, 0),
+        "lowConfidenceDropped": _clamped_int(src.get("lowConfidenceDropped"), 0, 0),
+        "error": clean_text(src.get("error")),
+        "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
+    }
+    raw_stage_timings = src.get("stageTimingsMs") if isinstance(src.get("stageTimingsMs"), dict) else {}
+    clean_stage_timings = {
+        "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
+        "parseCsv": _clamped_int(raw_stage_timings.get("parseCsv"), 0, 0),
+        "candidateExtraction": _clamped_int(raw_stage_timings.get("candidateExtraction"), 0, 0),
+        "detailFetch": _clamped_int(raw_stage_timings.get("detailFetch"), 0, 0),
+        "redirectResolve": _clamped_int(raw_stage_timings.get("redirectResolve"), 0, 0),
+        "canonicalization": _clamped_int(raw_stage_timings.get("canonicalization"), 0, 0),
+    }
+    if any(clean_stage_timings.values()):
+        normalized["stageTimingsMs"] = clean_stage_timings
+    exclusion_reason = clean_text(src.get("exclusionReason"))
+    if exclusion_reason:
+        normalized["exclusionReason"] = exclusion_reason
+    if isinstance(src.get("loss"), dict):
+        normalized["loss"] = _normalize_loss(src.get("loss"))
+    details = src.get("details")
+    if isinstance(details, list):
+        clean_details: List[Any] = []
+        for item in details:
+            if isinstance(item, dict):
+                clean_item: Dict[str, Any] = {
+                    "adapter": clean_text(item.get("adapter")),
+                    "studio": clean_text(item.get("studio")),
+                    "name": clean_text(item.get("name")),
+                    "status": norm_text(item.get("status")) or "error",
+                    "fetchedCount": _clamped_int(item.get("fetchedCount"), 0, 0),
+                    "keptCount": _clamped_int(item.get("keptCount"), 0, 0),
+                    "error": clean_text(item.get("error")),
+                    "classification": clean_text(item.get("classification")) or "",
+                    "browserFallbackRecommended": bool(item.get("browserFallbackRecommended")),
+                }
+                top_reject_reasons = item.get("top_reject_reasons")
+                if isinstance(top_reject_reasons, list):
+                    clean_item["top_reject_reasons"] = [clean_text(reason) for reason in top_reject_reasons if clean_text(reason)][
+                        :5
+                    ]
+                stats = item.get("stats")
+                if isinstance(stats, dict):
+                    clean_item["stats"] = {
+                        "downloader/request_count": _clamped_int(stats.get("downloader/request_count"), 0, 0),
+                        "downloader/response_count": _clamped_int(stats.get("downloader/response_count"), 0, 0),
+                        "downloader/response_status_count/200": _clamped_int(
+                            stats.get("downloader/response_status_count/200"), 0, 0
+                        ),
+                        "retry/count": _clamped_int(stats.get("retry/count"), 0, 0),
+                        "item_scraped_count": _clamped_int(stats.get("item_scraped_count"), 0, 0),
+                        "candidate_links_found": _clamped_int(stats.get("candidate_links_found"), 0, 0),
+                        "detail_pages_visited": _clamped_int(stats.get("detail_pages_visited"), 0, 0),
+                        "jobs_emitted": _clamped_int(stats.get("jobs_emitted"), 0, 0),
+                        "fetch_cache_hits": _clamped_int(stats.get("fetch_cache_hits"), 0, 0),
+                        "detail_yield_percent": _clamped_int(stats.get("detail_yield_percent"), 0, 0),
+                        "redirect_candidates": _clamped_int(stats.get("redirect_candidates"), 0, 0),
+                        "redirect_resolved": _clamped_int(stats.get("redirect_resolved"), 0, 0),
+                        "redirect_cache_hits": _clamped_int(stats.get("redirect_cache_hits"), 0, 0),
+                        "parse_csv_ms": _clamped_int(stats.get("parse_csv_ms"), 0, 0),
+                        "listing_fetch_ms": _clamped_int(stats.get("listing_fetch_ms"), 0, 0),
+                        "candidate_extraction_ms": _clamped_int(stats.get("candidate_extraction_ms"), 0, 0),
+                        "detail_fetch_ms": _clamped_int(stats.get("detail_fetch_ms"), 0, 0),
+                        "redirect_resolve_ms": _clamped_int(stats.get("redirect_resolve_ms"), 0, 0),
+                        "jobs_rejected_validation": _clamped_int(stats.get("jobs_rejected_validation"), 0, 0),
+                        "finish_reason": clean_text(stats.get("finish_reason")),
+                    }
+                if isinstance(item.get("loss"), dict):
+                    clean_item["loss"] = _normalize_loss(item.get("loss"))
+                source_id = clean_text(item.get("sourceId"))
+                if source_id:
+                    clean_item["sourceId"] = source_id
+                pages = item.get("pages")
+                if isinstance(pages, list):
+                    clean_pages = [clean_text(page) for page in pages if clean_text(page)]
+                    if clean_pages:
+                        clean_item["pages"] = clean_pages
+                clean_details.append(clean_item)
+                continue
+            text = clean_text(item)
+            if text:
+                clean_details.append(text)
+        if clean_details:
+            normalized["details"] = clean_details
+    return normalized
+
+
+def normalize_task_state_payload(
+    payload: Dict[str, Any],
+    *,
+    started_at: str,
+    finished_at: str = "",
+    report_path: str = "",
+) -> Dict[str, Any]:
+    src = payload if isinstance(payload, dict) else {}
+    rows = src.get("tasks")
+    normalized_rows: List[Dict[str, Any]] = []
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            normalized_rows.append(
+                {
+                    "name": clean_text(row.get("name")),
+                    "status": norm_text(row.get("status")) or "queued",
+                    "startedAt": clean_text(row.get("startedAt")),
+                    "finishedAt": clean_text(row.get("finishedAt")),
+                    "durationMs": _clamped_int(row.get("durationMs"), 0, 0),
+                    "heartbeatAt": clean_text(row.get("heartbeatAt")),
+                    "error": clean_text(row.get("error")),
+                }
+            )
+    summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "startedAt": clean_text(src.get("startedAt")) or clean_text(started_at),
+        "finishedAt": clean_text(src.get("finishedAt")) or clean_text(finished_at),
+        "summary": {
+            "queued": _clamped_int(summary.get("queued"), 0, 0),
+            "running": _clamped_int(summary.get("running"), 0, 0),
+            "ok": _clamped_int(summary.get("ok"), 0, 0),
+            "error": _clamped_int(summary.get("error"), 0, 0),
+        },
+        "tasks": normalized_rows,
+        "outputs": {"report": clean_text((src.get("outputs") or {}).get("report")) or clean_text(report_path)},
+    }
+
+
+def normalize_fetch_report_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    src = payload if isinstance(payload, dict) else {}
+    summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
+    outputs = src.get("outputs") if isinstance(src.get("outputs"), dict) else {}
+    changed = outputs.get("changed") if isinstance(outputs.get("changed"), dict) else {}
+    source_rows_raw = src.get("sources")
+    source_rows = source_rows_raw if isinstance(source_rows_raw, list) else []
+    runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "startedAt": clean_text(src.get("startedAt")),
+        "finishedAt": clean_text(src.get("finishedAt")),
+        "runtime": normalize_runtime_payload(runtime, selected_source_count=len(source_rows)),
+        "summary": dict(summary),
+        "sources": [normalize_source_report_row(row) for row in source_rows if isinstance(row, dict)],
+        "outputs": {
+            "json": clean_text(outputs.get("json")),
+            "csv": clean_text(outputs.get("csv")),
+            "lightJson": clean_text(outputs.get("lightJson")),
+            "report": clean_text(outputs.get("report")),
+            "lifecycleState": clean_text(outputs.get("lifecycleState")),
+            "browserFallbackQueue": clean_text(outputs.get("browserFallbackQueue")),
+            "changed": {
+                "json": bool(changed.get("json")),
+                "csv": bool(changed.get("csv")),
+                "lightJson": bool(changed.get("lightJson")),
+            },
+        },
+    }
+
+
+# Placeholders to be filled by follow-up patch once we transplant implementations.
+

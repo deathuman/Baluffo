@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from http.server import ThreadingHTTPServer
+from typing import Any, Type
+
+
+def run_http_server(*, api: Any, host: str, port: int, handler_cls: Type) -> int:
+    try:
+        server = ThreadingHTTPServer((host, port), handler_cls)
+    except OSError as exc:
+        api.bridge_log(
+            "error",
+            "admin_bridge_start_failed",
+            host=host,
+            port=port,
+            error=str(exc),
+        )
+        return 1
+    banner_fn = getattr(api, "startup_banner", None)
+    if callable(banner_fn):
+        banner_fn(getattr(api, "runtime_config", None))
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        api.bridge_log("info", "admin_bridge_shutdown_requested", signal="keyboard_interrupt")
+    finally:
+        server.server_close()
+        api.bridge_log("info", "admin_bridge_stopped")
+    return 0
+

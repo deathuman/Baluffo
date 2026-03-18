@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List
 
-from src.jobs import common
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
@@ -27,11 +27,11 @@ def run(
     _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    page_url = common.clean_text(pages[0])
+    page_url = clean_text(pages[0])
     if not page_url:
         return []
 
-    company = common.clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Milestone"
+    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Milestone"
     source_id = (source_row.get("id") or "").strip() or "milestone"
 
     try:
@@ -66,7 +66,7 @@ def run(
         if isinstance(row, dict):
             row["adapter"] = "static"
             row["studio"] = company
-            row["source"] = common.clean_text(source_row.get("name")) or "milestone"
+            row["source"] = clean_text(source_row.get("name")) or "milestone"
     cleaned = [r for r in rows if isinstance(r, dict)]
     if not cleaned:
         if _heuristics.detect_no_openings(html):

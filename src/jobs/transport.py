@@ -8,20 +8,26 @@ import time
 from dataclasses import replace
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from src.jobs import common
 from src.jobs.adapters import community
+from src.jobs.common import config as common_config
+from src.jobs.common import url as common_url
 from src.jobs.models import RequestConfig
+from src.jobs.text_utils import normalize_url as normalize_url_impl
+from src.jobs import common as common
 
-DEFAULT_TIMEOUT_S = common.DEFAULT_TIMEOUT_S
-DEFAULT_RETRIES = common.DEFAULT_RETRIES
-DEFAULT_BACKOFF_S = common.DEFAULT_BACKOFF_S
-DEFAULT_FETCH_STRATEGY = common.DEFAULT_FETCH_STRATEGY
-DEFAULT_ADAPTER_HTTP_CONCURRENCY = common.DEFAULT_ADAPTER_HTTP_CONCURRENCY
+DEFAULT_TIMEOUT_S = common_config.DEFAULT_TIMEOUT_S
+DEFAULT_RETRIES = common_config.DEFAULT_RETRIES
+DEFAULT_BACKOFF_S = common_config.DEFAULT_BACKOFF_S
+DEFAULT_FETCH_STRATEGY = common_config.DEFAULT_FETCH_STRATEGY
+DEFAULT_ADAPTER_HTTP_CONCURRENCY = common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
-DEFAULT_HTTP_HEADERS = dict(common.DEFAULT_HTTP_HEADERS)
-DEFAULT_REDIRECT_HEADERS = dict(common.DEFAULT_REDIRECT_HEADERS)
-SUPPORTED_REDIRECT_HOSTS = common.SUPPORTED_REDIRECT_HOSTS
-httpx = common.httpx
+DEFAULT_HTTP_HEADERS = dict(common_config.DEFAULT_HTTP_HEADERS)
+DEFAULT_REDIRECT_HEADERS = dict(common_config.DEFAULT_REDIRECT_HEADERS)
+SUPPORTED_REDIRECT_HOSTS = common_config.SUPPORTED_REDIRECT_HOSTS
+try:
+    import httpx  # type: ignore
+except Exception:  # noqa: BLE001
+    httpx = None
 
 
 def default_request_config(
@@ -57,19 +63,19 @@ def build_headers(request: RequestConfig) -> Dict[str, str]:
 
 
 def normalize_url(url: Any) -> str:
-    return common.normalize_url(url)
+    return normalize_url_impl(url)
 
 
 def fingerprint_url(url: Any) -> str:
-    return common.fingerprint_url(url)
+    return common_url.fingerprint_url(url)
 
 
 def is_supported_redirect_url(url: Any) -> bool:
-    return common.is_supported_redirect_url(url)
+    return common_url.is_supported_redirect_url(url)
 
 
 def resolve_supported_redirect_url(url: Any, *, timeout_s: int = DEFAULT_TIMEOUT_S) -> str:
-    return common.resolve_supported_redirect_url(url, timeout_s=timeout_s)
+    return common_url.resolve_supported_redirect_url(url, timeout_s=timeout_s)
 
 
 class PooledRedirectResolver:
