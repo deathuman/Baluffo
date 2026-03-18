@@ -154,6 +154,20 @@ def test_package_modules_do_not_import_legacy_impl(repo_root: Path) -> None:
         assert "import src.jobs.legacy_impl" not in text, str(target)
 
 
+def test_pipeline_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "pipeline.py"
+    text = target.read_text(encoding="utf-8")
+    assert "from src.jobs.pipeline_bootstrap import" in text
+    assert "from src.jobs.pipeline_loader_selection import" in text
+    assert "from src.jobs.pipeline_runtime import" in text
+
+
+def test_static_adapter_uses_package_private_helper_boundary(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "adapters" / "static.py"
+    text = target.read_text(encoding="utf-8")
+    assert "from src.jobs.adapters.static_helpers import" in text
+
+
 def test_jobs_fetcher_exposes_curated_package_surface() -> None:
     assert callable(jf.run_pipeline)
     assert callable(jf.parse_args)

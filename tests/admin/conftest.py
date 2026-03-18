@@ -7,7 +7,8 @@ from src import admin_bridge
 
 
 @pytest.fixture()
-def admin_bridge_ops_root(make_test_root, monkeypatch) -> Path:
+def admin_bridge_entrypoint_root(make_test_root, monkeypatch) -> Path:
+    """Entry-point level admin_bridge fixture for module/singleton patch tests."""
     root = make_test_root("admin-bridge")
 
     monkeypatch.setattr(admin_bridge, "_TASK_HISTORY_MANAGER", None)
@@ -52,3 +53,9 @@ def admin_bridge_ops_root(make_test_root, monkeypatch) -> Path:
     yield root
 
     admin_bridge.wait_for_sync_tasks(timeout_s=2.0)
+
+
+@pytest.fixture()
+def admin_bridge_ops_root(admin_bridge_entrypoint_root: Path) -> Path:
+    """Backward-compatible alias for legacy admin bridge tests."""
+    return admin_bridge_entrypoint_root

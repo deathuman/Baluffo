@@ -29,7 +29,7 @@ jobs feed + discovery/sync scripts: src/jobs_fetcher.py, src/source_discovery.py
   -> Package modules: config, sheet_directory, web_search, provider_patterns, static_candidates,
       scoring, io_runtime, reporting, probe, orchestrator.
 
-desktop launcher/runtime: src/ship/desktop_app.py
+desktop launcher/runtime: src/ship/desktop_app/__init__.py
   -> spawns local site + bridge
   -> opens browser app window
   -> watches heartbeat/activity and shutdown flow
@@ -62,8 +62,10 @@ For bridge API endpoints, see `docs/admin-bridge-api.md`.
 - Core app modules:
   - `app/feed.js`: startup/manual refresh flow and auto-refresh signal handling
   - `app/filters.js`: filter normalization, option rendering, quick-filter behavior
+  - `app/countries.js`: country/region metadata and bound filter helpers
   - `app/cache.js`: IndexedDB cache and "seen" job keys
   - `app/pipeline.js`: bridge pipeline status/polling helpers
+  - `app/sources.js`: source preset lists and thin data-source wrappers
   - `app/startup.js`: URL state parse/build, startup scheduling
   - `app/dom.js`, `app/auth.js`, `app/pagination.js`: DOM refs/auth/pager helpers
 - Runtime still composes legacy page modules where needed: `render.js`, `domain.js`, `data-source.js`, `services.js`, `state-sync/index.js`, `actions.js`.
@@ -167,14 +169,21 @@ Responsibilities still in `admin_bridge.py` and where they are used:
 
 Further shrinkage: extract to bridge modules with injected deps; keep `api.xxx` callable in admin_bridge if routes need it (thin wrappers that delegate).
 
-### Refactoring status (complete)
-Backend refactoring is considered complete. **Done:** shared utils/regex/exceptions (`src/shared/`), bridge extractions (source_checker, task_history, html_extractor), jobs extractions (social/provider parsers, normalizers, text_utils, game_detection), dead-code removal, coerce centralization; adapter validation uses `AdapterValidationError` from `src/exceptions.py`; **API client** (`frontend/shared/api-client.js`) for backend calls; **state hub** (`frontend/shared/state-hub.js`) for cross-module state (jobsFeedCount, jobsLastUpdated, savedCount, savedLastUpdated—new shared state can be added via new keys and set/read locations documented in that file); **shared UI components** in `frontend/shared/ui/`; **static plugin family** in `src/jobs/adapters/plugins/static/` (plugins selected by host/source_identity; core validation and adapter flow in `src/jobs/adapters/static.py`). **How to add a static plugin:** add a module under `src/jobs/adapters/plugins/static/` with `can_handle(ctx)` and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`, then register it in `register.py` (see docstring there). New static sites are added by implementing such plugins; new shared frontend state by adding keys and wiring in state-hub. **Pydantic (Phase 2):** Core contracts are validated with Pydantic at pipeline output (`src/core/contracts.py` before writing `jobs-unified.json`) and at bridge boundaries (e.g. saved-jobs/save in `bridge/routes/post_routes.py`). Schemas: `src/core/schemas.py` (CanonicalJobSchema, SavedJobSchema, ManifestSchema). See `docs/DATA_CONTRACT.md` and `src/core/` for the runtime source of truth; new fields require schema + doc update.
+### Refactoring status (current)
+Backend refactoring is directionally strong and materially narrower than the early audit baseline, but not fully settled. **Done:** shared utils/regex/exceptions (`src/shared/`), bridge extractions (source_checker, task_history, html_extractor, runtime_state, run_history_api), jobs extractions (social/provider parsers, normalizers, text_utils, game_detection), pipeline helper extraction (`src/jobs/pipeline_bootstrap.py`, `src/jobs/pipeline_loader_selection.py`, `src/jobs/pipeline_runtime.py`), static adapter helper extraction (`src/jobs/adapters/static_helpers.py`), dead-code removal, coerce centralization; adapter validation uses `AdapterValidationError` from `src/exceptions.py`; **API client** (`frontend/shared/api-client.js`) for backend calls; **state hub** (`frontend/shared/state-hub.js`) for cross-module state (jobsFeedCount, jobsLastUpdated, savedCount, savedLastUpdated—new shared state can be added via new keys and set/read locations documented in that file); **shared UI components** in `frontend/shared/ui/`; **static plugin family** in `src/jobs/adapters/plugins/static/` (plugins selected by host/source_identity; core validation and adapter flow still enters through `src/jobs/adapters/static.py`, with dense internal behavior delegated to `static_helpers.py`). **How to add a static plugin:** add a module under `src/jobs/adapters/plugins/static/` with `can_handle(ctx)` and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`, then register it in `register.py` (see docstring there). New static sites are added by implementing such plugins; new shared frontend state by adding keys and wiring in state-hub. **Pydantic (Phase 2):** Core contracts are validated with Pydantic at pipeline output (`src/core/contracts.py` before writing `jobs-unified.json`) and at bridge boundaries (e.g. saved-jobs/save in `bridge/routes/post_routes.py`). Schemas: `src/core/schemas.py` (CanonicalJobSchema, SavedJobSchema, ManifestSchema). See `docs/DATA_CONTRACT.md` and `src/core/` for the runtime source of truth; new fields require schema + doc update.
+
+### Transitional boundaries (allowed for now)
+
+- `src.admin_bridge` remains the composition root and CLI entrypoint, but mutable server-adjacent state should live in `src/bridge/server/runtime_state.py` or `src/bridge/sync_state.py`.
+- `src/jobs/adapters/_runtime.py` keeps `_runtime.facade()` as a legacy compatibility boundary; do not spread it to new jobs modules.
+- `frontend/local-data/services.js` may keep `window.JobAppLocalData` as the compatibility boundary until the local-data runtime is fully formalized.
 
 **Deliberately not done:** `jobs/validation.py` and `bridge/contracts.py` (intent satisfied by normalizers/text_utils/state).
 
 **Follow-up / optional work**
 - **Scrapy phase 2 (pipelines):** Moving validation and dedupe into a Scrapy pipeline is a larger refactor (spider would yield Items; pipeline would write into the runner’s container or a shared store). Deferred; when needed, treat it as a separate plan so contract and tests stay clear.
 - **Generic static plugin (P3.3):** If the inline fallback in `src/jobs/adapters/static.py` grows again, consider turning it into a low-priority "generic_static" plugin so static.py is mostly dispatch + scrapy.
+- **Jobs common compatibility surface:** `src/jobs/common/__init__.py` is still broad and re-export heavy; prefer reducing that surface before adding more helper modules elsewhere.
 - **State→DOM helper (P4.4):** Optional; apply when 2–3+ "subscribe to state key then set element" patterns appear. Not needed yet (status is fetch/event then setStatusText, not state-key subscription).
 - **html_parsers extraction:** Done. Implementation lives in `jobs/adapters/html_parsers.py`; re-exported via `jobs/parsers` and `jobs/common` for backward compatibility.
 - **Further admin_bridge shrinkage:** Done. Source-check fetch helpers live in `bridge/source_check_fetch.py`; admin_bridge wires them and stays dispatch-only.
@@ -187,6 +196,7 @@ Backend refactoring is considered complete. **Done:** shared utils/regex/excepti
 ### Static adapter and plugins (how to add a static plugin)
 
 - **Orchestration:** `src/jobs/adapters/static.py` — `run_static_studio_pages_source` (and shards), `run_scrapy_static_source` (from `static_scrapy.py`). For each source, host is derived from the first page URL; plugin is selected by `AdapterPluginContext(family="static", source_identity=host)`. Optional Playwright fallback for listing-page fetch only (see **Scraping pipeline** below).
+- **Internal helpers:** `src/jobs/adapters/static_helpers.py` owns report bootstrap, runtime config, cached fetch/time-budget behavior, detail-link heuristics, and detail-page processing. Keep new static internals there before growing `static.py` again.
 - **Scrapy path:** `src/jobs/adapters/static_scrapy.py` — subprocess runner, envelope parsing, job normalization; used when source type is scrapy_static. Sources come from the browser fallback queue and run with `use_browser=True` (Scrapy-Playwright when installed).
 - **Plugins:** `src/jobs/adapters/plugins/static/` — one module per site (e.g. `example_com.py`, `example_org.py`, `littlechicken.py`; `larian.py` exists but is unregistered so larian.com uses the fallback and its heuristics). Each provides `can_handle(ctx)` and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`. Registered in `register.py`.
 - **To add a static plugin:** (1) Add a module under `src/jobs/adapters/plugins/static/` with `can_handle(ctx)` (e.g. `ctx.source_identity == "example.org"`) and `run(...)` that fetches/parses and returns `RawJob` dicts. (2) Register it in `register.py` with `default_registry.register(SimpleAdapterPlugin(name=..., family="static", priority=90, can_handle_fn=..., run_fn=...))`. (3) See `register.py` docstring and this map for the full contract.
@@ -229,6 +239,7 @@ Key stages:
 - **Sources:** Defined in `source-registry-active.json`, fetched by adapter type
 - **Adapters:** `src/jobs/adapters/` - fetch and parse each source type
 - **Pipeline:** `src/jobs/pipeline.py` - core processing
+- **Pipeline helpers:** `src/jobs/pipeline_bootstrap.py`, `src/jobs/pipeline_loader_selection.py`, `src/jobs/pipeline_runtime.py` - package-private orchestration support
 - **Dedup:** `src/jobs/dedup.py` - collapse duplicates
 - **Output:** `data/jobs-unified.*` - primary feed for Jobs UI
 
@@ -252,7 +263,7 @@ Key stages:
 | Bridge pipeline operations | `src/bridge/pipeline_service.py` | `src/admin_bridge.py` |
 | Bridge HTTP routes | `src/bridge/routes/get_routes.py` | `src/bridge/routes/post_routes.py`, `src/admin_bridge.py` |
 | UI Selection & Interaction | `frontend/shared/ui/selectors.js` | `frontend/*/app/dom.js`, `frontend/*/app/runtime.js` |
-| Desktop startup/runtime behavior | `src/ship/desktop_app.py` | `tests/test_desktop_app.py`, `src/ship/runtime_launcher.py` |
+| Desktop startup/runtime behavior | `src/ship/desktop_app/__init__.py` | `tests/test_desktop_app.py`, `src/ship/runtime_launcher.py` |
 | Add new filter to jobs page | `frontend/jobs/app/filters.js` | `frontend/jobs/render.js`, `frontend/jobs/app/runtime.js` |
 | Add new field to custom job form | `frontend/saved/app/custom-job.js` | `frontend/saved/render.js`, `frontend/saved/app/runtime.js` |
 

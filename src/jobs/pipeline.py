@@ -6,12 +6,9 @@ import argparse
 import json
 import os
 import sys
-import threading
-import time
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
 
 from src.jobs import canonicalize as canonicalize_pkg
 from src.jobs import dedup as dedup_pkg
@@ -42,6 +39,20 @@ from src.pipeline_io import (
 from src.shared.utils import env_flag, now_iso
 from src.jobs.text_utils import clean_text, norm_text
 from src.jobs.pipeline_stage_source_execution import SourceExecutionStageConfig, run_source_execution_stage
+from src.jobs.pipeline_bootstrap import build_pipeline_paths
+from src.jobs.pipeline_loader_selection import (
+    apply_source_cadence_exclusions,
+    build_excluded_source_report,
+    build_pipeline_runtime_payload,
+    select_pipeline_loaders,
+    sort_selected_loaders,
+)
+from src.jobs.pipeline_runtime import (
+    initialize_task_runtime,
+    make_fetch_text_limited,
+    make_task_state_writer,
+    write_progress_report as write_pipeline_progress_report,
+)
 
 DEFAULT_OUTPUT_DIR = common_config.DEFAULT_OUTPUT_DIR
 DEFAULT_TIMEOUT_S = common_config.DEFAULT_TIMEOUT_S
@@ -134,22 +145,6 @@ def default_source_loaders(
     except TypeError:
         return adapters_default_source_loaders()
 
-
-def _build_excluded_source_report(source_name: str, reason: str) -> Dict[str, Any]:
-    return {
-        "name": source_name,
-        "status": "excluded",
-        "adapter": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter")) or "custom",
-        "fetchStrategy": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy")) or "auto",
-        "studio": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("studio")) or "",
-        "fetchedCount": 0,
-        "keptCount": 0,
-        "error": clean_text(reason),
-        "exclusionReason": clean_text(reason),
-        "durationMs": 0,
-    }
-
-
 def run_pipeline(
     *,
     output_dir: Path,
@@ -180,19 +175,7 @@ def run_pipeline(
     selection_exclusions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    json_path = output_dir / "jobs-unified.json"
-    csv_path = output_dir / "jobs-unified.csv"
-    light_json_path = output_dir / "jobs-unified-light.json"
-    report_path = output_dir / "jobs-fetch-report.json"
-    success_cache_path = output_dir / "jobs-success-cache.json"
-    source_state_path = output_dir / "jobs-source-state.json"
-    lifecycle_state_path = output_dir / "jobs-lifecycle-state.json"
-    browser_fallback_queue_path = output_dir / "jobs-browser-fallback-queue.json"
-    task_state_path = output_dir / "jobs-fetch-tasks.json"
-    pending_registry_path = output_dir / "source-registry-pending.json"
-    approval_state_path = output_dir / "source-approval-state.json"
+    paths = build_pipeline_paths(output_dir)
     SOURCE_DIAGNOSTICS.clear()
 
     started_at = now_iso()
@@ -216,55 +199,17 @@ def run_pipeline(
         timeout_s=timeout_s,
         max_connections=google_sheets_redirect_concurrency,
     )
-    source_state_rows = read_source_state(source_state_path)
-    lifecycle_rows = read_job_lifecycle_state(lifecycle_state_path)
+    source_state_rows = read_source_state(paths.source_state_path)
+    lifecycle_rows = read_job_lifecycle_state(paths.lifecycle_state_path)
     if seed_from_existing_output:
         seeded_rows = read_existing_output_from_file(
-            json_path,
+            paths.json_path,
             started_at,
             canonicalize_job=_canonicalize_existing_output_row,
             clean_text=clean_text,
         )
         canonical_rows.extend(CanonicalJob.from_mapping(row) for row in seeded_rows)
-
     runtime_payload: Dict[str, Any] = {}
-
-    def write_progress_report() -> None:
-        deduplicator = CanonicalDeduplicator()
-        deduped_progress_rows = deduplicator.process(canonical_rows)
-        dedup_progress_stats = deduplicator.stats
-        dedup_progress_stats["outputCount"] = len(deduped_progress_rows)
-        progress_lifecycle_counts = lifecycle_counts(lifecycle_rows)
-        progress_payload = normalize_fetch_report_payload({
-            "schemaVersion": SCHEMA_VERSION,
-            "startedAt": started_at,
-            "finishedAt": "",
-            "runtime": runtime_payload,
-            "summary": build_pipeline_summary(
-                dedup_progress_stats,
-                deduped_progress_rows,
-                source_reports,
-                len(canonical_rows),
-                False,
-                len([row for row in STUDIO_SOURCE_REGISTRY if bool(row.get("enabledByDefault", True))]),
-                len(load_registry_from_file(pending_registry_path, [])),
-                read_approved_since_last_run(approval_state_path),
-                json_bytes=0,
-                csv_bytes=0,
-                light_json_bytes=0,
-                lifecycle_counts_map=progress_lifecycle_counts,
-            ),
-            "sources": source_reports,
-            "outputs": {
-                "json": str(json_path),
-                "csv": str(csv_path),
-                "lightJson": str(light_json_path),
-                "report": str(report_path),
-                "lifecycleState": str(lifecycle_state_path),
-                "changed": {"json": False, "csv": False, "lightJson": False},
-            },
-        })
-        write_text_if_changed(report_path, json.dumps(progress_payload, indent=2, ensure_ascii=False))
 
     effective_social_config_path = Path(social_config_path) if social_config_path else (output_dir / "social-sources-config.json")
     social_config = load_social_config(
@@ -273,69 +218,59 @@ def run_pipeline(
         lookback_minutes=social_lookback_minutes,
     )
 
-    if source_loaders is None:
-        try:
-            selected_loaders = default_source_loaders(
-                social_enabled=bool(social_enabled),
-                social_config=social_config,
-            )
-        except TypeError:
-            selected_loaders = default_source_loaders()
-    else:
-        selected_loaders = list(source_loaders)
-
-    def _source_priority(item: Tuple[str, SourceLoader]) -> Tuple[int, int]:
-        source_name = clean_text(item[0])
-        adapter = clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter"))
-        state = source_state_rows.get(source_name) if isinstance(source_state_rows.get(source_name), dict) else {}
-        duration_ms = int((state or {}).get("lastDurationMs") or 0)
-        detail_pages = int((state or {}).get("lastDetailPagesVisited") or 0)
-        static_priority = 0 if adapter == "static" else 1
-        return (static_priority, -(duration_ms + (detail_pages * 25)))
-
-    selected_loaders = sorted(selected_loaders, key=_source_priority)
-    using_default_loaders = source_loaders is None
-    runtime_payload = normalize_runtime_payload({
-        "maxWorkers": max_workers,
-        "maxPerDomain": max_per_domain,
-        "fetchStrategy": clean_text(fetch_strategy) or DEFAULT_FETCH_STRATEGY,
-        "fetchClient": fetch_client,
-        "adapterHttpConcurrency": adapter_http_concurrency,
-        "staticDetailConcurrency": static_detail_concurrency,
-        "googleSheetsRedirectConcurrency": google_sheets_redirect_concurrency,
-        "seedFromExistingOutput": bool(seed_from_existing_output),
-        "sourceTtlMinutes": int(source_ttl_minutes or 0),
-        "respectSourceCadence": bool(respect_source_cadence),
-        "hotSourceCadenceMinutes": hot_source_cadence_minutes,
-        "coldSourceCadenceMinutes": cold_source_cadence_minutes,
-        "circuitBreakerFailures": int(circuit_breaker_failures or 0),
-        "circuitBreakerCooldownMinutes": int(circuit_breaker_cooldown_minutes or 0),
-        "ignoreCircuitBreaker": bool(ignore_circuit_breaker),
-        "socialEnabled": bool(social_enabled),
-        "socialConfigPath": str(effective_social_config_path),
-        "socialLookbackMinutes": int(social_config.get("lookbackMinutes") or DEFAULT_SOCIAL_LOOKBACK_MINUTES),
-        "socialMinConfidence": int(social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE),
-        "staticDetailHeuristicsProfile": norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE"))
-        or DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE,
-        "scrapyValidationStrict": env_flag("BALUFFO_SCRAPY_VALIDATION_STRICT", DEFAULT_SCRAPY_VALIDATION_STRICT),
-        "canonicalStrictUrlValidation": env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL),
-        "selectedSourceCount": len(selected_loaders),
-    }, selected_source_count=len(selected_loaders))
-
-    if respect_source_cadence:
-        cadence_skipped: List[Dict[str, Any]] = []
-        filtered_loaders: List[Tuple[str, SourceLoader]] = []
-        for name, loader in selected_loaders:
-            if should_skip_source_by_cadence(
-                name,
-                source_state_rows,
-                hot_minutes=hot_source_cadence_minutes,
-                cold_minutes=cold_source_cadence_minutes,
-            ):
-                cadence_skipped.append(_build_excluded_source_report(name, "skipped_by_source_cadence"))
-                continue
-            filtered_loaders.append((name, loader))
-        selected_loaders = filtered_loaders
+    selected_loaders, using_default_loaders = select_pipeline_loaders(
+        source_loaders=source_loaders,
+        social_enabled=bool(social_enabled),
+        social_config=social_config,
+        default_source_loaders=default_source_loaders,
+    )
+    selected_loaders = sort_selected_loaders(
+        selected_loaders,
+        source_report_meta=SOURCE_REPORT_META,
+        source_state_rows=source_state_rows,
+    )
+    runtime_payload = build_pipeline_runtime_payload(
+        selected_loaders=selected_loaders,
+        max_workers=max_workers,
+        max_per_domain=max_per_domain,
+        fetch_strategy=fetch_strategy,
+        fetch_client=fetch_client,
+        adapter_http_concurrency=adapter_http_concurrency,
+        static_detail_concurrency=static_detail_concurrency,
+        google_sheets_redirect_concurrency=google_sheets_redirect_concurrency,
+        seed_from_existing_output=seed_from_existing_output,
+        source_ttl_minutes=source_ttl_minutes,
+        respect_source_cadence=respect_source_cadence,
+        hot_source_cadence_minutes=hot_source_cadence_minutes,
+        cold_source_cadence_minutes=cold_source_cadence_minutes,
+        circuit_breaker_failures=circuit_breaker_failures,
+        circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+        ignore_circuit_breaker=ignore_circuit_breaker,
+        social_enabled=bool(social_enabled),
+        effective_social_config_path=str(effective_social_config_path),
+        social_config=social_config,
+        default_social_lookback_minutes=DEFAULT_SOCIAL_LOOKBACK_MINUTES,
+        default_social_min_confidence=DEFAULT_SOCIAL_MIN_CONFIDENCE,
+        default_fetch_strategy=DEFAULT_FETCH_STRATEGY,
+        default_static_detail_heuristics_profile=DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE,
+        default_scrapy_validation_strict=DEFAULT_SCRAPY_VALIDATION_STRICT,
+        default_canonical_strict_url=DEFAULT_CANONICAL_STRICT_URL,
+        normalize_runtime_payload=normalize_runtime_payload,
+    )
+    selected_loaders, cadence_skipped = apply_source_cadence_exclusions(
+        selected_loaders,
+        respect_source_cadence=respect_source_cadence,
+        source_state_rows=source_state_rows,
+        hot_source_cadence_minutes=hot_source_cadence_minutes,
+        cold_source_cadence_minutes=cold_source_cadence_minutes,
+        should_skip_source_by_cadence=should_skip_source_by_cadence,
+        build_excluded_source_report=lambda name, reason: build_excluded_source_report(
+            name,
+            reason,
+            source_report_meta=SOURCE_REPORT_META,
+        ),
+    )
+    if cadence_skipped:
         source_reports.extend(cadence_skipped)
         runtime_payload["selectedSourceCount"] = len(selected_loaders)
 
@@ -348,69 +283,38 @@ def run_pipeline(
     )
     source_reports.extend(excluded_by_circuit)
 
-    task_rows: Dict[str, Dict[str, Any]] = {
-        name: {
-            "name": name,
-            "status": "queued",
-            "startedAt": "",
-            "finishedAt": "",
-            "durationMs": 0,
-            "heartbeatAt": "",
-            "error": "",
-        }
-        for name, _ in selected_loaders
-    }
-    task_lock = threading.Lock()
-    last_task_write_monotonic = 0.0
-    last_heartbeat_write: Dict[str, float] = {}
-
-    def write_task_state(finished_at: str = "", *, force: bool = False) -> None:
-        nonlocal last_task_write_monotonic
-        now_mono = time.perf_counter()
-        if not force and (now_mono - last_task_write_monotonic) < 0.9:
-            return
-        last_task_write_monotonic = now_mono
-        with task_lock:
-            rows_snapshot = [dict(row) for row in task_rows.values()]
-        payload = normalize_task_state_payload({
-            "startedAt": started_at,
-            "finishedAt": finished_at,
-            "summary": {
-                "queued": sum(1 for row in rows_snapshot if row.get("status") == "queued"),
-                "running": sum(1 for row in rows_snapshot if row.get("status") == "running"),
-                "ok": sum(1 for row in rows_snapshot if row.get("status") == "ok"),
-                "error": sum(1 for row in rows_snapshot if row.get("status") == "error"),
-            },
-            "tasks": rows_snapshot,
-            "outputs": {"report": str(report_path)},
-        }, started_at=started_at, finished_at=finished_at, report_path=str(report_path))
-        write_text_if_changed(task_state_path, json.dumps(payload, indent=2, ensure_ascii=False))
-
-    thread_local = threading.local()
-    domain_lock = threading.Lock()
-    domain_gates: Dict[str, threading.BoundedSemaphore] = {}
-
-    def fetch_text_limited(url: str, timeout: int) -> str:
-        host = clean_text(urlparse(url).netloc).lower() or "_unknown"
-        with domain_lock:
-            gate = domain_gates.get(host)
-            if gate is None:
-                gate = threading.BoundedSemaphore(max_per_domain)
-                domain_gates[host] = gate
-        gate.acquire()
-        try:
-            current = clean_text(getattr(thread_local, "source_name", ""))
-            if current and current in task_rows:
-                now_mono = time.perf_counter()
-                if (now_mono - float(last_heartbeat_write.get(current) or 0.0)) >= 4.0:
-                    with task_lock:
-                        if task_rows[current].get("status") == "running":
-                            task_rows[current]["heartbeatAt"] = now_iso()
-                    last_heartbeat_write[current] = now_mono
-                    write_task_state()
-            return fetch_text_impl(url, timeout)
-        finally:
-            gate.release()
+    task_runtime = initialize_task_runtime(selected_loaders)
+    write_task_state = make_task_state_writer(
+        runtime=task_runtime,
+        started_at=started_at,
+        report_path=str(paths.report_path),
+        task_state_path=paths.task_state_path,
+        normalize_task_state_payload=normalize_task_state_payload,
+        write_text_if_changed=write_text_if_changed,
+    )
+    fetch_text_limited = make_fetch_text_limited(
+        runtime=task_runtime,
+        max_per_domain=max_per_domain,
+        fetch_text_impl=fetch_text_impl,
+        write_task_state=write_task_state,
+    )
+    write_progress_report = lambda: write_pipeline_progress_report(
+        canonical_rows=canonical_rows,
+        lifecycle_rows=lifecycle_rows,
+        source_reports=source_reports,
+        runtime_payload=runtime_payload,
+        started_at=started_at,
+        paths=paths,
+        schema_version=SCHEMA_VERSION,
+        studio_source_registry=STUDIO_SOURCE_REGISTRY,
+        load_registry_from_file=load_registry_from_file,
+        read_approved_since_last_run=read_approved_since_last_run,
+        lifecycle_counts=lifecycle_counts,
+        build_pipeline_summary=build_pipeline_summary,
+        normalize_fetch_report_payload=normalize_fetch_report_payload,
+        write_text_if_changed=write_text_if_changed,
+        deduplicator_factory=CanonicalDeduplicator,
+    )
 
     stage_config = SourceExecutionStageConfig(
         max_workers=max_workers,
@@ -429,9 +333,9 @@ def run_pipeline(
             fetch_text_limited=fetch_text_limited,
             source_state_rows=source_state_rows,
             redirect_resolver=redirect_resolver,
-            task_rows=task_rows,
-            task_lock=task_lock,
-            thread_local=thread_local,
+            task_rows=task_runtime.task_rows,
+            task_lock=task_runtime.task_lock,
+            thread_local=task_runtime.thread_local,
             write_task_state=write_task_state,
             write_progress_report=write_progress_report,
             canonical_rows=canonical_rows,
@@ -472,7 +376,7 @@ def run_pipeline(
     preserved_previous = False
     if preserve_previous_on_empty and not deduped_rows:
         previous_rows = read_existing_output_from_file(
-            json_path,
+            paths.json_path,
             started_at,
             canonicalize_job=_canonicalize_existing_output_row,
             clean_text=clean_text,
@@ -524,18 +428,18 @@ def run_pipeline(
     wrote_light_json = False
     if deduped_payload_rows:
         validate_canonical_jobs_payload(deduped_payload_rows)
-        wrote_json = write_atomic_if_changed(json_path, serialize_rows_for_json(deduped_payload_rows, OUTPUT_FIELDS))
-        wrote_csv = write_atomic_if_changed(csv_path, serialize_rows_for_csv(deduped_payload_rows, OUTPUT_FIELDS))
+        wrote_json = write_atomic_if_changed(paths.json_path, serialize_rows_for_json(deduped_payload_rows, OUTPUT_FIELDS))
+        wrote_csv = write_atomic_if_changed(paths.csv_path, serialize_rows_for_csv(deduped_payload_rows, OUTPUT_FIELDS))
         wrote_light_json = write_atomic_if_changed(
-            light_json_path,
+            paths.light_json_path,
             serialize_rows_for_json(deduped_payload_rows, LIGHTWEIGHT_OUTPUT_FIELDS),
         )
 
-    json_bytes = json_path.stat().st_size if json_path.exists() else 0
-    csv_bytes = csv_path.stat().st_size if csv_path.exists() else 0
-    light_json_bytes = light_json_path.stat().st_size if light_json_path.exists() else 0
+    json_bytes = paths.json_path.stat().st_size if paths.json_path.exists() else 0
+    csv_bytes = paths.csv_path.stat().st_size if paths.csv_path.exists() else 0
+    light_json_bytes = paths.light_json_path.stat().st_size if paths.light_json_path.exists() else 0
     browser_fallback_queue_rows = build_browser_fallback_queue(source_reports, generated_at=lifecycle_finished_at)
-    write_text_if_changed(browser_fallback_queue_path, json.dumps(browser_fallback_queue_rows, indent=2, ensure_ascii=False))
+    write_text_if_changed(paths.browser_fallback_queue_path, json.dumps(browser_fallback_queue_rows, indent=2, ensure_ascii=False))
 
     report_payload = normalize_fetch_report_payload({
         "schemaVersion": SCHEMA_VERSION,
@@ -549,8 +453,8 @@ def run_pipeline(
             len(canonical_rows),
             preserved_previous,
             len([row for row in STUDIO_SOURCE_REGISTRY if bool(row.get("enabledByDefault", True))]),
-            len(load_registry_from_file(pending_registry_path, [])),
-            read_approved_since_last_run(approval_state_path),
+            len(load_registry_from_file(paths.pending_registry_path, [])),
+            read_approved_since_last_run(paths.approval_state_path),
             json_bytes=json_bytes,
             csv_bytes=csv_bytes,
             light_json_bytes=light_json_bytes,
@@ -558,12 +462,12 @@ def run_pipeline(
         ),
         "sources": source_reports,
         "outputs": {
-            "json": str(json_path),
-            "csv": str(csv_path),
-            "lightJson": str(light_json_path),
-            "report": str(report_path),
-            "lifecycleState": str(lifecycle_state_path),
-            "browserFallbackQueue": str(browser_fallback_queue_path),
+            "json": str(paths.json_path),
+            "csv": str(paths.csv_path),
+            "lightJson": str(paths.light_json_path),
+            "report": str(paths.report_path),
+            "lifecycleState": str(paths.lifecycle_state_path),
+            "browserFallbackQueue": str(paths.browser_fallback_queue_path),
             "changed": {"json": wrote_json, "csv": wrote_csv, "lightJson": wrote_light_json},
         },
     })
@@ -586,10 +490,10 @@ def run_pipeline(
             reverse=True,
         )[:10]
     ]
-    write_text_if_changed(report_path, json.dumps(report_payload, indent=2, ensure_ascii=False))
+    write_text_if_changed(paths.report_path, json.dumps(report_payload, indent=2, ensure_ascii=False))
     finished_at = clean_text(report_payload.get("finishedAt")) or now_iso()
     write_task_state(finished_at=finished_at, force=True)
-    write_success_cache(success_cache_path, source_reports)
+    write_success_cache(paths.success_cache_path, source_reports)
 
     source_state_rows = update_source_state_rows(
         source_state_rows=source_state_rows,
@@ -599,8 +503,8 @@ def run_pipeline(
         circuit_breaker_failures=circuit_breaker_failures,
         circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
     )
-    write_source_state(source_state_path, source_state_rows)
-    write_job_lifecycle_state(lifecycle_state_path, lifecycle_rows)
+    write_source_state(paths.source_state_path, source_state_rows)
+    write_job_lifecycle_state(paths.lifecycle_state_path, lifecycle_rows)
     return report_payload
 
 
@@ -747,7 +651,9 @@ def main() -> int:
         for name, _loader in default_loaders:
             if name in wanted:
                 continue
-            selection_exclusions.append(_build_excluded_source_report(name, "only_sources_filter"))
+            selection_exclusions.append(
+                build_excluded_source_report(name, "only_sources_filter", source_report_meta=SOURCE_REPORT_META)
+            )
         missing = [name for name in only_sources if name not in {item[0] for item in source_loaders}]
         if missing:
             print(f"[jobs_fetcher] WARN unknown --only-sources entries: {', '.join(missing)}", flush=True)
@@ -770,7 +676,9 @@ def main() -> int:
         if successful:
             selected = [(name, loader) for name, loader in selected if name not in successful]
             for source_name in sorted(successful):
-                selection_exclusions.append(_build_excluded_source_report(source_name, "skip_successful_ttl"))
+                selection_exclusions.append(
+                    build_excluded_source_report(source_name, "skip_successful_ttl", source_report_meta=SOURCE_REPORT_META)
+                )
         source_loaders = selected
         seed_from_existing_output = True
         if not args.quiet:

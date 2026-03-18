@@ -76,7 +76,20 @@ import {
   clearNoteSaveQueues as clearNoteSaveQueuesFromModule
 } from "./notes.js";
 import { computeAnchorScrollDelta } from "./render-cycle.js";
-import { isCustomJob, filterSavedJobs } from "./view-state.js";
+import {
+  SAVED_FILTER_ALL,
+  SAVED_FILTER_CUSTOM,
+  SAVED_FILTER_IMPORTED,
+  SORT_UPDATED,
+  SORT_SAVED,
+  SORT_REMINDER,
+  SORT_PERSONAL,
+  isCustomJob,
+  filterSavedJobs,
+  isValidSavedFilter,
+  isValidSavedSort,
+  sortSavedJobs
+} from "./view-state.js";
 import {
   isAllowedAttachment,
   formatFileSize,
@@ -163,15 +176,7 @@ let savedInteractiveMetricSent = false;
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const TIMELINE_PREF_PREFIX = "baluffo_saved_timeline_prefs";
 const CUSTOM_SOURCE_LABEL = "Custom";
-const SAVED_FILTER_ALL = "all";
-const SAVED_FILTER_CUSTOM = "custom";
-const SAVED_FILTER_IMPORTED = "imported";
 const DEFAULT_SAVED_FILTER = SAVED_FILTER_ALL;
-const SORT_UPDATED = "updated";
-const SORT_SAVED = "saved";
-const SORT_REMINDER = "reminder";
-const SORT_PERSONAL = "personal";
-const REMINDER_SOON_HOURS = 72;
 const ACTIVITY_HIGHLIGHT_MS = 2600;
 let activeSavedFilter = DEFAULT_SAVED_FILTER;
 const TIMELINE_SCOPE_ALL = "all";
@@ -1379,20 +1384,12 @@ function setAuthStatus(text) {
   }, text);
 }
 
-function isValidSavedFilter(value) {
-  return value === SAVED_FILTER_ALL || value === SAVED_FILTER_CUSTOM || value === SAVED_FILTER_IMPORTED;
-}
-
 function setSavedFilter(nextFilter) {
   activeSavedFilter = isValidSavedFilter(nextFilter) ? nextFilter : DEFAULT_SAVED_FILTER;
   savedCustomFilterBtnEls.forEach(btn => {
     const isActive = String(btn.dataset.savedFilter || "").toLowerCase() === activeSavedFilter;
     btn.classList.toggle("active", isActive);
   });
-}
-
-function isValidSavedSort(value) {
-  return value === SORT_UPDATED || value === SORT_SAVED || value === SORT_REMINDER || value === SORT_PERSONAL;
 }
 
 function setSavedSort(nextSort) {
@@ -1407,43 +1404,6 @@ function setSavedSortBarVisible(visible) {
   if (!savedSortBarEl) return;
   savedSortBarEl.classList.toggle("hidden", !visible);
   savedSortBarEl.setAttribute("aria-hidden", visible ? "false" : "true");
-}
-
-function sortSavedJobs(jobs, mode) {
-  const rows = Array.isArray(jobs) ? [...jobs] : [];
-  const byKey = (a, b) => String(a?.jobKey || "").localeCompare(String(b?.jobKey || ""));
-  const byUpdated = (a, b) => String(b.updatedAt || b.savedAt || "").localeCompare(String(a.updatedAt || a.savedAt || ""));
-  const bySaved = (a, b) => String(b.savedAt || "").localeCompare(String(a.savedAt || ""));
-  const byTitle = (a, b) => String(a.title || "").localeCompare(String(b.title || ""));
-  if (mode === SORT_SAVED) {
-    return rows.sort((a, b) => bySaved(a, b) || byTitle(a, b) || byKey(a, b));
-  }
-  if (mode === SORT_PERSONAL) {
-    return rows.sort((a, b) => {
-      const customA = isCustomJob(a) ? 0 : 1;
-      const customB = isCustomJob(b) ? 0 : 1;
-      if (customA !== customB) return customA - customB;
-      return byUpdated(a, b) || byTitle(a, b) || byKey(a, b);
-    });
-  }
-  if (mode === SORT_REMINDER) {
-    return rows.sort((a, b) => {
-      const reminderA = getReminderWeight(a.reminderAt);
-      const reminderB = getReminderWeight(b.reminderAt);
-      if (reminderA !== reminderB) return reminderA - reminderB;
-      return byUpdated(a, b) || byTitle(a, b) || byKey(a, b);
-    });
-  }
-  return rows.sort((a, b) => byUpdated(a, b) || byTitle(a, b) || byKey(a, b));
-}
-
-function getReminderWeight(reminderAt) {
-  const parsed = parseIsoDate(reminderAt);
-  if (!parsed) return 3;
-  const diff = parsed.getTime() - Date.now();
-  if (diff < 0) return 2;
-  if (diff <= REMINDER_SOON_HOURS * 60 * 60 * 1000) return 0;
-  return 1;
 }
 
 function setSavedFilterBarVisible(visible) {

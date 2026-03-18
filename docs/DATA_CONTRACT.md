@@ -90,11 +90,15 @@ The orchestrator generates a machine-readable HUD in `_out/LATEST_MANIFEST.json`
     "exe": "string (path to portable exe artifact)",
     "ship": "string (path to ship bundle artifact)",
     "smoke_report": "string (relative path to report.json)",
+    "py_tests_status": "string (not_run|passed|failed)",
+    "node_tests_status": "string (not_run|passed|failed)",
     "py_tests_ok": "boolean",
     "node_tests_ok": "boolean"
   }
 }
 ```
+
+`py_tests_ok` and `node_tests_ok` remain compatibility booleans. New code and AI agents should prefer `py_tests_status` and `node_tests_status` when present so `not_run` is distinguishable from `failed`.
 
 ---
 

@@ -24,6 +24,10 @@ function readImports(relPath) {
   return imports;
 }
 
+function countLines(relPath) {
+  return fs.readFileSync(repoPath(relPath), "utf8").split(/\r?\n/).length;
+}
+
 test("cleanup structure: page indexes boot direct from sibling app modules", () => {
   const checks = [
     path.join("frontend", "jobs", "index.js"),
@@ -147,6 +151,24 @@ test("cleanup structure: app runtime helper modules stay slice-local", () => {
         );
       }
     }
+  }
+});
+
+test("cleanup structure: runtime entrypoints stay within the current size budget", () => {
+  const budgets = {
+    jobs: 1900,
+    saved: 1900,
+    admin: 700
+  };
+
+  for (const [slice, maxLines] of Object.entries(budgets)) {
+    const rel = path.join("frontend", slice, "app", "runtime.js");
+    const lines = countLines(rel);
+    assert.equal(
+      lines <= maxLines,
+      true,
+      `frontend/${slice}/app/runtime.js is ${lines} lines, above the ${maxLines}-line budget`
+    );
   }
 });
 

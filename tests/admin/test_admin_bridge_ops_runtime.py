@@ -7,7 +7,7 @@ from unittest import mock
 from src import admin_bridge
 
 
-def test_resolve_runtime_config_cli_env_precedence(admin_bridge_ops_root):
+def test_resolve_runtime_config_cli_env_precedence(admin_bridge_entrypoint_root):
     cfg = admin_bridge.resolve_runtime_config(
         [
             "--port",
@@ -15,7 +15,7 @@ def test_resolve_runtime_config_cli_env_precedence(admin_bridge_ops_root):
             "--host",
             "127.0.0.9",
             "--data-dir",
-            str(admin_bridge_ops_root),
+            str(admin_bridge_entrypoint_root),
             "--log-format",
             "jsonl",
             "--log-level",
@@ -31,12 +31,12 @@ def test_resolve_runtime_config_cli_env_precedence(admin_bridge_ops_root):
     )
     assert cfg.host == "127.0.0.9"
     assert cfg.port == 9001
-    assert str(cfg.data_dir) == str(admin_bridge_ops_root.resolve())
+    assert str(cfg.data_dir) == str(admin_bridge_entrypoint_root.resolve())
     assert cfg.log_format == "jsonl"
     assert cfg.log_level == "debug"
 
 
-def test_resolve_runtime_config_env_defaults_when_cli_missing(admin_bridge_ops_root):
+def test_resolve_runtime_config_env_defaults_when_cli_missing(admin_bridge_entrypoint_root):
     with mock.patch.object(
         admin_bridge,
         "get_bridge_defaults",
@@ -48,26 +48,26 @@ def test_resolve_runtime_config_env_defaults_when_cli_missing(admin_bridge_ops_r
             "quiet_requests": False,
         },
     ), mock.patch.object(
-        admin_bridge, "get_storage_defaults", return_value={"data_dir": admin_bridge_ops_root / "from-file"}
+        admin_bridge, "get_storage_defaults", return_value={"data_dir": admin_bridge_entrypoint_root / "from-file"}
     ):
         cfg = admin_bridge.resolve_runtime_config(
             [],
             env={
                 "BALUFFO_BRIDGE_HOST": "0.0.0.0",
                 "BALUFFO_BRIDGE_PORT": "9911",
-                "BALUFFO_DATA_DIR": str(admin_bridge_ops_root),
+                "BALUFFO_DATA_DIR": str(admin_bridge_entrypoint_root),
                 "BALUFFO_BRIDGE_LOG_FORMAT": "jsonl",
                 "BALUFFO_BRIDGE_LOG_LEVEL": "debug",
             },
         )
     assert cfg.host == "0.0.0.0"
     assert cfg.port == 9911
-    assert str(cfg.data_dir) == str(admin_bridge_ops_root.resolve())
+    assert str(cfg.data_dir) == str(admin_bridge_entrypoint_root.resolve())
     assert cfg.log_format == "jsonl"
     assert cfg.log_level == "debug"
 
 
-def test_resolve_runtime_config_uses_file_defaults_when_env_missing(admin_bridge_ops_root):
+def test_resolve_runtime_config_uses_file_defaults_when_env_missing(admin_bridge_entrypoint_root):
     with mock.patch.object(
         admin_bridge,
         "get_bridge_defaults",
@@ -79,21 +79,21 @@ def test_resolve_runtime_config_uses_file_defaults_when_env_missing(admin_bridge
             "quiet_requests": True,
         },
     ), mock.patch.object(
-        admin_bridge, "get_storage_defaults", return_value={"data_dir": admin_bridge_ops_root / "from-file"}
+        admin_bridge, "get_storage_defaults", return_value={"data_dir": admin_bridge_entrypoint_root / "from-file"}
     ):
         cfg = admin_bridge.resolve_runtime_config([], env={})
     assert cfg.host == "127.0.0.5"
     assert cfg.port == 9915
-    assert str(cfg.data_dir) == str((admin_bridge_ops_root / "from-file").resolve())
+    assert str(cfg.data_dir) == str((admin_bridge_entrypoint_root / "from-file").resolve())
     assert cfg.log_format == "jsonl"
     assert cfg.log_level == "debug"
     assert cfg.quiet_requests
 
 
-def test_bridge_log_jsonl_output_is_valid_json(admin_bridge_ops_root):
+def test_bridge_log_jsonl_output_is_valid_json(admin_bridge_entrypoint_root):
     cfg = admin_bridge.RuntimeConfig(
-        root=admin_bridge_ops_root,
-        data_dir=admin_bridge_ops_root,
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
         host="127.0.0.1",
         port=8877,
         log_format="jsonl",
@@ -111,10 +111,10 @@ def test_bridge_log_jsonl_output_is_valid_json(admin_bridge_ops_root):
     assert str(payload.get("level") or "") == "info"
 
 
-def test_configure_runtime_paths_updates_bridge_paths(admin_bridge_ops_root):
-    data_dir = admin_bridge_ops_root / "runtime-data"
+def test_configure_runtime_paths_updates_bridge_paths(admin_bridge_entrypoint_root):
+    data_dir = admin_bridge_entrypoint_root / "runtime-data"
     cfg = admin_bridge.RuntimeConfig(
-        root=admin_bridge_ops_root,
+        root=admin_bridge_entrypoint_root,
         data_dir=data_dir,
         host="127.0.0.1",
         port=8877,
@@ -128,7 +128,7 @@ def test_configure_runtime_paths_updates_bridge_paths(admin_bridge_ops_root):
     assert admin_bridge.source_registry_module.DATA_DIR == data_dir.resolve()
 
 
-def test_append_run_history_enforces_limit(admin_bridge_ops_root):
+def test_append_run_history_enforces_limit(admin_bridge_entrypoint_root):
     for idx in range(8):
         admin_bridge.append_run_history(
             {
@@ -145,7 +145,7 @@ def test_append_run_history_enforces_limit(admin_bridge_ops_root):
     assert rows[-1]["summary"]["outputCount"] == 8
 
 
-def test_compute_ops_health_reports_alerts(admin_bridge_ops_root):
+def test_compute_ops_health_reports_alerts(admin_bridge_entrypoint_root):
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
         {
@@ -165,7 +165,7 @@ def test_compute_ops_health_reports_alerts(admin_bridge_ops_root):
     assert any(alert["id"] == "degraded_reliability" for alert in health["alerts"])
 
 
-def test_compute_ops_health_includes_social_alerts(admin_bridge_ops_root):
+def test_compute_ops_health_includes_social_alerts(admin_bridge_entrypoint_root):
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
         {
@@ -186,7 +186,7 @@ def test_compute_ops_health_includes_social_alerts(admin_bridge_ops_root):
     assert "social_low_confidence_spike" in ids
 
 
-def test_normalize_fetch_report_contract_sanitizes_minimal_payload(admin_bridge_ops_root):
+def test_normalize_fetch_report_contract_sanitizes_minimal_payload(admin_bridge_entrypoint_root):
     payload = admin_bridge.normalize_fetch_report_contract(
         {
             "schemaVersion": "1.0",
@@ -207,7 +207,7 @@ def test_normalize_fetch_report_contract_sanitizes_minimal_payload(admin_bridge_
     assert int(row.get("durationMs") or 0) == 17
 
 
-def test_normalize_fetch_report_contract_parses_stringified_detail_rows(admin_bridge_ops_root):
+def test_normalize_fetch_report_contract_parses_stringified_detail_rows(admin_bridge_entrypoint_root):
     payload = admin_bridge.normalize_fetch_report_contract(
         {
             "sources": [
@@ -230,7 +230,7 @@ def test_normalize_fetch_report_contract_parses_stringified_detail_rows(admin_br
     assert int(details[0].get("keptCount") or 0) == 2
 
 
-def test_normalize_discovery_report_contract_derives_queued_count_from_candidates(admin_bridge_ops_root):
+def test_normalize_discovery_report_contract_derives_queued_count_from_candidates(admin_bridge_entrypoint_root):
     payload = admin_bridge.normalize_discovery_report_contract(
         {
             "summary": {"queuedCandidateCount": 0, "probedCandidateCount": 4},
@@ -244,7 +244,7 @@ def test_normalize_discovery_report_contract_derives_queued_count_from_candidate
     assert int((payload.get("summary") or {}).get("queuedCandidateCount") or 0) == 2
 
 
-def test_summarize_discovery_report_prefers_derived_queued_count(admin_bridge_ops_root):
+def test_summarize_discovery_report_prefers_derived_queued_count(admin_bridge_entrypoint_root):
     summary, status = admin_bridge.summarize_discovery_report(
         {
             "startedAt": "2026-03-01T00:00:00+00:00",
@@ -261,7 +261,7 @@ def test_summarize_discovery_report_prefers_derived_queued_count(admin_bridge_op
     assert status == "ok"
 
 
-def test_build_fetcher_args_retry_failed_is_deterministic_and_filters_unknown(admin_bridge_ops_root):
+def test_build_fetcher_args_retry_failed_is_deterministic_and_filters_unknown(admin_bridge_entrypoint_root):
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
         {
@@ -287,7 +287,7 @@ def test_build_fetcher_args_retry_failed_is_deterministic_and_filters_unknown(ad
     assert "--adapter-http-concurrency" in args
 
 
-def test_build_fetcher_args_retry_failed_omits_only_sources_when_no_known_failures(admin_bridge_ops_root):
+def test_build_fetcher_args_retry_failed_omits_only_sources_when_no_known_failures(admin_bridge_entrypoint_root):
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
         {
@@ -304,7 +304,7 @@ def test_build_fetcher_args_retry_failed_omits_only_sources_when_no_known_failur
     assert "--quiet" in args
 
 
-def test_build_fetcher_args_accepts_cadence_and_strategy_overrides(admin_bridge_ops_root):
+def test_build_fetcher_args_accepts_cadence_and_strategy_overrides(admin_bridge_entrypoint_root):
     args, preset = admin_bridge.build_fetcher_args_from_payload(
         {
             "preset": "default",
@@ -327,7 +327,7 @@ def test_build_fetcher_args_accepts_cadence_and_strategy_overrides(admin_bridge_
     assert args[args.index("--cold-source-cadence-minutes") + 1] == "90"
 
 
-def test_sync_history_from_reports_prunes_stale_started_rows_when_report_stuck(admin_bridge_ops_root):
+def test_sync_history_from_reports_prunes_stale_started_rows_when_report_stuck(admin_bridge_entrypoint_root):
     old_started = "2026-03-01T00:00:00+00:00"
     admin_bridge.save_json_atomic(
         admin_bridge.OPS_HISTORY_PATH,
@@ -358,17 +358,17 @@ def test_sync_history_from_reports_prunes_stale_started_rows_when_report_stuck(a
     assert started_rows == []
 
 
-def test_infer_studio_name_from_host_skips_www_and_splits_studio_token(admin_bridge_ops_root):
+def test_infer_studio_name_from_host_skips_www_and_splits_studio_token(admin_bridge_entrypoint_root):
     studio = admin_bridge.infer_studio_name_from_host("https://www.naconstudiomilan.com/careers/")
     assert studio == "Nacon Studio Milan"
 
 
-def test_infer_studio_name_from_host_skips_short_placeholder_subdomain(admin_bridge_ops_root):
+def test_infer_studio_name_from_host_skips_short_placeholder_subdomain(admin_bridge_entrypoint_root):
     studio = admin_bridge.infer_studio_name_from_host("https://w.nixxes.com/jobs")
     assert studio == "Nixxes"
 
 
-def test_alert_ack_suppresses_visible_alert(admin_bridge_ops_root):
+def test_alert_ack_suppresses_visible_alert(admin_bridge_entrypoint_root):
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
         {
@@ -389,10 +389,10 @@ def test_alert_ack_suppresses_visible_alert(admin_bridge_ops_root):
     assert "degraded_reliability" not in updated_ids
 
 
-def test_run_background_script_uses_child_script_mode_when_frozen(admin_bridge_ops_root):
+def test_run_background_script_uses_child_script_mode_when_frozen(admin_bridge_entrypoint_root):
     cfg = admin_bridge.RuntimeConfig(
-        root=admin_bridge_ops_root,
-        data_dir=admin_bridge_ops_root,
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
         host="127.0.0.1",
         port=8877,
         log_format="human",
@@ -407,6 +407,6 @@ def test_run_background_script_uses_child_script_mode_when_frozen(admin_bridge_o
     ), mock.patch.object(admin_bridge.subprocess, "Popen", return_value=fake_proc) as popen_mock:
         admin_bridge.run_background_script("source_discovery.py", ["--mode", "dynamic"])
     command = popen_mock.call_args.args[0]
-    assert command[:5] == ["C:/tmp/Baluffo.exe", "__child_script__", "--root", str(admin_bridge_ops_root), "--script"]
+    assert command[:5] == ["C:/tmp/Baluffo.exe", "__child_script__", "--root", str(admin_bridge_entrypoint_root), "--script"]
     assert "source_discovery.py" in command
     assert command[-2:] == ["--mode", "dynamic"]

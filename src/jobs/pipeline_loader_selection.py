@@ -1,0 +1,148 @@
+from __future__ import annotations
+
+import os
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from src.jobs.interfaces import SourceLoader
+from src.jobs.text_utils import clean_text, norm_text
+from src.shared.utils import env_flag
+
+
+def build_excluded_source_report(
+    source_name: str,
+    reason: str,
+    *,
+    source_report_meta: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    return {
+        "name": source_name,
+        "status": "excluded",
+        "adapter": clean_text(source_report_meta.get(source_name, {}).get("adapter")) or "custom",
+        "fetchStrategy": clean_text(source_report_meta.get(source_name, {}).get("fetchStrategy")) or "auto",
+        "studio": clean_text(source_report_meta.get(source_name, {}).get("studio")) or "",
+        "fetchedCount": 0,
+        "keptCount": 0,
+        "error": clean_text(reason),
+        "exclusionReason": clean_text(reason),
+        "durationMs": 0,
+    }
+
+
+def select_pipeline_loaders(
+    *,
+    source_loaders: Optional[List[Tuple[str, SourceLoader]]],
+    social_enabled: bool,
+    social_config: Dict[str, Any],
+    default_source_loaders: Callable[..., List[Tuple[str, SourceLoader]]],
+) -> tuple[list[tuple[str, SourceLoader]], bool]:
+    if source_loaders is not None:
+        return list(source_loaders), False
+    try:
+        return default_source_loaders(
+            social_enabled=bool(social_enabled),
+            social_config=social_config,
+        ), True
+    except TypeError:
+        return default_source_loaders(), True
+
+
+def sort_selected_loaders(
+    selected_loaders: List[Tuple[str, SourceLoader]],
+    *,
+    source_report_meta: Dict[str, Dict[str, Any]],
+    source_state_rows: Dict[str, Dict[str, Any]],
+) -> List[Tuple[str, SourceLoader]]:
+    def _source_priority(item: Tuple[str, SourceLoader]) -> Tuple[int, int]:
+        source_name = clean_text(item[0])
+        adapter = clean_text(source_report_meta.get(source_name, {}).get("adapter"))
+        state = source_state_rows.get(source_name) if isinstance(source_state_rows.get(source_name), dict) else {}
+        duration_ms = int((state or {}).get("lastDurationMs") or 0)
+        detail_pages = int((state or {}).get("lastDetailPagesVisited") or 0)
+        static_priority = 0 if adapter == "static" else 1
+        return (static_priority, -(duration_ms + (detail_pages * 25)))
+
+    return sorted(selected_loaders, key=_source_priority)
+
+
+def apply_source_cadence_exclusions(
+    selected_loaders: List[Tuple[str, SourceLoader]],
+    *,
+    respect_source_cadence: bool,
+    source_state_rows: Dict[str, Dict[str, Any]],
+    hot_source_cadence_minutes: int,
+    cold_source_cadence_minutes: int,
+    should_skip_source_by_cadence: Callable[..., bool],
+    build_excluded_source_report: Callable[[str, str], Dict[str, Any]],
+) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]]]:
+    if not respect_source_cadence:
+        return selected_loaders, []
+    cadence_skipped: list[dict[str, Any]] = []
+    filtered_loaders: list[tuple[str, SourceLoader]] = []
+    for name, loader in selected_loaders:
+        if should_skip_source_by_cadence(
+            name,
+            source_state_rows,
+            hot_minutes=hot_source_cadence_minutes,
+            cold_minutes=cold_source_cadence_minutes,
+        ):
+            cadence_skipped.append(build_excluded_source_report(name, "skipped_by_source_cadence"))
+            continue
+        filtered_loaders.append((name, loader))
+    return filtered_loaders, cadence_skipped
+
+
+def build_pipeline_runtime_payload(
+    *,
+    selected_loaders: List[Tuple[str, SourceLoader]],
+    max_workers: int,
+    max_per_domain: int,
+    fetch_strategy: str,
+    fetch_client: str,
+    adapter_http_concurrency: int,
+    static_detail_concurrency: int,
+    google_sheets_redirect_concurrency: int,
+    seed_from_existing_output: bool,
+    source_ttl_minutes: int,
+    respect_source_cadence: bool,
+    hot_source_cadence_minutes: int,
+    cold_source_cadence_minutes: int,
+    circuit_breaker_failures: int,
+    circuit_breaker_cooldown_minutes: int,
+    ignore_circuit_breaker: bool,
+    social_enabled: bool,
+    effective_social_config_path: str,
+    social_config: Dict[str, Any],
+    default_social_lookback_minutes: int,
+    default_social_min_confidence: int,
+    default_fetch_strategy: str,
+    default_static_detail_heuristics_profile: str,
+    default_scrapy_validation_strict: bool,
+    default_canonical_strict_url: bool,
+    normalize_runtime_payload: Callable[..., Dict[str, Any]],
+) -> Dict[str, Any]:
+    return normalize_runtime_payload({
+        "maxWorkers": max_workers,
+        "maxPerDomain": max_per_domain,
+        "fetchStrategy": clean_text(fetch_strategy) or default_fetch_strategy,
+        "fetchClient": fetch_client,
+        "adapterHttpConcurrency": adapter_http_concurrency,
+        "staticDetailConcurrency": static_detail_concurrency,
+        "googleSheetsRedirectConcurrency": google_sheets_redirect_concurrency,
+        "seedFromExistingOutput": bool(seed_from_existing_output),
+        "sourceTtlMinutes": int(source_ttl_minutes or 0),
+        "respectSourceCadence": bool(respect_source_cadence),
+        "hotSourceCadenceMinutes": hot_source_cadence_minutes,
+        "coldSourceCadenceMinutes": cold_source_cadence_minutes,
+        "circuitBreakerFailures": int(circuit_breaker_failures or 0),
+        "circuitBreakerCooldownMinutes": int(circuit_breaker_cooldown_minutes or 0),
+        "ignoreCircuitBreaker": bool(ignore_circuit_breaker),
+        "socialEnabled": bool(social_enabled),
+        "socialConfigPath": str(effective_social_config_path),
+        "socialLookbackMinutes": int(social_config.get("lookbackMinutes") or default_social_lookback_minutes),
+        "socialMinConfidence": int(social_config.get("minConfidence") or default_social_min_confidence),
+        "staticDetailHeuristicsProfile": norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE"))
+        or default_static_detail_heuristics_profile,
+        "scrapyValidationStrict": env_flag("BALUFFO_SCRAPY_VALIDATION_STRICT", default_scrapy_validation_strict),
+        "canonicalStrictUrlValidation": env_flag("BALUFFO_CANONICAL_STRICT_URL", default_canonical_strict_url),
+        "selectedSourceCount": len(selected_loaders),
+    }, selected_source_count=len(selected_loaders))

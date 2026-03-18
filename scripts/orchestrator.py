@@ -199,7 +199,11 @@ def build(args: argparse.Namespace, run_dir: Optional[Path] = None, is_verify: b
         rotate_history()
         update_manifest("success", "Build completed successfully", artifacts={
             "exe": "build/portable/Baluffo.exe",
-            "ship": "build/ship"
+            "ship": "build/ship",
+            "py_tests_status": "not_run",
+            "node_tests_status": "not_run",
+            "py_tests_ok": False,
+            "node_tests_ok": False,
         }, run_id=run_dir.name)
         
     return True, run_dir
@@ -243,11 +247,15 @@ def verify(args: argparse.Namespace):
     status = "success" if total_ok else "failure"
     summary = "Verification PASSED" if total_ok else "Verification FAILED"
     
+    py_status = "passed" if ok_py else "failed"
+    node_status = "passed" if ok_node else "failed"
     artifacts = {
         "exe": f"{Path(effective_build_run_dir or run_dir).relative_to(ROOT)}/build/portable/Baluffo.exe",
         "smoke_report": "test/smoke/report.json",
-        "py_tests_ok": ok_py,
-        "node_tests_ok": ok_node
+        "py_tests_status": py_status,
+        "node_tests_status": node_status,
+        "py_tests_ok": py_status == "passed",
+        "node_tests_ok": node_status == "passed",
     }
     
     sync_latest(run_dir)

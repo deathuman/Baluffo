@@ -71,6 +71,7 @@ from src.bridge.request_utils import read_json_from_request
 from src.bridge.server import make_handler, run_http_server
 from src.bridge.api import BridgeApi
 from src.bridge import config as bridge_config
+from src.bridge.server import runtime_state as bridge_runtime_state
 from src.bridge.source_helpers import (
     find_existing_source_by_url,
     find_existing_static_source_by_studio_domain,
@@ -121,27 +122,6 @@ def _get_task_history_manager() -> Any:
 
 
 LOG_LEVEL_ORDER = bridge_config.LOG_LEVEL_ORDER
-PIPELINE_STATE_LOCK = threading.RLock()
-ACTIVE_PIPELINE_RUN_ID = ""
-ACTIVE_PIPELINE_THREAD: Optional[threading.Thread] = None
-PIPELINE_STATUS: Dict[str, Any] = {
-    "active": False,
-    "runId": "",
-    "stage": "idle",
-    "progress": {"currentStep": 0, "totalSteps": 3, "percent": 0, "label": "Idle"},
-    "startedAt": "",
-    "finishedAt": "",
-    "error": "",
-    "updatesFound": False,
-    "refreshRecommended": False,
-    "baselineOutputCount": 0,
-    "finalOutputCount": 0,
-    "jobsPageLoadedCount": 0,
-}
-DESKTOP_LOCAL_DATA_STORE: LocalDataStore | None = None
-STARTUP_METRICS_LOCK = threading.RLock()
-DESKTOP_SESSION_ACTIVITY_AT = ""
-
 SYNC_CONFIG: Any = None
 _SYNC_SERVICE: SyncService | None = None
 _SYNC_SERVICE_DATA_DIR: Path | None = None
@@ -152,7 +132,6 @@ _REGISTRY_SERVICE_LOCK = threading.RLock()
 _DISCOVERY_SERVICE: DiscoveryService | None = None
 _DISCOVERY_SERVICE_PATHS: tuple[Path, Path, Path, Path] | None = None
 _DISCOVERY_SERVICE_LOCK = threading.RLock()
-_PIPELINE_RUNTIME = PipelineRuntime()
 _PIPELINE_SERVICE: PipelineService | None = None
 _PIPELINE_SERVICE_LOCK = threading.RLock()
 
@@ -249,9 +228,9 @@ def _get_pipeline_service() -> PipelineService:
     with _PIPELINE_SERVICE_LOCK:
         if _PIPELINE_SERVICE is None:
             _PIPELINE_SERVICE = PipelineService(
-                pipeline_state_lock=PIPELINE_STATE_LOCK,
-                pipeline_status=PIPELINE_STATUS,
-                runtime=_PIPELINE_RUNTIME,
+                pipeline_state_lock=bridge_runtime_state.PIPELINE_STATE_LOCK,
+                pipeline_status=bridge_runtime_state.PIPELINE_STATUS,
+                runtime=bridge_runtime_state.PIPELINE_RUNTIME,
                 bridge_log=bridge_log,
                 now_iso=now_iso,
                 parse_iso=parse_iso,
@@ -341,7 +320,6 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     global OPS_HISTORY_PATH, OPS_ALERT_STATE_PATH, JOBS_FETCH_REPORT_PATH, TASK_STATE_PATH, DISCOVERY_LOG_PATH, FETCHER_LOG_PATH
     global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
     global TASKS_CONFIG_PATH, SYNC_CONFIG_PATH, SYNC_RUNTIME_PATH, STARTUP_METRICS_PATH
-    global DESKTOP_LOCAL_DATA_STORE, DESKTOP_SESSION_ACTIVITY_AT
     global _REGISTRY_SERVICE, _REGISTRY_SERVICE_PATHS
     global _DISCOVERY_SERVICE, _DISCOVERY_SERVICE_PATHS
 
@@ -375,8 +353,11 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     # Desktop local-data APIs are safe to keep available on localhost and are required
     # for the packaged desktop experience. Treat the LocalDataStore as the feature flag,
     # rather than relying exclusively on environment toggles.
-    DESKTOP_LOCAL_DATA_STORE = LocalDataStore(LocalDataPaths.from_data_dir(data_dir))
-    DESKTOP_SESSION_ACTIVITY_AT = now_iso()
+    bridge_runtime_state.configure_runtime_paths(
+        startup_metrics_path=STARTUP_METRICS_PATH,
+        desktop_local_data_store=LocalDataStore(LocalDataPaths.from_data_dir(data_dir)),
+        now_iso=now_iso,
+    )
     with _REGISTRY_SERVICE_LOCK:
         _REGISTRY_SERVICE = None
         _REGISTRY_SERVICE_PATHS = None
@@ -405,7 +386,7 @@ def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
         DISCOVERY_LOG_PATH=DISCOVERY_LOG_PATH,
         FETCHER_LOG_PATH=FETCHER_LOG_PATH,
         STARTUP_METRICS_PATH=STARTUP_METRICS_PATH,
-        DESKTOP_SESSION_ACTIVITY_AT=DESKTOP_SESSION_ACTIVITY_AT,
+        DESKTOP_SESSION_ACTIVITY_AT=bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
         bridge_log=bridge_log,
         now_iso=now_iso,
         _mark_desktop_session_activity=mark_desktop_session_activity,
@@ -441,38 +422,11 @@ def load_saved_sync_settings() -> Dict[str, Any]:
 
 
 def append_startup_metric(event: str, payload: Optional[Dict[str, Any]] = None) -> None:
-    row = {
-        "ts": now_iso(),
-        "event": str(event or "").strip() or "unknown",
-        "payload": payload if isinstance(payload, dict) else {},
-    }
-    with STARTUP_METRICS_LOCK:
-        try:
-            STARTUP_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with STARTUP_METRICS_PATH.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-        except OSError:
-            return
+    bridge_runtime_state.append_startup_metric(event, payload, now_iso=now_iso)
 
 
 def read_startup_metrics(limit: int = 200) -> List[Dict[str, Any]]:
-    max_rows = max(1, min(1000, int(limit or 200)))
-    try:
-        text = STARTUP_METRICS_PATH.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    rows: List[Dict[str, Any]] = []
-    for line in text.splitlines():
-        line = str(line or "").strip()
-        if not line:
-            continue
-        try:
-            parsed = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            rows.append(parsed)
-    return rows[-max_rows:]
+    return bridge_runtime_state.read_startup_metrics(limit)
 
 
 def resolve_effective_sync_config() -> source_sync_module.SyncConfig:
@@ -957,13 +911,11 @@ def build_fetcher_args_from_payload(payload: Dict[str, Any]) -> Tuple[List[str],
 
 
 def mark_desktop_session_activity(path: str) -> None:
-    global DESKTOP_SESSION_ACTIVITY_AT
-    if not RUNTIME_CONFIG.desktop_mode:
-        return
-    normalized = str(path or "").strip()
-    if not normalized or normalized == "/ops/health":
-        return
-    DESKTOP_SESSION_ACTIVITY_AT = now_iso()
+    bridge_runtime_state.mark_desktop_session_activity(
+        path,
+        now_iso=now_iso,
+        desktop_mode=RUNTIME_CONFIG.desktop_mode,
+    )
 
 
 def parse_iso(value: Any) -> datetime | None:
@@ -1083,87 +1035,30 @@ def summarize_discovery_report(report: Dict[str, Any]) -> Tuple[Dict[str, Any], 
 
 
 def sync_history_from_reports() -> List[Dict[str, Any]]:
-    with OPS_STATE_LOCK:
-        _reconcile_sync_history_locked()
-        _reconcile_started_task_history_locked("fetch")
-        _reconcile_started_task_history_locked("discovery")
-        fetch_report = normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {}))
-        fetch_started_at = str(fetch_report.get("startedAt") or "")
-        fetch_finished_at = str(fetch_report.get("finishedAt") or "")
-        if report_is_stale_in_progress("fetch", JOBS_FETCH_REPORT_PATH, fetch_report):
-            prune_started_rows_for_type("fetch")
-            clear_task_state("fetch")
-            fetch_started_at = ""
-        if fetch_started_at and not fetch_finished_at:
-            prune_started_rows_for_type("fetch", keep_started_at=fetch_started_at)
-            fetch_summary = summarize_fetch_report(fetch_report)
-            upsert_run_history({
-                "type": "fetch",
-                "status": "started",
-                "startedAt": fetch_started_at,
-                "finishedAt": "",
-                "durationMs": int(fetch_summary["durationMs"]),
-                "summary": {
-                    "outputCount": int(fetch_summary["outputCount"]),
-                    "failedSources": int(fetch_summary["failedSources"]),
-                    "sourceCount": int(fetch_summary["sourceCount"]),
-                },
-            }, dedupe_fields=("type", "status", "startedAt"))
-        if fetch_report.get("finishedAt"):
-            fetch_summary = summarize_fetch_report(fetch_report)
-            prune_started_rows_for_type("fetch", finished_at=str(fetch_report.get("finishedAt") or ""))
-            clear_task_state("fetch")
-            upsert_run_history({
-                "type": "fetch",
-                "status": "ok" if fetch_summary["failedSources"] == 0 else ("error" if fetch_summary["failedRatio"] >= 1 else "warning"),
-                "startedAt": str(fetch_report.get("startedAt") or ""),
-                "finishedAt": str(fetch_report.get("finishedAt") or ""),
-                "durationMs": int(fetch_summary["durationMs"]),
-                "summary": {
-                    "outputCount": int(fetch_summary["outputCount"]),
-                    "failedSources": int(fetch_summary["failedSources"]),
-                    "sourceCount": int(fetch_summary["sourceCount"]),
-                },
-            }, dedupe_fields=("type", "finishedAt"))
-        discovery_report = normalize_discovery_report_contract(load_json_object(DISCOVERY_REPORT_PATH, {}))
-        discovery_started_at = str(discovery_report.get("startedAt") or "")
-        discovery_finished_at = str(discovery_report.get("finishedAt") or "")
-        if report_is_stale_in_progress("discovery", DISCOVERY_REPORT_PATH, discovery_report):
-            prune_started_rows_for_type("discovery")
-            clear_task_state("discovery")
-            discovery_started_at = ""
-        if discovery_started_at and not discovery_finished_at:
-            prune_started_rows_for_type("discovery", keep_started_at=discovery_started_at)
-            discovery_summary, _status = summarize_discovery_report(discovery_report)
-            upsert_run_history({
-                "type": "discovery",
-                "status": "started",
-                "startedAt": discovery_started_at,
-                "finishedAt": "",
-                "durationMs": int(discovery_summary["durationMs"]),
-                "summary": {
-                    "queuedCandidateCount": int(discovery_summary["queuedCandidateCount"]),
-                    "failedProbeCount": int(discovery_summary["failedProbeCount"]),
-                    "probedCandidateCount": int(discovery_summary["probedCandidateCount"]),
-                },
-            }, dedupe_fields=("type", "status", "startedAt"))
-        if discovery_report.get("finishedAt"):
-            discovery_summary, status = summarize_discovery_report(discovery_report)
-            prune_started_rows_for_type("discovery", finished_at=str(discovery_report.get("finishedAt") or ""))
-            clear_task_state("discovery")
-            upsert_run_history({
-                "type": "discovery",
-                "status": status,
-                "startedAt": str(discovery_report.get("startedAt") or ""),
-                "finishedAt": str(discovery_report.get("finishedAt") or ""),
-                "durationMs": int(discovery_summary["durationMs"]),
-                "summary": {
-                    "queuedCandidateCount": int(discovery_summary["queuedCandidateCount"]),
-                    "failedProbeCount": int(discovery_summary["failedProbeCount"]),
-                    "probedCandidateCount": int(discovery_summary["probedCandidateCount"]),
-                },
-            }, dedupe_fields=("type", "finishedAt"))
-        return load_run_history()
+    return _run_history_api.sync_history_from_reports(
+        _run_history_api.SyncHistoryDeps(
+            ops_state_lock=OPS_STATE_LOCK,
+            load_run_history=load_run_history,
+            save_run_history=save_run_history,
+            prune_started_rows_for_type=prune_started_rows_for_type,
+            clear_task_state=clear_task_state,
+            clear_task_state_locked=_clear_task_state_locked,
+            upsert_run_history=upsert_run_history,
+            task_running_from_state=task_running_from_state,
+            report_is_stale_in_progress=report_is_stale_in_progress,
+            load_json_object=load_json_object,
+            normalize_fetch_report_contract=normalize_fetch_report_contract,
+            normalize_discovery_report_contract=normalize_discovery_report_contract,
+            summarize_fetch_report=summarize_fetch_report,
+            summarize_discovery_report=summarize_discovery_report,
+            jobs_fetch_report_path=JOBS_FETCH_REPORT_PATH,
+            discovery_report_path=DISCOVERY_REPORT_PATH,
+            get_active_sync_runs=SyncState.get_active_sync_runs,
+            parse_iso=parse_iso,
+            now_iso=now_iso,
+            now_utc=now_utc,
+        )
+    )
 
 
 def _build_ops_health_deps() -> Any:
@@ -1173,7 +1068,7 @@ def _build_ops_health_deps() -> Any:
     deps.get_state = load_state
     deps.now_iso = now_iso
     deps.desktop_mode = RUNTIME_CONFIG.desktop_mode
-    deps.desktop_last_activity_at = DESKTOP_SESSION_ACTIVITY_AT
+    deps.desktop_last_activity_at = bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT
     deps.load_alert_state_fn = load_alert_state
     deps.save_alert_state_fn = save_alert_state
     deps.parse_schedule_metadata_fn = parse_schedule_metadata
@@ -1226,80 +1121,32 @@ def startup_sync_pull() -> None:
     _get_sync_service().startup_sync_pull()
 
 
-def _reconcile_sync_history_locked() -> None:
-    history = load_run_history()
-    active_runs = SyncState.get_active_sync_runs()
-    next_rows: List[Dict[str, Any]] = []
-    changed = False
-    for row in history:
-        if str(row.get("type") or "").strip().lower() != "sync":
-            next_rows.append(row)
-            continue
-        if str(row.get("status") or "").strip().lower() != "started":
-            next_rows.append(row)
-            continue
-        if str(row.get("finishedAt") or "").strip():
-            next_rows.append(row)
-            continue
-        run_id = str(row.get("id") or "").strip()
-        if run_id and run_id in active_runs:
-            next_rows.append(row)
-            continue
-        changed = True
-    if changed:
-        save_run_history(next_rows)
-
-
-def _reconcile_started_task_history_locked(run_type: str) -> None:
-    """Drop or finalize stale started rows when no task process is running.
-
-    Fetch/discovery tasks can exit early (or be killed) without always updating their
-    report `finishedAt` field. We use `admin-task-state.json` as the authoritative
-    "is a process running" signal and finalize stale started placeholders.
-    """
-    history = load_run_history()
-    now_dt = now_utc()
-    next_rows: List[Dict[str, Any]] = []
-    changed = False
-    for row in history:
-        if str(row.get("type") or "").strip().lower() != str(run_type or "").strip().lower():
-            next_rows.append(row)
-            continue
-        if str(row.get("status") or "").strip().lower() != "started":
-            next_rows.append(row)
-            continue
-        if str(row.get("finishedAt") or "").strip():
-            next_rows.append(row)
-            continue
-        started_dt = parse_iso(row.get("startedAt"))
-        if task_running_from_state(run_type):
-            next_rows.append(row)
-            continue
-        if not started_dt:
-            changed = True
-            continue
-        age_minutes = (now_dt - started_dt).total_seconds() / 60.0
-        if age_minutes < 0.5:
-            next_rows.append(row)
-            continue
-        changed = True
-        finished_at = now_iso()
-        next_rows.append(
-            {
-                **dict(row),
-                "status": "error",
-                "finishedAt": finished_at,
-                "summary": {**(row.get("summary") if isinstance(row.get("summary"), dict) else {}), "error": "stale_started_run_pruned"},
-            }
-        )
-        _clear_task_state_locked(run_type)
-    if changed:
-        save_run_history(next_rows)
-
-
 def sync_task_running() -> bool:
     with OPS_STATE_LOCK:
-        _reconcile_sync_history_locked()
+        _run_history_api.reconcile_sync_history_locked(
+            _run_history_api.SyncHistoryDeps(
+                ops_state_lock=OPS_STATE_LOCK,
+                load_run_history=load_run_history,
+                save_run_history=save_run_history,
+                prune_started_rows_for_type=prune_started_rows_for_type,
+                clear_task_state=clear_task_state,
+                clear_task_state_locked=_clear_task_state_locked,
+                upsert_run_history=upsert_run_history,
+                task_running_from_state=task_running_from_state,
+                report_is_stale_in_progress=report_is_stale_in_progress,
+                load_json_object=load_json_object,
+                normalize_fetch_report_contract=normalize_fetch_report_contract,
+                normalize_discovery_report_contract=normalize_discovery_report_contract,
+                summarize_fetch_report=summarize_fetch_report,
+                summarize_discovery_report=summarize_discovery_report,
+                jobs_fetch_report_path=JOBS_FETCH_REPORT_PATH,
+                discovery_report_path=DISCOVERY_REPORT_PATH,
+                get_active_sync_runs=SyncState.get_active_sync_runs,
+                parse_iso=parse_iso,
+                now_iso=now_iso,
+                now_utc=now_utc,
+            )
+        )
     return _get_sync_service().sync_task_running()
 
 
@@ -1414,64 +1261,6 @@ def _current_fetch_output_count() -> int:
     return int(summary.get("outputCount") or 0)
 
 
-def _pipeline_progress(current_step: int, total_steps: int, label: str) -> Dict[str, Any]:
-    safe_total = max(1, int(total_steps or 1))
-    safe_current = max(0, min(int(current_step or 0), safe_total))
-    return {
-        "currentStep": safe_current,
-        "totalSteps": safe_total,
-        "percent": int(round((safe_current / safe_total) * 100)),
-        "label": str(label or ""),
-    }
-
-
-def _pipeline_mark_stage(*, stage: str, current_step: int, total_steps: int, label: str, error: str = "") -> None:
-    with PIPELINE_STATE_LOCK:
-        PIPELINE_STATUS["stage"] = str(stage or "unknown")
-        PIPELINE_STATUS["progress"] = _pipeline_progress(current_step, total_steps, label)
-        if error:
-            PIPELINE_STATUS["error"] = str(error)
-
-
-def _pipeline_set_completed(*, status: str, final_output_count: int = 0, error: str = "") -> None:
-    with PIPELINE_STATE_LOCK:
-        run_id = str(PIPELINE_STATUS.get("runId") or "")
-        started_at = str(PIPELINE_STATUS.get("startedAt") or "")
-        baseline = int(PIPELINE_STATUS.get("baselineOutputCount") or 0)
-        loaded = int(PIPELINE_STATUS.get("jobsPageLoadedCount") or 0)
-        compare_base = max(baseline, loaded)
-        updates_found = int(final_output_count or 0) > compare_base
-        PIPELINE_STATUS.update({
-            "active": False,
-            "stage": "completed" if status != "error" else "error",
-            "progress": _pipeline_progress(3, 3, "Pipeline completed" if status != "error" else "Pipeline failed"),
-            "finishedAt": now_iso(),
-            "error": str(error or ""),
-            "finalOutputCount": int(final_output_count or 0),
-            "updatesFound": bool(updates_found),
-            "refreshRecommended": bool(updates_found),
-        })
-        finished_at = str(PIPELINE_STATUS.get("finishedAt") or "")
-        if run_id:
-            upsert_run_history({
-                "id": run_id,
-                "type": "pipeline",
-                "status": "error" if status == "error" else "ok",
-                "startedAt": started_at,
-                "finishedAt": finished_at,
-                "durationMs": int(max(0.0, (parse_iso(finished_at) - parse_iso(started_at)).total_seconds() * 1000)) if parse_iso(finished_at) and parse_iso(started_at) else 0,
-                "summary": {
-                    "error": str(error or ""),
-                    "baselineOutputCount": baseline,
-                    "jobsPageLoadedCount": loaded,
-                    "finalOutputCount": int(final_output_count or 0),
-                    "updatesFound": bool(updates_found),
-                },
-            }, dedupe_fields=("id",))
-        global ACTIVE_PIPELINE_RUN_ID
-        ACTIVE_PIPELINE_RUN_ID = ""
-
-
 def get_jobs_pipeline_status_payload() -> Dict[str, Any]:
     return _get_pipeline_service().get_status_payload()
 
@@ -1566,9 +1355,7 @@ def start_jobs_pipeline_task(payload: Optional[Dict[str, Any]] = None) -> Dict[s
 
 
 def desktop_local_data_store() -> LocalDataStore:
-    if DESKTOP_LOCAL_DATA_STORE is None:
-        raise RuntimeError("Desktop local data API is unavailable.")
-    return DESKTOP_LOCAL_DATA_STORE
+    return bridge_runtime_state.get_desktop_local_data_store()
 
 
 def parse_args(argv: Optional[List[str]] = None) -> RuntimeConfig:

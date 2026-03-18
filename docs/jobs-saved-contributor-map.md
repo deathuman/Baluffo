@@ -40,9 +40,17 @@ actions/domain/data-source/render/services/state-sync -> shared or root utilitie
 ## Quick edit guidance
 - Add Jobs filter/page interaction: `frontend/jobs/app/filters.js` (+ `app/runtime.js` wiring if needed)
 - Add Jobs fetch/refresh behavior: `frontend/jobs/app/feed.js`
+- Add Jobs country/region filter behavior: `frontend/jobs/app/countries.js`
+- Add Jobs source preset / startup feed-source behavior: `frontend/jobs/app/sources.js`
 - Add Saved notes behavior: `frontend/saved/app/notes.js`
 - Add Saved attachments behavior: `frontend/saved/app/attachments.js`
+- Add Saved filter/sort rules: `frontend/saved/app/view-state.js`
 - Add Admin unlock/ops/fetch/discovery/sync behavior: `frontend/admin/app/{auth,ops,fetcher,discovery,sync}.js`
 - Add render-only visual changes: `frontend/{jobs|saved|admin}/render.js`
 - Add bridge/local-data transport behavior: `frontend/{jobs|saved|admin}/services.js`
 - Add URL/session state sync behavior: `frontend/{jobs|saved|admin}/state-sync/index.js`
+
+## Transitional seams
+- Jobs adapter compatibility: `_runtime.facade()` is still intentionally limited to the jobs adapter compatibility layer.
+- Local data compatibility: `window.JobAppLocalData` remains the temporary runtime boundary in `frontend/local-data/services.js`.
+- Bridge runtime state: mutable server-adjacent bridge state should live in `src/bridge/server/runtime_state.py` or `src/bridge/sync_state.py`, not new module globals elsewhere.

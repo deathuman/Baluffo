@@ -10,7 +10,7 @@ import {
   bindHandlersMap
 } from "../../shared/ui/index.js";
 import { emitStartupMetric, logError, logInfo, markFirstInteractive } from "../../shared/app-boot.js";
-import { sanitizeUrl as sanitizeUrlValue, fullCountryName as fullCountryNameFromData } from "../../shared/data/index.js";
+import { sanitizeUrl as sanitizeUrlValue } from "../../shared/data/index.js";
 import { BaluffoJobsParsing as jobsParsing } from "../../../jobs-parsing-utils.js";
 import {
   detectWorkType,
@@ -19,23 +19,14 @@ import {
   classifyCompanyType,
   mapProfession,
   isInternshipJob,
-  normalizeCountryToken,
-  canonicalizeCountryName,
-  fullCountryName as fullCountryNameFromDomainLayer,
   isValidCountry,
   normalizeJobs,
   getJobKeyForJob,
   toJobSnapshot
 } from "../domain.js";
-import {
-  fetchUnifiedJobs as fetchUnifiedJobsFromData,
-  fetchJsonFromCandidates as fetchJsonFromCandidatesFromData,
-  parseUnifiedJobsPayload,
-  parseCSVLarge as parseCSVLargeFromData
-} from "../data-source.js";
 import { isJobsApiReady, jobsAuthService, jobsSavedJobsService, jobsPageService } from "../services.js";
 import { createJobsDispatcher, JOBS_ACTIONS } from "../actions.js";
-import { renderDataSourcesPanel, renderJobRowHtml, showJobsLoading, showJobsError } from "../render.js";
+import { renderJobRowHtml, showJobsLoading, showJobsError } from "../render.js";
 import {
   readAutoRefreshAppliedId,
   readAutoRefreshSignal,
@@ -73,12 +64,6 @@ import {
 import {
   normalizeLifecycleStatus,
   optionExists,
-  getAvailableRegionOptions as getAvailableRegionOptionsFromModule,
-  getCountryFilterOptionLabel as getCountryFilterOptionLabelFromModule,
-  matchesCountrySelection as matchesCountrySelectionFromModule,
-  resolveRegionSelection as resolveRegionSelectionFromModule,
-  countryMatchesRegion as countryMatchesRegionFromModule,
-  resolveCountryCode as resolveCountryCodeFromModule,
   normalizeSelectedCountries,
   getCountrySelectionBadgeText,
   renderCountryPickerOptionsHtml,
@@ -115,6 +100,19 @@ import { createJobsStartupMetrics } from "./runtime/effects.js";
 import { createJobsBridgeRequest } from "./runtime/actions.js";
 import { setProgressVisibility, setStatusText } from "./runtime/view.js";
 import { bindWindowResize } from "./runtime/events.js";
+import {
+  fullCountryName as fullCountryNameForJobs,
+  getAvailableRegionOptions as getAvailableRegionOptionsForJobs,
+  getCountryFilterOptionLabel as getCountryFilterOptionLabelForJobs,
+  matchesCountrySelection as matchesCountrySelectionForJobs,
+  resolveCountryCode as resolveCountryCodeForJobs
+} from "./countries.js";
+import {
+  STARTUP_PREVIEW_JSON_URLS,
+  fetchUnifiedJobs as fetchUnifiedJobsFromSources,
+  fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
+  renderDataSources as renderDataSourcesFromSources
+} from "./sources.js";
 let allJobs = [];
 let filteredJobs = [];
 const JOBS_LOG_SCOPE = "jobs";
@@ -232,35 +230,6 @@ const JOBS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const JOBS_AUTO_REFRESH_SIGNAL_KEY = "baluffo_jobs_auto_refresh_signal";
 const JOBS_AUTO_REFRESH_APPLIED_KEY = "baluffo_jobs_auto_refresh_applied";
 const QUICK_FILTER_PREFS_KEY = "baluffo_quick_filter_prefs";
-const UNIFIED_JSON_SOURCES = [
-  { name: "Unified JSON light (local data)", url: "data/jobs-unified-light.json" },
-  { name: "Unified JSON (local data)", url: "data/jobs-unified.json" },
-  { name: "Unified JSON (root)", url: "jobs-unified.json" }
-];
-const STARTUP_PREVIEW_JSON_URLS = [
-  "data/jobs-unified.json",
-  "data/jobs-unified-light.json",
-  "data/jobs-unified-startup.json",
-  "jobs-unified.json",
-  "jobs-unified-startup.json"
-];
-const UNIFIED_CSV_SOURCES = [
-  { name: "Unified CSV (local data)", url: "data/jobs-unified.csv" },
-  { name: "Unified CSV (root)", url: "jobs-unified.csv" }
-];
-const SHEETS_FALLBACK_SOURCES = [
-  { sheetId: "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE", gid: "1560329579" },
-  { sheetId: "1eR2oAXOuflr8CZeGoz3JTrsgNj3KuefbdXJOmNtjEVM", gid: "0" },
-  { sheetId: "1MvqHXAtXP_6ogtfrLM0g_RzGdJQyx5Q8mhPX4lZECkI", gid: "0" }
-];
-const SOURCE_REGISTRY_ACTIVE_URLS = [
-  "data/source-registry-active.json",
-  "source-registry-active.json"
-];
-const JOBS_FETCH_REPORT_URLS = [
-  "data/jobs-fetch-report.json",
-  "jobs-fetch-report.json"
-];
 const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
 const JOBS_PIPELINE_STATUS_POLL_MS = 1500;
 const JOBS_PIPELINE_STATUS_IDLE_POLL_MS = 5000;
@@ -268,144 +237,6 @@ const JOBS_BRIDGE_REQUEST_TIMEOUT_MS = 1800;
 const JOBS_FIRST_LOAD_REQUEST_TIMEOUT_MS = 4500;
 
 const QUICK_FILTERS = Array.isArray(jobsStateModule.QUICK_FILTERS) ? jobsStateModule.QUICK_FILTERS : [];
-const COUNTRY_DISPLAY_NAMES = (typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function")
-  ? new Intl.DisplayNames(["en"], { type: "region" })
-  : null;
-const COUNTRY_NAME_BY_CODE = {
-  US: "United States",
-  CA: "Canada",
-  GB: "United Kingdom",
-  UK: "United Kingdom",
-  DE: "Germany",
-  FI: "Finland",
-  JP: "Japan",
-  AU: "Australia",
-  SG: "Singapore",
-  FR: "France",
-  NL: "Netherlands",
-  SE: "Sweden",
-  NO: "Norway",
-  DK: "Denmark",
-  ES: "Spain",
-  IT: "Italy",
-  BR: "Brazil",
-  IN: "India",
-  MX: "Mexico",
-  AR: "Argentina",
-  CL: "Chile",
-  PL: "Poland",
-  PT: "Portugal",
-  IE: "Ireland",
-  CH: "Switzerland",
-  AT: "Austria",
-  BE: "Belgium",
-  CZ: "Czechia",
-  CN: "China",
-  KR: "South Korea",
-  NZ: "New Zealand"
-};
-const COUNTRY_ALIAS_TO_CANONICAL = {
-  usa: "United States",
-  unitedstatesofamerica: "United States",
-  america: "United States",
-  uk: "United Kingdom",
-  greatbritain: "United Kingdom",
-  england: "United Kingdom",
-  uae: "United Arab Emirates",
-  czechrepublic: "Czechia",
-  korea: "South Korea",
-  republicofkorea: "South Korea",
-  russianfederation: "Russia"
-};
-const COUNTRY_NAME_OPTIONS = {
-  fullCountryNameFromData,
-  countryNamesByCode: COUNTRY_NAME_BY_CODE,
-  countryAliasToCanonical: COUNTRY_ALIAS_TO_CANONICAL,
-  countryDisplayNames: COUNTRY_DISPLAY_NAMES
-};
-const REGION_DEFINITIONS = [
-  {
-    value: "region:europe",
-    label: "Europe",
-    countries: [
-      "Albania", "Andorra", "Austria", "Belarus", "Belgium", "Bosnia and Herzegovina", "Bulgaria",
-      "Croatia", "Cyprus", "Czechia", "Denmark", "Estonia", "Finland", "France", "Germany",
-      "Greece", "Hungary", "Iceland", "Ireland", "Italy", "Kosovo", "Latvia", "Liechtenstein",
-      "Lithuania", "Luxembourg", "Malta", "Moldova", "Monaco", "Montenegro", "Netherlands",
-      "North Macedonia", "Norway", "Poland", "Portugal", "Romania", "San Marino", "Serbia",
-      "Slovakia", "Slovenia", "Spain", "Sweden", "Switzerland", "Ukraine", "United Kingdom",
-      "Vatican City"
-    ]
-  },
-  {
-    value: "region:north-america",
-    label: "North America",
-    countries: [
-      "Antigua and Barbuda", "Bahamas", "Barbados", "Belize", "Canada", "Costa Rica", "Cuba",
-      "Dominica", "Dominican Republic", "El Salvador", "Grenada", "Guatemala", "Haiti", "Honduras",
-      "Jamaica", "Mexico", "Nicaragua", "Panama", "Saint Kitts and Nevis", "Saint Lucia",
-      "Saint Vincent and the Grenadines", "Trinidad and Tobago", "United States"
-    ]
-  },
-  {
-    value: "region:south-america",
-    label: "South America",
-    countries: [
-      "Argentina", "Bolivia", "Brazil", "Chile", "Colombia", "Ecuador", "Guyana", "Paraguay",
-      "Peru", "Suriname", "Uruguay", "Venezuela"
-    ]
-  },
-  {
-    value: "region:asia",
-    label: "Asia",
-    countries: [
-      "Afghanistan", "Armenia", "Azerbaijan", "Bahrain", "Bangladesh", "Bhutan", "Brunei", "Cambodia",
-      "China", "Georgia", "India", "Indonesia", "Iran", "Iraq", "Israel", "Japan", "Jordan",
-      "Kazakhstan", "Kuwait", "Kyrgyzstan", "Laos", "Lebanon", "Malaysia", "Maldives", "Mongolia",
-      "Myanmar", "Nepal", "North Korea", "Oman", "Pakistan", "Palestine", "Philippines", "Qatar",
-      "Russia", "Saudi Arabia", "Singapore", "South Korea", "Sri Lanka", "Syria", "Taiwan",
-      "Tajikistan", "Thailand", "Timor-Leste", "Turkey", "Turkmenistan", "United Arab Emirates",
-      "Uzbekistan", "Vietnam", "Yemen"
-    ]
-  },
-  {
-    value: "region:africa",
-    label: "Africa",
-    countries: [
-      "Algeria", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", "Cabo Verde", "Cameroon",
-      "Central African Republic", "Chad", "Comoros", "Congo", "Democratic Republic of the Congo",
-      "Djibouti", "Egypt", "Equatorial Guinea", "Eritrea", "Eswatini", "Ethiopia", "Gabon", "Gambia",
-      "Ghana", "Guinea", "Guinea-Bissau", "Ivory Coast", "Kenya", "Lesotho", "Liberia", "Libya",
-      "Madagascar", "Malawi", "Mali", "Mauritania", "Mauritius", "Morocco", "Mozambique", "Namibia",
-      "Niger", "Nigeria", "Rwanda", "Sao Tome and Principe", "Senegal", "Seychelles", "Sierra Leone",
-      "Somalia", "South Africa", "South Sudan", "Sudan", "Tanzania", "Togo", "Tunisia", "Uganda",
-      "Zambia", "Zimbabwe"
-    ]
-  },
-  {
-    value: "region:oceania",
-    label: "Oceania",
-    countries: [
-      "Australia", "Fiji", "Kiribati", "Marshall Islands", "Micronesia", "Nauru", "New Zealand",
-      "Palau", "Papua New Guinea", "Samoa", "Solomon Islands", "Tonga", "Tuvalu", "Vanuatu"
-    ]
-  },
-  {
-    value: "region:remote-worldwide",
-    label: "Remote / Worldwide",
-    countries: ["Remote", "Worldwide", "Global"]
-  }
-];
-const REMOTE_WORLDWIDE_TOKENS = new Set(
-  ["remote", "worldwide", "global", "anywhere"].map(item => normalizeCountryToken(item))
-);
-const REGION_COUNTRY_TOKEN_LOOKUP = Object.fromEntries(
-  REGION_DEFINITIONS.map(region => [
-    region.value,
-    new Set(region.countries.map(item => normalizeCountryToken(canonicalizeCountryName(item, COUNTRY_NAME_OPTIONS))).filter(Boolean))
-  ])
-);
-
 let refreshInFlight = false;
 let availableProfessions = [];
 let availableCountries = [];
@@ -1385,8 +1216,8 @@ function sortJobs(jobs, sortMode) {
   }
   if (sortMode === "country-asc") {
     jobs.sort((a, b) =>
-      fullCountryNameFromDomainLayer(a.country, COUNTRY_NAME_OPTIONS)
-        .localeCompare(fullCountryNameFromDomainLayer(b.country, COUNTRY_NAME_OPTIONS))
+      fullCountryNameForJobs(a.country)
+        .localeCompare(fullCountryNameForJobs(b.country))
     );
     return;
   }
@@ -1471,7 +1302,7 @@ function renderJobRow(job) {
   const jobKey = getJobKeyForJobWithService(job);
   const isSeen = Boolean(currentUser && seenJobKeys.has(jobKey));
   return renderJobRowHtml(job, {
-    fullCountryName: value => fullCountryNameFromDomainLayer(value, COUNTRY_NAME_OPTIONS),
+    fullCountryName: fullCountryNameForJobs,
     sanitizeUrl,
     getJobKeyForJob: getJobKeyForJobWithService,
     savedJobKeys,
@@ -1631,10 +1462,10 @@ function updateFilterOptions() {
   });
 
   availableCountries = Array.from(countries).sort((a, b) =>
-    fullCountryNameFromDomainLayer(a, COUNTRY_NAME_OPTIONS)
-      .localeCompare(fullCountryNameFromDomainLayer(b, COUNTRY_NAME_OPTIONS))
+    fullCountryNameForJobs(a)
+      .localeCompare(fullCountryNameForJobs(b))
   );
-  const availableRegions = getAvailableRegionOptions(availableCountries);
+  const availableRegions = getAvailableRegionOptionsForJobs(availableCountries);
   availableCountryFilterValues = [
     ...availableRegions.map(region => region.value),
     ...availableCountries
@@ -1644,7 +1475,7 @@ function updateFilterOptions() {
   availableCountryFilterValues.forEach(country => {
     const opt = document.createElement("option");
     opt.value = country;
-    opt.textContent = getCountryFilterOptionLabel(country);
+    opt.textContent = getCountryFilterOptionLabelForJobs(country);
     countryFilter.appendChild(opt);
   });
   renderCountryPickerOptions(countryPickerSearch ? countryPickerSearch.value : "");
@@ -1701,38 +1532,8 @@ function updateCountrySelectionBadge() {
   countrySelectionBadge.textContent = getCountrySelectionBadgeText(state.filters.countries);
 }
 
-function getCountryFilterOptionLabel(value) {
-  return getCountryFilterOptionLabelFromModule(value, {
-    regionDefinitions: REGION_DEFINITIONS,
-    fullCountryName: fullCountryNameFromDomainLayer,
-    countryNameOptions: COUNTRY_NAME_OPTIONS
-  });
-}
-
-function getAvailableRegionOptions(countries) {
-  return getAvailableRegionOptionsFromModule(countries, {
-    canonicalizeCountryName,
-    normalizeCountryToken,
-    regionDefinitions: REGION_DEFINITIONS,
-    regionCountryTokenLookup: REGION_COUNTRY_TOKEN_LOOKUP,
-    countryNameOptions: COUNTRY_NAME_OPTIONS
-  });
-}
-
 function matchesCountrySelection(jobCountry, selections) {
-  return matchesCountrySelectionFromModule(jobCountry, selections, {
-    canonicalizeCountryName,
-    normalizeCountryToken,
-    countryNameOptions: COUNTRY_NAME_OPTIONS,
-    regionCountryMatcher: countryMatchesRegion
-  });
-}
-
-function countryMatchesRegion(countryToken, regionValue) {
-  return countryMatchesRegionFromModule(countryToken, regionValue, {
-    regionCountryTokenLookup: REGION_COUNTRY_TOKEN_LOOKUP,
-    remoteWorldwideTokens: REMOTE_WORLDWIDE_TOKENS
-  });
+  return matchesCountrySelectionForJobs(jobCountry, selections);
 }
 
 function toggleCountrySelection(countryCode) {
@@ -1748,16 +1549,9 @@ function toggleCountrySelection(countryCode) {
 }
 
 function resolveCountryCode(countryCode) {
-  return resolveCountryCodeFromModule(countryCode, {
+  return resolveCountryCodeForJobs(countryCode, {
     availableCountries,
-    availableCountryFilterValues,
-    resolveRegionValue: value => resolveRegionSelectionFromModule(value, {
-      normalizeCountryToken,
-      regionDefinitions: REGION_DEFINITIONS
-    }),
-    canonicalizeCountryName,
-    normalizeCountryToken,
-    countryNameOptions: COUNTRY_NAME_OPTIONS
+    availableCountryFilterValues
   });
 }
 
@@ -1894,33 +1688,8 @@ function updateActiveFiltersSummary() {
 }
 
 async function fetchUnifiedJobs() {
-  return fetchUnifiedJobsFromData({
-    unifiedJsonSources: UNIFIED_JSON_SOURCES,
-    unifiedCsvSources: UNIFIED_CSV_SOURCES,
-    sheetsFallbackSources: SHEETS_FALLBACK_SOURCES,
+  return fetchUnifiedJobsFromSources({
     setSourceStatus,
-    parseUnifiedPayload: payload => parseUnifiedJobsPayload(payload, jobsParsing),
-    parseCSV: parseJobsCsv
-  });
-}
-
-async function fetchJsonFromCandidates(urls) {
-  return fetchJsonFromCandidatesFromData(urls);
-}
-
-async function renderDataSources() {
-  return renderDataSourcesPanel({
-    dataSourcesListEl,
-    dataSourcesCaptionEl,
-    sourceRegistryActiveUrls: SOURCE_REGISTRY_ACTIVE_URLS,
-    jobsFetchReportUrls: JOBS_FETCH_REPORT_URLS,
-    sheetsFallbackSources: SHEETS_FALLBACK_SOURCES,
-    fetchJsonFromCandidates
-  });
-}
-
-function parseJobsCsv(csv) {
-  return parseCSVLargeFromData(csv, {
     jobsParsing,
     parserDeps: {
       mapProfession,
@@ -1931,6 +1700,17 @@ function parseJobsCsv(csv) {
       logInfo: logJobsInfo,
       logError: logJobsError
     }
+  });
+}
+
+async function fetchJsonFromCandidates(urls) {
+  return fetchJsonFromCandidatesFromSources(urls);
+}
+
+async function renderDataSources() {
+  return renderDataSourcesFromSources({
+    dataSourcesListEl,
+    dataSourcesCaptionEl
   });
 }
 

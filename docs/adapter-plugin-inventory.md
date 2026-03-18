@@ -35,13 +35,14 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 
 ### Biggest / highest-churn candidates
 
-- **`src/jobs/adapters/static.py` (~802 LOC)**  
+- **`src/jobs/adapters/static.py` (~550 LOC)**  
   Monolith that includes:
   - static studio page crawling (listing + detail heuristics)
   - detail-link heuristics / filtering
   - per-source concurrency tuning
   - HTML parsing + fallback title synthesis
   - scrapy-runner integration (`scrapy_static`)
+  - note: this is now narrower than the initial plugin-rollout snapshot because report/config/fetch/detail internals live in `src/jobs/adapters/static_helpers.py`
 
 ### Existing “family-like” clusters (good early plugin families)
 

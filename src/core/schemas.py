@@ -5,7 +5,7 @@ See docs/DATA_CONTRACT.md for field definitions.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -82,6 +82,8 @@ class ManifestArtifactsSchema(BaseModel):
     exe: str = ""
     ship: str = ""
     smoke_report: str = ""
+    py_tests_status: Literal["not_run", "passed", "failed"] = "not_run"
+    node_tests_status: Literal["not_run", "passed", "failed"] = "not_run"
     py_tests_ok: bool = False
     node_tests_ok: bool = False
 
