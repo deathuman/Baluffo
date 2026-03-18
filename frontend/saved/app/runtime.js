@@ -6,6 +6,7 @@ import {
   bindUi,
   bindAsyncClick
 } from "../../shared/ui/index.js";
+import { emitStartupMetric, markFirstInteractive } from "../../shared/app-boot.js";
 import {
   sanitizeUrl,
   toContractClass,
@@ -245,11 +246,11 @@ function bootSavedPage() {
 }
 
 function emitSavedStartupMetric(event, payload = {}) {
-  startupMetrics.emit(event, payload);
+  emitStartupMetric(startupMetrics, event, payload);
 }
 
 function markSavedFirstInteractive(reason) {
-  startupMetrics.markFirstInteractive(reason);
+  markFirstInteractive(startupMetrics, reason);
   savedInteractiveMetricSent = true;
 }
 

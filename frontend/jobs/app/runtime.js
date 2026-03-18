@@ -9,6 +9,7 @@ import {
   bindAsyncClick,
   bindHandlersMap
 } from "../../shared/ui/index.js";
+import { emitStartupMetric, logError, logInfo, markFirstInteractive } from "../../shared/app-boot.js";
 import { sanitizeUrl as sanitizeUrlValue, fullCountryName as fullCountryNameFromData } from "../../shared/data/index.js";
 import { BaluffoJobsParsing as jobsParsing } from "../../../jobs-parsing-utils.js";
 import {
@@ -444,11 +445,11 @@ const callJobsBridge = createJobsBridgeRequest({
  */
 
 function logJobsInfo(message, ...args) {
-  console.info(`[${JOBS_LOG_SCOPE}] ${message}`, ...args);
+  logInfo(JOBS_LOG_SCOPE, message, ...args);
 }
 
 function logJobsError(message, err) {
-  console.error(`[${JOBS_LOG_SCOPE}] ${message}:`, err);
+  logError(JOBS_LOG_SCOPE, message, err);
 }
 
 function bootJobsPage() {
@@ -518,7 +519,7 @@ function isDesktopRuntimeMode() {
 }
 
 function emitDesktopStartupMetric(event, payload = {}) {
-  startupMetrics.emit(event, payload);
+  emitStartupMetric(startupMetrics, event, payload);
 }
 
 function markStartupRendered(stage, rowCount) {
@@ -526,7 +527,7 @@ function markStartupRendered(stage, rowCount) {
 }
 
 function markJobsFirstInteractive(reason) {
-  startupMetrics.markInteractive(reason);
+  markFirstInteractive(startupMetrics, reason);
   desktopUrlStateReady = true;
   if (desktopPendingRememberJobsUrl) {
     desktopPendingRememberJobsUrl = false;

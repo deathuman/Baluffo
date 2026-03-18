@@ -6,6 +6,7 @@ import {
   bindUi,
   bindAsyncClick
 } from "../../shared/ui/index.js";
+import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
 import { adminService, adminPageService } from "../services.js";
 import { createAdminDispatcher, ADMIN_ACTIONS } from "../actions.js";
 import {
@@ -131,11 +132,11 @@ const callBridge = createBridgeCaller({
  */
 
 function emitAdminStartupMetric(event, payload = {}) {
-  startupMetrics.emit(event, payload);
+  emitStartupMetric(startupMetrics, event, payload);
 }
 
 function markAdminFirstInteractive(reason) {
-  startupMetrics.markFirstInteractive(reason);
+  markFirstInteractive(startupMetrics, reason);
 }
 
 function getErrorMessage(err) {
@@ -143,7 +144,7 @@ function getErrorMessage(err) {
 }
 
 function logAdminError(context, err) {
-  console.error(`[admin] ${context}:`, err);
+  logError("admin", context, err);
 }
 
 function normalizeLogLevel(level) {

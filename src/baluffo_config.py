@@ -273,7 +273,9 @@ def resolve_admin_bridge_config(
         minimum=0,
         maximum=1000,
     )
-    desktop_mode = _coerce_bool(env_map.get("BALUFFO_DESKTOP_MODE"), False)
+    desktop_mode_env = _coerce_bool(env_map.get("BALUFFO_DESKTOP_MODE"), False)
+    # CLI is treated as an override when the caller provides a `desktop_mode` attribute.
+    desktop_mode = bool(getattr(args, "desktop_mode", False)) or bool(desktop_mode_env)
 
     data_dir = resolve_path(
         getattr(args, "data_dir", None) or env_map.get("BALUFFO_DATA_DIR") or storage_defaults["data_dir"],

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.baluffo_config import resolve_path as _resolve_path
+
 
 LOG_LEVEL_ORDER: Dict[str, int] = {"debug": 10, "info": 20, "warn": 30, "error": 40}
 
@@ -56,15 +58,16 @@ def resolve_runtime_config(
     parser.add_argument("--data-dir", default=None)
     parser.add_argument("--desktop-mode", action="store_true", default=False)
     parser.add_argument("--log-format", choices=("human", "jsonl"), default=None)
-    parser.add_argument("--log-level", choices=("info", "debug"), default=None)
+    parser.add_argument("--log-level", choices=tuple(LOG_LEVEL_ORDER.keys()), default=None)
     parser.add_argument("--quiet-requests", action="store_true", default=None)
     args = parser.parse_args(argv)
     env_map = env if isinstance(env, dict) else os.environ
 
     host = str(args.host or env_map.get("BALUFFO_BRIDGE_HOST") or bridge_defaults["host"]).strip() or str(bridge_defaults["host"])
     port = _coerce_port(args.port if args.port is not None else env_map.get("BALUFFO_BRIDGE_PORT"), int(bridge_defaults["port"]))
-    data_dir_raw = str(args.data_dir or env_map.get("BALUFFO_DATA_DIR") or storage_defaults["data_dir"]).strip()
-    data_dir = Path(data_dir_raw).expanduser().resolve()
+    data_dir_value = args.data_dir if args.data_dir is not None else (env_map.get("BALUFFO_DATA_DIR") or storage_defaults["data_dir"])
+    # Keep relative `BALUFFO_DATA_DIR` resolution consistent with `src/baluffo_config.py`.
+    data_dir = _resolve_path(data_dir_value, str(storage_defaults["data_dir"]))
     log_format = _normalize_log_format(args.log_format or env_map.get("BALUFFO_BRIDGE_LOG_FORMAT") or bridge_defaults["log_format"])
     log_level = _normalize_log_level(args.log_level or env_map.get("BALUFFO_BRIDGE_LOG_LEVEL") or bridge_defaults["log_level"])
     quiet_requests = bool(
