@@ -16,8 +16,8 @@ from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.social.register import ensure_registered as ensure_social_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.common import config as common_config
+from src.jobs.common.diagnostics import SOURCE_DIAGNOSTICS, set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
-from src.jobs.common import SOURCE_DIAGNOSTICS, set_source_diagnostics
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 

@@ -62,223 +62,23 @@ from src.pipeline_io import (
 
 RawJob = Dict[str, Any]
 SourceLoader = Callable[..., List[RawJob]]
-
-REMOTE_OK_URLS = [
-    "https://remoteok.com/api",
-    "https://remoteok.io/api",
-]
-GAMES_INDUSTRY_URLS = [
-    "https://jobs.gamesindustry.biz",
-    "https://jobs.gamesindustry.biz/jobs",
-]
-EPIC_CAREERS_API_URL = "https://greenhouse-service.debc.live.use1a.on.epicgames.com/api/job"
-WELLFOUND_URLS = [
-    "https://wellfound.com/jobs?query=game+developer",
-    "https://wellfound.com/jobs?query=unity",
-    "https://wellfound.com/jobs?query=unreal",
-]
-GREENHOUSE_JOBS_URL_TEMPLATE = "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
-DEFAULT_STUDIO_SOURCE_REGISTRY = [
-    {
-        "name": "Guerrilla Games",
-        "studio": "Guerrilla Games",
-        "adapter": "greenhouse",
-        "slug": "guerrilla-games",
-        "nlPriority": True,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "PlayStation Global",
-        "studio": "PlayStation Global",
-        "adapter": "greenhouse",
-        "slug": "sonyinteractiveentertainmentglobal",
-        "nlPriority": True,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Paradox Careers",
-        "studio": "Paradox Interactive",
-        "adapter": "teamtailor",
-        "listing_url": "https://career.paradoxplaza.com/jobs",
-        "base_url": "https://career.paradoxplaza.com",
-        "company": "Paradox Interactive",
-        "nlPriority": True,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Little Chicken",
-        "studio": "Little Chicken",
-        "adapter": "static",
-        "company": "Little Chicken",
-        "pages": [
-            "https://www.littlechicken.nl/about-us/jobs/",
-            "https://www.littlechicken.nl/job/",
-        ],
-        "nlPriority": True,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Larian Studios",
-        "studio": "Larian Studios",
-        "adapter": "greenhouse",
-        "slug": "larian-studios",
-        "nlPriority": True,
-        "enabledByDefault": False,
-    },
-    {
-        "name": "Bandai Namco Entertainment America (Greenhouse)",
-        "studio": "Bandai Namco Entertainment America Inc.",
-        "adapter": "greenhouse",
-        "slug": "bandainamco",
-        "nlPriority": False,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Jagex (Lever)",
-        "studio": "Jagex",
-        "adapter": "lever",
-        "account": "jagex",
-        "api_url": "https://api.lever.co/v0/postings/jagex?mode=json",
-        "nlPriority": False,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Sandbox VR (Lever)",
-        "studio": "Sandbox VR",
-        "adapter": "lever",
-        "account": "sandboxvr",
-        "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json",
-        "nlPriority": False,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Voodoo (Lever)",
-        "studio": "Voodoo",
-        "adapter": "lever",
-        "account": "voodoo",
-        "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json",
-        "nlPriority": False,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "CD PROJEKT RED (SmartRecruiters)",
-        "studio": "CD PROJEKT RED",
-        "adapter": "smartrecruiters",
-        "company_id": "CDPROJEKTRED",
-        "api_url": "https://api.smartrecruiters.com/v1/companies/CDPROJEKTRED/postings",
-        "nlPriority": False,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Gameloft (SmartRecruiters)",
-        "studio": "Gameloft",
-        "adapter": "smartrecruiters",
-        "company_id": "Gameloft",
-        "api_url": "https://api.smartrecruiters.com/v1/companies/Gameloft/postings",
-        "nlPriority": False,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Hutch (Workable)",
-        "studio": "Hutch",
-        "adapter": "workable",
-        "account": "hutch",
-        "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true",
-        "nlPriority": False,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Wargaming (Workable)",
-        "studio": "Wargaming",
-        "adapter": "workable",
-        "account": "wargaming",
-        "api_url": "https://apply.workable.com/api/v1/widget/accounts/wargaming?details=true",
-        "nlPriority": False,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "InnoGames (Personio)",
-        "studio": "InnoGames",
-        "adapter": "personio",
-        "feed_url": "https://innogames.jobs.personio.de/xml",
-        "nlPriority": True,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Travian (Personio)",
-        "studio": "Travian",
-        "adapter": "personio",
-        "feed_url": "https://travian.jobs.personio.de/xml",
-        "nlPriority": True,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Jagex (Ashby)",
-        "studio": "Jagex",
-        "adapter": "ashby",
-        "board_url": "https://jobs.ashbyhq.com/jagex/jobs",
-        "nlPriority": False,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Scopely (Ashby)",
-        "studio": "Scopely",
-        "adapter": "ashby",
-        "board_url": "https://jobs.ashbyhq.com/scopely/jobs",
-        "nlPriority": False,
-        "enabledByDefault": True,
-    },
-    {
-        "name": "Ubisoft (SmartRecruiters)",
-        "studio": "Ubisoft",
-        "adapter": "smartrecruiters",
-        "company_id": "Ubisoft2",
-        "api_url": "https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings",
-        "nlPriority": False,
-        "enabledByDefault": True,
-    },
-]
-
-# Static sources whose host matches one of these are skipped when the registry
-# already has the corresponding provider source (avoids duplicate extract-zero static runs).
-REDUNDANT_STATIC_IF_PROVIDER: List[Dict[str, Any]] = [
-    {
-        "hosts": ["cdprojektred.com", "www.cdprojektred.com"],
-        "adapter": "smartrecruiters",
-        "provider_id_field": "company_id",
-        "provider_id_value": "CDPROJEKTRED",
-    },
-    {
-        "hosts": ["ubisoft.com", "www.ubisoft.com"],
-        "adapter": "smartrecruiters",
-        "provider_id_field": "company_id",
-        "provider_id_value": "Ubisoft2",
-    },
-    {
-        "hosts": ["xsolla.com", "www.xsolla.com"],
-        "adapter": "lever",
-        "provider_id_field": "account",
-        "provider_id_value": "xsolla",
-    },
-    {
-        "hosts": ["bandainamcoent.com", "www.bandainamcoent.com"],
-        "adapter": "greenhouse",
-        "provider_id_field": "slug",
-        "provider_id_value": "bandainamco",
-    },
-]
+from src.jobs.common.registry_defaults import DEFAULT_STUDIO_SOURCE_REGISTRY, REDUNDANT_STATIC_IF_PROVIDER
 
 from src.jobs.common import config
 from src.jobs.common import fetch
 from src.jobs.common import heuristics
 from src.jobs.common import http
 from src.jobs.common import parsing
+from src.jobs.common import diagnostics
+from src.jobs.common import registry_defaults
 from src.jobs.common import social
 from src.jobs.common import sources
 from src.jobs.common import url
 
 from src.jobs.common import config as _common_config
+from src.jobs.common import diagnostics as _common_diagnostics
 from src.jobs.common import heuristics as _common_heuristics
+from src.jobs.common import registry_defaults as _common_registry_defaults
 from src.jobs.common import social as _common_social
 from src.jobs.common import sources as _common_sources
 
@@ -296,6 +96,11 @@ DEFAULT_OUTPUT_DIR = _common_config.DEFAULT_OUTPUT_DIR
 DEFAULT_SOCIAL_CONFIG_PATH = _common_config.DEFAULT_SOCIAL_CONFIG_PATH
 DEFAULT_SOCIAL_LOOKBACK_MINUTES = _common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES
 DEFAULT_SOCIAL_MIN_CONFIDENCE = _common_config.DEFAULT_SOCIAL_MIN_CONFIDENCE
+GREENHOUSE_JOBS_URL_TEMPLATE = _common_config.GREENHOUSE_JOBS_URL_TEMPLATE
+REMOTE_OK_URLS = _common_config.REMOTE_OK_URLS
+GAMES_INDUSTRY_URLS = _common_config.GAMES_INDUSTRY_URLS
+EPIC_CAREERS_API_URL = _common_config.EPIC_CAREERS_API_URL
+WELLFOUND_URLS = _common_config.WELLFOUND_URLS
 DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE = _common_config.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
 DEFAULT_STATIC_DETAIL_CONCURRENCY = _common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY
 DEFAULT_SCRAPY_VALIDATION_STRICT = _common_config.DEFAULT_SCRAPY_VALIDATION_STRICT
@@ -315,12 +120,12 @@ DEFAULT_REDIRECT_HEADERS = _common_config.DEFAULT_REDIRECT_HEADERS
 LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = _common_config.LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS
 LIFECYCLE_ARCHIVE_RETENTION_DAYS = _common_config.LIFECYCLE_ARCHIVE_RETENTION_DAYS
 TARGET_PROFESSIONS = _common_config.TARGET_PROFESSIONS
-SOURCE_DIAGNOSTICS = _common_config.SOURCE_DIAGNOSTICS
+SOURCE_DIAGNOSTICS = _common_diagnostics.SOURCE_DIAGNOSTICS
 
 SOCIAL_SOURCE_NAMES = _common_social.SOCIAL_SOURCE_NAMES
 DEFAULT_SOCIAL_CONFIG = _common_social.DEFAULT_SOCIAL_CONFIG
-load_social_config = _common_social.load_social_config
-
+DEFAULT_STUDIO_SOURCE_REGISTRY = _common_registry_defaults.DEFAULT_STUDIO_SOURCE_REGISTRY
+REDUNDANT_STATIC_IF_PROVIDER = _common_registry_defaults.REDUNDANT_STATIC_IF_PROVIDER
 load_registry_from_file = _common_sources.load_registry_from_file
 read_approved_since_last_run = _common_sources.read_approved_since_last_run
 load_studio_source_registry = _common_sources.load_studio_source_registry
@@ -337,9 +142,11 @@ compute_focus_score = _common_heuristics.compute_focus_score
 
 PREFERRED_IMPORT_SURFACES = [
     "config",
+    "diagnostics",
     "heuristics",
     "http",
     "parsing",
+    "registry_defaults",
     "social",
     "sources",
     "url",
@@ -359,23 +166,14 @@ CURATED_COMPAT_EXPORTS = [
     "DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE",
     "DEFAULT_STATIC_DETAIL_CONCURRENCY",
     "DEFAULT_SCRAPY_VALIDATION_STRICT",
-    "DEFAULT_CANONICAL_STRICT_URL",
     "SOURCE_REGISTRY_ACTIVE_PATH",
     "SOURCE_REGISTRY_PENDING_PATH",
-    "SOURCE_APPROVAL_STATE_PATH",
-    "TARGET_PROFESSIONS",
-    "SOCIAL_SOURCE_NAMES",
-    "DEFAULT_STUDIO_SOURCE_REGISTRY",
     "STUDIO_SOURCE_REGISTRY",
     "load_registry_from_file",
-    "load_studio_source_registry",
     "read_approved_since_last_run",
-    "DEFAULT_SOCIAL_CONFIG",
     "load_social_config",
     "normalize_url",
     "fingerprint_url",
-    "is_supported_redirect_url",
-    "resolve_supported_redirect_url",
     "fetch_with_retries",
     "registry_entries",
 ]
@@ -395,20 +193,7 @@ def registry_entries(adapter: str, *, enabled_only: bool = True) -> List[Dict[st
     )
 
 
-def set_source_diagnostics(
-    source_name: str,
-    *,
-    adapter: str,
-    studio: str,
-    details: Optional[List[Dict[str, Any]]] = None,
-    partial_errors: Optional[List[str]] = None,
-) -> None:
-    SOURCE_DIAGNOSTICS[source_name] = {
-        "adapter": clean_text(adapter) or "unknown",
-        "studio": clean_text(studio) or "multiple",
-        "details": details or [],
-        "partialErrors": partial_errors or [],
-    }
+set_source_diagnostics = _common_diagnostics.set_source_diagnostics
 
 
 def now_iso() -> str:

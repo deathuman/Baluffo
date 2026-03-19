@@ -81,6 +81,7 @@ class BridgeApi:
     _mark_desktop_session_activity: Callable[[str], None] = lambda _path: None  # type: ignore[assignment]
 
     desktop_local_data_store: DesktopLocalDataStoreFactory = lambda: None  # type: ignore[assignment]
+    append_startup_metric: Callable[[str, Dict[str, Any] | None], None] = lambda _event, _payload=None: None  # type: ignore[assignment]
     read_startup_metrics: Callable[[int], List[Dict[str, Any]]] = lambda _limit=200: []  # type: ignore[assignment]
 
     load_state: LoadStateFunc = lambda: {"active": [], "pending": [], "rejected": []}  # type: ignore[assignment]
@@ -88,6 +89,8 @@ class BridgeApi:
     persist_state_and_auto_sync: Callable[..., Dict[str, List[Dict[str, Any]]]] = (  # type: ignore[assignment]
         lambda state, **_kw: state
     )
+    add_manual_source: Callable[[str], Dict[str, Any]] = lambda _url: {"status": "invalid", "error": "not_implemented"}  # type: ignore[assignment]
+    trigger_source_check: Callable[..., Dict[str, Any]] = lambda _source_id, **_kw: {"started": False, "error": "not_implemented"}  # type: ignore[assignment]
 
     # Registry helpers used by POST routes.
     move_entries: Callable[[List[Dict[str, Any]], List[str]], Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]] = (  # type: ignore[assignment]

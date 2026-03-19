@@ -34,6 +34,21 @@ DEFAULT_OUTPUT_DIR = Path(_STORAGE_DEFAULTS["data_dir"])
 DEFAULT_SOCIAL_CONFIG_PATH = Path(_STORAGE_DEFAULTS["social_sources_config_path"])
 DEFAULT_SOCIAL_LOOKBACK_MINUTES = 30
 DEFAULT_SOCIAL_MIN_CONFIDENCE = 40
+REMOTE_OK_URLS = [
+    "https://remoteok.com/api",
+    "https://remoteok.io/api",
+]
+GAMES_INDUSTRY_URLS = [
+    "https://jobs.gamesindustry.biz",
+    "https://jobs.gamesindustry.biz/jobs",
+]
+EPIC_CAREERS_API_URL = "https://greenhouse-service.debc.live.use1a.on.epicgames.com/api/job"
+WELLFOUND_URLS = [
+    "https://wellfound.com/jobs?query=game+developer",
+    "https://wellfound.com/jobs?query=unity",
+    "https://wellfound.com/jobs?query=unreal",
+]
+GREENHOUSE_JOBS_URL_TEMPLATE = "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
 
 DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE = "balanced"
 DEFAULT_STATIC_DETAIL_CONCURRENCY = 6

@@ -142,6 +142,9 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 
 - **`request_utils.py`**: Request/response helpers (`read_json_from_request`); used by admin_bridge handler for POST body.
 - **`api.py`**: `BridgeApi` composition object; now defaults registry identity/url helpers to `src.source_registry` so POST registry routes do not depend on entrypoint stubs for those basics.
+- **`source_check_api.py`**: Source-check orchestration (`normalize_manual_static_studio_fields`, `trigger_source_check`); `admin_bridge.py` keeps thin wrappers for route/test stability.
+- **`task_launch_api.py`**: Fetch/discovery task-launch orchestration (`run_background_script`, `build_fetcher_args_from_payload`); `admin_bridge.py` delegates immediately.
+- **`ops_api.py`**: Ops/report orchestration (`failed_source_names_from_latest_report`, `sync_history_from_reports`, `compute_ops_health`, `compute_fetcher_metrics`); keeps report/history/ops assembly out of `admin_bridge.py`.
 
 - **`source_helpers.py`**: Source/URL helpers (`infer_studio_name_from_host`, `find_existing_source_by_url`, `find_existing_static_source_by_studio_domain`); used by add_manual_source and registry flows.
 
@@ -152,6 +155,9 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 - Service composition/wiring for `SyncService`, `RegistryService`, `DiscoveryService`, `PipelineService`, source checker, task history
 - Registry auto-sync wrappers only; the persist/start logic now lives in `src/bridge/registry_sync_flow.py`
 - Sync task wrappers only; the shared worker logic now lives in `src/bridge/sync_task_flow.py`
+- Source-check wrappers only; orchestration now lives in `src/bridge/source_check_api.py`
+- Fetch/discovery task-launch wrappers only; orchestration now lives in `src/bridge/task_launch_api.py`
+- Ops/report wrappers only; orchestration now lives in `src/bridge/ops_api.py`
 - Bridge API sync-status wiring now comes from `SyncService` directly instead of `admin_bridge.py` lambda/wrapper glue.
 - Utility functions: `bridge_log()`, runtime config/paths, data normalization (run history lives in `bridge/task_history.py`)
 - Request/response: delegated to `bridge/request_utils.py`. Source/URL helpers: delegated to `bridge/source_helpers.py`. Source-check fetch/error/URL helpers: delegated to `bridge/source_check_http.py`.
@@ -169,8 +175,8 @@ Responsibilities still in `admin_bridge.py` and where they are used:
 | **Source/registry helpers** | Implementation in `bridge/source_helpers.py`. admin_bridge imports and uses for POST add manual source and registry flows. | POST add manual source, registry flows |
 | **Source-check (fetch/HTML)** | Implementation in `bridge/source_checker.py` and `bridge/source_check_http.py`. admin_bridge still provides `_fetch_html_with_fallback`, `_html_has_extractable_job_data`, `_fetch_static_page_with_alternates` (wrappers that call bridge and discovery), and `check_static_source` / `trigger_source_check` that delegate to bridge. | `post_routes.py` (`trigger_source_check`); `check_static_source` |
 | **Run history / task state** | Implementation in `bridge/task_history.py` (TaskHistoryManager) and `bridge/run_history_api.py` (load/save/append/upsert/prune/clear, task_running_from_state, report_is_stale_in_progress). admin_bridge keeps `_get_task_history_manager()` and thin wrappers that delegate to run_history_api. | Routes (ops, run history), handler (task state), discovery/sync finish paths |
-| **Alerts / schedule** | Implementation in `bridge/ops_health.py` (load_alert_state, save_alert_state, detect_task_interval_hours, parse_schedule_metadata, evaluate_alerts, etc.). admin_bridge wires deps and calls. | Ops health, fetcher metrics |
-| **Ops / health / reports** | Report normalization in `bridge/report_normalizer.py`; ops health/summaries in `bridge/ops_health.py`. admin_bridge wires deps and calls `compute_ops_health`, `normalize_fetch_report_contract`, `normalize_discovery_report_contract`; `_failed_source_names_from_latest_report` uses report_normalizer. | GET `/ops/health`, `/ops/summary`, report normalization for routes |
+| **Alerts / schedule** | Implementation in `bridge/ops_health.py`, with `src/bridge/ops_api.py` owning the dependency assembly and delegating alert/schedule helpers through stable `admin_bridge.py` wrappers. | Ops health, fetcher metrics |
+| **Ops / health / reports** | Report normalization in `bridge/report_normalizer.py`; orchestration for failed-source filtering, history reconciliation, ops health, and fetcher metrics now lives in `bridge/ops_api.py`, with `admin_bridge.py` exposing thin compatibility wrappers. | GET `/ops/health`, `/ops/summary`, report normalization for routes |
 | **Sync status (wrappers)** | `_set_sync_status`, `get_sync_status_payload`, `sync_pull_sources`, `sync_push_sources`, `startup_sync_pull`, `sync_task_running`, `wait_for_sync_tasks`, `_sync_guard`, `_mark_discovery_sync_finished` | POST sync routes, startup, discovery completion |
 | **Fetcher / discovery run** | `build_fetcher_args_from_payload`, `run_background_script` | POST trigger fetch, trigger discovery |
 | **Desktop / session** | `mark_desktop_session_activity`, `parse_iso` | Handler (activity), run history parsing |
@@ -197,7 +203,7 @@ Backend refactoring is directionally strong and materially narrower than the ear
 - **Jobs common compatibility surface:** `src/jobs/common/__init__.py` is still broad and re-export heavy; prefer reducing that surface before adding more helper modules elsewhere.
 - **State→DOM helper (P4.4):** Optional; apply when 2–3+ "subscribe to state key then set element" patterns appear. Not needed yet (status is fetch/event then setStatusText, not state-key subscription).
 - **html_parsers extraction:** Done. Implementation lives in `jobs/adapters/html_parsers.py`; re-exported via `jobs/parsers` and `jobs/common` for backward compatibility.
-- **Further admin_bridge shrinkage:** Done. Source-check fetch helpers live in `bridge/source_check_fetch.py`; admin_bridge wires them and stays dispatch-only.
+- **Further admin_bridge shrinkage:** Latest follow-up completed the source-check, task-launch, and ops/report extractions. Remaining work should stay focused on narrow wiring seams, not broad file movement.
 - **Pydantic integration:** GET saved-jobs validates each row with SavedJobSchema (lenient: invalid rows skipped, logged). Other endpoints use Pydantic only where contract shape clearly matters; response models deferred. CanonicalJob and frontend contract unchanged.
 
 **Phase 3 (static adapter):** Scrapy path lives in `static_scrapy.py`; orchestration and plugin dispatch in `static.py`; site plugins in `plugins/static/` (see subsection below).

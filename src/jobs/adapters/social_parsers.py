@@ -11,7 +11,7 @@ from xml.etree import ElementTree as ET
 from src.jobs.models import RawJob
 
 from src.jobs.game_detection import looks_like_game_job
-import src.jobs.common as common
+from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.text_utils import clean_text as _clean_text_impl, norm_text as _norm_text_impl, normalize_url
 from src.shared.regex import find_urls_in_text
 
@@ -162,11 +162,11 @@ def parse_reddit_json_payload(
         flair = _clean_text(item.get("link_flair_text"))
         post_id = _clean_text(item.get("id"))
         permalink = (
-            common.normalize_url(f"https://www.reddit.com{_clean_text(item.get('permalink'))}")
+            normalize_url(f"https://www.reddit.com{_clean_text(item.get('permalink'))}")
             if _clean_text(item.get("permalink"))
             else ""
         )
-        external_url = common.normalize_url(item.get("url"))
+        external_url = normalize_url(item.get("url"))
         apply_url = social_extract_apply_url(body, external_url)
         keep, confidence = social_should_keep_post(
             title=title,
@@ -224,8 +224,8 @@ def parse_reddit_rss_payload(
     low_conf_count = 0
     for item in items:
         title = _clean_text(item.findtext("title"))
-        link = common.normalize_url(item.findtext("link"))
-        description = common.strip_html_text(
+        link = normalize_url(item.findtext("link"))
+        description = strip_html_text(
             unescape(_clean_text(item.findtext("description")))
         )
         apply_url = social_extract_apply_url(description, link)
@@ -306,7 +306,7 @@ def parse_x_payload(
             low_conf_count += 1
             continue
         permalink = (
-            common.normalize_url(f"https://x.com/i/web/status/{post_id}") if post_id else ""
+            normalize_url(f"https://x.com/i/web/status/{post_id}") if post_id else ""
         )
         company = social_infer_company(text, fallback="Unknown Studio")
         post_source_id = f"x:{post_id or hashlib.sha1(text.encode('utf-8')).hexdigest()[:12]}"
@@ -353,8 +353,8 @@ def parse_x_rss_payload(
     low_conf_count = 0
     for item in items:
         title = _clean_text(item.findtext("title"))
-        link = common.normalize_url(item.findtext("link"))
-        description = common.strip_html_text(
+        link = normalize_url(item.findtext("link"))
+        description = strip_html_text(
             unescape(_clean_text(item.findtext("description")))
         )
         banner_text = _norm_text(f"{title} {description}")
@@ -418,8 +418,8 @@ def parse_mastodon_payload(
         if not isinstance(row, dict):
             continue
         html_text = _clean_text(row.get("content"))
-        text = common.strip_html_text(unescape(html_text))
-        post_url = common.normalize_url(row.get("url"))
+        text = strip_html_text(unescape(html_text))
+        post_url = normalize_url(row.get("url"))
         card = row.get("card") if isinstance(row.get("card"), dict) else {}
         apply_url = social_extract_apply_url(text, _clean_text(card.get("url")))
         keep, confidence = social_should_keep_post(

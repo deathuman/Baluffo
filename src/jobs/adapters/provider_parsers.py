@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree as ET
 
-import src.jobs.common as common
-
+from src.jobs.adapters.html_parsers import strip_html_text
+from src.jobs.game_detection import looks_like_game_job
 from src.jobs.normalizers import COUNTRY_NAME_TO_CODE, normalize_country
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.jobs.models import RawJob
@@ -122,14 +122,14 @@ def parse_lever_jobs_payload(
         city, country, work_type = parse_generic_location_fields(location_text)
         commitment = clean_text(categories.get("commitment") or row.get("commitment"))
         tags_text = " ".join([
-            common.clean_text(categories.get("team")),
-            common.clean_text(categories.get("department")),
-            common.clean_text(row.get("descriptionPlain")),
+            clean_text(categories.get("team")),
+            clean_text(categories.get("department")),
+            clean_text(row.get("descriptionPlain")),
         ])
-        if not common.looks_like_game_job(title, company, tags_text):
+        if not looks_like_game_job(title, company, tags_text):
             continue
         jobs.append({
-            "sourceJobId": f"lever:{account}:{common.clean_text(row.get('id') or row.get('requisitionCode'))}",
+            "sourceJobId": f"lever:{account}:{clean_text(row.get('id') or row.get('requisitionCode'))}",
             "title": title,
             "company": company,
             "city": city,
@@ -150,29 +150,29 @@ def parse_smartrecruiters_jobs_payload(
     if not isinstance(rows, list):
         return []
     jobs: List[RawJob] = []
-    company = common.clean_text(fallback_company) or company_id
+    company = clean_text(fallback_company) or company_id
     for row in rows:
         if not isinstance(row, dict):
             continue
-        title = common.clean_text(row.get("name"))
-        posting_id = common.clean_text(row.get("id") or row.get("ref"))
-        link = common.clean_text(row.get("ref"))
+        title = clean_text(row.get("name"))
+        posting_id = clean_text(row.get("id") or row.get("ref"))
+        link = clean_text(row.get("ref"))
         if link and not link.startswith("http"):
             link = f"https://jobs.smartrecruiters.com/{company_id}/{link}"
         if not title or not (posting_id or link):
             continue
         location_obj = row.get("location") if isinstance(row.get("location"), dict) else {}
-        city = common.clean_text(location_obj.get("city"))
-        country = common.normalize_country(
-            common.clean_text(location_obj.get("country")) or common.clean_text(location_obj.get("countryCode"))
+        city = clean_text(location_obj.get("city"))
+        country = normalize_country(
+            clean_text(location_obj.get("country")) or clean_text(location_obj.get("countryCode"))
         )
-        work_type = common.clean_text(location_obj.get("remote")) or common.clean_text(location_obj.get("region"))
+        work_type = clean_text(location_obj.get("remote")) or clean_text(location_obj.get("region"))
         tags = " ".join([
-            common.clean_text(row.get("department")),
-            common.clean_text(row.get("function")),
-            common.clean_text(row.get("typeOfEmployment")),
+            clean_text(row.get("department")),
+            clean_text(row.get("function")),
+            clean_text(row.get("typeOfEmployment")),
         ])
-        if not common.looks_like_game_job(title, company, tags):
+        if not looks_like_game_job(title, company, tags):
             continue
         jobs.append({
             "sourceJobId": f"smartrecruiters:{company_id}:{posting_id or hashlib.sha1(title.encode('utf-8')).hexdigest()[:10]}",
@@ -181,7 +181,7 @@ def parse_smartrecruiters_jobs_payload(
             "city": city,
             "country": country or "Unknown",
             "workType": work_type,
-            "contractType": common.clean_text(row.get("typeOfEmployment")),
+            "contractType": clean_text(row.get("typeOfEmployment")),
             "jobLink": link or f"https://jobs.smartrecruiters.com/{company_id}/{posting_id}",
             "sector": "Game",
             "postedAt": row.get("releasedDate") or row.get("createdOn"),
@@ -196,43 +196,43 @@ def parse_workable_jobs_payload(
     if not isinstance(rows, list):
         return []
     company = (
-        common.clean_text(payload.get("name") if isinstance(payload, dict) else "")
-        or common.clean_text(fallback_company)
+        clean_text(payload.get("name") if isinstance(payload, dict) else "")
+        or clean_text(fallback_company)
         or account
     )
     jobs: List[RawJob] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
-        title = common.clean_text(row.get("title"))
-        link = common.clean_text(row.get("url") or row.get("shortlink"))
+        title = clean_text(row.get("title"))
+        link = clean_text(row.get("url") or row.get("shortlink"))
         if link and not link.startswith("http"):
             link = urljoin(f"https://apply.workable.com/{account}/", link)
         location = row.get("location") if isinstance(row.get("location"), dict) else {}
         location_text = " ".join([
-            common.clean_text(location.get("city")),
-            common.clean_text(location.get("country")),
+            clean_text(location.get("city")),
+            clean_text(location.get("country")),
             "Remote" if bool(location.get("telecommuting")) else "",
         ]).strip()
         city, country, work_type = parse_generic_location_fields(location_text)
         if bool(location.get("telecommuting")):
             city, country, work_type = "Remote", "Remote", "Remote"
         tags = " ".join([
-            common.clean_text(row.get("department")),
-            common.clean_text(row.get("description")),
+            clean_text(row.get("department")),
+            clean_text(row.get("description")),
         ])
         if not title or not link:
             continue
-        if not common.looks_like_game_job(title, company, tags):
+        if not looks_like_game_job(title, company, tags):
             continue
         jobs.append({
-            "sourceJobId": f"workable:{account}:{common.clean_text(row.get('shortcode') or row.get('id'))}",
+            "sourceJobId": f"workable:{account}:{clean_text(row.get('shortcode') or row.get('id'))}",
             "title": title,
             "company": company,
             "city": city,
             "country": country,
             "workType": work_type or location_text,
-            "contractType": common.clean_text(row.get("employment_type")),
+            "contractType": clean_text(row.get("employment_type")),
             "jobLink": link,
             "sector": "Game",
             "postedAt": row.get("published") or row.get("created_at"),
@@ -247,35 +247,35 @@ def parse_epic_games_jobs_payload(
     if not isinstance(rows, list):
         return []
     jobs: List[RawJob] = []
-    company = common.clean_text(fallback_company) or "Epic Games"
+    company = clean_text(fallback_company) or "Epic Games"
     for row in rows:
         if not isinstance(row, dict):
             continue
-        title = common.clean_text(row.get("title"))
-        posting_id = common.clean_text(
+        title = clean_text(row.get("title"))
+        posting_id = clean_text(
             row.get("id") or row.get("internal_job_id") or row.get("requisition_id")
         )
-        link = common.clean_text(row.get("absolute_url"))
+        link = clean_text(row.get("absolute_url"))
         if not link and posting_id:
             link = f"https://www.epicgames.com/site/en-US/careers/jobs/{posting_id}"
         if not title or not link:
             continue
-        company_name = common.clean_text(row.get("company_name") or row.get("company")) or company
-        location_text = common.clean_text(row.get("location"))
+        company_name = clean_text(row.get("company_name") or row.get("company")) or company
+        location_text = clean_text(row.get("location"))
         if not location_text:
             location_text = ", ".join(
-                [part for part in [common.clean_text(row.get("city")), common.clean_text(row.get("country"))] if part]
+                [part for part in [clean_text(row.get("city")), clean_text(row.get("country"))] if part]
             )
         city, country, work_type = parse_generic_location_fields(location_text)
         if bool(row.get("remote")):
             city, country, work_type = "Remote", "Remote", "Remote"
         tags = " ".join([
-            common.clean_text(row.get("department")),
-            common.clean_text(row.get("product")),
-            common.clean_text(row.get("type")),
-            common.clean_text(row.get("filterText")),
+            clean_text(row.get("department")),
+            clean_text(row.get("product")),
+            clean_text(row.get("type")),
+            clean_text(row.get("filterText")),
         ])
-        if not common.looks_like_game_job(title, company_name, tags):
+        if not looks_like_game_job(title, company_name, tags):
             continue
         jobs.append({
             "sourceJobId": f"epic:{posting_id or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
@@ -284,7 +284,7 @@ def parse_epic_games_jobs_payload(
             "city": city,
             "country": country,
             "workType": work_type or location_text,
-            "contractType": common.clean_text(row.get("type")),
+            "contractType": clean_text(row.get("type")),
             "jobLink": link,
             "sector": "Game",
             "postedAt": row.get("first_published") or row.get("updated_at"),
@@ -298,7 +298,7 @@ def parse_ashby_jobs_from_html(
     links = []
     seen = set()
     for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html_text):
-        absolute = urljoin(board_url, common.clean_text(href))
+        absolute = urljoin(board_url, clean_text(href))
         path = urlparse(absolute).path.lower()
         if "/job/" not in path:
             continue
@@ -309,11 +309,11 @@ def parse_ashby_jobs_from_html(
     jobs: List[RawJob] = []
     for link in links:
         slug = urlparse(link).path.rstrip("/").split("/")[-1]
-        title = common.strip_html_text(re.sub(r"[-_]+", " ", slug)).title()
+        title = strip_html_text(re.sub(r"[-_]+", " ", slug)).title()
         if not title:
             continue
-        company = common.clean_text(fallback_company) or "Unknown"
-        if not common.looks_like_game_job(title, company):
+        company = clean_text(fallback_company) or "Unknown"
+        if not looks_like_game_job(title, company):
             continue
         jobs.append({
             "sourceJobId": f"ashby:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
@@ -340,17 +340,17 @@ def parse_personio_feed_xml(xml_text: str, source_name: str = "") -> List[RawJob
     if root is None:
         return jobs
     for posting in root.findall(".//position"):
-        title = common.clean_text(posting.findtext("name"))
+        title = clean_text(posting.findtext("name"))
         if not title:
             continue
-        company = common.clean_text(posting.findtext("subcompany")) or common.clean_text(source_name) or "Unknown"
-        office = common.clean_text(posting.findtext("office"))
-        department = common.clean_text(posting.findtext("department"))
+        company = clean_text(posting.findtext("subcompany")) or clean_text(source_name) or "Unknown"
+        office = clean_text(posting.findtext("office"))
+        department = clean_text(posting.findtext("department"))
         city, country, work_type = parse_generic_location_fields(office)
-        job_link = common.clean_text(posting.findtext("url"))
-        posting_id = common.clean_text(posting.findtext("id") or posting.get("id"))
+        job_link = clean_text(posting.findtext("url"))
+        posting_id = clean_text(posting.findtext("id") or posting.get("id"))
         tags = " ".join([department, office])
-        if not common.looks_like_game_job(title, company, tags):
+        if not looks_like_game_job(title, company, tags):
             continue
         jobs.append({
             "sourceJobId": f"personio:{source_name}:{posting_id or hashlib.sha1((title + office).encode('utf-8')).hexdigest()[:10]}",
@@ -359,9 +359,9 @@ def parse_personio_feed_xml(xml_text: str, source_name: str = "") -> List[RawJob
             "city": city,
             "country": country,
             "workType": work_type or office,
-            "contractType": common.clean_text(posting.findtext("employmentType")),
+            "contractType": clean_text(posting.findtext("employmentType")),
             "jobLink": job_link,
             "sector": "Game",
-            "postedAt": common.clean_text(posting.findtext("createdAt") or posting.findtext("date")),
+            "postedAt": clean_text(posting.findtext("createdAt") or posting.findtext("date")),
         })
     return jobs

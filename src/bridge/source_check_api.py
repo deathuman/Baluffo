@@ -1,0 +1,224 @@
+"""Source-check orchestration helpers extracted from admin_bridge composition root."""
+
+from __future__ import annotations
+
+import re
+import uuid
+from typing import Any, Callable, Dict, Tuple
+
+
+def normalize_manual_static_studio_fields(
+    row: Dict[str, Any],
+    *,
+    normalize_source_url: Callable[[str], str],
+    infer_studio_name_from_host: Callable[[str], str],
+) -> Dict[str, Any]:
+    normalized = dict(row)
+    source_url = normalize_source_url(
+        str(normalized.get("listing_url") or "")
+    ) or normalize_source_url(
+        str((normalized.get("pages") or [""])[0] if isinstance(normalized.get("pages"), list) else "")
+    )
+    if not source_url:
+        return normalized
+    inferred = infer_studio_name_from_host(source_url)
+    current_studio = str(normalized.get("studio") or "").strip().lower()
+    if (
+        current_studio in {"", "www", "w", "manual source"}
+        or bool(re.search(r"\b(?:game|studio)\s+s\b", current_studio))
+    ):
+        normalized["studio"] = inferred
+        normalized["company"] = inferred
+        normalized["name"] = f"{inferred} (Manual Website)"
+    return normalized
+
+
+def _build_static_success_result(
+    *,
+    run_id: str,
+    updated: Dict[str, Any],
+    jobs_found: int,
+    weak_signal: bool,
+    probe_meta: Dict[str, Any],
+    source_identity: Callable[[Dict[str, Any]], str],
+) -> Dict[str, Any]:
+    return {
+        "started": True,
+        "runId": run_id,
+        "sourceId": source_identity(updated),
+        "ok": True,
+        "jobsFound": int(jobs_found),
+        "weakSignal": bool(weak_signal),
+        "browserFallbackAttempted": bool((probe_meta or {}).get("browserFallbackAttempted")),
+        "browserFallbackUsed": bool((probe_meta or {}).get("browserFallbackUsed")),
+    }
+
+
+def _build_failure_result(
+    *,
+    run_id: str,
+    updated: Dict[str, Any],
+    error: str,
+    failure_details: Dict[str, Any],
+    source_identity: Callable[[Dict[str, Any]], str],
+    include_browser_used: bool = False,
+    probe_meta: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    result = {
+        "started": True,
+        "runId": run_id,
+        "sourceId": source_identity(updated),
+        "ok": False,
+        "error": str(error or "probe failed"),
+        "errorCode": str(failure_details.get("errorCode") or "probe_failed"),
+        "suggestedUrls": failure_details.get("suggestedUrls") or [],
+    }
+    if "browserFallbackAttempted" in failure_details:
+        result["browserFallbackAttempted"] = bool(failure_details.get("browserFallbackAttempted"))
+    if include_browser_used:
+        result["browserFallbackUsed"] = bool((probe_meta or {}).get("browserFallbackUsed"))
+    return result
+
+
+def _reconstruct_probe_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
+    reconstructed = dict(row)
+    adapter = str(reconstructed.get("adapter") or "").strip().lower()
+    if adapter == "greenhouse" and not reconstructed.get("api_url") and reconstructed.get("slug"):
+        reconstructed["api_url"] = f"https://boards-api.greenhouse.io/v1/boards/{reconstructed.get('slug')}/jobs"
+    elif adapter == "lever" and not reconstructed.get("api_url") and reconstructed.get("account"):
+        reconstructed["api_url"] = f"https://api.lever.co/v0/postings/{reconstructed.get('account')}?mode=json"
+    elif adapter == "workable" and not reconstructed.get("api_url") and reconstructed.get("account"):
+        reconstructed["api_url"] = (
+            f"https://apply.workable.com/api/v1/widget/accounts/{reconstructed.get('account')}?details=true"
+        )
+    elif adapter == "smartrecruiters" and not reconstructed.get("api_url") and reconstructed.get("company_id"):
+        reconstructed["api_url"] = (
+            f"https://api.smartrecruiters.com/v1/companies/{reconstructed.get('company_id')}/postings"
+        )
+    return reconstructed
+
+
+def _candidate_endpoint_url(row: Dict[str, Any]) -> str:
+    return str(
+        row.get("listing_url")
+        or row.get("api_url")
+        or row.get("feed_url")
+        or row.get("board_url")
+        or ""
+    )
+
+
+def trigger_source_check(
+    source_id: str,
+    *,
+    timeout_s: int = 12,
+    load_state: Callable[[], Dict[str, Any]],
+    source_identity: Callable[[Dict[str, Any]], str],
+    normalize_manual_static_studio_fields_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
+    check_static_source_fn: Callable[[Dict[str, Any], int], Tuple[bool, int, str, bool, Dict[str, Any]]],
+    now_iso: Callable[[], str],
+    compute_candidate_score: Callable[[Dict[str, Any], int], Tuple[int, list[str]]],
+    normalize_candidate: Callable[..., Dict[str, Any]],
+    probe_candidate: Callable[..., Tuple[bool, int, str]],
+    persist_state_and_auto_sync: Callable[..., Dict[str, Any]],
+    normalize_source_url: Callable[[str], str],
+    build_check_failure_details: Callable[..., Dict[str, Any]],
+) -> Dict[str, Any]:
+    token = str(source_id or "").strip().lower()
+    if not token:
+        return {"started": False, "error": "Missing sourceId."}
+
+    state = load_state()
+    run_id = f"check_{uuid.uuid4().hex[:12]}"
+    for bucket in ("active", "pending", "rejected"):
+        rows = state.get(bucket, [])
+        for idx, row in enumerate(rows):
+            if source_identity(row) != token:
+                continue
+            if str(row.get("adapter") or "").strip().lower() == "static":
+                row = normalize_manual_static_studio_fields_fn(row)
+                ok, jobs_found, error, weak_signal, probe_meta = check_static_source_fn(row, timeout_s)
+                updated = dict(row)
+                updated["lastProbedAt"] = now_iso()
+                if ok:
+                    score, reasons = compute_candidate_score(updated, jobs_found)
+                    updated["jobsFound"] = int(jobs_found)
+                    updated["sampleCount"] = int(jobs_found)
+                    updated["score"] = int(score)
+                    updated["reasons"] = reasons
+                    updated["confidence"] = "high" if jobs_found >= 10 else ("medium" if jobs_found >= 1 else "low")
+                    updated.pop("lastProbeError", None)
+                    updated["lastProbeWeakSignal"] = bool(weak_signal)
+                    rows[idx] = updated
+                    state[bucket] = rows
+                    persist_state_and_auto_sync(state, reason="source_check_updated")
+                    return _build_static_success_result(
+                        run_id=run_id,
+                        updated=updated,
+                        jobs_found=jobs_found,
+                        weak_signal=weak_signal,
+                        probe_meta=probe_meta,
+                        source_identity=source_identity,
+                    )
+                updated["lastProbeError"] = str(error or "probe failed")
+                rows[idx] = updated
+                state[bucket] = rows
+                persist_state_and_auto_sync(state, reason="source_check_updated")
+                source_url = normalize_source_url(
+                    str(updated.get("listing_url") or "")
+                ) or normalize_source_url(
+                    str((updated.get("pages") or [""])[0] if isinstance(updated.get("pages"), list) else "")
+                ) or ""
+                failure_details = build_check_failure_details(
+                    str(error or "probe failed"),
+                    source_url,
+                    browser_fallback_attempted=bool((probe_meta or {}).get("browserFallbackAttempted")),
+                )
+                return _build_failure_result(
+                    run_id=run_id,
+                    updated=updated,
+                    error=str(error or "probe failed"),
+                    failure_details=failure_details,
+                    source_identity=source_identity,
+                    include_browser_used=True,
+                    probe_meta=probe_meta,
+                )
+
+            ok, jobs_found, error = probe_candidate(row, timeout_s=timeout_s)
+            if not ok and str(error or "").strip().lower() == "missing adapter or url":
+                ok, jobs_found, error = probe_candidate(_reconstruct_probe_candidate(row), timeout_s=timeout_s)
+            if ok:
+                score, reasons = compute_candidate_score(row, jobs_found)
+                updated = normalize_candidate(row, score, reasons, jobs_found, probed_at=now_iso())
+                updated["enabledByDefault"] = bool(row.get("enabledByDefault"))
+                updated.pop("lastProbeError", None)
+                if row.get("manualAddedAt"):
+                    updated["manualAddedAt"] = row.get("manualAddedAt")
+                rows[idx] = updated
+                state[bucket] = rows
+                persist_state_and_auto_sync(state, reason="source_check_updated")
+                return {
+                    "started": True,
+                    "runId": run_id,
+                    "sourceId": source_identity(updated),
+                    "ok": True,
+                    "jobsFound": int(jobs_found),
+                }
+
+            updated = dict(row)
+            updated["lastProbedAt"] = now_iso()
+            updated["lastProbeError"] = str(error or "probe failed")
+            rows[idx] = updated
+            state[bucket] = rows
+            persist_state_and_auto_sync(state, reason="source_check_updated")
+            source_url = normalize_source_url(endpoint_url := _candidate_endpoint_url(row)) or endpoint_url
+            failure_details = build_check_failure_details(str(error or "probe failed"), str(source_url or ""))
+            return _build_failure_result(
+                run_id=run_id,
+                updated=updated,
+                error=str(error or "probe failed"),
+                failure_details=failure_details,
+                source_identity=source_identity,
+            )
+
+    return {"started": False, "error": "Source not found."}

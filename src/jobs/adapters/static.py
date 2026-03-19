@@ -33,8 +33,9 @@ from src.jobs.adapters.static_helpers import (
     process_detail_link,
     source_detail_concurrency_for,
 )
-from src.jobs.common import registry_entries, set_source_diagnostics
+from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.interfaces import SourceLoader
+from src.jobs.registry import registry_entries
 from src.shared.regex import find_urls_in_text
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url

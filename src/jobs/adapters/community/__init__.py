@@ -8,18 +8,13 @@ from typing import Any, Callable, Dict, List
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters.community import google_sheets as _google_sheets
-from src.jobs.models import RawJob
-from src.jobs.common import (
-    EPIC_CAREERS_API_URL,
-    GAMES_INDUSTRY_URLS,
-    REMOTE_OK_URLS,
-    WELLFOUND_URLS,
-    parse_gamesindustry_html,
-    parse_remote_ok_payload,
-    parse_wellfound_html,
-    set_source_diagnostics,
-)
+from src.jobs.adapters.html_parsers import parse_gamesindustry_html, parse_wellfound_html
 from src.jobs.adapters.provider_parsers import parse_epic_games_jobs_payload
+from src.jobs.common.parsing import parse_remote_ok_payload as _parse_remote_ok_payload
+from src.jobs.models import RawJob
+from src.jobs.common.config import EPIC_CAREERS_API_URL, GAMES_INDUSTRY_URLS, REMOTE_OK_URLS, WELLFOUND_URLS
+from src.jobs.common.diagnostics import set_source_diagnostics
+from src.jobs.game_detection import looks_like_game_job
 from src.jobs.text_utils import clean_text
 from src.jobs.common.fetch import fetch_with_retries
 
@@ -90,7 +85,7 @@ def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: in
     for url in REMOTE_OK_URLS:
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            parsed = parse_remote_ok_payload(json.loads(text))
+            parsed = _parse_remote_ok_payload(json.loads(text), looks_like_game_job=looks_like_game_job)
             if parsed:
                 return parsed
             errors.append(f"{url}: empty/invalid payload")

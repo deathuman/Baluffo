@@ -19,7 +19,10 @@ from src.jobs.common.heuristics import (
     normalize_company_value,
     title_has_focus_role,
 )
-from src.jobs.common import is_supported_redirect_url, parse_datetime, posted_ts, to_iso
+from src.jobs.game_detection import looks_like_game_job
+from src.jobs.common.datetime_utils import parse_datetime, posted_ts, to_iso
+from src.jobs.common.parsing import normalize_contract_type
+from src.jobs.common.url import is_supported_redirect_url
 from src.jobs.models import CanonicalJob, RawJob
 from src.jobs.transport import PooledRedirectResolver
 from src.jobs.normalizers import normalize_country, normalize_sector, normalize_work_type
@@ -35,10 +38,6 @@ LIGHTWEIGHT_OUTPUT_FIELDS = common_config.LIGHTWEIGHT_OUTPUT_FIELDS
 TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
 DEFAULT_CANONICAL_STRICT_URL = common_config.DEFAULT_CANONICAL_STRICT_URL
-
-from src.jobs.common import looks_like_game_job, normalize_contract_type  # noqa: E402
-
-
 def canonicalize_job_with_reason(
     raw: Any,
     *,

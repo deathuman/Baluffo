@@ -9,10 +9,26 @@ from src.jobs.adapters import social_parsers as _social_parsers
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
 from src.jobs.models import RawJob
+from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.common.fetch import fetch_with_retries
-from src.jobs.common import SOURCE_DIAGNOSTICS, set_source_diagnostics
 from src.jobs.common.config import DEFAULT_SOCIAL_MIN_CONFIDENCE
 from src.jobs.text_utils import clean_text
+
+
+def set_source_diagnostics(
+    source_name: str,
+    *,
+    adapter: str,
+    studio: str,
+    details: List[Dict[str, Any]] | None = None,
+    partial_errors: List[str] | None = None,
+) -> None:
+    SOURCE_DIAGNOSTICS[source_name] = {
+        "adapter": clean_text(adapter) or "unknown",
+        "studio": clean_text(studio) or "multiple",
+        "details": details or [],
+        "partialErrors": partial_errors or [],
+    }
 
 _REGISTERED = False
 _SOCIAL_CONFIG: Dict[str, Any] = {}

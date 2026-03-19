@@ -8,7 +8,8 @@ from src.jobs.adapters import community
 from src.jobs.adapters import html_parsers as _html_parsers
 from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.adapters import social_parsers as _social_parsers
-from src.jobs.common import parse_remote_ok_payload
+from src.jobs.common.parsing import parse_remote_ok_payload as _parse_remote_ok_payload
+from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 
 extract_json_ld_blocks = _html_parsers.extract_json_ld_blocks
@@ -52,4 +53,8 @@ parse_workable_jobs_payload = _provider_parsers.parse_workable_jobs_payload
 parse_epic_games_jobs_payload = _provider_parsers.parse_epic_games_jobs_payload
 parse_ashby_jobs_from_html = _provider_parsers.parse_ashby_jobs_from_html
 parse_personio_feed_xml = _provider_parsers.parse_personio_feed_xml
+
+
+def parse_remote_ok_payload(payload: Any) -> List[RawJob]:
+    return _parse_remote_ok_payload(payload, looks_like_game_job=looks_like_game_job)
 

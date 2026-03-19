@@ -120,6 +120,65 @@ def test_bridge_api_uses_sync_service_for_sync_status_wiring(repo_root: Path) ->
     assert "def set_sync_status(" in sync_service
 
 
+def test_bridge_api_exposes_route_facing_entrypoints(repo_root: Path) -> None:
+    admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    bridge_api = (repo_root / "src" / "bridge" / "api.py").read_text(encoding="utf-8")
+    build_api_section = admin_bridge.split("def build_bridge_api", 1)[1].split("def load_saved_sync_settings", 1)[0]
+    assert "append_startup_metric=append_startup_metric" in build_api_section
+    assert "persist_state_and_auto_sync=persist_state_and_auto_sync" in build_api_section
+    assert "add_manual_source=add_manual_source" in build_api_section
+    assert "trigger_source_check=trigger_source_check" in build_api_section
+    assert "append_startup_metric: Callable[[str, Dict[str, Any] | None], None]" in bridge_api
+    assert "add_manual_source: Callable[[str], Dict[str, Any]]" in bridge_api
+    assert "trigger_source_check: Callable[..., Dict[str, Any]]" in bridge_api
+
+
+def test_admin_bridge_delegates_source_check_orchestration_to_bridge_module(repo_root: Path) -> None:
+    admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    assert "from src.bridge import source_check_api as _source_check_api" in admin_bridge
+    trigger_section = admin_bridge.split("def trigger_source_check", 1)[1].split("def run_background_script", 1)[0]
+    assert "return _source_check_api.trigger_source_check(" in trigger_section
+    normalize_section = admin_bridge.split("def normalize_manual_static_studio_fields", 1)[1].split("def trigger_source_check", 1)[0]
+    assert "return _source_check_api.normalize_manual_static_studio_fields(" in normalize_section
+
+
+def test_admin_bridge_delegates_task_launch_orchestration_to_bridge_module(repo_root: Path) -> None:
+    admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    task_launch_api = (repo_root / "src" / "bridge" / "task_launch_api.py").read_text(encoding="utf-8")
+    assert "from src.bridge import task_launch_api as _task_launch_api" in admin_bridge
+    run_section = admin_bridge.split("def run_background_script", 1)[1].split("def _failed_source_names_from_latest_report", 1)[0]
+    assert "return _get_task_launch_api().run_background_script(" in run_section
+    assert "subprocess.Popen(" not in run_section
+    build_args_section = admin_bridge.split("def build_fetcher_args_from_payload", 1)[1].split("def mark_desktop_session_activity", 1)[0]
+    assert "return _get_task_launch_api().build_fetcher_args_from_payload(payload)" in build_args_section
+    assert "--max-workers" not in build_args_section
+    assert "class TaskLaunchApi:" in task_launch_api
+    assert "def run_background_script(" in task_launch_api
+    assert "def build_fetcher_args_from_payload(" in task_launch_api
+
+
+def test_admin_bridge_delegates_ops_orchestration_to_bridge_module(repo_root: Path) -> None:
+    admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    ops_api = (repo_root / "src" / "bridge" / "ops_api.py").read_text(encoding="utf-8")
+    assert "from src.bridge import ops_api as _ops_api" in admin_bridge
+    failed_section = admin_bridge.split("def _failed_source_names_from_latest_report", 1)[1].split("def build_fetcher_args_from_payload", 1)[0]
+    assert "return _get_ops_api().failed_source_names_from_latest_report(" in failed_section
+    assert "report_normalizer.failed_source_names_from_report(" not in failed_section
+    sync_section = admin_bridge.split("def sync_history_from_reports", 1)[1].split("def compute_ops_health", 1)[0]
+    assert "return _get_ops_api().sync_history_from_reports()" in sync_section
+    assert "_run_history_api.sync_history_from_reports(" not in sync_section
+    ops_health_section = admin_bridge.split("def compute_ops_health", 1)[1].split("def compute_fetcher_metrics", 1)[0]
+    assert "return _get_ops_api().compute_ops_health()" in ops_health_section
+    assert "_ops_health.compute_ops_health(" not in ops_health_section
+    metrics_section = admin_bridge.split("def compute_fetcher_metrics", 1)[1].split("def _set_sync_status", 1)[0]
+    assert "return _get_ops_api().compute_fetcher_metrics(window_runs=window_runs)" in metrics_section
+    assert "fetcher_metrics_module.build_metrics(" not in metrics_section
+    assert "class OpsApi:" in ops_api
+    assert "def sync_history_from_reports(" in ops_api
+    assert "def compute_ops_health(" in ops_api
+    assert "def compute_fetcher_metrics(" in ops_api
+
+
 def test_bridge_api_defaults_registry_identity_helpers_to_source_registry(repo_root: Path) -> None:
     bridge_api = (repo_root / "src" / "bridge" / "api.py").read_text(encoding="utf-8")
     assert "from src.source_registry import normalize_source_url as normalize_source_url_impl" in bridge_api

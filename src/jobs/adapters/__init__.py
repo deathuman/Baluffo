@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.jobs.adapters import community, provider_api, social, static
 from src.jobs.common import config as common_config
 from src.jobs.common import social as common_social
-from src.jobs.common import SOCIAL_SOURCE_NAMES, SOURCE_DIAGNOSTICS
 from src.jobs.common.http import default_fetch_text as common_default_fetch_text
 from src.jobs_fetcher_registry import DEFAULT_SOURCE_LOADER_NAMES
 from src.jobs.interfaces import SourceLoader
@@ -84,7 +83,7 @@ def default_source_loaders(
         if name not in {"static_studio_pages", "static_studio_pages_a_i", "static_studio_pages_j_r", "static_studio_pages_s_z"}
     ]
     if not bool(social_cfg.get("enabled")):
-        base_loaders = [(name, loader) for name, loader in base_loaders if name not in SOCIAL_SOURCE_NAMES]
+        base_loaders = [(name, loader) for name, loader in base_loaders if name not in common_social.SOCIAL_SOURCE_NAMES]
     return base_loaders + static.build_static_source_loaders()
 
 
@@ -119,7 +118,7 @@ def run_loader(name: str, loader: SourceLoader, ctx: FetchContext) -> FetchResul
         retries=ctx.retries,
         backoff_s=ctx.backoff_s,
     )
-    diagnostics_payload = SOURCE_DIAGNOSTICS.get(name)
+    diagnostics_payload = common_config.SOURCE_DIAGNOSTICS.get(name)
     diagnostics = None
     if isinstance(diagnostics_payload, dict):
         diagnostics = SourceDiagnostics(

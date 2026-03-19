@@ -4,7 +4,7 @@ Date: 2026-03-18
 
 ## Summary
 
-The refactor wave has materially improved the repo for both stability and AI-assisted work, especially in test organization, explicit data contracts, frontend slice boundaries, and backend module extraction. The codebase is in a better state than before, but it is not yet in a fully "settled" modular shape.
+The refactor wave has materially improved the repo for both stability and AI-assisted work, especially in test organization, explicit data contracts, frontend slice boundaries, and backend module extraction. The codebase is in a better state than before, and the local tightening follow-up has now reduced some of the most obvious residual compatibility/orchestration hotspots, but it is not yet in a fully "settled" modular shape.
 
 The strongest pattern in the current local repo is this:
 
@@ -35,6 +35,19 @@ Since this audit was first written, the first tightening wave has been completed
 - `BridgeApi` now defaults registry identity/url helpers from `src.source_registry`, reducing reliance on entrypoint stub behavior for registry POST routes
 - `RegistryService` now exposes those identity/url helpers too, and `BridgeApi` prefers the typed registry service when present
 
+The latest local tightening pass also completed the next highest-value steps:
+
+- more repo-internal jobs callers now import from `src.jobs.common.config`, `social`, `sources`, or `url` directly instead of treating `src.jobs.common` as the default package surface
+- provider-api registration now imports `GREENHOUSE_JOBS_URL_TEMPLATE` from `src/jobs/common/config.py`, so the canonical definition no longer lives only in the compatibility barrel
+- jobs diagnostics helpers now live in `src/jobs/common/diagnostics.py`, and registry default/provider-redundancy data now live in `src/jobs/common/registry_defaults.py`
+- the remaining package-internal barrel-heavy callsites in `registry.py`, `adapters/social.py`, `adapters/static.py`, `adapters/static_scrapy.py`, `adapters/__init__.py`, and `adapters/community/__init__.py` now import from direct submodules or package-owned surfaces
+- `src/bridge/source_check_api.py` now owns the source-check orchestration flow, and `src/admin_bridge.py` delegates `normalize_manual_static_studio_fields(...)` and `trigger_source_check(...)` into that bridge module
+- `src/bridge/task_launch_api.py` now owns subprocess launch and fetcher-arg assembly for fetch/discovery task starts, and `src/admin_bridge.py` keeps only thin wrappers for `run_background_script(...)` and `build_fetcher_args_from_payload(...)`
+- `src/bridge/ops_api.py` now owns fetch-report filtering, run-history reconciliation assembly, ops-health dependency assembly, and fetcher-metrics assembly, and `src/admin_bridge.py` now keeps thin wrappers for those route-facing helpers too
+- `BridgeApi` now exposes typed route-facing callables for `append_startup_metric`, `persist_state_and_auto_sync`, `add_manual_source`, and `trigger_source_check`
+- `src/jobs/common/__init__.py` has now pruned several stale compatibility re-exports, so the curated facade is smaller than in the first tightening pass
+- jobs package guardrails and suite-contract checks now cover the narrower compatibility, task-launch, and ops-orchestration expectations explicitly
+
 ## Audit Baseline
 
 - Baseline branch: `main`
@@ -50,10 +63,11 @@ Since this audit was first written, the first tightening wave has been completed
 
 ### Workspace and docs
 
-- `_out/LATEST_MANIFEST.json` reports a successful build on 2026-03-17, but `py_tests_ok` and `node_tests_ok` are both `false`
+- `_out/LATEST_MANIFEST.json` now reports a successful build on 2026-03-18 at `17:25:22`, but the compatibility booleans `py_tests_ok` and `node_tests_ok` are still both `false`
 - `docs/architecture-ai-map.md`, `docs/testing.md`, `docs/DATA_CONTRACT.md`, and `frontend/shared/ui/selectors.js` are all present and actively maintained
 - contributor-facing maps exist for both architecture and frontend slice ownership
 - local code now supports explicit HUD test-lane status fields so future manifests can distinguish `not_run` from `failed`
+- the manifest is now slightly stale relative to the local verification state captured below
 
 ### Recent evolution on `main`
 
@@ -101,14 +115,28 @@ The current local repo is more stable than the manifest implies.
 - `python -m pytest tests/bridge/test_routes_smoke.py tests/admin/test_admin_bridge_ops_runtime.py tests/test_suite_contract.py tests/test_orchestrator_manifest.py tests/bridge/test_sync_service.py -q` -> 32 passed
 - `node tests/frontend/unit/all.test.mjs` -> 123 passed
 - `python -m pytest tests/test_jobs_package.py tests/test_suite_contract.py tests/test_no_new_runtime_facade_usage.py tests/test_jobs_fetcher.py -q` -> 93 passed
+- `py -3 -m pytest tests/test_jobs_package.py tests/test_no_new_runtime_facade_usage.py tests/test_suite_contract.py -q` -> passed
+- `py -3 -m pytest tests/test_jobs_fetcher.py -q` -> passed
+- `py -3 -m pytest tests/admin/ -q` -> passed
+- `py -3 -m py_compile src/admin_bridge.py src/bridge/api.py src/bridge/source_check_api.py src/bridge/task_launch_api.py src/jobs/common/diagnostics.py src/jobs/common/registry_defaults.py src/jobs/common/__init__.py src/jobs/common/config.py src/jobs/common/registry.py src/jobs/registry.py src/jobs/adapters/__init__.py src/jobs/adapters/community/__init__.py src/jobs/adapters/social.py src/jobs/adapters/static.py src/jobs/adapters/static_scrapy.py` -> passed
+- `py -3.13` with a repo-local tempdir shim reran `tests/bridge/test_routes_smoke.py tests/bridge/test_sync_service.py -q` -> 8 passed
+- `py -3 -m py_compile src/admin_bridge.py src/bridge/ops_api.py src/jobs/common/__init__.py` -> passed
+- direct `py -3 -m pytest tests/bridge/test_routes_smoke.py tests/bridge/test_sync_service.py -q` still fails in this shell because Windows temp-root creation/cleanup hits sandbox permission errors under `%LOCALAPPDATA%\\Temp`
+- `py -3.13` with the repo-local tempdir shim reran `tests/bridge/test_routes_smoke.py tests/bridge/test_sync_service.py -q` after the latest `ops_api` extraction -> 8 passed
+
+The bridge rerun matters because the earlier failure mode was environmental, not architectural:
+
+- Python `tempfile` / pytest temp-root creation under this sandbox can produce inaccessible Windows temp directories
+- the failing pattern was tied to the tempdir/cleanup path and Windows permission handling, not bridge route or sync assertions
+- when pytest temp roots were forced into a repo-local writable directory created with plain `mkdir()` semantics, both previously blocked bridge files passed cleanly
 
 ## Subsystem Decision Table
 
 | Subsystem | Stability | AI Access | Recommended action | Notes |
 | --- | --- | --- | --- | --- |
 | Frontend slice architecture | 5/5 | 5/5 | Keep as-is | Both large runtime entrypoints are now under guardrail and slimmer, with non-boot concerns moving into slice-local helpers. |
-| Jobs pipeline and adapters | 4/5 | 5/5 | Tighten | `pipeline.py` and `static.py` are materially narrower, and the remaining internal package hotspots now avoid the broad `jobs/common` barrel. |
-| Admin bridge | 4/5 | 4/5 | Tighten | Runtime state, run-history, registry auto-sync flow, and sync task worker flow are now extracted and guarded, but `admin_bridge.py` remains a large composition root with more wiring to trim over time. |
+| Jobs pipeline and adapters | 4/5 | 5/5 | Tighten | `pipeline.py` and `static.py` are materially narrower, package-internal callers now use direct `jobs.common` submodules, and the remaining risk is mostly the still-large compatibility facade implementation rather than broad internal import misuse. |
+| Admin bridge | 4/5 | 4/5 | Tighten | Runtime state, run-history, registry auto-sync flow, sync task worker flow, source-check orchestration, task-launch assembly, and ops/report orchestration are now extracted and guarded, but `admin_bridge.py` remains a large composition root with more wiring to trim over time. |
 | Source discovery | 4/5 | 4/5 | Keep as-is | Package split, schema validation, and focused tests look healthy. |
 | Desktop/runtime packaging | 3/5 | 2/5 | Tighten | Runtime tests pass, but docs have path drift and this area is still high-churn. |
 | Test organization and guardrails | 5/5 | 5/5 | Keep as-is | Pytest consolidation, structure tests, facade guardrails, bridge state guardrails, and runtime budget guardrails are strong improvements. |
@@ -170,23 +198,37 @@ The latest narrowing wave improved AI and human navigation in the jobs backend:
 - `src/jobs/pipeline.py` now reads more like an orchestration root
 - path/bootstrap, loader selection, and task/progress concerns live behind named helper modules
 - `src/jobs/adapters/static.py` keeps its public loader surface while delegating dense internals
+- diagnostics and registry-default data now have dedicated `jobs.common` submodules instead of living only in the compatibility facade
 - package tests now guard the new helper boundaries explicitly
+
+### 6. Bridge route-facing seams are now more explicit
+
+The latest bridge follow-up improved entrypoint clarity without over-splitting the system:
+
+- source-check flow now has a real bridge module home in `src/bridge/source_check_api.py`
+- fetch/discovery task launch flow now has a real bridge module home in `src/bridge/task_launch_api.py`
+- ops/report orchestration now has a real bridge module home in `src/bridge/ops_api.py`
+- `admin_bridge.py` keeps stable wrappers where useful, but those wrappers now delegate immediately for source-check behavior
+- `admin_bridge.py` now also keeps stable wrappers for task launch/arg building while delegating the business logic immediately
+- `admin_bridge.py` now also keeps stable wrappers for failed-source filtering, run-history reconciliation, ops-health payload assembly, and fetcher-metrics assembly
+- `BridgeApi` now carries explicit typed callables for startup metrics, state persistence/auto-sync, manual-source addition, and source checks
+- suite-contract tests now protect those route-facing expectations directly, including the newer task-launch and ops/report seams
 
 ## Ranked Findings
 
 ### High
 
-#### 1. `src/jobs/common` still carries compatibility-heavy surface area
+#### 1. `src/jobs/common` still carries compatibility-heavy implementation surface area
 
 Evidence:
 
 - `_runtime.facade()` still exists as a compatibility boundary
-- `src/jobs/common/__init__.py` is still large and re-export heavy
+- `src/jobs/common/__init__.py` is still large even after diagnostics/default-data moved out, more package-internal callers moved to direct submodules, and stale curated exports were pruned
 - the package surface is safer than before, but compatibility affordances are still broad enough to attract new coupling
 
 Impact:
 
-- modularization gains are real, but dependency clarity still depends on keeping the curated surface small
+- modularization gains are real, repo-internal imports are better aligned now, and the curated export list is smaller, but dependency clarity still depends on keeping the facade implementation from regrowing
 - legacy convenience imports still exist for facade compatibility, so regrowth has to stay guarded
 
 Decision: tightening wave in progress; keep capping compatibility spread
@@ -196,12 +238,12 @@ Decision: tightening wave in progress; keep capping compatibility spread
 Evidence:
 
 - `src/admin_bridge.py` remains one of the largest live Python files in the repo
-- the extracted `BridgeApi` exists, but the entrypoint still holds substantial wiring and compatibility responsibility
+- the extracted `BridgeApi` exists, and source-check, task-launch, and ops/report orchestration now moved out too, but the entrypoint still holds substantial wiring and compatibility responsibility
 - service-level and route-level tests are in better shape, but some admin tests still rely on entrypoint monkeypatch seams by design
 
 Impact:
 
-- stability risk is lower than at audit start, but edits in this file still have a larger than ideal blast radius
+- stability risk is lower than at audit start, and source-check behavior is less entangled, but edits in this file still have a larger than ideal blast radius
 - AI coders still need more context than they should for some admin bridge changes
 
 Decision: tightening wave in progress; continue narrowing, not rollback
@@ -279,20 +321,35 @@ Current local pending files should be treated as runtime artifacts, not architec
   - made `src/jobs/common/__init__.py` declare its curated compatibility surface explicitly
   - moved registry auto-sync persistence/start flow behind `src/bridge/registry_sync_flow.py`
   - removed stale sync-normalization helper leftovers from `src/admin_bridge.py`
+  - moved more jobs package internals off the broad barrel in `canonicalize.py`, `parsers.py`, `reporting.py`, `state.py`, and plugin/provider registration paths
+  - moved the canonical `GREENHOUSE_JOBS_URL_TEMPLATE` definition into `src/jobs/common/config.py` while preserving compatibility imports
+  - moved diagnostics helpers into `src/jobs/common/diagnostics.py`
+  - moved default registry rows and provider-redundancy rules into `src/jobs/common/registry_defaults.py`
+  - moved the last package-internal barrel-heavy jobs callsites onto direct submodules or package-owned surfaces
+  - moved source-check orchestration behind `src/bridge/source_check_api.py`
+  - moved fetch/discovery task-launch assembly behind `src/bridge/task_launch_api.py`
+  - moved ops/report orchestration behind `src/bridge/ops_api.py`
+  - pruned stale compatibility exports from `src/jobs/common/__init__.py` while preserving `src.jobs_fetcher` and compat-test behavior
+  - wired `append_startup_metric`, `persist_state_and_auto_sync`, `add_manual_source`, and `trigger_source_check` through `BridgeApi`
+  - added structure tests that guard the narrowed `jobs.common` compatibility list and the new ops/report delegation seam
+  - verified the previously blocked bridge route/sync tests by rerunning them with a repo-local pytest tempdir shim that avoids the sandbox's broken Windows temp permissions
 - Current immediate targets:
-  - keep reducing legacy convenience re-exports in `src/jobs/common` only when repo-internal callers no longer need them
-  - keep `src/admin_bridge.py` on a composition-root diet by moving only real business seams out of the entrypoint
+  - keep `src/jobs/common/__init__.py` from regrowing now that the curated export list has been pruned
+  - keep `src/admin_bridge.py` on a composition-root diet by targeting only the remaining wiring/helper clusters that still combine real behavior
+  - add only narrowly scoped backend guardrails if a new seam appears without coverage
   - only revisit frontend runtime splits if new behavior starts regrowing the entrypoints
 
 ### Next
 
 - Simplify jobs compatibility surfaces:
-  - reduce remaining legacy re-export density in `src/jobs/common`
+  - keep reducing legacy implementation density inside `src/jobs/common` only when a change materially clarifies ownership
+  - keep the newer `diagnostics` and `registry_defaults` modules as the owning homes instead of letting data/helpers drift back into the facade
   - keep `_runtime.facade()` usage capped to the current compatibility boundary
 - Continue bridge tightening only if it stays narrow:
   - move more handler/wiring behavior behind typed bridge modules or `BridgeApi`
+  - prefer remaining high-signal seams such as residual sync-config wrapper clusters or route-local wiring, not request-dispatch or bootstrap churn
   - reduce direct global monkeypatch dependence in admin tests where practical
-- Add backend structural guardrails only where they protect the new helper boundaries from regrowth
+- Add backend structural guardrails only where they protect new helper boundaries from regrowth
 
 ### Later
 
@@ -317,8 +374,8 @@ Current local pending files should be treated as runtime artifacts, not architec
 
 ## Recommended First Follow-up Tickets
 
-1. Reduce compatibility-heavy surface area in `src/jobs/common`.
-2. Continue shrinking `admin_bridge.py` only through narrow composition-root extractions.
-3. Add small guardrails around the new backend helper boundaries if they start drifting.
+1. Keep `src/jobs/common` compatibility pruning surgical and only remove more exports when a concrete compat caller disappears.
+2. Continue shrinking `admin_bridge.py` only through one narrow remaining wiring seam at a time.
+3. Add the smallest missing structure tests only when a new extracted seam needs protection.
 4. Normalize remaining test ownership only if it can stay surgical.
 5. Revisit frontend/runtime tightening only if new churn regrows the entrypoints.

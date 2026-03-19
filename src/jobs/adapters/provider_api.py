@@ -12,13 +12,30 @@ from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
 from src.jobs.common.fetch import fetch_with_retries
-from src.jobs.common import registry_entries, set_source_diagnostics
+from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.parsers import parse_ashby_jobs_from_html, parse_personio_feed_xml
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
+
+
+def set_source_diagnostics(
+    source_name: str,
+    *,
+    adapter: str,
+    studio: str,
+    details: List[Dict[str, object]] | None = None,
+    partial_errors: List[str] | None = None,
+) -> None:
+    SOURCE_DIAGNOSTICS[source_name] = {
+        "adapter": clean_text(adapter) or "unknown",
+        "studio": clean_text(studio) or "multiple",
+        "details": details or [],
+        "partialErrors": partial_errors or [],
+    }
 
 def _dispatch_provider_api(
     adapter_key: str,

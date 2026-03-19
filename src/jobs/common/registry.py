@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+from src.jobs.common.config import SCRAPY_BROWSER_QUEUE_PATH
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
 
@@ -28,13 +30,16 @@ def _static_source_primary_host(row: Dict[str, Any]) -> str:
 
 
 def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> List[Dict[str, Any]]:
-    # Indirection so tests can monkeypatch `src.jobs.common.SCRAPY_BROWSER_QUEUE_PATH`.
-    from src.jobs.common import SCRAPY_BROWSER_QUEUE_PATH
-
+    queue_path = SCRAPY_BROWSER_QUEUE_PATH
+    common_module = sys.modules.get("src.jobs.common")
+    if common_module is not None:
+        candidate = getattr(common_module, "SCRAPY_BROWSER_QUEUE_PATH", queue_path)
+        if isinstance(candidate, Path):
+            queue_path = candidate
     try:
-        if not SCRAPY_BROWSER_QUEUE_PATH.exists():
+        if not queue_path.exists():
             return []
-        payload = json.loads(SCRAPY_BROWSER_QUEUE_PATH.read_text(encoding="utf-8"))
+        payload = json.loads(queue_path.read_text(encoding="utf-8"))
         if not isinstance(payload, list):
             return []
     except (OSError, json.JSONDecodeError):

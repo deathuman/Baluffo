@@ -16,11 +16,12 @@ from threading import Lock
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.jobs.canonicalize import CanonicalNormalizer
+from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.models import CanonicalJob
 from src.jobs.state import source_rows_fingerprint
 from src.jobs.reporting import format_source_error
-from src.jobs.common import SOURCE_DIAGNOSTICS, SOURCE_REPORT_META
 from src.jobs.text_utils import clean_text, norm_text
+from src.jobs_fetcher_registry import SOURCE_REPORT_META
 from src.shared.utils import now_iso
 
 

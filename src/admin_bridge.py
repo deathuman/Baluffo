@@ -35,7 +35,6 @@ from src.jobs.pipeline import default_source_loaders
 from src.jobs.registry import DEFAULT_STUDIO_SOURCE_REGISTRY
 from src.jobs.transport import normalize_url as normalize_job_url
 from src import source_discovery as discovery
-from src import fetcher_metrics as fetcher_metrics_module
 from src import source_registry as source_registry_module
 from src import source_sync as source_sync_module
 from src.app_version import get_app_version
@@ -78,12 +77,14 @@ from src.bridge.source_helpers import (
     infer_studio_name_from_host,
 )
 from src.bridge import report_normalizer
-from src.bridge import ops_health as _ops_health
+from src.bridge import ops_api as _ops_api
 from src.bridge import registry_sync_flow as _registry_sync_flow
 from src.bridge import run_history_api as _run_history_api
+from src.bridge import source_check_api as _source_check_api
 from src.bridge import source_check_fetch as _source_check_fetch
 from src.bridge import source_check_http as _source_check_http
 from src.bridge import sync_task_flow as _sync_task_flow
+from src.bridge import task_launch_api as _task_launch_api
 from src.shared.regex import find_urls_in_text
 
 normalize_fetch_report_contract = report_normalizer.normalize_fetch_report_contract
@@ -223,6 +224,68 @@ def _get_discovery_service() -> DiscoveryService:
                 ),
             )
         return _DISCOVERY_SERVICE
+
+
+def _get_task_launch_api() -> _task_launch_api.TaskLaunchApi:
+    return _task_launch_api.TaskLaunchApi(
+        runtime=_task_launch_api.TaskLaunchRuntime(
+            root=Path(RUNTIME_CONFIG.root),
+            data_dir=Path(RUNTIME_CONFIG.data_dir),
+        ),
+        paths=_task_launch_api.TaskLaunchPaths(
+            discovery_log=DISCOVERY_LOG_PATH,
+            fetcher_log=FETCHER_LOG_PATH,
+            task_state=TASK_STATE_PATH,
+            jobs_fetch_report=JOBS_FETCH_REPORT_PATH,
+            approval_state=APPROVAL_STATE_PATH,
+        ),
+        deps=_task_launch_api.TaskLaunchDeps(
+            now_iso=now_iso,
+            bridge_log=bridge_log,
+            load_json_object=load_json_object,
+            save_json_atomic=save_json_atomic,
+            task_state_lock=OPS_STATE_LOCK,
+            default_source_loaders=default_source_loaders,
+            failed_source_names_from_latest_report=lambda allowed: _failed_source_names_from_latest_report(
+                allowed_names=allowed
+            ),
+            safe_int=_safe_int,
+        ),
+    )
+
+
+def _get_ops_api() -> _ops_api.OpsApi:
+    return _ops_api.OpsApi(
+        paths=_ops_api.OpsPaths(
+            ops_alert_state=OPS_ALERT_STATE_PATH,
+            jobs_fetch_report=JOBS_FETCH_REPORT_PATH,
+            discovery_report=DISCOVERY_REPORT_PATH,
+        ),
+        deps=_ops_api.OpsDeps(
+            load_json_object=load_json_object,
+            save_json_atomic=save_json_atomic,
+            load_state=load_state,
+            now_iso=now_iso,
+            now_utc=now_utc,
+            parse_iso=parse_iso,
+            read_tasks_config=_read_tasks_config,
+            ops_state_lock=OPS_STATE_LOCK,
+            load_run_history=load_run_history,
+            save_run_history=save_run_history,
+            prune_started_rows_for_type=prune_started_rows_for_type,
+            clear_task_state=clear_task_state,
+            clear_task_state_locked=_clear_task_state_locked,
+            upsert_run_history=upsert_run_history,
+            task_running_from_state=task_running_from_state,
+            report_is_stale_in_progress=report_is_stale_in_progress,
+            get_active_sync_runs=SyncState.get_active_sync_runs,
+            normalize_fetch_report_contract=normalize_fetch_report_contract,
+            normalize_discovery_report_contract=normalize_discovery_report_contract,
+            desktop_mode=RUNTIME_CONFIG.desktop_mode,
+            get_desktop_last_activity_at=lambda: bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
+            ops_schema_version=OPS_SCHEMA_VERSION,
+        ),
+    )
 
 
 def _get_pipeline_service() -> PipelineService:
@@ -393,7 +456,11 @@ def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
         now_iso=now_iso,
         _mark_desktop_session_activity=mark_desktop_session_activity,
         desktop_local_data_store=desktop_local_data_store,
+        append_startup_metric=append_startup_metric,
         read_startup_metrics=read_startup_metrics,
+        persist_state_and_auto_sync=persist_state_and_auto_sync,
+        add_manual_source=add_manual_source,
+        trigger_source_check=trigger_source_check,
         load_json_object=load_json_object,
         save_json_atomic=save_json_atomic,
         start_fetcher_task=start_fetcher_task,
@@ -617,282 +684,52 @@ def check_static_source(row: Dict[str, Any], timeout_s: int = 12) -> Tuple[bool,
 
 
 def normalize_manual_static_studio_fields(row: Dict[str, Any]) -> Dict[str, Any]:
-    normalized = dict(row)
-    source_url = normalize_source_url(
-        str(normalized.get("listing_url") or "")
-    ) or normalize_source_url(
-        str((normalized.get("pages") or [""])[0] if isinstance(normalized.get("pages"), list) else "")
+    return _source_check_api.normalize_manual_static_studio_fields(
+        row,
+        normalize_source_url=normalize_source_url,
+        infer_studio_name_from_host=infer_studio_name_from_host,
     )
-    if not source_url:
-        return normalized
-    inferred = infer_studio_name_from_host(source_url)
-    current_studio = str(normalized.get("studio") or "").strip().lower()
-    # Correct placeholder studio values created by naive host parsing.
-    if (
-        current_studio in {"", "www", "w", "manual source"}
-        or bool(re.search(r"\b(?:game|studio)\s+s\b", current_studio))
-    ):
-        normalized["studio"] = inferred
-        normalized["company"] = inferred
-        normalized["name"] = f"{inferred} (Manual Website)"
-    return normalized
 
 
 def trigger_source_check(source_id: str, timeout_s: int = 12) -> Dict[str, Any]:
-    token = str(source_id or "").strip().lower()
-    if not token:
-        return {"started": False, "error": "Missing sourceId."}
-
-    state = load_state()
-    run_id = f"check_{uuid.uuid4().hex[:12]}"
-    for bucket in ("active", "pending", "rejected"):
-        rows = state.get(bucket, [])
-        for idx, row in enumerate(rows):
-            if source_identity(row) != token:
-                continue
-            if str(row.get("adapter") or "").strip().lower() == "static":
-                row = normalize_manual_static_studio_fields(row)
-                ok, jobs_found, error, weak_signal, probe_meta = check_static_source(row, timeout_s=timeout_s)
-                updated = dict(row)
-                updated["lastProbedAt"] = now_iso()
-                if ok:
-                    score, reasons = discovery.compute_candidate_score(updated, jobs_found)
-                    updated["jobsFound"] = int(jobs_found)
-                    updated["sampleCount"] = int(jobs_found)
-                    updated["score"] = int(score)
-                    updated["reasons"] = reasons
-                    updated["confidence"] = "high" if jobs_found >= 10 else ("medium" if jobs_found >= 1 else "low")
-                    updated.pop("lastProbeError", None)
-                    updated["lastProbeWeakSignal"] = bool(weak_signal)
-                    rows[idx] = updated
-                    state[bucket] = rows
-                    persist_state_and_auto_sync(state, reason="source_check_updated")
-                    return {
-                        "started": True,
-                        "runId": run_id,
-                        "sourceId": source_identity(updated),
-                        "ok": True,
-                        "jobsFound": int(jobs_found),
-                        "weakSignal": bool(weak_signal),
-                        "browserFallbackAttempted": bool((probe_meta or {}).get("browserFallbackAttempted")),
-                        "browserFallbackUsed": bool((probe_meta or {}).get("browserFallbackUsed")),
-                    }
-                updated["lastProbeError"] = str(error or "probe failed")
-                rows[idx] = updated
-                state[bucket] = rows
-                persist_state_and_auto_sync(state, reason="source_check_updated")
-                source_url = normalize_source_url(
-                    str(updated.get("listing_url") or "")
-                ) or normalize_source_url(
-                    str((updated.get("pages") or [""])[0] if isinstance(updated.get("pages"), list) else "")
-                ) or ""
-                failure_details = _source_check_http.build_check_failure_details(
-                    str(error or "probe failed"),
-                    source_url,
-                    browser_fallback_attempted=bool((probe_meta or {}).get("browserFallbackAttempted")),
-                )
-                return {
-                    "started": True,
-                    "runId": run_id,
-                    "sourceId": source_identity(updated),
-                    "ok": False,
-                    "error": str(error or "probe failed"),
-                    "errorCode": str(failure_details.get("errorCode") or "probe_failed"),
-                    "suggestedUrls": failure_details.get("suggestedUrls") or [],
-                    "browserFallbackAttempted": bool(failure_details.get("browserFallbackAttempted")),
-                    "browserFallbackUsed": bool((probe_meta or {}).get("browserFallbackUsed")),
-                }
-            ok, jobs_found, error = discovery.probe_candidate(row, timeout_s=timeout_s)
-            if not ok and str(error or "").strip().lower() == "missing adapter or url":
-                # Some canonical registry rows only store identity token (e.g. greenhouse slug)
-                # and rely on adapter-specific URL fallback patterns.
-                reconstructed = dict(row)
-                adapter = str(reconstructed.get("adapter") or "").strip().lower()
-                if adapter == "greenhouse" and not reconstructed.get("api_url") and reconstructed.get("slug"):
-                    reconstructed["api_url"] = f"https://boards-api.greenhouse.io/v1/boards/{reconstructed.get('slug')}/jobs"
-                elif adapter == "lever" and not reconstructed.get("api_url") and reconstructed.get("account"):
-                    reconstructed["api_url"] = f"https://api.lever.co/v0/postings/{reconstructed.get('account')}?mode=json"
-                elif adapter == "workable" and not reconstructed.get("api_url") and reconstructed.get("account"):
-                    reconstructed["api_url"] = f"https://apply.workable.com/api/v1/widget/accounts/{reconstructed.get('account')}?details=true"
-                elif adapter == "smartrecruiters" and not reconstructed.get("api_url") and reconstructed.get("company_id"):
-                    reconstructed["api_url"] = f"https://api.smartrecruiters.com/v1/companies/{reconstructed.get('company_id')}/postings"
-                ok, jobs_found, error = discovery.probe_candidate(reconstructed, timeout_s=timeout_s)
-            if ok:
-                score, reasons = discovery.compute_candidate_score(row, jobs_found)
-                updated = discovery.normalize_candidate(row, score, reasons, jobs_found, probed_at=now_iso())
-                updated["enabledByDefault"] = bool(row.get("enabledByDefault"))
-                updated.pop("lastProbeError", None)
-                if row.get("manualAddedAt"):
-                    updated["manualAddedAt"] = row.get("manualAddedAt")
-                rows[idx] = updated
-                state[bucket] = rows
-                persist_state_and_auto_sync(state, reason="source_check_updated")
-                return {
-                    "started": True,
-                    "runId": run_id,
-                    "sourceId": source_identity(updated),
-                    "ok": True,
-                    "jobsFound": int(jobs_found),
-                }
-            updated = dict(row)
-            updated["lastProbedAt"] = now_iso()
-            updated["lastProbeError"] = str(error or "probe failed")
-            rows[idx] = updated
-            state[bucket] = rows
-            persist_state_and_auto_sync(state, reason="source_check_updated")
-            source_url = normalize_source_url(endpoint_url := str(
-                row.get("listing_url")
-                or row.get("api_url")
-                or row.get("feed_url")
-                or row.get("board_url")
-                or ""
-            )) or endpoint_url
-            failure_details = _source_check_http.build_check_failure_details(str(error or "probe failed"), str(source_url or ""))
-            return {
-                "started": True,
-                "runId": run_id,
-                "sourceId": source_identity(updated),
-                "ok": False,
-                "error": str(error or "probe failed"),
-                "errorCode": str(failure_details.get("errorCode") or "probe_failed"),
-                "suggestedUrls": failure_details.get("suggestedUrls") or [],
-            }
-    return {"started": False, "error": "Source not found."}
+    return _source_check_api.trigger_source_check(
+        source_id,
+        timeout_s=timeout_s,
+        load_state=load_state,
+        source_identity=source_identity,
+        normalize_manual_static_studio_fields_fn=normalize_manual_static_studio_fields,
+        check_static_source_fn=check_static_source,
+        now_iso=now_iso,
+        compute_candidate_score=discovery.compute_candidate_score,
+        normalize_candidate=discovery.normalize_candidate,
+        probe_candidate=discovery.probe_candidate,
+        persist_state_and_auto_sync=persist_state_and_auto_sync,
+        normalize_source_url=normalize_source_url,
+        build_check_failure_details=_source_check_http.build_check_failure_details,
+    )
 
 
 def run_background_script(script_name: str, args: List[str] | None = None) -> int:
-    if getattr(sys, "frozen", False):
-        command = [
-            sys.executable,
-            "__child_script__",
-            "--root",
-            str(Path(RUNTIME_CONFIG.root)),
-            "--script",
-            str(script_name),
-            "--",
-        ]
-        command.extend(args or [])
-    else:
-        # When running from source, prefer module execution so that the `src`
-        # package can be imported reliably regardless of how the script path is
-        # resolved on sys.path.
-        script_lower = str(script_name).lower()
-        module = None
-        if script_lower.endswith("jobs_fetcher.py"):
-            module = "src.jobs_fetcher"
-        elif script_lower.endswith("source_discovery.py"):
-            module = "src.source_discovery"
-
-        if module:
-            command = [sys.executable, "-m", module]
-            command.extend(args or [])
-        else:
-            command = [sys.executable, str(Path(RUNTIME_CONFIG.root) / "src" / script_name)]
-            command.extend(args or [])
-    script = Path(script_name).name.lower()
-    task_type = "discovery" if "discovery" in script else ("fetch" if "fetcher" in script else script)
-    child_env = os.environ.copy()
-    child_env["BALUFFO_DATA_DIR"] = str(RUNTIME_CONFIG.data_dir)
-    if task_type == "discovery":
-        child_env["BALUFFO_DISCOVERY_LOG_PATH"] = str(DISCOVERY_LOG_PATH)
-    elif task_type == "fetch":
-        child_env["BALUFFO_FETCHER_LOG_PATH"] = str(FETCHER_LOG_PATH)
-    popen_kwargs: Dict[str, Any] = {
-        "cwd": str(Path(RUNTIME_CONFIG.root)),
-        "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-        "env": child_env,
-    }
-    if os.name == "nt":
-        # Detach child jobs from admin bridge console streams to avoid Windows
-        # stdio initialization failures when terminal handles are unstable/closed.
-        popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    log_handle = None
-    try:
-        if task_type in {"discovery", "fetch"}:
-            log_path = DISCOVERY_LOG_PATH if task_type == "discovery" else FETCHER_LOG_PATH
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_handle = open(log_path, "a", encoding="utf-8")
-            popen_kwargs["stdout"] = log_handle
-            popen_kwargs["stderr"] = subprocess.STDOUT
-        proc = subprocess.Popen(command, **popen_kwargs)
-    finally:
-        if log_handle is not None:
-            log_handle.close()
-    with OPS_STATE_LOCK:
-        state = load_json_object(TASK_STATE_PATH, {})
-        state[str(task_type)] = {
-            "pid": int(proc.pid),
-            "script": str(script_name),
-            "startedAt": now_iso(),
-        }
-        save_json_atomic(TASK_STATE_PATH, state)
-    bridge_log("info", "task_process_spawned", task=task_type, script=script_name, pid=int(proc.pid))
-    return int(proc.pid)
+    return _get_task_launch_api().run_background_script(
+        script_name,
+        args,
+        is_frozen=bool(getattr(sys, "frozen", False)),
+        executable=str(sys.executable),
+        spawn_process=subprocess.Popen,
+        devnull=subprocess.DEVNULL,
+        stdout_target=subprocess.STDOUT,
+        create_no_window=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)),
+    )
 
 
 def _failed_source_names_from_latest_report(*, allowed_names: set[str] | None = None) -> List[str]:
-    report = normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {}))
-    return report_normalizer.failed_source_names_from_report(
-        report, allowed_names=allowed_names
+    return _get_ops_api().failed_source_names_from_latest_report(
+        allowed_names=allowed_names
     )
 
 
 def build_fetcher_args_from_payload(payload: Dict[str, Any]) -> Tuple[List[str], str]:
-    data = payload if isinstance(payload, dict) else {}
-    preset = str(data.get("preset") or "default").strip().lower()
-    args: List[str] = []
-
-    # Optional explicit overrides.
-    max_workers = _safe_int(data.get("maxWorkers"), 6, 1, 16)
-    max_per_domain = _safe_int(data.get("maxPerDomain"), 2, 1, 6)
-    fetch_strategy = str(data.get("fetchStrategy") or "auto").strip().lower()
-    if fetch_strategy not in {"auto", "http", "browser"}:
-        fetch_strategy = "auto"
-    adapter_http_concurrency = _safe_int(data.get("adapterHttpConcurrency"), 24, 1, 128)
-    source_ttl = _safe_int(data.get("sourceTtlMinutes"), 360, 0, 1440)
-    hot_cadence = _safe_int(data.get("hotSourceCadenceMinutes"), 15, 1, 240)
-    cold_cadence = _safe_int(data.get("coldSourceCadenceMinutes"), 60, 1, 1440)
-    circuit_failures = _safe_int(data.get("circuitBreakerFailures"), 3, 0, 20)
-    circuit_cooldown = _safe_int(data.get("circuitBreakerCooldownMinutes"), 180, 0, 24 * 60)
-
-    if preset == "incremental":
-        args.extend(["--skip-successful-sources", "--source-ttl-minutes", str(source_ttl), "--quiet"])
-    elif preset == "retry_failed":
-        available_names = {name for name, _loader in default_source_loaders()}
-        failed_names = _failed_source_names_from_latest_report(allowed_names=available_names)
-        if failed_names:
-            args.extend(["--only-sources", ",".join(failed_names)])
-        args.extend(["--ignore-circuit-breaker", "--quiet"])
-    elif preset == "force_full":
-        args.extend(["--ignore-circuit-breaker", "--quiet"])
-    else:
-        preset = "default"
-
-    # Apply common overrides (including defaults) so runtime is explicit.
-    args.extend(["--max-workers", str(max_workers), "--max-per-domain", str(max_per_domain)])
-    args.extend(["--fetch-strategy", fetch_strategy, "--adapter-http-concurrency", str(adapter_http_concurrency)])
-    args.extend(["--circuit-breaker-failures", str(circuit_failures)])
-    args.extend(["--circuit-breaker-cooldown-minutes", str(circuit_cooldown)])
-    args.extend(["--hot-source-cadence-minutes", str(hot_cadence), "--cold-source-cadence-minutes", str(cold_cadence)])
-
-    if bool(data.get("skipSuccessfulSources")) and "--skip-successful-sources" not in args:
-        args.append("--skip-successful-sources")
-        args.extend(["--source-ttl-minutes", str(source_ttl)])
-    if bool(data.get("respectSourceCadence")) and "--respect-source-cadence" not in args:
-        args.append("--respect-source-cadence")
-    if bool(data.get("ignoreCircuitBreaker")) and "--ignore-circuit-breaker" not in args:
-        args.append("--ignore-circuit-breaker")
-    if bool(data.get("quiet")) and "--quiet" not in args:
-        args.append("--quiet")
-
-    only_sources = data.get("onlySources")
-    if isinstance(only_sources, list):
-        sanitized = [str(item).strip() for item in only_sources if str(item).strip()]
-        if sanitized:
-            args.extend(["--only-sources", ",".join(sanitized)])
-    return args, preset
+    return _get_task_launch_api().build_fetcher_args_from_payload(payload)
 
 
 def mark_desktop_session_activity(path: str) -> None:
@@ -992,88 +829,39 @@ def _read_tasks_config() -> Dict[str, Any]:
 
 
 def load_alert_state() -> Dict[str, Any]:
-    return _ops_health.load_alert_state(load_json_object, OPS_ALERT_STATE_PATH, OPS_SCHEMA_VERSION)
+    return _get_ops_api().load_alert_state()
 
 
 def save_alert_state(state: Dict[str, Any]) -> None:
-    _ops_health.save_alert_state(
-        save_json_atomic, OPS_ALERT_STATE_PATH, state, OPS_SCHEMA_VERSION, now_iso
-    )
+    _get_ops_api().save_alert_state(state)
 
 
 def detect_task_interval_hours(task: Dict[str, Any]) -> float | None:
-    return _ops_health.detect_task_interval_hours(task)
+    return _get_ops_api().detect_task_interval_hours(task)
 
 
 def parse_schedule_metadata() -> Dict[str, Any]:
-    return _ops_health.parse_schedule_metadata(_read_tasks_config)
+    return _get_ops_api().parse_schedule_metadata()
 
 
 def summarize_fetch_report(report: Dict[str, Any]) -> Dict[str, Any]:
-    return _ops_health.summarize_fetch_report(report)
+    return _get_ops_api().summarize_fetch_report(report)
 
 
 def summarize_discovery_report(report: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
-    return _ops_health.summarize_discovery_report(
-        report, normalize_discovery_report_contract, parse_iso
-    )
+    return _get_ops_api().summarize_discovery_report(report)
 
 
 def sync_history_from_reports() -> List[Dict[str, Any]]:
-    return _run_history_api.sync_history_from_reports(
-        _run_history_api.SyncHistoryDeps(
-            ops_state_lock=OPS_STATE_LOCK,
-            load_run_history=load_run_history,
-            save_run_history=save_run_history,
-            prune_started_rows_for_type=prune_started_rows_for_type,
-            clear_task_state=clear_task_state,
-            clear_task_state_locked=_clear_task_state_locked,
-            upsert_run_history=upsert_run_history,
-            task_running_from_state=task_running_from_state,
-            report_is_stale_in_progress=report_is_stale_in_progress,
-            load_json_object=load_json_object,
-            normalize_fetch_report_contract=normalize_fetch_report_contract,
-            normalize_discovery_report_contract=normalize_discovery_report_contract,
-            summarize_fetch_report=summarize_fetch_report,
-            summarize_discovery_report=summarize_discovery_report,
-            jobs_fetch_report_path=JOBS_FETCH_REPORT_PATH,
-            discovery_report_path=DISCOVERY_REPORT_PATH,
-            get_active_sync_runs=SyncState.get_active_sync_runs,
-            parse_iso=parse_iso,
-            now_iso=now_iso,
-            now_utc=now_utc,
-        )
-    )
-
-
-def _build_ops_health_deps() -> Any:
-    deps = type("OpsHealthDeps", (), {})()
-    deps.get_history = lambda: sync_history_from_reports()
-    deps.get_fetch_report = lambda: normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {}))
-    deps.get_state = load_state
-    deps.now_iso = now_iso
-    deps.desktop_mode = RUNTIME_CONFIG.desktop_mode
-    deps.desktop_last_activity_at = bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT
-    deps.load_alert_state_fn = load_alert_state
-    deps.save_alert_state_fn = save_alert_state
-    deps.parse_schedule_metadata_fn = parse_schedule_metadata
-    deps.parse_iso = parse_iso
-    deps.now_utc = now_utc
-    return deps
+    return _get_ops_api().sync_history_from_reports()
 
 
 def compute_ops_health() -> Dict[str, Any]:
-    return _ops_health.compute_ops_health(_build_ops_health_deps())
+    return _get_ops_api().compute_ops_health()
 
 
 def compute_fetcher_metrics(window_runs: int = 20) -> Dict[str, Any]:
-    latest_fetch_report = normalize_fetch_report_contract(load_json_object(JOBS_FETCH_REPORT_PATH, {}))
-    history = sync_history_from_reports()
-    return fetcher_metrics_module.build_metrics(
-        latest_fetch_report,
-        history,
-        window=max(1, int(window_runs or 1)),
-    )
+    return _get_ops_api().compute_fetcher_metrics(window_runs=window_runs)
 
 
 def _set_sync_status(*, action: str = "", result: str = "", error: str = "", pulled: bool = False, pushed: bool = False) -> None:

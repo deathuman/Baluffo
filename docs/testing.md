@@ -53,6 +53,12 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | `admin_bridge_ops_root` | `tests/admin/conftest.py` |
 | `workspace_tmpdir(prefix)` (context manager) | `tests/helpers/temp_paths.py` |
 
+**Temp directory note (Windows sandbox):**
+
+- Prefer repo-local temp fixtures such as `workspace_tmpdir(...)` and `admin_bridge_ops_root` for new tests that write runtime state.
+- In this environment, direct pytest temp-root creation under `%LOCALAPPDATA%\\Temp` can hit Windows permission errors during setup/cleanup.
+- If a narrow bridge test run fails before assertions with tmpdir/tempfile ACL errors, rerun it with a repo-local `--basetemp` or the existing repo-local tempdir shim rather than treating it as a product regression.
+
 **Test-to-source map:**
 
 | Area | Test path |

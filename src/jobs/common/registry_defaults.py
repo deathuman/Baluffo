@@ -1,0 +1,197 @@
+"""Default registry rows and provider-redundancy rules for jobs sources."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+
+DEFAULT_STUDIO_SOURCE_REGISTRY: List[Dict[str, Any]] = [
+    {
+        "name": "Guerrilla Games",
+        "studio": "Guerrilla Games",
+        "adapter": "greenhouse",
+        "slug": "guerrilla-games",
+        "nlPriority": True,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "PlayStation Global",
+        "studio": "PlayStation Global",
+        "adapter": "greenhouse",
+        "slug": "sonyinteractiveentertainmentglobal",
+        "nlPriority": True,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Paradox Careers",
+        "studio": "Paradox Interactive",
+        "adapter": "teamtailor",
+        "listing_url": "https://career.paradoxplaza.com/jobs",
+        "base_url": "https://career.paradoxplaza.com",
+        "company": "Paradox Interactive",
+        "nlPriority": True,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Little Chicken",
+        "studio": "Little Chicken",
+        "adapter": "static",
+        "company": "Little Chicken",
+        "pages": [
+            "https://www.littlechicken.nl/about-us/jobs/",
+            "https://www.littlechicken.nl/job/",
+        ],
+        "nlPriority": True,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Larian Studios",
+        "studio": "Larian Studios",
+        "adapter": "greenhouse",
+        "slug": "larian-studios",
+        "nlPriority": True,
+        "enabledByDefault": False,
+    },
+    {
+        "name": "Bandai Namco Entertainment America (Greenhouse)",
+        "studio": "Bandai Namco Entertainment America Inc.",
+        "adapter": "greenhouse",
+        "slug": "bandainamco",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Jagex (Lever)",
+        "studio": "Jagex",
+        "adapter": "lever",
+        "account": "jagex",
+        "api_url": "https://api.lever.co/v0/postings/jagex?mode=json",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Sandbox VR (Lever)",
+        "studio": "Sandbox VR",
+        "adapter": "lever",
+        "account": "sandboxvr",
+        "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Voodoo (Lever)",
+        "studio": "Voodoo",
+        "adapter": "lever",
+        "account": "voodoo",
+        "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "CD PROJEKT RED (SmartRecruiters)",
+        "studio": "CD PROJEKT RED",
+        "adapter": "smartrecruiters",
+        "company_id": "CDPROJEKTRED",
+        "api_url": "https://api.smartrecruiters.com/v1/companies/CDPROJEKTRED/postings",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Gameloft (SmartRecruiters)",
+        "studio": "Gameloft",
+        "adapter": "smartrecruiters",
+        "company_id": "Gameloft",
+        "api_url": "https://api.smartrecruiters.com/v1/companies/Gameloft/postings",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Hutch (Workable)",
+        "studio": "Hutch",
+        "adapter": "workable",
+        "account": "hutch",
+        "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Wargaming (Workable)",
+        "studio": "Wargaming",
+        "adapter": "workable",
+        "account": "wargaming",
+        "api_url": "https://apply.workable.com/api/v1/widget/accounts/wargaming?details=true",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "InnoGames (Personio)",
+        "studio": "InnoGames",
+        "adapter": "personio",
+        "feed_url": "https://innogames.jobs.personio.de/xml",
+        "nlPriority": True,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Travian (Personio)",
+        "studio": "Travian",
+        "adapter": "personio",
+        "feed_url": "https://travian.jobs.personio.de/xml",
+        "nlPriority": True,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Jagex (Ashby)",
+        "studio": "Jagex",
+        "adapter": "ashby",
+        "board_url": "https://jobs.ashbyhq.com/jagex/jobs",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Scopely (Ashby)",
+        "studio": "Scopely",
+        "adapter": "ashby",
+        "board_url": "https://jobs.ashbyhq.com/scopely/jobs",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Ubisoft (SmartRecruiters)",
+        "studio": "Ubisoft",
+        "adapter": "smartrecruiters",
+        "company_id": "Ubisoft2",
+        "api_url": "https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+]
+
+REDUNDANT_STATIC_IF_PROVIDER: List[Dict[str, Any]] = [
+    {
+        "hosts": ["cdprojektred.com", "www.cdprojektred.com"],
+        "adapter": "smartrecruiters",
+        "provider_id_field": "company_id",
+        "provider_id_value": "CDPROJEKTRED",
+    },
+    {
+        "hosts": ["ubisoft.com", "www.ubisoft.com"],
+        "adapter": "smartrecruiters",
+        "provider_id_field": "company_id",
+        "provider_id_value": "Ubisoft2",
+    },
+    {
+        "hosts": ["xsolla.com", "www.xsolla.com"],
+        "adapter": "lever",
+        "provider_id_field": "account",
+        "provider_id_value": "xsolla",
+    },
+    {
+        "hosts": ["bandainamcoent.com", "www.bandainamcoent.com"],
+        "adapter": "greenhouse",
+        "provider_id_field": "slug",
+        "provider_id_value": "bandainamco",
+    },
+]
+
+
+__all__ = ["DEFAULT_STUDIO_SOURCE_REGISTRY", "REDUNDANT_STATIC_IF_PROVIDER"]

@@ -26,8 +26,9 @@ from src.jobs.models import RawJob
 from src.jobs.common import config as common_config
 from src.jobs.common import social as common_social
 from src.jobs.common import sources as common_sources
-from src.jobs.common import SOURCE_DIAGNOSTICS, SOURCE_REPORT_META, STUDIO_SOURCE_REGISTRY, registry_entries
+from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.contracts import SCHEMA_VERSION
+from src.jobs_fetcher_registry import SOURCE_REPORT_META
 from src.pipeline_io import (
     read_existing_output as read_existing_output_from_file,
     serialize_rows_for_csv,
@@ -36,6 +37,7 @@ from src.pipeline_io import (
     write_text_if_changed,
 )
 from src.shared.utils import env_flag, now_iso
+from src.jobs.registry import STUDIO_SOURCE_REGISTRY, registry_entries
 from src.jobs.text_utils import clean_text, norm_text
 from src.jobs.pipeline_stage_source_execution import SourceExecutionStageConfig, run_source_execution_stage
 from src.jobs.pipeline_bootstrap import build_pipeline_paths

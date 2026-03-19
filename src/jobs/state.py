@@ -11,7 +11,8 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from src.contracts import SCHEMA_VERSION
 from src.jobs.common import config as common_config
 from src.jobs.common import url as common_url
-from src.jobs.common import _clamped_int, parse_datetime, to_iso
+from src.jobs.common.datetime_utils import parse_datetime, to_iso
+from src.jobs.common.numbers import _clamped_int
 from src.jobs.dedup import dedup_secondary_key
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob

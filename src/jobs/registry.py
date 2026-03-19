@@ -7,9 +7,11 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from src.jobs.adapters import community
 from src.jobs.common import config as common_config
+from src.jobs.common.registry_defaults import DEFAULT_STUDIO_SOURCE_REGISTRY, REDUNDANT_STATIC_IF_PROVIDER
 from src.jobs.common import social as common_social
 from src.jobs.common import sources as common_sources
-from src.jobs.common import DEFAULT_STUDIO_SOURCE_REGISTRY
+from src.jobs.common.numbers import _clamped_int
+from src.jobs.common.registry import registry_entries as common_registry_entries
 from src.jobs.models import SourceConfig
 
 DEFAULT_SOCIAL_CONFIG = common_social.DEFAULT_SOCIAL_CONFIG
@@ -22,6 +24,7 @@ GOOGLE_SHEETS_SOURCES = community.GOOGLE_SHEETS_SOURCES
 SOURCE_REGISTRY_ACTIVE_PATH = common_config.SOURCE_REGISTRY_ACTIVE_PATH
 SOURCE_REGISTRY_PENDING_PATH = common_config.SOURCE_REGISTRY_PENDING_PATH
 SOURCE_APPROVAL_STATE_PATH = common_config.SOURCE_APPROVAL_STATE_PATH
+STUDIO_SOURCE_REGISTRY = common_sources.load_studio_source_registry(DEFAULT_STUDIO_SOURCE_REGISTRY)
 
 
 def load_registry_from_file(path: Path, fallback: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -43,13 +46,15 @@ def registry_entries(
     registry_rows: Optional[Sequence[SourceConfig]] = None,
 ) -> List[Dict[str, Any]]:
     if registry_rows is None:
-        from src.jobs.common import registry_entries as common_registry_entries
-
-        return common_registry_entries(adapter, enabled_only=enabled_only)
+        return common_registry_entries(
+            adapter,
+            enabled_only=enabled_only,
+            studio_source_registry=STUDIO_SOURCE_REGISTRY,
+            redundant_static_rules=REDUNDANT_STATIC_IF_PROVIDER,
+        )
     rows: List[Dict[str, Any]] = []
     for row in registry_rows:
         from src.jobs.text_utils import clean_text
-        from src.jobs.common import _clamped_int  # noqa: SLF001
 
         if clean_text(row.get("adapter")) != adapter:
             continue

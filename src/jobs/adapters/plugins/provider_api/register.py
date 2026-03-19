@@ -10,9 +10,10 @@ from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import AdapterPluginContext, SimpleAdapterPlugin
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, parse_teamtailor_listing_links
-from src.jobs.common import GREENHOUSE_JOBS_URL_TEMPLATE, registry_entries, set_source_diagnostics
+from src.jobs.common.config import GREENHOUSE_JOBS_URL_TEMPLATE
 from src.jobs.models import RawJob
 from src.jobs.common.fetch import fetch_with_retries
+from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
 
 _REGISTERED = False

@@ -8,12 +8,12 @@ from typing import Any, Dict, List, Sequence
 from src.jobs.adapters import community
 from src.scrapers.domain_profiles import domain_profile_for_url, pick_canonical_listing_url
 from src.jobs.common import config as common_config
-from src.jobs.common import _clamped_int
-from src.jobs.common import (
+from src.jobs.common.contracts import (
     normalize_fetch_report_payload,
     normalize_runtime_payload,
     normalize_source_report_row,
 )
+from src.jobs.common.numbers import _clamped_int
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text
 from src.contracts import SCHEMA_VERSION
