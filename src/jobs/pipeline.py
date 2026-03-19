@@ -121,6 +121,81 @@ def _canonicalize_existing_output_row(row: Dict[str, Any], *, source: str, fetch
     return payload
 
 
+def _percentile_ms(values: List[int], percentile: float) -> int:
+    if not values:
+        return 0
+    ordered = sorted(max(0, int(value or 0)) for value in values)
+    if len(ordered) == 1:
+        return int(ordered[0])
+    index = int(round((len(ordered) - 1) * max(0.0, min(1.0, float(percentile)))))
+    return int(ordered[index])
+
+
+def build_runtime_timing_summary(source_reports: List[Dict[str, Any]]) -> Dict[str, Any]:
+    rows = [row for row in source_reports if isinstance(row, dict)]
+    durations = [max(0, int(row.get("durationMs") or 0)) for row in rows]
+    stage_keys = [
+        "fetchAndParse",
+        "listingFetch",
+        "parseCsv",
+        "candidateExtraction",
+        "detailFetch",
+        "redirectResolve",
+        "canonicalization",
+    ]
+    stage_totals: Dict[str, int] = {key: 0 for key in stage_keys}
+    for row in rows:
+        stage_timings = row.get("stageTimingsMs") if isinstance(row.get("stageTimingsMs"), dict) else {}
+        for key in stage_keys:
+            stage_totals[key] += max(0, int(stage_timings.get(key) or 0))
+    slowest_sources = [
+        {
+            "name": clean_text(row.get("name")),
+            "adapter": clean_text(row.get("adapter")),
+            "durationMs": max(0, int(row.get("durationMs") or 0)),
+            "keptCount": max(0, int(row.get("keptCount") or 0)),
+            "detailPagesVisited": int(
+                (((row.get("details") or [{}])[0] if isinstance(row.get("details"), list) and row.get("details") else {}).get("stats") or {}).get("detail_pages_visited") or 0
+            ),
+            "detailYieldPct": int(
+                (((row.get("details") or [{}])[0] if isinstance(row.get("details"), list) and row.get("details") else {}).get("stats") or {}).get("detail_yield_percent") or 0
+            ),
+        }
+        for row in sorted(rows, key=lambda item: int(item.get("durationMs") or 0), reverse=True)[:10]
+    ]
+    stage_top = [
+        {"stage": key, "durationMs": int(value)}
+        for key, value in sorted(stage_totals.items(), key=lambda item: int(item[1]), reverse=True)
+        if int(value) > 0
+    ][:5]
+    high_cost_low_yield = [
+        {
+            "name": clean_text(row.get("name")),
+            "adapter": clean_text(row.get("adapter")),
+            "durationMs": max(0, int(row.get("durationMs") or 0)),
+            "keptCount": max(0, int(row.get("keptCount") or 0)),
+        }
+        for row in sorted(
+            [
+                row
+                for row in rows
+                if max(0, int(row.get("durationMs") or 0)) >= 20_000 and max(0, int(row.get("keptCount") or 0)) <= 1
+            ],
+            key=lambda item: int(item.get("durationMs") or 0),
+            reverse=True,
+        )[:5]
+    ]
+    return {
+        "totalDurationMs": int(sum(durations)),
+        "medianSourceDurationMs": _percentile_ms(durations, 0.5),
+        "p95SourceDurationMs": _percentile_ms(durations, 0.95),
+        "stageTotalsMs": stage_totals,
+        "stageTop": stage_top,
+        "highCostLowYieldSources": high_cost_low_yield,
+        "slowestSources": slowest_sources,
+    }
+
+
 def default_source_loaders(
     *,
     social_enabled: bool = False,
@@ -149,6 +224,8 @@ def default_source_loaders(
 def run_pipeline(
     *,
     output_dir: Path,
+    run_id: str = "",
+    started_at_override: str = "",
     timeout_s: int = DEFAULT_TIMEOUT_S,
     retries: int = DEFAULT_RETRIES,
     backoff_s: float = DEFAULT_BACKOFF_S,
@@ -179,7 +256,7 @@ def run_pipeline(
     paths = build_pipeline_paths(output_dir)
     SOURCE_DIAGNOSTICS.clear()
 
-    started_at = now_iso()
+    started_at = clean_text(started_at_override) or now_iso()
     source_reports: List[Dict[str, Any]] = []
     if isinstance(selection_exclusions, list):
         source_reports.extend([row for row in selection_exclusions if isinstance(row, dict)])
@@ -284,9 +361,10 @@ def run_pipeline(
     )
     source_reports.extend(excluded_by_circuit)
 
-    task_runtime = initialize_task_runtime(selected_loaders)
+    task_runtime = initialize_task_runtime(selected_loaders, show_progress=show_progress)
     write_task_state = make_task_state_writer(
         runtime=task_runtime,
+        run_id=run_id,
         started_at=started_at,
         report_path=str(paths.report_path),
         task_state_path=paths.task_state_path,
@@ -315,6 +393,7 @@ def run_pipeline(
         normalize_fetch_report_payload=normalize_fetch_report_payload,
         write_text_if_changed=write_text_if_changed,
         deduplicator_factory=CanonicalDeduplicator,
+        run_id=run_id,
     )
 
     stage_config = SourceExecutionStageConfig(
@@ -441,9 +520,20 @@ def run_pipeline(
     light_json_bytes = paths.light_json_path.stat().st_size if paths.light_json_path.exists() else 0
     browser_fallback_queue_rows = build_browser_fallback_queue(source_reports, generated_at=lifecycle_finished_at)
     write_text_if_changed(paths.browser_fallback_queue_path, json.dumps(browser_fallback_queue_rows, indent=2, ensure_ascii=False))
+    timing_summary = build_runtime_timing_summary(source_reports)
+    runtime_payload["slowestSources"] = list(timing_summary.get("slowestSources") or [])
+    runtime_payload["timingSummary"] = {
+        "totalDurationMs": int(timing_summary.get("totalDurationMs") or 0),
+        "medianSourceDurationMs": int(timing_summary.get("medianSourceDurationMs") or 0),
+        "p95SourceDurationMs": int(timing_summary.get("p95SourceDurationMs") or 0),
+        "stageTotalsMs": dict(timing_summary.get("stageTotalsMs") or {}),
+        "stageTop": list(timing_summary.get("stageTop") or []),
+        "highCostLowYieldSources": list(timing_summary.get("highCostLowYieldSources") or []),
+    }
 
     report_payload = normalize_fetch_report_payload({
         "schemaVersion": SCHEMA_VERSION,
+        "runId": run_id,
         "startedAt": started_at,
         "finishedAt": lifecycle_finished_at,
         "runtime": runtime_payload,
@@ -472,25 +562,6 @@ def run_pipeline(
             "changed": {"json": wrote_json, "csv": wrote_csv, "lightJson": wrote_light_json},
         },
     })
-    report_payload["runtime"]["slowestSources"] = [
-        {
-            "name": clean_text(row.get("name")),
-            "adapter": clean_text(row.get("adapter")),
-            "durationMs": int(row.get("durationMs") or 0),
-            "keptCount": int(row.get("keptCount") or 0),
-            "detailPagesVisited": int(
-                (((row.get("details") or [{}])[0] if isinstance(row.get("details"), list) and row.get("details") else {}).get("stats") or {}).get("detail_pages_visited") or 0
-            ),
-            "detailYieldPct": int(
-                (((row.get("details") or [{}])[0] if isinstance(row.get("details"), list) and row.get("details") else {}).get("stats") or {}).get("detail_yield_percent") or 0
-            ),
-        }
-        for row in sorted(
-            [row for row in report_payload.get("sources", []) if isinstance(row, dict)],
-            key=lambda item: int(item.get("durationMs") or 0),
-            reverse=True,
-        )[:10]
-    ]
     write_text_if_changed(paths.report_path, json.dumps(report_payload, indent=2, ensure_ascii=False))
     finished_at = clean_text(report_payload.get("finishedAt")) or now_iso()
     write_task_state(finished_at=finished_at, force=True)
@@ -628,6 +699,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    env_run_id = clean_text(os.environ.get("BALUFFO_FETCH_RUN_ID"))
+    env_started_at = clean_text(os.environ.get("BALUFFO_FETCH_STARTED_AT"))
     source_loaders: Optional[List[Tuple[str, SourceLoader]]] = None
     seed_from_existing_output = False
     selection_exclusions: List[Dict[str, Any]] = []
@@ -701,6 +774,8 @@ def main() -> int:
         deduped_selection_exclusions.append(row)
     report = run_pipeline(
         output_dir=Path(args.output_dir),
+        run_id=env_run_id,
+        started_at_override=env_started_at,
         timeout_s=args.timeout,
         retries=args.retries,
         backoff_s=args.backoff,
@@ -729,10 +804,30 @@ def main() -> int:
     summary = report.get("summary", {})
     output_count = int(summary.get("outputCount") or 0)
     failed_sources = int(summary.get("failedSources") or 0)
+    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
+    timing_summary = runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
+    stage_top = timing_summary.get("stageTop") if isinstance(timing_summary.get("stageTop"), list) else []
+    slowest_sources = runtime.get("slowestSources") if isinstance(runtime.get("slowestSources"), list) else []
     print(
         f"Jobs fetch completed. Output jobs: {output_count}. "
         f"Failed sources: {failed_sources}. Report: {report['outputs']['report']}"
     )
+    if stage_top:
+        top_stage_summary = " | ".join(
+            f"{clean_text(item.get('stage'))}={int(item.get('durationMs') or 0)}ms"
+            for item in stage_top[:3]
+            if isinstance(item, dict)
+        )
+        if top_stage_summary:
+            print(f"[jobs_fetcher] TIMING top-stages {top_stage_summary}", flush=True)
+    if slowest_sources:
+        slowest_summary = " | ".join(
+            f"{clean_text(item.get('name'))}={int(item.get('durationMs') or 0)}ms"
+            for item in slowest_sources[:3]
+            if isinstance(item, dict)
+        )
+        if slowest_summary:
+            print(f"[jobs_fetcher] TIMING slowest-sources {slowest_summary}", flush=True)
     return 0 if output_count > 0 else 2
 
 

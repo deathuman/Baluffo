@@ -41,6 +41,10 @@ def parse_jobpostings_from_html(
 
 
 parse_google_sheets_csv = community.parse_google_sheets_csv
+parse_gamejobs_html = community.parse_gamejobs_html
+parse_workwithindies_html = community.parse_workwithindies_html
+parse_8bitplay_html = community.parse_8bitplay_html
+parse_gracklehq_html = community.parse_gracklehq_html
 parse_reddit_json_payload = _social_parsers.parse_reddit_json_payload
 parse_reddit_rss_payload = _social_parsers.parse_reddit_rss_payload
 parse_x_payload = _social_parsers.parse_x_payload
@@ -50,8 +54,12 @@ parse_greenhouse_jobs_payload = _provider_parsers.parse_greenhouse_jobs_payload
 parse_lever_jobs_payload = _provider_parsers.parse_lever_jobs_payload
 parse_smartrecruiters_jobs_payload = _provider_parsers.parse_smartrecruiters_jobs_payload
 parse_workable_jobs_payload = _provider_parsers.parse_workable_jobs_payload
+parse_recruitee_jobs_payload = _provider_parsers.parse_recruitee_jobs_payload
+parse_pinpoint_jobs_payload = _provider_parsers.parse_pinpoint_jobs_payload
 parse_epic_games_jobs_payload = _provider_parsers.parse_epic_games_jobs_payload
 parse_ashby_jobs_from_html = _provider_parsers.parse_ashby_jobs_from_html
+parse_breezy_jobs_html = _provider_parsers.parse_breezy_jobs_html
+parse_jazzhr_jobs_html = _provider_parsers.parse_jazzhr_jobs_html
 parse_personio_feed_xml = _provider_parsers.parse_personio_feed_xml
 
 

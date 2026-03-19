@@ -13,6 +13,7 @@ export function createAdminAuthController({
   setSourceStatus,
   setFetcherLogPlaceholder,
   setDiscoveryLogPlaceholder,
+  clearOptimisticFetchRun,
   clearOptimisticDiscoveryRun,
   setManualSourceFeedback,
   setOpsPlaceholders,
@@ -121,6 +122,7 @@ export function createAdminAuthController({
 
     state.adminPin = nextPin;
     state.syncConfigDirty = false;
+    clearOptimisticFetchRun();
     clearOptimisticDiscoveryRun();
     resetBusyFlags();
     adminDispatch.dispatch({ type: adminActions.UNLOCKED });
@@ -158,6 +160,7 @@ export function createAdminAuthController({
     state.adminPin = "";
     state.syncConfigDirty = false;
     state.latestSyncStatusCache = null;
+    clearOptimisticFetchRun();
     clearOptimisticDiscoveryRun();
     resetBusyFlags();
     adminDispatch.dispatch({ type: adminActions.LOCKED });

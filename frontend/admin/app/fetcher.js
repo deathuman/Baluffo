@@ -1,4 +1,4 @@
-import { deriveFetcherProgressModel } from "../domain.js";
+import { deriveFetcherFailureSummary, deriveFetcherProgressModel } from "../domain.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
 
 export const FETCHER_FALLBACK_MESSAGES = {
@@ -170,6 +170,22 @@ export function createAdminFetcherController({
     appendFetcherLog(message, "muted");
   }
 
+  function setOptimisticFetchRun(runMeta) {
+    const startedAt = String(runMeta?.startedAt || "").trim();
+    if (!startedAt) {
+      state.fetchOptimisticRun = null;
+      return;
+    }
+    state.fetchOptimisticRun = {
+      runId: String(runMeta?.runId || ""),
+      startedAt
+    };
+  }
+
+  function clearOptimisticFetchRun() {
+    state.fetchOptimisticRun = null;
+  }
+
   async function loadFetcherLogChunk(options = {}) {
     if (!state.adminPin) return null;
     const reset = Boolean(options?.reset);
@@ -179,6 +195,23 @@ export function createAdminFetcherController({
     appendFetcherServerLogText(String(payload?.text || ""));
     state.fetcherLogRemoteOffset = Math.max(0, Number(payload?.nextOffset) || 0);
     return payload || null;
+  }
+
+  function stopFetcherLogPolling() {
+    if (!state.fetcherLogPollTimer) return;
+    clearTimeout(state.fetcherLogPollTimer);
+    state.fetcherLogPollTimer = null;
+  }
+
+  function scheduleFetcherLogPoll(delayMs) {
+    stopFetcherLogPolling();
+    state.fetcherLogPollTimer = setTimeout(() => {
+      loadFetcherLogChunk().catch(() => null).finally(() => {
+        if (state.adminBusyState.fetcherWatch) {
+          scheduleFetcherLogPoll(delayMs);
+        }
+      });
+    }, Math.max(250, Number(delayMs) || 900));
   }
 
   function formatFetcherRuntimeOptions(report) {
@@ -224,6 +257,26 @@ export function createAdminFetcherController({
       return "";
     }
     return `Lifecycle: active ${active.toLocaleString()}, likely removed ${likelyRemoved.toLocaleString()}, archived ${archived.toLocaleString()}, tracked ${tracked.toLocaleString()}`;
+  }
+
+  function formatStageTopSummary(report) {
+    const timing = report?.runtime?.timingSummary || {};
+    const stageTop = Array.isArray(timing?.stageTop) ? timing.stageTop : [];
+    if (!stageTop.length) return "";
+    return stageTop
+      .slice(0, 3)
+      .map(item => `${String(item?.stage || "unknown")} ${formatDurationCompact(item?.durationMs)}`)
+      .join(" | ");
+  }
+
+  function selectSlowSources(report) {
+    const runtimeSlowest = Array.isArray(report?.runtime?.slowestSources) ? report.runtime.slowestSources : [];
+    if (runtimeSlowest.length) return runtimeSlowest;
+    const sources = Array.isArray(report?.sources) ? report.sources : [];
+    return sources
+      .filter(source => Number(source?.durationMs || 0) >= 20_000)
+      .sort((a, b) => Number(b?.durationMs || 0) - Number(a?.durationMs || 0))
+      .slice(0, 5);
   }
 
   async function fetchJobsFetchReportJsonWithRetry(maxAttempts = 3, delayMs = 850) {
@@ -285,13 +338,22 @@ export function createAdminFetcherController({
       if (failedSources.length) {
         appendFetcherLog(`Failures: ${failedSources.join(" | ")}`, "warn");
       }
-      const slowSources = sources
-        .filter(source => Number(source?.durationMs || 0) >= 20_000)
-        .sort((a, b) => Number(b?.durationMs || 0) - Number(a?.durationMs || 0))
+      const failureSummary = deriveFetcherFailureSummary(report);
+      if (Array.isArray(failureSummary?.buckets) && failureSummary.buckets.length) {
+        const bucketLine = failureSummary.buckets
+          .map(bucket => `${String(bucket.key || "").replaceAll("_", " ")} ${Number(bucket.count || 0)}`)
+          .join(" | ");
+        appendFetcherLog(`Failure buckets: ${bucketLine}`, "warn");
+      }
+      const slowSources = selectSlowSources(report)
         .slice(0, 2)
         .map(source => `${String(source?.name || "unknown")} ${formatDurationCompact(source?.durationMs)}`);
       if (slowSources.length) {
         appendFetcherLog(`Slowest sources: ${slowSources.join(" | ")}`, "muted");
+      }
+      const slowStages = formatStageTopSummary(report);
+      if (slowStages) {
+        appendFetcherLog(`Slowest stages: ${slowStages}`, "muted");
       }
 
       loadOpsHealthData().catch(() => {});
@@ -307,14 +369,33 @@ export function createAdminFetcherController({
       return;
     }
     state.latestFetcherReportCache = report;
+    const failureSummary = deriveFetcherFailureSummary(report);
     const failures = (Array.isArray(report?.sources) ? report.sources : []).filter(
       row => String(row?.status || "").toLowerCase() === "error"
     );
-    if (!failures.length) {
+    if (!failures.length && !(Array.isArray(failureSummary?.buckets) && failureSummary.buckets.length)) {
       showToast("No failed sources in latest report.", "info");
       return;
     }
-    const summary = failures.map(row => `${row?.name || "unknown"}: ${row?.error || "error"}`).join("\n");
+    const summaryLines = [];
+    summaryLines.push(`Top-level failed sources: ${Number(failureSummary?.topLevelFailedSources || failures.length)}`);
+    summaryLines.push(`Grouped detail failures: ${Number(failureSummary?.detailFailureCount || 0)}`);
+    if (Array.isArray(failureSummary?.buckets) && failureSummary.buckets.length) {
+      summaryLines.push("");
+      summaryLines.push("Failure buckets:");
+      failureSummary.buckets.forEach(bucket => {
+        const examples = Array.isArray(bucket?.examples) && bucket.examples.length ? ` (${bucket.examples.join(" | ")})` : "";
+        summaryLines.push(`- ${String(bucket?.key || "uncategorized")}: ${Number(bucket?.count || 0)}${examples}`);
+      });
+    }
+    if (failures.length) {
+      summaryLines.push("");
+      summaryLines.push("Top-level failures:");
+      failures.forEach(row => {
+        summaryLines.push(`${row?.name || "unknown"}: ${row?.error || "error"}`);
+      });
+    }
+    const summary = summaryLines.join("\n");
     if (navigator?.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(summary);
@@ -416,6 +497,21 @@ export function createAdminFetcherController({
       appendFetcherLog(item.message, item.level);
     });
 
+    const slowSourceLine = selectSlowSources(report)
+      .slice(0, 2)
+      .map(source => `${String(source?.name || "unknown")} ${formatDurationCompact(source?.durationMs)}`)
+      .join(" | ");
+    if (slowSourceLine && slowSourceLine !== liveState.slowSourceSummarySignature) {
+      liveState.slowSourceSummarySignature = slowSourceLine;
+      appendFetcherLog(`Slowest sources: ${slowSourceLine}`, "muted");
+    }
+
+    const slowStageLine = formatStageTopSummary(report);
+    if (slowStageLine && slowStageLine !== liveState.slowStageSummarySignature) {
+      liveState.slowStageSummarySignature = slowStageLine;
+      appendFetcherLog(`Slowest stages: ${slowStageLine}`, "muted");
+    }
+
     if ((nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 12000) {
       liveState.lastHeartbeatAtMs = nowMs;
       appendFetcherLog(
@@ -429,6 +525,10 @@ export function createAdminFetcherController({
     stopFetcherCompletionWatch();
     setBusyFlag("fetcherWatch", true);
     state.fetcherLaunchAtMs = Date.now();
+    const optimisticStartedAtMs = parseReportTimestampMs(state.fetchOptimisticRun?.startedAt);
+    if (optimisticStartedAtMs > 0) {
+      state.fetcherLaunchAtMs = optimisticStartedAtMs;
+    }
     state.fetcherCompletionPollDeadline = state.fetcherLaunchAtMs + fetchReportPollTimeoutMs;
     state.fetcherLogRemoteOffset = 0;
     state.fetcherLiveProgressState = {
@@ -436,11 +536,14 @@ export function createAdminFetcherController({
       sourceSignatures: new Map(),
       reportedSlowSources: new Set(),
       serverLogSignatures: new Set(),
+      slowSourceSummarySignature: "",
+      slowStageSummarySignature: "",
       lastHeartbeatAtMs: 0
     };
     updateFetcherProgressFromReport(null, { running: true });
     appendFetcherLog("Fetcher started. Watching live progress...", "info");
     loadFetcherLogChunk({ reset: true }).catch(() => {});
+    scheduleFetcherLogPoll(700);
     scheduleFetcherCompletionPoll(900);
   }
 
@@ -449,6 +552,7 @@ export function createAdminFetcherController({
       clearTimeout(state.fetcherCompletionPollTimer);
       state.fetcherCompletionPollTimer = null;
     }
+    stopFetcherLogPolling();
     state.fetcherLiveProgressState = null;
     setFetcherProgress({ active: false });
     setBusyFlag("fetcherWatch", false);
@@ -467,14 +571,13 @@ export function createAdminFetcherController({
     const now = Date.now();
     if (now >= state.fetcherCompletionPollDeadline) {
       appendFetcherLog("Could not confirm completion from report within timeout window.", "warn");
+      setBusyFlag("liveFetchRunning", false);
+      clearOptimisticFetchRun();
       stopFetcherCompletionWatch();
       return;
     }
 
-    const [report] = await Promise.all([
-      fetchJobsFetchReportJson(),
-      loadFetcherLogChunk().catch(() => null)
-    ]);
+    const report = await fetchJobsFetchReportJson();
     const startedMs = parseReportTimestampMs(report?.startedAt);
     if (startedMs >= (state.fetcherLaunchAtMs - 1000)) {
       appendFetcherProgressFromReport(report, now);
@@ -487,7 +590,19 @@ export function createAdminFetcherController({
         `Fetcher completed: output ${Number(summary.outputCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
         Number(summary.failedSources || 0) > 0 ? "warn" : "success"
       );
+      const slowSources = selectSlowSources(report)
+        .slice(0, 3)
+        .map(source => `${String(source?.name || "unknown")} ${formatDurationCompact(source?.durationMs)}`);
+      if (slowSources.length) {
+        appendFetcherLog(`Slowest sources: ${slowSources.join(" | ")}`, "muted");
+      }
+      const slowStages = formatStageTopSummary(report);
+      if (slowStages) {
+        appendFetcherLog(`Slowest stages: ${slowStages}`, "muted");
+      }
       emitJobsAutoRefreshSignal(report);
+      setBusyFlag("liveFetchRunning", false);
+      clearOptimisticFetchRun();
       stopFetcherCompletionWatch();
       return;
     }
@@ -521,6 +636,8 @@ export function createAdminFetcherController({
     try {
       const bridge = await postBridge("/tasks/run-fetcher", payload);
       if (bridge && bridge.started) {
+        setOptimisticFetchRun(bridge);
+        setBusyFlag("liveFetchRunning", true);
         const presetLabel = String(bridge?.preset || presetMeta.preset || "default");
         const argsLabel = Array.isArray(bridge?.args) ? bridge.args.join(" ") : "";
         appendFetcherLog(
@@ -548,6 +665,11 @@ export function createAdminFetcherController({
     }
     appendFetcherLog("Preparing jobs fetcher task launch from admin panel.");
     showToast("Attempting fetcher launch...", "info");
+    setOptimisticFetchRun({
+      runId: `fallback-fetch:${Date.now()}`,
+      startedAt: new Date().toISOString()
+    });
+    setBusyFlag("liveFetchRunning", true);
     const taskArgQuoted = encodeURIComponent(JSON.stringify(jobsFetcherTaskLabel));
     const taskArgRaw = encodeURIComponent(jobsFetcherTaskLabel);
     const taskUris = [
@@ -597,6 +719,7 @@ export function createAdminFetcherController({
     getFetcherPresetMeta,
     applyFetcherPresetMetadata,
     setFetcherLogPlaceholder,
+    clearOptimisticFetchRun,
     appendFetcherLog,
     loadLatestFetcherReport,
     copyLatestFailureSummary,

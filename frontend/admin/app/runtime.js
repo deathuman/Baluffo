@@ -33,6 +33,7 @@ import {
   deriveSourceStatus as deriveSourceStatusFromDomain,
   normalizeOpsRuns as normalizeOpsRunsFromDomain,
   applyOptimisticDiscoveryRun as applyOptimisticDiscoveryRunFromDomain,
+  applyOptimisticFetchRun as applyOptimisticFetchRunFromDomain,
   getOpsPollIntervalMs as getOpsPollIntervalMsFromDomain
 } from "../domain.js";
 import {
@@ -341,6 +342,7 @@ function composeControllers() {
     postBridge,
     normalizeOpsRuns: (runs, nowMs = Date.now()) => normalizeOpsRunsFromDomain(runs, nowMs),
     applyOptimisticDiscoveryRun: (runModel, optimisticRun, nowMs = Date.now()) => applyOptimisticDiscoveryRunFromDomain(runModel, optimisticRun, nowMs),
+    applyOptimisticFetchRun: (runModel, optimisticRun, nowMs = Date.now()) => applyOptimisticFetchRunFromDomain(runModel, optimisticRun, nowMs),
     getOpsPollIntervalMs: hasLiveRuns => getOpsPollIntervalMsFromDomain(hasLiveRuns, OPS_POLL_IDLE_INTERVAL_MS, OPS_POLL_LIVE_INTERVAL_MS),
     renderAdminOpsAlerts,
     renderAdminOpsKpis,
@@ -456,6 +458,7 @@ function composeControllers() {
     setSourceFilter,
     setSourceStatus,
     setFetcherLogPlaceholder: (...args) => fetcherController.setFetcherLogPlaceholder(...args),
+    clearOptimisticFetchRun: (...args) => fetcherController.clearOptimisticFetchRun(...args),
     setDiscoveryLogPlaceholder: (...args) => discoveryController.setDiscoveryLogPlaceholder(...args),
     clearOptimisticDiscoveryRun: (...args) => discoveryController.clearOptimisticDiscoveryRun(...args),
     setManualSourceFeedback: (...args) => registryController.setManualSourceFeedback(...args),

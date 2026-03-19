@@ -282,7 +282,7 @@ def test_build_fetcher_args_retry_failed_is_deterministic_and_filters_unknown(ad
     idx = args.index("--only-sources")
     assert args[idx + 1] == "google_sheets,remote_ok"
     assert "--ignore-circuit-breaker" in args
-    assert "--quiet" in args
+    assert "--quiet" not in args
     assert "--fetch-strategy" in args
     assert "--adapter-http-concurrency" in args
 
@@ -301,7 +301,7 @@ def test_build_fetcher_args_retry_failed_omits_only_sources_when_no_known_failur
     assert preset == "retry_failed"
     assert "--only-sources" not in args
     assert "--ignore-circuit-breaker" in args
-    assert "--quiet" in args
+    assert "--quiet" not in args
 
 
 def test_build_fetcher_args_accepts_cadence_and_strategy_overrides(admin_bridge_entrypoint_root):
@@ -358,6 +358,33 @@ def test_sync_history_from_reports_prunes_stale_started_rows_when_report_stuck(a
     assert started_rows == []
 
 
+def test_sync_history_from_reports_marks_stale_discovery_report_finished(admin_bridge_entrypoint_root):
+    old_started = "2026-03-01T00:00:00+00:00"
+    admin_bridge.save_json_atomic(
+        admin_bridge.DISCOVERY_REPORT_PATH,
+        {
+            "startedAt": old_started,
+            "finishedAt": "",
+            "summary": {
+                "foundEndpointCount": 0,
+                "probedCandidateCount": 0,
+                "queuedCandidateCount": 0,
+                "failedProbeCount": 0,
+            },
+            "candidates": [],
+            "failures": [],
+        },
+    )
+    old_ts = 1_700_000_000
+    os.utime(admin_bridge.DISCOVERY_REPORT_PATH, (old_ts, old_ts))
+
+    admin_bridge.sync_history_from_reports()
+
+    report = admin_bridge.load_json_object(admin_bridge.DISCOVERY_REPORT_PATH, {})
+    assert str(report.get("finishedAt") or "").strip()
+    assert str((report.get("summary") or {}).get("error") or "") == "stale_started_run_pruned"
+
+
 def test_infer_studio_name_from_host_skips_www_and_splits_studio_token(admin_bridge_entrypoint_root):
     studio = admin_bridge.infer_studio_name_from_host("https://www.naconstudiomilan.com/careers/")
     assert studio == "Nacon Studio Milan"
@@ -410,3 +437,132 @@ def test_run_background_script_uses_child_script_mode_when_frozen(admin_bridge_e
     assert command[:5] == ["C:/tmp/Baluffo.exe", "__child_script__", "--root", str(admin_bridge_entrypoint_root), "--script"]
     assert "source_discovery.py" in command
     assert command[-2:] == ["--mode", "dynamic"]
+
+
+def test_run_background_script_uses_unbuffered_python_for_live_logs(admin_bridge_entrypoint_root):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=True,
+        desktop_mode=False,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    fake_proc = type("FakeProc", (), {"pid": 24680})()
+    with mock.patch.object(admin_bridge.sys, "frozen", False, create=True), mock.patch.object(
+        admin_bridge.sys, "executable", "C:/Python313/python.exe"
+    ), mock.patch.object(admin_bridge.subprocess, "Popen", return_value=fake_proc) as popen_mock:
+        admin_bridge.run_background_script("source_discovery.py", ["--mode", "dynamic"])
+    command = popen_mock.call_args.args[0]
+    kwargs = popen_mock.call_args.kwargs
+    assert command[:4] == ["C:/Python313/python.exe", "-u", "-m", "src.source_discovery"]
+    assert command[-2:] == ["--mode", "dynamic"]
+    assert kwargs["env"]["PYTHONUNBUFFERED"] == "1"
+
+
+def test_start_fetcher_task_writes_report_shell_with_run_id(admin_bridge_entrypoint_root):
+    with mock.patch.object(admin_bridge, "run_background_script", return_value=24680):
+        result = admin_bridge.start_fetcher_task({})
+
+    assert result["started"] is True
+    run_id = str(result.get("runId") or "")
+    assert run_id.startswith("fetch_")
+
+    report = admin_bridge.load_json_object(admin_bridge.JOBS_FETCH_REPORT_PATH, {})
+    assert str(report.get("runId") or "") == run_id
+    assert str(report.get("startedAt") or "") == str(result.get("startedAt") or "")
+    assert str(report.get("finishedAt") or "") == ""
+
+    rows = admin_bridge.load_run_history()
+    assert any(
+        str(row.get("type") or "") == "fetch"
+        and str(row.get("status") or "") == "started"
+        and str(row.get("runId") or "") == run_id
+        for row in rows
+    )
+
+
+def test_sync_history_from_reports_merges_fetch_launcher_and_report_rows_by_run_id(admin_bridge_entrypoint_root):
+    run_id = "fetch_merge_1"
+    started_at = "2026-03-01T00:00:00+00:00"
+    finished_at = "2026-03-01T00:03:00+00:00"
+    admin_bridge.save_json_atomic(
+        admin_bridge.OPS_HISTORY_PATH,
+        [
+            {
+                "id": run_id,
+                "runId": run_id,
+                "type": "fetch",
+                "status": "started",
+                "startedAt": started_at,
+                "finishedAt": "",
+                "durationMs": 0,
+                "summary": {},
+            }
+        ],
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "runId": run_id,
+            "startedAt": started_at,
+            "finishedAt": finished_at,
+            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 5},
+            "sources": [],
+        },
+    )
+
+    rows = admin_bridge.sync_history_from_reports()
+    matching = [row for row in rows if str(row.get("runId") or "") == run_id]
+    assert len(matching) == 1
+    assert str(matching[0].get("status") or "") == "warning"
+    assert str(matching[0].get("finishedAt") or "") == finished_at
+
+
+def test_sync_history_from_reports_collapses_legacy_fetch_duplicates_by_timestamps(admin_bridge_entrypoint_root):
+    started_at = "2026-03-01T00:00:00+00:00"
+    finished_at = "2026-03-01T00:03:00+00:00"
+    admin_bridge.save_json_atomic(
+        admin_bridge.OPS_HISTORY_PATH,
+        [
+            {
+                "id": "run_a",
+                "type": "fetch",
+                "status": "warning",
+                "startedAt": started_at,
+                "finishedAt": finished_at,
+                "durationMs": 1000,
+                "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 5},
+            },
+            {
+                "id": "run_b",
+                "type": "fetch",
+                "status": "warning",
+                "startedAt": started_at,
+                "finishedAt": finished_at,
+                "durationMs": 1000,
+                "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 5},
+            },
+        ],
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "startedAt": started_at,
+            "finishedAt": finished_at,
+            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 5},
+            "sources": [],
+        },
+    )
+
+    rows = admin_bridge.sync_history_from_reports()
+    matching = [
+        row for row in rows
+        if str(row.get("type") or "") == "fetch"
+        and str(row.get("startedAt") or "") == started_at
+        and str(row.get("finishedAt") or "") == finished_at
+    ]
+    assert len(matching) == 1

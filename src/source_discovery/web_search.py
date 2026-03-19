@@ -78,7 +78,7 @@ def _is_retryable_error(exc: Exception) -> bool:
 
 
 def fetch_text_with_retry(url: str, timeout_s: int, *, adapter: str, fetcher=fetch_text) -> str:
-    if adapter in {"workable", "personio", "ashby"}:
+    if adapter in {"workable", "personio", "ashby", "recruitee", "pinpoint"}:
         time.sleep(0.18)
     attempts = FETCH_MAX_RETRIES + 1
     last_exc: Optional[Exception] = None
@@ -102,7 +102,7 @@ async def async_fetch_text_with_retry(
     adapter: str,
     fetcher,
 ) -> str:
-    if adapter in {"workable", "personio", "ashby"}:
+    if adapter in {"workable", "personio", "ashby", "recruitee", "pinpoint"}:
         await asyncio.sleep(0.18)
     attempts = FETCH_MAX_RETRIES + 1
     last_exc: Optional[Exception] = None
@@ -265,6 +265,42 @@ def _provider_candidate(
             "evidenceTypes": evidence_types,
             "evidenceSource": evidence_source,
         }
+    if adapter == "recruitee":
+        subdomain = host.split(".recruitee.com", 1)[0]
+        if not subdomain:
+            return None
+        return {
+            "name": f"{studio} (Recruitee)",
+            "studio": studio,
+            "adapter": "recruitee",
+            "subdomain": subdomain,
+            "api_url": f"https://{host}/api/offers/",
+            "nlPriority": nl_priority,
+            "discoveryMethod": discovery_method,
+            "discoveryStage": "web_provider",
+            "careersUrl": url,
+            "evidenceScore": evidence_score,
+            "evidenceTypes": evidence_types,
+            "evidenceSource": evidence_source,
+        }
+    if adapter == "pinpoint":
+        subdomain = host.split(".pinpointhq.com", 1)[0]
+        if not subdomain:
+            return None
+        return {
+            "name": f"{studio} (Pinpoint)",
+            "studio": studio,
+            "adapter": "pinpoint",
+            "subdomain": subdomain,
+            "api_url": f"https://{host}/postings.json",
+            "nlPriority": nl_priority,
+            "discoveryMethod": discovery_method,
+            "discoveryStage": "web_provider",
+            "careersUrl": url,
+            "evidenceScore": evidence_score,
+            "evidenceTypes": evidence_types,
+            "evidenceSource": evidence_source,
+        }
     if adapter == "teamtailor":
         base_url = f"{parsed.scheme}://{host}" if parsed.scheme else f"https://{host}"
         return {
@@ -342,6 +378,16 @@ def infer_web_candidate(
     if "jobs.ashbyhq.com" in host:
         return _provider_candidate(
             studio=studio, adapter="ashby", url=url, nl_priority=nl_priority,
+            discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
+        )
+    if ".recruitee.com" in host:
+        return _provider_candidate(
+            studio=studio, adapter="recruitee", url=url, nl_priority=nl_priority,
+            discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
+        )
+    if ".pinpointhq.com" in host:
+        return _provider_candidate(
+            studio=studio, adapter="pinpoint", url=url, nl_priority=nl_priority,
             discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
         )
     if "apply.workable.com" in host:
@@ -537,4 +583,3 @@ def discover_web_search_candidates(
             if static_candidate:
                 static_candidates.append(static_candidate)
     return collapse_competing_candidates(provider_candidates), unique_sources(static_candidates), failures
-

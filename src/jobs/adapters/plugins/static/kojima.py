@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Dict, List
+from urllib.parse import urljoin, urlparse
 
 from src.jobs.adapters.plugins.static import _heuristics
+from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
-from src.jobs.text_utils import clean_text
+from src.jobs.text_utils import clean_text, normalize_url
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
@@ -23,6 +26,7 @@ def run(
     source_row: Dict[str, Any],
     parse_jobpostings_from_html: Callable[..., List[Dict[str, Any]]] | None = None,
     maybe_fetch_kojima_job_listing_html: Callable[..., str] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     **kwargs: Any,
 ) -> List[RawJob]:
     _ = (retries, backoff_s, kwargs)
@@ -79,6 +83,22 @@ def run(
         fallback_company=company,
         fallback_source_id_prefix=f"static:{source_id}",
     )
+    if not rows:
+        rows = _parse_kojima_listing_rows(
+            html=html,
+            base_url=page_url,
+            company=company,
+            source_id=source_id,
+        )
+    if not rows and callable(try_playwright):
+        browser_html, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
+        if browser_html:
+            rows = _parse_kojima_listing_rows(
+                html=browser_html,
+                base_url=page_url,
+                company=company,
+                source_id=source_id,
+            )
     for row in rows:
         if isinstance(row, dict):
             row["adapter"] = "static"
@@ -103,4 +123,61 @@ def run(
                 "atsLinks": ats_links[:5],
             }
     return cleaned
+
+
+def _parse_kojima_listing_rows(*, html: str, base_url: str, company: str, source_id: str) -> List[RawJob]:
+    rows: List[RawJob] = []
+    seen = set()
+    excluded_paths = {
+        "/en/careers",
+        "/en/careers_interview",
+        "/en/careers_faq",
+        "/en/ourculture",
+        "/en/new-kjpstudio",
+        "/en/faqs",
+        "/en/contact-us",
+        "/en/terms-of-use",
+        "/en/cookie-policy",
+        "/en/newsletter-signup",
+    }
+    role_pattern = re.compile(r"(programmer|artist|designer|engineer|writer|specialist|relations|support)", flags=re.I)
+    for href, inner in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html):
+        absolute = normalize_url(urljoin(base_url, clean_text(href)))
+        if not absolute or absolute in seen:
+            continue
+        parsed = urlparse(absolute)
+        path = (parsed.path or "").strip()
+        if not path.startswith("/en/"):
+            continue
+        if path.lower() in excluded_paths:
+            continue
+        text = strip_html_text(inner)
+        if not role_pattern.search(text):
+            continue
+        lines = [clean_text(part) for part in re.split(r"[\r\n]+", re.sub(r"(?is)<br\s*/?>", "\n", inner)) if clean_text(part)]
+        title = lines[0] if lines else clean_text(text.split("  ")[0])
+        city = ""
+        country = ""
+        if len(lines) >= 3 and "," in lines[-1]:
+            city = clean_text(lines[-1].split(",", 1)[0])
+            country = clean_text(lines[-1].split(",", 1)[1]) or "Japan"
+        elif len(lines) >= 3:
+            city = clean_text(lines[-1])
+        source_job_id = path.rstrip("/").split("/")[-1] or f"{source_id}-{len(rows)+1}"
+        rows.append(
+            {
+                "sourceJobId": f"static:{source_id}:{source_job_id}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country or "Japan",
+                "workType": "",
+                "contractType": "",
+                "jobLink": absolute,
+                "sector": "Game",
+                "postedAt": "",
+            }
+        )
+        seen.add(absolute)
+    return rows
 

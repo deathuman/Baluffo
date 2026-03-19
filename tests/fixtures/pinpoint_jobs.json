@@ -1,0 +1,36 @@
+{
+  "data": [
+    {
+      "id": "gg-201",
+      "title": "Senior Game Backend Engineer",
+      "url": "https://gameplaygalaxy.pinpointhq.com/postings/senior-game-backend-engineer",
+      "location": {
+        "name": "London, United Kingdom"
+      },
+      "workplace_type_text": "Hybrid",
+      "employment_type_text": "Full Time",
+      "job": {
+        "department": {
+          "name": "Game Technology"
+        }
+      },
+      "description": "<p>Help power multiplayer game services.</p>"
+    },
+    {
+      "id": "gg-202",
+      "title": "Live Ops Game Designer",
+      "url": "https://gameplaygalaxy.pinpointhq.com/postings/live-ops-game-designer",
+      "location": {
+        "name": "Remote"
+      },
+      "workplace_type_text": "Remote",
+      "employment_type_text": "Full Time",
+      "job": {
+        "department": {
+          "name": "Design"
+        }
+      },
+      "description": "<p>Own live game balance and progression systems.</p>"
+    }
+  ]
+}

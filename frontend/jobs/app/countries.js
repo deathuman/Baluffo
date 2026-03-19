@@ -11,7 +11,7 @@ import {
   resolveCountryCode as resolveCountryCodeFromModule,
   resolveRegionSelection as resolveRegionSelectionFromModule,
   countryMatchesRegion as countryMatchesRegionFromModule
-} from "../filters.js";
+} from "./filters.js";
 
 const COUNTRY_DISPLAY_NAMES = (typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function")
   ? new Intl.DisplayNames(["en"], { type: "region" })

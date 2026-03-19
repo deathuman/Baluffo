@@ -78,6 +78,8 @@ SUPPORTED_PROVIDERS: tuple[str, ...] = (
     "workable",
     "teamtailor",
     "ashby",
+    "recruitee",
+    "pinpoint",
     "personio",
 )
 DISCOVERY_CONFIG_PATH = Path(str(_STORAGE_DEFAULTS["source_discovery_config_path"]))
@@ -128,6 +130,8 @@ ADAPTER_QUEUE_CAPS: Dict[str, int] = {
     "workable": 4,
     "teamtailor": 4,
     "ashby": 4,
+    "recruitee": 4,
+    "pinpoint": 3,
     "personio": 3,
     "static": 6,
 }
@@ -232,10 +236,8 @@ STATIC_DISCOVERY_CANDIDATES: List[Dict[str, Any]] = [
     {"name": "Gameloft (SmartRecruiters)", "studio": "Gameloft", "adapter": "smartrecruiters", "company_id": "Gameloft", "api_url": "https://api.smartrecruiters.com/v1/companies/Gameloft/postings", "nlPriority": False},
     {"name": "Hutch (Workable)", "studio": "Hutch", "adapter": "workable", "account": "hutch", "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true", "nlPriority": False},
     {"name": "Wargaming (Workable)", "studio": "Wargaming", "adapter": "workable", "account": "wargaming", "api_url": "https://apply.workable.com/api/v1/widget/accounts/wargaming?details=true", "nlPriority": False},
-    {"name": "InnoGames (Personio)", "studio": "InnoGames", "adapter": "personio", "feed_url": "https://innogames.jobs.personio.de/xml", "nlPriority": True},
-    {"name": "Travian (Personio)", "studio": "Travian", "adapter": "personio", "feed_url": "https://travian.jobs.personio.de/xml", "nlPriority": True},
-    {"name": "Jagex (Ashby)", "studio": "Jagex", "adapter": "ashby", "board_url": "https://jobs.ashbyhq.com/jagex/jobs", "nlPriority": False},
-    {"name": "Scopely (Ashby)", "studio": "Scopely", "adapter": "ashby", "board_url": "https://jobs.ashbyhq.com/scopely/jobs", "nlPriority": False},
+    {"name": "CrazyGames (Recruitee)", "studio": "CrazyGames", "adapter": "recruitee", "subdomain": "jobs.crazygames.com", "api_url": "https://jobs.crazygames.com/api/offers/", "nlPriority": False},
+    {"name": "Gameplay Galaxy (Pinpoint)", "studio": "Gameplay Galaxy", "adapter": "pinpoint", "subdomain": "gameplaygalaxy", "api_url": "https://gameplaygalaxy.pinpointhq.com/postings.json", "nlPriority": False},
     {"name": "Ubisoft (SmartRecruiters)", "studio": "Ubisoft", "adapter": "smartrecruiters", "company_id": "Ubisoft2", "api_url": "https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings", "nlPriority": False},
     {"name": "Bandai Namco Entertainment America (Greenhouse)", "studio": "Bandai Namco Entertainment America Inc.", "adapter": "greenhouse", "slug": "bandainamco", "nlPriority": False},
 ]
@@ -274,4 +276,3 @@ def load_discovery_config(config_path: Path | str | None = None) -> Dict[str, An
 
 
 STUDIO_SEEDS: List[Dict[str, Any]] = load_studio_seeds()
-

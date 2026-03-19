@@ -38,6 +38,7 @@ LIGHTWEIGHT_OUTPUT_FIELDS = common_config.LIGHTWEIGHT_OUTPUT_FIELDS
 TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
 DEFAULT_CANONICAL_STRICT_URL = common_config.DEFAULT_CANONICAL_STRICT_URL
+REDIRECT_RESOLUTION_SKIP_SOURCES = {"gracklehq"}
 def canonicalize_job_with_reason(
     raw: Any,
     *,
@@ -57,7 +58,8 @@ def canonicalize_job_with_reason(
         return None, "missing_company"
     normalized_link_source = raw.get("jobLink") if resolved_job_link is None else resolved_job_link
     normalized_link = normalize_url(normalized_link_source)
-    if resolved_job_link is None and normalized_link and callable(resolve_redirect_url):
+    skip_redirect_resolution = norm_text(source) in REDIRECT_RESOLUTION_SKIP_SOURCES
+    if resolved_job_link is None and normalized_link and callable(resolve_redirect_url) and not skip_redirect_resolution:
         try:
             resolved_link = normalize_url(resolve_redirect_url(normalized_link))
         except Exception:  # noqa: BLE001

@@ -26,6 +26,9 @@ def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]
         # This route must never "silently" drop the connection; the admin UI
         # treats network errors as bridge-availability failures.
         try:
+            sync_history_fn = getattr(api, "sync_history_from_reports", None)
+            if callable(sync_history_fn):
+                sync_history_fn()
             load_fn = getattr(api, "load_json_object", None)
             raw = load_fn(getattr(api, "DISCOVERY_REPORT_PATH", None), {}) if callable(load_fn) else {}
 
@@ -263,6 +266,9 @@ def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]
         return True
 
     if path == "/ops/fetch-report":
+        sync_history_fn = getattr(api, "sync_history_from_reports", None)
+        if callable(sync_history_fn):
+            sync_history_fn()
         handler._send_json(api.normalize_fetch_report_contract(api.load_json_object(api.JOBS_FETCH_REPORT_PATH, {})))  # noqa: SLF001
         return True
 

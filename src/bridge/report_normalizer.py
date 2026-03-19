@@ -83,11 +83,64 @@ def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
             "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
             "details": normalized_details,
         })
+    slowest_sources_raw = runtime.get("slowestSources") if isinstance(runtime.get("slowestSources"), list) else []
+    slowest_sources: List[Dict[str, Any]] = []
+    for row in slowest_sources_raw[:10]:
+        if not isinstance(row, dict):
+            continue
+        slowest_sources.append({
+            "name": str(row.get("name") or "").strip(),
+            "adapter": str(row.get("adapter") or "").strip().lower(),
+            "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+            "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
+            "detailPagesVisited": safe_int(row.get("detailPagesVisited"), 0, 0, 1_000_000),
+            "detailYieldPct": safe_int(row.get("detailYieldPct"), 0, 0, 100),
+        })
+    timing_summary_raw = runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
+    stage_totals_raw = timing_summary_raw.get("stageTotalsMs") if isinstance(timing_summary_raw.get("stageTotalsMs"), dict) else {}
+    stage_top_raw = timing_summary_raw.get("stageTop") if isinstance(timing_summary_raw.get("stageTop"), list) else []
+    high_cost_raw = timing_summary_raw.get("highCostLowYieldSources") if isinstance(timing_summary_raw.get("highCostLowYieldSources"), list) else []
     return {
         "schemaVersion": safe_schema_version(src.get("schemaVersion")),
+        "runId": str(src.get("runId") or "").strip(),
         "startedAt": str(src.get("startedAt") or "").strip(),
         "finishedAt": str(src.get("finishedAt") or "").strip(),
-        "runtime": dict(runtime),
+        "runtime": {
+            **dict(runtime),
+            "slowestSources": slowest_sources,
+            "timingSummary": {
+                "totalDurationMs": safe_int(timing_summary_raw.get("totalDurationMs"), 0, 0, 86_400_000),
+                "medianSourceDurationMs": safe_int(timing_summary_raw.get("medianSourceDurationMs"), 0, 0, 86_400_000),
+                "p95SourceDurationMs": safe_int(timing_summary_raw.get("p95SourceDurationMs"), 0, 0, 86_400_000),
+                "stageTotalsMs": {
+                    "fetchAndParse": safe_int(stage_totals_raw.get("fetchAndParse"), 0, 0, 86_400_000),
+                    "listingFetch": safe_int(stage_totals_raw.get("listingFetch"), 0, 0, 86_400_000),
+                    "parseCsv": safe_int(stage_totals_raw.get("parseCsv"), 0, 0, 86_400_000),
+                    "candidateExtraction": safe_int(stage_totals_raw.get("candidateExtraction"), 0, 0, 86_400_000),
+                    "detailFetch": safe_int(stage_totals_raw.get("detailFetch"), 0, 0, 86_400_000),
+                    "redirectResolve": safe_int(stage_totals_raw.get("redirectResolve"), 0, 0, 86_400_000),
+                    "canonicalization": safe_int(stage_totals_raw.get("canonicalization"), 0, 0, 86_400_000),
+                },
+                "stageTop": [
+                    {
+                        "stage": str(row.get("stage") or "").strip(),
+                        "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                    }
+                    for row in stage_top_raw[:5]
+                    if isinstance(row, dict) and str(row.get("stage") or "").strip()
+                ],
+                "highCostLowYieldSources": [
+                    {
+                        "name": str(row.get("name") or "").strip(),
+                        "adapter": str(row.get("adapter") or "").strip().lower(),
+                        "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                        "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
+                    }
+                    for row in high_cost_raw[:5]
+                    if isinstance(row, dict)
+                ],
+            },
+        },
         "summary": dict(summary),
         "sources": normalized_sources,
         "outputs": dict(src.get("outputs") or {}),

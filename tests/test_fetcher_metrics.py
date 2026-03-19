@@ -5,6 +5,16 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
     report = {
         "startedAt": "2026-03-09T10:00:00+00:00",
         "finishedAt": "2026-03-09T10:02:00+00:00",
+        "runtime": {
+            "timingSummary": {
+                "totalDurationMs": 50,
+                "medianSourceDurationMs": 25,
+                "p95SourceDurationMs": 40,
+                "stageTotalsMs": {"fetchAndParse": 35, "canonicalization": 15},
+                "stageTop": [{"stage": "fetchAndParse", "durationMs": 35}],
+                "highCostLowYieldSources": [{"name": "b", "durationMs": 40, "keptCount": 0}],
+            }
+        },
         "summary": {"inputCount": 10, "mergedCount": 2, "outputCount": 8},
         "sources": [
             {"name": "a", "status": "ok", "durationMs": 10},
@@ -23,6 +33,10 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
     assert latest["outputYieldRate"] == 0.8
     assert latest["sourceFailureRate"] == 0.3333
     assert latest["failedSources"] == 1
+    assert latest["durationMs"] == 50
+    assert latest["medianSourceDurationMs"] == 25
+    assert latest["p95SourceDurationMs"] == 40
+    assert latest["stageTop"][0]["stage"] == "fetchAndParse"
     assert metrics["history"]["windowRuns"] == 2
     assert metrics["history"]["medianDurationMs"] == 2000
 

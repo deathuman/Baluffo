@@ -1,0 +1,39 @@
+{
+  "company": {
+    "name": "CrazyGames"
+  },
+  "offers": [
+    {
+      "id": 101,
+      "title": "Senior Gameplay Engineer",
+      "careers_url": "https://jobs.crazygames.com/o/senior-gameplay-engineer",
+      "employment_type_text": "Full-time",
+      "location": {
+        "city": "Amsterdam",
+        "country": "Netherlands"
+      },
+      "department": {
+        "name": "Game Development"
+      },
+      "description": "Build web games and gameplay systems for millions of players.",
+      "remote": false,
+      "published_at": "2026-03-18T08:00:00Z"
+    },
+    {
+      "id": 102,
+      "title": "Technical Game Designer",
+      "careers_url": "https://jobs.crazygames.com/o/technical-game-designer",
+      "employment_type_text": "Full-time",
+      "location": {
+        "city": "Remote",
+        "country": "Remote"
+      },
+      "department": {
+        "name": "Game Design"
+      },
+      "description": "Design and tune live game systems for the CrazyGames platform.",
+      "remote": true,
+      "published_at": "2026-03-18T09:00:00Z"
+    }
+  ]
+}

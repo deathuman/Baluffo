@@ -44,6 +44,7 @@ class TaskLaunchApi:
         self,
         script_name: str,
         args: List[str] | None = None,
+        extra_env: Dict[str, str] | None = None,
         *,
         is_frozen: bool,
         executable: str,
@@ -72,15 +73,20 @@ class TaskLaunchApi:
                 module = "src.source_discovery"
 
             if module:
-                command = [executable, "-m", module]
+                command = [executable, "-u", "-m", module]
                 command.extend(args or [])
             else:
-                command = [executable, str(self._runtime.root / "src" / script_name)]
+                command = [executable, "-u", str(self._runtime.root / "src" / script_name)]
                 command.extend(args or [])
         script = Path(script_name).name.lower()
         task_type = "discovery" if "discovery" in script else ("fetch" if "fetcher" in script else script)
         child_env = os.environ.copy()
         child_env["BALUFFO_DATA_DIR"] = str(self._runtime.data_dir)
+        child_env["PYTHONUNBUFFERED"] = "1"
+        if isinstance(extra_env, dict):
+            for key, value in extra_env.items():
+                if key:
+                    child_env[str(key)] = str(value)
         if task_type == "discovery":
             child_env["BALUFFO_DISCOVERY_LOG_PATH"] = str(self._paths.discovery_log)
         elif task_type == "fetch":
@@ -135,15 +141,15 @@ class TaskLaunchApi:
         circuit_cooldown = self._deps.safe_int(data.get("circuitBreakerCooldownMinutes"), 180, 0, 24 * 60)
 
         if preset == "incremental":
-            args.extend(["--skip-successful-sources", "--source-ttl-minutes", str(source_ttl), "--quiet"])
+            args.extend(["--skip-successful-sources", "--source-ttl-minutes", str(source_ttl)])
         elif preset == "retry_failed":
             available_names = {name for name, _loader in self._deps.default_source_loaders()}
             failed_names = self._deps.failed_source_names_from_latest_report(available_names)
             if failed_names:
                 args.extend(["--only-sources", ",".join(failed_names)])
-            args.extend(["--ignore-circuit-breaker", "--quiet"])
+            args.extend(["--ignore-circuit-breaker"])
         elif preset == "force_full":
-            args.extend(["--ignore-circuit-breaker", "--quiet"])
+            args.extend(["--ignore-circuit-breaker"])
         else:
             preset = "default"
 

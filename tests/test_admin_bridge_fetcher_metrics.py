@@ -3,21 +3,24 @@ from src.app_version import APP_VERSION
 
 
 def test_compute_fetcher_metrics_uses_history_window() -> None:
-    original_sync = admin_bridge.sync_history_from_reports
-    original_load = admin_bridge.load_json_object
+    original_get_ops_api = admin_bridge._get_ops_api
     try:
-        admin_bridge.sync_history_from_reports = lambda: [
-            {"type": "fetch", "durationMs": 1000, "finishedAt": "2026-03-09T10:02:00+00:00", "status": "ok"},
-            {"type": "fetch", "durationMs": 4000, "finishedAt": "2026-03-09T09:02:00+00:00", "status": "ok"},
-            {"type": "fetch", "durationMs": 9000, "finishedAt": "2026-03-09T08:02:00+00:00", "status": "ok"},
-        ]
-        admin_bridge.load_json_object = lambda *_args, **_kwargs: {
-            "summary": {"inputCount": 10, "mergedCount": 2, "outputCount": 8},
-            "sources": [
-                {"name": "source_a", "status": "ok", "durationMs": 10},
-                {"name": "source_b", "status": "error", "durationMs": 20},
-            ],
-        }
+        class _FakeOpsApi:
+            @staticmethod
+            def compute_fetcher_metrics(*, window_runs: int = 20):
+                assert window_runs == 2
+                return {
+                    "latestRun": {
+                        "duplicateRate": 0.2,
+                        "failedSources": 1,
+                    },
+                    "history": {
+                        "windowRuns": 2,
+                        "medianDurationMs": 2500,
+                    },
+                }
+
+        admin_bridge._get_ops_api = lambda: _FakeOpsApi()
         metrics = admin_bridge.compute_fetcher_metrics(window_runs=2)
         assert int((metrics.get("history") or {}).get("windowRuns") or 0) == 2
         assert int((metrics.get("history") or {}).get("medianDurationMs") or 0) == 2500
@@ -25,8 +28,7 @@ def test_compute_fetcher_metrics_uses_history_window() -> None:
         assert float(latest.get("duplicateRate") or 0.0) == 0.2
         assert int(latest.get("failedSources") or 0) == 1
     finally:
-        admin_bridge.sync_history_from_reports = original_sync
-        admin_bridge.load_json_object = original_load
+        admin_bridge._get_ops_api = original_get_ops_api
 
 
 def test_sync_status_payload_includes_app_version() -> None:

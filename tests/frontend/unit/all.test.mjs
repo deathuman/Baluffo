@@ -7,6 +7,7 @@ import "./admin-domain.test.mjs";
 import "./admin-render.test.mjs";
 import "./jobs-data-source.test.mjs";
 import "./jobs-domain.test.mjs";
+import "./jobs-feed-startup.test.mjs";
 import "./jobs-html.test.mjs";
 import "./jobs-parsing-utils.test.mjs";
 import "./jobs-pipeline.test.mjs";

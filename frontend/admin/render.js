@@ -408,10 +408,23 @@ export function renderAdminOpsSchedule(scheduleEl, schedule, latestOpsHealthCach
   `;
 }
 
-export function renderAdminOpsFetcherMetrics(metricsEl, metrics) {
+const FETCHER_FAILURE_BUCKET_LABELS = {
+  extract_zero: "Extract Zero",
+  blocked_or_challenge: "Blocked/Challenge",
+  timeout: "Timeout",
+  provider_rate_limited: "Provider Rate Limited",
+  provider_not_found_or_bad_config: "Provider Bad Config",
+  uncategorized: "Uncategorized"
+};
+
+export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};
   const history = metrics?.history || {};
+  const summary = failureSummary && typeof failureSummary === "object"
+    ? failureSummary
+    : { topLevelFailedSources: 0, detailFailureCount: 0, buckets: [] };
+  const canPatchInPlace = Boolean(metricsEl && metricsEl.dataset);
   const signature = stableOpsSignature({
     latestRun: {
       inputCount: Number(latest?.inputCount || 0),
@@ -419,17 +432,22 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics) {
       duplicateRate: Number(latest?.duplicateRate || 0),
       sourceFailureRate: Number(latest?.sourceFailureRate || 0),
       failedSources: Number(latest?.failedSources || 0),
-      sourceCount: Number(latest?.sourceCount || 0)
+      sourceCount: Number(latest?.sourceCount || 0),
+      durationMs: Number(latest?.durationMs || 0),
+      medianSourceDurationMs: Number(latest?.medianSourceDurationMs || 0),
+      p95SourceDurationMs: Number(latest?.p95SourceDurationMs || 0)
     },
     history: {
       windowRuns: Number(history?.windowRuns || 0),
       medianDurationMs: Number(history?.medianDurationMs || 0),
       averageDurationMs: Number(history?.averageDurationMs || 0)
     },
-    slowestSources: Array.isArray(latest?.slowestSources) ? latest.slowestSources : []
+    slowestSources: Array.isArray(latest?.slowestSources) ? latest.slowestSources : [],
+    stageTop: Array.isArray(latest?.stageTop) ? latest.stageTop : [],
+    failureSummary: summary
   });
-  if (metricsEl.dataset.opsFetcherMetricsSig === signature) return;
-  metricsEl.dataset.opsFetcherMetricsSig = signature;
+  if (canPatchInPlace && metricsEl.dataset.opsFetcherMetricsSig === signature) return;
+  if (canPatchInPlace) metricsEl.dataset.opsFetcherMetricsSig = signature;
 
   const failed = Number(latest?.failedSources || 0);
   const sourceCount = Math.max(0, Number(latest?.sourceCount || 0));
@@ -437,6 +455,8 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics) {
   const outputYieldRate = Math.max(0, Number(latest?.outputYieldRate || 0));
   const failureRate = Math.max(0, Number(latest?.sourceFailureRate || 0));
   const slowest = Array.isArray(latest?.slowestSources) ? latest.slowestSources : [];
+  const stageTop = Array.isArray(latest?.stageTop) ? latest.stageTop : [];
+  const highCostLowYield = Array.isArray(latest?.highCostLowYieldSources) ? latest.highCostLowYieldSources : [];
   const slowestSummary = slowest.length
     ? slowest
       .slice(0, 3)
@@ -444,8 +464,38 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics) {
       .filter(Boolean)
       .join(" | ")
     : "No source timing data yet.";
+  const slowestStageSummary = stageTop.length
+    ? stageTop
+      .slice(0, 3)
+      .map(row => `${String(row?.stage || "unknown")} (${formatDuration(Number(row?.durationMs || 0))})`)
+      .join(" | ")
+    : "No stage timing data yet.";
+  const highCostSummary = highCostLowYield.length
+    ? highCostLowYield
+      .slice(0, 3)
+      .map(row => `${sanitizeSlowSourceName(row?.name)} (${formatDuration(Number(row?.durationMs || 0))}, kept ${Number(row?.keptCount || 0)})`)
+      .join(" | ")
+    : "No high-cost low-yield sources.";
+  const bucketRows = Array.isArray(summary?.buckets) ? summary.buckets : [];
+  const bucketSummaryHtml = bucketRows.length
+    ? bucketRows.map(bucket => `
+      <div class="admin-ops-schedule-item admin-ops-full-row">
+        <strong>${escapeHtml(FETCHER_FAILURE_BUCKET_LABELS[bucket.key] || bucket.key)}</strong>
+        : ${Number(bucket.count || 0).toLocaleString()}
+        ${bucket.examples?.length ? ` (${escapeHtml(bucket.examples.join(" | "))})` : ""}
+      </div>
+    `).join("")
+    : `
+      <div class="admin-ops-schedule-item admin-ops-full-row">
+        <strong>Failure buckets</strong>: No classified failures in the latest fetch report.
+      </div>
+    `;
 
   metricsEl.innerHTML = `
+    <div class="admin-total-card">
+      <div class="admin-total-label">Latest Runtime</div>
+      <div class="admin-total-value">${formatDuration(Number(latest?.durationMs || 0))}</div>
+    </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Median Runtime</div>
       <div class="admin-total-value">${formatDuration(Number(history?.medianDurationMs || 0))}</div>
@@ -467,10 +517,24 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics) {
       <div class="admin-total-value">${(outputYieldRate * 100).toFixed(1)}%</div>
     </div>
     <div class="admin-total-card">
+      <div class="admin-total-label">Median Source Time</div>
+      <div class="admin-total-value">${formatDuration(Number(latest?.medianSourceDurationMs || 0))}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">P95 Source Time</div>
+      <div class="admin-total-value">${formatDuration(Number(latest?.p95SourceDurationMs || 0))}</div>
+    </div>
+    <div class="admin-total-card">
       <div class="admin-total-label">Source Failures</div>
       <div class="admin-total-value">${failed.toLocaleString()} / ${sourceCount.toLocaleString()} (${(failureRate * 100).toFixed(1)}%)</div>
     </div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top-level failed sources</strong>: ${Number(summary?.topLevelFailedSources || 0).toLocaleString()}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Grouped detail failures</strong>: ${Number(summary?.detailFailureCount || 0).toLocaleString()}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Failure buckets</strong></div>
+    ${bucketSummaryHtml}
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest sources</strong>: ${escapeHtml(slowestSummary)}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
   `;
 }
 

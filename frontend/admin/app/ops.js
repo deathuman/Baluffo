@@ -1,3 +1,5 @@
+import { deriveFetcherFailureSummary } from "../domain.js";
+
 export function formatBytes(bytes) {
   const value = Number(bytes) || 0;
   if (value < 1024) return `${value} B`;
@@ -13,6 +15,7 @@ export function createAdminOpsController({
   postBridge,
   normalizeOpsRuns,
   applyOptimisticDiscoveryRun,
+  applyOptimisticFetchRun,
   getOpsPollIntervalMs,
   renderAdminOpsAlerts,
   renderAdminOpsKpis,
@@ -90,15 +93,20 @@ export function createAdminOpsController({
       state.latestOpsHealthCache = health || null;
       const rawRunModel = normalizeOpsRuns(historyPayload?.runs || [], Date.now());
       const optimisticDiscoveryActive = Boolean(
-        state.adminBusyState.discoveryWatch
-        && state.discoveryOptimisticRun?.startedAt
+        String(state.discoveryOptimisticRun?.startedAt || "").trim()
       );
-      const runModel = optimisticDiscoveryActive
+      const optimisticFetchActive = Boolean(
+        String(state.fetchOptimisticRun?.startedAt || "").trim()
+      );
+      const discoveryAdjustedModel = optimisticDiscoveryActive
         ? applyOptimisticDiscoveryRun(rawRunModel, state.discoveryOptimisticRun, Date.now())
         : rawRunModel;
+      const runModel = optimisticFetchActive
+        ? applyOptimisticFetchRun(discoveryAdjustedModel, state.fetchOptimisticRun, Date.now())
+        : discoveryAdjustedModel;
       const liveTypes = new Set(Array.isArray(runModel?.liveTypes) ? runModel.liveTypes : []);
       setBusyFlag("liveFetchRunning", liveTypes.has("fetch"));
-      setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery") || optimisticDiscoveryActive);
+      setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
       setBusyFlag("liveSyncRunning", liveTypes.has("sync"));
       setBusyFlag("livePipelineRunning", liveTypes.has("pipeline"));
 
@@ -115,7 +123,11 @@ export function createAdminOpsController({
       });
       renderAdminOpsKpis(refs.adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
       renderAdminOpsSchedule(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
-      renderAdminOpsFetcherMetrics(refs.adminOpsFetcherMetricsEl, fetcherMetrics || {});
+      renderAdminOpsFetcherMetrics(
+        refs.adminOpsFetcherMetricsEl,
+        fetcherMetrics || {},
+        deriveFetcherFailureSummary(state.latestFetcherReportCache || {})
+      );
       renderAdminOpsHistory(refs.adminOpsHistoryEl, runModel);
       renderAdminOpsTrends(refs.adminOpsTrendsEl, historyPayload?.runs || []);
       loadSyncStatus({ silent: true }).catch(() => {});

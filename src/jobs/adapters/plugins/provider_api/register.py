@@ -238,6 +238,36 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
             else ""
         )
         payload_count = lambda payload, parsed: len(payload.get("jobs", [])) if isinstance(payload, dict) else len(parsed)
+    elif adapter_name == "recruitee":
+        default_error = "missing subdomain/api_url"
+        parse_payload = lambda source, payload, studio: _provider_parsers.parse_recruitee_jobs_payload(
+            payload, clean_text(source.get("subdomain")), fallback_company=studio
+        )
+        build_url = lambda source: clean_text(source.get("api_url")) or (
+            f"https://{clean_text(source.get('subdomain'))}/api/offers/"
+            if "." in clean_text(source.get("subdomain"))
+            else (
+                f"https://{clean_text(source.get('subdomain'))}.recruitee.com/api/offers/"
+                if clean_text(source.get("subdomain"))
+                else ""
+            )
+        )
+        payload_count = lambda payload, parsed: len(payload.get("offers", [])) if isinstance(payload, dict) else len(parsed)
+    elif adapter_name == "pinpoint":
+        default_error = "missing subdomain/api_url"
+        parse_payload = lambda source, payload, studio: _provider_parsers.parse_pinpoint_jobs_payload(
+            payload, clean_text(source.get("subdomain")), fallback_company=studio
+        )
+        build_url = lambda source: clean_text(source.get("api_url")) or (
+            f"https://{clean_text(source.get('subdomain'))}/postings.json"
+            if "." in clean_text(source.get("subdomain"))
+            else (
+                f"https://{clean_text(source.get('subdomain'))}.pinpointhq.com/postings.json"
+                if clean_text(source.get("subdomain"))
+                else ""
+            )
+        )
+        payload_count = lambda payload, parsed: len(payload.get("data", [])) if isinstance(payload, dict) else len(parsed)
     else:
         # lever
         default_error = "missing account/api_url"
@@ -263,6 +293,99 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
             parse_payload=parse_payload,
             build_url=build_url,
             payload_count=payload_count,
+            **kwargs,
+        ),
+    )
+
+
+def _run_html_board_sources(
+    *,
+    adapter_name: str,
+    registry_adapter: str,
+    default_error: str,
+    parse_html,
+    build_url,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+) -> List[RawJob]:
+    deps = runtime_deps.facade()
+    jobs: List[RawJob] = []
+    errors: List[str] = []
+    details: List[Dict[str, object]] = []
+    for source in deps.registry_entries(registry_adapter):
+        source_name = clean_text(source.get("name")) or f"{registry_adapter}_source"
+        studio = clean_text(source.get("studio")) or source_name
+        board_url = build_url(source)
+        entry_report = {
+            "adapter": adapter_name,
+            "studio": studio,
+            "name": source_name,
+            "status": "ok",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "error": "",
+        }
+        if not board_url:
+            entry_report["status"] = "error"
+            entry_report["error"] = default_error
+            details.append(entry_report)
+            continue
+        try:
+            text = deps.fetch_with_retries(board_url, fetch_text, timeout_s, retries, backoff_s)
+            parsed = parse_html(text, board_url, studio)
+            entry_report["fetchedCount"] = len(parsed)
+            entry_report["keptCount"] = len(parsed)
+            if not parsed:
+                entry_report["status"] = "error"
+                entry_report["error"] = f"no jobs extracted from {adapter_name} board html"
+            for row in parsed:
+                row["adapter"] = adapter_name
+                row["studio"] = studio
+            jobs.extend(parsed)
+        except Exception as exc:  # noqa: BLE001
+            entry_report["status"] = "error"
+            entry_report["error"] = str(exc)
+            errors.append(f"{registry_adapter}:{source_name}: {exc}")
+        details.append(entry_report)
+
+    deps.set_source_diagnostics(
+        f"{registry_adapter}_sources",
+        adapter=adapter_name,
+        studio="multiple",
+        details=details,
+        partial_errors=errors,
+    )
+    if jobs:
+        return jobs
+    if errors:
+        raise AdapterValidationError.from_errors(errors)
+    return []
+
+
+def _html_board_plugin(adapter_name: str) -> SimpleAdapterPlugin:
+    registry_adapter = adapter_name
+    if adapter_name == "breezy":
+        default_error = "missing board_url"
+        parse_html = _provider_parsers.parse_breezy_jobs_html
+        build_url = lambda source: clean_text(source.get("board_url"))
+    else:
+        default_error = "missing board_url"
+        parse_html = _provider_parsers.parse_jazzhr_jobs_html
+        build_url = lambda source: clean_text(source.get("board_url"))
+
+    return SimpleAdapterPlugin(
+        name=f"{adapter_name}_sources",
+        family="provider_api",
+        priority=55,
+        can_handle_fn=lambda ctx: ctx.family == "provider_api" and ctx.adapter_key == f"{adapter_name}_sources",
+        run_fn=lambda **kwargs: _run_html_board_sources(
+            adapter_name=adapter_name,
+            registry_adapter=registry_adapter,
+            default_error=default_error,
+            parse_html=parse_html,
+            build_url=build_url,
             **kwargs,
         ),
     )
@@ -294,4 +417,8 @@ def ensure_registered() -> None:
     default_registry.register(_json_feed_plugin("lever"))
     default_registry.register(_json_feed_plugin("workable"))
     default_registry.register(_json_feed_plugin("smartrecruiters"))
+    default_registry.register(_json_feed_plugin("recruitee"))
+    default_registry.register(_json_feed_plugin("pinpoint"))
+    default_registry.register(_html_board_plugin("breezy"))
+    default_registry.register(_html_board_plugin("jazzhr"))
 

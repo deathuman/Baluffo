@@ -40,7 +40,7 @@ STARTUP_REQUIRED_EVENTS = (
     "desktop_shell_window_shown",
 )
 EMBEDDED_PAGE_PROBES = (
-    {"name": "Embedded Jobs Ready", "openPath": "jobs.html", "requiredEvents": ("jobs_auth_ready",)},
+    {"name": "Embedded Jobs Ready", "openPath": "jobs.html", "requiredEvents": ("jobs_first_render", "jobs_first_interactive")},
     {"name": "Embedded Saved Ready", "openPath": "saved.html", "requiredEvents": ("saved_auth_ready",)},
     {"name": "Embedded Admin Ready", "openPath": "admin.html", "requiredEvents": ("admin_pin_gate_ready",)},
 )

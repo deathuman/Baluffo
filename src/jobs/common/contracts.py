@@ -12,7 +12,7 @@ from src.jobs_fetcher_registry import SOURCE_REPORT_META
 
 def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count: int) -> Dict[str, Any]:
     src = runtime if isinstance(runtime, dict) else {}
-    return {
+    payload = {
         "selectedSourceCount": int(selected_source_count),
         "sourceTtlMinutes": _clamped_int(src.get("sourceTtlMinutes"), 0, 0),
         "maxWorkers": _clamped_int(src.get("maxWorkers"), 1, 1),
@@ -35,6 +35,55 @@ def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count:
         "scrapyValidationStrict": bool(src.get("scrapyValidationStrict")),
         "canonicalStrictUrl": bool(src.get("canonicalStrictUrl")),
     }
+    slowest_sources_raw = src.get("slowestSources") if isinstance(src.get("slowestSources"), list) else []
+    if slowest_sources_raw:
+        payload["slowestSources"] = [
+            {
+                "name": clean_text(row.get("name")) or "unknown",
+                "adapter": clean_text(row.get("adapter")) or "custom",
+                "durationMs": _clamped_int(row.get("durationMs"), 0, 0),
+                "keptCount": _clamped_int(row.get("keptCount"), 0, 0),
+                "detailPagesVisited": _clamped_int(row.get("detailPagesVisited"), 0, 0),
+                "detailYieldPct": min(100, _clamped_int(row.get("detailYieldPct"), 0, 0)),
+            }
+            for row in slowest_sources_raw[:10]
+            if isinstance(row, dict)
+        ]
+    timing_summary_raw = src.get("timingSummary") if isinstance(src.get("timingSummary"), dict) else {}
+    if timing_summary_raw:
+        stage_totals_raw = timing_summary_raw.get("stageTotalsMs") if isinstance(timing_summary_raw.get("stageTotalsMs"), dict) else {}
+        stage_top_raw = timing_summary_raw.get("stageTop") if isinstance(timing_summary_raw.get("stageTop"), list) else []
+        costly_raw = timing_summary_raw.get("highCostLowYieldSources") if isinstance(timing_summary_raw.get("highCostLowYieldSources"), list) else []
+        payload["timingSummary"] = {
+            "totalDurationMs": _clamped_int(timing_summary_raw.get("totalDurationMs"), 0, 0),
+            "medianSourceDurationMs": _clamped_int(timing_summary_raw.get("medianSourceDurationMs"), 0, 0),
+            "p95SourceDurationMs": _clamped_int(timing_summary_raw.get("p95SourceDurationMs"), 0, 0),
+            "stageTotalsMs": {
+                "fetchAndParse": _clamped_int(stage_totals_raw.get("fetchAndParse"), 0, 0),
+                "listingFetch": _clamped_int(stage_totals_raw.get("listingFetch"), 0, 0),
+                "parseCsv": _clamped_int(stage_totals_raw.get("parseCsv"), 0, 0),
+                "candidateExtraction": _clamped_int(stage_totals_raw.get("candidateExtraction"), 0, 0),
+                "detailFetch": _clamped_int(stage_totals_raw.get("detailFetch"), 0, 0),
+                "redirectResolve": _clamped_int(stage_totals_raw.get("redirectResolve"), 0, 0),
+                "canonicalization": _clamped_int(stage_totals_raw.get("canonicalization"), 0, 0),
+            },
+            "stageTop": [
+                {"stage": clean_text(row.get("stage")), "durationMs": _clamped_int(row.get("durationMs"), 0, 0)}
+                for row in stage_top_raw[:5]
+                if isinstance(row, dict) and clean_text(row.get("stage"))
+            ],
+            "highCostLowYieldSources": [
+                {
+                    "name": clean_text(row.get("name")) or "unknown",
+                    "adapter": clean_text(row.get("adapter")) or "custom",
+                    "durationMs": _clamped_int(row.get("durationMs"), 0, 0),
+                    "keptCount": _clamped_int(row.get("keptCount"), 0, 0),
+                }
+                for row in costly_raw[:5]
+                if isinstance(row, dict)
+            ],
+        }
+    return payload
 
 
 def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -77,6 +126,7 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
     }
     raw_stage_timings = src.get("stageTimingsMs") if isinstance(src.get("stageTimingsMs"), dict) else {}
     clean_stage_timings = {
+        "fetchAndParse": _clamped_int(raw_stage_timings.get("fetchAndParse"), 0, 0),
         "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
         "parseCsv": _clamped_int(raw_stage_timings.get("parseCsv"), 0, 0),
         "candidateExtraction": _clamped_int(raw_stage_timings.get("candidateExtraction"), 0, 0),
@@ -161,6 +211,7 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
 def normalize_task_state_payload(
     payload: Dict[str, Any],
     *,
+    run_id: str = "",
     started_at: str,
     finished_at: str = "",
     report_path: str = "",
@@ -186,6 +237,7 @@ def normalize_task_state_payload(
     summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
     return {
         "schemaVersion": SCHEMA_VERSION,
+        "runId": clean_text(src.get("runId")) or clean_text(run_id),
         "startedAt": clean_text(src.get("startedAt")) or clean_text(started_at),
         "finishedAt": clean_text(src.get("finishedAt")) or clean_text(finished_at),
         "summary": {
@@ -209,6 +261,7 @@ def normalize_fetch_report_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
     return {
         "schemaVersion": SCHEMA_VERSION,
+        "runId": clean_text(src.get("runId")),
         "startedAt": clean_text(src.get("startedAt")),
         "finishedAt": clean_text(src.get("finishedAt")),
         "runtime": normalize_runtime_payload(runtime, selected_source_count=len(source_rows)),

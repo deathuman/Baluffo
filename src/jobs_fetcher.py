@@ -94,6 +94,10 @@ DEFAULT_REDIRECT_HEADERS = _transport.DEFAULT_REDIRECT_HEADERS
 fetch_with_retries = _common.fetch_with_retries
 
 parse_google_sheets_csv = _parsers.parse_google_sheets_csv
+parse_gamejobs_html = _parsers.parse_gamejobs_html
+parse_workwithindies_html = _parsers.parse_workwithindies_html
+parse_8bitplay_html = _parsers.parse_8bitplay_html
+parse_gracklehq_html = _parsers.parse_gracklehq_html
 parse_remote_ok_payload = _parsers.parse_remote_ok_payload
 parse_reddit_json_payload = _parsers.parse_reddit_json_payload
 parse_reddit_rss_payload = _parsers.parse_reddit_rss_payload
@@ -107,8 +111,12 @@ parse_jobpostings_from_html = _parsers.parse_jobpostings_from_html
 parse_lever_jobs_payload = _parsers.parse_lever_jobs_payload
 parse_smartrecruiters_jobs_payload = _parsers.parse_smartrecruiters_jobs_payload
 parse_workable_jobs_payload = _parsers.parse_workable_jobs_payload
+parse_recruitee_jobs_payload = _parsers.parse_recruitee_jobs_payload
+parse_pinpoint_jobs_payload = _parsers.parse_pinpoint_jobs_payload
 parse_epic_games_jobs_payload = _parsers.parse_epic_games_jobs_payload
 parse_ashby_jobs_from_html = _parsers.parse_ashby_jobs_from_html
+parse_breezy_jobs_html = _parsers.parse_breezy_jobs_html
+parse_jazzhr_jobs_html = _parsers.parse_jazzhr_jobs_html
 parse_personio_feed_xml = _parsers.parse_personio_feed_xml
 parse_wellfound_html = _parsers.parse_wellfound_html
 
@@ -121,6 +129,10 @@ should_skip_source_by_cadence = _state.should_skip_source_by_cadence
 run_google_sheets_source = _community.run_google_sheets_source
 run_remote_ok_source = _community.run_remote_ok_source
 run_gamesindustry_source = _community.run_gamesindustry_source
+run_gamejobs_source = _community.run_gamejobs_source
+run_workwithindies_source = _community.run_workwithindies_source
+run_8bitplay_source = _community.run_8bitplay_source
+run_gracklehq_source = _community.run_gracklehq_source
 run_epic_games_careers_source = _community.run_epic_games_careers_source
 run_wellfound_source = _community.run_wellfound_source
 google_sheet_candidate_urls = _community.google_sheet_candidate_urls
@@ -129,7 +141,11 @@ run_teamtailor_sources_source = _provider_api.run_teamtailor_sources_source
 run_lever_sources_source = _provider_api.run_lever_sources_source
 run_smartrecruiters_sources_source = _provider_api.run_smartrecruiters_sources_source
 run_workable_sources_source = _provider_api.run_workable_sources_source
+run_recruitee_sources_source = _provider_api.run_recruitee_sources_source
+run_pinpoint_sources_source = _provider_api.run_pinpoint_sources_source
 run_ashby_sources_source = _provider_api.run_ashby_sources_source
+run_breezy_sources_source = _provider_api.run_breezy_sources_source
+run_jazzhr_sources_source = _provider_api.run_jazzhr_sources_source
 run_personio_sources_source = _provider_api.run_personio_sources_source
 run_social_reddit_source = _social.run_social_reddit_source
 run_social_x_source = _social.run_social_x_source
@@ -293,21 +309,29 @@ __all__ = [
     "now_iso",
     "parse_args",
     "parse_ashby_jobs_from_html",
+    "parse_breezy_jobs_html",
     "parse_epic_games_jobs_payload",
     "parse_gamesindustry_html",
+    "parse_gamejobs_html",
+    "parse_8bitplay_html",
     "parse_google_sheets_csv",
+    "parse_gracklehq_html",
     "parse_greenhouse_jobs_payload",
     "parse_jobpostings_from_html",
     "parse_lever_jobs_payload",
     "parse_mastodon_payload",
+    "parse_pinpoint_jobs_payload",
     "parse_personio_feed_xml",
     "parse_reddit_json_payload",
     "parse_reddit_rss_payload",
+    "parse_recruitee_jobs_payload",
     "parse_remote_ok_payload",
+    "parse_jazzhr_jobs_html",
     "parse_smartrecruiters_jobs_payload",
     "parse_teamtailor_listing_links",
     "parse_wellfound_html",
     "parse_workable_jobs_payload",
+    "parse_workwithindies_html",
     "parse_x_payload",
     "parse_x_rss_payload",
     "read_approved_since_last_run",
@@ -316,13 +340,20 @@ __all__ = [
     "resolve_fetch_text_impl",
     "subprocess",
     "run_ashby_sources_source",
+    "run_breezy_sources_source",
+    "run_8bitplay_source",
     "run_epic_games_careers_source",
     "run_gamesindustry_source",
+    "run_gamejobs_source",
     "run_google_sheets_source",
     "run_greenhouse_boards_source",
     "run_lever_sources_source",
+    "run_jazzhr_sources_source",
+    "run_pinpoint_sources_source",
     "run_personio_sources_source",
     "run_pipeline",
+    "run_gracklehq_source",
+    "run_recruitee_sources_source",
     "run_remote_ok_source",
     "run_scrapy_static_source",
     "run_smartrecruiters_sources_source",
@@ -337,6 +368,7 @@ __all__ = [
     "run_teamtailor_sources_source",
     "run_wellfound_source",
     "run_workable_sources_source",
+    "run_workwithindies_source",
     "set_source_diagnostics",
     "should_skip_source_by_cadence",
     "should_skip_source_by_ttl",

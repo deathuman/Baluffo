@@ -249,6 +249,8 @@ let lastFilterOptionsSignature = "";
 let authReadyPollTimer = null;
 let authStateListenerBound = false;
 let nonCriticalStartupScheduled = false;
+let coreEventsBound = false;
+let secondaryEventsBound = false;
 const jobsPipelineUiState = createJobsPipelineUiState();
 const startupMetrics = createJobsStartupMetrics({
   emitMetric: (event, payload) => {
@@ -285,11 +287,18 @@ function logJobsError(message, err) {
 
 function bootJobsPage() {
   cacheDom();
-  initializeQuickFilters();
-  bindEvents();
-  readStateFromUrl();
-  applyStateToStaticFilters();
-  init().catch(err => logJobsError("Error initializing jobs", err));
+  setJobsStartupState("loading", "booting");
+  bindCoreEvents();
+  try {
+    initializeQuickFilters();
+    bindEvents();
+    readStateFromUrl();
+    applyStateToStaticFilters();
+  } catch (err) {
+    handleJobsStartupFailure("Jobs page boot failed", err, { allowRetryReload: true });
+    return;
+  }
+  init().catch(err => handleJobsStartupFailure("Error initializing jobs", err));
 }
 
 function scheduleNonCriticalStartupWork() {
@@ -359,6 +368,7 @@ function markStartupRendered(stage, rowCount) {
 
 function markJobsFirstInteractive(reason) {
   markFirstInteractive(startupMetrics, reason);
+  setJobsStartupState("interactive", String(reason || "interactive"));
   desktopUrlStateReady = true;
   if (desktopPendingRememberJobsUrl) {
     desktopPendingRememberJobsUrl = false;
@@ -370,8 +380,9 @@ function markJobsFirstInteractive(reason) {
   }
 }
 
-function bindEvents() {
-
+function bindCoreEvents() {
+  if (coreEventsBound) return;
+  coreEventsBound = true;
   const clickHandlers = new Map([
     [savedJobsBtn, () => {
       rememberCurrentJobsUrl();
@@ -392,7 +403,11 @@ function bindEvents() {
   bindAsyncClick(authSignOutBtn, signOutUser);
   bindAsyncClick(refreshJobsBtn, () => refreshJobsNow({ manual: true }));
   bindAsyncClick(jobsPipelineRunBtn, triggerJobsPipelineRun);
+}
 
+function bindEvents() {
+  if (secondaryEventsBound) return;
+  secondaryEventsBound = true;
   [
     workTypeFilter,
     lifecycleStatusFilter,
@@ -1569,7 +1584,7 @@ function renderCountryPickerOptions(query = "") {
     availableCountryFilterValues,
     selectedCountries: state.filters.countries,
     query,
-    getCountryFilterOptionLabel,
+    getCountryFilterOptionLabel: getCountryFilterOptionLabelForJobs,
     escapeHtml
   });
 }
@@ -1788,15 +1803,40 @@ function setSourceStatus(text) {
   setStatusText(setText, sourceStatus, text);
 }
 
+function setJobsStartupState(state, detail = "") {
+  if (!document?.body) return;
+  const normalized = String(state || "loading").trim().toLowerCase() || "loading";
+  document.body.setAttribute("data-jobs-startup-state", normalized);
+  if (detail) {
+    document.body.setAttribute("data-jobs-startup-detail", String(detail));
+  } else {
+    document.body.removeAttribute("data-jobs-startup-detail");
+  }
+}
+
 function showLoading(text) {
   showJobsLoading(jobsList, text);
 }
 
-function showError(message) {
+function showError(message, onRetry = null) {
+  setJobsStartupState("error", "load_error");
   showJobsError(jobsList, pagination, message, () => {
-    init().catch(err => logJobsError("Retry failed", err));
+    const retry = typeof onRetry === "function"
+      ? onRetry
+      : () => init().catch(err => handleJobsStartupFailure("Retry failed", err));
+    return retry();
   });
   updateResultsSummary(0, 0, 0, allJobs.length);
+}
+
+function handleJobsStartupFailure(context, err, options = {}) {
+  logJobsError(context, err);
+  setProgress(false);
+  setSourceStatus("Jobs page failed to start.");
+  const retry = options.allowRetryReload
+    ? () => window.location.reload()
+    : () => init().catch(nextErr => handleJobsStartupFailure("Retry failed", nextErr));
+  showError("Unable to load job listings right now.", retry);
 }
 
 export { bootJobsPage as boot };

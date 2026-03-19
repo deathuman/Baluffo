@@ -13,13 +13,21 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 | google_sheets_1mvqhxat | csv | community (mirror sheet) | adapter: csv |
 | remote_ok | api | community | adapter: api, studio: remote_ok |
 | gamesindustry | html | community | adapter: html, studio: gamesindustry |
+| gamejobs | html | community board loader | adapter: html, studio: gamejobs |
+| workwithindies | html | community board loader | adapter: html, studio: workwithindies |
+| 8bitplay | html | community board loader | adapter: html, studio: 8bitplay |
+| gracklehq | html | community board loader | adapter: html, studio: gracklehq |
 | epic_games_careers | api | community | adapter: api, studio: epic_games |
 | greenhouse_boards | greenhouse | provider_api (registry) | adapter: greenhouse, studio: multiple |
 | teamtailor_sources | teamtailor | provider_api (registry) | adapter: teamtailor |
 | lever_sources | lever | provider_api (registry) | adapter: lever |
 | smartrecruiters_sources | smartrecruiters | provider_api (registry) | adapter: smartrecruiters |
 | workable_sources | workable | provider_api (registry) | adapter: workable |
+| recruitee_sources | recruitee | provider_api (registry) | adapter: recruitee |
+| pinpoint_sources | pinpoint | provider_api (registry) | adapter: pinpoint |
 | ashby_sources | ashby | provider_api (registry) | adapter: ashby |
+| breezy_sources | breezy | provider_api (registry) | adapter: breezy |
+| jazzhr_sources | jazzhr | provider_api (registry) | adapter: jazzhr |
 | personio_sources | personio | provider_api (registry) | adapter: personio |
 | scrapy_static_sources | scrapy_static | static (Scrapy subprocess) | adapter: scrapy_static |
 | social_reddit | social | social (config-driven) | adapter: social, studio: reddit |
@@ -51,7 +59,19 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
   - `greenhouse` (boards JSON)
   - `teamtailor` (listing HTML + detail parsing)
   - `lever`, `smartrecruiters`, `workable` (similar registry-driven flow)
-  - `ashby`, `personio` (provider-specific flows)
+  - `recruitee`, `pinpoint` (registry-driven JSON feeds)
+  - `ashby`, `breezy`, `jazzhr`, `personio` (provider-specific HTML/XML board flows)
+
+- **`src/jobs/adapters/community/__init__.py`**  
+  Community-board loaders now include:
+  - `google_sheets`
+  - `remote_ok`
+  - `gamesindustry`
+  - `gamejobs`
+  - `workwithindies`
+  - `8bitplay`
+  - `gracklehq`
+  - `epic_games_careers`
 
 - **`src/jobs/adapters/social.py` (~269 LOC)**  
   Already segmented by provider:
@@ -124,8 +144,9 @@ When a studio’s jobs are already covered by a provider adapter (e.g. SmartRecr
 
 ### How to add new sources by family
 
-- **Provider API (Greenhouse, Lever, etc.):** Add the source to the runtime registry (`data/source-registry-active.json` or via Admin → Sources). The fetcher loads registry entries by adapter type; ensure the entry has the required fields (e.g. `slug` for Greenhouse, `api_url` for Lever). No change to `DEFAULT_SOURCE_LOADER_NAMES` needed for registry-driven adapters.
+- **Provider API (Greenhouse, Lever, Recruitee, Pinpoint, Breezy, JazzHR, etc.):** Add the source to the runtime registry (`data/source-registry-active.json` or via Admin -> Sources). The fetcher loads registry entries by adapter type; ensure the entry has the required fields (e.g. `slug` for Greenhouse, `api_url` for Lever/Recruitee/Pinpoint, `board_url` for Ashby/Breezy/JazzHR, `feed_url` for Personio). No change to `DEFAULT_SOURCE_LOADER_NAMES` is needed once the provider family itself exists.
 - **Static studio site:** (1) Add a static plugin if the site needs custom parsing (see Static plugins above). (2) Add a registry entry with `"adapter": "static"`, `pages` (listing URL(s)), and `company`/`name`. The pipeline will pick the plugin by host from the first page URL.
 - **New CSV/Google Sheet:** Add an entry to `GOOGLE_SHEETS_SOURCES` in `src/jobs/adapters/community/google_sheets.py` (or import from `src.jobs.adapters.community`) with `name`, `sheetId`, `gid`. Add the same `name` to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`.
+- **New community board / aggregator:** Add the parser and loader in `src/jobs/adapters/community/__init__.py`, export the parser through `src/jobs/parsers.py` and `src/jobs_fetcher.py`, then add the loader name to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`. Recent examples: `gamejobs`, `workwithindies`, `8bitplay`, `gracklehq`.
 - **Social (Reddit/X/Mastodon):** Enable via `--social-enabled` or runtime config. To add a new social provider, implement the loader in `src/jobs/adapters/social.py` and register it in `default_source_loaders` and `SOURCE_REPORT_META`.
 

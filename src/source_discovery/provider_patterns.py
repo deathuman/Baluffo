@@ -31,7 +31,7 @@ def likely_providers_for_seed(seed: Dict[str, Any]) -> List[str]:
         return [item for item in explicit if item in SUPPORTED_PROVIDERS or item == "static"]
     providers = {"greenhouse", "workable", "teamtailor"}
     if not bool(seed.get("nlPriority")):
-        providers.update({"lever", "smartrecruiters", "ashby"})
+        providers.update({"lever", "smartrecruiters", "ashby", "recruitee", "pinpoint"})
     return [item for item in SUPPORTED_PROVIDERS if item in providers]
 
 
@@ -52,6 +52,10 @@ def provider_reinforcement_score(seed: Dict[str, Any], provider: str) -> int:
         return 18 if "workable" in host else 0
     if provider == "ashby":
         return 18 if "ashbyhq" in host else 0
+    if provider == "recruitee":
+        return 18 if ".recruitee.com" in host else 0
+    if provider == "pinpoint":
+        return 18 if ".pinpointhq.com" in host else 0
     if provider == "personio":
         return 18 if ".jobs.personio.de" in host else 0
     if provider == "teamtailor":
@@ -65,8 +69,8 @@ def provider_reinforcement_score(seed: Dict[str, Any], provider: str) -> int:
 
 def _pattern_aliases_for_provider(seed: Dict[str, Any], provider: str) -> List[str]:
     aliases = expand_aliases(seed)
-    scoped = aliases[:2] if provider in {"greenhouse", "lever", "workable", "teamtailor"} else aliases[:1]
-    if provider in {"lever", "teamtailor"}:
+    scoped = aliases[:2] if provider in {"greenhouse", "lever", "workable", "teamtailor", "recruitee"} else aliases[:1]
+    if provider in {"lever", "teamtailor", "recruitee", "pinpoint"}:
         expanded: List[str] = []
         seen = set()
         for alias in scoped:
@@ -166,6 +170,24 @@ def build_pattern_candidates(studio_seeds: List[Dict[str, Any]]) -> List[Dict[st
                         "adapter": "ashby",
                         "board_url": f"https://jobs.ashbyhq.com/{alias}/jobs",
                     })
+                elif provider == "recruitee":
+                    host = alias if ".recruitee.com" in alias else f"{alias}.recruitee.com"
+                    rows.append({
+                        **base,
+                        "name": f"{studio} (Recruitee)",
+                        "adapter": "recruitee",
+                        "subdomain": host.split(".recruitee.com", 1)[0],
+                        "api_url": f"https://{host}/api/offers/",
+                    })
+                elif provider == "pinpoint":
+                    host = alias if ".pinpointhq.com" in alias else f"{alias}.pinpointhq.com"
+                    rows.append({
+                        **base,
+                        "name": f"{studio} (Pinpoint)",
+                        "adapter": "pinpoint",
+                        "subdomain": host.split(".pinpointhq.com", 1)[0],
+                        "api_url": f"https://{host}/postings.json",
+                    })
                 elif provider == "personio":
                     rows.append({
                         **base,
@@ -174,4 +196,3 @@ def build_pattern_candidates(studio_seeds: List[Dict[str, Any]]) -> List[Dict[st
                         "feed_url": f"https://{alias}.jobs.personio.de/xml",
                     })
     return unique_sources(rows)
-

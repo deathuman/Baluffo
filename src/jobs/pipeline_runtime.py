@@ -22,9 +22,10 @@ class PipelineTaskRuntime:
     thread_local: threading.local
     domain_lock: threading.Lock
     domain_gates: Dict[str, threading.BoundedSemaphore]
+    show_progress: bool = False
 
 
-def initialize_task_runtime(selected_loaders: List[Tuple[str, Any]]) -> PipelineTaskRuntime:
+def initialize_task_runtime(selected_loaders: List[Tuple[str, Any]], *, show_progress: bool = False) -> PipelineTaskRuntime:
     return PipelineTaskRuntime(
         task_rows={
             name: {
@@ -44,6 +45,7 @@ def initialize_task_runtime(selected_loaders: List[Tuple[str, Any]]) -> Pipeline
         thread_local=threading.local(),
         domain_lock=threading.Lock(),
         domain_gates={},
+        show_progress=bool(show_progress),
     )
 
 
@@ -64,6 +66,7 @@ def write_progress_report(
     normalize_fetch_report_payload: Callable[[Dict[str, Any]], Dict[str, Any]],
     write_text_if_changed: Callable[[Any, str], Any],
     deduplicator_factory: Callable[[], Any],
+    run_id: str = "",
 ) -> None:
     deduplicator = deduplicator_factory()
     deduped_progress_rows = deduplicator.process(canonical_rows)
@@ -72,6 +75,7 @@ def write_progress_report(
     progress_lifecycle_counts = lifecycle_counts(lifecycle_rows)
     progress_payload = normalize_fetch_report_payload({
         "schemaVersion": schema_version,
+        "runId": run_id,
         "startedAt": started_at,
         "finishedAt": "",
         "runtime": runtime_payload,
@@ -105,6 +109,7 @@ def write_progress_report(
 def make_task_state_writer(
     *,
     runtime: PipelineTaskRuntime,
+    run_id: str,
     started_at: str,
     report_path: str,
     task_state_path: Any,
@@ -119,6 +124,7 @@ def make_task_state_writer(
         with runtime.task_lock:
             rows_snapshot = [dict(row) for row in runtime.task_rows.values()]
         payload = normalize_task_state_payload({
+            "runId": run_id,
             "startedAt": started_at,
             "finishedAt": finished_at,
             "summary": {
@@ -129,7 +135,7 @@ def make_task_state_writer(
             },
             "tasks": rows_snapshot,
             "outputs": {"report": str(report_path)},
-        }, started_at=started_at, finished_at=finished_at, report_path=str(report_path))
+        }, run_id=run_id, started_at=started_at, finished_at=finished_at, report_path=str(report_path))
         write_text_if_changed(task_state_path, json.dumps(payload, indent=2, ensure_ascii=False))
 
     return write_task_state
@@ -158,6 +164,14 @@ def make_fetch_text_limited(
                     with runtime.task_lock:
                         if runtime.task_rows[current].get("status") == "running":
                             runtime.task_rows[current]["heartbeatAt"] = now_iso()
+                            started_mono = float(runtime.task_rows[current].get("_startedMonotonic") or 0.0)
+                            warned = bool(runtime.task_rows[current].get("_slowWarned"))
+                            if runtime.show_progress and started_mono > 0 and not warned and (now_mono - started_mono) >= 20.0:
+                                runtime.task_rows[current]["_slowWarned"] = True
+                                print(
+                                    f"[jobs_fetcher] WARN source={current} runningForMs={int((now_mono - started_mono) * 1000)}",
+                                    flush=True,
+                                )
                     runtime.last_heartbeat_write[current] = now_mono
                     write_task_state()
             return fetch_text_impl(url, timeout)

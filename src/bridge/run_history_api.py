@@ -104,6 +104,7 @@ class SyncHistoryDeps:
     ops_state_lock: Any
     load_run_history: Callable[[], List[Dict[str, Any]]]
     save_run_history: Callable[[List[Dict[str, Any]]], None]
+    save_json_atomic: Callable[[Path, Any], None]
     prune_started_rows_for_type: Callable[..., None]
     clear_task_state: Callable[[str], None]
     clear_task_state_locked: Callable[[str], None]
@@ -121,6 +122,77 @@ class SyncHistoryDeps:
     parse_iso: Callable[[Any], datetime | None]
     now_iso: Callable[[], str]
     now_utc: Callable[[], datetime]
+
+
+def mark_report_stale_finished(
+    report: Dict[str, Any],
+    *,
+    now_iso: Callable[[], str],
+    error_code: str = "stale_started_run_pruned",
+) -> Dict[str, Any]:
+    next_report = dict(report or {})
+    next_report["finishedAt"] = str(next_report.get("finishedAt") or now_iso())
+    summary = dict(next_report.get("summary") or {})
+    summary["error"] = str(summary.get("error") or error_code)
+    next_report["summary"] = summary
+    return next_report
+
+
+def _match_run_identity(row: Dict[str, Any], *, run_type: str, run_id: str, started_at: str) -> bool:
+    if str(row.get("type") or "").strip().lower() != str(run_type or "").strip().lower():
+        return False
+    if run_id and str(row.get("runId") or "").strip() == run_id:
+        return True
+    return bool(started_at) and str(row.get("startedAt") or "").strip() == started_at
+
+
+def _collapse_duplicate_history_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    deduped: List[Dict[str, Any]] = []
+    row_keys: Dict[tuple[str, str], int] = {}
+    legacy_keys: Dict[tuple[str, str], int] = {}
+
+    def _score(row: Dict[str, Any]) -> tuple[int, int, int, int]:
+        finished = 1 if str(row.get("finishedAt") or "").strip() else 0
+        has_run_id = 1 if str(row.get("runId") or "").strip() else 0
+        has_summary = 1 if isinstance(row.get("summary"), dict) and row.get("summary") else 0
+        duration = int(row.get("durationMs") or 0)
+        return (finished, has_run_id, has_summary, duration)
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_type = str(row.get("type") or "").strip().lower()
+        started_at = str(row.get("startedAt") or "").strip()
+        finished_at = str(row.get("finishedAt") or "").strip()
+        status = str(row.get("status") or "").strip().lower()
+        run_id = str(row.get("runId") or "").strip()
+
+        target_key = None
+        target_map = None
+        if row_type and run_id:
+            target_key = (row_type, run_id)
+            target_map = row_keys
+        elif row_type and started_at:
+            target_key = (row_type, started_at)
+            target_map = legacy_keys
+
+        if target_key is None or target_map is None:
+            deduped.append(dict(row))
+            continue
+
+        existing_idx = target_map.get(target_key)
+        if existing_idx is None:
+            target_map[target_key] = len(deduped)
+            deduped.append(dict(row))
+            continue
+
+        existing = deduped[existing_idx]
+        merged = {**existing, **dict(row)}
+        if _score(existing) > _score(row):
+            merged = {**dict(row), **existing}
+        deduped[existing_idx] = merged
+
+    return deduped
 
 
 def reconcile_sync_history_locked(deps: SyncHistoryDeps) -> None:
@@ -193,6 +265,9 @@ def reconcile_started_task_history_locked(run_type: str, deps: SyncHistoryDeps) 
 
 def sync_history_from_reports(deps: SyncHistoryDeps) -> List[Dict[str, Any]]:
     with deps.ops_state_lock:
+        initial_history = _collapse_duplicate_history_rows(deps.load_run_history())
+        if initial_history != deps.load_run_history():
+            deps.save_run_history(initial_history)
         reconcile_sync_history_locked(deps)
         reconcile_started_task_history_locked("fetch", deps)
         reconcile_started_task_history_locked("discovery", deps)
@@ -203,6 +278,10 @@ def sync_history_from_reports(deps: SyncHistoryDeps) -> List[Dict[str, Any]]:
         fetch_started_at = str(fetch_report.get("startedAt") or "")
         fetch_finished_at = str(fetch_report.get("finishedAt") or "")
         if deps.report_is_stale_in_progress("fetch", deps.jobs_fetch_report_path, fetch_report):
+            deps.save_json_atomic(
+                deps.jobs_fetch_report_path,
+                mark_report_stale_finished(fetch_report, now_iso=deps.now_iso),
+            )
             deps.prune_started_rows_for_type("fetch")
             deps.clear_task_state("fetch")
             fetch_started_at = ""
@@ -230,23 +309,34 @@ def sync_history_from_reports(deps: SyncHistoryDeps) -> List[Dict[str, Any]]:
                 "fetch", finished_at=str(fetch_report.get("finishedAt") or "")
             )
             deps.clear_task_state("fetch")
-            deps.upsert_run_history(
-                {
-                    "type": "fetch",
-                    "status": "ok"
-                    if fetch_summary["failedSources"] == 0
-                    else ("error" if fetch_summary["failedRatio"] >= 1 else "warning"),
-                    "startedAt": str(fetch_report.get("startedAt") or ""),
-                    "finishedAt": str(fetch_report.get("finishedAt") or ""),
-                    "durationMs": int(fetch_summary["durationMs"]),
-                    "summary": {
-                        "outputCount": int(fetch_summary["outputCount"]),
-                        "failedSources": int(fetch_summary["failedSources"]),
-                        "sourceCount": int(fetch_summary["sourceCount"]),
-                    },
+            history = deps.load_run_history()
+            run_id = str(fetch_report.get("runId") or "").strip()
+            started_at = str(fetch_report.get("startedAt") or "")
+            entry = {
+                "runId": run_id,
+                "type": "fetch",
+                "status": "ok"
+                if fetch_summary["failedSources"] == 0
+                else ("error" if fetch_summary["failedRatio"] >= 1 else "warning"),
+                "startedAt": started_at,
+                "finishedAt": str(fetch_report.get("finishedAt") or ""),
+                "durationMs": int(fetch_summary["durationMs"]),
+                "summary": {
+                    "outputCount": int(fetch_summary["outputCount"]),
+                    "failedSources": int(fetch_summary["failedSources"]),
+                    "sourceCount": int(fetch_summary["sourceCount"]),
                 },
-                dedupe_fields=("type", "finishedAt"),
-            )
+            }
+            match_idx = -1
+            for idx, row in enumerate(history):
+                if _match_run_identity(row, run_type="fetch", run_id=run_id, started_at=started_at):
+                    match_idx = idx
+                    break
+            if match_idx >= 0:
+                history[match_idx] = {**dict(history[match_idx]), **entry}
+                deps.save_run_history(history)
+            else:
+                deps.upsert_run_history(entry, dedupe_fields=("type", "finishedAt"))
 
         discovery_report = deps.normalize_discovery_report_contract(
             deps.load_json_object(deps.discovery_report_path, {})
@@ -256,6 +346,10 @@ def sync_history_from_reports(deps: SyncHistoryDeps) -> List[Dict[str, Any]]:
         if deps.report_is_stale_in_progress(
             "discovery", deps.discovery_report_path, discovery_report
         ):
+            deps.save_json_atomic(
+                deps.discovery_report_path,
+                mark_report_stale_finished(discovery_report, now_iso=deps.now_iso),
+            )
             deps.prune_started_rows_for_type("discovery")
             deps.clear_task_state("discovery")
             discovery_started_at = ""
@@ -298,4 +392,6 @@ def sync_history_from_reports(deps: SyncHistoryDeps) -> List[Dict[str, Any]]:
                 },
                 dedupe_fields=("type", "finishedAt"),
             )
-        return deps.load_run_history()
+        final_rows = _collapse_duplicate_history_rows(deps.load_run_history())
+        deps.save_run_history(final_rows)
+        return final_rows

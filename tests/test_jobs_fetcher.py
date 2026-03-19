@@ -53,6 +53,12 @@ def test_runtime_facade_falls_back_to_main_module_for_jobs_fetcher_runs() -> Non
         resolved = runtime_resolver.facade()
         assert resolved is main_mod
         assert callable(getattr(resolved, "parse_ashby_jobs_from_html", None))
+        assert callable(getattr(resolved, "parse_breezy_jobs_html", None))
+        assert callable(getattr(resolved, "parse_jazzhr_jobs_html", None))
+        assert callable(getattr(resolved, "parse_recruitee_jobs_payload", None))
+        assert callable(getattr(resolved, "parse_pinpoint_jobs_payload", None))
+        assert callable(getattr(resolved, "parse_8bitplay_html", None))
+        assert callable(getattr(resolved, "parse_gracklehq_html", None))
         assert callable(getattr(resolved, "parse_personio_feed_xml", None))
         assert callable(getattr(resolved, "parse_epic_games_jobs_payload", None))
         main_mod.__spec__ = prev_spec  # type: ignore[attr-defined]
@@ -476,6 +482,30 @@ def test_deduplicate_jobs_keeps_unresolved_redirect_separate() -> None:
         assert stats["outputCount"] == 2
         assert int(stats.get("mergedByPrimaryUrl") or 0) == 0
 
+def test_canonicalize_job_skips_redirect_resolution_for_gracklehq_source() -> None:
+        calls: list[str] = []
+
+        row = jf.canonicalize_job(
+            {
+                "title": "Technical Director Level Design - M/F/NB - unannounced project",
+                "company": jf.UNKNOWN_COMPANY_LABEL,
+                "city": "Montpellier",
+                "country": "France",
+                "workType": "Onsite",
+                "contractType": "Unknown",
+                "jobLink": "https://gracklehq.com/rd/372393",
+                "sector": "Game",
+                "sourceJobId": "gracklehq:https://gracklehq.com/rd/372393",
+            },
+            source="gracklehq",
+            fetched_at=jf.now_iso(),
+            resolve_redirect_url=lambda url: calls.append(str(url)) or "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-role",
+        )
+
+        assert row is not None
+        assert row["jobLink"] == "https://gracklehq.com/rd/372393"
+        assert calls == []
+
 def test_pooled_redirect_resolver_reuses_cached_resolution_and_headers() -> None:
         calls = []
         fake_httpx = type(
@@ -772,10 +802,219 @@ def test_parse_ashby_jobs_from_html_fixture() -> None:
         assert len(rows) == 2
         assert all("jobs.ashbyhq.com" in row["jobLink"] for row in rows)
 
+def test_parse_breezy_jobs_html_fixture() -> None:
+        rows = jf.parse_breezy_jobs_html(_fixture("breezy_jobs.html"), "https://yallaplay.breezy.hr/", "YallaPlay")
+        assert len(rows) == 2
+        assert all(row["company"] == "YallaPlay" for row in rows)
+        assert any(row["workType"] == "Remote" for row in rows)
+
+def test_parse_jazzhr_jobs_html_fixture() -> None:
+        rows = jf.parse_jazzhr_jobs_html(
+            _fixture("jazzhr_jobs.html"),
+            "https://lostboysinteractive.applytojob.com/apply",
+            "Lost Boys Interactive",
+        )
+        assert len(rows) == 2
+        assert all(row["company"] == "Lost Boys Interactive" for row in rows)
+        assert any(row["contractType"] == "Full Time" for row in rows)
+
+def test_parse_recruitee_jobs_payload_fixture() -> None:
+        payload = json.loads(_fixture("recruitee_jobs.json"))
+        rows = jf.parse_recruitee_jobs_payload(
+            payload,
+            "jobs.crazygames.com",
+            fallback_company="CrazyGames",
+        )
+        assert len(rows) == 2
+        assert all(row["company"] == "CrazyGames" for row in rows)
+        assert any(row["workType"] == "Remote" for row in rows)
+
+def test_parse_pinpoint_jobs_payload_fixture() -> None:
+        payload = json.loads(_fixture("pinpoint_jobs.json"))
+        rows = jf.parse_pinpoint_jobs_payload(
+            payload,
+            "gameplaygalaxy",
+            fallback_company="Gameplay Galaxy",
+        )
+        assert len(rows) == 2
+        assert all(row["company"] == "Gameplay Galaxy" for row in rows)
+        assert any(row["workType"] == "Remote" for row in rows)
+
 def test_parse_personio_feed_xml_fixture() -> None:
         rows = jf.parse_personio_feed_xml(_fixture("personio_feed.xml"), source_name="InnoGames")
         assert len(rows) >= 1
         assert any(row["title"] == "Environment Artist" for row in rows)
+
+def test_parse_gamejobs_html_fixture() -> None:
+        rows = jf.parse_gamejobs_html(_fixture("gamejobs.html"), base_url="https://gamejobs.co/")
+        assert len(rows) == 2
+        assert rows[0]["company"] == "Pixel Forge"
+        assert any(row["workType"] == "Remote" for row in rows)
+
+def test_run_gamejobs_source_paginates_search_pages() -> None:
+        page_one = """
+        <html><body>
+          <a href="/jobs/lead-gameplay-programmer">Lead Gameplay Programmer</a>
+          <a href="/companies/pixel-forge">Pixel Forge</a>
+          <a href="/locations/amsterdam-netherlands">Amsterdam, Netherlands</a>
+          <a href="/jobs/technical-artist">Technical Artist</a>
+          <a href="/companies/nebula-games">Nebula Games</a>
+          <a href="/locations/worldwide-remote">Worldwide Remote</a>
+        </body></html>
+        """
+        page_two = """
+        <html><body>
+          <a href="/jobs/economy-designer">Economy Designer</a>
+          <a href="/companies/rainfall-interactive">Rainfall Interactive</a>
+          <a href="/locations/london-united-kingdom">London, United Kingdom</a>
+          <a href="/jobs/lead-gameplay-programmer">Lead Gameplay Programmer</a>
+          <a href="/companies/pixel-forge">Pixel Forge</a>
+          <a href="/locations/amsterdam-netherlands">Amsterdam, Netherlands</a>
+        </body></html>
+        """
+        seen_urls: list[str] = []
+
+        def fake_fetch_text(url: str, timeout: int) -> str:
+            _ = timeout
+            seen_urls.append(url)
+            if url == "https://gamejobs.co/":
+                return page_one
+            if url == "https://gamejobs.co/search?page=2":
+                return page_two
+            if url == "https://gamejobs.co/search?page=3":
+                return "<html><body>No jobs</body></html>"
+            raise AssertionError(f"unexpected url {url}")
+
+        rows = jf.run_gamejobs_source(fetch_text=fake_fetch_text, timeout_s=5, retries=0, backoff_s=0)
+        assert len(rows) == 3
+        assert any(row["title"] == "Economy Designer" for row in rows)
+        assert seen_urls[:3] == [
+            "https://gamejobs.co/",
+            "https://gamejobs.co/search?page=2",
+            "https://gamejobs.co/search?page=3",
+        ]
+
+def test_parse_workwithindies_html_fixture() -> None:
+        rows = jf.parse_workwithindies_html(
+            _fixture("workwithindies.html"),
+            base_url="https://www.workwithindies.com/",
+        )
+        assert len(rows) == 2
+        assert rows[0]["company"] == "Moonshot Games"
+        assert any(row["workType"] == "Remote" for row in rows)
+        assert any(row["country"] == "Canada" for row in rows)
+
+def test_parse_8bitplay_html_fixture() -> None:
+        rows = jf.parse_8bitplay_html(
+            _fixture("8bitplay_jobs.html"),
+            base_url="https://8bitplay.com/jobs/",
+        )
+        assert len(rows) == 2
+        assert rows[0]["company"] == "Pixel Dominion"
+        assert any(row["workType"] == "Remote" for row in rows)
+
+def test_run_8bitplay_source_paginates_job_board_pages() -> None:
+        page_one = _fixture("8bitplay_jobs.html")
+        page_two = """
+        <html><body>
+          <a href="https://8bitplay.com/job/rendering-engineer/" class="post__similar-job">
+            <div class="acf-job-board__top">
+              <div class="acf-job-board__logo"><p class="acf-job-board__img-text">Nebula Forge</p></div>
+              <h2 class="acf-job-board__props"><span>PC/Console</span><span>Europe</span></h2>
+            </div>
+            <h3 class="post__similar-job-title acf-jtw__title">Rendering Engineer</h3>
+          </a>
+        </body></html>
+        """
+        seen_urls: list[str] = []
+
+        def fake_fetch_text(url: str, timeout: int) -> str:
+            _ = timeout
+            seen_urls.append(url)
+            if url == "https://8bitplay.com/jobs/":
+                return page_one
+            if url == "https://8bitplay.com/jobs/?job-board-paged=2":
+                return page_two
+            if url == "https://8bitplay.com/jobs/?job-board-paged=3":
+                return "<html><body>No more jobs</body></html>"
+            raise AssertionError(f"unexpected url {url}")
+
+        rows = jf.run_8bitplay_source(fetch_text=fake_fetch_text, timeout_s=5, retries=0, backoff_s=0)
+        assert len(rows) == 3
+        assert any(row["title"] == "Rendering Engineer" for row in rows)
+        assert seen_urls[:3] == [
+            "https://8bitplay.com/jobs/",
+            "https://8bitplay.com/jobs/?job-board-paged=2",
+            "https://8bitplay.com/jobs/?job-board-paged=3",
+        ]
+
+def test_parse_gracklehq_html_fixture() -> None:
+        rows = jf.parse_gracklehq_html(
+            _fixture("gracklehq_jobs.html"),
+            base_url="https://gracklehq.com/jobs",
+        )
+        assert len(rows) == 2
+        assert rows[0]["company"] == "Ubisoft"
+        assert any(row["workType"] == "Remote" for row in rows)
+
+def test_run_gracklehq_source_follows_next_pages() -> None:
+        page_one = _fixture("gracklehq_jobs.html") + '<a href="./jobs?pageidx=2" class="btn btn-default ">Next</a>'
+        page_two = """
+        <html><body>
+          <div class="joblisting">
+            <a href="/rd/372395" target="_blank">Gameplay Programmer</a>
+            <div>Robot Eclipse - Remote</div>
+            <div class="bottomright">&lt;1d</div>
+          </div>
+        </body></html>
+        """
+        seen_urls: list[str] = []
+
+        def fake_fetch_text(url: str, timeout: int) -> str:
+            _ = timeout
+            seen_urls.append(url)
+            if url == "https://gracklehq.com/jobs":
+                return page_one
+            if url == "https://gracklehq.com/jobs?pageidx=2":
+                return page_two
+            raise AssertionError(f"unexpected url {url}")
+
+        rows = jf.run_gracklehq_source(fetch_text=fake_fetch_text, timeout_s=5, retries=0, backoff_s=0)
+        assert len(rows) == 3
+        assert any(row["title"] == "Gameplay Programmer" for row in rows)
+        assert seen_urls == [
+            "https://gracklehq.com/jobs",
+            "https://gracklehq.com/jobs?pageidx=2",
+        ]
+
+def test_run_gracklehq_source_stops_on_repeated_next_page() -> None:
+        page_one = _fixture("gracklehq_jobs.html") + '<a href="./jobs?pageidx=2" class="btn btn-default ">Next</a>'
+        page_two = """
+        <html><body>
+          <div class="joblisting">
+            <a href="/rd/372395" target="_blank">Gameplay Programmer</a>
+            <div>Robot Eclipse - Remote</div>
+          </div>
+          <a href="./jobs?pageidx=2" class="btn btn-default ">Next</a>
+        </body></html>
+        """
+        seen_urls: list[str] = []
+
+        def fake_fetch_text(url: str, timeout: int) -> str:
+            _ = timeout
+            seen_urls.append(url)
+            if url == "https://gracklehq.com/jobs":
+                return page_one
+            if url == "https://gracklehq.com/jobs?pageidx=2":
+                return page_two
+            raise AssertionError(f"unexpected url {url}")
+
+        rows = jf.run_gracklehq_source(fetch_text=fake_fetch_text, timeout_s=5, retries=0, backoff_s=0)
+        assert len(rows) == 3
+        assert seen_urls == [
+            "https://gracklehq.com/jobs",
+            "https://gracklehq.com/jobs?pageidx=2",
+        ]
 
 def test_normalize_source_report_row_preserves_structured_details() -> None:
         row = jf.normalize_source_report_row({
@@ -980,6 +1219,173 @@ def test_run_static_studio_pages_source_loads_kojima_dynamic_listing() -> None:
             assert len(rows) == 2
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
+
+def test_run_static_studio_pages_source_littlechicken_plugin_extracts_listing_cards() -> None:
+        prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        jf.STUDIO_SOURCE_REGISTRY = [
+            {
+                "name": "Little Chicken (Manual Website)",
+                "studio": "Little Chicken",
+                "adapter": "static",
+                "company": "Little Chicken",
+                "pages": ["https://www.littlechicken.nl/jobs/"],
+                "enabledByDefault": True,
+                "id": "static:listing_url:https://www.littlechicken.nl/jobs/",
+            }
+        ]
+        listing_html = """
+        <article><h2>3D Artist Internship</h2><a href="/job/3d-artist-internship/">Read more</a></article>
+        <article><h2>2D Artist Internship</h2><a href="/job/2d-artist-internship/">Read more</a></article>
+        <article><h2>QA Tester Internship</h2><a href="/job/qa-tester-internship/">Read more</a></article>
+        """
+        detail_html = """
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"JobPosting","title":"3D Artist Internship","url":"https://www.littlechicken.nl/job/3d-artist-internship/","hiringOrganization":{"@type":"Organization","name":"Little Chicken"}}
+        </script>
+        """
+
+        def fake_fetch(url: str, _: int) -> str:
+            if url == "https://www.littlechicken.nl/jobs/":
+                return listing_html
+            if "littlechicken.nl/job/" in url:
+                return detail_html.replace("3d-artist-internship", url.rstrip("/").split("/")[-1]).replace("3D Artist Internship", url.rstrip("/").split("/")[-1].replace("-", " ").title())
+            raise RuntimeError(f"Unexpected URL: {url}")
+
+        try:
+            rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
+            titles = {str(row.get("title") or "") for row in rows}
+            assert "3D Artist Internship" in titles
+            assert "2D Artist Internship" in titles
+            assert "Qa Tester Internship" in titles
+            assert len(rows) == 3
+        finally:
+            jf.STUDIO_SOURCE_REGISTRY = prev
+
+def test_run_static_studio_pages_source_milestone_plugin_extracts_intervieweb_iframe() -> None:
+        prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        jf.STUDIO_SOURCE_REGISTRY = [
+            {
+                "name": "Milestone (Manual Website)",
+                "studio": "Milestone",
+                "adapter": "static",
+                "company": "Milestone",
+                "pages": ["https://milestone.it/careers"],
+                "enabledByDefault": True,
+                "id": "static:listing_url:https://milestone.it/careers",
+            }
+        ]
+        listing_html = """
+        <script src="https://cezanneondemand.intervieweb.it/integration/announces_js.php?lang=en&utype=0&k=abc123&LAC=milestone&d=milestone.it&annType=published&view=list&defgroup=name&gnavenable=1&desc=1&typeView=large"></script>
+        """
+        iframe_html = """
+        <a href="https://cezanneondemand.intervieweb.it/app.php?opmode=guest&module=iframeAnnunci&act1=1&IdAnnuncio=60982&lang=en">Game Designer_tech</a>
+        <div>Milano, Italia Design</div>
+        <a href="https://cezanneondemand.intervieweb.it/app.php?opmode=guest&module=iframeAnnunci&act1=1&IdAnnuncio=61104&lang=en">JUNIOR IT SERVICE DESK</a>
+        <div>Milano, Italia ICT and Information Systems</div>
+        """
+
+        def fake_fetch(url: str, _: int) -> str:
+            if url == "https://milestone.it/careers":
+                return listing_html
+            if "module=iframeAnnunci" in url and "act1=23" in url:
+                return iframe_html
+            raise RuntimeError(f"Unexpected URL: {url}")
+
+        try:
+            rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
+            titles = {str(row.get("title") or "") for row in rows}
+            assert "Game Designer_tech" in titles
+            assert "JUNIOR IT SERVICE DESK" in titles
+            assert len(rows) == 2
+        finally:
+            jf.STUDIO_SOURCE_REGISTRY = prev
+
+def test_run_static_studio_pages_source_kojima_plugin_uses_browser_listing() -> None:
+        prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        jf.STUDIO_SOURCE_REGISTRY = [
+            {
+                "name": "Kojimaproductions (Manual Website)",
+                "studio": "Kojimaproductions",
+                "adapter": "static",
+                "company": "Kojimaproductions",
+                "pages": ["https://www.kojimaproductions.jp/en/careers"],
+                "enabledByDefault": True,
+                "id": "static:listing_url:https://www.kojimaproductions.jp/en/careers",
+            }
+        ]
+        listing_html = "<html><body><p>Open Positions</p></body></html>"
+        browser_html = """
+        <a href="/en/game-programmer">Game Programmer<br>Programming<br>Tokyo, Japan</a>
+        <a href="/en/technical-artist">Technical Artist<br>Programming<br>Tokyo, Japan</a>
+        """
+
+        def fake_fetch(url: str, _: int) -> str:
+            if url == "https://www.kojimaproductions.jp/en/careers":
+                return listing_html
+            raise RuntimeError(f"Unexpected URL: {url}")
+
+        try:
+            rows = jf.run_static_studio_pages_source(
+                fetch_text=fake_fetch,
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+                try_playwright=lambda _url, _timeout: (browser_html, ""),
+            )
+            titles = {str(row.get("title") or "") for row in rows}
+            assert "Game Programmer" in titles
+            assert "Technical Artist" in titles
+            assert len(rows) == 2
+        finally:
+            jf.STUDIO_SOURCE_REGISTRY = prev
+
+def test_run_static_studio_pages_source_blizzard_plugin_follows_role_pages_to_search_results() -> None:
+        prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        jf.STUDIO_SOURCE_REGISTRY = [
+            {
+                "name": "Blizzard Entertainment (Sheet)",
+                "studio": "Blizzard Entertainment",
+                "adapter": "static",
+                "company": "Blizzard Entertainment",
+                "pages": ["https://careers.blizzard.com/global/en"],
+                "enabledByDefault": True,
+                "id": "static:listing_url:https://careers.blizzard.com/global/en",
+            }
+        ]
+        home_html = '<a href="/global/en/engineering-technology">ENGINEERING & TECHNOLOGY</a>'
+        role_html = '<a href="https://careers.blizzard.com/global/en/search-results?rk=l-engineering-technology&sortBy=Most%20relevant">View Open Jobs</a>'
+        results_html = """
+        <a href="https://careers.blizzard.com/global/en/job/R026699/Software-Engineer-Server-World-of-Warcraft-Irvine-CA">Software Engineer, Server - World of Warcraft | Irvine, CA</a>
+        <div>Location Irvine, California, United States of America Posted Date January 30 2026 Category Engineering Job Id R026699</div>
+        <a href="https://careers.blizzard.com/global/en/job/R026419/Lead-Systems-Engineer-Unreal-Engine-5">Lead Systems Engineer, Unreal Engine 5</a>
+        <div>Location Irvine, California, United States of America Posted Date February 03 2026 Category Engineering Job Id R026419</div>
+        """
+
+        def fake_fetch(url: str, _: int) -> str:
+            if url == "https://careers.blizzard.com/global/en":
+                return home_html
+            if url == "https://careers.blizzard.com/global/en/engineering-technology":
+                return role_html
+            if "search-results?rk=l-engineering-technology" in url:
+                return results_html
+            raise RuntimeError(f"Unexpected URL: {url}")
+
+        try:
+            rows = jf.run_static_studio_pages_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
+            titles = {str(row.get("title") or "") for row in rows}
+            assert "Software Engineer, Server - World of Warcraft | Irvine, CA" in titles
+            assert "Lead Systems Engineer, Unreal Engine 5" in titles
+            assert len(rows) == 2
+        finally:
+            jf.STUDIO_SOURCE_REGISTRY = prev
+
+def test_default_registry_no_longer_seeds_stale_ashby_personio_or_placeholder_greenhouse_rows() -> None:
+        names = {str(row.get("name") or "") for row in jf.STUDIO_SOURCE_REGISTRY}
+        assert "InnoGames (Personio)" not in names
+        assert "Travian (Personio)" not in names
+        assert "Jagex (Ashby)" not in names
+        assert "Scopely (Ashby)" not in names
+        assert "Example Studio GmbH (Greenhouse)" not in names
 
 def test_run_static_studio_pages_source_accepts_larian_uuid_paths_and_rejects_location_pages() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
@@ -1881,6 +2287,10 @@ def test_pipeline_default_sources_exclude_wellfound_and_include_guerrilla() -> N
         google_csv = _fixture("google_sheets.csv")
         remote_json = _fixture("remoteok.json")
         gamesindustry_html = _fixture("gamesindustry_jobs.html")
+        gamejobs_html = _fixture("gamejobs.html")
+        workwithindies_html = _fixture("workwithindies.html")
+        eightbitplay_html = _fixture("8bitplay_jobs.html")
+        gracklehq_html = _fixture("gracklehq_jobs.html")
         greenhouse_json = _fixture("greenhouse_guerrilla_jobs.json")
         greenhouse_playstation_json = _fixture("greenhouse_playstation_jobs.json")
         teamtailor_listing = _fixture("teamtailor_listing.html")
@@ -1891,6 +2301,10 @@ def test_pipeline_default_sources_exclude_wellfound_and_include_guerrilla() -> N
         smart_json = _fixture("smartrecruiters_jobs.json")
         workable_json = _fixture("workable_jobs.json")
         ashby_html = _fixture("ashby_jobs.html")
+        recruitee_json = _fixture("recruitee_jobs.json")
+        pinpoint_json = _fixture("pinpoint_jobs.json")
+        breezy_html = _fixture("breezy_jobs.html")
+        jazzhr_html = _fixture("jazzhr_jobs.html")
         personio_xml = _fixture("personio_feed.xml")
 
         def fake_fetch(url: str, _: int) -> str:
@@ -1900,6 +2314,14 @@ def test_pipeline_default_sources_exclude_wellfound_and_include_guerrilla() -> N
                 return remote_json
             if "jobs.gamesindustry.biz" in url:
                 return gamesindustry_html
+            if url == "https://gamejobs.co/":
+                return gamejobs_html
+            if url == "https://www.workwithindies.com/":
+                return workwithindies_html
+            if url == "https://8bitplay.com/jobs/":
+                return eightbitplay_html
+            if url == "https://gracklehq.com/jobs":
+                return gracklehq_html
             if "boards-api.greenhouse.io" in url and "guerrilla-games" in url:
                 return greenhouse_json
             if "boards-api.greenhouse.io" in url and "sonyinteractiveentertainmentglobal" in url:
@@ -1916,6 +2338,14 @@ def test_pipeline_default_sources_exclude_wellfound_and_include_guerrilla() -> N
                 return workable_json
             if "jobs.ashbyhq.com" in url:
                 return ashby_html
+            if "jobs.crazygames.com/api/offers" in url:
+                return recruitee_json
+            if "gameplaygalaxy.pinpointhq.com/postings.json" in url:
+                return pinpoint_json
+            if "breezy.hr" in url:
+                return breezy_html
+            if "applytojob.com/apply" in url:
+                return jazzhr_html
             if "jobs.personio.de/xml" in url:
                 return personio_xml
             if url == "https://www.littlechicken.nl/about-us/jobs/" or url == "https://www.littlechicken.nl/job/":
@@ -1939,12 +2369,20 @@ def test_pipeline_default_sources_exclude_wellfound_and_include_guerrilla() -> N
             assert sources["google_sheets_1mvqhxat"]["status"] == "ok"
             assert sources["remote_ok"]["status"] == "ok"
             assert sources["gamesindustry"]["status"] == "ok"
+            assert sources["gamejobs"]["status"] == "ok"
+            assert sources["workwithindies"]["status"] == "ok"
+            assert sources["8bitplay"]["status"] == "ok"
+            assert sources["gracklehq"]["status"] == "ok"
             assert sources["greenhouse_boards"]["status"] == "ok"
             assert sources["teamtailor_sources"]["status"] == "ok"
             assert sources["lever_sources"]["status"] == "ok"
             assert sources["smartrecruiters_sources"]["status"] == "ok"
             assert sources["workable_sources"]["status"] == "ok"
+            assert sources["recruitee_sources"]["status"] == "ok"
+            assert sources["pinpoint_sources"]["status"] == "ok"
             assert sources["ashby_sources"]["status"] == "ok"
+            assert sources["breezy_sources"]["status"] == "ok"
+            assert sources["jazzhr_sources"]["status"] == "ok"
             assert sources["personio_sources"]["status"] == "ok"
             static_rows = [row for row in report["sources"] if str(row.get("adapter") or "").lower() == "static"]
             assert static_rows
@@ -1956,7 +2394,13 @@ def test_pipeline_default_sources_exclude_wellfound_and_include_guerrilla() -> N
             assert sources["lever_sources"]["adapter"] == "lever"
             assert sources["smartrecruiters_sources"]["adapter"] == "smartrecruiters"
             assert sources["workable_sources"]["adapter"] == "workable"
+            assert sources["recruitee_sources"]["adapter"] == "recruitee"
+            assert sources["pinpoint_sources"]["adapter"] == "pinpoint"
+            assert sources["8bitplay"]["adapter"] == "html"
+            assert sources["gracklehq"]["adapter"] == "html"
             assert sources["ashby_sources"]["adapter"] == "ashby"
+            assert sources["breezy_sources"]["adapter"] == "breezy"
+            assert sources["jazzhr_sources"]["adapter"] == "jazzhr"
             assert sources["personio_sources"]["adapter"] == "personio"
             assert "failedSources" in report["summary"]
             assert report["summary"]["excludedSources"] == 1
@@ -1971,6 +2415,12 @@ def test_pipeline_default_sources_exclude_wellfound_and_include_guerrilla() -> N
             assert any("guerrilla" in row.get("company", "").lower() for row in rows)
             assert any("playstation" in row.get("company", "").lower() for row in rows)
             assert any("paradox" in row.get("company", "").lower() for row in rows)
+            assert any("pixel forge" in row.get("company", "").lower() for row in rows)
+            assert any("moonshot games" in row.get("company", "").lower() for row in rows)
+            assert any("pixel dominion" in row.get("company", "").lower() for row in rows)
+            assert any("ubisoft" in row.get("company", "").lower() for row in rows)
+            assert any("crazygames" in row.get("company", "").lower() for row in rows)
+            assert any("gameplay galaxy" in row.get("company", "").lower() for row in rows)
             assert any("little chicken" in row.get("company", "").lower() for row in rows)
             assert all("focusScore" in row for row in rows)
             assert all("sourceBundleCount" in row for row in rows)
@@ -2014,11 +2464,18 @@ def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts()
             assert int(runtime.get("googleSheetsRedirectConcurrency") or 0) == jf.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
             assert int(runtime.get("selectedSourceCount") or 0) == 1
             assert isinstance(runtime.get("slowestSources"), list)
+            timing = runtime.get("timingSummary") or {}
+            assert "medianSourceDurationMs" in timing
+            assert "p95SourceDurationMs" in timing
+            assert "stageTotalsMs" in timing
             assert "summary" in report
             assert "sources" in report
             assert str(report["sources"][0].get("fetchStrategy") or "") == "auto"
             assert "loss" in report["sources"][0]
             assert "canonicalDropReasons" in (report["sources"][0].get("loss") or {})
+            stage_timings = report["sources"][0].get("stageTimingsMs") or {}
+            if stage_timings:
+                assert "fetchAndParse" in stage_timings
 
             task_payload = json.loads((out / "jobs-fetch-tasks.json").read_text(encoding="utf-8"))
             assert str(task_payload.get("schemaVersion") or "") == str(jf.SCHEMA_VERSION)
@@ -2026,6 +2483,7 @@ def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts()
             assert "tasks" in task_payload
             assert "outputs" in task_payload
             assert str((task_payload.get("outputs") or {}).get("report") or "") == str(out / "jobs-fetch-report.json")
+            assert str((task_payload.get("tasks") or [])[0].get("status") or "") == "ok"
 
             state_payload = json.loads((out / "jobs-source-state.json").read_text(encoding="utf-8"))
             assert str(state_payload.get("schemaVersion") or "") == str(jf.SCHEMA_VERSION)

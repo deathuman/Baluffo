@@ -4,6 +4,7 @@ import {
   renderAdminOpsAlerts,
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
+  renderAdminOpsFetcherMetrics,
   renderAdminOpsTrends,
   renderAdminOpsHistory
 } from "../../../frontend/admin/render.js";
@@ -102,6 +103,47 @@ test("admin render: schedule/trends/history render deterministic core text", () 
   assert.match(historyEl.innerHTML, />42</);
   assert.match(historyEl.innerHTML, /Queued \(new\): 5/);
   assert.match(historyEl.innerHTML, /Sync pull/i);
+});
+
+test("admin render: fetcher metrics render failure buckets and examples", () => {
+  const metricsEl = makeEl();
+  renderAdminOpsFetcherMetrics(metricsEl, {
+    latestRun: {
+      durationMs: 240000,
+      failedSources: 24,
+      sourceCount: 90,
+      sourceFailureRate: 24 / 90,
+      duplicateRate: 0.06,
+      outputYieldRate: 0.71,
+      medianSourceDurationMs: 1200,
+      p95SourceDurationMs: 45000,
+      slowestSources: [{ name: "static_sources", durationMs: 31000 }],
+      stageTop: [{ stage: "detailFetch", durationMs: 82000 }],
+      highCostLowYieldSources: [{ name: "stormind", durationMs: 25000, keptCount: 0 }]
+    },
+    history: {
+      windowRuns: 7,
+      medianDurationMs: 180000,
+      averageDurationMs: 210000
+    }
+  }, {
+    topLevelFailedSources: 1,
+    detailFailureCount: 1,
+    buckets: [
+      { key: "extract_zero", count: 1, examples: ["ashby_sources"] },
+      { key: "provider_rate_limited", count: 1, examples: ["InnoGames (Personio)"] }
+    ]
+  });
+
+  assert.match(metricsEl.innerHTML, /Top-level failed sources/i);
+  assert.match(metricsEl.innerHTML, /Grouped detail failures/i);
+  assert.match(metricsEl.innerHTML, /Failure buckets/i);
+  assert.match(metricsEl.innerHTML, /Extract Zero/i);
+  assert.match(metricsEl.innerHTML, /Provider Rate Limited/i);
+  assert.match(metricsEl.innerHTML, /InnoGames \(Personio\)/i);
+  assert.match(metricsEl.innerHTML, /Latest Runtime/i);
+  assert.match(metricsEl.innerHTML, /Slowest stages/i);
+  assert.match(metricsEl.innerHTML, /High-cost low-yield/i);
 });
 
 test("admin render: signature patching skips redundant alerts/kpis/schedule rewrites", () => {

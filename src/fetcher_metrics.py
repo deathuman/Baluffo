@@ -76,6 +76,16 @@ def summarize_source_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def percentile(values: List[int], pct: float) -> int:
+    if not values:
+        return 0
+    ordered = sorted(int(max(0, value)) for value in values)
+    if len(ordered) == 1:
+        return int(ordered[0])
+    index = int(round((len(ordered) - 1) * max(0.0, min(1.0, float(pct)))))
+    return int(ordered[index])
+
+
 def summarize_run_history(rows: List[Dict[str, Any]], window: int) -> Dict[str, Any]:
     clean_rows = [row for row in rows if isinstance(row, dict) and str(row.get("type") or "").lower() == "fetch"]
     clean_rows.sort(
@@ -112,16 +122,25 @@ def build_metrics(report: Dict[str, Any], history: List[Dict[str, Any]], window:
     merged = int(summary.get("mergedCount") or 0)
     duplicate_rate = round((merged / input_count), 4) if input_count > 0 else 0.0
     output_yield_rate = round((output_count / input_count), 4) if input_count > 0 else 0.0
+    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
+    timing_summary = runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
+    durations = [max(0, int(row.get("durationMs") or 0)) for row in sources if isinstance(row, dict)]
     return {
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "latestRun": {
             "startedAt": str(report.get("startedAt") or ""),
             "finishedAt": str(report.get("finishedAt") or ""),
+            "durationMs": int(timing_summary.get("totalDurationMs") or sum(durations)),
             "inputCount": input_count,
             "outputCount": output_count,
             "mergedCount": merged,
             "duplicateRate": duplicate_rate,
             "outputYieldRate": output_yield_rate,
+            "medianSourceDurationMs": int(timing_summary.get("medianSourceDurationMs") or percentile(durations, 0.5)),
+            "p95SourceDurationMs": int(timing_summary.get("p95SourceDurationMs") or percentile(durations, 0.95)),
+            "stageTotalsMs": dict(timing_summary.get("stageTotalsMs") or {}),
+            "stageTop": list(timing_summary.get("stageTop") or []),
+            "highCostLowYieldSources": list(timing_summary.get("highCostLowYieldSources") or []),
             **summarize_source_rows([row for row in sources if isinstance(row, dict)]),
         },
         "history": summarize_run_history(history, window=window),

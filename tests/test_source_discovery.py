@@ -59,6 +59,27 @@ def test_build_pattern_candidates_adds_reinforcement_for_provider_matching_caree
     assert all("seed_provider_reinforced" in (row.get("evidenceTypes") or []) for row in rows)
 
 
+def test_build_pattern_candidates_supports_recruitee_and_pinpoint_providers() -> None:
+    previous = list(sd.STUDIO_SEEDS)
+    sd.STUDIO_SEEDS = [
+        {
+            "studio": "Example Studio",
+            "aliases": ["example-studio"],
+            "nlPriority": False,
+            "likelyProviders": ["recruitee", "pinpoint"],
+        }
+    ]
+    try:
+        rows = sd.build_pattern_candidates()
+    finally:
+        sd.STUDIO_SEEDS = previous
+
+    adapters = {str(row.get("adapter")) for row in rows}
+    assert adapters == {"recruitee", "pinpoint"}
+    assert any(str(row.get("api_url") or "").endswith("/api/offers/") for row in rows)
+    assert any(str(row.get("api_url") or "").endswith("/postings.json") for row in rows)
+
+
 def test_probe_candidate_maps_jobs_found_for_greenhouse_and_teamtailor() -> None:
     greenhouse = {
         "adapter": "greenhouse",
@@ -98,6 +119,36 @@ def test_probe_candidate_uses_fallback_when_primary_fails() -> None:
     ok, count, error = sd.probe_candidate(greenhouse, timeout_s=5, fetcher=fake_fetch)
     assert ok
     assert count == 1
+    assert error == ""
+
+
+def test_probe_candidate_maps_jobs_found_for_recruitee_and_pinpoint() -> None:
+    recruitee = {
+        "adapter": "recruitee",
+        "subdomain": "example",
+        "api_url": "https://example.recruitee.com/api/offers/",
+    }
+    ok, count, error = sd.probe_candidate(
+        recruitee,
+        timeout_s=5,
+        fetcher=lambda *_: json.dumps({"offers": [{}, {}]}),
+    )
+    assert ok
+    assert count == 2
+    assert error == ""
+
+    pinpoint = {
+        "adapter": "pinpoint",
+        "subdomain": "gameplaygalaxy",
+        "api_url": "https://gameplaygalaxy.pinpointhq.com/postings.json",
+    }
+    ok, count, error = sd.probe_candidate(
+        pinpoint,
+        timeout_s=5,
+        fetcher=lambda *_: json.dumps({"data": [{}, {}, {}]}),
+    )
+    assert ok
+    assert count == 3
     assert error == ""
 
 
@@ -150,6 +201,19 @@ def test_infer_provider_candidates_from_html_detects_provider_from_page_url() ->
     )
     assert len(rows) == 1
     assert str(rows[0].get("adapter") or "") == "personio"
+    assert str(rows[0].get("evidenceSource") or "") == "page_url"
+
+
+def test_infer_provider_candidates_from_html_detects_pinpoint_provider_from_page_url() -> None:
+    rows = sd.infer_provider_candidates_from_html(
+        "https://example.pinpointhq.com/",
+        "<html><body>Careers</body></html>",
+        studio="Example Studio",
+        nl_priority=False,
+        discovery_method="seed_careers_page",
+    )
+    assert len(rows) == 1
+    assert str(rows[0].get("adapter") or "") == "pinpoint"
     assert str(rows[0].get("evidenceSource") or "") == "page_url"
 
 
@@ -1107,6 +1171,4 @@ def test_resolve_discovery_thresholds_overrides_defaults() -> None:
     assert int(thresholds.get("minStaticEvidenceToQueue") or 0) == int(
         sd.DEFAULT_DISCOVERY_THRESHOLDS["minStaticEvidenceToQueue"]
     )
-
-
 

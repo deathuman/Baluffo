@@ -167,6 +167,26 @@ def run_workable_sources_source(*, fetch_text: Callable[[str, int], str], timeou
     )
 
 
+def run_recruitee_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+    return _dispatch_provider_api(
+        "recruitee_sources",
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+    )
+
+
+def run_pinpoint_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+    return _dispatch_provider_api(
+        "pinpoint_sources",
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+    )
+
+
 def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
     jobs: List[RawJob] = []
     errors: List[str] = []
@@ -214,6 +234,26 @@ def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s
     if errors:
         raise AdapterValidationError.from_errors(errors)
     return []
+
+
+def run_breezy_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+    return _dispatch_provider_api(
+        "breezy_sources",
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+    )
+
+
+def run_jazzhr_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+    return _dispatch_provider_api(
+        "jazzhr_sources",
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+    )
 
 
 def run_personio_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:

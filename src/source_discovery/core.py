@@ -181,7 +181,7 @@ def compute_confidence(candidate: Dict[str, Any], jobs_found: int) -> str:
         return "high"
     if jobs_found >= 1:
         return "medium"
-    if adapter in {"lever", "greenhouse", "smartrecruiters", "workable", "teamtailor", "ashby", "personio"}:
+    if adapter in {"lever", "greenhouse", "smartrecruiters", "workable", "teamtailor", "ashby", "recruitee", "pinpoint", "personio"}:
         return "low" if evidence < 40 else "medium"
     return "low"
 

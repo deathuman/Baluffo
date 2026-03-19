@@ -4,11 +4,13 @@ import {
   normalizeLogLevel,
   createLogEvent,
   deriveSourceStatus,
+  deriveFetcherFailureSummary,
   mergeSourceStatusFromReport,
   applySourceFilter,
   getSourceJobsFoundCount,
   normalizeOpsRuns,
   applyOptimisticDiscoveryRun,
+  applyOptimisticFetchRun,
   deriveFetcherProgressModel,
   deriveDiscoveryProgressModel,
   deriveDiscoveryQueuedCount,
@@ -75,6 +77,62 @@ test("admin domain parses stringified detail rows when merging statuses", () => 
   );
   assert.equal(rows[0]._lastStatus, "ok");
   assert.equal(rows[0]._lastKeptCount, 2);
+});
+
+test("admin domain derives bucketed fetch failure summary with examples", () => {
+  const summary = deriveFetcherFailureSummary({
+    sources: [
+      {
+        name: "ashby_sources",
+        adapter: "ashby",
+        status: "error",
+        error: "ashby:Jagex (Ashby): no jobs extracted from ashby board html; ashby:Scopely (Ashby): no jobs extracted from ashby board html"
+      },
+      {
+        name: "personio_sources",
+        adapter: "personio",
+        status: "ok",
+        details: [
+          {
+            adapter: "personio",
+            name: "InnoGames (Personio)",
+            status: "error",
+            error: "HTTP 429 for https://innogames.jobs.personio.de/xml"
+          },
+          {
+            adapter: "personio",
+            name: "Travian (Personio)",
+            status: "error",
+            error: "HTTP 429 for https://travian.jobs.personio.de/xml"
+          }
+        ]
+      },
+      {
+        name: "greenhouse_boards",
+        adapter: "greenhouse",
+        status: "ok",
+        details: [
+          {
+            adapter: "greenhouse",
+            name: "Example Studio GmbH (Greenhouse)",
+            status: "error",
+            error: "HTTP 404 for https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true"
+          }
+        ]
+      }
+    ]
+  });
+
+  assert.equal(summary.topLevelFailedSources, 1);
+  assert.equal(summary.detailFailureCount, 3);
+  const extractZero = summary.buckets.find(bucket => bucket.key === "extract_zero");
+  const rateLimited = summary.buckets.find(bucket => bucket.key === "provider_rate_limited");
+  const badConfig = summary.buckets.find(bucket => bucket.key === "provider_not_found_or_bad_config");
+  assert.equal(extractZero?.count, 1);
+  assert.ok(extractZero?.examples.includes("ashby_sources"));
+  assert.equal(rateLimited?.count, 2);
+  assert.ok(rateLimited?.examples.includes("InnoGames (Personio)"));
+  assert.equal(badConfig?.count, 1);
 });
 
 test("admin domain matches static source rows by source id from loader name", () => {
@@ -179,6 +237,44 @@ test("admin domain suppresses optimistic discovery row once a matching completed
 
   assert.equal(model.currentRows.length, 0);
   assert.equal(model.visibleCompletedRows.length, 1);
+});
+
+test("admin domain injects optimistic fetch row into current runs when history lags", () => {
+  const baseModel = normalizeOpsRuns([], Date.parse("2026-03-08T10:01:00.000Z"));
+
+  const model = applyOptimisticFetchRun(baseModel, {
+    runId: "fetch_1",
+    startedAt: "2026-03-08T10:00:30.000Z"
+  }, Date.parse("2026-03-08T10:01:00.000Z"));
+
+  assert.equal(model.currentRows.length, 1);
+  assert.ok(model.currentRows.some(row => row.type === "fetch" && row.isLive === true && row.optimistic === true));
+  assert.ok(model.liveTypes.includes("fetch"));
+});
+
+test("admin domain suppresses optimistic fetch row once a matching completed run exists", () => {
+  const baseModel = normalizeOpsRuns([
+    { id: "f1", runId: "fetch_1", type: "fetch", status: "warning", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 }
+  ], Date.parse("2026-03-08T10:01:30.000Z"));
+
+  const model = applyOptimisticFetchRun(baseModel, {
+    runId: "fetch_1",
+    startedAt: "2026-03-08T10:00:30.000Z"
+  }, Date.parse("2026-03-08T10:01:30.000Z"));
+
+  assert.equal(model.currentRows.length, 0);
+  assert.equal(model.visibleCompletedRows.length, 1);
+});
+
+test("admin domain collapses legacy duplicate completed fetch rows without run ids", () => {
+  const model = normalizeOpsRuns([
+    { id: "f1", type: "fetch", status: "warning", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 },
+    { id: "f2", type: "fetch", status: "warning", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 },
+    { id: "d1", type: "discovery", status: "ok", startedAt: "2026-03-08T09:00:30.000Z", finishedAt: "2026-03-08T09:01:20.000Z", durationMs: 50000 }
+  ], Date.parse("2026-03-08T10:01:30.000Z"));
+
+  assert.equal(model.currentRows.length, 0);
+  assert.equal(model.visibleCompletedRows.filter(row => row.type === "fetch").length, 1);
 });
 
 test("admin domain derives determinate fetcher progress when total sources are known", () => {

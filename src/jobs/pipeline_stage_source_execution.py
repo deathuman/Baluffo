@@ -116,6 +116,7 @@ def run_source_execution_stage(
 
         try:
             thread_local.source_name = name
+            loader_started = time.perf_counter()
             loader_kwargs: Dict[str, Any] = {
                 "fetch_text": fetch_text_limited,
                 "timeout_s": config.timeout_s,
@@ -146,6 +147,7 @@ def run_source_execution_stage(
                 }
 
             raw_rows = loader(**accepted_kwargs)
+            fetch_and_parse_ms = int((time.perf_counter() - loader_started) * 1000)
             report["fetchedCount"] = len(raw_rows)
             report_loss = report["loss"] if isinstance(report.get("loss"), dict) else {}
             report_loss["rawFetched"] = int(len(raw_rows))
@@ -196,6 +198,7 @@ def run_source_execution_stage(
             detail_rows = details if isinstance(details, list) else []
 
             stage_timings = report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
+            stage_timings["fetchAndParse"] = int(fetch_and_parse_ms)
             if norm_text(report.get("adapter")) == "static":
                 listing_fetch_ms = 0
                 candidate_extraction_ms = 0
@@ -342,6 +345,8 @@ def run_source_execution_stage(
             task_rows[source_name]["status"] = "running"
             task_rows[source_name]["startedAt"] = start_time
             task_rows[source_name]["heartbeatAt"] = start_time
+            task_rows[source_name]["_startedMonotonic"] = time.perf_counter()
+            task_rows[source_name]["_slowWarned"] = False
         write_task_state(force=True)
         if config.show_progress:
             print(f"[jobs_fetcher] START source={source_name}", flush=True)
@@ -354,9 +359,15 @@ def run_source_execution_stage(
             task_rows[source_name]["durationMs"] = int(report.get("durationMs") or 0)
             task_rows[source_name]["heartbeatAt"] = end_time
             task_rows[source_name]["error"] = clean_text(report.get("error"))
+            task_rows[source_name]["_slowWarned"] = False
         write_progress_report()
         write_task_state(force=True)
         if config.show_progress:
+            error_text = clean_text(report.get("error"))
+            if report.get("status") == "error" and error_text:
+                print(f"[jobs_fetcher] ERROR source={source_name} error={error_text}", flush=True)
+            elif error_text:
+                print(f"[jobs_fetcher] WARN source={source_name} error={error_text}", flush=True)
             print(
                 f"[jobs_fetcher] DONE source={source_name} status={report['status']} "
                 f"fetched={int(report.get('fetchedCount') or 0)} "

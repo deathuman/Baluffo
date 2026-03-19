@@ -73,6 +73,21 @@ async function waitForDesktopAdapter(page) {
   await page.waitForFunction(() => Boolean(window.JobAppLocalData), null, { timeout: 15_000 });
 }
 
+async function assertJobsPageReady(page) {
+  await page.waitForFunction(() => {
+    const state = document.body?.getAttribute("data-jobs-startup-state") || "loading";
+    return state === "interactive" || state === "error";
+  }, null, { timeout: 15_000 });
+  const startupState = await page.locator("body").getAttribute("data-jobs-startup-state");
+  assert.notEqual(startupState, "loading", "jobs page should not stay in loading state");
+  await page.locator("#refresh-jobs-btn").waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator("#auth-sign-in-btn").waitFor({ state: "visible", timeout: 10_000 });
+  assert.equal(await page.locator("#refresh-jobs-btn").isEnabled(), true, "jobs refresh button should be enabled");
+  assert.equal(await page.locator("#auth-sign-in-btn").isEnabled(), true, "jobs sign-in button should be enabled");
+  const jobsListText = await page.locator("#jobs-list").textContent();
+  assert.doesNotMatch(String(jobsListText || ""), /loading jobs/i);
+}
+
 async function fetchStartupMetricRows(apiRequest, limit = 400) {
   const response = await apiRequest.get(`${BRIDGE_BASE}/desktop-local-data/startup-metrics?limit=${Number(limit) || 400}`);
   assert.equal(response.ok(), true, "startup metrics request should succeed");
@@ -190,9 +205,13 @@ async function main() {
     page = await context.newPage();
     apiRequest = await playwrightRequest.newContext({ baseURL: BRIDGE_BASE });
     await runScenario("Jobs startup and facade ordering", async () => {
+      const pageErrors = [];
+      page.on("pageerror", error => pageErrors.push(String(error?.message || error)));
       await gotoDesktop(page, "jobs.html");
       await waitForDesktopAdapter(page);
       await page.locator("#jobs-list").waitFor({ state: "visible", timeout: 15_000 });
+      await assertJobsPageReady(page);
+      assert.equal(pageErrors.length, 0, `unexpected jobs startup page errors: ${pageErrors.join("; ")}`);
       const sourceStatus = await page.locator("#source-status").textContent();
       assert.ok(String(sourceStatus || "").trim().length > 0, "jobs source status should not be empty");
       const health = await apiRequest.get(`${BRIDGE_BASE}/ops/health`);

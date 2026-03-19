@@ -1,5 +1,17 @@
 import { defineConfig, devices } from "@playwright/test";
 
+function resolvePlaywrightPythonCommand() {
+  if (process.env.PLAYWRIGHT_PYTHON) {
+    return process.env.PLAYWRIGHT_PYTHON;
+  }
+  if (process.platform === "win32") {
+    return "py -3";
+  }
+  return "python3";
+}
+
+const playwrightPython = resolvePlaywrightPythonCommand();
+
 export default defineConfig({
   testDir: "./tests/frontend",
   testMatch: ["**/smoke.spec.js"],
@@ -18,7 +30,7 @@ export default defineConfig({
     headless: true
   },
   webServer: {
-    command: `${process.env.PLAYWRIGHT_PYTHON || "python"} -m http.server 4173 --directory .`,
+    command: `${playwrightPython} -m http.server 4173 --directory .`,
     url: "http://127.0.0.1:4173/jobs.html",
     timeout: 20_000,
     reuseExistingServer: !process.env.CI

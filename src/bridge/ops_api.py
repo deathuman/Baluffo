@@ -114,6 +114,7 @@ class OpsApi:
                 ops_state_lock=self._deps.ops_state_lock,
                 load_run_history=self._deps.load_run_history,
                 save_run_history=self._deps.save_run_history,
+                save_json_atomic=self._deps.save_json_atomic,
                 prune_started_rows_for_type=self._deps.prune_started_rows_for_type,
                 clear_task_state=self._deps.clear_task_state,
                 clear_task_state_locked=self._deps.clear_task_state_locked,

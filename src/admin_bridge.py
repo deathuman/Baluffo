@@ -709,10 +709,16 @@ def trigger_source_check(source_id: str, timeout_s: int = 12) -> Dict[str, Any]:
     )
 
 
-def run_background_script(script_name: str, args: List[str] | None = None) -> int:
+def run_background_script(
+    script_name: str,
+    args: List[str] | None = None,
+    *,
+    extra_env: Dict[str, str] | None = None,
+) -> int:
     return _get_task_launch_api().run_background_script(
         script_name,
         args,
+        extra_env,
         is_frozen=bool(getattr(sys, "frozen", False)),
         executable=str(sys.executable),
         spawn_process=subprocess.Popen,
@@ -1036,8 +1042,24 @@ def start_fetcher_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, An
     fetcher_args, preset = build_fetcher_args_from_payload(payload if isinstance(payload, dict) else {})
     FETCHER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     FETCHER_LOG_PATH.write_text(f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8")
+    save_json_atomic(
+        JOBS_FETCH_REPORT_PATH,
+        normalize_fetch_report_contract(
+            {
+                "runId": run_id,
+                "schemaVersion": SCHEMA_VERSION,
+                "startedAt": started_at,
+                "finishedAt": "",
+                "runtime": {},
+                "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+                "sources": [],
+                "outputs": {"report": str(JOBS_FETCH_REPORT_PATH)},
+            }
+        ),
+    )
     append_run_history({
         "id": run_id,
+        "runId": run_id,
         "type": "fetch",
         "status": "started",
         "startedAt": started_at,
@@ -1048,7 +1070,14 @@ def start_fetcher_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, An
     spawn_args = list(fetcher_args)
     if "--output-dir" not in spawn_args:
         spawn_args.extend(["--output-dir", str(RUNTIME_CONFIG.data_dir)])
-    pid = run_background_script("jobs_fetcher.py", spawn_args)
+    pid = run_background_script(
+        "jobs_fetcher.py",
+        spawn_args,
+        extra_env={
+            "BALUFFO_FETCH_RUN_ID": run_id,
+            "BALUFFO_FETCH_STARTED_AT": started_at,
+        },
+    )
     approval = load_json_object(APPROVAL_STATE_PATH, {"approvedSinceLastRun": 0})
     approval["approvedSinceLastRun"] = 0
     save_json_atomic(APPROVAL_STATE_PATH, approval)

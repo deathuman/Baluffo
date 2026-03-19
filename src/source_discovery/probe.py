@@ -75,6 +75,12 @@ def validate_candidate_for_probe(candidate: Dict[str, Any]) -> Tuple[bool, str]:
     if adapter == "ashby":
         host = (urlparse(str(candidate.get("board_url") or "").strip()).netloc or "").lower()
         return ("ashbyhq.com" in host, "" if "ashbyhq.com" in host else "invalid ashby host")
+    if adapter == "recruitee":
+        host = (urlparse(str(candidate.get("api_url") or "").strip()).netloc or "").lower()
+        return (".recruitee.com" in host, "" if ".recruitee.com" in host else "invalid recruitee host")
+    if adapter == "pinpoint":
+        host = (urlparse(str(candidate.get("api_url") or "").strip()).netloc or "").lower()
+        return (".pinpointhq.com" in host, "" if ".pinpointhq.com" in host else "invalid pinpoint host")
     if adapter == "static":
         listing = str(candidate.get("listing_url") or "").strip()
         pages = candidate.get("pages")
@@ -104,6 +110,14 @@ def fallback_probe_urls(candidate: Dict[str, Any]) -> List[str]:
         account = str(candidate.get("account") or "").strip()
         if account:
             urls.append(f"https://apply.workable.com/{account}")
+    elif adapter == "recruitee":
+        host = (urlparse(str(candidate.get("api_url") or "")).netloc or "").strip()
+        if host:
+            urls.append(f"https://{host}/")
+    elif adapter == "pinpoint":
+        host = (urlparse(str(candidate.get("api_url") or "")).netloc or "").strip()
+        if host:
+            urls.append(f"https://{host}/")
     elif adapter == "personio":
         host = (urlparse(str(candidate.get("feed_url") or "")).netloc or "").strip()
         if host:
@@ -134,6 +148,16 @@ def parse_probe_count(adapter: str, text: str) -> int:
             payload = json.loads(text)
             return len(payload.get("jobs", [])) if isinstance(payload, dict) else 0
         return len(set(re.findall(r'(?is)href=["\'][^"\']+/j/[^"\']+["\']', text)))
+    if adapter == "recruitee":
+        if text.strip().startswith("{"):
+            payload = json.loads(text)
+            return len(payload.get("offers", [])) if isinstance(payload, dict) else 0
+        return len(set(re.findall(r'(?is)href=["\'][^"\']+/o/[^"\']+["\']', text)))
+    if adapter == "pinpoint":
+        if text.strip().startswith("{"):
+            payload = json.loads(text)
+            return len(payload.get("data", [])) if isinstance(payload, dict) else 0
+        return len(set(re.findall(r'(?is)href=["\'][^"\']+/postings/[^"\']+["\']', text)))
     if adapter == "personio":
         if text.lstrip().startswith("<"):
             return len(ET.fromstring(text).findall(".//position"))
