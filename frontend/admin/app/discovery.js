@@ -150,7 +150,6 @@ export function createAdminDiscoveryController({
   }
 
   async function loadDiscoveryLogChunk(options = {}) {
-    if (!state.adminPin) return null;
     const reset = Boolean(options?.reset);
     const offset = reset ? 0 : Math.max(0, Number(state.discoveryLogRemoteOffset) || 0);
     const payload = await getBridge(`/discovery/log?offset=${offset}`);
@@ -327,10 +326,6 @@ export function createAdminDiscoveryController({
   }
 
   async function runDiscoveryTask() {
-    if (!state.adminPin) {
-      showToast("Unlock admin before running discovery.", "error");
-      return;
-    }
     if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
       showToast("Discovery operation already in progress.", "info");
       return;

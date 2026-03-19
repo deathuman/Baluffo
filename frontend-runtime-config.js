@@ -7,7 +7,6 @@ export const BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({
     "port": 8877
   },
   "security": {
-    "admin_pin_default": "1234",
     "github_app_enabled_default": true
   }
 });

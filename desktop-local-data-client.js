@@ -336,20 +336,17 @@ const desktopApi = createLocalDataRuntime({
     await pollSavedSubscriptions();
     return response.result || {};
   },
-  verifyAdminPin(pin) {
-    return String(pin || "") === String(AdminConfig.ADMIN_PIN_DEFAULT || "");
-  },
-  async getAdminOverview(pin) {
+  async getAdminOverview() {
     const payload = await requestJson("/admin/overview", {
       method: "POST",
-      body: JSON.stringify({ pin })
+      body: JSON.stringify({})
     });
     return payload.overview || { users: [], totals: {} };
   },
-  async wipeAccountAdmin(pin, uid) {
+  async wipeAccountAdmin(uid) {
     const payload = await requestJson("/admin/wipe", {
       method: "POST",
-      body: JSON.stringify({ pin, uid })
+      body: JSON.stringify({ uid })
     });
     authStateRevision += 1;
     commitAuthState(payload.user || null);

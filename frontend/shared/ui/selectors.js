@@ -124,11 +124,7 @@ export const UI_TOKENS = Object.freeze({
   admin: {
     jobsPageBtn: "admin-jobs-btn",
     savedPageBtn: "admin-saved-btn",
-    lockBtn: "admin-lock-btn",
-    pinInput: "admin-pin-input",
-    unlockBtn: "admin-unlock-btn",
     sourceStatus: "admin-source-status",
-    pinGate: "admin-pin-gate",
     content: "admin-content",
     refreshBtn: "admin-refresh-btn",
     runFetcherBtn: "admin-run-fetcher-btn",

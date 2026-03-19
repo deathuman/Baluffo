@@ -10,11 +10,14 @@ support/
 logs/
 _out/
 .state/
+.cursor/
+.vscode/debug-brave-profile/
 
 # Local runtime/generated data (keep local, do not track)
 data/*.json
 data/*.csv
 data/*.log
+data/local-user-data/
 !data/.gitkeep
 !data/source-discovery-config.json
 

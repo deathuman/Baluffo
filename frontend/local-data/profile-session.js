@@ -1,4 +1,3 @@
-import { AdminConfig } from "../../admin-config.js";
 import { SESSION_KEY, PROFILE_KEY } from "./constants.js";
 
 export function makeUser(profile) {
@@ -21,14 +20,6 @@ export function readProfiles() {
 
 export function writeProfiles(profiles) {
   localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles));
-}
-
-export function verifyAdminPin(pin) {
-  return String(pin || "") === String(AdminConfig.ADMIN_PIN_DEFAULT || "");
-}
-
-export function ensureAdmin(pin) {
-  if (!verifyAdminPin(pin)) throw new Error("Invalid admin PIN.");
 }
 
 export function getStoredSessionUser() {

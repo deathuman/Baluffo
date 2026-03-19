@@ -281,19 +281,20 @@ async function main() {
       }
     }, scenarios);
 
-    await runScenario("Navigate to Admin and unlock", async () => {
+    await runScenario("Navigate to Admin from jobs button", async () => {
       const adminPageBtn = page.locator("#admin-page-btn");
       if (await adminPageBtn.count()) {
+        await page.waitForFunction(
+          () => /Admin Online/i.test(document.querySelector("#admin-page-btn")?.textContent || ""),
+          null,
+          { timeout: 30_000 }
+        );
+        assert.equal(await adminPageBtn.isEnabled(), true, "jobs admin button should be enabled when bridge is online");
         await adminPageBtn.first().click();
       } else {
         await page.locator("a[href='admin.html']").first().click();
       }
       await page.waitForURL(/admin\.html/, { timeout: 15_000 });
-      await page.locator("#admin-pin-gate").waitFor({ state: "visible", timeout: 10_000 });
-      const unlockBtn = page.locator("#admin-unlock-btn");
-      assert.equal(await unlockBtn.isEnabled(), true, "admin unlock button should be enabled");
-      await page.fill("#admin-pin-input", "1234");
-      await unlockBtn.click();
       await page.locator("#admin-content").waitFor({ state: "visible", timeout: 15_000 });
     }, scenarios);
 

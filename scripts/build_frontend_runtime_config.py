@@ -26,7 +26,6 @@ def build_frontend_runtime_config_payload() -> Dict[str, Dict[str, Any]]:
             "port": int(bridge_defaults["port"]),
         },
         "security": {
-            "admin_pin_default": str(security_defaults["admin_pin_default"]),
             "github_app_enabled_default": bool(security_defaults["github_app_enabled_default"]),
         },
     }

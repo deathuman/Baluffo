@@ -33,6 +33,7 @@ export function cacheJobsDom(doc = document) {
     authAvatar: doc.querySelector(ui(g.authAvatar)),
     authSignInBtn: doc.querySelector(ui(g.authSignInBtn)),
     authSignOutBtn: doc.querySelector(ui(g.authSignOutBtn)),
+    adminPageBtn: doc.querySelector(ui(g.adminPageBtn)),
     savedJobsBtn: doc.querySelector(ui(g.savedPageBtn)), 
     activeFiltersSummaryEl: doc.querySelector(ui(t.activeFiltersSummary)),
     quickActionsEl: doc.querySelector(ui(t.quickActions)),

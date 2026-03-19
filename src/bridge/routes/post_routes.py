@@ -141,7 +141,7 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
 
     if path == "/desktop-local-data/admin/overview":
         try:
-            handler._send_json({"ok": True, "overview": api.desktop_local_data_store().get_admin_overview(str((payload or {}).get("pin") or ""))})  # noqa: SLF001,E501
+            handler._send_json({"ok": True, "overview": api.desktop_local_data_store().get_admin_overview()})  # noqa: SLF001,E501
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True
@@ -149,7 +149,6 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
     if path == "/desktop-local-data/admin/wipe":
         try:
             api.desktop_local_data_store().wipe_account_admin(
-                str((payload or {}).get("pin") or ""),
                 str((payload or {}).get("uid") or ""),
             )
             handler._send_json({"ok": True, "user": api.desktop_local_data_store().get_current_user()})  # noqa: SLF001

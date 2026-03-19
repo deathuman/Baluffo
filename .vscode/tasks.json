@@ -4,7 +4,7 @@
     {
       "label": "Serve static site (8080)",
       "type": "shell",
-      "command": "py -m http.server 8080 --directory .",
+      "command": "python -m http.server 8080 --directory .",
       "isBackground": true,
       "problemMatcher": {
         "owner": "custom",
@@ -32,7 +32,7 @@
     {
       "label": "Serve admin check site (8765)",
       "type": "shell",
-      "command": "py -m http.server 8765 --directory .",
+      "command": "python -m http.server 8765 --directory .",
       "isBackground": true,
       "problemMatcher": {
         "owner": "custom",
@@ -80,7 +80,7 @@
     {
       "label": "Run admin bridge",
       "type": "shell",
-      "command": "py src/admin_bridge.py --host 127.0.0.1 --port 8877",
+      "command": "python src/admin_bridge.py --host 127.0.0.1 --port 8877",
       "isBackground": true,
       "problemMatcher": {
         "owner": "custom",

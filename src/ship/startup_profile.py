@@ -193,7 +193,7 @@ def summarize_startup_metrics(rows: List[Dict[str, Any]], *, page: str = "jobs",
 
     auth_event, auth_ms = _pick_first(events, [f"{safe_page}_auth_ready"])
     render_event, render_ms = _pick_first(events, [f"{safe_page}_first_render"])
-    interactive_event, interactive_ms = _pick_first(events, [f"{safe_page}_first_interactive", f"{safe_page}_pin_gate_ready"])
+    interactive_event, interactive_ms = _pick_first(events, [f"{safe_page}_first_interactive", f"{safe_page}_ready"])
     first_usable_candidates = [(name, value) for name, value in ((render_event, render_ms), (interactive_event, interactive_ms)) if name and value is not None]
     first_usable_event = None
     first_usable_ms = None

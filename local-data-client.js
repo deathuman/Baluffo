@@ -12,8 +12,6 @@ import {
   makeUser,
   readProfiles,
   writeProfiles,
-  verifyAdminPin,
-  ensureAdmin,
   getStoredSessionUser
 } from "./frontend/local-data/profile-session.js";
 import {
@@ -157,7 +155,6 @@ export function initBrowserLocalDataClient() {
   });
 
   const adminDomain = createAdminDomain({
-    ensureAdmin,
     readProfiles,
     writeProfiles,
     listAllSavedJobs,
@@ -206,7 +203,6 @@ export function initBrowserLocalDataClient() {
     exportProfileData: backupDomain.exportProfileData,
     getBackupExportUrl: () => "",
     importProfileData: backupDomain.importProfileData,
-    verifyAdminPin,
     getAdminOverview: adminDomain.getAdminOverview,
     wipeAccountAdmin: adminDomain.wipeAccountAdmin
   }, "browser local data runtime");

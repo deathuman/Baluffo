@@ -32,7 +32,6 @@ CODE_FALLBACK_CONFIG: Dict[str, Any] = {
         "social_sources_config_path": "data/social-sources-config.json",
     },
     "security": {
-        "admin_pin_default": "1234",
         "github_app_enabled_default": True,
     },
     "sync": {
@@ -127,7 +126,6 @@ def get_storage_defaults() -> Dict[str, Any]:
 def get_security_defaults() -> Dict[str, Any]:
     cfg = dict(load_config().get("security") or {})
     return {
-        "admin_pin_default": _coerce_str(cfg.get("admin_pin_default"), CODE_FALLBACK_CONFIG["security"]["admin_pin_default"]),
         "github_app_enabled_default": _coerce_bool(
             cfg.get("github_app_enabled_default"),
             CODE_FALLBACK_CONFIG["security"]["github_app_enabled_default"],

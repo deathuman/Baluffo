@@ -94,7 +94,6 @@ export function createAdminSyncController({
   }
 
   async function loadSyncStatus(options = {}) {
-    if (!state.adminPin) return null;
     const silent = Boolean(options?.silent);
     const forceForm = Boolean(options?.forceForm);
     try {
@@ -110,10 +109,6 @@ export function createAdminSyncController({
   }
 
   async function saveSyncConfig() {
-    if (!state.adminPin) {
-      showToast("Unlock admin to save sync settings.", "error");
-      return;
-    }
     if (isSyncBusy()) {
       showToast("Sync task is already running.", "info");
       return;
@@ -133,10 +128,6 @@ export function createAdminSyncController({
   }
 
   async function testSyncConfig() {
-    if (!state.adminPin) {
-      showToast("Unlock admin to test sync settings.", "error");
-      return;
-    }
     if (isSyncBusy()) {
       showToast("Sync task is already running.", "info");
       return;
@@ -163,10 +154,6 @@ export function createAdminSyncController({
   }
 
   async function pullSourcesSync() {
-    if (!state.adminPin) {
-      showToast("Unlock admin to pull source sync.", "error");
-      return;
-    }
     if (isSyncBusy()) {
       showToast("Sync task is already running.", "info");
       return;
@@ -189,10 +176,6 @@ export function createAdminSyncController({
   }
 
   async function pushSourcesSync() {
-    if (!state.adminPin) {
-      showToast("Unlock admin to push source sync.", "error");
-      return;
-    }
     if (isSyncBusy()) {
       showToast("Sync task is already running.", "info");
       return;

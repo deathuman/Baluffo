@@ -89,40 +89,18 @@ function withDom(queryMap, fn) {
     });
 }
 
-test("admin auth controller unlocks and locks the composed admin view", async () => {
+test("admin auth controller initializes the composed admin view immediately", async () => {
   const dispatched = [];
   const toasts = [];
   const calls = [];
-  const state = {
-    activeSourceFilter: "all",
-    adminPin: "",
-    syncConfigDirty: false,
-    latestSyncStatusCache: { stale: true },
-    adminBusyState: {}
-  };
   const refs = {
-    adminUnlockBtnEl: createElement(),
-    adminLockBtnEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminPinGateEl: createElement(),
     adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminPinInputEl: createElement({ value: "1234" }),
     adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminTotalsEl: createElement({ innerHTML: "stale" }),
-    adminUsersListEl: createElement({ innerHTML: "stale" }),
     adminSyncStatusEl: createElement()
   };
 
   const controller = createAdminAuthController({
-    state,
     refs,
-    services: {
-      adminService: {
-        verifyAdminPin: pin => pin === "1234"
-      },
-      adminPageService: {
-        isAvailable: () => true
-      }
-    },
     adminDispatch: {
       dispatch(action) {
         dispatched.push(action);
@@ -208,122 +186,62 @@ test("admin auth controller unlocks and locks the composed admin view", async ()
   });
 
   const initReady = controller.initAdminPage();
-  assert.equal(initReady, true);
-
-  controller.unlockAdmin();
   await new Promise(resolve => setTimeout(resolve, 0));
 
-  assert.equal(state.adminPin, "1234");
-  assert.equal(refs.adminPinInputEl.value, "");
-  assert.equal(refs.adminPinGateEl.classList.contains("hidden"), true);
+  assert.equal(initReady, true);
   assert.equal(refs.adminContentEl.classList.contains("hidden"), false);
-  assert.equal(refs.adminLockBtnEl.classList.contains("hidden"), false);
   assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("hidden"), false);
-  assert.deepEqual(dispatched.map(item => item.type), ["unlocked"]);
+  assert.deepEqual(dispatched.map(item => item.type), []);
   assert.ok(calls.includes("resetBusyFlags"));
   assert.ok(calls.includes("startBridgeStatusWatch"));
   assert.ok(calls.includes("refreshOverview"));
   assert.ok(calls.includes("loadDiscoveryData"));
   assert.ok(calls.includes("loadOpsHealthData"));
   assert.ok(calls.includes("scheduleOpsHealthPolling:900"));
-
-  controller.lockAdmin();
-
-  assert.equal(state.adminPin, "");
-  assert.equal(state.latestSyncStatusCache, null);
-  assert.equal(refs.adminPinGateEl.classList.contains("hidden"), false);
-  assert.equal(refs.adminContentEl.classList.contains("hidden"), true);
-  assert.equal(refs.adminLockBtnEl.classList.contains("hidden"), true);
-  assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("hidden"), true);
-  assert.equal(refs.adminTotalsEl.innerHTML, "");
-  assert.equal(refs.adminUsersListEl.innerHTML, "");
-  assert.deepEqual(dispatched.map(item => item.type), ["unlocked", "locked"]);
-  assert.ok(calls.includes("stopBridgeStatusWatch"));
-  assert.ok(calls.includes("stopOpsHealthPolling"));
+  assert.equal(refs.adminSyncStatusEl.textContent, "Loading sync status...");
   assert.equal(toasts.length, 0);
 });
 
-test("admin auth controller polls for api readiness while locked", async () => {
-  const scheduled = [];
+test("admin auth controller session view model tracks bridge badge state", async () => {
   const refs = {
-    adminUnlockBtnEl: createElement(),
-    adminLockBtnEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminPinGateEl: createElement(),
-    adminContentEl: createElement({ classList: createClassList(["hidden"]) })
+    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["online"]) }),
+    adminContentEl: createElement()
   };
-  const state = {
-    activeSourceFilter: "all",
-    adminPin: "",
-    adminApiReadyPollTimer: null,
-    adminBusyState: {}
-  };
-  let available = false;
-  const previousSetTimeout = global.setTimeout;
-  const previousClearTimeout = global.clearTimeout;
-  global.setTimeout = callback => {
-    scheduled.push(callback);
-    return scheduled.length;
-  };
-  global.clearTimeout = () => {};
+  const controller = createAdminAuthController({
+    refs,
+    emitAdminStartupMetric() {},
+    markAdminFirstInteractive() {},
+    syncAdminBusyUi() {},
+    syncDiscoveryLogDisclosure() {},
+    resetBusyFlags() {},
+    setSourceFilter() {},
+    setSourceStatus() {},
+    setFetcherLogPlaceholder() {},
+    setDiscoveryLogPlaceholder() {},
+    clearOptimisticFetchRun() {},
+    clearOptimisticDiscoveryRun() {},
+    setManualSourceFeedback() {},
+    setOpsPlaceholders() {},
+    setBridgeStatusBadge() {},
+    renderUsersEmpty() {},
+    startBridgeStatusWatch() {},
+    stopBridgeStatusWatch() {},
+    scheduleOpsHealthPolling() {},
+    stopOpsHealthPolling() {},
+    refreshOverview: async () => {},
+    loadLatestFetcherReport: async () => {},
+    loadDiscoveryData: async () => {},
+    loadOpsHealthData: async () => {},
+    loadSyncStatus: async () => {},
+    logAdminError() {},
+    showToast() {}
+  });
 
-  try {
-    const sourceStatus = { text: "" };
-    const controller = createAdminAuthController({
-      state,
-      refs,
-      services: {
-        adminService: { verifyAdminPin: () => true },
-        adminPageService: { isAvailable: () => available }
-      },
-      adminDispatch: { dispatch() {} },
-      adminActions: { UNLOCKED: "u", LOCKED: "l" },
-      emitAdminStartupMetric() {},
-      markAdminFirstInteractive() {},
-      syncAdminBusyUi() {},
-      syncDiscoveryLogDisclosure() {},
-      resetBusyFlags() {},
-      setSourceFilter() {},
-      setSourceStatus(text) {
-        sourceStatus.text = text;
-      },
-      setFetcherLogPlaceholder() {},
-      setDiscoveryLogPlaceholder() {},
-      clearOptimisticFetchRun() {},
-      clearOptimisticDiscoveryRun() {},
-      setManualSourceFeedback() {},
-      setOpsPlaceholders() {},
-      setBridgeStatusBadge() {},
-      renderUsersEmpty() {},
-      startBridgeStatusWatch() {},
-      stopBridgeStatusWatch() {},
-      scheduleOpsHealthPolling() {},
-      stopOpsHealthPolling() {},
-      refreshOverview: async () => {},
-      loadLatestFetcherReport: async () => {},
-      loadDiscoveryData: async () => {},
-      loadOpsHealthData: async () => {},
-      loadSyncStatus: async () => {},
-      getErrorMessage: err => String(err?.message || err || "unknown"),
-      logAdminError() {},
-      showToast() {}
-    });
-
-    const initReady = controller.initAdminPage();
-    assert.equal(initReady, false);
-    assert.equal(refs.adminUnlockBtnEl.disabled, true);
-    assert.match(refs.adminUnlockBtnEl.title, /waiting for local storage provider/i);
-    assert.equal(scheduled.length > 0, true);
-
-    available = true;
-    scheduled[0]();
-
-    assert.equal(refs.adminUnlockBtnEl.disabled, false);
-    assert.equal(refs.adminUnlockBtnEl.attributes["aria-disabled"], "false");
-    assert.equal(sourceStatus.text, "Enter admin PIN to access user overview.");
-  } finally {
-    global.setTimeout = previousSetTimeout;
-    global.clearTimeout = previousClearTimeout;
-  }
+  assert.deepEqual(controller.toAdminSessionViewModel(), {
+    isUnlocked: true,
+    apiReady: true,
+    bridgeStatus: "online"
+  });
 });
 
 test("admin registry controller loads filtered discovery state and dispatches refresh", async () => {

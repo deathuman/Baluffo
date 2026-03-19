@@ -5,7 +5,7 @@ function resolvePlaywrightPythonCommand() {
     return process.env.PLAYWRIGHT_PYTHON;
   }
   if (process.platform === "win32") {
-    return "py -3";
+    return "python";
   }
   return "python3";
 }

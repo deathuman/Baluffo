@@ -15,21 +15,12 @@
       <div class="header-actions">
         <button id="admin-jobs-btn" data-ui="admin-jobs-btn" class="btn back-btn" aria-label="Go to jobs page">All Jobs</button>
         <button id="admin-saved-btn" data-ui="admin-saved-btn" class="btn back-btn" aria-label="Go to saved jobs page">Saved Jobs</button>
-        <button id="admin-lock-btn" data-ui="admin-lock-btn" class="btn back-btn hidden" aria-label="Lock admin panel">Lock</button>
       </div>
     </div>
 
-    <p id="admin-source-status" data-ui="admin-source-status" class="source-status">Enter admin PIN to access user overview.</p>
+    <p id="admin-source-status" data-ui="admin-source-status" class="source-status">Loading admin overview...</p>
 
-    <section id="admin-pin-gate" data-ui="admin-pin-gate" class="admin-panel">
-      <h2 class="admin-section-title">PIN Required</h2>
-      <div class="admin-pin-row">
-        <input id="admin-pin-input" data-ui="admin-pin-input" type="password" class="admin-pin-input" placeholder="Enter admin PIN" autocomplete="off">
-        <button id="admin-unlock-btn" data-ui="admin-unlock-btn" class="btn back-btn">Unlock</button>
-      </div>
-    </section>
-
-    <section id="admin-content" data-ui="admin-content" class="admin-panel hidden">
+    <section id="admin-content" data-ui="admin-content" class="admin-panel">
       <div class="admin-toolbar">
         <h2 class="admin-section-title">Stored Profiles Overview</h2>
         <div class="admin-toolbar-actions">

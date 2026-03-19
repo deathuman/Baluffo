@@ -23,7 +23,6 @@ export const LOCAL_DATA_RUNTIME_METHODS = Object.freeze([
   "exportProfileData",
   "getBackupExportUrl",
   "importProfileData",
-  "verifyAdminPin",
   "getAdminOverview",
   "wipeAccountAdmin"
 ]);

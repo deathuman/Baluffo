@@ -29,12 +29,19 @@ test("savedJobsService normalizes key list result", async () => {
   assert.deepEqual(result.data, ["job_a", "job_b"]);
 });
 
-test("adminService returns false on invalid verify response", async () => {
+test("adminService overview forwards without a PIN argument", async () => {
+  const calls = [];
   setMockApi({
-    verifyAdminPin: () => false
+    getAdminOverview: async (...args) => {
+      calls.push(args);
+      return { users: [{ uid: "u1" }], totals: { users: 1 } };
+    }
   });
   const { adminService } = await import("../../../frontend/local-data/services.js");
-  assert.equal(adminService.verifyAdminPin("1234"), false);
+  const result = await adminService.getAdminOverview();
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [[]]);
+  assert.equal(result.data.users.length, 1);
 });
 
 test("historyService returns error contract on failure", async () => {
@@ -102,7 +109,7 @@ test("adminService overview returns fallback data on error", async () => {
     }
   });
   const { adminService } = await import("../../../frontend/local-data/services.js");
-  const result = await adminService.getAdminOverview("1234");
+  const result = await adminService.getAdminOverview();
   assert.equal(result.ok, false);
   assert.deepEqual(result.data, { users: [], totals: {} });
   assert.match(result.error, /overview down/i);

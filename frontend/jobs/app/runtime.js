@@ -37,7 +37,7 @@ import {
   rememberJobsUrl
 } from "../state-sync/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
-import { postJson } from "../../shared/api-client.js";
+import { fetchJson, postJson } from "../../shared/api-client.js";
 import { cacheJobsDom } from "./dom.js";
 import {
   toggleJobsAuthButtons,
@@ -202,6 +202,7 @@ let authStatusHint;
 let authAvatar;
 let authSignInBtn;
 let authSignOutBtn;
+let adminPageBtn;
 let savedJobsBtn;
 let activeFiltersSummaryEl;
 let quickActionsEl;
@@ -251,6 +252,8 @@ let authStateListenerBound = false;
 let nonCriticalStartupScheduled = false;
 let coreEventsBound = false;
 let secondaryEventsBound = false;
+let adminBridgeStatusPollTimer = null;
+let adminBridgeButtonState = "checking";
 const jobsPipelineUiState = createJobsPipelineUiState();
 const startupMetrics = createJobsStartupMetrics({
   emitMetric: (event, payload) => {
@@ -287,6 +290,7 @@ function logJobsError(message, err) {
 
 function bootJobsPage() {
   cacheDom();
+  setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
   setJobsStartupState("loading", "booting");
   bindCoreEvents();
   try {
@@ -307,6 +311,7 @@ function scheduleNonCriticalStartupWork() {
   scheduleNonCriticalStartup(window, () => {
     renderDataSources().catch(() => {});
     ensureJobsPipelineStatusWatch();
+    startAdminBridgeButtonWatch();
   });
 }
 
@@ -341,6 +346,7 @@ function cacheDom() {
     authAvatar,
     authSignInBtn,
     authSignOutBtn,
+    adminPageBtn,
     savedJobsBtn,
     activeFiltersSummaryEl,
     quickActionsEl,
@@ -380,6 +386,51 @@ function markJobsFirstInteractive(reason) {
   }
 }
 
+function setAdminPageButtonState(stateValue, label, title) {
+  if (!adminPageBtn) return;
+  const normalized = String(stateValue || "checking").toLowerCase();
+  const enabled = normalized === "online";
+  adminBridgeButtonState = normalized;
+  adminPageBtn.dataset.bridgeState = normalized;
+  adminPageBtn.textContent = label || "Admin Checking...";
+  adminPageBtn.title = title || label || "Checking admin bridge status";
+  adminPageBtn.disabled = !enabled;
+  adminPageBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
+}
+
+async function pollAdminBridgeButtonState() {
+  if (!adminPageBtn) return;
+  if (adminBridgeButtonState !== "online") {
+    setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
+  }
+  try {
+    const payload = await fetchJson(ADMIN_BRIDGE_BASE, "/ops/health");
+    const summary = payload?.summary || {};
+    const activeAlerts = Number(summary?.activeAlertCount || 0);
+    const label = activeAlerts > 0 ? `Admin Online (${activeAlerts} alerts)` : "Admin Online";
+    setAdminPageButtonState("online", label, "Open admin panel");
+  } catch {
+    setAdminPageButtonState("offline", "Admin Offline", "Admin bridge is offline");
+  }
+}
+
+function startAdminBridgeButtonWatch() {
+  if (!adminPageBtn || adminBridgeStatusPollTimer) return;
+  pollAdminBridgeButtonState().catch(() => {});
+  adminBridgeStatusPollTimer = window.setInterval(() => {
+    pollAdminBridgeButtonState().catch(() => {});
+  }, 5000);
+}
+
+async function openAdminPageFromJobs() {
+  if (adminBridgeButtonState !== "online") {
+    showToast("Admin bridge is offline.", "info");
+    return;
+  }
+  rememberCurrentJobsUrl();
+  window.location.href = "admin.html";
+}
+
 function bindCoreEvents() {
   if (coreEventsBound) return;
   coreEventsBound = true;
@@ -401,6 +452,7 @@ function bindCoreEvents() {
 
   bindAsyncClick(authSignInBtn, signInUser);
   bindAsyncClick(authSignOutBtn, signOutUser);
+  bindAsyncClick(adminPageBtn, openAdminPageFromJobs);
   bindAsyncClick(refreshJobsBtn, () => refreshJobsNow({ manual: true }));
   bindAsyncClick(jobsPipelineRunBtn, triggerJobsPipelineRun);
 }

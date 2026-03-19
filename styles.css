@@ -609,6 +609,51 @@ h1 {
   transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
+.admin-page-btn {
+  margin: 0;
+  cursor: pointer;
+  transition: transform 0.18s ease, opacity 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.admin-page-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.admin-page-btn:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.admin-page-btn[data-bridge-state="online"] {
+  border-color: var(--chip-remote-border);
+  background-color: var(--chip-remote-bg);
+  color: var(--chip-remote-text);
+}
+
+.admin-page-btn[data-bridge-state="online"]::before {
+  background-color: var(--chip-remote-text);
+}
+
+.admin-page-btn[data-bridge-state="offline"] {
+  border-color: var(--chip-clear-border);
+  background-color: var(--chip-clear-bg);
+  color: var(--chip-clear-text);
+}
+
+.admin-page-btn[data-bridge-state="offline"]::before {
+  background-color: var(--chip-clear-text);
+}
+
+.admin-page-btn[data-bridge-state="checking"] {
+  border-color: var(--contract-temporary-border);
+  background-color: var(--contract-temporary-bg);
+  color: var(--contract-temporary-text);
+}
+
+.admin-page-btn[data-bridge-state="checking"]::before {
+  background-color: var(--contract-temporary-text);
+}
+
 #auth-sign-in-btn,
 #saved-auth-sign-in-btn {
   background: linear-gradient(180deg, var(--surface-12), var(--surface-14));
@@ -2363,8 +2408,47 @@ h1 {
 }
 
 #admin-pending-sources,
-#admin-active-sources {
+#admin-active-sources,
+#admin-rejected-sources {
+  --admin-source-visible-rows: 15;
+  --admin-source-row-height: 52px;
   margin-bottom: 0.9rem;
+}
+
+#admin-pending-sources .jobs-table-body,
+#admin-active-sources .jobs-table-body,
+#admin-rejected-sources .jobs-table-body {
+  max-height: calc(var(--admin-source-visible-rows) * var(--admin-source-row-height));
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-18) var(--surface-1);
+}
+
+#admin-pending-sources .jobs-table-body::-webkit-scrollbar,
+#admin-active-sources .jobs-table-body::-webkit-scrollbar,
+#admin-rejected-sources .jobs-table-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+#admin-pending-sources .jobs-table-body::-webkit-scrollbar-track,
+#admin-active-sources .jobs-table-body::-webkit-scrollbar-track,
+#admin-rejected-sources .jobs-table-body::-webkit-scrollbar-track {
+  background: var(--surface-1);
+  border-radius: 999px;
+}
+
+#admin-pending-sources .jobs-table-body::-webkit-scrollbar-thumb,
+#admin-active-sources .jobs-table-body::-webkit-scrollbar-thumb,
+#admin-rejected-sources .jobs-table-body::-webkit-scrollbar-thumb {
+  background: var(--surface-18);
+  border-radius: 999px;
+  border: 2px solid var(--surface-1);
+}
+
+#admin-pending-sources .jobs-table-body::-webkit-scrollbar-thumb:hover,
+#admin-active-sources .jobs-table-body::-webkit-scrollbar-thumb:hover,
+#admin-rejected-sources .jobs-table-body::-webkit-scrollbar-thumb:hover {
+  background: var(--surface-20);
 }
 
 .admin-rejected-section {

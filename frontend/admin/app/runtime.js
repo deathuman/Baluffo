@@ -198,7 +198,7 @@ function setSourceStatus(text) {
 
 function toAdminViewState() {
   return toAdminViewStateFromModule(state.adminBusyState, {
-    isUnlocked: Boolean(state.adminPin)
+    isUnlocked: true
   });
 }
 
@@ -288,10 +288,6 @@ function renderUsersEmpty(message) {
 }
 
 async function wipeAccount(uid, name) {
-  if (!state.adminPin) {
-    showToast("Unlock admin before wiping accounts.", "error");
-    return;
-  }
   if (!uid) {
     showToast("Missing user id for wipe.", "error");
     return;
@@ -303,7 +299,8 @@ async function wipeAccount(uid, name) {
   });
   if (!confirmed) return;
   try {
-    await adminService.wipeUserData(state.adminPin, uid);
+    const result = await adminService.wipeAccountAdmin(uid);
+    if (!result.ok) throw new Error(result.error || "Could not wipe account.");
     showToast("User account wiped.", "success");
     await refreshOverview();
   } catch (err) {
@@ -312,12 +309,10 @@ async function wipeAccount(uid, name) {
 }
 
 async function refreshOverview() {
-  if (!state.adminPin) {
-    showToast("Unlock admin to refresh overview.", "error");
-    return;
-  }
   try {
-    const overview = await adminService.getAdminOverview(state.adminPin);
+    const overviewResult = await adminService.getAdminOverview();
+    if (!overviewResult.ok) throw new Error(overviewResult.error || "Could not load admin overview.");
+    const overview = overviewResult.data || {};
     renderTotals(overview?.totals || {});
     const users = Array.isArray(overview?.users) ? overview.users : [];
     if (users.length) {
@@ -445,11 +440,7 @@ function composeControllers() {
   });
 
   authController = createAdminAuthController({
-    state,
     refs,
-    services: { adminService, adminPageService },
-    adminDispatch,
-    adminActions: ADMIN_ACTIONS,
     emitAdminStartupMetric,
     markAdminFirstInteractive,
     syncAdminBusyUi,
@@ -474,7 +465,6 @@ function composeControllers() {
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
     loadSyncStatus: (...args) => syncController.loadSyncStatus(...args),
-    getErrorMessage,
     logAdminError,
     showToast
   });
@@ -491,18 +481,6 @@ function bindEvents() {
   bindUi(refs.adminSavedBtnEl, "click", () => {
     window.location.href = "saved.html";
   });
-  bindUi(refs.adminUnlockBtnEl, "click", authController.unlockAdmin);
-  bindUi(refs.adminLockBtnEl, "click", authController.lockAdmin);
-
-  if (refs.adminPinInputEl) {
-    refs.adminPinInputEl.addEventListener("keydown", event => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        authController.unlockAdmin();
-      }
-    });
-  }
-
   bindAsyncClick(refs.adminRefreshBtnEl, refreshOverview);
   bindAsyncClick(refs.adminRunFetcherBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "default" }));
   bindAsyncClick(refs.adminRunFetcherIncrementalBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "incremental" }));

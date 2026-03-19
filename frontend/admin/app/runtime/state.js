@@ -23,13 +23,11 @@ export function createAdminRuntimeState({
   discoveryReportPollTimeoutMs
 }) {
   return {
-    adminPin: "",
     activeSourceFilter: "all",
     latestFetcherReportCache: null,
     latestOpsHealthCache: null,
     latestSyncStatusCache: null,
     syncConfigDirty: false,
-    adminApiReadyPollTimer: null,
     bridgeStatusPollTimer: null,
     opsHealthPollTimer: null,
     fetcherCompletionPollTimer: null,

@@ -42,7 +42,7 @@ STARTUP_REQUIRED_EVENTS = (
 EMBEDDED_PAGE_PROBES = (
     {"name": "Embedded Jobs Ready", "openPath": "jobs.html", "requiredEvents": ("jobs_first_render", "jobs_first_interactive")},
     {"name": "Embedded Saved Ready", "openPath": "saved.html", "requiredEvents": ("saved_auth_ready",)},
-    {"name": "Embedded Admin Ready", "openPath": "admin.html", "requiredEvents": ("admin_pin_gate_ready",)},
+    {"name": "Embedded Admin Ready", "openPath": "admin.html", "requiredEvents": ("admin_ready",)},
 )
 
 
@@ -69,7 +69,7 @@ def startup_profile_required_events(page: str) -> tuple[str, ...]:
             "desktop_probe_inline_ready",
         )
     page_events = {
-        "admin": ("admin_pin_gate_ready",),
+        "admin": ("admin_ready",),
         "saved": ("saved_first_interactive",),
         "jobs": ("jobs_first_render", "jobs_first_interactive"),
     }.get(normalized, ("jobs_first_render", "jobs_first_interactive"))

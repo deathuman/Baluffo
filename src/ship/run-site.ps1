@@ -3,13 +3,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$PythonLauncher = Get-Command py -ErrorAction SilentlyContinue
 $PythonCommand = "python"
 $PythonArgs = @()
-if ($PythonLauncher) {
-  $PythonCommand = $PythonLauncher.Source
-  $PythonArgs = @("-3")
-}
 $Root = if (Test-Path (Join-Path $PSScriptRoot "src")) {
   $PSScriptRoot
 } else {

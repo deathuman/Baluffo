@@ -187,7 +187,6 @@ export function createAdminFetcherController({
   }
 
   async function loadFetcherLogChunk(options = {}) {
-    if (!state.adminPin) return null;
     const reset = Boolean(options?.reset);
     const offset = reset ? 0 : Math.max(0, Number(state.fetcherLogRemoteOffset) || 0);
     const payload = await getBridge(`/fetcher/log?offset=${offset}`);
@@ -295,10 +294,6 @@ export function createAdminFetcherController({
   }
 
   async function loadLatestFetcherReport(options = {}) {
-    if (!state.adminPin) {
-      if (!options?.silent) showToast("Unlock admin to load fetch report.", "error");
-      return;
-    }
     const silent = Boolean(options.silent);
     if (state.adminBusyState.fetcherReportLoad) {
       if (!silent) showToast("Fetch report loading already in progress.", "info");
@@ -620,10 +615,6 @@ export function createAdminFetcherController({
   }
 
   async function triggerJobsFetcherTask(runOptions = {}) {
-    if (!state.adminPin) {
-      showToast("Unlock admin before running fetcher.", "error");
-      return;
-    }
     if (state.adminBusyState.fetcherRun || state.adminBusyState.fetcherWatch || state.adminBusyState.fetcherReportLoad || state.adminBusyState.liveFetchRunning) {
       showToast("Fetcher task is already running.", "info");
       return;

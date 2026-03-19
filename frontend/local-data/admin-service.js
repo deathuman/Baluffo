@@ -1,6 +1,5 @@
 export function createAdminDomain(deps) {
   const {
-    ensureAdmin,
     readProfiles,
     writeProfiles,
     listAllSavedJobs,
@@ -16,8 +15,7 @@ export function createAdminDomain(deps) {
     notifySavedJobsChanged
   } = deps;
 
-  async function getAdminOverview(pin) {
-    ensureAdmin(pin);
+  async function getAdminOverview() {
     const profiles = readProfiles();
     const allSavedJobs = await listAllSavedJobs();
     const allAttachments = await listAllAttachments();
@@ -114,8 +112,7 @@ export function createAdminDomain(deps) {
     });
   }
 
-  async function wipeAccountAdmin(pin, uid) {
-    ensureAdmin(pin);
+  async function wipeAccountAdmin(uid) {
     const targetUid = String(uid || "");
     if (!targetUid) throw new Error("Missing account id.");
 

@@ -99,21 +99,14 @@ test("saved smoke: export stays available for signed-in browser users and guest 
   await expect(page.locator("#saved-source-status")).toContainText("Sign in to view your saved jobs");
 });
 
-test("admin smoke: invalid pin keeps browser gate locked", async ({ page }) => {
+test("admin smoke: loads directly without a PIN gate", async ({ page }) => {
   await page.goto("/admin.html");
-
-  await page.fill("#admin-pin-input", "9999");
-  await page.click("#admin-unlock-btn");
-  await expect(page.locator(".toast").last()).toContainText("Invalid admin PIN");
-  await expect(page.locator("#admin-pin-gate")).toBeVisible();
-  await expect(page.locator("#admin-content")).toBeHidden();
+  await expect(page.locator("#admin-content")).toBeVisible();
+  await expect(page.locator("#admin-source-status")).toContainText(/Loading|Loaded|users|Could not|Admin overview/i);
 });
 
-test("admin smoke: unlocked admin shows bucketed fetch failure summary", async ({ page }) => {
+test("admin smoke: direct admin load shows bucketed fetch failure summary", async ({ page }) => {
   await page.goto("/admin.html");
-
-  await page.fill("#admin-pin-input", "1234");
-  await page.click("#admin-unlock-btn");
   await expect(page.locator("#admin-content")).toBeVisible();
 
   const metrics = page.locator("#admin-ops-fetcher-metrics");

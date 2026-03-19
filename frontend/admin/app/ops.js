@@ -36,7 +36,7 @@ export function createAdminOpsController({
 }) {
   let lastBridgeStatus = "checking";
 
-  function setOpsPlaceholders(message = "Unlock admin to view operations health.") {
+  function setOpsPlaceholders(message = "Operations health unavailable.") {
     if (refs.adminSyncStatusEl) {
       refs.adminSyncStatusEl.textContent = message;
     }
@@ -63,7 +63,6 @@ export function createAdminOpsController({
 
   function scheduleOpsHealthPolling(delayMs) {
     stopOpsHealthPolling();
-    if (!state.adminPin) return;
     const waitMs = Math.max(600, Number(delayMs) || 10000);
     state.opsHealthPollTimer = setTimeout(() => {
       loadOpsHealthData({ fromPoll: true }).catch(() => {});
@@ -71,7 +70,6 @@ export function createAdminOpsController({
   }
 
   async function loadOpsHealthData(options = {}) {
-    if (!state.adminPin) return;
     if (state.adminBusyState.opsLoad) {
       if (options?.fromPoll) scheduleOpsHealthPolling(idlePollIntervalMs);
       return;
@@ -173,14 +171,6 @@ export function createAdminOpsController({
   }
 
   async function pollBridgeStatus(options = {}) {
-    if (!state.adminPin) {
-      if (lastBridgeStatus !== "checking") {
-        lastBridgeStatus = "checking";
-        onBridgeStatusChange?.("checking");
-      }
-      setBridgeStatusBadge("checking", "Bridge Locked");
-      return;
-    }
     if (options.forceChecking) {
       if (lastBridgeStatus !== "checking") {
         lastBridgeStatus = "checking";

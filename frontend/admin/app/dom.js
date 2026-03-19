@@ -5,11 +5,7 @@ export function cacheAdminDom(doc = document) {
 
   return {
     adminSourceStatusEl: doc.querySelector(ui(t.sourceStatus)),
-    adminPinGateEl: doc.querySelector(ui(t.pinGate)),
     adminContentEl: doc.querySelector(ui(t.content)),
-    adminPinInputEl: doc.querySelector(ui(t.pinInput)),
-    adminUnlockBtnEl: doc.querySelector(ui(t.unlockBtn)),
-    adminLockBtnEl: doc.querySelector(ui(t.lockBtn)),
     adminRefreshBtnEl: doc.querySelector(ui(t.refreshBtn)),
     adminRunFetcherBtnEl: doc.querySelector(ui(t.runFetcherBtn)),
     adminRunFetcherIncrementalBtnEl: doc.querySelector(ui(t.runFetcherIncrementalBtn)),

@@ -17,10 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-from src.baluffo_config import get_security_defaults
 from src.shared.utils import now_iso
 
-ADMIN_PIN = str(get_security_defaults()["admin_pin_default"])
 APPLICATION_STATUSES = ["bookmark", "applied", "interview_1", "interview_2", "offer", "rejected"]
 LOCK = threading.RLock()
 
@@ -666,9 +664,7 @@ class LocalDataStore:
             "warnings": warnings,
         }
 
-    def get_admin_overview(self, pin: str) -> Dict[str, Any]:
-        if str(pin or "") != ADMIN_PIN:
-            raise ValueError("Invalid admin PIN.")
+    def get_admin_overview(self) -> Dict[str, Any]:
         with LOCK:
             users = []
             for user_dir in sorted(self.paths.users.iterdir()) if self.paths.users.exists() else []:
@@ -707,9 +703,7 @@ class LocalDataStore:
             }
             return {"users": users, "totals": totals}
 
-    def wipe_account_admin(self, pin: str, uid: str) -> None:
-        if str(pin or "") != ADMIN_PIN:
-            raise ValueError("Invalid admin PIN.")
+    def wipe_account_admin(self, uid: str) -> None:
         target_uid = str(uid or "").strip()
         if not target_uid:
             raise ValueError("Missing account id.")

@@ -162,26 +162,21 @@ export const backupService = {
 };
 
 export const adminService = {
-  verifyAdminPin(pin) {
-    const api = getLocalDataApi();
-    ensureApi(api, "verifyAdminPin");
-    return Boolean(api.verifyAdminPin(pin));
-  },
-  async getAdminOverview(pin) {
+  async getAdminOverview() {
     try {
       const api = getLocalDataApi();
       ensureApi(api, "getAdminOverview");
-      const data = await api.getAdminOverview(pin);
+      const data = await api.getAdminOverview();
       return toResult(data || { users: [], totals: {} });
     } catch (err) {
       return toResult({ users: [], totals: {} }, err?.message || "Could not load admin overview.");
     }
   },
-  async wipeAccountAdmin(pin, uid) {
+  async wipeAccountAdmin(uid) {
     try {
       const api = getLocalDataApi();
       ensureApi(api, "wipeAccountAdmin");
-      await api.wipeAccountAdmin(pin, uid);
+      await api.wipeAccountAdmin(uid);
       return toResult(true);
     } catch (err) {
       return toResult(null, err?.message || "Could not wipe account.");

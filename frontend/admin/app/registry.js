@@ -76,10 +76,6 @@ export function createAdminRegistryController({
   }
 
   async function addManualSource() {
-    if (!state.adminPin) {
-      showToast("Unlock admin before adding a source.", "error");
-      return;
-    }
     if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
       showToast("Another discovery operation is running.", "info");
       return;
@@ -157,7 +153,6 @@ export function createAdminRegistryController({
   }
 
   async function approveSelectedSources() {
-    if (!state.adminPin) return;
     if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
       showToast("Another discovery operation is running.", "info");
       return;
@@ -183,7 +178,6 @@ export function createAdminRegistryController({
   }
 
   async function rejectSelectedSources() {
-    if (!state.adminPin) return;
     if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
       showToast("Another discovery operation is running.", "info");
       return;
@@ -209,7 +203,6 @@ export function createAdminRegistryController({
   }
 
   async function restoreRejectedSources() {
-    if (!state.adminPin) return;
     if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
       showToast("Another discovery operation is running.", "info");
       return;
@@ -235,7 +228,6 @@ export function createAdminRegistryController({
   }
 
   async function deleteSelectedSources() {
-    if (!state.adminPin) return;
     if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
       showToast("Another discovery operation is running.", "info");
       return;
@@ -271,7 +263,6 @@ export function createAdminRegistryController({
   }
 
   async function loadDiscoveryData() {
-    if (!state.adminPin) return;
     if (state.adminBusyState.discoveryLoad) return;
     setBusyFlag("discoveryLoad", true);
     appendDiscoveryLog("Loading source discovery report and registries...");
