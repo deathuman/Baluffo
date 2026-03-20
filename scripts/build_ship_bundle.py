@@ -135,6 +135,16 @@ def _write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _resolve_runtime_asset_source(rel: str) -> Path:
+    direct = ROOT / rel
+    if direct.exists():
+        return direct
+    probe_fallback = ROOT / "probes" / rel
+    if probe_fallback.exists():
+        return probe_fallback
+    return direct
+
+
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -363,7 +373,7 @@ def _copy_app_version(version_dir: Path) -> None:
     )
     # Static frontend/runtime assets.
     for rel in APP_RUNTIME_FILES:
-        _copy_file(ROOT / rel, version_dir / rel)
+        _copy_file(_resolve_runtime_asset_source(rel), version_dir / rel)
 
     _copy_tree(ROOT / "frontend", version_dir / "frontend")
     for rel in APP_RUNTIME_SCRIPTS:
