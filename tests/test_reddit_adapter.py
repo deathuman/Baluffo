@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 import pytest
 
+from src.exceptions import AdapterValidationError
 from src.jobs.adapters.plugins.social.register import _run_reddit, set_source_diagnostics
 from src.jobs.models import RawJob
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
@@ -71,9 +72,8 @@ def test_reddit_adapter_configuration():
     reddit_config = config.get("reddit") or {}
     subreddits = reddit_config.get("subreddits") or []
     
-    # Verify we have all 6 subreddits
-    assert len(subreddits) == 6
-    expected_subreddits = ["gamedev", "gameDevClassifieds", "gamedevjobs", "INAT", "gamejobs", "indiegaming"]
+    assert len(subreddits) == 1
+    expected_subreddits = ["gamedev"]
     assert subreddits == expected_subreddits
 
 
@@ -100,15 +100,13 @@ def test_reddit_adapter_error_handling():
     register_module._SOCIAL_CONFIG = social_config
     
     try:
-        jobs = _run_reddit(
-            fetch_text=failing_fetch,
-            timeout_s=10,
-            retries=2,
-            backoff_s=1.0
-        )
-        
-        # Should return empty list when all sources fail
-        assert len(jobs) == 0
+        with pytest.raises(AdapterValidationError):
+            _run_reddit(
+                fetch_text=failing_fetch,
+                timeout_s=10,
+                retries=2,
+                backoff_s=1.0
+            )
         
         # Verify diagnostics show errors
         assert "social_reddit" in SOURCE_DIAGNOSTICS
@@ -133,7 +131,7 @@ def test_reddit_adapter_rate_limiting():
             "enabled": True,
             "subreddits": ["gamedev", "gameDevClassifieds"],
             "maxPostsPerSubreddit": 1,
-            "rssFallback": True,
+            "rssFallback": False,
             "htmlFallback": False,
             "rateLimitDelay": 0.01,  # Very short delay for testing
         }
@@ -152,8 +150,11 @@ def test_reddit_adapter_rate_limiting():
     register_module._SOCIAL_CONFIG = social_config
     
     try:
-        start_time = time.time()
-        with patch('src.jobs.adapters.plugins.social.register.fetch_with_retries', mock_fetch):
+        def mock_fetch_with_retries(url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float) -> str:
+            fetch_calls.append(time.time())
+            return "{}"
+
+        with patch('src.jobs.adapters.plugins.social.register.fetch_with_retries', mock_fetch_with_retries):
             _run_reddit(
                 fetch_text=mock_fetch,
                 timeout_s=10,
@@ -161,7 +162,7 @@ def test_reddit_adapter_rate_limiting():
                 backoff_s=1.0
             )
         
-        # Should have made 2 fetch calls (one per subreddit)
+        # One JSON attempt per subreddit when RSS fallback is disabled.
         assert len(fetch_calls) == 2
         
         # Verify there was a delay between calls

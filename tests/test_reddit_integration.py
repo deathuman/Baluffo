@@ -16,8 +16,8 @@ def test_complete_reddit_implementation():
     reddit_config = config.get("reddit") or {}
     subreddits = reddit_config.get("subreddits") or []
     
-    assert len(subreddits) == 6, f"Expected 6 subreddits, got {len(subreddits)}"
-    expected_subreddits = ["gamedev", "gameDevClassifieds", "gamedevjobs", "INAT", "gamejobs", "indiegaming"]
+    assert len(subreddits) == 1, f"Expected 1 subreddit, got {len(subreddits)}"
+    expected_subreddits = ["gamedev"]
     assert subreddits == expected_subreddits, f"Expected {expected_subreddits}, got {subreddits}"
     print("✓ Configuration loading test passed")
     

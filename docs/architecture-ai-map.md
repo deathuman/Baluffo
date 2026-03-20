@@ -60,6 +60,8 @@ runtime data roots:
 | `scripts/benchmark_discovery_probe.py` | `scripts/` | Discovery probe benchmarking |
 | `src/scrapers/` | `src/scrapers/` | Scrapy runner and spiders (GenericCareersSpider, domain_profiles, providers) |
 
+Build/ship note: packaging scripts should not import composition-root runtime modules like `src.jobs` or `src.admin_bridge` just to read defaults; prefer leaf modules or direct data/config paths so release builds stay isolated from the full runtime graph.
+
 For bridge API endpoints, see `docs/admin-bridge-api.md`.
 
 ## 2) Frontend topology (current)
@@ -215,6 +217,8 @@ Responsibilities still in `admin_bridge.py` and where they are used:
 | **Fetcher / discovery run** | `build_fetcher_args_from_payload`, `run_background_script` | POST trigger fetch, trigger discovery |
 | **Desktop / session** | `mark_desktop_session_activity`, `parse_iso` | Handler (activity), run history parsing |
 | **Route dispatch** | Request handler class `do_GET` / `do_POST` calling `get_routes.handle_get`, `post_routes.handle_post` | Incoming HTTP |
+
+Guardrail: changes to long-running admin task flows should verify launch, busy-state locking, and log polling/reattachment together, because those behaviors are coupled across routes, bridge services, and frontend runtime code.
 
 Further shrinkage: extract to bridge modules with injected deps; keep `api.xxx` callable in admin_bridge if routes need it (thin wrappers that delegate).
 

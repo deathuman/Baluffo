@@ -4,8 +4,7 @@ import hashlib
 from typing import Any, Callable, Dict, List
 from urllib.parse import urljoin, urlparse
 
-from bs4 import BeautifulSoup
-
+from src.jobs.adapters.html_parsers import extract_first_tag_text, html_fragment_lines, iter_anchor_fragments
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
@@ -67,22 +66,22 @@ def run(
 
 
 def _parse_listing_rows(*, html: str, page_url: str, company: str, source_id: str, source_name: str) -> List[RawJob]:
-    soup = BeautifulSoup(html or "", "html.parser")
     jobs: List[RawJob] = []
     seen: set[str] = set()
 
-    for anchor in soup.select('a[href*="/pages/"][href*="/jobs/"]'):
+    for anchor in iter_anchor_fragments(html or ""):
         href = clean_text(anchor.get("href"))
+        if "/pages/" not in href or "/jobs/" not in href:
+            continue
         if not href:
             continue
         absolute = clean_text(urljoin(page_url, href))
         if not absolute or absolute in seen:
             continue
-        segments = [clean_text(segment) for segment in anchor.stripped_strings if clean_text(segment)]
+        segments = html_fragment_lines(anchor.get("body", ""))
         if not segments:
             continue
-        heading = anchor.find(["h1", "h2", "h3", "h4"])
-        title = clean_text(" ".join(heading.stripped_strings) if heading is not None else "")
+        title = clean_text(extract_first_tag_text(anchor.get("body", ""), ["h1", "h2", "h3", "h4"]))
         if not title:
             title = segments[0]
         if not title:

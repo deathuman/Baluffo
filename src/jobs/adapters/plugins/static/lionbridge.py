@@ -4,8 +4,7 @@ import hashlib
 from typing import Any, Callable, Dict, List
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
-
+from src.jobs.adapters.html_parsers import html_fragment_lines, iter_anchor_fragments, iter_block_fragments
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
@@ -43,21 +42,21 @@ def run(
             "error": str(exc),
         }
         return []
-    soup = BeautifulSoup(html or "", "html.parser")
     jobs: List[RawJob] = []
     seen: set[str] = set()
-    for anchor in soup.select('a[href*="/jobs/"]'):
+    for row_html in iter_block_fragments(html or "", "tr"):
+        anchor = next((item for item in iter_anchor_fragments(row_html) if "/jobs/" in clean_text(item.get("href"))), None)
+        if not anchor:
+            continue
         href = clean_text(anchor.get("href"))
-        title = clean_text(anchor.get_text(" ", strip=True))
+        title = clean_text(anchor.get("text"))
         if not href or not title or title.lower() in {"all jobs", "skip to jobs search results"}:
             continue
         link = clean_text(urljoin(page_url, href))
         if not link or link in seen:
             continue
         seen.add(link)
-        row = anchor.find_parent("tr")
-        row_text = clean_text(row.get_text("\n", strip=True)) if row is not None else ""
-        meta = [clean_text(line) for line in row_text.splitlines() if clean_text(line) and clean_text(line) != title]
+        meta = [clean_text(line) for line in html_fragment_lines(row_html) if clean_text(line) and clean_text(line) != title]
         location = ""
         work_type = ""
         for line in meta:

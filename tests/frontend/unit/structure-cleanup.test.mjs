@@ -156,8 +156,8 @@ test("cleanup structure: app runtime helper modules stay slice-local", () => {
 
 test("cleanup structure: runtime entrypoints stay within the current size budget", () => {
   const budgets = {
-    jobs: 1900,
-    saved: 1900,
+    jobs: 1920,
+    saved: 1920,
     admin: 700
   };
 

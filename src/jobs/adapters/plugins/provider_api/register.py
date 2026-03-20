@@ -503,12 +503,22 @@ def _run_html_board_sources(
                 details.append(entry_report)
                 continue
         try:
-            text = deps.fetch_with_retries(board_url, fetch_text, timeout_s, retries, backoff_s)
-            parsed = parse_html(text, board_url, studio)
+            candidate_urls = _iter_ashby_candidate_urls(source) if adapter_name == "ashby" else [board_url]
+            parsed = []
+            last_text = ""
+            last_url = board_url
+            for candidate_url in candidate_urls:
+                last_url = candidate_url
+                last_text = deps.fetch_with_retries(candidate_url, fetch_text, timeout_s, retries, backoff_s)
+                parsed = parse_html(last_text, candidate_url, studio)
+                if parsed:
+                    break
             entry_report["fetchedCount"] = len(parsed)
             entry_report["keptCount"] = len(parsed)
             if not parsed:
                 entry_report["status"] = "error"
+                if adapter_name == "ashby" and "page not found" in clean_text(last_text).lower():
+                    entry_report["classification"] = "dead_listing_page"
                 entry_report["error"] = f"no jobs extracted from {adapter_name} board html"
             for row in parsed:
                 row["adapter"] = adapter_name
@@ -563,6 +573,32 @@ def _html_board_plugin(adapter_name: str) -> SimpleAdapterPlugin:
             **kwargs,
         ),
     )
+
+
+def _normalize_ashby_candidate_url(url: str) -> str:
+    text = clean_text(url)
+    if not text:
+        return ""
+    if text.rstrip("/").endswith("/jobs"):
+        return text.rstrip("/")[:-5].rstrip("/")
+    return text
+
+
+def _iter_ashby_candidate_urls(source: Dict[str, object]) -> List[str]:
+    candidates = [
+        clean_text(source.get("board_url")),
+        _normalize_ashby_candidate_url(clean_text(source.get("board_url"))),
+        clean_text(source.get("careersUrl")),
+        clean_text(source.get("sourceDirectoryEntryUrl")),
+    ]
+    rows: List[str] = []
+    seen: set[str] = set()
+    for item in candidates:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        rows.append(item)
+    return rows
 
 
 def ensure_registered() -> None:

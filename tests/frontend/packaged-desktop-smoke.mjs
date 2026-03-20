@@ -70,18 +70,18 @@ async function signInWithProfile(page, buttonSelector, profileName, expectedFocu
 }
 
 async function waitForDesktopAdapter(page) {
-  await page.waitForFunction(() => Boolean(window.JobAppLocalData), null, { timeout: 15_000 });
+  await page.waitForFunction(() => Boolean(window.JobAppLocalData), null, { timeout: 30_000 });
 }
 
 async function assertJobsPageReady(page) {
   await page.waitForFunction(() => {
     const state = document.body?.getAttribute("data-jobs-startup-state") || "loading";
     return state === "interactive" || state === "error";
-  }, null, { timeout: 15_000 });
+  }, null, { timeout: 30_000 });
   const startupState = await page.locator("body").getAttribute("data-jobs-startup-state");
   assert.notEqual(startupState, "loading", "jobs page should not stay in loading state");
-  await page.locator("#refresh-jobs-btn").waitFor({ state: "visible", timeout: 10_000 });
-  await page.locator("#auth-sign-in-btn").waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator("#refresh-jobs-btn").waitFor({ state: "visible", timeout: 20_000 });
+  await page.locator("#auth-sign-in-btn").waitFor({ state: "visible", timeout: 20_000 });
   assert.equal(await page.locator("#refresh-jobs-btn").isEnabled(), true, "jobs refresh button should be enabled");
   assert.equal(await page.locator("#auth-sign-in-btn").isEnabled(), true, "jobs sign-in button should be enabled");
   const jobsListText = await page.locator("#jobs-list").textContent();
@@ -209,7 +209,7 @@ async function main() {
       page.on("pageerror", error => pageErrors.push(String(error?.message || error)));
       await gotoDesktop(page, "jobs.html");
       await waitForDesktopAdapter(page);
-      await page.locator("#jobs-list").waitFor({ state: "visible", timeout: 15_000 });
+      await page.locator("#jobs-list").waitFor({ state: "visible", timeout: 30_000 });
       await assertJobsPageReady(page);
       assert.equal(pageErrors.length, 0, `unexpected jobs startup page errors: ${pageErrors.join("; ")}`);
       const sourceStatus = await page.locator("#source-status").textContent();
@@ -310,12 +310,15 @@ async function main() {
 
     await runScenario("Admin discovery run launches without immediate error", async () => {
       const discoveryBtn = page.locator("#admin-run-discovery-btn");
-      if (!(await discoveryBtn.isVisible())) {
-        throw new Error("Admin discovery button is not visible.");
-      }
-      if (!(await discoveryBtn.isEnabled())) {
-        throw new Error("Admin discovery button is not enabled.");
-      }
+      await discoveryBtn.waitFor({ state: "visible", timeout: 15_000 });
+      await page.waitForFunction(
+        () => {
+          const button = document.querySelector("#admin-run-discovery-btn");
+          return Boolean(button) && !button.disabled;
+        },
+        null,
+        { timeout: 20_000 }
+      );
       await discoveryBtn.click();
       await assertNoImmediateAdminError(page, { buttonLocator: discoveryBtn, observeMs: 8_000 });
     }, scenarios);

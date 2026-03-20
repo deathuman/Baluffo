@@ -216,60 +216,45 @@ def parse_reddit_html_payload(
     reject_for_hire_posts: bool,
 ) -> Tuple[List[RawJob], int]:
     """Parse Reddit HTML content for job posts when JSON and RSS fail."""
-    from bs4 import BeautifulSoup
-    
     out: List[RawJob] = []
     low_conf_count = 0
-    
+
     try:
-        soup = BeautifulSoup(html_text, 'html.parser')
-        
-        # Find post containers - Reddit typically uses specific CSS classes
-        post_containers = soup.find_all(['div', 'article'], class_=lambda x: x and ('post' in x.lower() or 'link' in x.lower() or 'thing' in x.lower()))
-        
+        block_pattern = re.compile(r"(?is)<(?:article|div)\b[^>]*>(.*?)</(?:article|div)>")
+        anchor_pattern = re.compile(r"(?is)<a\b[^>]*href\s*=\s*(['\"])(.*?)\1[^>]*>(.*?)</a>")
+        title_pattern = re.compile(r"(?is)<(?:h1|h2|h3|h4|h5|h6)\b[^>]*>(.*?)</(?:h1|h2|h3|h4|h5|h6)>")
+
+        post_containers = [match.group(1) or "" for match in block_pattern.finditer(html_text or "")]
         if not post_containers:
-            # Try more generic selectors if specific ones don't work
-            post_containers = soup.find_all(['div', 'article'])
-        
+            post_containers = [html_text or ""]
+
         for container in post_containers:
-            title_elem = container.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a'])
-            title = ""
-            if title_elem:
-                title = _clean_text(title_elem.get_text())
-            
-            # Skip empty titles
+            title_match = title_pattern.search(container)
+            if title_match:
+                title = _clean_text(strip_html_text(title_match.group(1)))
+            else:
+                first_anchor = anchor_pattern.search(container)
+                title = _clean_text(strip_html_text(first_anchor.group(3))) if first_anchor else ""
             if not title:
                 continue
-            
-            # Extract URL from post
-            link_elem = container.find('a', href=True)
+
             link = ""
-            if link_elem:
-                href = _clean_text(link_elem.get('href'))
-                if href and (href.startswith('http') or href.startswith('/')):
-                    link = href if href.startswith('http') else f"https://www.reddit.com{href}"
-            
-            # Extract posted date
-            date_elem = container.find(['time', 'span'], class_=lambda x: x and ('date' in x.lower() or 'time' in x.lower() or 'ago' in x.lower()))
-            posted_at = ""
-            if date_elem:
-                posted_at = _clean_text(date_elem.get_text())
-            
-            # Extract author
-            author_elem = container.find(['span', 'a'], class_=lambda x: x and ('author' in x.lower() or 'user' in x.lower()))
-            author = ""
-            if author_elem:
-                author = _clean_text(author_elem.get_text())
-            
-            # Check if this looks like a job post
+            for anchor_match in anchor_pattern.finditer(container):
+                href = _clean_text(anchor_match.group(2))
+                if href and (href.startswith("http") or href.startswith("/")):
+                    link = href if href.startswith("http") else f"https://www.reddit.com{href}"
+                    break
+
+            posted_match = re.search(r"(?is)<time\b[^>]*>(.*?)</time>", container)
+            posted_at = _clean_text(strip_html_text(posted_match.group(1))) if posted_match else ""
+
             confidence = social_compute_confidence(
                 title,
                 link,
                 has_apply_url=bool(link),
                 has_remote_hint=False
             )
-            
-            # Check for hiring keywords
+
             title_lower = title.lower()
             if any(keyword in title_lower for keyword in SOCIAL_HIRING_KEYWORDS):
                 confidence += 20
@@ -281,11 +266,9 @@ def parse_reddit_html_payload(
             if confidence < min_confidence:
                 low_conf_count += 1
                 continue
-            
-            # Extract company name
+
             company = social_infer_company(title, link)
-            
-            # Create job entry
+
             job_entry = RawJob(
                 title=title,
                 company=company,
@@ -297,11 +280,10 @@ def parse_reddit_html_payload(
                 studio=subreddit,
             )
             out.append(job_entry)
-            
-    except Exception as exc:
-        # If HTML parsing fails, return empty results
+
+    except Exception:
         pass
-    
+
     return out, low_conf_count
 
 

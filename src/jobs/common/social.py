@@ -79,12 +79,13 @@ def _deep_merge_dicts(base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[s
 
 def load_social_config(
     *,
-    config_path: Path = DEFAULT_SOCIAL_CONFIG_PATH,
+    config_path: Path | None = DEFAULT_SOCIAL_CONFIG_PATH,
     enabled: bool = False,
     lookback_minutes: int = DEFAULT_SOCIAL_LOOKBACK_MINUTES,
 ) -> Dict[str, Any]:
+    resolved_path = Path(config_path) if config_path else DEFAULT_SOCIAL_CONFIG_PATH
     try:
-        payload = json.loads(Path(config_path).read_text(encoding="utf-8"))
+        payload = json.loads(resolved_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         payload = {}
     merged = _deep_merge_dicts(DEFAULT_SOCIAL_CONFIG, payload if isinstance(payload, dict) else {})

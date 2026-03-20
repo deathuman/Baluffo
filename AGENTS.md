@@ -81,6 +81,108 @@ Examples:
 - one-subsystem feature: inspect targeted files, edit, and run one relevant verification step
 - release or packaging task: switch to high-risk behavior and verify the release-critical path explicitly
 
+## Dependency Guardrail
+
+Do not add new libraries, packages, or framework dependencies without explicit user approval.
+
+This applies to:
+- Python dependencies in `requirements*.txt`, packaging specs, or implicit runtime imports
+- Node dependencies in `package.json`, lockfiles, or build tooling
+- bundled third-party assets or vendored libraries added to the repo
+
+Default behavior:
+- prefer existing standard-library, repo-local, Scrapy, and already-installed project tooling first
+- if a new dependency would be the cleanest path, stop and ask the user before adding it
+- do not silently add a dependency just to simplify parsing, scraping, packaging, testing, or UI work
+
+When touching code that currently imports an unapproved dependency, prefer removing or replacing it with existing project tooling unless the user explicitly asks to keep or add that dependency.
+
+## Packaging and Build Isolation
+
+Treat packaging and ship-build work as isolated delivery code, not as a shortcut into the full runtime graph.
+
+Defaults:
+- Build and ship scripts under `scripts/` must not import broad runtime modules just to read constants, defaults, or registry paths.
+- Prefer direct data/config file reads or narrow leaf modules over composition-root imports.
+- When editing portable/ship packaging paths, verify with the narrowest release-critical command first:
+  - `python scripts/build_portable_exe.py`
+  - `npm run build:portable-exe`
+- Treat `Path` objects as unsafe in manifests or JSON/report output unless they are explicitly serialized to strings first.
+- Do not add convenience dependencies for packaging; prefer the standard library and existing project tooling.
+
+## No Broad Composition-Root Imports
+
+Do not import composition-root modules from narrow helpers, plugins, or build code unless the task genuinely needs the whole runtime graph.
+
+Defaults:
+- Avoid importing `src.jobs`, `src.admin_bridge`, or other top-level re-export modules from build scripts, parsers, plugins, or narrow bridge helpers.
+- Prefer leaf modules such as `src/jobs/common/*`, `src/bridge/*`, `src/core/*`, or direct data-file paths.
+- If a change touches an `__init__.py` that re-exports a large module tree, promote the task to high risk and verify the affected build/runtime path explicitly.
+
+## Bridge and Route Compatibility
+
+Bridge changes must be treated as API compatibility work, not local refactors.
+
+Defaults:
+- Route handlers should call bridge/service methods with explicit keyword arguments when signatures are evolving.
+- When changing a bridge or service signature, search both route call sites and frontend payload builders before editing.
+- If a change affects long-running task launch or completion flows, verify all three together:
+  - task starts
+  - busy state locks controls
+  - log polling or attachment still works
+- Do not assume a running local bridge reflects code changes; if behavior looks stale after a fix, restart the bridge before concluding the fix failed.
+
+## Admin UI Task Controls
+
+Any new admin task control must integrate with the shared task lifecycle, not just fire a request.
+
+Defaults:
+- New admin run buttons must participate in shared busy-state disable/restore behavior.
+- New run presets or actions must document their bridge payload wiring and fallback behavior.
+- Any new admin task control should land with one focused frontend unit test or bridge payload test.
+- If adding a new preset such as `uncapped`, keep it distinct from existing presets rather than overloading a nearby action.
+
+## Release and Tag Discipline
+
+Release and tag work is always high risk.
+
+Defaults:
+- Never move, recreate, or force-push a release tag unless the user explicitly asks for tag retargeting.
+- Workflow fixes after a release tag should default to a new version/tag, not silent reuse of the existing tag.
+- Before suggesting a re-release, determine whether the problem is:
+  - tag contents
+  - workflow state on `main`
+  - release artifact generation
+- For release/build failures, inspect the actual workflow log or failing build path before generalizing from earlier local success.
+
+## Parser and Scraping Guardrail
+
+Prefer the scraping stack already in the repo over parser-by-parser reinvention or new dependencies.
+
+Defaults:
+- Prefer existing Scrapy/parsel/repo-local HTML helpers over adding or reintroducing parsing libraries.
+- For static adapters, use the plugin architecture documented in `docs/architecture-ai-map.md`.
+- Keep site-specific extraction logic local to the plugin or shared parser helpers, not in unrelated build/runtime code.
+- If a parser fallback is added, ensure it does not silently widen packaging/runtime dependencies.
+
+## Data-Quality and Public Output Guardrail
+
+Changes that affect public jobs data must preserve user-facing cleanliness, not just parser success.
+
+Defaults:
+- Any change affecting public job text, locations, dropdown values, or report payloads must preserve:
+  - sanitized public text
+  - semantic location validity
+  - filter-safe frontend values
+- If touching normalization/canonicalization or adapters that emit `title`, `city`, `country`, or similar public fields, run at least one targeted contamination or location-quality check.
+
+## Windows-Specific Safety Notes
+
+Defaults:
+- Be careful with Windows-only artifacts like phantom `nul` in `git status`; never include them in commits.
+- Prefer repo-relative strings over platform-specific `Path` serialization in output contracts.
+- For commands and paths in docs or scripts, avoid assumptions that hold only on POSIX shells.
+
 ## AI Tooling Palette (Efficiency Palette)
 
 To minimize token consumption and exploration overhead, AI agents MUST favor these tools and strategies:

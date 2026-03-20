@@ -31,6 +31,78 @@ def strip_html_text(fragment: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def html_fragment_lines(fragment: str) -> List[str]:
+    if not fragment:
+        return []
+    text = str(fragment)
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?is)</(?:div|span|p|li|tr|td|th|h[1-6]|section|article)>", "\n", text)
+    text = re.sub(r"(?is)<(?:div|p|li|tr|td|th|section|article)\b[^>]*>", "\n", text)
+    normalized = re.sub(r"(?is)<[^>]+>", " ", text)
+    return [re.sub(r"\s+", " ", line).strip() for line in normalized.splitlines() if re.sub(r"\s+", " ", line).strip()]
+
+
+def extract_first_tag_text(fragment: str, tags: Iterable[str]) -> str:
+    text_map = extract_tag_texts(fragment, tags)
+    return text_map[0] if text_map else ""
+
+
+def extract_tag_texts(fragment: str, tags: Iterable[str]) -> List[str]:
+    if not fragment:
+        return []
+    names = [re.escape(str(tag).strip()) for tag in tags if str(tag).strip()]
+    if not names:
+        return []
+    pattern = re.compile(rf"(?is)<(?:{'|'.join(names)})\b[^>]*>(.*?)</(?:{'|'.join(names)})>")
+    values: List[str] = []
+    for match in pattern.finditer(fragment):
+        text = strip_html_text(match.group(1))
+        if text:
+            values.append(text)
+    return values
+
+
+def iter_anchor_fragments(html_text: str) -> Iterable[Dict[str, str]]:
+    if not html_text:
+        return []
+    pattern = re.compile(
+        r"(?is)<a\b(?P<before>[^>]*)href\s*=\s*(?P<quote>['\"])(?P<href>.*?)(?P=quote)(?P<after>[^>]*)>(?P<body>.*?)</a>"
+    )
+    rows: List[Dict[str, str]] = []
+    for match in pattern.finditer(html_text):
+        attrs = f"{match.group('before')}{match.group('after')}"
+        href = clean_text(unescape(match.group("href")))
+        body = match.group("body") or ""
+        rows.append(
+            {
+                "href": href,
+                "body": body,
+                "text": strip_html_text(body),
+                "attrs": attrs,
+                "class": _extract_html_attr(attrs, "class"),
+            }
+        )
+    return rows
+
+
+def iter_block_fragments(html_text: str, tag: str) -> Iterable[str]:
+    safe_tag = re.escape(str(tag or "").strip())
+    if not safe_tag or not html_text:
+        return []
+    pattern = re.compile(rf"(?is)<{safe_tag}\b[^>]*>(.*?)</{safe_tag}>")
+    return [match.group(1) or "" for match in pattern.finditer(html_text)]
+
+
+def _extract_html_attr(attrs_text: str, attr_name: str) -> str:
+    safe_attr = re.escape(str(attr_name or "").strip())
+    if not safe_attr:
+        return ""
+    match = re.search(rf"(?is)\b{safe_attr}\s*=\s*(['\"])(.*?)\1", attrs_text or "")
+    if not match:
+        return ""
+    return clean_text(unescape(match.group(2)))
+
+
 def parse_gamesindustry_changed_date(value: Any) -> str:
     text = clean_text(value)
     if not text:

@@ -4,8 +4,7 @@ import hashlib
 from typing import Any, Callable, Dict, List
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
-
+from src.jobs.adapters.html_parsers import html_fragment_lines, iter_anchor_fragments
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
@@ -43,17 +42,18 @@ def run(
             "error": str(exc),
         }
         return []
-    soup = BeautifulSoup(html or "", "html.parser")
     jobs: List[RawJob] = []
     seen: set[str] = set()
-    for anchor in soup.select('a[href*="/amberstudiocareers/job/"]'):
+    for anchor in iter_anchor_fragments(html or ""):
         href = clean_text(anchor.get("href"))
+        if "/amberstudiocareers/job/" not in href:
+            continue
         if not href:
             continue
         link = clean_text(urljoin(page_url, href))
         if not link or link in seen:
             continue
-        lines = [clean_text(line) for line in anchor.get_text("\n", strip=True).splitlines() if clean_text(line)]
+        lines = html_fragment_lines(anchor.get("body", ""))
         title = lines[0] if lines else ""
         location = lines[1] if len(lines) > 1 else ""
         if not title:

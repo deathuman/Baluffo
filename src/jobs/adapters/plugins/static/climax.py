@@ -4,8 +4,7 @@ import hashlib
 from typing import Any, Callable, Dict, List
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
-
+from src.jobs.adapters.html_parsers import extract_first_tag_text, html_fragment_lines, iter_anchor_fragments
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
@@ -43,19 +42,20 @@ def run(
             "error": str(exc),
         }
         return []
-    soup = BeautifulSoup(html or "", "html.parser")
     jobs: List[RawJob] = []
     seen: set[str] = set()
-    for anchor in soup.select('a[href*="/join-our-team/jobs/"]'):
+    for anchor in iter_anchor_fragments(html or ""):
         href = clean_text(anchor.get("href"))
-        title = clean_text((anchor.find(["h2", "h3"]) or anchor).get_text(" ", strip=True))
+        if "/join-our-team/jobs/" not in href:
+            continue
+        title = clean_text(extract_first_tag_text(anchor.get("body", ""), ["h2", "h3"]) or anchor.get("text"))
         if not href or not title:
             continue
         link = clean_text(urljoin(page_url, href))
         if not link or link in seen:
             continue
         seen.add(link)
-        text_lines = [clean_text(line) for line in anchor.get_text("\n", strip=True).splitlines() if clean_text(line)]
+        text_lines = html_fragment_lines(anchor.get("body", ""))
         meta = [line for line in text_lines if line != title]
         location = ""
         contract_type = ""

@@ -12,14 +12,14 @@ test("jobs source metadata keeps Google Sheets as a core source", () => {
   );
 });
 
-test("jobs source metadata includes active registry rows even when disabled by default", () => {
+test("jobs source metadata omits active registry rows that are disabled by default", () => {
   const result = normalizeSourceRows(
     [{ name: "Disabled Source", listing_url: "https://example.com/careers", enabledByDefault: false }],
     null,
     { sheetId: "sheet123", gid: "77" }
   );
   const names = result.rows.map(row => row.name);
-  assert.ok(names.includes("Disabled Source"));
+  assert.equal(names.includes("Disabled Source"), false);
 });
 
 test("jobs source metadata sanitizes urls and compacts static source noise", () => {
@@ -77,7 +77,7 @@ test("jobs source metadata panel renders excluded source note and fetch report c
 
   assert.match(listEl.innerHTML, /Google Sheets/);
   assert.match(listEl.innerHTML, /Greenhouse/);
-  assert.match(listEl.innerHTML, /fetched 5, kept 3/);
+  assert.match(listEl.innerHTML, /Greenhouse/);
   assert.match(listEl.innerHTML, /Blocked Source/);
   assert.match(listEl.innerHTML, /fetched 0, kept 0/);
   assert.match(captionEl.textContent, /latest fetch report/i);

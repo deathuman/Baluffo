@@ -59,6 +59,15 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 - In this environment, direct pytest temp-root creation under `%LOCALAPPDATA%\\Temp` can hit Windows permission errors during setup/cleanup.
 - If a narrow bridge test run fails before assertions with tmpdir/tempfile ACL errors, rerun it with a repo-local `--basetemp` or the existing repo-local tempdir shim rather than treating it as a product regression.
 
+## Release/build regression picks
+
+Use the narrowest check that matches the risky path:
+
+- Packaging or portable EXE changes: `python scripts/build_portable_exe.py`
+- Bridge route wiring or task-launch signature changes: focused `tests/bridge/...`
+- Admin task buttons, presets, or busy-state changes: focused frontend unit tests plus the nearest admin bridge payload test
+- Contamination or location-quality regressions: targeted fetcher/unit checks around sanitization, canonicalization, or audit helpers
+
 **Test-to-source map:**
 
 | Area | Test path |

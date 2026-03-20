@@ -664,7 +664,7 @@ class LocalDataStore:
             "warnings": warnings,
         }
 
-    def get_admin_overview(self) -> Dict[str, Any]:
+    def get_admin_overview(self, _admin_pin: str | None = None) -> Dict[str, Any]:
         with LOCK:
             users = []
             for user_dir in sorted(self.paths.users.iterdir()) if self.paths.users.exists() else []:
@@ -703,8 +703,10 @@ class LocalDataStore:
             }
             return {"users": users, "totals": totals}
 
-    def wipe_account_admin(self, uid: str) -> None:
-        target_uid = str(uid or "").strip()
+    def wipe_account_admin(self, admin_pin_or_uid: str, uid: str | None = None) -> None:
+        # Backward-compatible signature: older callers still pass (admin_pin, uid),
+        # while current bridge code passes only the uid.
+        target_uid = str(uid if uid is not None else admin_pin_or_uid or "").strip()
         if not target_uid:
             raise ValueError("Missing account id.")
         with LOCK:

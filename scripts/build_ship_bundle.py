@@ -75,6 +75,10 @@ APP_RUNTIME_SCRIPT_DIRS = (
     "jobs",
     "scrapers",
     "shared",
+    "source_discovery",
+)
+APP_RUNTIME_ASSET_DIRS = (
+    "probes",
 )
 PACKAGING_FILES = (
     "README.md",
@@ -181,11 +185,12 @@ def _manifest_payload(version: str, sha256: str) -> dict:
 
 
 def _seed_runtime_data(data_dir: Path) -> None:
-    from src.jobs.registry import DEFAULT_SOCIAL_CONFIG, DEFAULT_STUDIO_SOURCE_REGISTRY  # local import to keep script lightweight
-
     data_dir.mkdir(parents=True, exist_ok=True)
+    for name in APP_RUNTIME_DATA_FILES:
+        src = ROOT / "data" / name
+        if src.exists():
+            _copy_file(src, data_dir / name)
     payloads = {
-        "source-registry-active.json": DEFAULT_STUDIO_SOURCE_REGISTRY,
         "source-registry-pending.json": [],
         "source-registry-rejected.json": [],
         "source-discovery-candidates.json": [],
@@ -196,13 +201,15 @@ def _seed_runtime_data(data_dir: Path) -> None:
         "jobs-fetch-tasks.json": {"summary": {}, "tasks": [], "outputs": {}},
         "jobs-source-state.json": {"schemaVersion": 1, "updatedAt": "", "sources": {}},
         "jobs-success-cache.json": {"updatedAt": "", "successfulSources": []},
-        "social-sources-config.json": DEFAULT_SOCIAL_CONFIG,
         "admin-task-state.json": {},
         "admin-alert-state.json": {"schemaVersion": 1, "acked": {}, "updatedAt": ""},
         "admin-run-history.json": [],
     }
     for name, payload in payloads.items():
-        _write_text(data_dir / name, json.dumps(payload, indent=2, ensure_ascii=False))
+        target = data_dir / name
+        if target.exists():
+            continue
+        _write_text(target, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
 def _require_packaged_sync_config() -> Path:
@@ -376,6 +383,8 @@ def _copy_app_version(version_dir: Path) -> None:
         _copy_file(_resolve_runtime_asset_source(rel), version_dir / rel)
 
     _copy_tree(ROOT / "frontend", version_dir / "frontend")
+    for rel in APP_RUNTIME_ASSET_DIRS:
+        _copy_tree(ROOT / rel, version_dir / rel)
     for rel in APP_RUNTIME_SCRIPTS:
         _copy_file(ROOT / "src" / rel, version_dir / "src" / rel)
     for rel in APP_RUNTIME_SCRIPT_DIRS:

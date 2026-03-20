@@ -29,11 +29,10 @@ def test_registry_social_config_merges_defaults() -> None:
     assert config["enabled"]
     assert int(config["lookbackMinutes"]) == 45
     assert "reddit" in config
-    # Test that all 6 subreddits are included
     reddit_config = config.get("reddit") or {}
     subreddits = reddit_config.get("subreddits") or []
-    assert len(subreddits) == 6
-    expected_subreddits = ["gamedev", "gameDevClassifieds", "gamedevjobs", "INAT", "gamejobs", "indiegaming"]
+    assert len(subreddits) == 1
+    expected_subreddits = ["gamedev"]
     assert subreddits == expected_subreddits
 
 
