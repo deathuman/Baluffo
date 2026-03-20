@@ -82,6 +82,26 @@ function compactStaticSourceLabel(rawName) {
   return "Static source";
 }
 
+function detectAdapterFromSource(sourceName, sourceUrl) {
+  const name = String(sourceName || "").toLowerCase();
+  const url = String(sourceUrl || "").toLowerCase();
+  
+  // Check for common adapter patterns
+  if (name.includes("lever") || url.includes("lever.co")) return "Lever";
+  if (name.includes("greenhouse") || url.includes("greenhouse.io") || url.includes("app.greenhouse.io")) return "Greenhouse";
+  if (name.includes("teamtailor") || url.includes("teamtailor.com")) return "Teamtailor";
+  if (name.includes("smartrecruiters") || url.includes("smartrecruiters.com")) return "SmartRecruiters";
+  if (name.includes("workable") || url.includes("workable.com")) return "Workable";
+  if (name.includes("personio") || url.includes("personio.com")) return "Personio";
+  if (name.includes("ashby") || url.includes("ashbyhq.com")) return "Ashby";
+  if (name.includes("pinpoint") || url.includes("pinpointhq.com")) return "Pinpoint";
+  if (name.includes("recruitee") || url.includes("recruitee.com")) return "Recruitee";
+  if (name.includes("gamesmap") || url.includes("gamesmap.com")) return "Gamesmap";
+  if (name.includes("sheet") || name.includes("google")) return "Sheet";
+  
+  return "Manual Website";
+}
+
 function resolveSheetsForMetadata(sheetsFallbackSource, sheetsFallbackSources) {
   const list = Array.isArray(sheetsFallbackSources) ? sheetsFallbackSources : [];
   if (list.length > 0) {
@@ -126,10 +146,33 @@ export function normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackS
   const activeStaticRows = activeRows.filter(row => String(row.adapter || "").trim().toLowerCase() === "static");
   const activeNonStaticRows = activeRows.filter(row => String(row.adapter || "").trim().toLowerCase() !== "static");
 
+  // Group non-static sources by adapter type
+  const adapterGroups = new Map();
+  
   activeNonStaticRows.forEach(row => {
-      const name = String(row.name || row.studio || row.adapter || "Source").trim();
-      const url = row._safeUrl || "";
-      push(name, url, "active");
+    const name = String(row.name || row.studio || row.adapter || "Source").trim();
+    const url = row._safeUrl || "";
+    const adapter = detectAdapterFromSource(name, url);
+    
+    if (!adapterGroups.has(adapter)) {
+      adapterGroups.set(adapter, {
+        adapter: adapter,
+        count: 0,
+        name: name,
+        url: url,
+        status: "active",
+        note: ""
+      });
+    }
+    
+    const group = adapterGroups.get(adapter);
+    group.count += 1;
+    group.name = `${group.count} ${adapter} sources`;
+  });
+
+  // Add grouped adapter entries
+  adapterGroups.forEach(group => {
+    push(group.name, group.url, group.status, group.note);
   });
 
   const staticRowsSorted = activeStaticRows

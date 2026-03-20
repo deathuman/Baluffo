@@ -168,7 +168,7 @@ def build_pattern_candidates(studio_seeds: List[Dict[str, Any]]) -> List[Dict[st
                         **base,
                         "name": f"{studio} (Ashby)",
                         "adapter": "ashby",
-                        "board_url": f"https://jobs.ashbyhq.com/{alias}/jobs",
+                        "board_url": f"https://jobs.ashbyhq.com/{alias}",
                     })
                 elif provider == "recruitee":
                     host = alias if ".recruitee.com" in alias else f"{alias}.recruitee.com"

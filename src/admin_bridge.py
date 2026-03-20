@@ -907,6 +907,7 @@ def sync_task_running() -> bool:
                 ops_state_lock=OPS_STATE_LOCK,
                 load_run_history=load_run_history,
                 save_run_history=save_run_history,
+                save_json_atomic=save_json_atomic,
                 prune_started_rows_for_type=prune_started_rows_for_type,
                 clear_task_state=clear_task_state,
                 clear_task_state_locked=_clear_task_state_locked,
@@ -977,9 +978,16 @@ def start_sync_task(action: str, *, reason: str = "", automatic: bool = False) -
     return _get_sync_service().start_sync_task(action, reason=reason, automatic=bool(automatic))
 
 
-def trigger_discovery_task(*, route_name: str, enable_auto_sync_watch: bool = True) -> Tuple[int, Dict[str, Any]]:
+def trigger_discovery_task(
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    route_name: str,
+    enable_auto_sync_watch: bool = True,
+) -> Tuple[int, Dict[str, Any]]:
     return _get_discovery_service().trigger_discovery_task(
-        route_name=route_name, enable_auto_sync_watch=enable_auto_sync_watch
+        route_name=route_name,
+        payload=payload if isinstance(payload, dict) else {},
+        enable_auto_sync_watch=enable_auto_sync_watch,
     )
 
 

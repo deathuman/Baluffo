@@ -1,6 +1,8 @@
 import json
+import os
 import sys
 import asyncio
+import importlib
 from pathlib import Path
 from unittest import mock
 
@@ -78,6 +80,313 @@ def test_build_pattern_candidates_supports_recruitee_and_pinpoint_providers() ->
     assert adapters == {"recruitee", "pinpoint"}
     assert any(str(row.get("api_url") or "").endswith("/api/offers/") for row in rows)
     assert any(str(row.get("api_url") or "").endswith("/postings.json") for row in rows)
+
+
+def test_build_pattern_candidates_generates_root_ashby_board_urls() -> None:
+    previous = list(sd.STUDIO_SEEDS)
+    sd.STUDIO_SEEDS = [
+        {
+            "studio": "Example Studio",
+            "aliases": ["example-studio"],
+            "nlPriority": False,
+            "likelyProviders": ["ashby"],
+        }
+    ]
+    try:
+        rows = sd.build_pattern_candidates()
+    finally:
+        sd.STUDIO_SEEDS = previous
+    assert len(rows) == 1
+    assert rows[0]["adapter"] == "ashby"
+    assert rows[0]["board_url"] == "https://jobs.ashbyhq.com/example-studio"
+
+
+def test_seed_catalog_path_points_to_repo_src_catalog() -> None:
+    assert sd.SEED_CATALOG_PATH.name == "discovery_seed_catalog.json"
+    assert sd.SEED_CATALOG_PATH.parts[-2] == "src"
+    assert sd.SEED_CATALOG_PATH.exists()
+
+
+def test_probe_concurrency_defaults_use_updated_fallbacks() -> None:
+    previous = {
+        key: os.environ.get(key)
+        for key in (
+            "BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TOTAL",
+            "BALUFFO_DISCOVERY_PROBE_CONCURRENCY_STATIC",
+            "BALUFFO_DISCOVERY_PROBE_CONCURRENCY_PROVIDER",
+            "BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TEAMTAILOR",
+        )
+    }
+    try:
+        for key in previous:
+            os.environ.pop(key, None)
+        defaults = sd.probe_concurrency_defaults()
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    assert defaults == {
+        "total": 40,
+        "static": 16,
+        "provider": 40,
+        "teamtailor": 15,
+    }
+
+
+def test_adapter_queue_caps_use_updated_provider_growth_defaults() -> None:
+    assert sd.ADAPTER_QUEUE_CAPS == {
+        "greenhouse": 12,
+        "lever": 10,
+        "smartrecruiters": 8,
+        "workable": 8,
+        "teamtailor": 8,
+        "ashby": 10,
+        "recruitee": 6,
+        "pinpoint": 6,
+        "personio": 3,
+        "static": 8,
+    }
+
+
+def test_apply_queue_balancing_prefers_provider_candidates_over_static_in_bounded_runs() -> None:
+    candidates = [
+        {
+            "name": "Static A",
+            "studio": "Static A",
+            "adapter": "static",
+            "score": 99,
+            "evidenceScore": 99,
+            "jobsFound": 5,
+            "pages": ["https://static-a.example/jobs"],
+        },
+        {
+            "name": "Static B",
+            "studio": "Static B",
+            "adapter": "static",
+            "score": 98,
+            "evidenceScore": 98,
+            "jobsFound": 5,
+            "pages": ["https://static-b.example/jobs"],
+        },
+        {
+            "name": "Greenhouse A",
+            "studio": "Greenhouse A",
+            "adapter": "greenhouse",
+            "score": 80,
+            "evidenceScore": 80,
+            "jobsFound": 4,
+            "api_url": "https://boards-api.greenhouse.io/v1/boards/a/jobs?content=true",
+        },
+        {
+            "name": "Lever A",
+            "studio": "Lever A",
+            "adapter": "lever",
+            "score": 79,
+            "evidenceScore": 79,
+            "jobsFound": 4,
+            "api_url": "https://api.lever.co/v0/postings/a?mode=json",
+        },
+        {
+            "name": "Ashby A",
+            "studio": "Ashby A",
+            "adapter": "ashby",
+            "score": 78,
+            "evidenceScore": 78,
+            "jobsFound": 4,
+            "board_url": "https://jobs.ashbyhq.com/a",
+        },
+        {
+            "name": "SmartRecruiters A",
+            "studio": "SmartRecruiters A",
+            "adapter": "smartrecruiters",
+            "score": 77,
+            "evidenceScore": 77,
+            "jobsFound": 4,
+            "api_url": "https://api.smartrecruiters.com/v1/companies/A/postings",
+        },
+    ]
+
+    queued, report_rows, stats = sd.apply_queue_balancing(candidates, top_n=4)
+    assert [str(row.get("adapter") or "") for row in queued] == [
+        "greenhouse",
+        "lever",
+        "ashby",
+        "smartrecruiters",
+    ]
+    assert int((stats.get("queuedByAdapter") or {}).get("static") or 0) == 0
+    assert int((stats.get("deferredByAdapter") or {}).get("static") or 0) == 2
+    assert int((stats.get("healthyButDeferredByAdapter") or {}).get("static") or 0) == 2
+    assert len([row for row in report_rows if bool(row.get("deferred"))]) == 2
+    assert int(stats.get("providerTarget") or 0) == 2
+
+
+def test_classify_static_suppression_suppresses_weak_repeat_low_yield_static_candidate() -> None:
+    reason = sd.classify_static_suppression(
+        {
+            "name": "Weak Static (Manual Website)",
+            "studio": "Weak Static",
+            "adapter": "static",
+            "discoveryStage": "generic_static",
+            "weakSignal": True,
+            "manualOnly": True,
+            "evidenceScore": 26,
+            "evidenceTypes": ["careers_keyword"],
+        },
+        source_state_rows={
+            "Weak Static (Manual Website)": {
+                "lastDurationMs": 32000,
+                "lastKeptCount": 0,
+                "lastDetailPagesVisited": 14,
+                "lastDetailYieldPct": 0,
+                "lastCandidateLinksFound": 12,
+            }
+        },
+        thresholds=sd.DEFAULT_DISCOVERY_THRESHOLDS,
+    )
+    assert reason == "manual_only_repeat_low_yield"
+
+
+def test_classify_static_suppression_preserves_strong_or_previously_productive_static_candidate() -> None:
+    strong_reason = sd.classify_static_suppression(
+        {
+            "name": "Strong Static (Manual Website)",
+            "studio": "Strong Static",
+            "adapter": "static",
+            "discoveryStage": "generic_static",
+            "weakSignal": True,
+            "manualOnly": True,
+            "evidenceScore": 26,
+            "evidenceTypes": ["careers_keyword", "structured_job_links"],
+        },
+        source_state_rows={},
+        thresholds=sd.DEFAULT_DISCOVERY_THRESHOLDS,
+    )
+    productive_reason = sd.classify_static_suppression(
+        {
+            "name": "Previously Productive (Manual Website)",
+            "studio": "Previously Productive",
+            "adapter": "static",
+            "discoveryStage": "generic_static",
+            "weakSignal": True,
+            "manualOnly": True,
+            "evidenceScore": 24,
+            "evidenceTypes": ["careers_keyword"],
+        },
+        source_state_rows={
+            "Previously Productive (Manual Website)": {
+                "lastDurationMs": 22000,
+                "lastKeptCount": 3,
+                "lastDetailPagesVisited": 6,
+                "lastDetailYieldPct": 25,
+            }
+        },
+        thresholds=sd.DEFAULT_DISCOVERY_THRESHOLDS,
+    )
+    assert strong_reason == ""
+    assert productive_reason == ""
+
+
+def test_sheet_directory_static_probe_cap_scales_from_bounded_top_n() -> None:
+    assert sd.sheet_directory_static_probe_cap(0) == 0
+    assert sd.sheet_directory_static_probe_cap(4) == 4
+    assert sd.sheet_directory_static_probe_cap(20) == 6
+
+
+def test_apply_sheet_directory_static_probe_cap_limits_overproducing_sheet_static_rows() -> None:
+    candidates = [
+        {
+            "name": "Sheet Static Productive",
+            "studio": "Productive",
+            "adapter": "static",
+            "discoveryStage": "sheet_directory",
+            "evidenceScore": 46,
+            "jobsFound": 0,
+            "pages": ["https://productive.example/jobs"],
+        },
+        {
+            "name": "Sheet Static B",
+            "studio": "B",
+            "adapter": "static",
+            "discoveryStage": "sheet_directory",
+            "evidenceScore": 46,
+            "jobsFound": 0,
+            "pages": ["https://b.example/jobs"],
+        },
+        {
+            "name": "Sheet Static C",
+            "studio": "C",
+            "adapter": "static",
+            "discoveryStage": "sheet_directory",
+            "evidenceScore": 46,
+            "jobsFound": 0,
+            "pages": ["https://c.example/jobs"],
+        },
+        {
+            "name": "Sheet Static D",
+            "studio": "D",
+            "adapter": "static",
+            "discoveryStage": "sheet_directory",
+            "evidenceScore": 46,
+            "jobsFound": 0,
+            "pages": ["https://d.example/jobs"],
+        },
+        {
+            "name": "Sheet Static E",
+            "studio": "E",
+            "adapter": "static",
+            "discoveryStage": "sheet_directory",
+            "evidenceScore": 46,
+            "jobsFound": 0,
+            "pages": ["https://e.example/jobs"],
+        },
+        {
+            "name": "Greenhouse A",
+            "studio": "Greenhouse A",
+            "adapter": "greenhouse",
+            "discoveryStage": "provider_pattern",
+            "evidenceScore": 70,
+            "jobsFound": 0,
+            "api_url": "https://boards-api.greenhouse.io/v1/boards/a/jobs?content=true",
+        },
+    ]
+    kept, suppressed = sd.apply_sheet_directory_static_probe_cap(
+        candidates,
+        top_n=4,
+        source_state_rows={
+            "Sheet Static Productive": {
+                "lastKeptCount": 3,
+                "lastJobsFound": 5,
+                "lastDurationMs": 1200,
+            }
+        },
+    )
+    assert len([row for row in kept if str(row.get("adapter")) == "static"]) == 4
+    assert len(suppressed) == 1
+    assert any(str(row.get("name")) == "Sheet Static Productive" for row in kept)
+
+
+def test_source_registry_paths_honor_baluffo_data_dir_override() -> None:
+    previous = os.environ.get("BALUFFO_DATA_DIR")
+    override_root = str((Path.cwd() / "_out" / "test-source-registry-override").resolve())
+    try:
+        os.environ["BALUFFO_DATA_DIR"] = override_root
+        import src.source_registry as source_registry
+
+        source_registry = importlib.reload(source_registry)
+        assert source_registry.DATA_DIR == Path(override_root)
+        assert source_registry.ACTIVE_PATH == Path(override_root) / "source-registry-active.json"
+        assert source_registry.PENDING_PATH == Path(override_root) / "source-registry-pending.json"
+        assert source_registry.REJECTED_PATH == Path(override_root) / "source-registry-rejected.json"
+        assert source_registry.DISCOVERY_REPORT_PATH == Path(override_root) / "source-discovery-report.json"
+        assert source_registry.DISCOVERY_CANDIDATES_PATH == Path(override_root) / "source-discovery-candidates.json"
+    finally:
+        if previous is None:
+            os.environ.pop("BALUFFO_DATA_DIR", None)
+        else:
+            os.environ["BALUFFO_DATA_DIR"] = previous
 
 
 def test_probe_candidate_maps_jobs_found_for_greenhouse_and_teamtailor() -> None:
@@ -498,6 +807,47 @@ def test_discover_gamesmap_candidates_dedupes_repeated_directory_entries() -> No
     provider_rows, static_rows, _failures = sd.discover_gamesmap_candidates(5, config=config, fetcher=fake_fetch)
     assert len(provider_rows) == 1
     assert len(static_rows) == 0
+
+
+def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
+    with workspace_tmpdir("gamesmap-cache") as root:
+        cache_path = root / "gamesmap-cache.json"
+        config = {
+            "gamesmap": {
+                "enabled": True,
+                "baseUrl": "https://www.gamesmap.de",
+                "indexUrls": ["https://www.gamesmap.de/en"],
+                "websiteOnlyFallback": True,
+                "maxDetailPages": 10,
+                "allowedCategoryTokens": ["developer", "publisher", "mobile", "pc", "console"],
+                "blockedCategoryTokens": ["association", "education"],
+                "cachePath": str(cache_path),
+                "cacheTtlMinutes": 60,
+            }
+        }
+        payloads = {
+            "https://www.gamesmap.de/en": _fixture_text("gamesmap_index.html"),
+            "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text("gamesmap_detail_careers.html"),
+            "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text("gamesmap_detail_blocked.html"),
+            "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text("gamesmap_detail_website_only.html"),
+        }
+        calls: list[str] = []
+
+        def fake_fetch(url: str, _: int) -> str:
+            calls.append(url)
+            if url not in payloads:
+                raise RuntimeError(f"unexpected URL: {url}")
+            return payloads[url]
+
+        provider_rows_1, static_rows_1, failures_1 = sd.discover_gamesmap_candidates(5, config=config, fetcher=fake_fetch)
+        assert len(calls) > 0
+        first_call_count = len(calls)
+
+        provider_rows_2, static_rows_2, failures_2 = sd.discover_gamesmap_candidates(5, config=config, fetcher=fake_fetch)
+        assert len(calls) == first_call_count
+        assert provider_rows_1 == provider_rows_2
+        assert static_rows_1 == static_rows_2
+        assert failures_1 == failures_2
 
 def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
     with workspace_tmpdir("source-discovery") as root:
@@ -1129,6 +1479,11 @@ x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
             assert str(queued[0].get("discoveryMethod") or "") == "sheet_directory"
             assert str(queued[0].get("sourceDirectory") or "") == "game_studios_sheet"
             assert str(queued[0].get("adapter") or "") == "greenhouse"
+            runtime = report.get("runtime") or {}
+            assert int(runtime.get("totalDurationMs") or 0) >= 0
+            assert "stageTimingsMs" in runtime
+            assert "adapterTimings" in runtime
+            assert any(str(row.get("adapter") or "") == "greenhouse" for row in (runtime.get("adapterTimings") or []))
         finally:
             (
                 sd.ACTIVE_PATH,

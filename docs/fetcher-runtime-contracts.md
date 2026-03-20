@@ -2,10 +2,11 @@
 
 ## CLI runtime options
 
-- `--max-workers` (default `6`): max concurrent source loaders.
-- `--max-per-domain` (default `2`): max concurrent requests per host across workers.
+- `--max-workers` (default `12`): max concurrent source loaders.
+- `--max-per-domain` (default `3`): max concurrent requests per host across workers.
 - `--fetch-strategy` (default `auto`): transport preference (`auto`, `http`, `browser`).
-- `--adapter-http-concurrency` (default `24`): async HTTP client connection pool size.
+- `--adapter-http-concurrency` (default `48`): async HTTP client connection pool size.
+- `--static-detail-concurrency` (default `10`): static detail-page fetch concurrency per source before per-domain limiting.
 - `--skip-successful-sources`: incremental mode, skips sources recently successful within TTL.
 - `--source-ttl-minutes` (default `360`): TTL window for incremental skip.
 - `--respect-source-cadence`: applies hot/cold cadence skip based on source-state recency.
@@ -26,6 +27,12 @@
 - `incremental`: enables `--skip-successful-sources`, sets TTL, quiet mode.
 - `retry_failed`: resolves failed sources from latest report, keeps deterministic ordering, filters unknown source names, runs with `--ignore-circuit-breaker --quiet`.
 - `force_full`: full run with `--ignore-circuit-breaker --quiet`.
+- `uncapped`: aggressive admin run that bypasses freshness skips, cadence skips, and circuit-breaker quarantine and avoids admin-imposed source/concurrency narrowing while still keeping hard transport safety.
+
+Bridge defaults:
+
+- Bridge-started fetch runs include `--social-enabled` by default unless `socialEnabled: false` is passed.
+- Jobs page `Run Discovery + Fetch + Sync` and Admin `Run Jobs Fetcher` share this same bridge-default behavior.
 
 Optional overrides:
 
@@ -73,3 +80,6 @@ Optional overrides:
   - quarantined sources are marked as `excluded` until cooldown expires unless `--ignore-circuit-breaker` is set.
 - During incremental mode:
   - sources with recent success within TTL are skipped.
+- During admin uncapped mode:
+  - bridge preset logic bypasses freshness/cadence/circuit-breaker gating in the launch args
+  - this preset is intentionally more aggressive than `force_full`

@@ -58,5 +58,5 @@ See also: `docs/DATA_CONTRACT.md` for report shapes; `docs/architecture-ai-map.m
 ## 4) Running the pipeline
 
 - **Recommended (full fetcher):** From repo root, set `PYTHONPATH` to the repo root and run the jobs fetcher module:  
-  `python -m src.jobs_fetcher` (optionally with `--ignore-circuit-breaker`). This runs all default source loaders including static and scrapy_static.
+  `python src/jobs_fetcher.py` (optionally with `--ignore-circuit-breaker`). This runs all default source loaders including static and scrapy_static.
 - **npm script:** `npm run dev:pipeline` runs the pipeline script with `PYTHONPATH` set to the current directory so that `src` resolves; it invokes `src/jobs/pipeline.py` (same process as the fetcher’s pipeline, with default loaders when no facade overrides).

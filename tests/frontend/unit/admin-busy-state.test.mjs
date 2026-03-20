@@ -1,0 +1,157 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { syncAdminBusyUi, toAdminViewState } from "../../../frontend/admin/app/busy-state.js";
+import { FETCHER_PRESET_META } from "../../../frontend/admin/app/fetcher.js";
+
+function createClassList(initial = []) {
+  const values = new Set(initial);
+  return {
+    add(...tokens) {
+      tokens.forEach(token => values.add(token));
+    },
+    remove(...tokens) {
+      tokens.forEach(token => values.delete(token));
+    },
+    toggle(token, force) {
+      if (force === true) {
+        values.add(token);
+        return true;
+      }
+      if (force === false) {
+        values.delete(token);
+        return false;
+      }
+      if (values.has(token)) {
+        values.delete(token);
+        return false;
+      }
+      values.add(token);
+      return true;
+    },
+    contains(token) {
+      return values.has(token);
+    }
+  };
+}
+
+function createElement(text = "") {
+  return {
+    textContent: text,
+    disabled: false,
+    dataset: {},
+    attributes: {},
+    classList: createClassList(),
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    }
+  };
+}
+
+function buildRefs() {
+  return {
+    adminRunFetcherBtnEl: createElement("Run Jobs Fetcher"),
+    adminRunFetcherIncrementalBtnEl: createElement("Run Incremental"),
+    adminRunFetcherUncappedBtnEl: createElement("Uncapped Run"),
+    adminRunFetcherForceBtnEl: createElement("Force Ignore Circuit"),
+    adminRetryFailedBtnEl: createElement("Retry Failed Sources"),
+    adminRefreshReportBtnEl: createElement("Load Latest Report"),
+    adminRefreshBtnEl: createElement("Refresh"),
+    adminRefreshOpsBtnEl: createElement("Refresh Ops Health"),
+    adminSyncTestBtnEl: createElement("Test"),
+    adminSyncPullBtnEl: createElement("Pull"),
+    adminSyncPushBtnEl: createElement("Push"),
+    adminSyncEnabledEl: createElement(),
+    adminRunDiscoveryBtnEl: createElement("Run Discovery"),
+    adminRunDiscoveryUncappedBtnEl: createElement("Uncapped Run"),
+    adminLoadDiscoveryBtnEl: createElement("Load Discovery Report"),
+    adminApproveSourcesBtnEl: createElement("Approve"),
+    adminRejectSourcesBtnEl: createElement("Reject"),
+    adminDeleteSourcesBtnEl: createElement("Delete"),
+    adminRestoreRejectedBtnEl: createElement("Restore"),
+    adminAddManualSourceBtnEl: createElement("Add Source"),
+    adminManualSourceUrlEl: createElement(),
+    adminSourceFilterBtnEls: [],
+    adminFetcherProgressBadgeEl: createElement(),
+    adminDiscoveryProgressBadgeEl: createElement(),
+    adminOpsProgressBadgeEl: createElement(),
+    adminContentEl: createElement()
+  };
+}
+
+test("syncAdminBusyUi disables uncapped fetcher and discovery buttons while their tasks are running", () => {
+  const busyState = {
+    fetcherRun: false,
+    fetcherWatch: true,
+    fetcherReportLoad: false,
+    liveFetchRunning: true,
+    discoveryRun: false,
+    discoveryWatch: true,
+    discoveryLoad: false,
+    discoveryWrite: false,
+    manualAdd: false,
+    manualCheck: false,
+    liveDiscoveryRunning: true,
+    syncRun: false,
+    liveSyncRunning: false,
+    opsLoad: false,
+    livePipelineRunning: false
+  };
+  const refs = buildRefs();
+
+  syncAdminBusyUi({
+    busyState,
+    viewState: toAdminViewState(busyState, { isUnlocked: true }),
+    fetcherPresetMeta: FETCHER_PRESET_META,
+    refs,
+    onSyncDiscoveryLogDisclosure() {}
+  });
+
+  assert.equal(refs.adminRunFetcherUncappedBtnEl.disabled, true);
+  assert.equal(refs.adminRunFetcherUncappedBtnEl.attributes["aria-disabled"], "true");
+  assert.equal(refs.adminRunFetcherUncappedBtnEl.textContent, FETCHER_PRESET_META.uncapped.busyLabel);
+  assert.equal(refs.adminRunDiscoveryUncappedBtnEl.disabled, true);
+  assert.equal(refs.adminRunDiscoveryUncappedBtnEl.attributes["aria-disabled"], "true");
+  assert.equal(refs.adminRunDiscoveryUncappedBtnEl.textContent, "Uncapped Running...");
+});
+
+test("syncAdminBusyUi restores uncapped buttons after tasks are idle", () => {
+  const busyState = {
+    fetcherRun: false,
+    fetcherWatch: false,
+    fetcherReportLoad: false,
+    liveFetchRunning: false,
+    discoveryRun: false,
+    discoveryWatch: false,
+    discoveryLoad: false,
+    discoveryWrite: false,
+    manualAdd: false,
+    manualCheck: false,
+    liveDiscoveryRunning: false,
+    syncRun: false,
+    liveSyncRunning: false,
+    opsLoad: false,
+    livePipelineRunning: false
+  };
+  const refs = buildRefs();
+
+  refs.adminRunFetcherUncappedBtnEl.dataset.idleLabel = "Uncapped Run";
+  refs.adminRunDiscoveryUncappedBtnEl.dataset.idleLabel = "Uncapped Run";
+  refs.adminRunFetcherUncappedBtnEl.textContent = FETCHER_PRESET_META.uncapped.busyLabel;
+  refs.adminRunDiscoveryUncappedBtnEl.textContent = "Uncapped Running...";
+
+  syncAdminBusyUi({
+    busyState,
+    viewState: toAdminViewState(busyState, { isUnlocked: true }),
+    fetcherPresetMeta: FETCHER_PRESET_META,
+    refs,
+    onSyncDiscoveryLogDisclosure() {}
+  });
+
+  assert.equal(refs.adminRunFetcherUncappedBtnEl.disabled, false);
+  assert.equal(refs.adminRunFetcherUncappedBtnEl.attributes["aria-disabled"], "false");
+  assert.equal(refs.adminRunFetcherUncappedBtnEl.textContent, "Uncapped Run");
+  assert.equal(refs.adminRunDiscoveryUncappedBtnEl.disabled, false);
+  assert.equal(refs.adminRunDiscoveryUncappedBtnEl.attributes["aria-disabled"], "false");
+  assert.equal(refs.adminRunDiscoveryUncappedBtnEl.textContent, "Uncapped Run");
+});

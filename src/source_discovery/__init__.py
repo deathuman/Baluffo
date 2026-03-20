@@ -88,11 +88,14 @@ from .gamesmap import (  # noqa: F401
 from .core import (  # noqa: F401
     adapter_domain_fingerprint,
     apply_queue_balancing,
+    apply_sheet_directory_static_probe_cap,
+    classify_static_suppression,
     classify_probe_failure_stage,
     compute_candidate_score,
     normalize_candidate,
     probe_concurrency_defaults,
     queue_family_key,
+    sheet_directory_static_probe_cap,
 )
 from .orchestrator import main, parse_args, run_discovery  # noqa: F401
 

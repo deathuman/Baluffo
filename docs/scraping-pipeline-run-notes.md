@@ -1,7 +1,7 @@
 # Scraping pipeline run notes (Playwright fallback)
 
 **Run date:** 2026-03-17  
-**Entry point:** `python -m src.jobs_fetcher --ignore-circuit-breaker`  
+**Entry point:** `python src/jobs_fetcher.py --ignore-circuit-breaker`  
 **Output dir:** `data/`
 
 ---
@@ -135,7 +135,7 @@ These static sources failed with zero jobs extracted. Improvements to consider:
 # From repo root, with PYTHONPATH set
 cd c:\Users\Andrea\Documents\GitHubRepository\Baluffo
 $env:PYTHONPATH = (Get-Location).Path
-python -m src.jobs_fetcher --ignore-circuit-breaker
+python src/jobs_fetcher.py --ignore-circuit-breaker
 ```
 
 Then:

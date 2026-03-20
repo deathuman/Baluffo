@@ -12,6 +12,8 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
                 "p95SourceDurationMs": 40,
                 "stageTotalsMs": {"fetchAndParse": 35, "canonicalization": 15},
                 "stageTop": [{"stage": "fetchAndParse", "durationMs": 35}],
+                "adapterTimings": [{"adapter": "static", "durationMs": 40, "sourceCount": 2}],
+                "slowestAdapters": [{"adapter": "static", "durationMs": 40, "sourceCount": 2}],
                 "highCostLowYieldSources": [{"name": "b", "durationMs": 40, "keptCount": 0}],
             }
         },
@@ -37,6 +39,7 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
     assert latest["medianSourceDurationMs"] == 25
     assert latest["p95SourceDurationMs"] == 40
     assert latest["stageTop"][0]["stage"] == "fetchAndParse"
+    assert latest["slowestSources"][0]["name"] == "b"
     assert metrics["history"]["windowRuns"] == 2
     assert metrics["history"]["medianDurationMs"] == 2000
 

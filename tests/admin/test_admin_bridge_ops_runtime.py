@@ -234,6 +234,11 @@ def test_normalize_discovery_report_contract_derives_queued_count_from_candidate
     payload = admin_bridge.normalize_discovery_report_contract(
         {
             "summary": {"queuedCandidateCount": 0, "probedCandidateCount": 4},
+            "runtime": {
+                "totalDurationMs": "123",
+                "stageTimingsMs": {"probe": "45"},
+                "adapterTimings": [{"adapter": "greenhouse", "durationMs": "22", "queuedCount": 1}],
+            },
             "candidates": [
                 {"name": "A", "deferred": False},
                 {"name": "B"},
@@ -242,6 +247,9 @@ def test_normalize_discovery_report_contract_derives_queued_count_from_candidate
         }
     )
     assert int((payload.get("summary") or {}).get("queuedCandidateCount") or 0) == 2
+    assert int((payload.get("runtime") or {}).get("totalDurationMs") or 0) == 123
+    assert int((((payload.get("runtime") or {}).get("stageTimingsMs") or {}).get("probe")) or 0) == 45
+    assert str((((payload.get("runtime") or {}).get("adapterTimings") or [])[0].get("adapter")) or "") == "greenhouse"
 
 
 def test_summarize_discovery_report_prefers_derived_queued_count(admin_bridge_entrypoint_root):
@@ -325,6 +333,40 @@ def test_build_fetcher_args_accepts_cadence_and_strategy_overrides(admin_bridge_
     assert args[args.index("--hot-source-cadence-minutes") + 1] == "20"
     assert "--cold-source-cadence-minutes" in args
     assert args[args.index("--cold-source-cadence-minutes") + 1] == "90"
+
+
+def test_build_fetcher_args_enables_social_by_default(admin_bridge_entrypoint_root):
+    args, preset = admin_bridge.build_fetcher_args_from_payload({"preset": "default"})
+    assert preset == "default"
+    assert "--social-enabled" in args
+
+
+def test_build_fetcher_args_allows_social_opt_out(admin_bridge_entrypoint_root):
+    args, preset = admin_bridge.build_fetcher_args_from_payload(
+        {
+            "preset": "default",
+            "socialEnabled": False,
+        }
+    )
+    assert preset == "default"
+    assert "--social-enabled" not in args
+
+
+def test_build_fetcher_args_uncapped_bypasses_admin_caps_and_keeps_social(admin_bridge_entrypoint_root):
+    args, preset = admin_bridge.build_fetcher_args_from_payload({"preset": "uncapped"})
+    assert preset == "uncapped"
+    assert "--force-refresh-all" in args
+    assert "--ignore-circuit-breaker" in args
+    assert "--source-ttl-minutes" in args
+    assert args[args.index("--source-ttl-minutes") + 1] == "0"
+    assert "--circuit-breaker-failures" in args
+    assert args[args.index("--circuit-breaker-failures") + 1] == "0"
+    assert "--circuit-breaker-cooldown-minutes" in args
+    assert args[args.index("--circuit-breaker-cooldown-minutes") + 1] == "0"
+    assert "--max-workers" not in args
+    assert "--max-per-domain" not in args
+    assert "--adapter-http-concurrency" not in args
+    assert "--social-enabled" in args
 
 
 def test_sync_history_from_reports_prunes_stale_started_rows_when_report_stuck(admin_bridge_entrypoint_root):
@@ -458,7 +500,8 @@ def test_run_background_script_uses_unbuffered_python_for_live_logs(admin_bridge
         admin_bridge.run_background_script("source_discovery.py", ["--mode", "dynamic"])
     command = popen_mock.call_args.args[0]
     kwargs = popen_mock.call_args.kwargs
-    assert command[:4] == ["C:/Python313/python.exe", "-u", "-m", "src.source_discovery"]
+    assert command[:2] == ["C:/Python313/python.exe", "-u"]
+    assert command[2] == str(admin_bridge_entrypoint_root / "src" / "source_discovery.py")
     assert command[-2:] == ["--mode", "dynamic"]
     assert kwargs["env"]["PYTHONUNBUFFERED"] == "1"
 

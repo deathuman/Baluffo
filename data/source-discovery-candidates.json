@@ -1,341 +1,14 @@
 [
   {
-    "name": "Tripledot Studios (Pinpoint)",
-    "studio": "Tripledot Studios",
-    "adapter": "pinpoint",
-    "subdomain": "tripledotstudios",
-    "api_url": "https://tripledotstudios.pinpointhq.com/postings.json",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://tripledotstudios.pinpointhq.com/#js-careers-jobs-block",
-    "evidenceScore": 46,
-    "evidenceTypes": [
-      "web_provider_url",
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceSource": "url",
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://tripledotstudios.pinpointhq.com/#js-careers-jobs-block",
-    "weakSignal": false,
-    "id": "pinpoint:api_url:https://tripledotstudios.pinpointhq.com/postings.json",
-    "discoveredAt": "2026-03-19T14:19:25.432379+00:00",
-    "score": 48,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 131,
-    "jobsFound": 131,
-    "confidence": "high",
-    "lastProbedAt": "2026-03-19T14:20:16.630200+00:00",
-    "deferred": false
-  },
-  {
-    "name": "Framestore (Recruitee)",
-    "studio": "Framestore",
-    "adapter": "recruitee",
-    "subdomain": "framestore",
-    "api_url": "https://framestore.recruitee.com/api/offers/",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://framestore.recruitee.com/",
-    "evidenceScore": 46,
-    "evidenceTypes": [
-      "web_provider_url",
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceSource": "url",
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://framestore.recruitee.com/",
-    "weakSignal": false,
-    "id": "recruitee:api_url:https://framestore.recruitee.com/api/offers/",
-    "discoveredAt": "2026-03-19T14:19:25.432019+00:00",
-    "score": 48,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 90,
-    "jobsFound": 90,
-    "confidence": "high",
-    "lastProbedAt": "2026-03-19T14:20:16.653893+00:00",
-    "deferred": false
-  },
-  {
-    "name": "Frontier Developments (Sheet)",
-    "studio": "Frontier Developments",
-    "company": "Frontier Developments",
-    "adapter": "static",
-    "pages": [
-      "https://www.frontier.co.uk/careers/jobs?location=All"
-    ],
-    "listing_url": "https://www.frontier.co.uk/careers/jobs?location=All",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://www.frontier.co.uk/careers/jobs?location=All",
-    "evidenceSource": "game_studios_sheet",
-    "evidenceTypes": [
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceScore": 46,
-    "weakSignal": false,
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://www.frontier.co.uk/careers/jobs?location=All",
-    "id": "static:listing_url:https://www.frontier.co.uk/careers/jobs?location=all",
-    "discoveredAt": "2026-03-19T14:19:25.433374+00:00",
-    "score": 48,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 36,
-    "jobsFound": 36,
-    "confidence": "high",
-    "lastProbedAt": "2026-03-19T14:20:16.686929+00:00",
-    "deferred": false
-  },
-  {
-    "name": "Reliance Games (Sheet)",
-    "studio": "Reliance Games",
-    "company": "Reliance Games",
-    "adapter": "static",
-    "pages": [
-      "https://www.reliancegames.com/careers/"
-    ],
-    "listing_url": "https://www.reliancegames.com/careers/",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://www.reliancegames.com/careers/",
-    "evidenceSource": "game_studios_sheet",
-    "evidenceTypes": [
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceScore": 46,
-    "weakSignal": false,
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://www.reliancegames.com/careers/",
-    "id": "static:listing_url:https://www.reliancegames.com/careers/",
-    "discoveredAt": "2026-03-19T14:19:25.434415+00:00",
-    "score": 48,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 34,
-    "jobsFound": 34,
-    "confidence": "high",
-    "lastProbedAt": "2026-03-19T14:20:16.809795+00:00",
-    "deferred": false
-  },
-  {
-    "name": "Techland (Sheet)",
-    "studio": "Techland",
-    "company": "Techland",
-    "adapter": "static",
-    "pages": [
-      "https://techland.net/job-offers"
-    ],
-    "listing_url": "https://techland.net/job-offers",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://techland.net/job-offers",
-    "evidenceSource": "game_studios_sheet",
-    "evidenceTypes": [
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceScore": 46,
-    "weakSignal": false,
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://techland.net/job-offers",
-    "id": "static:listing_url:https://techland.net/job-offers",
-    "discoveredAt": "2026-03-19T14:19:25.434754+00:00",
-    "score": 48,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 33,
-    "jobsFound": 33,
-    "confidence": "high",
-    "lastProbedAt": "2026-03-19T14:20:16.849284+00:00",
-    "deferred": false
-  },
-  {
-    "name": "PLAION (Sheet)",
-    "studio": "PLAION",
-    "company": "PLAION",
-    "adapter": "static",
-    "pages": [
-      "https://jobs.plaion.com/"
-    ],
-    "listing_url": "https://jobs.plaion.com/",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://jobs.plaion.com/",
-    "evidenceSource": "game_studios_sheet",
-    "evidenceTypes": [
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceScore": 46,
-    "weakSignal": false,
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://jobs.plaion.com/",
-    "id": "static:listing_url:https://jobs.plaion.com/",
-    "discoveredAt": "2026-03-19T14:19:25.434275+00:00",
-    "score": 48,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 31,
-    "jobsFound": 31,
-    "confidence": "high",
-    "lastProbedAt": "2026-03-19T14:20:16.778677+00:00",
-    "deferred": false
-  },
-  {
-    "name": "KRAFTON Inc. (Sheet)",
-    "studio": "KRAFTON Inc.",
-    "company": "KRAFTON Inc.",
-    "adapter": "static",
-    "pages": [
-      "https://krafton.com/en/careers/jobs/"
-    ],
-    "listing_url": "https://krafton.com/en/careers/jobs/",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://krafton.com/en/careers/jobs/",
-    "evidenceSource": "game_studios_sheet",
-    "evidenceTypes": [
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceScore": 46,
-    "weakSignal": false,
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://krafton.com/en/careers/jobs/",
-    "id": "static:listing_url:https://krafton.com/en/careers/jobs/",
-    "discoveredAt": "2026-03-19T14:19:25.433848+00:00",
-    "score": 48,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 30,
-    "jobsFound": 30,
-    "confidence": "high",
-    "lastProbedAt": "2026-03-19T14:20:16.728841+00:00",
-    "deferred": false
-  },
-  {
-    "name": "Embark Studios (Sheet)",
-    "studio": "Embark Studios",
-    "company": "Embark Studios",
-    "adapter": "static",
-    "pages": [
-      "https://careers.embark-studios.com/#jobs"
-    ],
-    "listing_url": "https://careers.embark-studios.com/#jobs",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://careers.embark-studios.com/#jobs",
-    "evidenceSource": "game_studios_sheet",
-    "evidenceTypes": [
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceScore": 46,
-    "weakSignal": false,
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://careers.embark-studios.com/#jobs",
-    "id": "static:listing_url:https://careers.embark-studios.com/#jobs",
-    "discoveredAt": "2026-03-19T14:19:25.433220+00:00",
-    "score": 48,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 30,
-    "jobsFound": 30,
-    "confidence": "high",
-    "lastProbedAt": "2026-03-19T14:20:16.664233+00:00",
-    "deferred": false
-  },
-  {
-    "name": "Scorewarrior (Recruitee)",
-    "studio": "Scorewarrior",
-    "adapter": "recruitee",
-    "subdomain": "scorewarrior",
-    "api_url": "https://scorewarrior.recruitee.com/api/offers/",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://scorewarrior.recruitee.com/",
-    "evidenceScore": 46,
-    "evidenceTypes": [
-      "web_provider_url",
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceSource": "url",
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://scorewarrior.recruitee.com/",
-    "weakSignal": false,
-    "id": "recruitee:api_url:https://scorewarrior.recruitee.com/api/offers/",
-    "discoveredAt": "2026-03-19T14:19:25.432315+00:00",
-    "score": 48,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 28,
-    "jobsFound": 28,
-    "confidence": "high",
-    "lastProbedAt": "2026-03-19T14:20:16.641521+00:00",
-    "deferred": false
-  },
-  {
-    "name": "Penn Interactive (Greenhouse)",
-    "studio": "Penn Interactive",
+    "name": "Housemarque (Greenhouse)",
+    "studio": "Housemarque",
     "adapter": "greenhouse",
-    "slug": "penninteractive",
-    "api_url": "https://boards-api.greenhouse.io/v1/boards/penninteractive/jobs?content=true",
+    "slug": "housemarque",
+    "api_url": "https://boards-api.greenhouse.io/v1/boards/housemarque/jobs?content=true",
     "nlPriority": false,
     "discoveryMethod": "sheet_directory",
     "discoveryStage": "sheet_directory",
-    "careersUrl": "https://job-boards.greenhouse.io/penninteractive",
+    "careersUrl": "https://job-boards.greenhouse.io/housemarque",
     "evidenceScore": 46,
     "evidenceTypes": [
       "web_provider_url",
@@ -346,31 +19,31 @@
     "evidenceSource": "url",
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://job-boards.greenhouse.io/penninteractive",
+    "sourceDirectoryEntryUrl": "https://job-boards.greenhouse.io/housemarque",
     "weakSignal": false,
-    "id": "greenhouse:slug:penninteractive",
-    "discoveredAt": "2026-03-19T14:19:25.432140+00:00",
-    "score": 48,
+    "id": "greenhouse:slug:housemarque",
+    "discoveredAt": "2026-03-20T20:24:38.455271+00:00",
+    "score": 31,
     "reasons": [
       "evidence_signal",
       "live_jobs_detected"
     ],
-    "sampleCount": 27,
-    "jobsFound": 27,
+    "sampleCount": 8,
+    "jobsFound": 8,
     "confidence": "high",
-    "lastProbedAt": "2026-03-19T14:20:16.619426+00:00",
+    "lastProbedAt": "2026-03-20T20:25:04.724298+00:00",
     "deferred": false
   },
   {
-    "name": "The Pokémon Company International (Greenhouse)",
-    "studio": "The Pokémon Company International",
+    "name": "NaturalMotion Games (Greenhouse)",
+    "studio": "NaturalMotion Games",
     "adapter": "greenhouse",
-    "slug": "pokemoncareers",
-    "api_url": "https://boards-api.greenhouse.io/v1/boards/pokemoncareers/jobs?content=true",
+    "slug": "nmcareers",
+    "api_url": "https://boards-api.greenhouse.io/v1/boards/nmcareers/jobs?content=true",
     "nlPriority": false,
     "discoveryMethod": "sheet_directory",
     "discoveryStage": "sheet_directory",
-    "careersUrl": "https://job-boards.greenhouse.io/pokemoncareers",
+    "careersUrl": "https://job-boards.greenhouse.io/nmcareers",
     "evidenceScore": 46,
     "evidenceTypes": [
       "web_provider_url",
@@ -381,197 +54,26 @@
     "evidenceSource": "url",
     "sourceDirectory": "game_studios_sheet",
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://job-boards.greenhouse.io/pokemoncareers",
+    "sourceDirectoryEntryUrl": "https://job-boards.greenhouse.io/nmcareers",
     "weakSignal": false,
-    "id": "greenhouse:slug:pokemoncareers",
-    "discoveredAt": "2026-03-19T14:19:25.432367+00:00",
-    "score": 47,
+    "id": "greenhouse:slug:nmcareers",
+    "discoveredAt": "2026-03-20T20:24:38.455303+00:00",
+    "score": 27,
     "reasons": [
       "evidence_signal",
       "live_jobs_detected"
     ],
-    "sampleCount": 24,
-    "jobsFound": 24,
-    "confidence": "high",
-    "lastProbedAt": "2026-03-19T14:20:16.625087+00:00",
-    "deferred": false
-  },
-  {
-    "name": "Pipeworks Studios (Pinpoint)",
-    "studio": "Pipeworks Studios",
-    "adapter": "pinpoint",
-    "subdomain": "pipeworks",
-    "api_url": "https://pipeworks.pinpointhq.com/postings.json",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://pipeworks.pinpointhq.com/",
-    "evidenceScore": 46,
-    "evidenceTypes": [
-      "web_provider_url",
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceSource": "url",
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://pipeworks.pinpointhq.com/",
-    "weakSignal": false,
-    "id": "pinpoint:api_url:https://pipeworks.pinpointhq.com/postings.json",
-    "discoveredAt": "2026-03-19T14:19:25.432145+00:00",
-    "score": 24,
-    "reasons": [
-      "evidence_signal",
-      "live_jobs_detected"
-    ],
-    "sampleCount": 1,
-    "jobsFound": 1,
+    "sampleCount": 4,
+    "jobsFound": 4,
     "confidence": "medium",
-    "lastProbedAt": "2026-03-19T14:20:16.625016+00:00",
-    "deferred": false
-  },
-  {
-    "name": "Rushdown Studios (Lever)",
-    "studio": "Rushdown Studios",
-    "adapter": "lever",
-    "account": "rushdownstudio",
-    "api_url": "https://api.lever.co/v0/postings/rushdownstudio?mode=json",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://jobs.lever.co/rushdownstudio",
-    "evidenceScore": 46,
-    "evidenceTypes": [
-      "web_provider_url",
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceSource": "url",
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://jobs.lever.co/rushdownstudio",
-    "weakSignal": false,
-    "id": "lever:account:rushdownstudio",
-    "discoveredAt": "2026-03-19T14:19:25.432303+00:00",
-    "score": 23,
-    "reasons": [
-      "evidence_signal"
-    ],
-    "sampleCount": 0,
-    "jobsFound": 0,
-    "confidence": "medium",
-    "lastProbedAt": "2026-03-19T14:20:16.632940+00:00",
-    "deferred": false
-  },
-  {
-    "name": "PlayVS (Lever)",
-    "studio": "PlayVS",
-    "adapter": "lever",
-    "account": "playvs",
-    "api_url": "https://api.lever.co/v0/postings/playvs?mode=json",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://jobs.lever.co/playvs",
-    "evidenceScore": 46,
-    "evidenceTypes": [
-      "web_provider_url",
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceSource": "url",
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://jobs.lever.co/playvs",
-    "weakSignal": false,
-    "id": "lever:account:playvs",
-    "discoveredAt": "2026-03-19T14:19:25.432150+00:00",
-    "score": 23,
-    "reasons": [
-      "evidence_signal"
-    ],
-    "sampleCount": 0,
-    "jobsFound": 0,
-    "confidence": "medium",
-    "lastProbedAt": "2026-03-19T14:20:16.622546+00:00",
-    "deferred": false
-  },
-  {
-    "name": "Funkitron (Workable)",
-    "studio": "Funkitron",
-    "adapter": "workable",
-    "account": "funkitron",
-    "api_url": "https://apply.workable.com/api/v1/widget/accounts/funkitron?details=true",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://apply.workable.com/funkitron/",
-    "evidenceScore": 46,
-    "evidenceTypes": [
-      "web_provider_url",
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_yes"
-    ],
-    "evidenceSource": "url",
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://apply.workable.com/funkitron/",
-    "weakSignal": false,
-    "id": "workable:account:funkitron",
-    "discoveredAt": "2026-03-19T14:19:25.432023+00:00",
-    "score": 23,
-    "reasons": [
-      "evidence_signal"
-    ],
-    "sampleCount": 0,
-    "jobsFound": 0,
-    "confidence": "medium",
-    "lastProbedAt": "2026-03-19T14:20:16.622430+00:00",
-    "deferred": false
-  },
-  {
-    "name": "Spectarium (Workable)",
-    "studio": "Spectarium",
-    "adapter": "workable",
-    "account": "spectarium",
-    "api_url": "https://apply.workable.com/api/v1/widget/accounts/spectarium?details=true",
-    "nlPriority": false,
-    "discoveryMethod": "sheet_directory",
-    "discoveryStage": "sheet_directory",
-    "careersUrl": "https://apply.workable.com/spectarium/",
-    "evidenceScore": 40,
-    "evidenceTypes": [
-      "web_provider_url",
-      "sheet_directory",
-      "sheet_row",
-      "sheet_roles_open_no"
-    ],
-    "evidenceSource": "url",
-    "sourceDirectory": "game_studios_sheet",
-    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-    "sourceDirectoryEntryUrl": "https://apply.workable.com/spectarium/",
-    "weakSignal": true,
-    "id": "workable:account:spectarium",
-    "discoveredAt": "2026-03-19T14:19:25.432439+00:00",
-    "score": 20,
-    "reasons": [
-      "evidence_signal"
-    ],
-    "sampleCount": 0,
-    "jobsFound": 0,
-    "confidence": "medium",
-    "lastProbedAt": "2026-03-19T14:20:16.899956+00:00",
+    "lastProbedAt": "2026-03-20T20:25:04.724311+00:00",
     "deferred": false
   },
   {
     "name": "Millions of Monsters (Ashby)",
     "studio": "Millions of Monsters",
     "adapter": "ashby",
-    "board_url": "https://jobs.ashbyhq.com/monsters/jobs",
+    "board_url": "https://jobs.ashbyhq.com/monsters",
     "nlPriority": false,
     "discoveryMethod": "sheet_directory",
     "discoveryStage": "sheet_directory",
@@ -588,8 +90,8 @@
     "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
     "sourceDirectoryEntryUrl": "https://jobs.ashbyhq.com/monsters",
     "weakSignal": true,
-    "id": "ashby:board_url:https://jobs.ashbyhq.com/monsters/jobs",
-    "discoveredAt": "2026-03-19T14:19:25.432424+00:00",
+    "id": "ashby:board_url:https://jobs.ashbyhq.com/monsters",
+    "discoveredAt": "2026-03-20T20:24:38.455382+00:00",
     "score": 16,
     "reasons": [
       "evidence_signal"
@@ -597,7 +99,303 @@
     "sampleCount": 0,
     "jobsFound": 0,
     "confidence": "low",
-    "lastProbedAt": "2026-03-19T14:20:16.907608+00:00",
+    "lastProbedAt": "2026-03-20T20:25:04.887648+00:00",
+    "deferred": false
+  },
+  {
+    "name": "Star Stable Entertainment AB (Sheet)",
+    "studio": "Star Stable Entertainment AB",
+    "company": "Star Stable Entertainment AB",
+    "adapter": "static",
+    "pages": [
+      "https://jobs.starstableentertainment.com/jobs"
+    ],
+    "listing_url": "https://jobs.starstableentertainment.com/jobs",
+    "nlPriority": false,
+    "discoveryMethod": "sheet_directory",
+    "discoveryStage": "sheet_directory",
+    "careersUrl": "https://jobs.starstableentertainment.com/jobs",
+    "evidenceSource": "game_studios_sheet",
+    "evidenceTypes": [
+      "sheet_directory",
+      "sheet_row",
+      "sheet_roles_open_yes"
+    ],
+    "evidenceScore": 46,
+    "weakSignal": false,
+    "sourceDirectory": "game_studios_sheet",
+    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
+    "sourceDirectoryEntryUrl": "https://jobs.starstableentertainment.com/jobs",
+    "id": "static:listing_url:https://jobs.starstableentertainment.com/jobs",
+    "discoveredAt": "2026-03-20T20:24:38.456560+00:00",
+    "score": 41,
+    "reasons": [
+      "evidence_signal",
+      "live_jobs_detected"
+    ],
+    "sampleCount": 18,
+    "jobsFound": 18,
+    "confidence": "high",
+    "lastProbedAt": "2026-03-20T20:25:04.844013+00:00",
+    "deferred": false
+  },
+  {
+    "name": "Sharkmob (Sheet)",
+    "studio": "Sharkmob",
+    "company": "Sharkmob",
+    "adapter": "static",
+    "pages": [
+      "https://career.sharkmob.com/#jobs"
+    ],
+    "listing_url": "https://career.sharkmob.com/#jobs",
+    "nlPriority": false,
+    "discoveryMethod": "sheet_directory",
+    "discoveryStage": "sheet_directory",
+    "careersUrl": "https://career.sharkmob.com/#jobs",
+    "evidenceSource": "game_studios_sheet",
+    "evidenceTypes": [
+      "sheet_directory",
+      "sheet_row",
+      "sheet_roles_open_yes"
+    ],
+    "evidenceScore": 46,
+    "weakSignal": false,
+    "sourceDirectory": "game_studios_sheet",
+    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
+    "sourceDirectoryEntryUrl": "https://career.sharkmob.com/#jobs",
+    "id": "static:listing_url:https://career.sharkmob.com/#jobs",
+    "discoveredAt": "2026-03-20T20:24:38.456505+00:00",
+    "score": 41,
+    "reasons": [
+      "evidence_signal",
+      "live_jobs_detected"
+    ],
+    "sampleCount": 18,
+    "jobsFound": 18,
+    "confidence": "high",
+    "lastProbedAt": "2026-03-20T20:25:04.835848+00:00",
+    "deferred": false
+  },
+  {
+    "name": "Radical Forge (Sheet)",
+    "studio": "Radical Forge",
+    "company": "Radical Forge",
+    "adapter": "static",
+    "pages": [
+      "https://careers.radicalforge.com/jobs"
+    ],
+    "listing_url": "https://careers.radicalforge.com/jobs",
+    "nlPriority": false,
+    "discoveryMethod": "sheet_directory",
+    "discoveryStage": "sheet_directory",
+    "careersUrl": "https://careers.radicalforge.com/jobs",
+    "evidenceSource": "game_studios_sheet",
+    "evidenceTypes": [
+      "sheet_directory",
+      "sheet_row",
+      "sheet_roles_open_yes"
+    ],
+    "evidenceScore": 46,
+    "weakSignal": false,
+    "sourceDirectory": "game_studios_sheet",
+    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
+    "sourceDirectoryEntryUrl": "https://careers.radicalforge.com/jobs",
+    "id": "static:listing_url:https://careers.radicalforge.com/jobs",
+    "discoveredAt": "2026-03-20T20:24:38.456395+00:00",
+    "score": 41,
+    "reasons": [
+      "evidence_signal",
+      "live_jobs_detected"
+    ],
+    "sampleCount": 18,
+    "jobsFound": 18,
+    "confidence": "high",
+    "lastProbedAt": "2026-03-20T20:25:04.820967+00:00",
+    "deferred": false
+  },
+  {
+    "name": "Glu Mobile (Sheet)",
+    "studio": "Glu Mobile",
+    "company": "Glu Mobile",
+    "adapter": "static",
+    "pages": [
+      "https://jobs.ea.com/en_US/careers/SearchJobs/?4538=[8354]&4538_format=3021"
+    ],
+    "listing_url": "https://jobs.ea.com/en_US/careers/SearchJobs/?4538=[8354]&4538_format=3021",
+    "nlPriority": false,
+    "discoveryMethod": "sheet_directory",
+    "discoveryStage": "sheet_directory",
+    "careersUrl": "https://jobs.ea.com/en_US/careers/SearchJobs/?4538=[8354]&4538_format=3021",
+    "evidenceSource": "game_studios_sheet",
+    "evidenceTypes": [
+      "sheet_directory",
+      "sheet_row",
+      "sheet_roles_open_yes"
+    ],
+    "evidenceScore": 46,
+    "weakSignal": false,
+    "sourceDirectory": "game_studios_sheet",
+    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
+    "sourceDirectoryEntryUrl": "https://jobs.ea.com/en_US/careers/SearchJobs/?4538=[8354]&4538_format=3021",
+    "id": "static:listing_url:https://jobs.ea.com/en_us/careers/searchjobs/?4538=[8354]&4538_format=3021",
+    "discoveredAt": "2026-03-20T20:24:38.455965+00:00",
+    "score": 41,
+    "reasons": [
+      "evidence_signal",
+      "live_jobs_detected"
+    ],
+    "sampleCount": 18,
+    "jobsFound": 18,
+    "confidence": "high",
+    "lastProbedAt": "2026-03-20T20:25:04.774185+00:00",
+    "deferred": false
+  },
+  {
+    "name": "iLogos (Sheet)",
+    "studio": "iLogos",
+    "company": "iLogos",
+    "adapter": "static",
+    "pages": [
+      "https://careers.ilogos.biz/#jobs"
+    ],
+    "listing_url": "https://careers.ilogos.biz/#jobs",
+    "nlPriority": false,
+    "discoveryMethod": "sheet_directory",
+    "discoveryStage": "sheet_directory",
+    "careersUrl": "https://careers.ilogos.biz/#jobs",
+    "evidenceSource": "game_studios_sheet",
+    "evidenceTypes": [
+      "sheet_directory",
+      "sheet_row",
+      "sheet_roles_open_yes"
+    ],
+    "evidenceScore": 46,
+    "weakSignal": false,
+    "sourceDirectory": "game_studios_sheet",
+    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
+    "sourceDirectoryEntryUrl": "https://careers.ilogos.biz/#jobs",
+    "id": "static:listing_url:https://careers.ilogos.biz/#jobs",
+    "discoveredAt": "2026-03-20T20:24:38.456040+00:00",
+    "score": 40,
+    "reasons": [
+      "evidence_signal",
+      "live_jobs_detected"
+    ],
+    "sampleCount": 17,
+    "jobsFound": 17,
+    "confidence": "high",
+    "lastProbedAt": "2026-03-20T20:25:04.774147+00:00",
+    "deferred": false
+  },
+  {
+    "name": "Rovio Entertainment (Sheet)",
+    "studio": "Rovio Entertainment",
+    "company": "Rovio Entertainment",
+    "adapter": "static",
+    "pages": [
+      "https://www.rovio.com/open-positions/"
+    ],
+    "listing_url": "https://www.rovio.com/open-positions/",
+    "nlPriority": false,
+    "discoveryMethod": "sheet_directory",
+    "discoveryStage": "sheet_directory",
+    "careersUrl": "https://www.rovio.com/open-positions/",
+    "evidenceSource": "game_studios_sheet",
+    "evidenceTypes": [
+      "sheet_directory",
+      "sheet_row",
+      "sheet_roles_open_yes"
+    ],
+    "evidenceScore": 46,
+    "weakSignal": false,
+    "sourceDirectory": "game_studios_sheet",
+    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
+    "sourceDirectoryEntryUrl": "https://www.rovio.com/open-positions/",
+    "id": "static:listing_url:https://www.rovio.com/open-positions/",
+    "discoveredAt": "2026-03-20T20:24:38.456478+00:00",
+    "score": 40,
+    "reasons": [
+      "evidence_signal",
+      "live_jobs_detected"
+    ],
+    "sampleCount": 17,
+    "jobsFound": 17,
+    "confidence": "high",
+    "lastProbedAt": "2026-03-20T20:25:04.840056+00:00",
+    "deferred": false
+  },
+  {
+    "name": "Raw Power Games (Sheet)",
+    "studio": "Raw Power Games",
+    "company": "Raw Power Games",
+    "adapter": "static",
+    "pages": [
+      "https://careers.rawpowergames.com/jobs"
+    ],
+    "listing_url": "https://careers.rawpowergames.com/jobs",
+    "nlPriority": false,
+    "discoveryMethod": "sheet_directory",
+    "discoveryStage": "sheet_directory",
+    "careersUrl": "https://careers.rawpowergames.com/jobs",
+    "evidenceSource": "game_studios_sheet",
+    "evidenceTypes": [
+      "sheet_directory",
+      "sheet_row",
+      "sheet_roles_open_yes"
+    ],
+    "evidenceScore": 46,
+    "weakSignal": false,
+    "sourceDirectory": "game_studios_sheet",
+    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
+    "sourceDirectoryEntryUrl": "https://careers.rawpowergames.com/jobs",
+    "id": "static:listing_url:https://careers.rawpowergames.com/jobs",
+    "discoveredAt": "2026-03-20T20:24:38.456405+00:00",
+    "score": 40,
+    "reasons": [
+      "evidence_signal",
+      "live_jobs_detected"
+    ],
+    "sampleCount": 17,
+    "jobsFound": 17,
+    "confidence": "high",
+    "lastProbedAt": "2026-03-20T20:25:04.824448+00:00",
+    "deferred": false
+  },
+  {
+    "name": "Play Perfect (Sheet)",
+    "studio": "Play Perfect",
+    "company": "Play Perfect",
+    "adapter": "static",
+    "pages": [
+      "https://play-perfect.com/careers/"
+    ],
+    "listing_url": "https://play-perfect.com/careers/",
+    "nlPriority": false,
+    "discoveryMethod": "sheet_directory",
+    "discoveryStage": "sheet_directory",
+    "careersUrl": "https://play-perfect.com/careers/",
+    "evidenceSource": "game_studios_sheet",
+    "evidenceTypes": [
+      "sheet_directory",
+      "sheet_row",
+      "sheet_roles_open_yes"
+    ],
+    "evidenceScore": 46,
+    "weakSignal": false,
+    "sourceDirectory": "game_studios_sheet",
+    "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
+    "sourceDirectoryEntryUrl": "https://play-perfect.com/careers/",
+    "id": "static:listing_url:https://play-perfect.com/careers/",
+    "discoveredAt": "2026-03-20T20:24:38.456357+00:00",
+    "score": 40,
+    "reasons": [
+      "evidence_signal",
+      "live_jobs_detected"
+    ],
+    "sampleCount": 17,
+    "jobsFound": 17,
+    "confidence": "high",
+    "lastProbedAt": "2026-03-20T20:25:04.816760+00:00",
     "deferred": false
   }
 ]

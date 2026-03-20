@@ -142,6 +142,59 @@ export function normalizeTimestamp(value) {
   return dt.toISOString();
 }
 
+export function sanitizePublicText(value) {
+  const decoded = String(value || "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'");
+  const stripped = decoded.replace(/<[^>]+>/gi, " ");
+  const normalized = stripped.replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  if (normalized.includes("<") || normalized.includes(">")) return "";
+  const lowered = normalized.toLowerCase();
+  if (["div", "/div", "span", "/span", "cb", "location", "title"].includes(lowered)) return "";
+  return normalized;
+}
+
+export function invalidLocationReason(value, field = "city") {
+  const text = sanitizePublicText(value);
+  if (!text) return "";
+  const lowered = text.toLowerCase();
+  if (["unknown", "n/a", "na", "none", "remote", "hybrid", "onsite", "on-site", "worldwide"].includes(lowered)) {
+    return "";
+  }
+  if (text.length > 120) return `invalid_${field}_semantic_overlong`;
+  if (text.length > 72 && ((text.match(/,/g) || []).length >= 3 || (text.match(/;/g) || []).length >= 2)) {
+    return `invalid_${field}_semantic_multi_location_blob`;
+  }
+  if (text.length > 48 && (((text.match(/・/g) || []).length >= 2) || text.includes("※"))) {
+    return `invalid_${field}_semantic_bullet_noise`;
+  }
+  if (text.length > 48 && ((text.match(/[.!?。！？]/g) || []).length >= 2)) {
+    return `invalid_${field}_semantic_sentence_noise`;
+  }
+  if (/(requirements?|responsibilit(?:y|ies)|qualifications?|experience|register|registration|apply|position|positions|business level|job description|preferred|benefits?|contact us)/i.test(text)) {
+    return `invalid_${field}_semantic_noise`;
+  }
+  if (/(キャリア登録|ポジション|ご案内|応募|職務経歴|ビジネスレベルの日本語能力)/.test(text)) {
+    return `invalid_${field}_semantic_noise`;
+  }
+  return "";
+}
+
+export function isSemanticallyValidLocationValue(value, field = "city") {
+  return !invalidLocationReason(value, field);
+}
+
+export function sanitizeLocationField(value, field = "city") {
+  const text = sanitizePublicText(value);
+  if (!text) return "";
+  return isSemanticallyValidLocationValue(text, field) ? text : "";
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function parseTimestampMs(value) {
@@ -205,10 +258,12 @@ export function normalizeJobs(rows, options = {}) {
   return rows.map((row, idx) => {
     const job = { ...row };
     job.id = job.id || (1000 + idx);
-    job.title = String(job.title || "").trim();
-    job.company = String(job.company || "").trim();
-    job.city = String(job.city || "").trim();
-    job.country = String(job.country || "Unknown").trim() || "Unknown";
+    job.title = sanitizePublicText(job.title || "");
+    job.company = sanitizePublicText(job.company || "");
+    job.city = sanitizeLocationField(job.city || "", "city");
+    const rawCountry = sanitizePublicText(job.country || "");
+    const sanitizedCountry = sanitizeLocationField(rawCountry, "country");
+    job.country = sanitizedCountry || (rawCountry ? "" : "Unknown");
     job.workType = detectWorkType(job.workType || "");
     job.contractType = detectContractType(job.contractType || "", job.title || "");
     job.jobLink = sanitizeUrl(job.jobLink || "");
@@ -227,7 +282,7 @@ export function normalizeJobs(rows, options = {}) {
     job.dedupKey = String(job.dedupKey || "").trim();
     const quality = Number(job.qualityScore);
     job.qualityScore = Number.isFinite(quality) ? Math.max(0, Math.min(100, Math.round(quality))) : 0;
-    job.sector = normalizeSector(job.sector || "", job.company || "", job.title || "");
+    job.sector = normalizeSector(sanitizePublicText(job.sector || ""), job.company || "", job.title || "");
     job.profession = professionLabels[job.profession] ? job.profession : mapProfession(String(job.title || ""));
     if (!job.companyType) job.companyType = classifyCompanyType(job.company, job.title || "");
     if (!job.description) job.description = `${job.title} at ${job.company}`;

@@ -22,6 +22,9 @@ class StaticSourceRuntimeConfig:
     static_profile: str
     static_detail_concurrency: int
     static_source_time_budget_s: int
+    low_yield_detail_cap: int
+    very_low_yield_detail_cap: int
+    listing_only_hosts: List[str]
     default_path_tokens: List[str]
     default_query_keys: List[str]
 
@@ -38,6 +41,13 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
         static_profile=static_profile,
         static_detail_concurrency=detail_concurrency,
         static_source_time_budget_s=max(5, int(os.getenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S") or 25)),
+        low_yield_detail_cap=max(4, int(os.getenv("BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP") or 12)),
+        very_low_yield_detail_cap=max(2, int(os.getenv("BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP") or 6)),
+        listing_only_hosts=[
+            clean_text(part).lower()
+            for part in (os.getenv("BALUFFO_STATIC_LISTING_ONLY_HOSTS") or "hrmos.co,www.riotgames.com,careers.activision.com").split(",")
+            if clean_text(part)
+        ],
         default_path_tokens=default_path_tokens,
         default_query_keys=default_query_keys,
     )
@@ -68,6 +78,7 @@ def build_static_entry_report(*, source: Dict[str, Any], source_name: str, pages
             "listing_fetch_ms": 0,
             "candidate_extraction_ms": 0,
             "detail_fetch_ms": 0,
+            "detail_skipped_by_listing_fingerprint": 0,
         },
     }
 
@@ -86,6 +97,73 @@ def source_detail_concurrency_for(
     if pages_visited >= 40 or duration_ms >= 15_000:
         return max(static_detail_concurrency, 8)
     return static_detail_concurrency
+
+
+def source_detail_limit_for(
+    source_key: str,
+    *,
+    source_state_rows: Dict[str, Dict[str, Any]] | None,
+    discovered_links: int,
+    listing_jobs_found: int,
+    low_yield_detail_cap: int,
+    very_low_yield_detail_cap: int,
+) -> int:
+    if discovered_links <= 0:
+        return 0
+    entry = (source_state_rows or {}).get(source_key) if isinstance(source_state_rows, dict) else {}
+    if not isinstance(entry, dict):
+        return discovered_links
+    last_detail_pages = int(entry.get("lastDetailPagesVisited") or 0)
+    last_kept = int(entry.get("lastKeptCount") or 0)
+    last_duration_ms = int(entry.get("lastDurationMs") or 0)
+    last_detail_yield_pct = int(entry.get("lastDetailYieldPct") or 0)
+
+    if last_detail_pages >= 30 and last_kept <= 1 and last_duration_ms >= 45_000:
+        cap = very_low_yield_detail_cap if listing_jobs_found > 0 else low_yield_detail_cap
+        return min(discovered_links, max(1, cap))
+    if last_detail_pages >= 20 and last_duration_ms >= 20_000 and last_detail_yield_pct <= 5:
+        cap = low_yield_detail_cap if listing_jobs_found <= 0 else very_low_yield_detail_cap
+        return min(discovered_links, max(1, cap))
+    if listing_jobs_found > 0 and last_detail_pages >= 10 and last_detail_yield_pct <= 10:
+        return min(discovered_links, max(1, very_low_yield_detail_cap))
+    return discovered_links
+
+
+def choose_detail_traversal_mode(
+    page_url: str,
+    *,
+    runtime_config: StaticSourceRuntimeConfig,
+    profile: Dict[str, Any] | None,
+    plugin_meta: Dict[str, Any] | None,
+    listing_jobs_found: int,
+    discovered_links: int,
+    source_key: str,
+    source_state_rows: Dict[str, Dict[str, Any]] | None,
+) -> str:
+    plugin_meta = plugin_meta if isinstance(plugin_meta, dict) else {}
+    profile = profile if isinstance(profile, dict) else {}
+    explicit_mode = clean_text(plugin_meta.get("detailTraversalMode")) or clean_text(profile.get("detail_traversal_mode"))
+    if explicit_mode in {"listing_only", "capped_detail", "full_detail"}:
+        return explicit_mode
+    detail_fetch_required = plugin_meta.get("detailFetchRequired")
+    if detail_fetch_required is None:
+        detail_fetch_required = profile.get("detail_fetch_required")
+    if detail_fetch_required is False and listing_jobs_found > 0:
+        return "listing_only"
+    host = (urlparse(clean_text(page_url) or "").hostname or "").lower()
+    if host in runtime_config.listing_only_hosts and listing_jobs_found > 0:
+        return "listing_only"
+    detail_limit = source_detail_limit_for(
+        source_key,
+        source_state_rows=source_state_rows,
+        discovered_links=discovered_links,
+        listing_jobs_found=listing_jobs_found,
+        low_yield_detail_cap=runtime_config.low_yield_detail_cap,
+        very_low_yield_detail_cap=runtime_config.very_low_yield_detail_cap,
+    )
+    if detail_limit < discovered_links:
+        return "capped_detail"
+    return "full_detail"
 
 
 def create_fetch_html_cached(

@@ -85,7 +85,7 @@ import { setStatusText, toLocalTime } from "./runtime/view.js";
 import { bindWindowResize } from "./runtime/events.js";
 
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";
-const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python -m src.jobs_fetcher";
+const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python -m src.jobs_fetcher --social-enabled";
 const JOBS_FETCHER_TASK_LABEL = adminConfig.JOBS_FETCHER_TASK_LABEL || "Run jobs fetcher";
 const JOBS_FETCH_REPORT_URL = adminConfig.JOBS_FETCH_REPORT_URL || "data/jobs-fetch-report.json";
 const JOBS_AUTO_REFRESH_SIGNAL_KEY = adminConfig.JOBS_AUTO_REFRESH_SIGNAL_KEY || "baluffo_jobs_auto_refresh_signal";
@@ -352,6 +352,9 @@ function composeControllers() {
     adminDispatch,
     adminActions: ADMIN_ACTIONS,
     escapeHtml,
+    onLiveDiscoveryDetected: runMeta => {
+      discoveryController?.attachToActiveDiscoveryRun(runMeta);
+    },
     onBridgeStatusChange: status => {
       if (status === "online") {
         registryController?.loadDiscoveryData().catch(() => {});
@@ -484,6 +487,7 @@ function bindEvents() {
   bindAsyncClick(refs.adminRefreshBtnEl, refreshOverview);
   bindAsyncClick(refs.adminRunFetcherBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "default" }));
   bindAsyncClick(refs.adminRunFetcherIncrementalBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "incremental" }));
+  bindAsyncClick(refs.adminRunFetcherUncappedBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "uncapped" }));
   bindAsyncClick(refs.adminRunFetcherForceBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "force_full" }));
   bindAsyncClick(refs.adminRefreshReportBtnEl, () => fetcherController.loadLatestFetcherReport());
   bindUi(refs.adminClearLogBtnEl, "click", () => fetcherController.setFetcherLogPlaceholder("Output log cleared."));
@@ -494,6 +498,7 @@ function bindEvents() {
   bindAsyncClick(refs.adminCopyFailuresBtnEl, () => fetcherController.copyLatestFailureSummary());
 
   bindAsyncClick(refs.adminRunDiscoveryBtnEl, () => discoveryController.runDiscoveryTask());
+  bindAsyncClick(refs.adminRunDiscoveryUncappedBtnEl, () => discoveryController.runDiscoveryTask({ preset: "uncapped" }));
   bindAsyncClick(refs.adminLoadDiscoveryBtnEl, () => registryController.loadDiscoveryData());
   bindUi(refs.adminClearDiscoveryLogBtnEl, "click", event => {
     event.preventDefault();

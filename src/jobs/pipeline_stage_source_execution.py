@@ -10,6 +10,7 @@ the size/complexity of that file (AI-coder context switching).
 
 import inspect
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from threading import Lock
@@ -43,6 +44,35 @@ def _best_effort_get_try_playwright() -> Optional[Callable[[str, int], Tuple[str
         return None
 
 
+def _default_adapter_for_loader(name: str, base_meta: Dict[str, Any]) -> str:
+    adapter = clean_text(base_meta.get("adapter"))
+    if adapter:
+        return adapter
+    if clean_text(name).startswith("static_source::"):
+        return "static"
+    return "custom"
+
+
+def _is_provider_family_adapter(adapter_name: str) -> bool:
+    return norm_text(adapter_name) in {
+        "ashby",
+        "breezy",
+        "greenhouse",
+        "jazzhr",
+        "lever",
+        "personio",
+        "pinpoint",
+        "recruitee",
+        "smartrecruiters",
+        "teamtailor",
+        "workable",
+    }
+
+
+def _is_social_subsource_report(source_name: str, adapter_name: str) -> bool:
+    return norm_text(adapter_name) == "social" and clean_text(source_name) in {"social_x", "social_mastodon"}
+
+
 @dataclass(frozen=True)
 class SourceExecutionStageConfig:
     max_workers: int
@@ -53,6 +83,7 @@ class SourceExecutionStageConfig:
     google_sheets_redirect_concurrency: int
     started_at: str
     show_progress: bool
+    force_refresh_all: bool
 
 
 def run_source_execution_stage(
@@ -84,7 +115,7 @@ def run_source_execution_stage(
         report: Dict[str, Any] = {
             "name": name,
             "status": "ok",
-            "adapter": clean_text(base_meta.get("adapter")) or "custom",
+            "adapter": _default_adapter_for_loader(name, base_meta),
             "fetchStrategy": clean_text(base_meta.get("fetchStrategy")) or "auto",
             "studio": clean_text(base_meta.get("studio")) or "",
             "fetchedCount": 0,
@@ -122,10 +153,11 @@ def run_source_execution_stage(
                 "timeout_s": config.timeout_s,
                 "retries": config.retries,
                 "backoff_s": config.backoff_s,
+                "source_state_rows": source_state_rows,
+                "force_refresh_all": config.force_refresh_all,
             }
             if norm_text(report.get("adapter")) == "static":
                 loader_kwargs["static_detail_concurrency"] = config.static_detail_concurrency
-                loader_kwargs["source_state_rows"] = source_state_rows
                 if _try_playwright is not None:
                     loader_kwargs["try_playwright"] = _try_playwright
 
@@ -196,6 +228,66 @@ def run_source_execution_stage(
             if isinstance(details, list) and details:
                 report["details"] = details
             detail_rows = details if isinstance(details, list) else []
+            if detail_rows and _is_provider_family_adapter(clean_text(report.get("adapter"))):
+                board_decision_counts = Counter(
+                    clean_text(detail.get("cacheDecision"))
+                    for detail in detail_rows
+                    if isinstance(detail, dict) and clean_text(detail.get("cacheDecision"))
+                )
+                report["boardCount"] = len([detail for detail in detail_rows if isinstance(detail, dict)])
+                report["boardCacheDecisionCounts"] = dict(board_decision_counts)
+                report["boardSkippedCount"] = sum(
+                    1
+                    for detail in detail_rows
+                    if isinstance(detail, dict)
+                    and norm_text(detail.get("status")) == "excluded"
+                    and clean_text(detail.get("cacheDecision")) in {"skip_fresh", "cooldown_skip"}
+                )
+                report["boardRevalidatedCount"] = sum(
+                    1
+                    for detail in detail_rows
+                    if isinstance(detail, dict) and clean_text(detail.get("cacheDecision")) == "revalidate_only"
+                )
+                report["boardNotModifiedCount"] = sum(
+                    1
+                    for detail in detail_rows
+                    if isinstance(detail, dict) and clean_text(detail.get("cacheDecisionReason")) == "not_modified_304"
+                )
+                report["boardRefreshedCount"] = sum(
+                    1
+                    for detail in detail_rows
+                    if isinstance(detail, dict) and norm_text(detail.get("status")) in {"ok", "error"}
+                )
+            if detail_rows and _is_social_subsource_report(name, clean_text(report.get("adapter"))):
+                subsource_decision_counts = Counter(
+                    clean_text(detail.get("cacheDecision"))
+                    for detail in detail_rows
+                    if isinstance(detail, dict) and clean_text(detail.get("cacheDecision"))
+                )
+                report["subsourceCount"] = len([detail for detail in detail_rows if isinstance(detail, dict)])
+                report["subsourceCacheDecisionCounts"] = dict(subsource_decision_counts)
+                report["subsourceSkippedCount"] = sum(
+                    1
+                    for detail in detail_rows
+                    if isinstance(detail, dict)
+                    and norm_text(detail.get("status")) == "excluded"
+                    and clean_text(detail.get("cacheDecision")) in {"skip_fresh", "cooldown_skip"}
+                )
+                report["subsourceRevalidatedCount"] = sum(
+                    1
+                    for detail in detail_rows
+                    if isinstance(detail, dict) and clean_text(detail.get("cacheDecision")) == "revalidate_only"
+                )
+                report["subsourceNotModifiedCount"] = sum(
+                    1
+                    for detail in detail_rows
+                    if isinstance(detail, dict) and clean_text(detail.get("cacheDecisionReason")) == "not_modified_304"
+                )
+                report["subsourceRefreshedCount"] = sum(
+                    1
+                    for detail in detail_rows
+                    if isinstance(detail, dict) and norm_text(detail.get("status")) in {"ok", "error"}
+                )
 
             stage_timings = report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
             stage_timings["fetchAndParse"] = int(fetch_and_parse_ms)

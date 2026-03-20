@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import re
 from typing import Any, Callable, Dict, List
 from urllib.parse import urlparse, urlunparse
 
@@ -24,6 +26,7 @@ def run(
     pages: List[str],
     source_row: Dict[str, Any],
     parse_jobpostings_from_html: Callable[..., List[Dict[str, Any]]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     **kwargs: Any,
 ) -> List[RawJob]:
     _ = (retries, backoff_s, kwargs)
@@ -72,6 +75,41 @@ def run(
         fallback_company=company,
         fallback_source_id_prefix=f"static:{source_id}",
     )
+    if not rows and callable(try_playwright):
+        browser_html, _ = try_playwright(page_url, max(3, min(timeout_s, 20)))
+        if browser_html:
+            html = browser_html
+            rows = parse_jobpostings_from_html(
+                html,
+                base_url=page_url,
+                fallback_company=company,
+                fallback_source_id_prefix=f"static:{source_id}",
+            )
+    if not rows:
+        seen = set()
+        for match in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+/job/[^"\']+)["\'][^>]*>(.*?)</a>', html):
+            href = clean_text(match.group(1))
+            title = clean_text(re.sub(r"(?is)<[^>]+>", " ", match.group(2) or ""))
+            if not href or not title:
+                continue
+            link = href
+            if link in seen:
+                continue
+            seen.add(link)
+            rows.append(
+                {
+                    "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
+                    "title": title,
+                    "company": company,
+                    "city": "",
+                    "country": "Unknown",
+                    "workType": "",
+                    "contractType": "",
+                    "jobLink": link,
+                    "sector": "Game",
+                    "postedAt": "",
+                }
+            )
     for row in rows:
         if isinstance(row, dict):
             row["adapter"] = "static"
@@ -89,10 +127,17 @@ def run(
             }
         else:
             source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
-                "browserFallbackRecommended": bool(ats_links),
-                "extractorHint": "parse_empty",
+                "classification": _heuristics.CLASSIFICATION_PARSER_STALE,
+                "browserFallbackRecommended": False,
+                "extractorHint": "search_results_present_but_plugin_empty",
                 "atsLinks": ats_links[:5],
+                "detailFetchRequired": False,
+                "detailTraversalMode": "listing_only",
             }
+    else:
+        source_row["_staticPluginMeta"] = {
+            "detailFetchRequired": False,
+            "detailTraversalMode": "listing_only",
+        }
     return cleaned
 

@@ -99,6 +99,8 @@ def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
     timing_summary_raw = runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
     stage_totals_raw = timing_summary_raw.get("stageTotalsMs") if isinstance(timing_summary_raw.get("stageTotalsMs"), dict) else {}
     stage_top_raw = timing_summary_raw.get("stageTop") if isinstance(timing_summary_raw.get("stageTop"), list) else []
+    adapter_timings_raw = timing_summary_raw.get("adapterTimings") if isinstance(timing_summary_raw.get("adapterTimings"), list) else []
+    slowest_adapters_raw = timing_summary_raw.get("slowestAdapters") if isinstance(timing_summary_raw.get("slowestAdapters"), list) else []
     high_cost_raw = timing_summary_raw.get("highCostLowYieldSources") if isinstance(timing_summary_raw.get("highCostLowYieldSources"), list) else []
     return {
         "schemaVersion": safe_schema_version(src.get("schemaVersion")),
@@ -128,6 +130,34 @@ def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
                     }
                     for row in stage_top_raw[:5]
                     if isinstance(row, dict) and str(row.get("stage") or "").strip()
+                ],
+                "adapterTimings": [
+                    {
+                        "adapter": str(row.get("adapter") or "").strip().lower(),
+                        "sourceCount": safe_int(row.get("sourceCount"), 0, 0, 1_000_000),
+                        "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                        "medianDurationMs": safe_int(row.get("medianDurationMs"), 0, 0, 86_400_000),
+                        "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
+                        "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
+                        "errorCount": safe_int(row.get("errorCount"), 0, 0, 1_000_000),
+                        "zeroKeptCount": safe_int(row.get("zeroKeptCount"), 0, 0, 1_000_000),
+                    }
+                    for row in adapter_timings_raw[:20]
+                    if isinstance(row, dict)
+                ],
+                "slowestAdapters": [
+                    {
+                        "adapter": str(row.get("adapter") or "").strip().lower(),
+                        "sourceCount": safe_int(row.get("sourceCount"), 0, 0, 1_000_000),
+                        "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                        "medianDurationMs": safe_int(row.get("medianDurationMs"), 0, 0, 86_400_000),
+                        "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
+                        "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
+                        "errorCount": safe_int(row.get("errorCount"), 0, 0, 1_000_000),
+                        "zeroKeptCount": safe_int(row.get("zeroKeptCount"), 0, 0, 1_000_000),
+                    }
+                    for row in slowest_adapters_raw[:5]
+                    if isinstance(row, dict)
                 ],
                 "highCostLowYieldSources": [
                     {
@@ -162,15 +192,56 @@ def derive_discovery_queued_count(report: Dict[str, Any], summary: Dict[str, Any
 def normalize_discovery_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
+    runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
     candidates = src.get("candidates")
     failures = src.get("failures")
     top_failures = src.get("topFailures")
+    stage_timings_raw = runtime.get("stageTimingsMs") if isinstance(runtime.get("stageTimingsMs"), dict) else {}
+    stage_top_raw = runtime.get("stageTop") if isinstance(runtime.get("stageTop"), list) else []
+    adapter_timings_raw = runtime.get("adapterTimings") if isinstance(runtime.get("adapterTimings"), list) else []
+    slowest_adapters_raw = runtime.get("slowestAdapters") if isinstance(runtime.get("slowestAdapters"), list) else []
     normalized = {
         "schemaVersion": safe_schema_version(src.get("schemaVersion")),
         "mode": str(src.get("mode") or "").strip(),
         "startedAt": str(src.get("startedAt") or "").strip(),
         "finishedAt": str(src.get("finishedAt") or "").strip(),
         "summary": dict(summary),
+        "runtime": {
+            **dict(runtime),
+            "totalDurationMs": safe_int(runtime.get("totalDurationMs"), 0, 0, 86_400_000),
+            "stageTimingsMs": {str(key): safe_int(value, 0, 0, 86_400_000) for key, value in stage_timings_raw.items()},
+            "stageTop": [
+                {"stage": str(row.get("stage") or "").strip(), "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000)}
+                for row in stage_top_raw[:5]
+                if isinstance(row, dict) and str(row.get("stage") or "").strip()
+            ],
+            "adapterTimings": [
+                {
+                    "adapter": str(row.get("adapter") or "").strip().lower(),
+                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                    "generatedCount": safe_int(row.get("generatedCount"), 0, 0, 1_000_000),
+                    "failureCount": safe_int(row.get("failureCount"), 0, 0, 1_000_000),
+                    "probedCount": safe_int(row.get("probedCount"), 0, 0, 1_000_000),
+                    "healthyCount": safe_int(row.get("healthyCount"), 0, 0, 1_000_000),
+                    "queuedCount": safe_int(row.get("queuedCount"), 0, 0, 1_000_000),
+                }
+                for row in adapter_timings_raw[:20]
+                if isinstance(row, dict)
+            ],
+            "slowestAdapters": [
+                {
+                    "adapter": str(row.get("adapter") or "").strip().lower(),
+                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                    "generatedCount": safe_int(row.get("generatedCount"), 0, 0, 1_000_000),
+                    "failureCount": safe_int(row.get("failureCount"), 0, 0, 1_000_000),
+                    "probedCount": safe_int(row.get("probedCount"), 0, 0, 1_000_000),
+                    "healthyCount": safe_int(row.get("healthyCount"), 0, 0, 1_000_000),
+                    "queuedCount": safe_int(row.get("queuedCount"), 0, 0, 1_000_000),
+                }
+                for row in slowest_adapters_raw[:5]
+                if isinstance(row, dict)
+            ],
+        },
         "candidates": list(candidates) if isinstance(candidates, list) else [],
         "failures": list(failures) if isinstance(failures, list) else [],
         "topFailures": list(top_failures) if isinstance(top_failures, list) else [],

@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -36,12 +37,14 @@ from src.pipeline_io import (
     write_atomic_if_changed,
     write_text_if_changed,
 )
+from src.jobs.contamination_audit import build_public_text_quality_report
 from src.shared.utils import env_flag, now_iso
 from src.jobs.registry import STUDIO_SOURCE_REGISTRY, registry_entries
-from src.jobs.text_utils import clean_text, norm_text
+from src.jobs.text_utils import clean_text, norm_text, sanitize_location_text
 from src.jobs.pipeline_stage_source_execution import SourceExecutionStageConfig, run_source_execution_stage
 from src.jobs.pipeline_bootstrap import build_pipeline_paths
 from src.jobs.pipeline_loader_selection import (
+    apply_incremental_cache_exclusions,
     apply_source_cadence_exclusions,
     build_excluded_source_report,
     build_pipeline_runtime_payload,
@@ -83,6 +86,7 @@ read_approved_since_last_run = common_sources.read_approved_since_last_run
 
 canonicalize_job = canonicalize_pkg.canonicalize_job
 CanonicalNormalizer = canonicalize_pkg.CanonicalNormalizer
+reset_location_quality_audit = canonicalize_pkg.reset_location_quality_audit
 CanonicalDeduplicator = dedup_pkg.CanonicalDeduplicator
 format_source_error = reporting_pkg.format_source_error
 build_pipeline_summary = reporting_pkg.build_pipeline_summary
@@ -102,6 +106,7 @@ write_success_cache = state_pkg.write_success_cache
 normalize_task_state_payload = state_pkg.normalize_task_state_payload
 should_skip_source_by_ttl = state_pkg.should_skip_source_by_ttl
 should_skip_source_by_cadence = state_pkg.should_skip_source_by_cadence
+get_incremental_cache_decision = state_pkg.get_incremental_cache_decision
 apply_circuit_breaker_exclusions = state_pkg.apply_circuit_breaker_exclusions
 append_excluded_default_sources = state_pkg.append_excluded_default_sources
 update_source_state_rows = state_pkg.update_source_state_rows
@@ -109,6 +114,56 @@ update_source_state_rows = state_pkg.update_source_state_rows
 
 def _rows_to_legacy_dicts(rows: List[CanonicalJob]) -> List[Dict[str, Any]]:
     return [row.to_dict() if isinstance(row, CanonicalJob) else dict(row) for row in rows]
+
+
+def _apply_final_location_quality_guardrail(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    field_counts: Counter[str] = Counter()
+    reason_counts: Counter[str] = Counter()
+    examples: List[Dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        city_value, city_reason = sanitize_location_text(row.get("city"), field_name="city")
+        if city_reason:
+            if len(examples) < 20:
+                examples.append(
+                    {
+                        "company": clean_text(row.get("company")),
+                        "title": clean_text(row.get("title")),
+                        "source": clean_text(row.get("source")),
+                        "jobLink": clean_text(row.get("jobLink")),
+                        "field": "city",
+                        "reason": city_reason,
+                        "value": clean_text(row.get("city")),
+                    }
+                )
+            row["city"] = city_value
+            field_counts["city"] += 1
+            reason_counts[city_reason] += 1
+        country_value, country_reason = sanitize_location_text(row.get("country"), field_name="country")
+        if country_reason:
+            if len(examples) < 20:
+                examples.append(
+                    {
+                        "company": clean_text(row.get("company")),
+                        "title": clean_text(row.get("title")),
+                        "source": clean_text(row.get("source")),
+                        "jobLink": clean_text(row.get("jobLink")),
+                        "field": "country",
+                        "reason": country_reason,
+                        "value": clean_text(row.get("country")),
+                    }
+                )
+            row["country"] = country_value
+            field_counts["country"] += 1
+            reason_counts[country_reason] += 1
+    return {
+        "totalRows": len(rows),
+        "invalidLocationFieldCount": int(sum(field_counts.values())),
+        "fieldCounts": dict(field_counts),
+        "reasonCounts": dict(reason_counts),
+        "examples": examples,
+    }
 
 
 def _canonicalize_existing_output_row(row: Dict[str, Any], *, source: str, fetched_at: str) -> Dict[str, Any] | None:
@@ -131,7 +186,7 @@ def _percentile_ms(values: List[int], percentile: float) -> int:
     return int(ordered[index])
 
 
-def build_runtime_timing_summary(source_reports: List[Dict[str, Any]]) -> Dict[str, Any]:
+def build_runtime_timing_summary(source_reports: List[Dict[str, Any]], *, wall_clock_duration_ms: int = 0) -> Dict[str, Any]:
     rows = [row for row in source_reports if isinstance(row, dict)]
     durations = [max(0, int(row.get("durationMs") or 0)) for row in rows]
     stage_keys = [
@@ -148,6 +203,51 @@ def build_runtime_timing_summary(source_reports: List[Dict[str, Any]]) -> Dict[s
         stage_timings = row.get("stageTimingsMs") if isinstance(row.get("stageTimingsMs"), dict) else {}
         for key in stage_keys:
             stage_totals[key] += max(0, int(stage_timings.get(key) or 0))
+    adapter_totals: Dict[str, Dict[str, int | str]] = {}
+    for row in rows:
+        adapter_name = clean_text(row.get("adapter")) or "custom"
+        adapter_row = adapter_totals.setdefault(
+            adapter_name,
+            {
+                "adapter": adapter_name,
+                "sourceCount": 0,
+                "durationMs": 0,
+                "fetchedCount": 0,
+                "keptCount": 0,
+                "errorCount": 0,
+                "zeroKeptCount": 0,
+            },
+        )
+        kept_count = max(0, int(row.get("keptCount") or 0))
+        adapter_row["sourceCount"] = int(adapter_row.get("sourceCount") or 0) + 1
+        adapter_row["durationMs"] = int(adapter_row.get("durationMs") or 0) + max(0, int(row.get("durationMs") or 0))
+        adapter_row["fetchedCount"] = int(adapter_row.get("fetchedCount") or 0) + max(0, int(row.get("fetchedCount") or 0))
+        adapter_row["keptCount"] = int(adapter_row.get("keptCount") or 0) + kept_count
+        if norm_text(row.get("status")) == "error":
+            adapter_row["errorCount"] = int(adapter_row.get("errorCount") or 0) + 1
+        if kept_count <= 0:
+            adapter_row["zeroKeptCount"] = int(adapter_row.get("zeroKeptCount") or 0) + 1
+    adapter_timings = [
+        {
+            "adapter": str(item.get("adapter") or "custom"),
+            "sourceCount": int(item.get("sourceCount") or 0),
+            "durationMs": int(item.get("durationMs") or 0),
+            "medianDurationMs": _percentile_ms(
+                [
+                    max(0, int(row.get("durationMs") or 0))
+                    for row in rows
+                    if (clean_text(row.get("adapter")) or "custom") == str(item.get("adapter") or "custom")
+                ],
+                0.5,
+            ),
+            "fetchedCount": int(item.get("fetchedCount") or 0),
+            "keptCount": int(item.get("keptCount") or 0),
+            "errorCount": int(item.get("errorCount") or 0),
+            "zeroKeptCount": int(item.get("zeroKeptCount") or 0),
+        }
+        for item in adapter_totals.values()
+    ]
+    adapter_timings.sort(key=lambda item: int(item.get("durationMs") or 0), reverse=True)
     slowest_sources = [
         {
             "name": clean_text(row.get("name")),
@@ -185,13 +285,35 @@ def build_runtime_timing_summary(source_reports: List[Dict[str, Any]]) -> Dict[s
             reverse=True,
         )[:5]
     ]
+    detail_heavy_sources = [
+        {
+            "name": clean_text(row.get("name")),
+            "adapter": clean_text(row.get("adapter")),
+            "durationMs": max(0, int(row.get("durationMs") or 0)),
+            "detailFetchMs": max(0, int(((row.get("stageTimingsMs") or {}) if isinstance(row.get("stageTimingsMs"), dict) else {}).get("detailFetch") or 0)),
+            "keptCount": max(0, int(row.get("keptCount") or 0)),
+        }
+        for row in sorted(
+            [
+                row
+                for row in rows
+                if max(0, int(((row.get("stageTimingsMs") or {}) if isinstance(row.get("stageTimingsMs"), dict) else {}).get("detailFetch") or 0)) > 0
+            ],
+            key=lambda item: int(((item.get("stageTimingsMs") or {}) if isinstance(item.get("stageTimingsMs"), dict) else {}).get("detailFetch") or 0),
+            reverse=True,
+        )[:10]
+    ]
     return {
         "totalDurationMs": int(sum(durations)),
+        "wallClockDurationMs": max(0, int(wall_clock_duration_ms or 0)),
         "medianSourceDurationMs": _percentile_ms(durations, 0.5),
         "p95SourceDurationMs": _percentile_ms(durations, 0.95),
         "stageTotalsMs": stage_totals,
         "stageTop": stage_top,
+        "adapterTimings": adapter_timings,
+        "slowestAdapters": adapter_timings[:5],
         "highCostLowYieldSources": high_cost_low_yield,
+        "detailHeavySources": detail_heavy_sources,
         "slowestSources": slowest_sources,
     }
 
@@ -251,10 +373,13 @@ def run_pipeline(
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
     show_progress: bool = True,
     selection_exclusions: Optional[List[Dict[str, Any]]] = None,
+    force_refresh_all: bool = False,
 ) -> Dict[str, Any]:
     output_dir = Path(output_dir)
+    run_started_mono = time.perf_counter()
     paths = build_pipeline_paths(output_dir)
     SOURCE_DIAGNOSTICS.clear()
+    reset_location_quality_audit()
 
     started_at = clean_text(started_at_override) or now_iso()
     source_reports: List[Dict[str, Any]] = []
@@ -279,7 +404,9 @@ def run_pipeline(
     )
     source_state_rows = read_source_state(paths.source_state_path)
     lifecycle_rows = read_job_lifecycle_state(paths.lifecycle_state_path)
-    if seed_from_existing_output:
+    incremental_cache_enabled = bool(not force_refresh_all and paths.json_path.exists())
+    effective_seed_from_existing_output = bool(seed_from_existing_output or incremental_cache_enabled)
+    if effective_seed_from_existing_output:
         seeded_rows = read_existing_output_from_file(
             paths.json_path,
             started_at,
@@ -316,7 +443,9 @@ def run_pipeline(
         adapter_http_concurrency=adapter_http_concurrency,
         static_detail_concurrency=static_detail_concurrency,
         google_sheets_redirect_concurrency=google_sheets_redirect_concurrency,
-        seed_from_existing_output=seed_from_existing_output,
+        seed_from_existing_output=effective_seed_from_existing_output,
+        incremental_cache_enabled=incremental_cache_enabled,
+        force_refresh_all=force_refresh_all,
         source_ttl_minutes=source_ttl_minutes,
         respect_source_cadence=respect_source_cadence,
         hot_source_cadence_minutes=hot_source_cadence_minutes,
@@ -335,6 +464,22 @@ def run_pipeline(
         default_canonical_strict_url=DEFAULT_CANONICAL_STRICT_URL,
         normalize_runtime_payload=normalize_runtime_payload,
     )
+    selected_loaders, incremental_skipped = apply_incremental_cache_exclusions(
+        selected_loaders,
+        incremental_cache_enabled=incremental_cache_enabled,
+        force_refresh_all=force_refresh_all,
+        source_state_rows=source_state_rows,
+        get_incremental_cache_decision=get_incremental_cache_decision,
+        build_excluded_source_report=lambda name, reason: build_excluded_source_report(
+            name,
+            reason,
+            source_report_meta=SOURCE_REPORT_META,
+        ),
+        source_report_meta=SOURCE_REPORT_META,
+    )
+    if incremental_skipped:
+        source_reports.extend(incremental_skipped)
+        runtime_payload["selectedSourceCount"] = len(selected_loaders)
     selected_loaders, cadence_skipped = apply_source_cadence_exclusions(
         selected_loaders,
         respect_source_cadence=respect_source_cadence,
@@ -405,6 +550,7 @@ def run_pipeline(
         google_sheets_redirect_concurrency=google_sheets_redirect_concurrency,
         started_at=started_at,
         show_progress=show_progress,
+        force_refresh_all=force_refresh_all,
     )
     try:
         run_source_execution_stage(
@@ -473,9 +619,9 @@ def run_pipeline(
         for row in selected_reports
         if norm_text(row.get("status")) == "ok" and clean_text(row.get("name"))
     }
-    allow_mark_missing = bool(using_default_loaders and not seed_from_existing_output and run_is_healthy)
+    allow_mark_missing = bool(using_default_loaders and not effective_seed_from_existing_output and run_is_healthy)
     eligible_missing_sources = (
-        successful_source_names if using_default_loaders and not seed_from_existing_output else set()
+        successful_source_names if using_default_loaders and not effective_seed_from_existing_output else set()
     )
     lifecycle_finished_at = now_iso()
     deduped_rows, lifecycle_rows, lifecycle_counts_map = apply_job_lifecycle_state(
@@ -488,6 +634,11 @@ def run_pipeline(
 
     dedup_stats["outputCount"] = len(deduped_rows)
     deduped_payload_rows = _rows_to_legacy_dicts(deduped_rows)
+    location_quality_audit = _apply_final_location_quality_guardrail(deduped_payload_rows)
+    contamination_report = build_public_text_quality_report(deduped_payload_rows)
+    contamination_rows = int(contamination_report.get("contaminatedRows") or 0)
+    if contamination_rows > 0:
+        raise ValueError(f"Public text contamination validation failed: {contamination_rows} row(s) still contain HTML-like fragments")
     final_output_by_source: Counter[str] = Counter(
         clean_text(row.get("source")) for row in deduped_payload_rows if clean_text(row.get("source"))
     )
@@ -520,15 +671,22 @@ def run_pipeline(
     light_json_bytes = paths.light_json_path.stat().st_size if paths.light_json_path.exists() else 0
     browser_fallback_queue_rows = build_browser_fallback_queue(source_reports, generated_at=lifecycle_finished_at)
     write_text_if_changed(paths.browser_fallback_queue_path, json.dumps(browser_fallback_queue_rows, indent=2, ensure_ascii=False))
-    timing_summary = build_runtime_timing_summary(source_reports)
+    timing_summary = build_runtime_timing_summary(
+        source_reports,
+        wall_clock_duration_ms=int((time.perf_counter() - run_started_mono) * 1000),
+    )
     runtime_payload["slowestSources"] = list(timing_summary.get("slowestSources") or [])
     runtime_payload["timingSummary"] = {
         "totalDurationMs": int(timing_summary.get("totalDurationMs") or 0),
+        "wallClockDurationMs": int(timing_summary.get("wallClockDurationMs") or 0),
         "medianSourceDurationMs": int(timing_summary.get("medianSourceDurationMs") or 0),
         "p95SourceDurationMs": int(timing_summary.get("p95SourceDurationMs") or 0),
         "stageTotalsMs": dict(timing_summary.get("stageTotalsMs") or {}),
         "stageTop": list(timing_summary.get("stageTop") or []),
+        "adapterTimings": list(timing_summary.get("adapterTimings") or []),
+        "slowestAdapters": list(timing_summary.get("slowestAdapters") or []),
         "highCostLowYieldSources": list(timing_summary.get("highCostLowYieldSources") or []),
+        "detailHeavySources": list(timing_summary.get("detailHeavySources") or []),
     }
 
     report_payload = normalize_fetch_report_payload({
@@ -552,6 +710,8 @@ def run_pipeline(
             lifecycle_counts_map=lifecycle_counts_map,
         ),
         "sources": source_reports,
+        "contaminationAudit": contamination_report,
+        "locationQualityAudit": location_quality_audit,
         "outputs": {
             "json": str(paths.json_path),
             "csv": str(paths.csv_path),
@@ -605,13 +765,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-workers",
         type=int,
-        default=6,
+        default=12,
         help="Max concurrent source workers. Use >1 to run source loaders in parallel.",
     )
     parser.add_argument(
         "--max-per-domain",
         type=int,
-        default=2,
+        default=3,
         help="Max concurrent in-flight requests allowed per domain across workers.",
     )
     parser.add_argument(
@@ -648,6 +808,11 @@ def parse_args() -> argparse.Namespace:
         "--respect-source-cadence",
         action="store_true",
         help="Apply source-level hot/cold cadence skipping using source state history.",
+    )
+    parser.add_argument(
+        "--force-refresh-all",
+        action="store_true",
+        help="Bypass incremental freshness skips and source revalidation so all sources run fully.",
     )
     parser.add_argument(
         "--hot-source-cadence-minutes",
@@ -800,6 +965,7 @@ def main() -> int:
         social_lookback_minutes=int(args.social_lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES),
         show_progress=not args.quiet,
         selection_exclusions=deduped_selection_exclusions,
+        force_refresh_all=bool(args.force_refresh_all),
     )
     summary = report.get("summary", {})
     output_count = int(summary.get("outputCount") or 0)

@@ -2,9 +2,9 @@
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
 
-**CRITICAL:** The frontend expects `camelCase` keys in all `data/*.json` files. The Python backend maps these explicitly in `src/jobs/models.py`.
+**CRITICAL:** The frontend expects `camelCase` keys in all `data/*.json` files. The Python backend maps these explicitly in `src/jobs/common/contracts.py`.
 
-**Runtime source of truth:** `src/jobs/models.py` defines the canonical dataclasses (e.g. `CanonicalJob`). `src/core/schemas.py` defines Pydantic models (CanonicalJobSchema, SavedJobSchema, ManifestSchema) used for validation at pipeline and bridge boundaries. `src/core/contracts.py` uses these schemas to validate payloads before writing `jobs-unified.json` and at bridge saved-jobs/save. New fields or contract changes require updating this doc, `models.py`, and the Pydantic schemas in `src/core/schemas.py`.
+**Runtime source of truth:** `src/jobs/common/contracts.py` defines the canonical contracts used by the jobs pipeline. `src/core/schemas.py` defines Pydantic models (CanonicalJobSchema, SavedJobSchema, ManifestSchema) used for validation at pipeline and bridge boundaries. `src/core/contracts.py` uses these schemas to validate payloads before writing `jobs-unified.json` and at bridge saved-jobs/save. New fields or contract changes require updating this doc and the Pydantic schemas in `src/core/schemas.py`.
 
 ## 1. CanonicalJob
 Represents a single job posting retrieved from the external sources.

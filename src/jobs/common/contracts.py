@@ -22,6 +22,8 @@ def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count:
         "adapterHttpConcurrency": _clamped_int(src.get("adapterHttpConcurrency"), 0, 1),
         "staticDetailConcurrency": _clamped_int(src.get("staticDetailConcurrency"), 0, 1),
         "googleSheetsRedirectConcurrency": _clamped_int(src.get("googleSheetsRedirectConcurrency"), 0, 1),
+        "incrementalCacheEnabled": bool(src.get("incrementalCacheEnabled")),
+        "forceRefreshAll": bool(src.get("forceRefreshAll")),
         "respectSourceCadence": bool(src.get("respectSourceCadence")),
         "hotSourceCadenceMinutes": _clamped_int(src.get("hotSourceCadenceMinutes"), 0, 1),
         "coldSourceCadenceMinutes": _clamped_int(src.get("coldSourceCadenceMinutes"), 0, 1),
@@ -53,9 +55,12 @@ def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count:
     if timing_summary_raw:
         stage_totals_raw = timing_summary_raw.get("stageTotalsMs") if isinstance(timing_summary_raw.get("stageTotalsMs"), dict) else {}
         stage_top_raw = timing_summary_raw.get("stageTop") if isinstance(timing_summary_raw.get("stageTop"), list) else []
+        adapter_timings_raw = timing_summary_raw.get("adapterTimings") if isinstance(timing_summary_raw.get("adapterTimings"), list) else []
+        slowest_adapters_raw = timing_summary_raw.get("slowestAdapters") if isinstance(timing_summary_raw.get("slowestAdapters"), list) else []
         costly_raw = timing_summary_raw.get("highCostLowYieldSources") if isinstance(timing_summary_raw.get("highCostLowYieldSources"), list) else []
         payload["timingSummary"] = {
             "totalDurationMs": _clamped_int(timing_summary_raw.get("totalDurationMs"), 0, 0),
+            "wallClockDurationMs": _clamped_int(timing_summary_raw.get("wallClockDurationMs"), 0, 0),
             "medianSourceDurationMs": _clamped_int(timing_summary_raw.get("medianSourceDurationMs"), 0, 0),
             "p95SourceDurationMs": _clamped_int(timing_summary_raw.get("p95SourceDurationMs"), 0, 0),
             "stageTotalsMs": {
@@ -72,6 +77,34 @@ def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count:
                 for row in stage_top_raw[:5]
                 if isinstance(row, dict) and clean_text(row.get("stage"))
             ],
+            "adapterTimings": [
+                {
+                    "adapter": clean_text(row.get("adapter")) or "custom",
+                    "sourceCount": _clamped_int(row.get("sourceCount"), 0, 0),
+                    "durationMs": _clamped_int(row.get("durationMs"), 0, 0),
+                    "medianDurationMs": _clamped_int(row.get("medianDurationMs"), 0, 0),
+                    "fetchedCount": _clamped_int(row.get("fetchedCount"), 0, 0),
+                    "keptCount": _clamped_int(row.get("keptCount"), 0, 0),
+                    "errorCount": _clamped_int(row.get("errorCount"), 0, 0),
+                    "zeroKeptCount": _clamped_int(row.get("zeroKeptCount"), 0, 0),
+                }
+                for row in adapter_timings_raw[:20]
+                if isinstance(row, dict)
+            ],
+            "slowestAdapters": [
+                {
+                    "adapter": clean_text(row.get("adapter")) or "custom",
+                    "sourceCount": _clamped_int(row.get("sourceCount"), 0, 0),
+                    "durationMs": _clamped_int(row.get("durationMs"), 0, 0),
+                    "medianDurationMs": _clamped_int(row.get("medianDurationMs"), 0, 0),
+                    "fetchedCount": _clamped_int(row.get("fetchedCount"), 0, 0),
+                    "keptCount": _clamped_int(row.get("keptCount"), 0, 0),
+                    "errorCount": _clamped_int(row.get("errorCount"), 0, 0),
+                    "zeroKeptCount": _clamped_int(row.get("zeroKeptCount"), 0, 0),
+                }
+                for row in slowest_adapters_raw[:5]
+                if isinstance(row, dict)
+            ],
             "highCostLowYieldSources": [
                 {
                     "name": clean_text(row.get("name")) or "unknown",
@@ -80,6 +113,17 @@ def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count:
                     "keptCount": _clamped_int(row.get("keptCount"), 0, 0),
                 }
                 for row in costly_raw[:5]
+                if isinstance(row, dict)
+            ],
+            "detailHeavySources": [
+                {
+                    "name": clean_text(row.get("name")) or "unknown",
+                    "adapter": clean_text(row.get("adapter")) or "custom",
+                    "durationMs": _clamped_int(row.get("durationMs"), 0, 0),
+                    "detailFetchMs": _clamped_int(row.get("detailFetchMs"), 0, 0),
+                    "keptCount": _clamped_int(row.get("keptCount"), 0, 0),
+                }
+                for row in (timing_summary_raw.get("detailHeavySources") if isinstance(timing_summary_raw.get("detailHeavySources"), list) else [])[:10]
                 if isinstance(row, dict)
             ],
         }
@@ -124,6 +168,75 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "error": clean_text(src.get("error")),
         "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
     }
+    cache_decision = clean_text(src.get("cacheDecision"))
+    if cache_decision:
+        normalized["cacheDecision"] = cache_decision
+    cache_reason = clean_text(src.get("cacheDecisionReason"))
+    if cache_reason:
+        normalized["cacheDecisionReason"] = cache_reason
+    http_status = _clamped_int(src.get("httpStatus"), 0, 0)
+    if http_status > 0:
+        normalized["httpStatus"] = http_status
+    http_etag = clean_text(src.get("httpEtag"))
+    if http_etag:
+        normalized["httpEtag"] = http_etag
+    http_last_modified = clean_text(src.get("httpLastModified"))
+    if http_last_modified:
+        normalized["httpLastModified"] = http_last_modified
+    listing_fingerprint = clean_text(src.get("listingFingerprint"))
+    if listing_fingerprint:
+        normalized["listingFingerprint"] = listing_fingerprint
+    listing_checked_at = clean_text(src.get("listingCheckedAt"))
+    if listing_checked_at:
+        normalized["listingCheckedAt"] = listing_checked_at
+    if "listingChanged" in src:
+        normalized["listingChanged"] = bool(src.get("listingChanged"))
+    if "detailSkippedByListingFingerprint" in src:
+        normalized["detailSkippedByListingFingerprint"] = bool(src.get("detailSkippedByListingFingerprint"))
+    board_count = _clamped_int(src.get("boardCount"), 0, 0)
+    if board_count > 0:
+        normalized["boardCount"] = board_count
+    board_decision_counts = src.get("boardCacheDecisionCounts") if isinstance(src.get("boardCacheDecisionCounts"), dict) else {}
+    if board_decision_counts:
+        normalized["boardCacheDecisionCounts"] = {
+            clean_text(key): _clamped_int(value, 0, 0)
+            for key, value in board_decision_counts.items()
+            if clean_text(key)
+        }
+    board_skipped = _clamped_int(src.get("boardSkippedCount"), 0, 0)
+    if board_skipped > 0:
+        normalized["boardSkippedCount"] = board_skipped
+    board_revalidated = _clamped_int(src.get("boardRevalidatedCount"), 0, 0)
+    if board_revalidated > 0:
+        normalized["boardRevalidatedCount"] = board_revalidated
+    board_not_modified = _clamped_int(src.get("boardNotModifiedCount"), 0, 0)
+    if board_not_modified > 0:
+        normalized["boardNotModifiedCount"] = board_not_modified
+    board_refreshed = _clamped_int(src.get("boardRefreshedCount"), 0, 0)
+    if board_refreshed > 0:
+        normalized["boardRefreshedCount"] = board_refreshed
+    subsource_count = _clamped_int(src.get("subsourceCount"), 0, 0)
+    if subsource_count > 0:
+        normalized["subsourceCount"] = subsource_count
+    subsource_decision_counts = src.get("subsourceCacheDecisionCounts") if isinstance(src.get("subsourceCacheDecisionCounts"), dict) else {}
+    if subsource_decision_counts:
+        normalized["subsourceCacheDecisionCounts"] = {
+            clean_text(key): _clamped_int(value, 0, 0)
+            for key, value in subsource_decision_counts.items()
+            if clean_text(key)
+        }
+    subsource_skipped = _clamped_int(src.get("subsourceSkippedCount"), 0, 0)
+    if subsource_skipped > 0:
+        normalized["subsourceSkippedCount"] = subsource_skipped
+    subsource_revalidated = _clamped_int(src.get("subsourceRevalidatedCount"), 0, 0)
+    if subsource_revalidated > 0:
+        normalized["subsourceRevalidatedCount"] = subsource_revalidated
+    subsource_not_modified = _clamped_int(src.get("subsourceNotModifiedCount"), 0, 0)
+    if subsource_not_modified > 0:
+        normalized["subsourceNotModifiedCount"] = subsource_not_modified
+    subsource_refreshed = _clamped_int(src.get("subsourceRefreshedCount"), 0, 0)
+    if subsource_refreshed > 0:
+        normalized["subsourceRefreshedCount"] = subsource_refreshed
     raw_stage_timings = src.get("stageTimingsMs") if isinstance(src.get("stageTimingsMs"), dict) else {}
     clean_stage_timings = {
         "fetchAndParse": _clamped_int(raw_stage_timings.get("fetchAndParse"), 0, 0),
@@ -157,6 +270,31 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
                     "classification": clean_text(item.get("classification")) or "",
                     "browserFallbackRecommended": bool(item.get("browserFallbackRecommended")),
                 }
+                item_cache_decision = clean_text(item.get("cacheDecision"))
+                if item_cache_decision:
+                    clean_item["cacheDecision"] = item_cache_decision
+                item_cache_reason = clean_text(item.get("cacheDecisionReason"))
+                if item_cache_reason:
+                    clean_item["cacheDecisionReason"] = item_cache_reason
+                item_http_status = _clamped_int(item.get("httpStatus"), 0, 0)
+                if item_http_status > 0:
+                    clean_item["httpStatus"] = item_http_status
+                item_http_etag = clean_text(item.get("httpEtag"))
+                if item_http_etag:
+                    clean_item["httpEtag"] = item_http_etag
+                item_http_last_modified = clean_text(item.get("httpLastModified"))
+                if item_http_last_modified:
+                    clean_item["httpLastModified"] = item_http_last_modified
+                item_listing_fingerprint = clean_text(item.get("listingFingerprint"))
+                if item_listing_fingerprint:
+                    clean_item["listingFingerprint"] = item_listing_fingerprint
+                item_listing_checked_at = clean_text(item.get("listingCheckedAt"))
+                if item_listing_checked_at:
+                    clean_item["listingCheckedAt"] = item_listing_checked_at
+                if "listingChanged" in item:
+                    clean_item["listingChanged"] = bool(item.get("listingChanged"))
+                if "detailSkippedByListingFingerprint" in item:
+                    clean_item["detailSkippedByListingFingerprint"] = bool(item.get("detailSkippedByListingFingerprint"))
                 top_reject_reasons = item.get("top_reject_reasons")
                 if isinstance(top_reject_reasons, list):
                     clean_item["top_reject_reasons"] = [clean_text(reason) for reason in top_reject_reasons if clean_text(reason)][
@@ -184,6 +322,7 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
                         "listing_fetch_ms": _clamped_int(stats.get("listing_fetch_ms"), 0, 0),
                         "candidate_extraction_ms": _clamped_int(stats.get("candidate_extraction_ms"), 0, 0),
                         "detail_fetch_ms": _clamped_int(stats.get("detail_fetch_ms"), 0, 0),
+                        "detail_skipped_by_listing_fingerprint": _clamped_int(stats.get("detail_skipped_by_listing_fingerprint"), 0, 0),
                         "redirect_resolve_ms": _clamped_int(stats.get("redirect_resolve_ms"), 0, 0),
                         "jobs_rejected_validation": _clamped_int(stats.get("jobs_rejected_validation"), 0, 0),
                         "finish_reason": clean_text(stats.get("finish_reason")),
@@ -259,6 +398,8 @@ def normalize_fetch_report_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     source_rows_raw = src.get("sources")
     source_rows = source_rows_raw if isinstance(source_rows_raw, list) else []
     runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
+    contamination_audit = src.get("contaminationAudit") if isinstance(src.get("contaminationAudit"), dict) else {}
+    location_quality_audit = src.get("locationQualityAudit") if isinstance(src.get("locationQualityAudit"), dict) else {}
     return {
         "schemaVersion": SCHEMA_VERSION,
         "runId": clean_text(src.get("runId")),
@@ -266,6 +407,57 @@ def normalize_fetch_report_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "finishedAt": clean_text(src.get("finishedAt")),
         "runtime": normalize_runtime_payload(runtime, selected_source_count=len(source_rows)),
         "summary": dict(summary),
+        "contaminationAudit": {
+            "totalRows": _clamped_int(contamination_audit.get("totalRows"), 0, 0),
+            "contaminatedRows": _clamped_int(contamination_audit.get("contaminatedRows"), 0, 0),
+            "fieldCounts": {
+                clean_text(key): _clamped_int(value, 0, 0)
+                for key, value in (contamination_audit.get("fieldCounts") if isinstance(contamination_audit.get("fieldCounts"), dict) else {}).items()
+                if clean_text(key)
+            },
+            "examples": [
+                {
+                    "company": clean_text(item.get("company")),
+                    "title": clean_text(item.get("title")),
+                    "source": clean_text(item.get("source")),
+                    "jobLink": clean_text(item.get("jobLink")),
+                    "fields": {
+                        clean_text(key): clean_text(value)
+                        for key, value in (item.get("fields") if isinstance(item.get("fields"), dict) else {}).items()
+                        if clean_text(key)
+                    },
+                }
+                for item in (contamination_audit.get("examples") if isinstance(contamination_audit.get("examples"), list) else [])[:20]
+                if isinstance(item, dict)
+            ],
+        },
+        "locationQualityAudit": {
+            "totalRows": _clamped_int(location_quality_audit.get("totalRows"), 0, 0),
+            "invalidLocationFieldCount": _clamped_int(location_quality_audit.get("invalidLocationFieldCount"), 0, 0),
+            "fieldCounts": {
+                clean_text(key): _clamped_int(value, 0, 0)
+                for key, value in (location_quality_audit.get("fieldCounts") if isinstance(location_quality_audit.get("fieldCounts"), dict) else {}).items()
+                if clean_text(key)
+            },
+            "reasonCounts": {
+                clean_text(key): _clamped_int(value, 0, 0)
+                for key, value in (location_quality_audit.get("reasonCounts") if isinstance(location_quality_audit.get("reasonCounts"), dict) else {}).items()
+                if clean_text(key)
+            },
+            "examples": [
+                {
+                    "company": clean_text(item.get("company")),
+                    "title": clean_text(item.get("title")),
+                    "source": clean_text(item.get("source")),
+                    "jobLink": clean_text(item.get("jobLink")),
+                    "field": clean_text(item.get("field")),
+                    "reason": clean_text(item.get("reason")),
+                    "value": clean_text(item.get("value")),
+                }
+                for item in (location_quality_audit.get("examples") if isinstance(location_quality_audit.get("examples"), list) else [])[:20]
+                if isinstance(item, dict)
+            ],
+        },
         "sources": [normalize_source_report_row(row) for row in source_rows if isinstance(row, dict)],
         "outputs": {
             "json": clean_text(outputs.get("json")),

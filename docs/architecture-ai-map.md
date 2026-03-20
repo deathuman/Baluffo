@@ -26,8 +26,8 @@ admin bridge (local HTTP API): src/admin_bridge.py
 jobs feed + discovery/sync scripts: src/jobs_fetcher.py, src/source_discovery.py, src/source_sync.py
   -> source discovery: `import src.source_discovery` loads the package (src/source_discovery/);
       CLI and full run_discovery still delegate to the legacy script (source_discovery.py) via orchestrator.
-  -> Package modules: config, sheet_directory, web_search, provider_patterns, static_candidates,
-      scoring, io_runtime, reporting, probe, orchestrator.
+  -> Package modules: config, core, gamesmap, io_runtime, orchestrator, probe, provider_patterns,
+      reporting, schemas, scoring, sheet_directory, static_candidates, web_search.
 
 desktop launcher/runtime: src/ship/desktop_app/__init__.py
   -> spawns local site + bridge
@@ -45,13 +45,20 @@ runtime data roots:
 | Script | Location | Purpose |
 |--------|----------|---------|
 | `src/jobs_fetcher.py` | `src/` | Build unified jobs feed |
-| `src/source_discovery.py` | `src/` | Discover candidate sources |
-| `src/admin_bridge.py` | `src/` | Local admin HTTP server |
+| `src/source_discovery.py` | `src/` | Discover candidate sources (legacy CLI → delegates to package) |
+| `src/admin_bridge.py` | `src/` | Local admin HTTP API |
 | `src/jobs/pipeline.py` | `src/jobs/` | Core job processing |
+| `src/source_discovery/` | `src/source_discovery/` | Source discovery package (orchestrator, probe, web_search, etc.) |
+| `src/jobs/common/` | `src/jobs/common/` | Jobs package helpers (config, contracts, heuristics, parsing, etc.) |
+| `src/core/` | `src/core/` | Core schemas and contracts (Pydantic models) |
+| `src/shared/` | `src/shared/` | Shared utilities (regex, utils, exceptions) |
 | `scripts/orchestrator.py` | `scripts/` | Build/verify orchestration |
 | `scripts/build_ship_bundle.py` | `scripts/` | Create ship bundle |
 | `scripts/build_portable_exe.py` | `scripts/` | Create portable EXE |
 | `scripts/backup_e2e_validate.py` | `scripts/` | Validate backup flow |
+| `scripts/game_studios_sheet_funnel.py` | `scripts/` | Game studios sheet → registry funnel |
+| `scripts/benchmark_discovery_probe.py` | `scripts/` | Discovery probe benchmarking |
+| `src/scrapers/` | `src/scrapers/` | Scrapy runner and spiders (GenericCareersSpider, domain_profiles, providers) |
 
 For bridge API endpoints, see `docs/admin-bridge-api.md`.
 
@@ -101,6 +108,14 @@ For bridge API endpoints, see `docs/admin-bridge-api.md`.
 ### Bridge module (`src/bridge/`)
 Extracted from `admin_bridge.py` to reduce God Object complexity:
 
+- **`server/`**: HTTP server components
+  - `__init__.py`: Server package exports
+  - `httpd.py`: HTTP server implementation
+  - `handler.py`: Request handler (routes dispatch)
+  - `runtime_state.py`: Runtime state management (pipeline state, startup metrics, desktop session)
+
+- **`config.py`**: Bridge configuration helpers (RuntimeConfig, path resolution)
+
 - **`sync_state.py`**: State management for sync operations
   - `SYNC_STATE_LOCK`, `SYNC_CONFIG_LOCK`: Threading locks
   - `ACTIVE_SYNC_RUNS`, `ACTIVE_SYNC_THREADS`: Task tracking
@@ -119,6 +134,9 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
   - keeps pull/push run-history/status/logging assembly in one place
   - used by both `src.admin_bridge` compatibility wrappers and `SyncService`
 
+- **`registry_sync_flow.py`**: Registry auto-sync persistence/start flow
+  - `trigger_registry_auto_sync()`, `persist_registry_and_sync()`
+
 - **`registry_service.py`**: Registry business logic (active/pending/rejected)
   - `ensure_active_registry()`, `load_state()`, `persist_state()`, `normalize_state()`, `summarize_state()`
   - `move_entries()` helper
@@ -130,25 +148,41 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 - **`pipeline_service.py`**: Jobs pipeline orchestration and status payload
   - `start_task()` / `get_status_payload()`
 
+- **`ops_health.py`**: Health and alerts helpers
+  - `compute_health()`, `filter_alerts()`, `check_schedule()`
+
+- **`ops_api.py`**: Ops/report orchestration
+  - `failed_source_names_from_latest_report()`, `sync_history_from_reports()`, `compute_ops_health()`, `compute_fetcher_metrics()`
+  - keeps report/history/ops assembly out of `admin_bridge.py`
+
+- **`task_history.py`**: Run history and task-state persistence
+  - `TaskHistoryManager` (load/save/append/upsert run_history, prune_started_rows_for_type, clear_task_state)
+
+- **`run_history_api.py`**: Run history helpers
+  - `load_saved_run_history()`, `append_run_history_entry()`, `upsert_run_history_entry()`
+  - `task_running_from_state()`, `report_is_stale_in_progress()`
+
 - **`source_checker.py`**: Static source validation (check_static_source and helpers); used by admin bridge for source testing/validation.
 
-- **`task_history.py`**: Run history and task-state persistence; `TaskHistoryManager` (load/save/append/upsert run_history, prune_started_rows_for_type, clear_task_state). Admin bridge wires it via `_get_task_history_manager()` and resets it in `configure_runtime_paths`.
+- **`source_check_api.py`**: Source-check orchestration (`normalize_manual_static_studio_fields`, `trigger_source_check`); `admin_bridge.py` keeps thin wrappers for route/test stability.
 
-- **`html_extractor.py`**: Job-link extraction from HTML/scripts (_extract_embedded_job_urls, script URL extraction); used by admin bridge and static adapter.
+- **`source_check_fetch.py`**: Fetch helpers for source checking
+
+- **`source_check_http.py`**: HTTP fetch and URL helpers for source checking (`try_fetch_with_playwright`, `normalize_error_code`, `suggest_alternate_career_urls`, `discover_redirect_career_candidates`, `looks_like_browser_challenge_page`, `build_check_failure_details`); used by admin bridge when building callables for `source_checker.check_static_source`.
+
+- **`html_extractor.py`**: Job-link extraction from HTML/scripts (`_extract_embedded_job_urls`, script URL extraction); used by admin bridge and static adapter.
+
+- **`report_normalizer.py`**: Report normalization helpers
+
+- **`source_helpers.py`**: Source/URL helpers (`infer_studio_name_from_host`, `find_existing_source_by_url`, `find_existing_static_source_by_studio_domain`); used by add_manual_source and registry flows.
+
+- **`request_utils.py`**: Request/response helpers (`read_json_from_request`); used by admin_bridge handler for POST body.
+
+- **`api.py`**: `BridgeApi` composition object; now defaults registry identity/url helpers to `src.source_registry` so POST registry routes do not depend on entrypoint stubs for those basics.
 
 - **`routes/`**: HTTP route handlers extracted from `admin_bridge.py`
   - `routes/get_routes.py`: GET routes
   - `routes/post_routes.py`: POST routes
-
-- **`request_utils.py`**: Request/response helpers (`read_json_from_request`); used by admin_bridge handler for POST body.
-- **`api.py`**: `BridgeApi` composition object; now defaults registry identity/url helpers to `src.source_registry` so POST registry routes do not depend on entrypoint stubs for those basics.
-- **`source_check_api.py`**: Source-check orchestration (`normalize_manual_static_studio_fields`, `trigger_source_check`); `admin_bridge.py` keeps thin wrappers for route/test stability.
-- **`task_launch_api.py`**: Fetch/discovery task-launch orchestration (`run_background_script`, `build_fetcher_args_from_payload`); `admin_bridge.py` delegates immediately.
-- **`ops_api.py`**: Ops/report orchestration (`failed_source_names_from_latest_report`, `sync_history_from_reports`, `compute_ops_health`, `compute_fetcher_metrics`); keeps report/history/ops assembly out of `admin_bridge.py`.
-
-- **`source_helpers.py`**: Source/URL helpers (`infer_studio_name_from_host`, `find_existing_source_by_url`, `find_existing_static_source_by_studio_domain`); used by add_manual_source and registry flows.
-
-- **`source_check_http.py`**: HTTP fetch and URL helpers for source checking (`try_fetch_with_playwright`, `normalize_error_code`, `suggest_alternate_career_urls`, `discover_redirect_career_candidates`, `looks_like_browser_challenge_page`, `build_check_failure_details`); used by admin_bridge when building callables for `source_checker.check_static_source`.
 
 ### Remaining in `admin_bridge.py`
 - HTTP server + request handler class, plus wiring to route handlers
@@ -185,7 +219,7 @@ Responsibilities still in `admin_bridge.py` and where they are used:
 Further shrinkage: extract to bridge modules with injected deps; keep `api.xxx` callable in admin_bridge if routes need it (thin wrappers that delegate).
 
 ### Refactoring status (current)
-Backend refactoring is directionally strong and materially narrower than the early audit baseline, but not fully settled. **Done:** shared utils/regex/exceptions (`src/shared/`), bridge extractions (source_checker, task_history, html_extractor, runtime_state, run_history_api), jobs extractions (social/provider parsers, normalizers, text_utils, game_detection), pipeline helper extraction (`src/jobs/pipeline_bootstrap.py`, `src/jobs/pipeline_loader_selection.py`, `src/jobs/pipeline_runtime.py`), static adapter helper extraction (`src/jobs/adapters/static_helpers.py`), dead-code removal, coerce centralization; adapter validation uses `AdapterValidationError` from `src/exceptions.py`; **API client** (`frontend/shared/api-client.js`) for backend calls; **state hub** (`frontend/shared/state-hub.js`) for cross-module state (jobsFeedCount, jobsLastUpdated, savedCount, savedLastUpdated—new shared state can be added via new keys and set/read locations documented in that file); **shared UI components** in `frontend/shared/ui/`; **static plugin family** in `src/jobs/adapters/plugins/static/` (plugins selected by host/source_identity; core validation and adapter flow still enters through `src/jobs/adapters/static.py`, with dense internal behavior delegated to `static_helpers.py`). **How to add a static plugin:** add a module under `src/jobs/adapters/plugins/static/` with `can_handle(ctx)` and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`, then register it in `register.py` (see docstring there). New static sites are added by implementing such plugins; new shared frontend state by adding keys and wiring in state-hub. **Pydantic (Phase 2):** Core contracts are validated with Pydantic at pipeline output (`src/core/contracts.py` before writing `jobs-unified.json`) and at bridge boundaries (e.g. saved-jobs/save in `bridge/routes/post_routes.py`). Schemas: `src/core/schemas.py` (CanonicalJobSchema, SavedJobSchema, ManifestSchema). See `docs/DATA_CONTRACT.md` and `src/core/` for the runtime source of truth; new fields require schema + doc update.
+Backend refactoring is directionally strong and materially narrower than the early audit baseline, but not fully settled. **Done:** shared utils/regex/exceptions (`src/shared/`), bridge extractions (server/, api.py, ops_api.py, task_launch_api.py, report_normalizer.py, source_check_api.py, source_check_fetch.py, source_check_http.py, source_helpers.py, request_utils.py, registry_sync_flow.py, sync_task_flow.py), jobs extractions (social/provider parsers, normalizers, text_utils, game_detection), pipeline helper extraction (`src/jobs/pipeline_bootstrap.py`, `src/jobs/pipeline_loader_selection.py`, `src/jobs/pipeline_runtime.py`, `src/jobs/pipeline_stage_source_execution.py`), static adapter helper extraction (`src/jobs/adapters/static_helpers.py`), dead-code removal, coerce centralization; adapter validation uses `AdapterValidationError` from `src/exceptions.py`; **API client** (`frontend/shared/api-client.js`) for backend calls; **state hub** (`frontend/shared/state-hub.js`) for cross-module state (jobsFeedCount, jobsLastUpdated, savedCount, savedLastUpdated—new shared state can be added via new keys and set/read locations documented in that file); **shared UI components** in `frontend/shared/ui/`; **static plugin family** in `src/jobs/adapters/plugins/static/`; **jobs/common package** (`src/jobs/common/`) with config, contracts, heuristics, parsing, datetime_utils, diagnostics, fetch, http, legacy_runners, numbers, registry, registry_defaults, social, sources, url submodules; **core schemas** (`src/core/`) with Pydantic models (CanonicalJobSchema, SavedJobSchema, ManifestSchema) and contract validation at pipeline output and bridge boundaries. **How to add a static plugin:** add a module under `src/jobs/adapters/plugins/static/` with `can_handle(ctx)` and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`, then register it in `register.py` (see docstring there). New static sites are added by implementing such plugins; new shared frontend state by adding keys and wiring in state-hub. See `docs/DATA_CONTRACT.md` and `src/core/` for the runtime source of truth; new fields require schema + doc update.
 
 ### Transitional boundaries (allowed for now)
 
@@ -215,7 +249,9 @@ Backend refactoring is directionally strong and materially narrower than the ear
 - **Orchestration:** `src/jobs/adapters/static.py` — `run_static_studio_pages_source` (and shards), `run_scrapy_static_source` (from `static_scrapy.py`). For each source, host is derived from the first page URL; plugin is selected by `AdapterPluginContext(family="static", source_identity=host)`. Optional Playwright fallback for listing-page fetch only (see **Scraping pipeline** below).
 - **Internal helpers:** `src/jobs/adapters/static_helpers.py` owns report bootstrap, runtime config, cached fetch/time-budget behavior, detail-link heuristics, and detail-page processing. Keep new static internals there before growing `static.py` again.
 - **Scrapy path:** `src/jobs/adapters/static_scrapy.py` — subprocess runner, envelope parsing, job normalization; used when source type is scrapy_static. Sources come from the browser fallback queue and run with `use_browser=True` (Scrapy-Playwright when installed).
-- **Plugins:** `src/jobs/adapters/plugins/static/` — one module per site (e.g. `example_com.py`, `example_org.py`, `littlechicken.py`; `larian.py` exists but is unregistered so larian.com uses the fallback and its heuristics). Each provides `can_handle(ctx)` and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`. Registered in `register.py`.
+- **Plugins:** `src/jobs/adapters/plugins/static/` — one module per site. All plugins below are registered in `register.py`:
+  - `activision.py`, `blizzard.py`, `cdprojektred.py`, `climax.py`, `embark.py`, `example_com.py`, `example_org.py`, `globalstep.py`, `hrmos.py`, `jobvite.py`, `kojima.py`, `lionbridge.py`, `larian.py`, `littlechicken.py`, `milestone.py`, `naconstudiomilan.py`, `remedy.py`, `riot.py`, `sheet_studios.py`, `static_pilot.py`, `supercell.py`
+  - Each provides `can_handle(ctx)` and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`.
 - **To add a static plugin:** (1) Add a module under `src/jobs/adapters/plugins/static/` with `can_handle(ctx)` (e.g. `ctx.source_identity == "example.org"`) and `run(...)` that fetches/parses and returns `RawJob` dicts. (2) Register it in `register.py` with `default_registry.register(SimpleAdapterPlugin(name=..., family="static", priority=90, can_handle_fn=..., run_fn=...))`. (3) See `register.py` docstring and this map for the full contract.
 
 **Scraping pipeline and Playwright:** Flow (discovery → pipeline → static/scrapy_static → browser queue → Scrapy-Playwright), where Playwright is used (source check, discovery probe fallback, static listing fallback, Scrapy-Playwright), and how to compare job counts before/after: **docs/scraping-pipeline.md**.
@@ -256,8 +292,10 @@ Key stages:
 - **Sources:** Defined in `source-registry-active.json`, fetched by adapter type
 - **Adapters:** `src/jobs/adapters/` - fetch and parse each source type
 - **Pipeline:** `src/jobs/pipeline.py` - core processing
-- **Pipeline helpers:** `src/jobs/pipeline_bootstrap.py`, `src/jobs/pipeline_loader_selection.py`, `src/jobs/pipeline_runtime.py` - package-private orchestration support
-- **Jobs compatibility layer:** `src/jobs/common/__init__.py` - curated compatibility surface; prefer `src/jobs/common/config.py`, `fetch.py`, `http.py`, `social.py`, `sources.py`, `url.py` for package-internal imports
+- **Pipeline helpers:** `src/jobs/pipeline_bootstrap.py`, `src/jobs/pipeline_loader_selection.py`, `src/jobs/pipeline_runtime.py`, `src/jobs/pipeline_stage_source_execution.py` - package-private orchestration support
+- **Jobs package:** `src/jobs/` - main jobs module
+- **Jobs common package:** `src/jobs/common/` - shared helpers (config, contracts, heuristics, parsing, datetime_utils, diagnostics, fetch, http, legacy_runners, numbers, registry, registry_defaults, social, sources, url)
+- **Core schemas:** `src/core/` - Pydantic models (CanonicalJobSchema, SavedJobSchema, ManifestSchema)
 - **Dedup:** `src/jobs/dedup.py` - collapse duplicates
 - **Output:** `data/jobs-unified.*` - primary feed for Jobs UI
 

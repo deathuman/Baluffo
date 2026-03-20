@@ -58,33 +58,51 @@ That's it. Your data stays on your machine.
 python -m http.server 8080 --directory .
 
 # Generate jobs feed
-python -m src.jobs_fetcher
+python src/jobs_fetcher.py
 
 # Run admin bridge (for discovery/actions)
-python -m src.admin_bridge
+python src/admin_bridge.py
 ```
 
 ### Documentation
 
 - [Architecture Map](docs/architecture-ai-map.md) — scan-first guide for AI-assisted coding
 - [Admin Bridge API](docs/admin-bridge-api.md) — endpoint reference
-- [Local Setup](LOCAL_SETUP.md) — development environment setup
 - [Release Process](docs/RELEASE.md) — build and release guide
+- [Testing Guide](docs/testing.md) — test layout and run commands
+- [Scraping Pipeline](docs/scraping-pipeline.md) — Playwright and Scrapy flow
+- [Adapter Plugin Inventory](docs/adapter-plugin-inventory.md) — source loaders and static plugins
+- [Data Contracts](docs/DATA_CONTRACT.md) — data structures between Python and JS
 
 ### Project Structure
 
 ```
 .
-|- jobs.html                  # Jobs browser (main entry)
-|- saved.html                 # Saved jobs workspace
-|- admin.html                 # Source management console
+|- *.html                    # Page entry points (jobs.html, saved.html, admin.html)
 |- frontend/                  # ES module frontend code
-|- data/                      # Jobs feed outputs, source registries
+|  |- shared/                 # Shared UI components, API client, state hub
+|  |- jobs/                   # Jobs browser page
+|  |- saved/                  # Saved jobs page
+|  |- admin/                  # Admin console page
+|  |- local-data/             # Browser IndexedDB adapter
 |- src/
 |  |- jobs_fetcher.py         # Build unified jobs feed
-|  |- source_discovery.py     # Discover candidate sources
+|  |- source_discovery.py     # Discover candidate sources (legacy CLI)
 |  |- admin_bridge.py         # Local admin HTTP API
+|  |- bridge/                 # Bridge service modules (server/, api.py, ops_api.py, etc.)
+|  |- source_discovery/       # Source discovery package (orchestrator, probe, web_search, etc.)
+|  |- jobs/                   # Job pipeline and adapters
+|  |  |- adapters/            # Source adapters (static, provider, social)
+|  |  |  |- plugins/          # Adapter plugins (provider_api/, social/, static/)
+|  |  |- common/              # Jobs package helpers (config, contracts, heuristics, etc.)
+|  |- core/                   # Core schemas and contracts (Pydantic models)
+|  |- shared/                 # Shared utilities (regex, utils, exceptions)
+|  |- scrapers/               # Scrapy runner and spiders
+|  |- ship/                   # Desktop packaging
 |- scripts/                   # Build/orchestration scripts
+|- probes/                    # Development/testing probes
+|- docs/                      # Documentation
+|- data/                      # Jobs feed outputs, source registries
 ```
 
 ### Running Tests

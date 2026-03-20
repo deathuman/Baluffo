@@ -141,6 +141,23 @@ def test_post_routes_smoke_desktop_sign_in(tmp_path: Path) -> None:
     assert payload["user"]["name"] == "Alice"
 
 
+def test_post_routes_run_discovery_passes_payload_by_keyword(tmp_path: Path) -> None:
+    api = _make_api(tmp_path)
+    handler = _FakeHandler()
+    calls: List[Dict[str, Any]] = []
+
+    def _trigger_discovery_task(*, route_name: str, payload: Dict[str, Any] | None = None) -> tuple[int, Dict[str, Any]]:
+        calls.append({"route_name": route_name, "payload": payload})
+        return 200, {"started": True, "route": route_name, "preset": str((payload or {}).get("preset") or "")}
+
+    api.trigger_discovery_task = _trigger_discovery_task  # type: ignore[assignment]
+
+    assert handle_post(handler, api=api, path="/tasks/run-discovery", payload={"preset": "uncapped"}) is True
+    assert calls == [{"route_name": "/tasks/run-discovery", "payload": {"preset": "uncapped"}}]
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["started"] is True
+
+
 def test_bridge_api_defaults_expose_real_registry_identity_helpers(tmp_path: Path) -> None:
     api = _make_api(tmp_path)
     row = {"adapter": "static", "listing_url": "https://example.com/jobs?ref=1"}

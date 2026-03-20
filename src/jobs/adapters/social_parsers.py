@@ -208,6 +208,103 @@ def parse_reddit_json_payload(
     return out, low_conf_count
 
 
+def parse_reddit_html_payload(
+    html_text: str,
+    *,
+    subreddit: str,
+    min_confidence: int,
+    reject_for_hire_posts: bool,
+) -> Tuple[List[RawJob], int]:
+    """Parse Reddit HTML content for job posts when JSON and RSS fail."""
+    from bs4 import BeautifulSoup
+    
+    out: List[RawJob] = []
+    low_conf_count = 0
+    
+    try:
+        soup = BeautifulSoup(html_text, 'html.parser')
+        
+        # Find post containers - Reddit typically uses specific CSS classes
+        post_containers = soup.find_all(['div', 'article'], class_=lambda x: x and ('post' in x.lower() or 'link' in x.lower() or 'thing' in x.lower()))
+        
+        if not post_containers:
+            # Try more generic selectors if specific ones don't work
+            post_containers = soup.find_all(['div', 'article'])
+        
+        for container in post_containers:
+            title_elem = container.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a'])
+            title = ""
+            if title_elem:
+                title = _clean_text(title_elem.get_text())
+            
+            # Skip empty titles
+            if not title:
+                continue
+            
+            # Extract URL from post
+            link_elem = container.find('a', href=True)
+            link = ""
+            if link_elem:
+                href = _clean_text(link_elem.get('href'))
+                if href and (href.startswith('http') or href.startswith('/')):
+                    link = href if href.startswith('http') else f"https://www.reddit.com{href}"
+            
+            # Extract posted date
+            date_elem = container.find(['time', 'span'], class_=lambda x: x and ('date' in x.lower() or 'time' in x.lower() or 'ago' in x.lower()))
+            posted_at = ""
+            if date_elem:
+                posted_at = _clean_text(date_elem.get_text())
+            
+            # Extract author
+            author_elem = container.find(['span', 'a'], class_=lambda x: x and ('author' in x.lower() or 'user' in x.lower()))
+            author = ""
+            if author_elem:
+                author = _clean_text(author_elem.get_text())
+            
+            # Check if this looks like a job post
+            confidence = social_compute_confidence(
+                title,
+                link,
+                has_apply_url=bool(link),
+                has_remote_hint=False
+            )
+            
+            # Check for hiring keywords
+            title_lower = title.lower()
+            if any(keyword in title_lower for keyword in SOCIAL_HIRING_KEYWORDS):
+                confidence += 20
+            elif any(keyword in title_lower for keyword in SOCIAL_FOR_HIRE_KEYWORDS):
+                if reject_for_hire_posts:
+                    continue
+                confidence -= 30
+            
+            if confidence < min_confidence:
+                low_conf_count += 1
+                continue
+            
+            # Extract company name
+            company = social_infer_company(title, link)
+            
+            # Create job entry
+            job_entry = RawJob(
+                title=title,
+                company=company,
+                job_link=link,
+                source="social_reddit",
+                source_job_id=f"html:{subreddit}:{hash(title)}",
+                posted_at=posted_at,
+                adapter="social",
+                studio=subreddit,
+            )
+            out.append(job_entry)
+            
+    except Exception as exc:
+        # If HTML parsing fails, return empty results
+        pass
+    
+    return out, low_conf_count
+
+
 def parse_reddit_rss_payload(
     rss_text: str,
     *,

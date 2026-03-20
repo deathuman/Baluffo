@@ -11,6 +11,8 @@ from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import AdapterPluginContext, SimpleAdapterPlugin
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, parse_teamtailor_listing_links
 from src.jobs.common.config import GREENHOUSE_JOBS_URL_TEMPLATE
+from src.jobs.state import get_incremental_cache_decision
+from src.jobs.transport import conditional_revalidate_url
 from src.jobs.models import RawJob
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.registry import registry_entries
@@ -19,7 +21,27 @@ from src.jobs.text_utils import clean_text
 _REGISTERED = False
 
 
-def _run_greenhouse_boards(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def _normalize_ashby_board_url(url: str) -> str:
+    text = clean_text(url)
+    if not text:
+        return ""
+    parsed = urlparse(text)
+    path = parsed.path.rstrip("/")
+    if path.lower().endswith("/jobs"):
+        normalized = parsed._replace(path=path[:-5] or "/", query="", fragment="")
+        return normalized.geturl().rstrip("/")
+    return text
+
+
+def _run_greenhouse_boards(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    source_state_rows: Dict[str, Dict[str, object]] | None = None,
+    force_refresh_all: bool = False,
+) -> List[RawJob]:
     jobs: List[RawJob] = []
     errors: List[str] = []
     details: List[Dict[str, object]] = []
@@ -39,6 +61,40 @@ def _run_greenhouse_boards(*, fetch_text: Callable[[str, int], str], timeout_s: 
             "keptCount": 0,
             "error": "",
         }
+        cache_decision = get_incremental_cache_decision(
+            entry_report["name"],
+            source_state_rows or {},
+            adapter="greenhouse",
+            force_refresh_all=force_refresh_all,
+        )
+        entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
+        entry_report["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        if entry_report["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
+            entry_report["status"] = "excluded"
+            entry_report["error"] = entry_report["cacheDecisionReason"]
+            entry_report["exclusionReason"] = f"cache_{entry_report['cacheDecisionReason']}"
+            details.append(entry_report)
+            continue
+        if entry_report["cacheDecision"] == "revalidate_only":
+            state_entry = (source_state_rows or {}).get(entry_report["name"]) if isinstance(source_state_rows, dict) else {}
+            revalidate = conditional_revalidate_url(
+                url,
+                timeout_s,
+                etag=clean_text((state_entry or {}).get("lastHttpEtag")),
+                last_modified=clean_text((state_entry or {}).get("lastHttpLastModified")),
+            )
+            entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
+            if clean_text(revalidate.get("etag")):
+                entry_report["httpEtag"] = clean_text(revalidate.get("etag"))
+            if clean_text(revalidate.get("lastModified")):
+                entry_report["httpLastModified"] = clean_text(revalidate.get("lastModified"))
+            if bool(revalidate.get("notModified")):
+                entry_report["status"] = "excluded"
+                entry_report["error"] = "not_modified_304"
+                entry_report["exclusionReason"] = "cache_not_modified_304"
+                entry_report["cacheDecisionReason"] = "not_modified_304"
+                details.append(entry_report)
+                continue
         try:
             text = deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)
@@ -62,7 +118,15 @@ def _run_greenhouse_boards(*, fetch_text: Callable[[str, int], str], timeout_s: 
     return []
 
 
-def _run_teamtailor_sources(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def _run_teamtailor_sources(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    source_state_rows: Dict[str, Dict[str, object]] | None = None,
+    force_refresh_all: bool = False,
+) -> List[RawJob]:
     jobs: List[RawJob] = []
     errors: List[str] = []
     seen_links = set()
@@ -84,11 +148,45 @@ def _run_teamtailor_sources(*, fetch_text: Callable[[str, int], str], timeout_s:
             "keptCount": 0,
             "error": "",
         }
+        cache_decision = get_incremental_cache_decision(
+            source_name,
+            source_state_rows or {},
+            adapter="teamtailor",
+            force_refresh_all=force_refresh_all,
+        )
+        entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
+        entry_report["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
         if not listing_url:
             entry_report["status"] = "error"
             entry_report["error"] = "missing listing_url"
             details.append(entry_report)
             continue
+        if entry_report["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
+            entry_report["status"] = "excluded"
+            entry_report["error"] = entry_report["cacheDecisionReason"]
+            entry_report["exclusionReason"] = f"cache_{entry_report['cacheDecisionReason']}"
+            details.append(entry_report)
+            continue
+        if entry_report["cacheDecision"] == "revalidate_only":
+            state_entry = (source_state_rows or {}).get(source_name) if isinstance(source_state_rows, dict) else {}
+            revalidate = conditional_revalidate_url(
+                listing_url,
+                timeout_s,
+                etag=clean_text((state_entry or {}).get("lastHttpEtag")),
+                last_modified=clean_text((state_entry or {}).get("lastHttpLastModified")),
+            )
+            entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
+            if clean_text(revalidate.get("etag")):
+                entry_report["httpEtag"] = clean_text(revalidate.get("etag"))
+            if clean_text(revalidate.get("lastModified")):
+                entry_report["httpLastModified"] = clean_text(revalidate.get("lastModified"))
+            if bool(revalidate.get("notModified")):
+                entry_report["status"] = "excluded"
+                entry_report["error"] = "not_modified_304"
+                entry_report["exclusionReason"] = "cache_not_modified_304"
+                entry_report["cacheDecisionReason"] = "not_modified_304"
+                details.append(entry_report)
+                continue
 
         try:
             listing_html = deps.fetch_with_retries(listing_url, fetch_text, timeout_s, retries, backoff_s)
@@ -161,6 +259,8 @@ def _run_json_feed_sources(
     timeout_s: int,
     retries: int,
     backoff_s: float,
+    source_state_rows: Dict[str, Dict[str, object]] | None = None,
+    force_refresh_all: bool = False,
 ) -> List[RawJob]:
     deps = runtime_deps.facade()
     jobs: List[RawJob] = []
@@ -179,11 +279,45 @@ def _run_json_feed_sources(
             "keptCount": 0,
             "error": "",
         }
+        cache_decision = get_incremental_cache_decision(
+            source_name,
+            source_state_rows or {},
+            adapter=adapter_name,
+            force_refresh_all=force_refresh_all,
+        )
+        entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
+        entry_report["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
         if not endpoint:
             entry_report["status"] = "error"
             entry_report["error"] = default_error
             details.append(entry_report)
             continue
+        if entry_report["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
+            entry_report["status"] = "excluded"
+            entry_report["error"] = entry_report["cacheDecisionReason"]
+            entry_report["exclusionReason"] = f"cache_{entry_report['cacheDecisionReason']}"
+            details.append(entry_report)
+            continue
+        if entry_report["cacheDecision"] == "revalidate_only":
+            state_entry = (source_state_rows or {}).get(source_name) if isinstance(source_state_rows, dict) else {}
+            revalidate = conditional_revalidate_url(
+                endpoint,
+                timeout_s,
+                etag=clean_text((state_entry or {}).get("lastHttpEtag")),
+                last_modified=clean_text((state_entry or {}).get("lastHttpLastModified")),
+            )
+            entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
+            if clean_text(revalidate.get("etag")):
+                entry_report["httpEtag"] = clean_text(revalidate.get("etag"))
+            if clean_text(revalidate.get("lastModified")):
+                entry_report["httpLastModified"] = clean_text(revalidate.get("lastModified"))
+            if bool(revalidate.get("notModified")):
+                entry_report["status"] = "excluded"
+                entry_report["error"] = "not_modified_304"
+                entry_report["exclusionReason"] = "cache_not_modified_304"
+                entry_report["cacheDecisionReason"] = "not_modified_304"
+                details.append(entry_report)
+                continue
         try:
             text = deps.fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)
@@ -309,6 +443,8 @@ def _run_html_board_sources(
     timeout_s: int,
     retries: int,
     backoff_s: float,
+    source_state_rows: Dict[str, Dict[str, object]] | None = None,
+    force_refresh_all: bool = False,
 ) -> List[RawJob]:
     deps = runtime_deps.facade()
     jobs: List[RawJob] = []
@@ -327,11 +463,45 @@ def _run_html_board_sources(
             "keptCount": 0,
             "error": "",
         }
+        cache_decision = get_incremental_cache_decision(
+            source_name,
+            source_state_rows or {},
+            adapter=adapter_name,
+            force_refresh_all=force_refresh_all,
+        )
+        entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
+        entry_report["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
         if not board_url:
             entry_report["status"] = "error"
             entry_report["error"] = default_error
             details.append(entry_report)
             continue
+        if entry_report["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
+            entry_report["status"] = "excluded"
+            entry_report["error"] = entry_report["cacheDecisionReason"]
+            entry_report["exclusionReason"] = f"cache_{entry_report['cacheDecisionReason']}"
+            details.append(entry_report)
+            continue
+        if entry_report["cacheDecision"] == "revalidate_only":
+            state_entry = (source_state_rows or {}).get(source_name) if isinstance(source_state_rows, dict) else {}
+            revalidate = conditional_revalidate_url(
+                board_url,
+                timeout_s,
+                etag=clean_text((state_entry or {}).get("lastHttpEtag")),
+                last_modified=clean_text((state_entry or {}).get("lastHttpLastModified")),
+            )
+            entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
+            if clean_text(revalidate.get("etag")):
+                entry_report["httpEtag"] = clean_text(revalidate.get("etag"))
+            if clean_text(revalidate.get("lastModified")):
+                entry_report["httpLastModified"] = clean_text(revalidate.get("lastModified"))
+            if bool(revalidate.get("notModified")):
+                entry_report["status"] = "excluded"
+                entry_report["error"] = "not_modified_304"
+                entry_report["exclusionReason"] = "cache_not_modified_304"
+                entry_report["cacheDecisionReason"] = "not_modified_304"
+                details.append(entry_report)
+                continue
         try:
             text = deps.fetch_with_retries(board_url, fetch_text, timeout_s, retries, backoff_s)
             parsed = parse_html(text, board_url, studio)
@@ -370,6 +540,10 @@ def _html_board_plugin(adapter_name: str) -> SimpleAdapterPlugin:
         default_error = "missing board_url"
         parse_html = _provider_parsers.parse_breezy_jobs_html
         build_url = lambda source: clean_text(source.get("board_url"))
+    elif adapter_name == "ashby":
+        default_error = "missing board_url"
+        parse_html = _provider_parsers.parse_ashby_jobs_from_html
+        build_url = lambda source: _normalize_ashby_board_url(clean_text(source.get("board_url")))
     else:
         default_error = "missing board_url"
         parse_html = _provider_parsers.parse_jazzhr_jobs_html
@@ -421,4 +595,5 @@ def ensure_registered() -> None:
     default_registry.register(_json_feed_plugin("pinpoint"))
     default_registry.register(_html_board_plugin("breezy"))
     default_registry.register(_html_board_plugin("jazzhr"))
+    default_registry.register(_html_board_plugin("ashby"))
 

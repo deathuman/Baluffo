@@ -97,6 +97,14 @@ export function createAdminDiscoveryController({
     state.discoveryOptimisticRun = null;
   }
 
+  function attachToActiveDiscoveryRun(runMeta = null) {
+    if (state.adminBusyState.discoveryWatch) return;
+    if (runMeta && typeof runMeta === "object" && !Array.isArray(runMeta)) {
+      setOptimisticDiscoveryRun(runMeta);
+    }
+    startDiscoveryCompletionWatch();
+  }
+
   function appendDiscoveryLog(message, level = "info") {
     if (!refs.adminDiscoveryLogEl) return;
     const event = createLogEvent("discovery", message, level);
@@ -325,7 +333,7 @@ export function createAdminDiscoveryController({
     scheduleDiscoveryCompletionPoll(state.discoveryReportPollIntervalMs);
   }
 
-  async function runDiscoveryTask() {
+  async function runDiscoveryTask(runOptions = {}) {
     if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
       showToast("Discovery operation already in progress.", "info");
       return;
@@ -336,10 +344,15 @@ export function createAdminDiscoveryController({
     updateDiscoveryProgressFromReport(null, { running: true });
     appendDiscoveryLog("Triggering source discovery task...");
     try {
-      const result = await postBridge("/tasks/run-discovery", {});
+      const payload = (runOptions && typeof runOptions === "object" && !Array.isArray(runOptions))
+        ? { ...runOptions }
+        : {};
+      const result = await postBridge("/tasks/run-discovery", payload);
       setOptimisticDiscoveryRun(result || {});
-      appendDiscoveryLog("Source discovery task started.", "success");
-      showToast("Source discovery started.", "success");
+      const preset = String(result?.preset || payload?.preset || "default").trim().toLowerCase();
+      const isUncapped = preset === "uncapped";
+      appendDiscoveryLog(isUncapped ? "Source discovery uncapped task started." : "Source discovery task started.", "success");
+      showToast(isUncapped ? "Source discovery uncapped run started." : "Source discovery started.", "success");
       startDiscoveryCompletionWatch();
       loadOpsHealthData().catch(() => {});
       scheduleOpsHealthPolling(250);
@@ -371,6 +384,7 @@ export function createAdminDiscoveryController({
     loadDiscoveryLogChunk,
     setDiscoveryLogPlaceholder,
     clearOptimisticDiscoveryRun,
+    attachToActiveDiscoveryRun,
     startDiscoveryCompletionWatch,
     stopDiscoveryCompletionWatch,
     runDiscoveryTask,

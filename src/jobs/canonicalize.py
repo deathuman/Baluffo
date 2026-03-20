@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -26,7 +27,7 @@ from src.jobs.common.url import is_supported_redirect_url
 from src.jobs.models import CanonicalJob, RawJob
 from src.jobs.transport import PooledRedirectResolver
 from src.jobs.normalizers import normalize_country, normalize_sector, normalize_work_type
-from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.jobs.text_utils import clean_text, norm_text, normalize_url, sanitize_location_text, sanitize_public_text
 from src.shared.utils import env_flag
 
 UNKNOWN_COMPANY_LABEL = common_config.UNKNOWN_COMPANY_LABEL
@@ -39,6 +40,62 @@ TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
 DEFAULT_CANONICAL_STRICT_URL = common_config.DEFAULT_CANONICAL_STRICT_URL
 REDIRECT_RESOLUTION_SKIP_SOURCES = {"gracklehq"}
+
+_LOCATION_AUDIT_LOCK = threading.Lock()
+_LOCATION_AUDIT_FIELD_COUNTS: Counter[str] = Counter()
+_LOCATION_AUDIT_REASON_COUNTS: Counter[str] = Counter()
+_LOCATION_AUDIT_EXAMPLES: List[Dict[str, Any]] = []
+
+
+def reset_location_quality_audit() -> None:
+    with _LOCATION_AUDIT_LOCK:
+        _LOCATION_AUDIT_FIELD_COUNTS.clear()
+        _LOCATION_AUDIT_REASON_COUNTS.clear()
+        _LOCATION_AUDIT_EXAMPLES.clear()
+
+
+def snapshot_location_quality_audit(*, total_rows: int = 0) -> Dict[str, Any]:
+    with _LOCATION_AUDIT_LOCK:
+        return {
+            "totalRows": max(0, int(total_rows or 0)),
+            "invalidLocationFieldCount": int(sum(_LOCATION_AUDIT_FIELD_COUNTS.values())),
+            "fieldCounts": dict(_LOCATION_AUDIT_FIELD_COUNTS),
+            "reasonCounts": dict(_LOCATION_AUDIT_REASON_COUNTS),
+            "examples": list(_LOCATION_AUDIT_EXAMPLES[:20]),
+        }
+
+
+def _record_location_quality_issue(
+    *,
+    field_name: str,
+    reason: str,
+    raw_value: Any,
+    source: str,
+    company: str,
+    title: str,
+    job_link: Any,
+) -> None:
+    clean_reason = clean_text(reason)
+    clean_field = clean_text(field_name)
+    if not clean_reason or not clean_field:
+        return
+    with _LOCATION_AUDIT_LOCK:
+        _LOCATION_AUDIT_FIELD_COUNTS[clean_field] += 1
+        _LOCATION_AUDIT_REASON_COUNTS[clean_reason] += 1
+        if len(_LOCATION_AUDIT_EXAMPLES) < 20:
+            _LOCATION_AUDIT_EXAMPLES.append(
+                {
+                    "company": clean_text(company),
+                    "title": clean_text(title),
+                    "source": clean_text(source),
+                    "jobLink": clean_text(job_link),
+                    "field": clean_field,
+                    "reason": clean_reason,
+                    "value": clean_text(raw_value),
+                }
+            )
+
+
 def canonicalize_job_with_reason(
     raw: Any,
     *,
@@ -49,8 +106,8 @@ def canonicalize_job_with_reason(
 ) -> Tuple[Optional[CanonicalJob], str]:
     if not isinstance(raw, dict):
         return None, "invalid_payload"
-    title = clean_text(raw.get("title"))
-    company = clean_text(raw.get("company"))
+    title = sanitize_public_text(raw.get("title"))
+    company = sanitize_public_text(raw.get("company"))
     if not title:
         return None, "missing_title"
     company = normalize_company_value(company)
@@ -73,7 +130,29 @@ def canonicalize_job_with_reason(
         return None, "invalid_url"
 
     adapter = clean_text(raw.get("adapter"))
-    studio = clean_text(raw.get("studio"))
+    studio = sanitize_public_text(raw.get("studio"))
+    city_value, city_reason = sanitize_location_text(raw.get("city"), field_name="city")
+    country_value, country_reason = sanitize_location_text(raw.get("country"), field_name="country")
+    if city_reason:
+        _record_location_quality_issue(
+            field_name="city",
+            reason=city_reason,
+            raw_value=raw.get("city"),
+            source=source,
+            company=company,
+            title=title,
+            job_link=normalized_link,
+        )
+    if country_reason:
+        _record_location_quality_issue(
+            field_name="country",
+            reason=country_reason,
+            raw_value=raw.get("country"),
+            source=source,
+            company=company,
+            title=title,
+            job_link=normalized_link,
+        )
 
     def normalize_source_bundle(value: Any) -> List[Dict[str, Any]]:
         entries = value
@@ -95,7 +174,7 @@ def canonicalize_job_with_reason(
                 "jobLink": normalize_url(item.get("jobLink")),
                 "postedAt": to_iso(item.get("postedAt")),
                 "adapter": clean_text(item.get("adapter")),
-                "studio": clean_text(item.get("studio")),
+                "studio": sanitize_public_text(item.get("studio")),
             }
             token = "|".join(
                 [
@@ -123,17 +202,19 @@ def canonicalize_job_with_reason(
             }
         ]
 
+    sanitized_contract_type = sanitize_public_text(raw.get("contractType"))
+
     normalized = CanonicalJob.from_mapping(
         {
             "id": "",
             "title": title,
             "company": company,
-            "city": clean_text(raw.get("city")),
-            "country": normalize_country(raw.get("country")),
-            "workType": normalize_work_type(raw.get("workType")),
-            "contractType": normalize_contract_type(raw.get("contractType"), title),
+            "city": city_value,
+            "country": "" if country_reason else normalize_country(country_value),
+            "workType": normalize_work_type(sanitize_public_text(raw.get("workType")), title),
+            "contractType": normalize_contract_type(sanitized_contract_type, title),
             "jobLink": normalized_link,
-            "sector": normalize_sector(raw.get("sector"), company, title),
+            "sector": normalize_sector(sanitize_public_text(raw.get("sector")), company, title),
             "profession": map_profession(title),
             "companyType": classify_company_type(company, title),
             "description": f"{title} at {company}",

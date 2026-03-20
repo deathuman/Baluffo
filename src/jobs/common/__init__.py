@@ -830,6 +830,7 @@ def run_pipeline(
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
     show_progress: bool = True,
     selection_exclusions: Optional[List[Dict[str, Any]]] = None,
+    force_refresh_all: bool = False,
 ) -> Dict[str, Any]:
     from src.jobs import pipeline as pipeline_pkg
 
@@ -860,6 +861,7 @@ def run_pipeline(
         static_detail_concurrency=static_detail_concurrency,
         show_progress=show_progress,
         selection_exclusions=selection_exclusions,
+        force_refresh_all=force_refresh_all,
     )
 
 

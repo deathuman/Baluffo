@@ -19,6 +19,7 @@ from src.jobs.common import config as common_config
 from src.jobs.common.diagnostics import SOURCE_DIAGNOSTICS, set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
+from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 
 
@@ -38,11 +39,73 @@ def run_social_reddit_source(
     retries: int,
     backoff_s: float,
     social_config: Dict[str, Any],
+    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    force_refresh_all: bool = False,
 ) -> List[RawJob]:
+    deps = runtime_deps.facade()
+    cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
+    if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
+        deps.set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
+        return []
+
     ensure_social_plugins(social_config=social_config)
     plugin, _selection = default_registry.select(AdapterPluginContext(family="social", adapter_key="social_reddit"))
-    rows = plugin.run(fetch_text=fetch_text, timeout_s=timeout_s, retries=retries, backoff_s=backoff_s)
-    return list(rows)
+    subs = [clean_text(item) for item in (cfg.get("subreddits") or []) if clean_text(item)]
+    if not subs:
+        deps.set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
+        return []
+
+    details: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    rows: List[RawJob] = []
+
+    for sub in subs:
+        entry = {
+            "adapter": "social",
+            "studio": f"reddit/{sub}",
+            "name": f"reddit:r/{sub}",
+            "status": "ok",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "error": "",
+        }
+        cache_decision = get_incremental_cache_decision(
+            entry["name"],
+            source_state_rows or {},
+            adapter="social",
+            force_refresh_all=force_refresh_all,
+        )
+        entry["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
+        entry["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        if entry["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
+            entry["status"] = "excluded"
+            entry["error"] = entry["cacheDecisionReason"]
+            entry["exclusionReason"] = f"cache_{entry['cacheDecisionReason']}"
+            details.append(entry)
+            continue
+        try:
+            sub_rows = plugin.run(
+                fetch_text=fetch_text,
+                timeout_s=timeout_s,
+                retries=retries,
+                backoff_s=backoff_s,
+                subreddits=[sub],
+            )
+            entry["fetchedCount"] = len(sub_rows)
+            entry["keptCount"] = len(sub_rows)
+            rows.extend(sub_rows)
+        except Exception as exc:  # noqa: BLE001
+            entry["status"] = "error"
+            entry["error"] = str(exc)
+            errors.append(f"reddit:{sub}: {exc}")
+        details.append(entry)
+
+    deps.set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=details, partial_errors=errors)
+    if rows:
+        return rows
+    if errors:
+        raise AdapterValidationError.from_errors(errors)
+    return []
 
 
 def run_social_x_source(
@@ -52,6 +115,8 @@ def run_social_x_source(
     retries: int,
     backoff_s: float,
     social_config: Dict[str, Any],
+    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    force_refresh_all: bool = False,
 ) -> List[RawJob]:
     deps = runtime_deps.facade()
     cfg = social_config.get("x") if isinstance(social_config.get("x"), dict) else {}
@@ -86,8 +151,22 @@ def run_social_x_source(
 
     for query in queries:
         entry = {"adapter": "social", "studio": "x", "name": f"x:{query}", "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
+        cache_decision = get_incremental_cache_decision(
+            entry["name"],
+            source_state_rows or {},
+            adapter="social",
+            force_refresh_all=force_refresh_all,
+        )
+        entry["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
+        entry["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
         parsed_rows: List[RawJob] = []
         low_conf_query = 0
+        if entry["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
+            entry["status"] = "excluded"
+            entry["error"] = entry["cacheDecisionReason"]
+            entry["exclusionReason"] = f"cache_{entry['cacheDecisionReason']}"
+            details.append(entry)
+            continue
         try:
             payload: Any = {}
             if bool(api_cfg.get("enabled", True)) and bearer and endpoint:
@@ -167,6 +246,8 @@ def run_social_mastodon_source(
     retries: int,
     backoff_s: float,
     social_config: Dict[str, Any],
+    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    force_refresh_all: bool = False,
 ) -> List[RawJob]:
     deps = runtime_deps.facade()
     cfg = social_config.get("mastodon") if isinstance(social_config.get("mastodon"), dict) else {}
@@ -200,6 +281,20 @@ def run_social_mastodon_source(
                 "keptCount": 0,
                 "error": "",
             }
+            cache_decision = get_incremental_cache_decision(
+                entry["name"],
+                source_state_rows or {},
+                adapter="social",
+                force_refresh_all=force_refresh_all,
+            )
+            entry["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
+            entry["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+            if entry["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
+                entry["status"] = "excluded"
+                entry["error"] = entry["cacheDecisionReason"]
+                entry["exclusionReason"] = f"cache_{entry['cacheDecisionReason']}"
+                details.append(entry)
+                continue
             try:
                 url = f"{instance}/api/v1/timelines/tag/{quote(tag, safe='')}?limit={max_posts}"
                 text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)

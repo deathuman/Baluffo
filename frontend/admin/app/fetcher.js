@@ -26,6 +26,13 @@ export const FETCHER_PRESET_META = {
     title: "Run incremental mode: skip recently successful sources based on TTL and reuse existing output.",
     ariaLabel: "Run incremental fetcher"
   },
+  uncapped: {
+    preset: "uncapped",
+    buttonKey: "uncapped",
+    busyLabel: "Uncapped Running...",
+    title: "Run the fetcher aggressively: bypass freshness skips, circuit-breaker quarantine, and admin-imposed fetch caps.",
+    ariaLabel: "Run fetcher uncapped"
+  },
   force_full: {
     preset: "force_full",
     buttonKey: "force",
@@ -97,6 +104,7 @@ export function createAdminFetcherController({
     return [
       { preset: "default", el: refs.adminRunFetcherBtnEl },
       { preset: "incremental", el: refs.adminRunFetcherIncrementalBtnEl },
+      { preset: "uncapped", el: refs.adminRunFetcherUncappedBtnEl },
       { preset: "force_full", el: refs.adminRunFetcherForceBtnEl },
       { preset: "retry_failed", el: refs.adminRetryFailedBtnEl }
     ];

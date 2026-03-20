@@ -13,6 +13,8 @@ async function expectJobsPageReady(page) {
 
 async function signInWithProfile(page, buttonSelector, profileName, expectedFocusSelector) {
   await page.click(buttonSelector);
+  await page.waitForTimeout(1000);
+
   const profileInput = page.locator("#local-auth-name-input");
   await expect(profileInput).toBeVisible();
   await profileInput.fill(profileName);

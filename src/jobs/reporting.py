@@ -58,6 +58,18 @@ def build_pipeline_summary(
 ) -> Dict[str, Any]:
     deduped_payload = [row.to_dict() if isinstance(row, CanonicalJob) else dict(row) for row in deduped_rows]
     lifecycle = lifecycle_counts_map or {}
+    cache_rows: List[Dict[str, Any]] = []
+    for row in source_reports:
+        if not isinstance(row, dict):
+            continue
+        cache_rows.append(row)
+        details = row.get("details") if isinstance(row.get("details"), list) else []
+        cache_rows.extend([item for item in details if isinstance(item, dict)])
+    cache_decision_counts: Dict[str, int] = {}
+    for row in cache_rows:
+        decision = clean_text(row.get("cacheDecision"))
+        if decision:
+            cache_decision_counts[decision] = int(cache_decision_counts.get(decision, 0)) + 1
     raw_fetched = int(sum(int(row.get("fetchedCount") or 0) for row in source_reports if norm_text(row.get("status")) == "ok"))
     canonical_kept = int(canonical_count)
     canonical_dropped = max(0, raw_fetched - canonical_kept)
@@ -91,6 +103,12 @@ def build_pipeline_summary(
         "successfulSources": sum(1 for row in source_reports if row["status"] == "ok"),
         "failedSources": sum(1 for row in source_reports if row["status"] == "error"),
         "excludedSources": sum(1 for row in source_reports if row["status"] == "excluded"),
+        "cacheSkippedCount": sum(1 for row in cache_rows if norm_text(row.get("status")) == "excluded" and clean_text(row.get("cacheDecision")) in {"skip_fresh", "cooldown_skip"}),
+        "revalidatedCount": sum(1 for row in cache_rows if clean_text(row.get("cacheDecision")) == "revalidate_only"),
+        "notModifiedCount": sum(1 for row in cache_rows if clean_text(row.get("cacheDecisionReason")) == "not_modified_304"),
+        "listingOnlyCount": sum(1 for row in cache_rows if clean_text(row.get("cacheDecision")) == "listing_only"),
+        "detailSkippedByListingFingerprintCount": sum(1 for row in cache_rows if bool(row.get("detailSkippedByListingFingerprint"))),
+        "cacheDecisionCounts": cache_decision_counts,
         "activeSourceCount": active_source_count,
         "pendingSourceCount": pending_source_count,
         "newlyApprovedSinceLastRun": newly_approved_since_last_run,

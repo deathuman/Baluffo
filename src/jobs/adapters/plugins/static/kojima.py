@@ -8,7 +8,7 @@ from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
-from src.jobs.text_utils import clean_text, normalize_url
+from src.jobs.text_utils import clean_text, normalize_url, sanitize_public_text
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
@@ -151,18 +151,19 @@ def _parse_kojima_listing_rows(*, html: str, base_url: str, company: str, source
             continue
         if path.lower() in excluded_paths:
             continue
-        text = strip_html_text(inner)
+        text = sanitize_public_text(strip_html_text(inner))
         if not role_pattern.search(text):
             continue
-        lines = [clean_text(part) for part in re.split(r"[\r\n]+", re.sub(r"(?is)<br\s*/?>", "\n", inner)) if clean_text(part)]
-        title = lines[0] if lines else clean_text(text.split("  ")[0])
+        lines = [sanitize_public_text(part) for part in re.split(r"[\r\n]+", re.sub(r"(?is)<br\s*/?>", "\n", inner))]
+        lines = [part for part in lines if part]
+        title = sanitize_public_text(lines[0] if lines else text.split("  ")[0])
         city = ""
         country = ""
         if len(lines) >= 3 and "," in lines[-1]:
-            city = clean_text(lines[-1].split(",", 1)[0])
-            country = clean_text(lines[-1].split(",", 1)[1]) or "Japan"
+            city = sanitize_public_text(lines[-1].split(",", 1)[0])
+            country = sanitize_public_text(lines[-1].split(",", 1)[1]) or "Japan"
         elif len(lines) >= 3:
-            city = clean_text(lines[-1])
+            city = sanitize_public_text(lines[-1])
         source_job_id = path.rstrip("/").split("/")[-1] or f"{source_id}-{len(rows)+1}"
         rows.append(
             {

@@ -96,3 +96,308 @@
 {"ts": "2026-03-19T16:13:29.647492+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
 {"ts": "2026-03-19T16:13:29.647597+00:00", "event": "admin_pin_gate_ready", "payload": {"elapsedMs": 3}}
 {"ts": "2026-03-19T16:13:29.648722+00:00", "event": "admin_first_interactive", "payload": {"reason": "pin_gate_ready", "elapsedMs": 3}}
+{"ts": "2026-03-20T14:17:14.580010+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T14:17:14.580153+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:17:18.196860+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T14:17:18.198523+00:00", "event": "admin_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-20T14:17:18.198880+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-20T14:20:14.798833+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T14:20:14.798959+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:20:15.833644+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 0}}
+{"ts": "2026-03-20T14:20:15.833772+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:20:21.570091+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:20:21.571302+00:00", "event": "admin_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:20:21.572003+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 5}}
+{"ts": "2026-03-20T14:21:38.786871+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T14:21:38.786988+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:21:43.532798+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:21:43.533339+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T14:21:43.534991+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-20T14:24:30.029003+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T14:24:30.029163+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:24:31.049503+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 0}}
+{"ts": "2026-03-20T14:24:31.049637+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:24:36.793405+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:24:36.793958+00:00", "event": "admin_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:24:36.794251+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 5}}
+{"ts": "2026-03-20T14:25:21.441018+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T14:25:21.441143+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T14:25:22.472005+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 0}}
+{"ts": "2026-03-20T14:25:22.472126+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:25:28.205310+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:25:28.205935+00:00", "event": "admin_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:25:28.206315+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 5}}
+{"ts": "2026-03-20T14:27:07.927703+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T14:27:07.927833+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T14:27:08.957305+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 0}}
+{"ts": "2026-03-20T14:27:08.957519+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:27:14.696978+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:27:14.697517+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T14:27:14.697818+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-20T14:27:58.023747+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T14:27:58.023872+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:27:59.044359+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 0}}
+{"ts": "2026-03-20T14:27:59.044485+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:28:04.813278+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:28:04.813539+00:00", "event": "admin_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:28:04.814612+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-20T14:28:59.548754+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T14:28:59.548887+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:29:00.570638+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 0}}
+{"ts": "2026-03-20T14:29:00.570776+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T14:29:06.326484+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:29:06.327210+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T14:29:06.327600+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-20T14:29:36.264403+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:29:36.264978+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T14:29:36.265127+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-20T14:30:22.491307+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:30:22.492885+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T14:30:22.493201+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-20T14:31:11.844889+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T14:31:11.845752+00:00", "event": "admin_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T14:31:11.846208+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 5}}
+{"ts": "2026-03-20T14:31:57.729297+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T14:31:57.730949+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T14:31:57.731282+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-20T14:32:44.880418+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-20T14:32:44.881185+00:00", "event": "admin_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-20T14:32:44.881524+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-20T14:33:49.810194+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T14:33:49.812163+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T14:33:49.812423+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-20T14:34:51.354922+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T14:34:51.356766+00:00", "event": "admin_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-20T14:34:51.357035+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-20T15:44:59.374029+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-20T15:44:59.374214+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T15:44:59.374408+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T15:51:33.017789+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T15:51:33.019282+00:00", "event": "admin_ready", "payload": {"elapsedMs": 14}}
+{"ts": "2026-03-20T15:51:33.020077+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 14}}
+{"ts": "2026-03-20T15:51:33.196352+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T15:51:33.196841+00:00", "event": "admin_ready", "payload": {"elapsedMs": 14}}
+{"ts": "2026-03-20T15:51:33.197244+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 14}}
+{"ts": "2026-03-20T15:57:56.682059+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T15:57:56.682941+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T15:57:56.683170+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T15:57:56.840251+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T15:57:56.840949+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T15:57:56.841119+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T15:59:20.870844+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T15:59:20.872427+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T15:59:20.872909+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T15:59:21.030359+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T15:59:21.031366+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T15:59:21.031681+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:00:05.308367+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:00:05.309819+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:00:05.310113+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:00:05.474209+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:00:05.475102+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:00:05.475286+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:02:37.138211+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 14}}
+{"ts": "2026-03-20T16:02:37.139585+00:00", "event": "admin_ready", "payload": {"elapsedMs": 15}}
+{"ts": "2026-03-20T16:02:37.140135+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 15}}
+{"ts": "2026-03-20T16:02:37.313539+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:02:37.314649+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:02:37.314808+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T16:04:33.868971+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:04:33.869582+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:04:33.869957+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T16:04:34.023562+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:04:34.024252+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:04:34.024459+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T16:05:16.235346+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:05:16.235722+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:05:16.236098+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:05:16.399195+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:05:16.399941+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:05:16.400320+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T16:05:52.848754+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 11}}
+{"ts": "2026-03-20T16:05:52.849599+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:05:52.850146+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T16:05:53.007150+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:05:53.007329+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:05:53.007432+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:06:31.571751+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:06:31.572357+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:06:31.572503+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:06:31.729867+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:06:31.731217+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:06:31.731473+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:07:14.081236+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:07:14.081970+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:07:14.082094+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T16:07:14.223039+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:07:14.223722+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:07:14.223960+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T16:07:52.922013+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:07:52.922694+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:07:52.922862+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:07:53.089238+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 11}}
+{"ts": "2026-03-20T16:07:53.090478+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:07:53.091010+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T16:09:04.497354+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 11}}
+{"ts": "2026-03-20T16:09:04.498097+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:09:04.498566+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T16:09:04.658019+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:09:04.659936+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:09:04.660067+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:11:00.296173+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:11:00.297904+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:11:00.298166+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T16:11:00.452730+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 11}}
+{"ts": "2026-03-20T16:11:00.454428+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:11:00.454558+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-03-20T16:28:24.488868+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T16:28:24.489022+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T16:28:26.321571+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:28:26.322904+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:28:26.323104+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:28:26.480384+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:28:26.481233+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:28:26.481368+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:29:47.288352+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T16:29:47.289862+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T16:29:51.029113+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T16:29:51.029358+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T16:30:05.579616+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T16:30:05.579768+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T16:30:13.689690+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T16:30:13.689831+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T16:30:15.014384+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:30:15.015055+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:30:15.015301+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:30:15.156997+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:30:15.157131+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:30:15.157284+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:32:46.205794+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T16:32:46.206674+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T16:32:48.686216+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T16:32:48.687508+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T16:32:53.739601+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T16:32:53.740649+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
+{"ts": "2026-03-20T16:32:53.741184+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T16:36:08.734412+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T16:36:08.734583+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T16:36:10.039570+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:36:10.040184+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:36:10.040329+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:36:10.202554+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:36:10.202922+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:36:10.203043+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 14}}
+{"ts": "2026-03-20T16:36:28.696404+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 1}}
+{"ts": "2026-03-20T16:36:28.696539+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T16:36:30.616902+00:00", "event": "admin_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T16:36:30.617035+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T16:36:30.617136+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T16:37:41.268581+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T16:37:41.268885+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 3}}
+{"ts": "2026-03-20T16:37:42.586670+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:37:42.587325+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:37:42.587483+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:37:42.739594+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:37:42.739943+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:37:42.740064+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 14}}
+{"ts": "2026-03-20T16:38:06.807317+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T16:38:06.807540+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T16:39:49.526178+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T16:39:49.526376+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T16:39:50.815490+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:39:50.816691+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:39:50.817199+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:39:50.973510+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-20T16:39:50.974192+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-20T16:39:50.974346+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-20T16:40:15.836960+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T16:40:15.837106+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T19:32:39.442915+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-20T19:32:39.444468+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-20T19:32:39.444578+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T19:33:13.233355+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T19:33:13.233489+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T19:38:54.643953+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-20T19:38:54.645712+00:00", "event": "admin_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-20T19:38:54.646993+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-20T19:43:10.724662+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T19:43:10.724884+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}
+{"ts": "2026-03-20T19:43:10.726600+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T19:49:48.365022+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T19:49:48.366176+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T19:49:48.370258+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}
+{"ts": "2026-03-20T19:56:51.061944+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-20T19:56:51.062635+00:00", "event": "admin_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-20T19:56:51.063358+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-20T19:59:30.998471+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T19:59:30.999836+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T19:59:31.004694+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}
+{"ts": "2026-03-20T19:59:35.441905+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:35.446361+00:00", "event": "admin_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:35.446785+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:35.988430+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:35.988552+00:00", "event": "admin_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:35.988662+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:36.126783+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:36.127329+00:00", "event": "admin_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:36.128400+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:36.273935+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-20T19:59:36.274091+00:00", "event": "admin_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:36.274194+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:36.408710+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:36.408894+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T19:59:36.409022+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}
+{"ts": "2026-03-20T19:59:36.540950+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T19:59:36.541545+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T19:59:36.545235+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
+{"ts": "2026-03-20T19:59:37.119669+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.124339+00:00", "event": "admin_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.124556+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.262237+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.263175+00:00", "event": "admin_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.266440+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.396650+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.399285+00:00", "event": "admin_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.399399+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.543409+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.548680+00:00", "event": "admin_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.548809+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.689056+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.690983+00:00", "event": "admin_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:37.691576+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 2}}
+{"ts": "2026-03-20T19:59:56.111938+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T19:59:56.112083+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T19:59:56.113078+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 5}}
+{"ts": "2026-03-20T20:02:26.568049+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T20:02:26.568379+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-20T20:02:26.570282+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}
+{"ts": "2026-03-20T20:02:59.287213+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T20:02:59.288555+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T20:02:59.291413+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
+{"ts": "2026-03-20T20:04:20.627754+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T20:04:20.630019+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}
+{"ts": "2026-03-20T20:04:20.630279+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T20:08:11.054564+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T20:08:11.056074+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T20:08:11.056173+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
+{"ts": "2026-03-20T20:09:06.637497+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T20:09:06.637995+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
+{"ts": "2026-03-20T20:09:06.638358+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T20:10:26.909166+00:00", "event": "admin_ready", "payload": {"elapsedMs": 44}}
+{"ts": "2026-03-20T20:10:26.909324+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 45}}
+{"ts": "2026-03-20T20:10:26.909366+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 44}}
+{"ts": "2026-03-20T20:13:56.820245+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T20:13:56.820560+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T20:13:56.821548+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 5}}
+{"ts": "2026-03-20T20:14:26.474373+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}
+{"ts": "2026-03-20T20:14:26.474506+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T20:14:26.474633+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T20:17:23.503247+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T20:17:23.503413+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T20:17:23.503558+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
+{"ts": "2026-03-20T20:18:53.699562+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
+{"ts": "2026-03-20T20:18:53.699735+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T20:18:53.699924+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-20T20:24:08.873576+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T20:24:08.878490+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-20T20:24:08.878738+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}

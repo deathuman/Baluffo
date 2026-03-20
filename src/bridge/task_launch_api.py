@@ -69,8 +69,6 @@ class TaskLaunchApi:
             module = None
             if script_lower.endswith("jobs_fetcher.py"):
                 module = "src.jobs_fetcher"
-            elif script_lower.endswith("source_discovery.py"):
-                module = "src.source_discovery"
 
             if module:
                 command = [executable, "-u", "-m", module]
@@ -148,16 +146,34 @@ class TaskLaunchApi:
             if failed_names:
                 args.extend(["--only-sources", ",".join(failed_names)])
             args.extend(["--ignore-circuit-breaker"])
+        elif preset == "uncapped":
+            args.extend(
+                [
+                    "--force-refresh-all",
+                    "--ignore-circuit-breaker",
+                    "--source-ttl-minutes",
+                    "0",
+                    "--hot-source-cadence-minutes",
+                    "1",
+                    "--cold-source-cadence-minutes",
+                    "1",
+                    "--circuit-breaker-failures",
+                    "0",
+                    "--circuit-breaker-cooldown-minutes",
+                    "0",
+                ]
+            )
         elif preset == "force_full":
             args.extend(["--ignore-circuit-breaker"])
         else:
             preset = "default"
 
-        args.extend(["--max-workers", str(max_workers), "--max-per-domain", str(max_per_domain)])
-        args.extend(["--fetch-strategy", fetch_strategy, "--adapter-http-concurrency", str(adapter_http_concurrency)])
-        args.extend(["--circuit-breaker-failures", str(circuit_failures)])
-        args.extend(["--circuit-breaker-cooldown-minutes", str(circuit_cooldown)])
-        args.extend(["--hot-source-cadence-minutes", str(hot_cadence), "--cold-source-cadence-minutes", str(cold_cadence)])
+        if preset != "uncapped":
+            args.extend(["--max-workers", str(max_workers), "--max-per-domain", str(max_per_domain)])
+            args.extend(["--fetch-strategy", fetch_strategy, "--adapter-http-concurrency", str(adapter_http_concurrency)])
+            args.extend(["--circuit-breaker-failures", str(circuit_failures)])
+            args.extend(["--circuit-breaker-cooldown-minutes", str(circuit_cooldown)])
+            args.extend(["--hot-source-cadence-minutes", str(hot_cadence), "--cold-source-cadence-minutes", str(cold_cadence)])
 
         if bool(data.get("skipSuccessfulSources")) and "--skip-successful-sources" not in args:
             args.append("--skip-successful-sources")
@@ -168,6 +184,11 @@ class TaskLaunchApi:
             args.append("--ignore-circuit-breaker")
         if bool(data.get("quiet")) and "--quiet" not in args:
             args.append("--quiet")
+        social_enabled = data.get("socialEnabled")
+        if social_enabled is None:
+            social_enabled = True
+        if bool(social_enabled) and "--social-enabled" not in args:
+            args.append("--social-enabled")
 
         only_sources = data.get("onlySources")
         if isinstance(only_sources, list):

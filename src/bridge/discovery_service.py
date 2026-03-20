@@ -89,7 +89,15 @@ class DiscoveryService:
                 error=str(exc),
             )
 
-    def trigger_discovery_task(self, *, route_name: str, enable_auto_sync_watch: bool = True) -> Tuple[int, Dict[str, Any]]:
+    def trigger_discovery_task(
+        self,
+        *,
+        route_name: str,
+        payload: Dict[str, Any] | None = None,
+        enable_auto_sync_watch: bool = True,
+    ) -> Tuple[int, Dict[str, Any]]:
+        data = payload if isinstance(payload, dict) else {}
+        preset = str(data.get("preset") or "default").strip().lower()
         run_id = f"discovery_{uuid.uuid4().hex[:10]}"
         started_at = self._deps.now_iso()
         self._deps.save_json_atomic(
@@ -135,8 +143,13 @@ class DiscoveryService:
                 "summary": {},
             }
         )
+        spawn_args = ["--mode", "dynamic"]
+        if preset == "uncapped":
+            spawn_args.extend(["--top", "0"])
+        else:
+            preset = "default"
         try:
-            pid = self._deps.run_background_script("source_discovery.py", ["--mode", "dynamic"])
+            pid = self._deps.run_background_script("source_discovery.py", spawn_args)
         except Exception as exc:  # noqa: BLE001
             self._deps.save_json_atomic(
                 self._paths.report,
@@ -186,6 +199,7 @@ class DiscoveryService:
                 "started": False,
                 "task": "source_discovery",
                 "mode": "dynamic",
+                "preset": preset,
                 "route": route_name,
                 "error": str(exc),
             }
@@ -203,6 +217,7 @@ class DiscoveryService:
             runId=run_id,
             task="source_discovery",
             mode="dynamic",
+            preset=preset,
             route=route_name,
             pid=int(pid),
         )
@@ -211,6 +226,8 @@ class DiscoveryService:
             "runId": run_id,
             "task": "source_discovery",
             "mode": "dynamic",
+            "preset": preset,
+            "args": spawn_args,
             "route": route_name,
             "startedAt": started_at,
             "pid": int(pid),

@@ -106,20 +106,30 @@ def get_bridge_defaults() -> Dict[str, Any]:
 
 def get_storage_defaults() -> Dict[str, Any]:
     cfg = dict(load_config().get("storage") or {})
-    return {
-        "data_dir": resolve_path(cfg.get("data_dir"), CODE_FALLBACK_CONFIG["storage"]["data_dir"]),
-        "source_discovery_config_path": resolve_path(
+    data_dir_raw = os.environ.get("BALUFFO_DATA_DIR") or cfg.get("data_dir")
+    data_dir = resolve_path(data_dir_raw, CODE_FALLBACK_CONFIG["storage"]["data_dir"])
+    if os.environ.get("BALUFFO_DATA_DIR"):
+        source_discovery_config_path = data_dir / "source-discovery-config.json"
+        source_discovery_log_path = data_dir / "source-discovery.log"
+        social_sources_config_path = data_dir / "social-sources-config.json"
+    else:
+        source_discovery_config_path = resolve_path(
             cfg.get("source_discovery_config_path"),
             CODE_FALLBACK_CONFIG["storage"]["source_discovery_config_path"],
-        ),
-        "source_discovery_log_path": resolve_path(
+        )
+        source_discovery_log_path = resolve_path(
             cfg.get("source_discovery_log_path"),
             CODE_FALLBACK_CONFIG["storage"]["source_discovery_log_path"],
-        ),
-        "social_sources_config_path": resolve_path(
+        )
+        social_sources_config_path = resolve_path(
             cfg.get("social_sources_config_path"),
             CODE_FALLBACK_CONFIG["storage"]["social_sources_config_path"],
-        ),
+        )
+    return {
+        "data_dir": data_dir,
+        "source_discovery_config_path": source_discovery_config_path,
+        "source_discovery_log_path": source_discovery_log_path,
+        "social_sources_config_path": social_sources_config_path,
     }
 
 

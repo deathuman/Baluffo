@@ -18,6 +18,12 @@ from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.shared.utils import env_flag
 from src.shared.utils import coerce_int
 
+TIMEOUT_BUCKET_SOURCE_NAMES = {
+    "andarion games gmbh (gamesmap)",
+    "kevuru games (manual website)",
+    "tequilaworks (manual website)",
+}
+
 
 def _clean_errors(values: Any) -> List[str]:
     if not isinstance(values, list):
@@ -176,10 +182,13 @@ def run_scrapy_static_source(
                 "use_browser": True,
             },
         }
+        timeout_bucket = source_name.lower() in TIMEOUT_BUCKET_SOURCE_NAMES
+        if timeout_bucket:
+            config["runtime"]["timeout_s"] = min(int(timeout_s), 10)
 
         source_detail = _base_detail(source)
         try:
-            timeout_window = min(300, max(1, int(timeout_s)) * max(1, len(pages)) * 4)
+            timeout_window = min(90 if timeout_bucket else 300, max(1, int(config["runtime"]["timeout_s"])) * max(1, len(pages)) * 4)
             result = subprocess.run(
                 [sys.executable, str(runner_path)],
                 input=json.dumps(config).encode("utf-8"),
@@ -260,11 +269,12 @@ def run_scrapy_static_source(
                 if not clean_text(source_detail.get("classification")):
                     source_detail["classification"] = "ok_with_jobs" if kept > 0 else "ok_no_jobs"
                 if source_detail.get("classification") == "ok_no_jobs" and int(source_detail.get("fetchedCount") or 0) > 0:
-                    source_detail["classification"] = "fetch_ok_extract_zero"
-                source_detail["browserFallbackRecommended"] = bool(
-                    source_detail.get("browserFallbackRecommended")
-                    or source_detail.get("classification") in {"fetch_ok_extract_zero", "blocked_or_challenge"}
-                )
+                    source_detail["classification"] = "parser_stale"
+                if source_detail.get("classification") == "fetch_ok_extract_zero":
+                    source_detail["classification"] = "parser_stale"
+                if source_detail.get("classification") == "blocked_or_challenge":
+                    source_detail["classification"] = "browser_retry_not_recommended"
+                source_detail["browserFallbackRecommended"] = False
             else:
                 source_detail["status"] = "error"
                 if not clean_text(source_detail.get("error")):
@@ -298,8 +308,8 @@ def run_scrapy_static_source(
                 {
                     "status": "error",
                     "error": "subprocess timeout",
-                    "classification": "timeout",
-                    "browserFallbackRecommended": True,
+                    "classification": "browser_timeout",
+                    "browserFallbackRecommended": False,
                 }
             )
             errors_list.append(f"{source_name}: subprocess timeout")

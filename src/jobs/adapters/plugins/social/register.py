@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Callable, Dict, List
 from urllib.parse import quote
 
@@ -13,6 +14,7 @@ from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.config import DEFAULT_SOCIAL_MIN_CONFIDENCE
 from src.jobs.text_utils import clean_text
+from xml.etree import ElementTree as ET
 
 
 def set_source_diagnostics(
@@ -34,28 +36,46 @@ _REGISTERED = False
 _SOCIAL_CONFIG: Dict[str, Any] = {}
 
 
-def _run_reddit(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def _run_reddit(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    subreddits: List[str] | None = None,
+) -> List[RawJob]:
     social_config = _SOCIAL_CONFIG if isinstance(_SOCIAL_CONFIG, dict) else {}
     cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
         set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
         return []
-    subs = [clean_text(item) for item in (cfg.get("subreddits") or []) if clean_text(item)]
+    subs = [clean_text(item) for item in (subreddits if subreddits is not None else (cfg.get("subreddits") or [])) if clean_text(item)]
     max_posts = max(1, int(cfg.get("maxPostsPerSubreddit") or 50))
     min_conf = max(0, min(100, int(social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE)))
     reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
+    
+    # Enhanced Reddit-specific settings
+    rss_fallback = bool(cfg.get("rssFallback", True))
+    html_fallback = bool(cfg.get("htmlFallback", True))
+    rate_limit_delay = float(cfg.get("rateLimitDelay", 2.0))  # Default 2 second delay between requests
     details: List[Dict[str, Any]] = []
     errors: List[str] = []
     jobs: List[RawJob] = []
     low_conf_total = 0
 
-    for sub in subs:
+    for i, sub in enumerate(subs):
         source_name = f"reddit:r/{sub}"
         json_url = f"https://www.reddit.com/r/{quote(sub, safe='')}/new.json?limit={max_posts}"
         rss_url = f"https://www.reddit.com/r/{quote(sub, safe='')}/new.rss"
         entry = {"adapter": "social", "studio": f"reddit/{sub}", "name": source_name, "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
         parsed_rows: List[RawJob] = []
         low_conf_sub = 0
+        error_messages = []
+        
+        # Add delay between requests to avoid rate limiting
+        if i > 0:
+            time.sleep(rate_limit_delay)
+        # Try JSON API first
         try:
             text = fetch_with_retries(json_url, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)
@@ -66,25 +86,51 @@ def _run_reddit(*, fetch_text: Callable[[str, int], str], timeout_s: int, retrie
                 reject_for_hire_posts=reject_for_hire,
             )
             entry["fetchedCount"] = len((((payload.get("data") or {}).get("children")) if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else []) or [])
+            
+        except json.JSONDecodeError as json_exc:
+            error_messages.append(f"JSON decode error: {json_exc}")
         except Exception as exc:  # noqa: BLE001
-            if bool(cfg.get("rssFallback", True)):
-                try:
-                    rss_text = fetch_with_retries(rss_url, fetch_text, timeout_s, retries, backoff_s)
-                    parsed_rows, low_conf_sub = _social_parsers.parse_reddit_rss_payload(
-                        rss_text,
-                        subreddit=sub,
-                        min_confidence=min_conf,
-                        reject_for_hire_posts=reject_for_hire,
-                    )
-                    entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
-                except Exception as rss_exc:  # noqa: BLE001
-                    entry["status"] = "error"
-                    entry["error"] = f"{exc}; {rss_exc}"
-                    errors.append(f"reddit:{sub}: {exc}; {rss_exc}")
-            else:
-                entry["status"] = "error"
-                entry["error"] = str(exc)
-                errors.append(f"reddit:{sub}: {exc}")
+            error_messages.append(f"JSON API error: {exc}")
+
+        # Try RSS fallback if enabled and JSON failed
+        if not parsed_rows and rss_fallback:
+            try:
+                rss_text = fetch_with_retries(rss_url, fetch_text, timeout_s, retries, backoff_s)
+                parsed_rows, low_conf_sub = _social_parsers.parse_reddit_rss_payload(
+                    rss_text,
+                    subreddit=sub,
+                    min_confidence=min_conf,
+                    reject_for_hire_posts=reject_for_hire,
+                )
+                entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
+                
+            except ET.ParseError as rss_exc:
+                error_messages.append(f"RSS parse error: {rss_exc}")
+            except Exception as rss_exc:  # noqa: BLE001
+                error_messages.append(f"RSS fetch error: {rss_exc}")
+
+        # Try HTML fallback if enabled and both JSON and RSS failed
+        if not parsed_rows and html_fallback:
+            try:
+                # Fetch HTML content
+                html_url = f"https://www.reddit.com/r/{quote(sub, safe='')}/new/"
+                html_text = fetch_with_retries(html_url, fetch_text, timeout_s, retries, backoff_s)
+                parsed_rows, low_conf_sub = _social_parsers.parse_reddit_html_payload(
+                    html_text,
+                    subreddit=sub,
+                    min_confidence=min_conf,
+                    reject_for_hire_posts=reject_for_hire,
+                )
+                entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
+                
+            except Exception as html_exc:  # noqa: BLE001
+                error_messages.append(f"HTML fetch error: {html_exc}")
+
+        # Set status and error information
+        if error_messages and not parsed_rows:
+            entry["status"] = "error"
+            entry["error"] = "; ".join(error_messages)
+            errors.append(f"reddit:{sub}: {entry['error']}")
         entry["keptCount"] = len(parsed_rows)
         low_conf_total += int(low_conf_sub)
         jobs.extend(parsed_rows)
@@ -92,6 +138,158 @@ def _run_reddit(*, fetch_text: Callable[[str, int], str], timeout_s: int, retrie
 
     set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=details, partial_errors=errors)
     SOURCE_DIAGNOSTICS["social_reddit"]["lowConfidenceDropped"] = int(low_conf_total)
+    if jobs:
+        return jobs
+    if errors:
+        raise AdapterValidationError.from_errors(errors)
+    return []
+
+
+def _run_x(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+    social_config = _SOCIAL_CONFIG if isinstance(_SOCIAL_CONFIG, dict) else {}
+    cfg = social_config.get("x") if isinstance(social_config.get("x"), dict) else {}
+    if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
+        set_source_diagnostics("social_x", adapter="social", studio="x", details=[], partial_errors=[])
+        return []
+    
+    queries = [clean_text(item) for item in (cfg.get("queries") or []) if clean_text(item)]
+    max_posts = max(1, int(cfg.get("maxPostsPerQuery") or 25))
+    min_conf = max(0, min(100, int(social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE)))
+    reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
+    timeout_s = max(1, int(cfg.get("timeoutSeconds") or timeout_s))
+    retries = max(0, int(cfg.get("retries") or retries))
+    
+    details: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    jobs: List[RawJob] = []
+    low_conf_total = 0
+
+    for query in queries:
+        source_name = f"x:{query}"
+        # X API endpoint would go here - this is a placeholder
+        api_url = f"https://api.x.com/2/tweets/search/recent?query={quote(query, safe='')}&max_results={max_posts}"
+        
+        entry = {"adapter": "social", "studio": "x", "name": source_name, "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
+        parsed_rows: List[RawJob] = []
+        low_conf_sub = 0
+        error_messages = []
+        
+        try:
+            text = fetch_with_retries(api_url, fetch_text, timeout_s, retries, backoff_s)
+            payload = json.loads(text)
+            parsed_rows, low_conf_sub = _social_parsers.parse_x_payload(
+                payload,
+                query_label=query,
+                min_confidence=min_conf,
+                reject_for_hire_posts=reject_for_hire,
+            )
+            entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
+            
+        except json.JSONDecodeError as json_exc:
+            error_messages.append(f"JSON decode error: {json_exc}")
+        except Exception as exc:  # noqa: BLE001
+            error_messages.append(f"X API error: {exc}")
+
+        # Try RSS fallback if available
+        rss_fallback = bool(cfg.get("rssFallback", False))
+        if not parsed_rows and rss_fallback:
+            try:
+                # RSS fallback implementation would go here
+                rss_url = f"https://rss.x.com/search?q={quote(query, safe='')}"
+                rss_text = fetch_with_retries(rss_url, fetch_text, timeout_s, retries, backoff_s)
+                parsed_rows, low_conf_sub = _social_parsers.parse_x_rss_payload(
+                    rss_text,
+                    query_label=query,
+                    min_confidence=min_conf,
+                    reject_for_hire_posts=reject_for_hire,
+                )
+                entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
+                
+            except ET.ParseError as rss_exc:
+                error_messages.append(f"RSS parse error: {rss_exc}")
+            except Exception as rss_exc:  # noqa: BLE001
+                error_messages.append(f"RSS fetch error: {rss_exc}")
+
+        # Set status and error information
+        if error_messages and not parsed_rows:
+            entry["status"] = "error"
+            entry["error"] = "; ".join(error_messages)
+            errors.append(f"x:{query}: {entry['error']}")
+        
+        entry["keptCount"] = len(parsed_rows)
+        low_conf_total += int(low_conf_sub)
+        jobs.extend(parsed_rows)
+        details.append(entry)
+
+    set_source_diagnostics("social_x", adapter="social", studio="x", details=details, partial_errors=errors)
+    SOURCE_DIAGNOSTICS["social_x"]["lowConfidenceDropped"] = int(low_conf_total)
+    if jobs:
+        return jobs
+    if errors:
+        raise AdapterValidationError.from_errors(errors)
+    return []
+
+
+def _run_mastodon(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+    social_config = _SOCIAL_CONFIG if isinstance(_SOCIAL_CONFIG, dict) else {}
+    cfg = social_config.get("mastodon") if isinstance(social_config.get("mastodon"), dict) else {}
+    if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
+        set_source_diagnostics("social_mastodon", adapter="social", studio="mastodon", details=[], partial_errors=[])
+        return []
+    
+    instances = [clean_text(item) for item in (cfg.get("instances") or []) if clean_text(item)]
+    hashtags = [clean_text(item) for item in (cfg.get("hashtags") or []) if clean_text(item)]
+    max_posts = max(1, int(cfg.get("maxPostsPerTag") or 40))
+    min_conf = max(0, min(100, int(social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE)))
+    reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
+    timeout_s = max(1, int(cfg.get("timeoutSeconds") or timeout_s))
+    retries = max(0, int(cfg.get("retries") or retries))
+    
+    details: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    jobs: List[RawJob] = []
+    low_conf_total = 0
+
+    for instance in instances:
+        for hashtag in hashtags:
+            source_name = f"mastodon:{instance}/{hashtag}"
+            api_url = f"{instance.rstrip('/')}/api/v1/timelines/tag/{hashtag}?limit={max_posts}"
+            
+            entry = {"adapter": "social", "studio": "mastodon", "name": source_name, "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
+            parsed_rows: List[RawJob] = []
+            low_conf_sub = 0
+            error_messages = []
+            
+            try:
+                text = fetch_with_retries(api_url, fetch_text, timeout_s, retries, backoff_s)
+                payload = json.loads(text)
+                parsed_rows, low_conf_sub = _social_parsers.parse_mastodon_payload(
+                    payload,
+                    instance=instance,
+                    tag=hashtag,
+                    min_confidence=min_conf,
+                    reject_for_hire_posts=reject_for_hire,
+                )
+                entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
+                
+            except json.JSONDecodeError as json_exc:
+                error_messages.append(f"JSON decode error: {json_exc}")
+            except Exception as exc:  # noqa: BLE001
+                error_messages.append(f"Mastodon API error: {exc}")
+
+            # Set status and error information
+            if error_messages:
+                entry["status"] = "error"
+                entry["error"] = "; ".join(error_messages)
+                errors.append(f"mastodon:{instance}/{hashtag}: {entry['error']}")
+            
+            entry["keptCount"] = len(parsed_rows)
+            low_conf_total += int(low_conf_sub)
+            jobs.extend(parsed_rows)
+            details.append(entry)
+
+    set_source_diagnostics("social_mastodon", adapter="social", studio="mastodon", details=details, partial_errors=errors)
+    SOURCE_DIAGNOSTICS["social_mastodon"]["lowConfidenceDropped"] = int(low_conf_total)
     if jobs:
         return jobs
     if errors:
@@ -114,6 +312,24 @@ def ensure_registered(*, social_config: Dict[str, Any]) -> None:
             priority=10,
             can_handle_fn=lambda ctx: ctx.family == "social" and ctx.adapter_key == "social_reddit",
             run_fn=_run_reddit,
+        )
+    )
+    default_registry.register(
+        SimpleAdapterPlugin(
+            name="social_x",
+            family="social",
+            priority=10,
+            can_handle_fn=lambda ctx: ctx.family == "social" and ctx.adapter_key == "social_x",
+            run_fn=_run_x,
+        )
+    )
+    default_registry.register(
+        SimpleAdapterPlugin(
+            name="social_mastodon",
+            family="social",
+            priority=10,
+            can_handle_fn=lambda ctx: ctx.family == "social" and ctx.adapter_key == "social_mastodon",
+            run_fn=_run_mastodon,
         )
     )
     # Additional social plugins can be registered here incrementally (x, mastodon, etc).

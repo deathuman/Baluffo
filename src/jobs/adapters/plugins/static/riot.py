@@ -1,0 +1,119 @@
+from __future__ import annotations
+
+import hashlib
+from typing import Any, Callable, Dict, List
+from urllib.parse import urljoin
+
+from bs4 import BeautifulSoup
+
+from src.jobs.adapters.plugins.static import _heuristics
+from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text
+
+
+def can_handle(ctx: AdapterPluginContext) -> bool:
+    identity = (ctx.source_identity or "").strip().lower()
+    return identity == "www.riotgames.com"
+
+
+def run(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    pages: List[str],
+    source_row: Dict[str, Any],
+    **kwargs: Any,
+) -> List[RawJob]:
+    _ = (retries, backoff_s, kwargs)
+    if not pages:
+        return []
+    page_url = clean_text(pages[0])
+    if not page_url:
+        return []
+
+    try:
+        html = fetch_text(page_url, timeout_s)
+    except Exception as exc:  # noqa: BLE001
+        classification, recommend = _heuristics.classify_fetch_exception(exc)
+        source_row["_staticPluginMeta"] = {
+            "classification": classification,
+            "browserFallbackRecommended": bool(recommend),
+            "extractorHint": "fetch_failed",
+            "error": str(exc),
+        }
+        return []
+
+    jobs = _parse_listing_rows(
+        html=html,
+        page_url=page_url,
+        company=clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Riot Games",
+        source_id=clean_text(source_row.get("id")) or "riot",
+        source_name=clean_text(source_row.get("name")) or "Riot Games",
+    )
+    if not jobs:
+        source_row["_staticPluginMeta"] = {
+            "classification": _heuristics.CLASSIFICATION_PARSER_STALE,
+            "browserFallbackRecommended": False,
+            "extractorHint": "riot_listing_present_but_plugin_empty",
+            "detailFetchRequired": False,
+            "detailTraversalMode": "listing_only",
+        }
+        return []
+
+    source_row["_staticPluginMeta"] = {
+        "detailFetchRequired": False,
+        "detailTraversalMode": "listing_only",
+    }
+    return jobs
+
+
+def _parse_listing_rows(*, html: str, page_url: str, company: str, source_id: str, source_name: str) -> List[RawJob]:
+    soup = BeautifulSoup(html or "", "html.parser")
+    jobs: List[RawJob] = []
+    seen: set[str] = set()
+
+    for anchor in soup.select('a[href^="/en/j/"], a[href*="/en/j/"]'):
+        href = clean_text(anchor.get("href"))
+        if not href:
+            continue
+        absolute = clean_text(urljoin(page_url, href))
+        if not absolute or absolute in seen:
+            continue
+        text = anchor.get_text("\n", strip=True)
+        if not text:
+            continue
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        title = clean_text(lines[0] if lines else text)
+        if not title:
+            continue
+        seen.add(absolute)
+        location = ""
+        craft = ""
+        for line in lines[1:]:
+            lowered = line.lower()
+            if not craft and any(token in lowered for token in ("art", "engineering", "design", "publishing", "security", "data")):
+                craft = line
+            if not location and any(token in lowered for token in ("remote", "los angeles", "dublin", "seoul", "shanghai", "singapore", "berlin")):
+                location = line
+        jobs.append(
+            {
+                "sourceJobId": f"static:{source_id}:{hashlib.sha1(absolute.encode('utf-8')).hexdigest()[:10]}",
+                "title": title,
+                "company": company,
+                "city": location,
+                "country": "Unknown",
+                "workType": "",
+                "contractType": "",
+                "jobLink": absolute,
+                "sector": craft or "Game",
+                "postedAt": "",
+                "adapter": "static",
+                "studio": company,
+                "source": source_name,
+                "summary": " | ".join(lines[1:5]),
+            }
+        )
+    return jobs

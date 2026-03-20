@@ -5,7 +5,7 @@ export const SORT_UPDATED = "updated";
 export const SORT_SAVED = "saved";
 export const SORT_REMINDER = "reminder";
 export const SORT_PERSONAL = "personal";
-const REMINDER_SOON_HOURS = 72;
+export const REMINDER_SOON_HOURS = 72;
 
 export function isCustomJob(job) {
   return Boolean(job && job.isCustom);

@@ -326,7 +326,7 @@ def _provider_candidate(
             "name": f"{studio} (Ashby)",
             "studio": studio,
             "adapter": "ashby",
-            "board_url": f"https://jobs.ashbyhq.com/{slug}/jobs",
+            "board_url": f"https://jobs.ashbyhq.com/{slug}",
             "nlPriority": nl_priority,
             "discoveryMethod": discovery_method,
             "discoveryStage": "web_provider",

@@ -22,13 +22,22 @@ from src.jobs.models import RawJob
 from . import example_com
 from . import example_org
 from . import activision
+from . import amanotes
 from . import blizzard
 from . import cdprojektred
+from . import climax
+from . import embark
 from . import kojima
 from . import larian
 from . import littlechicken
+from . import hrmos
+from . import globalstep
+from . import jobvite
+from . import lionbridge
 from . import milestone
+from . import naconstudiomilan
 from . import remedy
+from . import riot
 from . import sheet_studios
 from . import supercell
 
@@ -60,11 +69,20 @@ def register_static_plugins() -> None:
         (example_org, "example_org", 90),
         (supercell, "supercell", 90),
         (remedy, "remedy", 90),
+        (hrmos, "hrmos", 90),
+        (globalstep, "globalstep", 90),
+        (climax, "climax", 90),
+        (embark, "embark", 90),
+        (lionbridge, "lionbridge", 90),
+        (jobvite, "jobvite", 90),
         (milestone, "milestone", 90),
+        (naconstudiomilan, "naconstudiomilan", 90),
         (kojima, "kojima", 90),
         (activision, "activision", 90),
+        (amanotes, "amanotes", 90),
         (blizzard, "blizzard", 90),
         (cdprojektred, "cdprojektred", 90),
+        (riot, "riot", 90),
         (larian, "larian", 90),
         (littlechicken, "littlechicken", 90),
         (sheet_studios, "sheet_studios", 90),

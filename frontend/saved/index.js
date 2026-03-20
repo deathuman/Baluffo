@@ -1,7 +1,10 @@
+window.__baluffoSavedIndexLoaded = true;
+console.log("[baluffo-saved] index.js: module started");
+
 import "../../app-local-data-client.js";
 import "../../saved-zip-utils.js";
 import { boot as bootSavedPage } from "./app.js";
-import { emitStartupProbeMetric } from "../../startup-probe.js";
+import { emitStartupProbeMetric } from "../../../probes/startup-probe.js";
 
 emitStartupProbeMetric("saved_page_boot_start");
 emitStartupProbeMetric("saved_module_boot_start");

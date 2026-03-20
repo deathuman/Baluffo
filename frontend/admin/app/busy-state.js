@@ -78,6 +78,7 @@ export function syncAdminBusyUi({
 
   setButtonBusy(refs.adminRunFetcherBtnEl, fetcherBusy || lockBusy, fetcherPresetMeta.default.busyLabel);
   setButtonBusy(refs.adminRunFetcherIncrementalBtnEl, fetcherBusy || lockBusy, fetcherPresetMeta.incremental.busyLabel);
+  setButtonBusy(refs.adminRunFetcherUncappedBtnEl, fetcherBusy || lockBusy, fetcherPresetMeta.uncapped.busyLabel);
   setButtonBusy(refs.adminRunFetcherForceBtnEl, fetcherBusy || lockBusy, fetcherPresetMeta.force_full.busyLabel);
   setButtonBusy(refs.adminRetryFailedBtnEl, fetcherBusy || lockBusy, fetcherPresetMeta.retry_failed.busyLabel);
   setButtonBusy(refs.adminRefreshReportBtnEl, Boolean(busyState.fetcherReportLoad), "Loading Report...");
@@ -93,6 +94,7 @@ export function syncAdminBusyUi({
   });
 
   setButtonBusy(refs.adminRunDiscoveryBtnEl, discoveryBusy || lockBusy, "Discovery Running...");
+  setButtonBusy(refs.adminRunDiscoveryUncappedBtnEl, discoveryBusy || lockBusy, "Uncapped Running...");
   setButtonBusy(refs.adminLoadDiscoveryBtnEl, discoveryBusy || lockBusy, "Loading...");
   setButtonBusy(refs.adminApproveSourcesBtnEl, discoveryBusy || lockBusy, "Working...");
   setButtonBusy(refs.adminRejectSourcesBtnEl, discoveryBusy || lockBusy, "Working...");

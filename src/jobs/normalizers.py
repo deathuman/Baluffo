@@ -44,12 +44,18 @@ def normalize_country(value: Any) -> str:
     return COUNTRY_NAME_TO_CODE.get(lower, text)
 
 
-def normalize_work_type(value: Any) -> str:
+def normalize_work_type(value: Any, title: Any = None) -> str:
     lower = _norm_text(value)
     if "remote" in lower:
         return "Remote"
     if "hybrid" in lower or "mixed" in lower:
         return "Hybrid"
+    if (not lower or lower == "onsite") and title:
+        title_lower = _norm_text(title)
+        if "remote" in title_lower:
+            return "Remote"
+        if "hybrid" in title_lower or "mixed" in title_lower:
+            return "Hybrid"
     return "Onsite"
 
 

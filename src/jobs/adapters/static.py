@@ -29,16 +29,22 @@ from src.jobs.adapters.static_helpers import (
     add_detail_link,
     build_static_entry_report,
     build_static_source_runtime_config,
+    choose_detail_traversal_mode,
     create_fetch_html_cached,
     process_detail_link,
     source_detail_concurrency_for,
+    source_detail_limit_for,
 )
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.interfaces import SourceLoader
 from src.jobs.registry import registry_entries
+from src.jobs.state import get_incremental_cache_decision
 from src.shared.regex import find_urls_in_text
+from src.jobs.transport import conditional_revalidate_url
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
+from src.scrapers.domain_profiles import domain_profile_for_url
+from src.shared.utils import now_iso
 
 register_static_plugins()
 
@@ -71,6 +77,7 @@ def run_static_studio_pages_source(
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
     try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    force_refresh_all: bool = False,
 ) -> List[RawJob]:
     jobs: List[RawJob] = []
     errors: List[str] = []
@@ -122,9 +129,43 @@ def run_static_studio_pages_source(
             pages=pages,
             company=company,
         )
+        cache_decision = get_incremental_cache_decision(
+            source_name,
+            source_state_rows or {},
+            adapter="static",
+            force_refresh_all=force_refresh_all,
+        )
+        entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
+        entry_report["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
         kept_before = len(jobs)
         link_rejections: Counter[str] = Counter()
         stats = entry_report["stats"]
+        if entry_report["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
+            entry_report["status"] = "excluded"
+            entry_report["error"] = entry_report["cacheDecisionReason"]
+            entry_report["exclusionReason"] = f"cache_{entry_report['cacheDecisionReason']}"
+            details.append(entry_report)
+            continue
+        state_entry = (source_state_rows or {}).get(source_name) if isinstance(source_state_rows, dict) else {}
+        if entry_report["cacheDecision"] == "revalidate_only" and pages:
+            revalidate = conditional_revalidate_url(
+                clean_text(pages[0]),
+                timeout_s,
+                etag=clean_text((state_entry or {}).get("lastHttpEtag")),
+                last_modified=clean_text((state_entry or {}).get("lastHttpLastModified")),
+            )
+            entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
+            if clean_text(revalidate.get("etag")):
+                entry_report["httpEtag"] = clean_text(revalidate.get("etag"))
+            if clean_text(revalidate.get("lastModified")):
+                entry_report["httpLastModified"] = clean_text(revalidate.get("lastModified"))
+            if bool(revalidate.get("notModified")):
+                entry_report["status"] = "excluded"
+                entry_report["error"] = "not_modified_304"
+                entry_report["exclusionReason"] = "cache_not_modified_304"
+                entry_report["cacheDecisionReason"] = "not_modified_304"
+                details.append(entry_report)
+                continue
 
         host = ""
         if pages:
@@ -133,7 +174,10 @@ def run_static_studio_pages_source(
                 host = (parsed.netloc or "").strip().lower()
             except Exception:  # noqa: BLE001
                 pass
-        ctx = AdapterPluginContext(family="static", adapter_key="static", source_identity=host or source_name)
+        plugin_identity = host or source_name
+        if host == "jobs.jobvite.com" and pages:
+            plugin_identity = clean_text(pages[0]) or plugin_identity
+        ctx = AdapterPluginContext(family="static", adapter_key="static", source_identity=plugin_identity)
         try:
             plugin, _ = default_registry.select(ctx)
             plugin_jobs = plugin.run(
@@ -195,16 +239,18 @@ def run_static_studio_pages_source(
             page_url = clean_text(page)
             if not page_url:
                 continue
-            if (time.perf_counter() - source_started) > float(static_source_time_budget_s):
+            domain_profile = domain_profile_for_url(page_url)
+            source_budget_s = int(domain_profile.get("static_source_time_budget_s") or static_source_time_budget_s)
+            if (time.perf_counter() - source_started) > float(source_budget_s):
                 entry_report["status"] = "error"
                 entry_report["classification"] = "timeout"
                 entry_report["browserFallbackRecommended"] = True
-                entry_report["error"] = f"time budget exceeded ({static_source_time_budget_s}s)"
+                entry_report["error"] = f"time budget exceeded ({source_budget_s}s)"
                 warnings.append(f"static:{source_name}:{page_url}: time_budget_exceeded")
                 break
             try:
                 listing_fetch_started = time.perf_counter()
-                remaining_budget_s = float(static_source_time_budget_s) - float(time.perf_counter() - source_started)
+                remaining_budget_s = float(source_budget_s) - float(time.perf_counter() - source_started)
                 effective_timeout_s = max(3, min(int(timeout_s or 1), int(remaining_budget_s or timeout_s)))
                 html = ""
                 cache_hit = False
@@ -260,6 +306,7 @@ def run_static_studio_pages_source(
                     errors.append(f"static:{source_name}:{page_url}: dynamic-listing-fetch failed: {exc}")
 
                 extraction_started = time.perf_counter()
+                listing_jobs_found = 0
                 for listing_html in listing_htmls:
                     parsed = parse_jobpostings_from_html(
                         listing_html,
@@ -275,6 +322,7 @@ def run_static_studio_pages_source(
                         row["adapter"] = "static"
                         row["studio"] = clean_text(source.get("studio")) or company or source_name
                         jobs.append(row)
+                        listing_jobs_found += 1
 
                     for row_match in re.finditer(
                         r'(?is)<(?:div|tr)[^>]*class=["\'][^"\']*job-listing-item[^"\']*["\'][^>]*>(.*?)</(?:div|tr)>',
@@ -333,10 +381,49 @@ def run_static_studio_pages_source(
                         )
                 stats["candidate_links_found"] += len(detail_links)
                 stats["candidate_extraction_ms"] += int((time.perf_counter() - extraction_started) * 1000)
+                listing_fingerprint = hashlib.sha1("\n".join(listing_htmls).encode("utf-8")).hexdigest()
+                previous_listing_fingerprint = clean_text((state_entry or {}).get("lastListingFingerprint"))
+                entry_report["listingFingerprint"] = listing_fingerprint
+                entry_report["listingCheckedAt"] = now_iso()
+                entry_report["listingChanged"] = bool(listing_fingerprint != previous_listing_fingerprint)
+                if previous_listing_fingerprint and listing_fingerprint == previous_listing_fingerprint:
+                    entry_report["cacheDecision"] = "listing_only"
+                    entry_report["cacheDecisionReason"] = "listing_fingerprint_unchanged"
+                    entry_report["detailSkippedByListingFingerprint"] = True
+                    stats["detail_skipped_by_listing_fingerprint"] += 1
+                    detail_links = []
 
                 if not detail_links:
                     continue
                 source_key = diagnostics_name if len(selected_sources) == 1 else source_name
+                plugin_meta = source.get("_staticPluginMeta") if isinstance(source, dict) else None
+                detail_traversal_mode = choose_detail_traversal_mode(
+                    page_url,
+                    runtime_config=static_runtime,
+                    profile=domain_profile,
+                    plugin_meta=plugin_meta,
+                    listing_jobs_found=listing_jobs_found,
+                    discovered_links=len(detail_links),
+                    source_key=source_key,
+                    source_state_rows=source_state_rows,
+                )
+                entry_report["detailTraversalMode"] = detail_traversal_mode
+                if detail_traversal_mode == "listing_only":
+                    detail_links = []
+                    continue
+                detail_limit = source_detail_limit_for(
+                    source_key,
+                    source_state_rows=source_state_rows,
+                    discovered_links=len(detail_links),
+                    listing_jobs_found=listing_jobs_found,
+                    low_yield_detail_cap=static_runtime.low_yield_detail_cap,
+                    very_low_yield_detail_cap=static_runtime.very_low_yield_detail_cap,
+                )
+                profile_max_detail_links = max(0, int(domain_profile.get("max_detail_links") or 0))
+                if profile_max_detail_links > 0:
+                    detail_limit = min(detail_limit, profile_max_detail_links) if detail_limit else profile_max_detail_links
+                if detail_limit and detail_limit < len(detail_links):
+                    detail_links = detail_links[:detail_limit]
                 detail_fetch_started = time.perf_counter()
                 with ThreadPoolExecutor(max_workers=source_detail_concurrency_for(
                     source_key,
@@ -349,7 +436,7 @@ def run_static_studio_pages_source(
                             detail=detail,
                             detail_title=detail_title,
                             source_started=source_started,
-                            static_source_time_budget_s=static_source_time_budget_s,
+                            static_source_time_budget_s=source_budget_s,
                             fetch_html_cached=fetch_html_cached,
                             timeout_s=timeout_s,
                             company=company,
@@ -456,6 +543,7 @@ def run_static_source_entry_source(
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
     try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    force_refresh_all: bool = False,
 ) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
@@ -467,6 +555,7 @@ def run_static_source_entry_source(
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
         try_playwright=try_playwright,
+        force_refresh_all=force_refresh_all,
     )
 
 
@@ -479,6 +568,7 @@ def run_static_studio_pages_a_i_source(
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
     try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    force_refresh_all: bool = False,
 ) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
@@ -490,6 +580,7 @@ def run_static_studio_pages_a_i_source(
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
         try_playwright=try_playwright,
+        force_refresh_all=force_refresh_all,
     )
 
 
@@ -519,6 +610,7 @@ def build_static_source_loaders() -> List[Tuple[str, SourceLoader]]:
             static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
             source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
             try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+            force_refresh_all: bool = False,
         ) -> List[RawJob]:
             return run_static_source_entry_source(
                 source_row=_row,
@@ -530,6 +622,7 @@ def build_static_source_loaders() -> List[Tuple[str, SourceLoader]]:
                 static_detail_concurrency=static_detail_concurrency,
                 source_state_rows=source_state_rows,
                 try_playwright=try_playwright,
+                force_refresh_all=force_refresh_all,
             )
 
         loaders.append((loader_name, _loader))
@@ -545,6 +638,7 @@ def run_static_studio_pages_j_r_source(
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
     try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    force_refresh_all: bool = False,
 ) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
@@ -556,6 +650,7 @@ def run_static_studio_pages_j_r_source(
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
         try_playwright=try_playwright,
+        force_refresh_all=force_refresh_all,
     )
 
 
@@ -568,6 +663,7 @@ def run_static_studio_pages_s_z_source(
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
     try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    force_refresh_all: bool = False,
 ) -> List[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
@@ -579,6 +675,7 @@ def run_static_studio_pages_s_z_source(
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
         try_playwright=try_playwright,
+        force_refresh_all=force_refresh_all,
     )
 
 

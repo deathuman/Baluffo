@@ -12,6 +12,7 @@ Phases:
 
 import argparse
 import asyncio
+import time
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -20,12 +21,15 @@ import httpx
 
 import src.source_discovery as sd
 from src.contracts import SCHEMA_VERSION
+from src.jobs.state import read_source_state
 from src.source_registry import load_json_array, save_json_atomic, source_identity, unique_sources
 
 from .core import (
     adapter_domain_fingerprint,
     apply_queue_balancing,
+    apply_sheet_directory_static_probe_cap,
     classify_probe_failure_stage,
+    classify_static_suppression,
     compute_candidate_score,
     estimate_probe_priority,
     init_stage_counter,
@@ -37,7 +41,7 @@ from .core import (
 from .gamesmap import discover_gamesmap_candidates
 from .probe import async_probe_candidate, validate_candidate_for_probe
 from .reporting import build_stage_summary, merge_candidate_streams, stage_curated_seed_candidates
-from .schemas import DiscoveryReportSummarySchema
+from .schemas import DiscoveryReportSchema, DiscoveryReportSummarySchema
 from .scoring import resolve_discovery_thresholds
 from .sheet_directory import discover_game_studio_sheet_candidates
 from .static_candidates import build_static_candidate_from_page
@@ -47,6 +51,121 @@ from .web_search import (
     fetch_text,
     infer_provider_candidates_from_html,
 )
+
+
+DISCOVERY_TIMING_STAGE_KEYS = [
+    "curatedSeed",
+    "sheetDirectory",
+    "providerPatterns",
+    "seedCareersScan",
+    "gamesmap",
+    "webSearch",
+    "dedupeFilter",
+    "probe",
+    "queueBalancing",
+]
+
+
+def _empty_adapter_runtime() -> Dict[str, int | str]:
+    return {
+        "adapter": "",
+        "durationMs": 0,
+        "generatedCount": 0,
+        "failureCount": 0,
+        "probedCount": 0,
+        "healthyCount": 0,
+        "queuedCount": 0,
+    }
+
+
+def _record_stage_timing(stage_timings_ms: Dict[str, int], stage: str, started_mono: float) -> int:
+    duration_ms = max(0, int((time.perf_counter() - started_mono) * 1000))
+    stage_timings_ms[stage] = stage_timings_ms.get(stage, 0) + duration_ms
+    return duration_ms
+
+
+def _increment_adapter_runtime(
+    adapter_runtime: Dict[str, Dict[str, int | str]],
+    adapter: Any,
+    *,
+    duration_ms: int = 0,
+    generated: int = 0,
+    failures: int = 0,
+    probed: int = 0,
+    healthy: int = 0,
+    queued: int = 0,
+) -> None:
+    adapter_name = str(adapter or "").strip().lower() or "unknown"
+    row = adapter_runtime.setdefault(adapter_name, {"adapter": adapter_name, **_empty_adapter_runtime()})
+    row["adapter"] = adapter_name
+    row["durationMs"] = int(row.get("durationMs") or 0) + max(0, int(duration_ms or 0))
+    row["generatedCount"] = int(row.get("generatedCount") or 0) + max(0, int(generated or 0))
+    row["failureCount"] = int(row.get("failureCount") or 0) + max(0, int(failures or 0))
+    row["probedCount"] = int(row.get("probedCount") or 0) + max(0, int(probed or 0))
+    row["healthyCount"] = int(row.get("healthyCount") or 0) + max(0, int(healthy or 0))
+    row["queuedCount"] = int(row.get("queuedCount") or 0) + max(0, int(queued or 0))
+
+
+def _distribute_duration_by_adapter(
+    adapter_runtime: Dict[str, Dict[str, int | str]],
+    *,
+    duration_ms: int,
+    rows: Optional[List[Dict[str, Any]]] = None,
+    failure_rows: Optional[List[Dict[str, Any]]] = None,
+) -> None:
+    adapter_counts: Counter[str] = Counter()
+    for row in rows or []:
+        if isinstance(row, dict):
+            adapter_counts[str(row.get("adapter") or "").strip().lower() or "unknown"] += 1
+    for row in failure_rows or []:
+        if isinstance(row, dict):
+            adapter_counts[str(row.get("adapter") or "").strip().lower() or "unknown"] += 1
+    if not adapter_counts:
+        return
+    total_units = sum(adapter_counts.values())
+    remaining = max(0, int(duration_ms or 0))
+    adapter_items = list(adapter_counts.items())
+    for index, (adapter_name, count) in enumerate(adapter_items):
+        if index == len(adapter_items) - 1:
+            share = remaining
+        else:
+            share = int((max(0, int(duration_ms or 0)) * count) / max(1, total_units))
+            remaining = max(0, remaining - share)
+        _increment_adapter_runtime(adapter_runtime, adapter_name, duration_ms=share)
+
+
+def _build_discovery_runtime_payload(
+    *,
+    total_duration_ms: int,
+    stage_timings_ms: Dict[str, int],
+    adapter_runtime: Dict[str, Dict[str, int | str]],
+) -> Dict[str, Any]:
+    stage_rows = [
+        {"stage": stage, "durationMs": int(duration_ms)}
+        for stage, duration_ms in sorted(stage_timings_ms.items(), key=lambda item: int(item[1]), reverse=True)
+        if int(duration_ms) > 0
+    ]
+    adapter_rows = [
+        {
+            "adapter": str(row.get("adapter") or "unknown"),
+            "durationMs": int(row.get("durationMs") or 0),
+            "generatedCount": int(row.get("generatedCount") or 0),
+            "failureCount": int(row.get("failureCount") or 0),
+            "probedCount": int(row.get("probedCount") or 0),
+            "healthyCount": int(row.get("healthyCount") or 0),
+            "queuedCount": int(row.get("queuedCount") or 0),
+        }
+        for row in adapter_runtime.values()
+        if isinstance(row, dict)
+    ]
+    adapter_rows.sort(key=lambda row: int(row.get("durationMs") or 0), reverse=True)
+    return {
+        "totalDurationMs": max(0, int(total_duration_ms or 0)),
+        "stageTimingsMs": {key: int(stage_timings_ms.get(key) or 0) for key in DISCOVERY_TIMING_STAGE_KEYS},
+        "stageTop": stage_rows[:5],
+        "adapterTimings": adapter_rows,
+        "slowestAdapters": adapter_rows[:5],
+    }
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -79,8 +198,11 @@ def run_discovery(
     fetcher=fetch_text,
 ) -> Dict[str, Any]:
     started_at = sd.now_iso()
+    run_started_mono = time.perf_counter()
     effective_config = discovery_config if isinstance(discovery_config, dict) else sd.load_discovery_config()
     thresholds = resolve_discovery_thresholds(effective_config)
+    stage_timings_ms: Dict[str, int] = {key: 0 for key in DISCOVERY_TIMING_STAGE_KEYS}
+    adapter_runtime: Dict[str, Dict[str, int | str]] = {}
 
     active = load_json_array(sd.ACTIVE_PATH, [])
     pending_existing = load_json_array(sd.PENDING_PATH, [])
@@ -107,17 +229,31 @@ def run_discovery(
     streams: List[Tuple[str, List[Dict[str, Any]]]] = []
 
     sd.emit_log("Generating curated seed candidates from static discovery inputs.")
+    stage_started = time.perf_counter()
     curated_seed_candidates = stage_curated_seed_candidates()
+    stage_duration_ms = _record_stage_timing(stage_timings_ms, "curatedSeed", stage_started)
+    _distribute_duration_by_adapter(adapter_runtime, duration_ms=stage_duration_ms, rows=curated_seed_candidates)
+    for row in curated_seed_candidates:
+        _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
     sd.emit_log(f"Curated seed generation complete: {len(curated_seed_candidates)} candidate(s).")
     streams.append(("curated_seed", curated_seed_candidates))
 
     sd.emit_log("Scanning game studios sheet directory for candidate sources.")
+    stage_started = time.perf_counter()
     provider_sheet_candidates, static_sheet_candidates, sheet_failures = discover_game_studio_sheet_candidates(
         timeout_s,
         sheet_id=str(getattr(sd, "GAME_STUDIOS_SHEET_ID", "")) or None,
         gid=str(getattr(sd, "GAME_STUDIOS_SHEET_GID", "")) or None,
         fetcher=fetcher,
     )
+    sheet_stage_rows = [*provider_sheet_candidates, *static_sheet_candidates]
+    stage_duration_ms = _record_stage_timing(stage_timings_ms, "sheetDirectory", stage_started)
+    _distribute_duration_by_adapter(adapter_runtime, duration_ms=stage_duration_ms, rows=sheet_stage_rows, failure_rows=sheet_failures)
+    for row in sheet_stage_rows:
+        _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+    for row in sheet_failures:
+        if isinstance(row, dict):
+            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
     sd.emit_log(
         "Game studios sheet scan complete: "
         f"provider={len(provider_sheet_candidates)}, static={len(static_sheet_candidates)}, failures={len(sheet_failures)}."
@@ -133,14 +269,28 @@ def run_discovery(
 
     if mode == "dynamic":
         sd.emit_log("Generating provider-pattern candidates from the studio seed catalog.")
+        stage_started = time.perf_counter()
         provider_pattern_candidates = sd.build_pattern_candidates()
+        stage_duration_ms = _record_stage_timing(stage_timings_ms, "providerPatterns", stage_started)
+        _distribute_duration_by_adapter(adapter_runtime, duration_ms=stage_duration_ms, rows=provider_pattern_candidates)
+        for row in provider_pattern_candidates:
+            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
         sd.emit_log(f"Provider-pattern generation complete: {len(provider_pattern_candidates)} candidate(s).")
         streams.append(("provider_pattern", provider_pattern_candidates))
 
         sd.emit_log("Scanning known careers pages from the seed catalog.")
+        stage_started = time.perf_counter()
         provider_web_candidates, static_web_candidates, seed_failures = sd.discover_seed_careers_page_candidates(
             timeout_s, fetcher=fetcher
         )
+        seed_stage_rows = [*provider_web_candidates, *static_web_candidates]
+        stage_duration_ms = _record_stage_timing(stage_timings_ms, "seedCareersScan", stage_started)
+        _distribute_duration_by_adapter(adapter_runtime, duration_ms=stage_duration_ms, rows=seed_stage_rows, failure_rows=seed_failures)
+        for row in seed_stage_rows:
+            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+        for row in seed_failures:
+            if isinstance(row, dict):
+                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
         sd.emit_log(
             "Seed careers scan complete: "
             f"provider={len(provider_web_candidates)}, static={len(static_web_candidates)}, failures={len(seed_failures)}."
@@ -150,11 +300,20 @@ def run_discovery(
         streams.append(("generic_static", static_web_candidates))
 
         sd.emit_log("Scanning Gamesmap directory for discoverable studios.")
+        stage_started = time.perf_counter()
         provider_gamesmap_candidates, static_gamesmap_candidates, gamesmap_failures = discover_gamesmap_candidates(
             timeout_s,
             config=effective_config,
             fetcher=fetcher,
         )
+        gamesmap_stage_rows = [*provider_gamesmap_candidates, *static_gamesmap_candidates]
+        stage_duration_ms = _record_stage_timing(stage_timings_ms, "gamesmap", stage_started)
+        _distribute_duration_by_adapter(adapter_runtime, duration_ms=stage_duration_ms, rows=gamesmap_stage_rows, failure_rows=gamesmap_failures)
+        for row in gamesmap_stage_rows:
+            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+        for row in gamesmap_failures:
+            if isinstance(row, dict):
+                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
         sd.emit_log(
             "Gamesmap scan complete: "
             f"provider={len(provider_gamesmap_candidates)}, static={len(static_gamesmap_candidates)}, failures={len(gamesmap_failures)}."
@@ -165,11 +324,20 @@ def run_discovery(
 
         if include_web_search:
             sd.emit_log("Running web-search discovery queries.")
+            stage_started = time.perf_counter()
             provider_search_candidates, static_search_candidates, search_failures = discover_web_search_candidates(
                 timeout_s,
                 studio_seeds=list(getattr(sd, "STUDIO_SEEDS", [])),
                 fetcher=fetcher,
             )
+            search_stage_rows = [*provider_search_candidates, *static_search_candidates]
+            stage_duration_ms = _record_stage_timing(stage_timings_ms, "webSearch", stage_started)
+            _distribute_duration_by_adapter(adapter_runtime, duration_ms=stage_duration_ms, rows=search_stage_rows, failure_rows=search_failures)
+            for row in search_stage_rows:
+                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+            for row in search_failures:
+                if isinstance(row, dict):
+                    _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
             sd.emit_log(
                 "Web-search discovery complete: "
                 f"provider={len(provider_search_candidates)}, static={len(static_search_candidates)}, failures={len(search_failures)}."
@@ -185,6 +353,7 @@ def run_discovery(
     duplicate_reasons: Counter[str] = Counter()
     dedupe_drop_rows: List[Dict[str, Any]] = []
 
+    stage_started = time.perf_counter()
     discovered = merge_candidate_streams(streams)
     for row in discovered:
         generated_count_by_stage[str(row.get("discoveryStage") or "provider_pattern")] += 1
@@ -264,8 +433,15 @@ def run_discovery(
             local_seen_domains.add(row_domain)
         survived_dedupe_count_by_stage[stage] += 1
         filtered.append(row)
+    _record_stage_timing(stage_timings_ms, "dedupeFilter", stage_started)
 
     filtered.sort(key=estimate_probe_priority, reverse=True)
+    source_state_rows = read_source_state(sd.ACTIVE_PATH.parent / "jobs-source-state.json")
+    filtered, sheet_static_suppressed = apply_sheet_directory_static_probe_cap(
+        filtered,
+        top_n=top_n,
+        source_state_rows=source_state_rows,
+    )
     sd.emit_log(
         "After dedupe: "
         + ", ".join(f"{stage}={survived_dedupe_count_by_stage.get(stage, 0)}" for stage in sd.DISCOVERY_STAGES)
@@ -286,12 +462,36 @@ def run_discovery(
     method_counter: Counter[str] = Counter()
     skipped_invalid = 0
     skipped_low_evidence_probe_count = 0
+    suppressed_static_count = 0
+    suppressed_static_by_reason: Counter[str] = Counter()
+    suppressed_static_by_stage: Counter[str] = Counter()
+    for raw in sheet_static_suppressed:
+        stage = str(raw.get("discoveryStage") or "provider_pattern")
+        suppressed_static_count += 1
+        suppressed_static_by_reason["sheet_directory_stage_cap"] += 1
+        suppressed_static_by_stage[stage] += 1
+        failures.append(
+            {
+                "name": raw.get("name"),
+                "adapter": raw.get("adapter"),
+                "domain": (urlparse(sd.endpoint_url(raw)).netloc or "").lower(),
+                "error": "sheet_directory_stage_cap",
+                "stage": "suppressed_static",
+                "dropStage": "suppressed_static",
+                "dropReason": "sheet_directory_stage_cap",
+            }
+        )
     low_evidence_probes_used = 0
     validation_skipped_count = 0
     queue_filtered_count = 0
     probe_failed_count = 0
 
     def write_progress_report(current_candidates: List[Dict[str, Any]], *, phase: str, phase_label: str) -> None:
+        runtime_payload = _build_discovery_runtime_payload(
+            total_duration_ms=max(0, int((time.perf_counter() - run_started_mono) * 1000)),
+            stage_timings_ms=stage_timings_ms,
+            adapter_runtime=adapter_runtime,
+        )
         summary = build_stage_summary(
             current_candidates,
             found_endpoint_count=found_endpoint_count,
@@ -312,6 +512,12 @@ def run_discovery(
             method_counter=method_counter,
             duplicate_reasons=duplicate_reasons,
             deferred_counts=None,
+            queued_by_adapter=None,
+            deferred_by_adapter=None,
+            healthy_but_deferred_by_adapter=None,
+            suppressed_static_count=suppressed_static_count,
+            suppressed_static_by_reason=dict(suppressed_static_by_reason),
+            suppressed_static_by_stage=dict(suppressed_static_by_stage),
             thresholds=thresholds,
             phase=phase,
             phase_label=phase_label,
@@ -324,6 +530,7 @@ def run_discovery(
                 "startedAt": started_at,
                 "finishedAt": "",
                 "summary": summary,
+                "runtime": runtime_payload,
                 "candidates": current_candidates,
                 "failures": failures,
                 "topFailures": [],
@@ -342,6 +549,27 @@ def run_discovery(
     probe_inputs: List[Dict[str, Any]] = []
     for raw in filtered:
         stage = str(raw.get("discoveryStage") or "provider_pattern")
+        suppression_reason = classify_static_suppression(
+            raw,
+            source_state_rows=source_state_rows,
+            thresholds=thresholds,
+        )
+        if suppression_reason:
+            suppressed_static_count += 1
+            suppressed_static_by_reason[suppression_reason] += 1
+            suppressed_static_by_stage[stage] += 1
+            failures.append(
+                {
+                    "name": raw.get("name"),
+                    "adapter": raw.get("adapter"),
+                    "domain": (urlparse(sd.endpoint_url(raw)).netloc or "").lower(),
+                    "error": suppression_reason,
+                    "stage": "suppressed_static",
+                    "dropStage": "suppressed_static",
+                    "dropReason": suppression_reason,
+                }
+            )
+            continue
         valid, invalid_reason = validate_candidate_for_probe(raw)
         if not valid:
             skipped_invalid += 1
@@ -400,7 +628,7 @@ def run_discovery(
         pass
     playwright_semaphore = asyncio.Semaphore(5) if try_playwright else None
 
-    async def _run_probe_batch(rows: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], bool, int, str]]:
+    async def _run_probe_batch(rows: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], bool, int, str, int]]:
         limits = probe_concurrency_defaults()
         total_sem = asyncio.Semaphore(int(limits["total"]))
         bucket_sems = {
@@ -414,11 +642,12 @@ def run_discovery(
                 return await asyncio.to_thread(fetcher, url, t)
             return await async_fetch_text_httpx(client, url, t)
 
-        async def _probe_one(row: Dict[str, Any]) -> Tuple[Dict[str, Any], bool, int, str]:
+        async def _probe_one(row: Dict[str, Any]) -> Tuple[Dict[str, Any], bool, int, str, int]:
             bucket = probe_bucket_for(row)
             bucket_sem = bucket_sems.get(bucket, bucket_sems["provider"])
             async with total_sem:
                 async with bucket_sem:
+                    probe_started = time.perf_counter()
                     ok, jobs_found, error = await async_probe_candidate(
                         row,
                         timeout_s,
@@ -426,26 +655,35 @@ def run_discovery(
                         try_playwright=try_playwright,
                         playwright_semaphore=playwright_semaphore,
                     )
-                    return row, ok, jobs_found, error
+                    probe_duration_ms = max(0, int((time.perf_counter() - probe_started) * 1000))
+                    return row, ok, jobs_found, error, probe_duration_ms
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
             tasks = [asyncio.create_task(_probe_one(row)) for row in rows]
-            results: List[Tuple[Dict[str, Any], bool, int, str]] = []
+            results: List[Tuple[Dict[str, Any], bool, int, str, int]] = []
             for fut in asyncio.as_completed(tasks):
                 results.append(await fut)
             return results
 
     completed = 0
-    for raw, ok, jobs_found, error in asyncio.run(_run_probe_batch(probe_inputs)):
+    probe_stage_started = time.perf_counter()
+    for raw, ok, jobs_found, error, probe_duration_ms in asyncio.run(_run_probe_batch(probe_inputs)):
         completed += 1
         stage = str(raw.get("discoveryStage") or "provider_pattern")
         evidence_score = int(raw.get("evidenceScore") or 0)
         probed += 1
         probed_count_by_stage[stage] += 1
+        _increment_adapter_runtime(
+            adapter_runtime,
+            raw.get("adapter"),
+            duration_ms=probe_duration_ms,
+            probed=1,
+        )
 
         if not ok:
             probe_failed_count += 1
             probe_stage = classify_probe_failure_stage(error)
+            _increment_adapter_runtime(adapter_runtime, raw.get("adapter"), failures=1)
             failures.append(
                 {
                     "name": raw.get("name"),
@@ -475,6 +713,7 @@ def run_discovery(
             score, reasons = compute_candidate_score(raw, jobs_found)
             normalized = sd.normalize_candidate(raw, score, reasons, jobs_found, probed_at=sd.now_iso())
             queueable_candidates.append(normalized)
+            _increment_adapter_runtime(adapter_runtime, normalized.get("adapter"), healthy=1, queued=1)
             adapter_counter[str(normalized.get("adapter") or "unknown")] += 1
             method_counter[str(normalized.get("discoveryMethod") or "unknown")] += 1
 
@@ -485,8 +724,12 @@ def run_discovery(
                 f"skipped_low_evidence={skipped_low_evidence_probe_count}."
             )
             write_progress_report(queueable_candidates, phase="probe", phase_label=f"Probing {len(filtered)} candidate(s)")
+    _record_stage_timing(stage_timings_ms, "probe", probe_stage_started)
 
-    queued_candidates, report_candidates, deferred_reason_counts = apply_queue_balancing(queueable_candidates, top_n)
+    queue_balancing_started = time.perf_counter()
+    queued_candidates, report_candidates, balancing_summary = apply_queue_balancing(queueable_candidates, top_n)
+    queue_balancing_duration_ms = _record_stage_timing(stage_timings_ms, "queueBalancing", queue_balancing_started)
+    _distribute_duration_by_adapter(adapter_runtime, duration_ms=queue_balancing_duration_ms, rows=queued_candidates)
     for row in report_candidates:
         if not isinstance(row, dict):
             continue
@@ -523,7 +766,13 @@ def run_discovery(
         adapter_counter=adapter_counter,
         method_counter=method_counter,
         duplicate_reasons=duplicate_reasons,
-        deferred_counts=deferred_reason_counts,
+        deferred_counts=dict(balancing_summary.get("deferredReasons") or {}),
+        queued_by_adapter=dict(balancing_summary.get("queuedByAdapter") or {}),
+        deferred_by_adapter=dict(balancing_summary.get("deferredByAdapter") or {}),
+        healthy_but_deferred_by_adapter=dict(balancing_summary.get("healthyButDeferredByAdapter") or {}),
+        suppressed_static_count=suppressed_static_count,
+        suppressed_static_by_reason=dict(suppressed_static_by_reason),
+        suppressed_static_by_stage=dict(suppressed_static_by_stage),
         thresholds=thresholds,
         phase="completed",
         phase_label="Discovery completed",
@@ -548,6 +797,11 @@ def run_discovery(
         "startedAt": started_at,
         "finishedAt": sd.now_iso(),
         "summary": summary,
+        "runtime": _build_discovery_runtime_payload(
+            total_duration_ms=max(0, int((time.perf_counter() - run_started_mono) * 1000)),
+            stage_timings_ms=stage_timings_ms,
+            adapter_runtime=adapter_runtime,
+        ),
         "candidates": report_candidates,
         "failures": failures,
         "topFailures": [{"key": key, "count": count} for key, count in failure_counter.most_common(5)],
@@ -558,7 +812,7 @@ def run_discovery(
             "pending": str(sd.PENDING_PATH),
         },
     }
-    DiscoveryReportSummarySchema.model_validate(report["summary"])
+    DiscoveryReportSchema.model_validate(report)
     save_json_atomic(sd.DISCOVERY_REPORT_PATH, report)
     sd.emit_log(f"Discovery report written to {sd.DISCOVERY_REPORT_PATH}.")
     return report

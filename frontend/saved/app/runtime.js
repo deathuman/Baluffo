@@ -45,7 +45,7 @@ import {
 } from "../state-sync/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { set as stateHubSet } from "../../shared/state-hub.js";
-import { postJson } from "../../shared/api-client.js";
+import { fetchJson, postJson } from "../../shared/api-client.js";
 import { cacheSavedDom } from "./dom.js";
 import { setSavedAuthControlsReady, setSavedAuthStatus, toggleSavedAuthButtons } from "./auth.js";
 import { requestConfirmationDialog, requestTextInputDialog } from "../../local-data/profile-name-dialog.js";
@@ -88,7 +88,8 @@ import {
   filterSavedJobs,
   isValidSavedFilter,
   isValidSavedSort,
-  sortSavedJobs
+  sortSavedJobs,
+  REMINDER_SOON_HOURS,
 } from "./view-state.js";
 import {
   isAllowedAttachment,
@@ -173,6 +174,8 @@ let lastActivityPulse = null;
 let savedAuthReadyPollTimer = null;
 let savedAuthListenerBound = false;
 let savedInteractiveMetricSent = false;
+let adminBridgeStatusPollTimer = null;
+let adminBridgeButtonState = "checking";
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const TIMELINE_PREF_PREFIX = "baluffo_saved_timeline_prefs";
 const CUSTOM_SOURCE_LABEL = "Custom";
@@ -244,8 +247,48 @@ const startupMetrics = createSavedStartupMetrics({
  * - events concern: ./runtime/events.js
  */
 
+function setAdminPageButtonState(stateValue, label, title) {
+  const normalized = String(stateValue || "checking").toLowerCase();
+  adminBridgeButtonState = normalized;
+  if (!adminPageBtnEl) return;
+  adminPageBtnEl.dataset.bridgeState = normalized;
+  adminPageBtnEl.classList.remove("online", "offline", "checking");
+  adminPageBtnEl.classList.add(normalized);
+  adminPageBtnEl.textContent = label || "Admin Checking...";
+  adminPageBtnEl.title = title || label || "Checking admin bridge status";
+  const enabled = normalized === "online";
+  adminPageBtnEl.disabled = !enabled;
+  adminPageBtnEl.setAttribute("aria-disabled", enabled ? "false" : "true");
+}
+
+async function pollAdminBridgeButtonState() {
+  if (!adminPageBtnEl) return;
+  if (adminBridgeButtonState !== "online") {
+    setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
+  }
+  try {
+    const payload = await fetchJson(adminConfig.ADMIN_BRIDGE_BASE, "/ops/health");
+    const summary = payload?.summary || {};
+    const activeAlerts = Number(summary?.activeAlertCount || 0);
+    const label = activeAlerts > 0 ? `Admin Online (${activeAlerts} alerts)` : "Admin Online";
+    setAdminPageButtonState("online", label, "Open admin panel");
+  } catch {
+    setAdminPageButtonState("offline", "Admin Offline", "Admin bridge is offline");
+  }
+}
+
+function startAdminBridgeButtonWatch() {
+  if (!adminPageBtnEl || adminBridgeStatusPollTimer) return;
+  setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
+  pollAdminBridgeButtonState().catch(() => {});
+  adminBridgeStatusPollTimer = window.setInterval(() => {
+    pollAdminBridgeButtonState().catch(() => {});
+  }, 5000);
+}
+
 function bootSavedPage() {
   cacheDom();
+  startAdminBridgeButtonWatch();
   bindEvents();
   initSavedJobsPage();
 }
@@ -321,6 +364,10 @@ function bindEvents() {
     window.location.href = target;
   });
   bindUi(adminPageBtnEl, "click", () => {
+    if (adminBridgeButtonState !== "online") {
+      showToast("Admin bridge is offline.", "info");
+      return;
+    }
     window.location.href = "admin.html";
   });
   bindUi(addCustomJobBtnEl, "click", () => {
@@ -416,7 +463,11 @@ function initSavedJobsPage() {
   setCustomJobAvailability(false);
   updateTimelineScopeButtons();
   renderWorkspaceStats();
-  if (!savedPageService.isAvailable() || !isSavedApiReady()) {
+
+  const pageServiceAvailable = savedPageService.isAvailable();
+  const apiReady = isSavedApiReady();
+
+  if (!pageServiceAvailable || !apiReady) {
     emitSavedStartupMetric("saved_auth_waiting");
     setAuthStatus("Local auth starting...");
     setSourceStatus("Local auth provider is starting...");
@@ -560,7 +611,7 @@ function renderSavedJobs(jobs) {
   if (!savedJobsListEl) return;
   const renderContext = captureRenderContext();
   const allJobs = Array.isArray(jobs) ? jobs : [];
-  const filteredJobs = sortSavedJobs(filterSavedJobs(allJobs, activeSavedFilter), activeSavedSort);
+  const filteredJobs = sortSavedJobs(filterSavedJobs(allJobs, activeSavedFilter), activeSavedSort, { parseIsoDate });
   setSavedFilterBarVisible(allJobs.length > 0 && Boolean(currentUser));
   setSavedSortBarVisible(allJobs.length > 0 && Boolean(currentUser));
   renderSavedFilterMeta(allJobs.length, filteredJobs.length);
@@ -1760,7 +1811,10 @@ function getLastJobsUrl() {
 }
 
 async function signInUser() {
-  if (!isSavedApiReady() || !savedPageService.isAvailable()) {
+  const pageServiceAvailable = savedPageService.isAvailable();
+  const apiReady = isSavedApiReady();
+
+  if (!apiReady || !pageServiceAvailable) {
     setAuthControlsReady(false);
     scheduleSavedAuthReadyPoll();
     showToast("Local auth provider is starting. Try again in a moment.", "info");
@@ -1770,7 +1824,9 @@ async function signInUser() {
     initSavedJobsPage();
   }
   setAuthControlsReady(true);
+
   const result = await savedAuthService.signIn();
+
   if (!result.ok) {
     if (String(result.error || "").toLowerCase().includes("cancel")) return;
     console.error("Sign-in failed:", result.error);

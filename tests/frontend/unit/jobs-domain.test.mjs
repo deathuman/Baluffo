@@ -6,6 +6,9 @@ import {
   classifyCompanyType,
   mapProfession,
   normalizeJobs,
+  sanitizePublicText,
+  sanitizeLocationField,
+  isSemanticallyValidLocationValue,
   getJobKeyForJob,
   deriveFreshness,
   mapFreshnessAgeToScore
@@ -105,4 +108,56 @@ test("jobs domain normalizes lifecycle status and timestamps", () => {
   assert.equal(rows[0].firstSeenAt, "2026-03-01T00:00:00.000Z");
   assert.equal(rows[0].lastSeenAt, "2026-03-05T00:00:00.000Z");
   assert.equal(rows[0].removedAt, "2026-03-06T00:00:00.000Z");
+});
+
+test("jobs domain sanitizes public text html fragments", () => {
+  assert.equal(sanitizePublicText('<div class="location">Tokyo'), "Tokyo");
+  assert.equal(sanitizePublicText("Japan</div>"), "Japan");
+  assert.equal(sanitizePublicText('<div class="cb"><'), "");
+
+  const rows = normalizeJobs([{
+    title: '<div class="title">Technical Artist</div>',
+    company: "Kojimaproductions",
+    city: '<div class="location">Tokyo',
+    country: "Japan</div>",
+    sector: "<div>Game</div>"
+  }], {
+    professionLabels: {},
+    sanitizeUrl: value => value
+  });
+  assert.equal(rows[0].title, "Technical Artist");
+  assert.equal(rows[0].city, "Tokyo");
+  assert.equal(rows[0].country, "Japan");
+  assert.equal(rows[0].sector, "Game");
+});
+
+test("jobs domain blanks semantic location noise but preserves valid locations", () => {
+  assert.equal(
+    sanitizeLocationField(
+      "Remote, United States; San Francisco Area, United States Remote; New York City; Los Angeles",
+      "city"
+    ),
+    ""
+  );
+  assert.equal(
+    sanitizeLocationField(
+      "キャリア登録 「キャリア登録」とは？ 当社に興味・関心を持たれた方にご自身のキャリア（職務経歴）を簡易登録いただくことで、適したポジションがある場合、人事担当者から個別にご案内させていただく仕組みです。",
+      "city"
+    ),
+    ""
+  );
+  assert.equal(sanitizeLocationField("Tokyo", "city"), "Tokyo");
+  assert.equal(isSemanticallyValidLocationValue("Montréal", "city"), true);
+
+  const rows = normalizeJobs([{
+    title: "Growth Marketing Intern",
+    company: "Sleeper",
+    city: "Remote, United States; San Francisco Area, United States Remote; New York City; Los Angeles",
+    country: "United States",
+  }], {
+    professionLabels: {},
+    sanitizeUrl: value => value
+  });
+  assert.equal(rows[0].city, "");
+  assert.equal(rows[0].country, "United States");
 });

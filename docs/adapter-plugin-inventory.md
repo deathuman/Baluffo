@@ -1,4 +1,4 @@
-## Adapter plugin inventory (2026-03-16)
+## Adapter plugin inventory (2026-03-20)
 
 This note captures the initial inventory for the **adapter plugin framework** rollout.
 
@@ -39,7 +39,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 
 **Health check:** After a run, open `data/jobs-fetch-report.json`. The `sources` array has one entry per attempted source with `name`, `status` (ok/error/excluded), `fetchedCount`, `keptCount`, `error`, and `durationMs`. Use `runtime.selectedSourceCount` and `summary.failedSources` / `summary.excludedSources` for a quick overview.
 
-**Troubleshooting:** To debug a failing source, find its entry in `sources` and check `status`, `error`, and `loss` (e.g. `canonicalDropReasons`). To run only specific sources: `python -m src.jobs_fetcher --only-sources google_sheets,remote_ok`. To force a full run ignoring circuit breaker: `--ignore-circuit-breaker`. To disable a source without code changes, add it to `EXCLUDED_DEFAULT_SOURCES` in `src/jobs_fetcher_registry.py` or remove it from the active registry (`data/source-registry-active.json`) for registry-driven sources.
+**Troubleshooting:** To debug a failing source, find its entry in `sources` and check `status`, `error`, and `loss` (e.g. `canonicalDropReasons`). To run only specific sources: `python src/jobs_fetcher.py --only-sources google_sheets,remote_ok`. To force a full run ignoring circuit breaker: `--ignore-circuit-breaker`. To disable a source without code changes, add it to `EXCLUDED_DEFAULT_SOURCES` in `src/jobs_fetcher_registry.py` or remove it from the active registry (`data/source-registry-active.json`) for registry-driven sources.
 
 ### Biggest / highest-churn candidates
 
@@ -97,24 +97,33 @@ Then validate framework generality on a second family:
 
 | Plugin | Host(s) | Purpose |
 |--------|--------|---------|
-| example_com | example.com | Demo / tests |
-| example_org | example.org | Demo / tests |
-| supercell | supercell.com, www.supercell.com | Supercell careers (HTML-first; browser escalation when needed) |
-| remedy | remedygames.com, www.remedygames.com | Remedy careers (HTML-first; browser escalation when needed) |
-| milestone | milestone.it, www.milestone.it | Milestone careers (HTML-first; browser escalation when needed) |
-| kojima | kojimaproductions.jp, www.kojimaproductions.jp | Kojima Productions careers (HTML-first; dynamic listing helper + browser escalation) |
 | activision | careers.activision.com | Activision careers (HTML-first; browser escalation when needed) |
 | blizzard | careers.blizzard.com, www.careers.blizzard.com | Blizzard Entertainment careers (HTML-first; browser escalation when needed) |
-| sheet_studios | coolgames.com, gismart.com, aspyr.com, 10chambers.com, careers.10chambers.com, 24bitgames.com, 4jstudios.com, blacksnow.tv, napsteam.com, area35east.com, chubbypixel.com, bonfirestudios.com, bandainamcostudios.my | Sheet-sourced / indie studio career pages (shared heuristics; empty-confirmed or browser fallback when extract fails) |
-| littlechicken | littlechicken.nl, www.littlechicken.nl | Little Chicken careers |
+| cdprojektred | cdprojektred.com, www.cdprojektred.com | CD Projekt RED careers (HTML-first; Playwright fallback when JS shell detected) |
+| climax | www.climaxstudios.com | Climax Studios careers |
+| embark | careers.embark-studios.com | Embark Studios careers |
+| example_com | example.com | Demo / tests |
+| example_org | example.org | Demo / tests |
+| globalstep | globalstep.com | GlobalStep careers |
+| hrmos | hrmos.co | HRMOS-powered career pages |
+| jobvite | amberstudiocareers (partial) | Jobvite-based studio careers |
+| kojima | kojimaproductions.jp, www.kojimaproductions.jp | Kojima Productions careers (HTML-first; dynamic listing helper + browser escalation) |
+| lionbridge | careers.lionbridge.com | Lionbridge careers |
 | larian | larian.com | Larian Studios static careers (excludes /careers/location/ false positives) |
+| littlechicken | littlechicken.nl, www.littlechicken.nl | Little Chicken careers |
+| milestone | milestone.it, www.milestone.it | Milestone careers (HTML-first; browser escalation when needed) |
+| naconstudiomilan | www.naconstudiomilan.com, naconstudiomilan.com | NACON Studio Milan careers |
+| remedy | remedygames.com, www.remedygames.com | Remedy careers (HTML-first; browser escalation when needed) |
+| riot | www.riotgames.com | Riot Games careers |
+| sheet_studios | coolgames.com, gismart.com, aspyr.com, 10chambers.com, careers.10chambers.com, 24bitgames.com, 4jstudios.com, blacksnow.tv, napsteam.com, area35east.com, chubbypixel.com, bonfirestudios.com, bandainamcostudios.my | Sheet-sourced / indie studio career pages (shared heuristics; empty-confirmed or browser fallback when extract fails) |
 | static_pilot | (none) | Placeholder; fallback used for all hosts |
+| supercell | supercell.com, www.supercell.com | Supercell careers (HTML-first; browser escalation when needed) |
 
 To add a new static plugin: (1) Add a module under `src/jobs/adapters/plugins/static/` with `can_handle(ctx)` (e.g. `ctx.source_identity == "example.org"`) and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`. (2) Register it in `register.py` with `default_registry.register(SimpleAdapterPlugin(...))`. (3) See `docs/architecture-ai-map.md` § Static adapter and this file § Source loaders map.
 
 #### Static source checklist (to avoid extract-zero regressions)
 
-- **Run it alone first**: `py -3 -m src.jobs_fetcher --only-sources static_source::<id> --ignore-circuit-breaker`
+- **Run it alone first**: `python src/jobs_fetcher.py --only-sources static_source::<id> --ignore-circuit-breaker`
 - **If it returns 403 / obvious challenge**: ensure it lands in `data/jobs-browser-fallback-queue.json` (browser-required escalation).
 - **If it returns 200 but extracts 0**:
   - Add/update a static plugin for that host, or
@@ -128,7 +137,7 @@ Follow this sequence so new static sources rarely end up as silent extract-zero:
 
 1. **Add the source** to the active registry (`data/source-registry-active.json` or Admin → Sources) with `"adapter": "static"` and `pages` (listing URL(s)).
 2. **Run it alone**:  
-   `py -3 -m src.jobs_fetcher --only-sources static_source::<source_id> --ignore-circuit-breaker`  
+   `python src/jobs_fetcher.py --only-sources static_source::<source_id> --ignore-circuit-breaker`  
    Use the source's `id` or the loader name from the report (e.g. `static_source::static:listing_url:https://...`).
 3. **Check the report** in `data/jobs-fetch-report.json`: find the source in `sources` and note `status`, `keptCount`, `classification`, `browserFallbackRecommended`, `error`.
 4. **Act on the outcome**:

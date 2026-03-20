@@ -86,8 +86,39 @@ def _json_error_envelope(error: str, *, source_name: str, studio: str) -> Dict[s
     }
 
 
+def _make_json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {_clean_text(key): _make_json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_make_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_make_json_safe(item) for item in value]
+    if isinstance(value, str):
+        return value.encode("utf-8", "replace").decode("utf-8")
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return _clean_text(value)
+
+
 def _emit_envelope(envelope: Dict[str, Any]) -> None:
-    print(json.dumps(envelope, ensure_ascii=False), flush=True)
+    safe_envelope = _make_json_safe(envelope)
+    try:
+        payload = json.dumps(safe_envelope, ensure_ascii=False)
+    except Exception as exc:  # noqa: BLE001
+        details = safe_envelope.get("details") if isinstance(safe_envelope, dict) else []
+        first_detail = details[0] if isinstance(details, list) and details and isinstance(details[0], dict) else {}
+        fallback = _json_error_envelope(
+            f"Envelope serialization failed: {exc}",
+            source_name=_clean_text(first_detail.get("name")) or "unknown",
+            studio=_clean_text(first_detail.get("studio")) or "unknown",
+        )
+        payload = json.dumps(fallback, ensure_ascii=False)
+    try:
+        print(payload, flush=True)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        sys.stdout.buffer.write(payload.encode(encoding, "replace") + b"\n")
+        sys.stdout.flush()
 
 
 def _validate_input(payload: Any) -> Tuple[Dict[str, Any] | None, str]:

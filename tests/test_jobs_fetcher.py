@@ -7,12 +7,18 @@ import time
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from src import jobs_fetcher as jf
 from src import jobs_fetcher_registry as jfr
+from src.exceptions import AdapterValidationError
+from src.jobs.contamination_audit import build_contamination_report, build_location_quality_report
 from src.jobs import common as jobs_common
 from src.scrapers import runner as scrapy_runner
 from tests.helpers.temp_paths import workspace_tmpdir
 from src.jobs.adapters import _runtime as runtime_resolver
+from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
+from src.jobs.adapters.static_helpers import source_detail_limit_for
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 
@@ -73,6 +79,14 @@ def test_static_plugin_registry_selects_supercell_plugin() -> None:
     ctx = AdapterPluginContext(family="static", adapter_key="static", source_identity="supercell.com")
     plugin, selection = default_registry.select(ctx)
     assert selection.plugin_name in {"supercell"}
+
+
+def test_provider_plugin_registry_selects_ashby_sources_plugin() -> None:
+    ensure_provider_plugins()
+    ctx = AdapterPluginContext(family="provider_api", adapter_key="ashby_sources")
+    plugin, selection = default_registry.select(ctx)
+    assert plugin.name == "ashby_sources"
+    assert selection.plugin_name == "ashby_sources"
 
 
 def test_registry_entries_static_filters_redundant_when_provider_present() -> None:
@@ -194,6 +208,21 @@ def test_parse_args_uses_config_backed_output_and_social_defaults() -> None:
         assert Path(args.social_config_path) == jf.DEFAULT_SOCIAL_CONFIG_PATH
 
 
+def test_parse_args_uses_updated_pipeline_concurrency_defaults() -> None:
+        prev_argv = list(sys.argv)
+        try:
+            sys.argv = ["jobs_fetcher.py"]
+            args = jf.parse_args()
+        finally:
+            sys.argv = prev_argv
+        assert int(args.max_workers or 0) == 12
+        assert int(args.max_per_domain or 0) == 3
+        assert int(args.timeout or 0) == 15
+        assert float(args.backoff or 0) == 1.2
+        assert int(args.adapter_http_concurrency or 0) == 48
+        assert int(args.static_detail_concurrency or 0) == 10
+
+
 def test_default_source_loaders_includes_all_registry_sources() -> None:
     """All DEFAULT_SOURCE_LOADER_NAMES (except static_studio_pages*) are attempted via loaders or static shards."""
     base_expected = {
@@ -205,6 +234,65 @@ def test_default_source_loaders_includes_all_registry_sources() -> None:
     for name in base_expected:
         assert name in loader_names, f"Registry source {name} should be in default loaders when social_enabled=True"
     assert len(loaders_with_social) >= len(base_expected), "Loaders should include all base sources plus static shards"
+
+
+def test_source_detail_limit_for_caps_chronic_low_yield_sources() -> None:
+    limit = source_detail_limit_for(
+        "Climax (Manual Website)",
+        source_state_rows={
+            "Climax (Manual Website)": {
+                "lastDetailPagesVisited": 42,
+                "lastKeptCount": 1,
+                "lastDurationMs": 52000,
+                "lastDetailYieldPct": 2,
+            }
+        },
+        discovered_links=28,
+        listing_jobs_found=0,
+        low_yield_detail_cap=12,
+        very_low_yield_detail_cap=6,
+    )
+    assert limit == 12
+
+
+def test_source_detail_limit_for_uses_tighter_cap_when_listing_jobs_already_found() -> None:
+    limit = source_detail_limit_for(
+        "Nintendo (Manual Website)",
+        source_state_rows={
+            "Nintendo (Manual Website)": {
+                "lastDetailPagesVisited": 18,
+                "lastKeptCount": 2,
+                "lastDurationMs": 26000,
+                "lastDetailYieldPct": 4,
+            }
+        },
+        discovered_links=20,
+        listing_jobs_found=5,
+        low_yield_detail_cap=12,
+        very_low_yield_detail_cap=6,
+    )
+    assert limit == 6
+
+
+def test_scrapy_runner_emit_envelope_tolerates_non_json_safe_values(capsys: pytest.CaptureFixture[str]) -> None:
+    scrapy_runner._emit_envelope(
+        {
+            "ok": True,
+            "jobs": [],
+            "details": [
+                {
+                    "name": "GAME FREAK inc. (Manual Website)",
+                    "studio": "GAME FREAK",
+                    "status": "ok",
+                    "meta": {"bad": object()},
+                }
+            ],
+        }
+    )
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert payload["ok"] is True
+    assert payload["details"][0]["name"] == "GAME FREAK inc. (Manual Website)"
 
 
 def test_parse_remote_ok_payload_filters_game_roles() -> None:
@@ -802,6 +890,76 @@ def test_parse_ashby_jobs_from_html_fixture() -> None:
         assert len(rows) == 2
         assert all("jobs.ashbyhq.com" in row["jobLink"] for row in rows)
 
+def test_parse_ashby_jobs_from_embedded_careers_links() -> None:
+        html = """
+        <div>
+          <a href="https://thatgamecompany.com/careers/?ashby_jid=7ea5dd25-3fcb-4d42-8217-89dd9b6f5083#/">
+            <h3>Senior 3D Environment Artist</h3>
+          </a>
+          <a href="https://thatgamecompany.com/careers/?ashby_jid=b1a491f9-fb8f-44fa-a511-818525dee8a9#/">
+            Gameplay Engineer
+          </a>
+        </div>
+        """
+        rows = jf.parse_ashby_jobs_from_html(html, "https://jobs.ashbyhq.com/thatgamecompany/jobs", "thatgamecompany")
+        assert len(rows) == 2
+        assert any(str(row.get("title") or "") == "Senior 3D Environment Artist" for row in rows)
+        assert any("ashby_jid=" in str(row.get("jobLink") or "") for row in rows)
+
+def test_parse_ashby_jobs_from_hosted_board_root_links() -> None:
+        html = """
+        <div>
+          <a href="/thatgamecompany/7ea5dd25-3fcb-4d42-8217-89dd9b6f5083">
+            <h3>Senior 3D Environment Artist</h3>
+          </a>
+          <a href="/thatgamecompany/b1a491f9-fb8f-44fa-a511-818525dee8a9">
+            Gameplay Engineer
+          </a>
+        </div>
+        """
+        rows = jf.parse_ashby_jobs_from_html(html, "https://jobs.ashbyhq.com/thatgamecompany", "thatgamecompany")
+        assert len(rows) == 2
+        assert any(str(row.get("jobLink") or "").endswith("/thatgamecompany/7ea5dd25-3fcb-4d42-8217-89dd9b6f5083") for row in rows)
+
+def test_parse_ashby_jobs_from_embedded_app_data() -> None:
+        html = """
+        <script>
+        window.__appData = {
+          "organization": {"name": "thatgamecompany"},
+          "jobBoard": {
+            "jobPostings": [
+              {
+                "id": "7ea5dd25-3fcb-4d42-8217-89dd9b6f5083",
+                "title": "Senior Frontend Engineer",
+                "locationName": "Remote - US",
+                "workplaceType": "Remote",
+                "employmentType": "FullTime",
+                "publishedDate": "2026-03-20"
+              }
+            ]
+          }
+        };
+        </script>
+        """
+        rows = jf.parse_ashby_jobs_from_html(html, "https://jobs.ashbyhq.com/thatgamecompany/jobs", "thatgamecompany")
+        assert len(rows) == 1
+        assert rows[0]["jobLink"] == "https://jobs.ashbyhq.com/thatgamecompany/7ea5dd25-3fcb-4d42-8217-89dd9b6f5083"
+        assert rows[0]["contractType"] == "Full Time"
+        assert rows[0]["workType"] == "Remote"
+        assert rows[0]["title"] == "Senior Frontend Engineer"
+
+def test_non_ashby_provider_keeps_game_keyword_filter_strict() -> None:
+        payload = [
+            {
+                "id": "job-1",
+                "text": "Senior Frontend Engineer",
+                "hostedUrl": "https://jobs.lever.co/example/job-1",
+                "categories": {"location": "Remote", "team": "Engineering", "commitment": "Full-time"},
+            }
+        ]
+        rows = jf.parse_lever_jobs_payload(payload, "example", fallback_company="Example Tech")
+        assert rows == []
+
 def test_parse_breezy_jobs_html_fixture() -> None:
         rows = jf.parse_breezy_jobs_html(_fixture("breezy_jobs.html"), "https://yallaplay.breezy.hr/", "YallaPlay")
         assert len(rows) == 2
@@ -844,6 +1002,105 @@ def test_parse_personio_feed_xml_fixture() -> None:
         rows = jf.parse_personio_feed_xml(_fixture("personio_feed.xml"), source_name="InnoGames")
         assert len(rows) >= 1
         assert any(row["title"] == "Environment Artist" for row in rows)
+
+def test_run_ashby_sources_source_falls_back_to_careers_page_when_board_is_stale() -> None:
+        source_rows = [
+            {
+                "name": "thatgamecompany (Ashby)",
+                "studio": "thatgamecompany",
+                "adapter": "ashby",
+                "board_url": "https://jobs.ashbyhq.com/thatgamecompany/jobs",
+                "careersUrl": "https://thatgamecompany.com/careers/",
+                "enabledByDefault": True,
+            }
+        ]
+        with mock.patch("src.jobs.adapters.provider_api.registry_entries", return_value=source_rows):
+            def fake_fetch(url: str, _: int) -> str:
+                if url == "https://jobs.ashbyhq.com/thatgamecompany/jobs":
+                    return "<html><body><h1>Job not found</h1><a href='/'>View all open positions</a></body></html>"
+                if url == "https://jobs.ashbyhq.com/thatgamecompany":
+                    return "<html><body><h1>Page not found</h1></body></html>"
+                if url == "https://thatgamecompany.com/careers/":
+                    return """
+                    <a href="https://thatgamecompany.com/careers/?ashby_jid=7ea5dd25-3fcb-4d42-8217-89dd9b6f5083#/">
+                      Senior 3D Environment Artist
+                    </a>
+                    """
+                    raise AssertionError(f"unexpected url {url}")
+
+            rows = jf.run_ashby_sources_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
+            assert len(rows) == 1
+            assert str(rows[0].get("title") or "") == "Senior 3D Environment Artist"
+
+def test_run_ashby_sources_source_normalizes_stale_jobs_url_to_board_root() -> None:
+        source_rows = [
+            {
+                "name": "thatgamecompany (Ashby)",
+                "studio": "thatgamecompany",
+                "adapter": "ashby",
+                "board_url": "https://jobs.ashbyhq.com/thatgamecompany/jobs",
+                "enabledByDefault": True,
+            }
+        ]
+        with mock.patch("src.jobs.adapters.provider_api.registry_entries", return_value=source_rows):
+            def fake_fetch(url: str, _: int) -> str:
+                if url == "https://jobs.ashbyhq.com/thatgamecompany/jobs":
+                    return "<html><body><h1>Job not found</h1></body></html>"
+                if url == "https://jobs.ashbyhq.com/thatgamecompany":
+                    return """
+                    <a href="/thatgamecompany/7ea5dd25-3fcb-4d42-8217-89dd9b6f5083">
+                      Senior 3D Environment Artist
+                    </a>
+                    """
+                raise AssertionError(f"unexpected url {url}")
+
+            rows = jf.run_ashby_sources_source(fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0)
+            assert len(rows) == 1
+            assert str(rows[0].get("jobLink") or "").endswith("/thatgamecompany/7ea5dd25-3fcb-4d42-8217-89dd9b6f5083")
+
+def test_run_personio_sources_source_classifies_dead_marketing_redirect() -> None:
+        source_rows = [
+            {
+                "name": "InnoGames (Personio)",
+                "studio": "InnoGames",
+                "adapter": "personio",
+                "feed_url": "https://innogames.jobs.personio.de/xml",
+                "enabledByDefault": True,
+            }
+        ]
+        with mock.patch("src.jobs.adapters.provider_api.registry_entries", return_value=source_rows):
+            jf.SOURCE_DIAGNOSTICS.clear()
+            rows = jf.run_personio_sources_source(
+                fetch_text=lambda _url, _timeout: "<html><body><h1>HR und Lohnbuchhaltung endlich vereint</h1></body></html>",
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+            )
+            assert rows == []
+            detail = ((jf.SOURCE_DIAGNOSTICS.get("personio_sources") or {}).get("details") or [{}])[0]
+            assert str(detail.get("classification") or "") == "dead_listing_page"
+
+def test_run_personio_sources_source_classifies_rate_limited_errors() -> None:
+        source_rows = [
+            {
+                "name": "InnoGames (Personio)",
+                "studio": "InnoGames",
+                "adapter": "personio",
+                "feed_url": "https://innogames.jobs.personio.de/xml",
+                "enabledByDefault": True,
+            }
+        ]
+        with mock.patch("src.jobs.adapters.provider_api.registry_entries", return_value=source_rows):
+            jf.SOURCE_DIAGNOSTICS.clear()
+            with pytest.raises(AdapterValidationError):
+                jf.run_personio_sources_source(
+                    fetch_text=lambda _url, _timeout: (_ for _ in ()).throw(RuntimeError("HTTP 429 for https://innogames.jobs.personio.de/xml")),
+                    timeout_s=5,
+                    retries=0,
+                    backoff_s=0,
+                )
+            detail = ((jf.SOURCE_DIAGNOSTICS.get("personio_sources") or {}).get("details") or [{}])[0]
+            assert str(detail.get("classification") or "") == "rate_limited"
 
 def test_parse_gamejobs_html_fixture() -> None:
         rows = jf.parse_gamejobs_html(_fixture("gamejobs.html"), base_url="https://gamejobs.co/")
@@ -1299,6 +1556,70 @@ def test_run_static_studio_pages_source_milestone_plugin_extracts_intervieweb_if
             assert len(rows) == 2
         finally:
             jf.STUDIO_SOURCE_REGISTRY = prev
+
+def test_run_static_studio_pages_source_activision_plugin_extracts_job_links() -> None:
+        source_rows = [
+            {
+                "name": "Activision (Manual Website)",
+                "studio": "Activision",
+                "adapter": "static",
+                "company": "Activision",
+                "pages": ["https://careers.activision.com"],
+                "enabledByDefault": True,
+                "id": "static:listing_url:https://careers.activision.com",
+            }
+        ]
+        listing_html = """
+        <a href="https://careers.activision.com/search-results">Search Jobs</a>
+        <a href="https://careers.activision.com/job/R025845/Programmeur-senior-Productivite">Programmeur senior, Productivite</a>
+        <a href="https://careers.activision.com/apply?jobSeqNo=ACPUUSR025845EXTERNAL">Apply Now</a>
+        """
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=lambda _url, _timeout: listing_html,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=source_rows,
+        )
+        assert len(rows) == 1
+        assert str(rows[0].get("jobLink") or "").endswith("/job/R025845/Programmeur-senior-Productivite")
+
+def test_run_static_studio_pages_source_nacon_plugin_extracts_listing_cards() -> None:
+        from src.jobs.adapters.plugins.static.register import register_static_plugins
+
+        register_static_plugins()
+        source_rows = [
+            {
+                "name": "Nacon Studio Milan (Manual Website)",
+                "studio": "Nacon Studio Milan",
+                "adapter": "static",
+                "company": "Nacon Studio Milan",
+                "pages": ["https://www.naconstudiomilan.com/careers/"],
+                "enabledByDefault": True,
+                "id": "static:listing_url:https://www.naconstudiomilan.com/careers",
+            }
+        ]
+        listing_html = """
+        <article>
+          <h4>Gameplay Designer</h4>
+          <p>We are looking for a Gameplay Designer.</p>
+          <a href="/careers/gameplay-designer/">Learn more</a>
+        </article>
+        <article>
+          <h4>AI Programmer</h4>
+          <p>We are looking for an experienced AI Programmer.</p>
+          <a href="/careers/ai-programmer/">Learn more</a>
+        </article>
+        """
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=lambda _url, _timeout: listing_html,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=source_rows,
+        )
+        titles = {str(row.get("title") or "") for row in rows}
+        assert titles == {"Gameplay Designer", "AI Programmer"}
 
 def test_run_static_studio_pages_source_kojima_plugin_uses_browser_listing() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)
@@ -1760,7 +2081,7 @@ def test_run_pipeline_writes_browser_fallback_queue() -> None:
                         "fetchedCount": 10,
                         "keptCount": 0,
                         "error": "",
-                        "classification": "fetch_ok_extract_zero",
+                        "classification": "blocked_or_challenge",
                         "browserFallbackRecommended": True,
                         "top_reject_reasons": ["missing_title:4"],
                         "sourceId": "valve-source-id",
@@ -1795,10 +2116,10 @@ def test_run_pipeline_writes_browser_fallback_queue() -> None:
             queue_rows = json.loads(queue_path.read_text(encoding="utf-8"))
             assert len(queue_rows) == 1
             assert str(queue_rows[0].get("adapter") or "") == "scrapy_static"
-            assert str(queue_rows[0].get("classification") or "") == "fetch_ok_extract_zero"
+            assert str(queue_rows[0].get("classification") or "") == "blocked_or_challenge"
             assert str((report.get("outputs") or {}).get("browserFallbackQueue") or "") == str(queue_path)
             details = ((report.get("sources") or [{}])[0].get("details") or [{}])[0]
-            assert str(details.get("classification") or "") == "fetch_ok_extract_zero"
+            assert str(details.get("classification") or "") == "blocked_or_challenge"
             assert bool(details.get("browserFallbackRecommended"))
 
 
@@ -1824,11 +2145,11 @@ def test_browser_fallback_queue_one_canonical_per_source() -> None:
                     "fetchedCount": 3,
                     "keptCount": 0,
                     "error": "",
-                    "classification": "fetch_ok_extract_zero",
-                    "browserFallbackRecommended": True,
-                    "sourceId": "static:listing_url:https://supercell.com/en/careers/",
-                    "pages": [main_url, *sub_urls],
-                    "stats": {},
+                        "classification": "blocked_or_challenge",
+                        "browserFallbackRecommended": True,
+                        "sourceId": "static:listing_url:https://supercell.com/en/careers/",
+                        "pages": [main_url, *sub_urls],
+                        "stats": {},
                 }
             ],
             partial_errors=[],
@@ -1891,6 +2212,145 @@ def test_browser_fallback_queue_excludes_job_provider_domains() -> None:
         queue_rows = json.loads(queue_path.read_text(encoding="utf-8"))
         remedy_rows = [r for r in queue_rows if "remedygames" in str(r.get("page") or "")]
         assert len(remedy_rows) == 0
+
+def test_browser_fallback_queue_skips_fetch_ok_extract_zero_sources() -> None:
+    def scraper_loader(**_: object):
+        jf.set_source_diagnostics(
+            "scrapy_static_sources",
+            adapter="scrapy_static",
+            studio="multiple",
+            details=[
+                {
+                    "adapter": "scrapy_static",
+                    "studio": "Nacon Studio Milan",
+                    "name": "Nacon Studio Milan",
+                    "status": "ok",
+                    "fetchedCount": 1,
+                    "keptCount": 0,
+                    "error": "no jobs extracted from source pages",
+                    "classification": "fetch_ok_extract_zero",
+                    "browserFallbackRecommended": True,
+                    "sourceId": "static:nacon",
+                    "pages": ["https://www.naconstudiomilan.com/careers/"],
+                    "stats": {},
+                }
+            ],
+            partial_errors=[],
+        )
+        return []
+
+    with workspace_tmpdir("jobs-fetcher-browser-queue-skip-parse-zero") as tmp:
+        out = Path(tmp)
+        jf.run_pipeline(
+            output_dir=out,
+            source_loaders=[("scrapy_static_sources", scraper_loader)],
+            show_progress=False,
+        )
+        queue_path = out / "jobs-browser-fallback-queue.json"
+        queue_rows = json.loads(queue_path.read_text(encoding="utf-8"))
+        assert queue_rows == []
+
+def test_run_scrapy_static_source_timeout_is_not_requeued() -> None:
+        prev = list(jf.STUDIO_SOURCE_REGISTRY)
+        jf.STUDIO_SOURCE_REGISTRY = [
+            {
+                "name": "Tequilaworks (Manual Website)",
+                "studio": "Tequilaworks",
+                "adapter": "scrapy_static",
+                "pages": ["https://tequilaworks.com/en/careers"],
+                "enabledByDefault": True,
+            }
+        ]
+        try:
+            with mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="runner", timeout=20)):
+                jf.SOURCE_DIAGNOSTICS.clear()
+                rows = jf.run_scrapy_static_source(
+                    fetch_text=lambda _url, _timeout: "",
+                    timeout_s=5,
+                    retries=0,
+                    backoff_s=0,
+                )
+                assert rows == []
+                detail = ((jf.SOURCE_DIAGNOSTICS.get("scrapy_static_sources") or {}).get("details") or [{}])[0]
+                assert str(detail.get("classification") or "") == "browser_timeout"
+                assert not bool(detail.get("browserFallbackRecommended"))
+        finally:
+            jf.STUDIO_SOURCE_REGISTRY = prev
+
+def test_public_text_sanitizer_cleans_html_contaminated_fields() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": '<div class="title">Technical Artist</div>',
+            "company": "Kojimaproductions",
+            "city": '<div class="location">Tokyo',
+            "country": "Japan</div>",
+            "contractType": '<span>Full-time</span>',
+            "jobLink": "https://www.kojimaproductions.jp/en/technical-artist",
+            "sector": "<div>Game</div>",
+        },
+        source="static_source::kojima",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["title"] == "Technical Artist"
+    assert payload["city"] == "Tokyo"
+    assert payload["country"] == "Japan"
+    assert payload["contractType"] == "Full-time"
+    assert payload["sector"] == "Game"
+
+def test_contamination_audit_reports_public_field_examples() -> None:
+    report = build_contamination_report(
+        [
+            {"title": "Clean", "company": "Studio", "city": "Paris", "country": "France", "jobLink": "https://example.com/1"},
+            {"title": '<div class="title">Artist</div>', "company": "Studio", "city": '<div class="location">Tokyo', "country": "Japan</div>", "source": "static", "jobLink": "https://example.com/2"},
+        ]
+    )
+    assert int(report["contaminatedRows"]) == 1
+    assert int(report["fieldCounts"]["title"]) == 1
+    assert int(report["fieldCounts"]["city"]) == 1
+    assert int(report["fieldCounts"]["country"]) == 1
+    assert str(report["examples"][0]["fields"]["city"]) == '<div class="location">Tokyo'
+
+
+def test_canonicalize_job_with_reason_blanks_semantic_location_noise() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Growth Marketing Intern",
+            "company": "Sleeper",
+            "city": "Remote, United States; San Francisco Area, United States Remote; New York City; Los Angeles",
+            "country": "Unknown",
+            "jobLink": "https://jobs.ashbyhq.com/sleeper/example",
+            "sector": "Game",
+        },
+        source="ashby_sources",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == ""
+    assert payload["country"] == "Unknown"
+
+
+def test_location_quality_audit_reports_semantic_location_examples() -> None:
+    report = build_location_quality_report(
+        [
+            {"title": "Clean", "company": "Studio", "city": "Paris", "country": "France", "jobLink": "https://example.com/1"},
+            {
+                "title": "Growth Marketing Intern",
+                "company": "Sleeper",
+                "city": "Remote, United States; San Francisco Area, United States Remote; New York City; Los Angeles",
+                "country": "Unknown",
+                "source": "ashby_sources",
+                "jobLink": "https://example.com/2",
+            },
+        ]
+    )
+    assert int(report["invalidLocationFieldCount"]) == 1
+    assert int(report["fieldCounts"]["city"]) == 1
+    assert str(report["examples"][0]["fields"]["city"]["reason"]) == "invalid_city_semantic_multi_location_blob"
 
 
 def test_scrapy_static_registry_from_browser_queue_collapses_by_source_id() -> None:
@@ -2468,6 +2928,7 @@ def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts()
             assert "medianSourceDurationMs" in timing
             assert "p95SourceDurationMs" in timing
             assert "stageTotalsMs" in timing
+            assert "adapterTimings" in timing
             assert "summary" in report
             assert "sources" in report
             assert str(report["sources"][0].get("fetchStrategy") or "") == "auto"
@@ -2476,6 +2937,9 @@ def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts()
             stage_timings = report["sources"][0].get("stageTimingsMs") or {}
             if stage_timings:
                 assert "fetchAndParse" in stage_timings
+            adapter_timings = timing.get("adapterTimings") or []
+            if adapter_timings:
+                assert str(adapter_timings[0].get("adapter") or "") == "custom"
 
             task_payload = json.loads((out / "jobs-fetch-tasks.json").read_text(encoding="utf-8"))
             assert str(task_payload.get("schemaVersion") or "") == str(jf.SCHEMA_VERSION)
@@ -2623,6 +3087,656 @@ def test_should_skip_source_by_cadence_uses_hot_and_cold_windows() -> None:
         assert not jf.should_skip_source_by_cadence("hot_source", rows, hot_minutes=15, cold_minutes=60)
         assert not jf.should_skip_source_by_cadence("cold_source", rows, hot_minutes=15, cold_minutes=60)
 
+
+def test_get_incremental_cache_decision_prefers_skip_and_listing_modes() -> None:
+        from src.jobs import state as state_pkg
+
+        now = jf.datetime.now(jf.timezone.utc)
+        rows = {
+            "provider_source": {
+                "lastAdapter": "greenhouse",
+                "lastStatus": "ok",
+                "lastSuccessAt": (now - jf.timedelta(minutes=10)).isoformat(),
+                "lastChangedAt": (now - jf.timedelta(minutes=20)).isoformat(),
+                "lastKeptCount": 3,
+            },
+            "static_source::example": {
+                "lastAdapter": "static",
+                "lastStatus": "ok",
+                "lastSuccessAt": (now - jf.timedelta(minutes=20)).isoformat(),
+                "lastKeptCount": 2,
+                "lastListingFingerprint": "abc123",
+            },
+        }
+        provider_decision = state_pkg.get_incremental_cache_decision("provider_source", rows, adapter="greenhouse")
+        static_decision = state_pkg.get_incremental_cache_decision("static_source::example", rows, adapter="static")
+        assert provider_decision["cacheDecision"] == "skip_fresh"
+        assert static_decision["cacheDecision"] == "listing_only"
+
+
+def test_get_incremental_cache_decision_treats_future_next_eligible_after_run_as_skip_fresh() -> None:
+        from src.jobs import state as state_pkg
+
+        now = jf.datetime.now(jf.timezone.utc)
+        rows = {
+            "provider_board": {
+                "lastAdapter": "lever",
+                "lastStatus": "ok",
+                "lastSuccessAt": (now - jf.timedelta(minutes=1)).isoformat(),
+                "lastKeptCount": 5,
+                "nextEligibleCheckAt": (now + jf.timedelta(minutes=30)).isoformat(),
+                "cacheDecision": "run_now",
+                "cacheDecisionReason": "no_cache_state",
+            }
+        }
+        decision = state_pkg.get_incremental_cache_decision("provider_board", rows, adapter="lever")
+        assert decision["cacheDecision"] == "skip_fresh"
+        assert decision["cacheDecisionReason"] == "within_freshness_window"
+
+
+def test_run_pipeline_incremental_second_run_skips_fresh_source_and_preserves_output() -> None:
+        calls = {"count": 0}
+
+        def ok_loader(**_: object):
+            calls["count"] += 1
+            return [
+                {
+                    "title": "Gameplay Engineer",
+                    "company": "Incremental Studio",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "Remote",
+                    "contractType": "Full-time",
+                    "jobLink": "https://example.com/incremental/gameplay-engineer",
+                    "sector": "Game",
+                    "sourceJobId": "incremental-1",
+                    "postedAt": "2026-03-01",
+                }
+            ]
+
+        with workspace_tmpdir("jobs-fetcher-incremental") as tmp:
+            out = Path(tmp)
+            first = jf.run_pipeline(output_dir=out, source_loaders=[("incremental_source", ok_loader)], show_progress=False)
+            second = jf.run_pipeline(output_dir=out, source_loaders=[("incremental_source", ok_loader)], show_progress=False)
+            assert calls["count"] == 1
+            assert int(first["summary"].get("outputCount") or 0) == 1
+            assert int(second["summary"].get("outputCount") or 0) == 1
+            excluded = [row for row in (second.get("sources") or []) if row.get("name") == "incremental_source"]
+            assert len(excluded) == 1
+            assert str(excluded[0].get("status") or "") == "excluded"
+            assert str(excluded[0].get("cacheDecision") or "") == "skip_fresh"
+            assert "cache_" in str(excluded[0].get("exclusionReason") or "")
+
+
+def test_run_pipeline_force_refresh_all_bypasses_incremental_skip() -> None:
+        calls = {"count": 0}
+
+        def ok_loader(**_: object):
+            calls["count"] += 1
+            return [
+                {
+                    "title": "Engine Programmer",
+                    "company": "Refresh Studio",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "Remote",
+                    "contractType": "Full-time",
+                    "jobLink": "https://example.com/refresh/engine-programmer",
+                    "sector": "Game",
+                    "sourceJobId": "refresh-1",
+                    "postedAt": "2026-03-01",
+                }
+            ]
+
+        with workspace_tmpdir("jobs-fetcher-force-refresh") as tmp:
+            out = Path(tmp)
+            jf.run_pipeline(output_dir=out, source_loaders=[("refresh_source", ok_loader)], show_progress=False)
+            jf.run_pipeline(
+                output_dir=out,
+                source_loaders=[("refresh_source", ok_loader)],
+                show_progress=False,
+                force_refresh_all=True,
+            )
+            assert calls["count"] == 2
+
+
+def test_apply_incremental_cache_exclusions_keeps_provider_family_loader_for_board_level_refresh() -> None:
+        from src.jobs import pipeline_loader_selection as selection_pkg
+        from src.jobs import state as state_pkg
+
+        now = jf.datetime.now(jf.timezone.utc)
+        future = (now + jf.timedelta(minutes=10)).isoformat()
+        selected = [
+            ("greenhouse_boards", lambda **_: []),
+            ("incremental_source", lambda **_: []),
+        ]
+        source_state_rows = {
+            "greenhouse_boards": {
+                "lastAdapter": "greenhouse",
+                "lastStatus": "ok",
+                "lastSuccessAt": (now - jf.timedelta(minutes=5)).isoformat(),
+                "lastKeptCount": 2,
+                "nextEligibleCheckAt": future,
+                "cacheDecision": "skip_fresh",
+                "cacheDecisionReason": "within_freshness_window",
+            },
+            "incremental_source": {
+                "lastAdapter": "custom",
+                "lastStatus": "ok",
+                "lastSuccessAt": (now - jf.timedelta(minutes=5)).isoformat(),
+                "lastKeptCount": 1,
+                "nextEligibleCheckAt": future,
+                "cacheDecision": "skip_fresh",
+                "cacheDecisionReason": "within_freshness_window",
+            },
+        }
+        filtered, skipped = selection_pkg.apply_incremental_cache_exclusions(
+            selected,
+            incremental_cache_enabled=True,
+            force_refresh_all=False,
+            source_state_rows=source_state_rows,
+            get_incremental_cache_decision=state_pkg.get_incremental_cache_decision,
+            build_excluded_source_report=lambda name, reason: {"name": name, "exclusionReason": reason},
+            source_report_meta={
+                "greenhouse_boards": {"adapter": "greenhouse"},
+                "incremental_source": {"adapter": "custom"},
+            },
+        )
+        assert [name for name, _ in filtered] == ["greenhouse_boards"]
+        assert [row["name"] for row in skipped] == ["incremental_source"]
+
+
+def test_provider_family_json_sources_refresh_only_stale_boards() -> None:
+        from src.jobs.adapters.plugins.provider_api import register as provider_register
+
+        calls = []
+        captured = {}
+
+        class _Deps:
+            def registry_entries(self, adapter: str):
+                assert adapter == "greenhouse"
+                return [
+                    {"name": "Fresh Board", "studio": "Fresh Board", "endpoint": "https://example.com/fresh.json"},
+                    {"name": "Stale Board", "studio": "Stale Board", "endpoint": "https://example.com/stale.json"},
+                ]
+
+            def fetch_with_retries(self, url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float) -> str:
+                calls.append(url)
+                return json.dumps({"jobs": [{"id": url}]})
+
+            def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
+                captured["source_name"] = source_name
+                captured["kwargs"] = kwargs
+
+        now = jf.datetime.now(jf.timezone.utc)
+        state_rows = {
+            "Fresh Board": {
+                "lastAdapter": "greenhouse",
+                "lastStatus": "ok",
+                "lastSuccessAt": (now - jf.timedelta(minutes=5)).isoformat(),
+                "lastKeptCount": 2,
+                "nextEligibleCheckAt": (now + jf.timedelta(minutes=10)).isoformat(),
+                "cacheDecision": "skip_fresh",
+                "cacheDecisionReason": "within_freshness_window",
+            },
+            "Stale Board": {
+                "lastAdapter": "greenhouse",
+                "lastStatus": "ok",
+                "lastSuccessAt": (now - jf.timedelta(hours=3)).isoformat(),
+                "lastChangedAt": (now - jf.timedelta(days=2)).isoformat(),
+                "lastKeptCount": 2,
+            },
+        }
+
+        with mock.patch.object(provider_register.runtime_deps, "facade", return_value=_Deps()):
+            rows = provider_register._run_json_feed_sources(
+                adapter_name="greenhouse",
+                registry_adapter="greenhouse",
+                default_error="missing endpoint",
+                parse_payload=lambda source, payload, studio: [{
+                    "title": f"{studio} Engineer",
+                    "company": studio,
+                    "city": "",
+                    "country": "Unknown",
+                    "workType": "",
+                    "contractType": "",
+                    "jobLink": f"https://example.com/{str(source.get('name') or '').lower().replace(' ', '-')}",
+                    "sector": "Game",
+                    "postedAt": "",
+                    "sourceJobId": f"greenhouse:{str(source.get('name') or '')}",
+                }],
+                build_url=lambda source: str(source.get("endpoint") or ""),
+                payload_count=lambda payload, parsed: len(parsed),
+                fetch_text=lambda url, timeout: "",
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+                source_state_rows=state_rows,
+                force_refresh_all=False,
+            )
+        assert calls == ["https://example.com/stale.json"]
+        assert len(rows) == 1
+        details = captured["kwargs"]["details"]
+        fresh_detail = next(row for row in details if row["name"] == "Fresh Board")
+        stale_detail = next(row for row in details if row["name"] == "Stale Board")
+        assert fresh_detail["status"] == "excluded"
+        assert fresh_detail["cacheDecision"] == "skip_fresh"
+        assert stale_detail["status"] == "ok"
+        assert stale_detail["cacheDecision"] == "run_now"
+
+
+def test_provider_family_revalidate_only_board_skips_fetch_on_not_modified() -> None:
+        from src.jobs.adapters.plugins.provider_api import register as provider_register
+
+        calls = []
+        captured = {}
+
+        class _Deps:
+            def registry_entries(self, adapter: str):
+                assert adapter == "lever"
+                return [{"name": "Revalidate Board", "studio": "Revalidate Board", "endpoint": "https://example.com/revalidate.json"}]
+
+            def fetch_with_retries(self, url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float) -> str:
+                calls.append(url)
+                return "[]"
+
+            def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
+                captured["kwargs"] = kwargs
+
+        now = jf.datetime.now(jf.timezone.utc)
+        state_rows = {
+            "Revalidate Board": {
+                "lastAdapter": "lever",
+                "lastStatus": "ok",
+                "lastSuccessAt": (now - jf.timedelta(minutes=30)).isoformat(),
+                "lastChangedAt": (now - jf.timedelta(days=2)).isoformat(),
+                "lastKeptCount": 1,
+                "lastHttpEtag": "etag-1",
+            }
+        }
+
+        with mock.patch.object(provider_register.runtime_deps, "facade", return_value=_Deps()), \
+             mock.patch.object(
+                 provider_register,
+                 "conditional_revalidate_url",
+                 return_value={"supported": True, "notModified": True, "statusCode": 304, "etag": "etag-1", "lastModified": ""},
+             ):
+            rows = provider_register._run_json_feed_sources(
+                adapter_name="lever",
+                registry_adapter="lever",
+                default_error="missing endpoint",
+                parse_payload=lambda source, payload, studio: [],
+                build_url=lambda source: str(source.get("endpoint") or ""),
+                payload_count=lambda payload, parsed: len(parsed),
+                fetch_text=lambda url, timeout: "",
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+                source_state_rows=state_rows,
+                force_refresh_all=False,
+            )
+        assert rows == []
+        assert calls == []
+        details = captured["kwargs"]["details"]
+        assert len(details) == 1
+        assert details[0]["status"] == "excluded"
+        assert details[0]["cacheDecision"] == "revalidate_only"
+        assert details[0]["cacheDecisionReason"] == "not_modified_304"
+        assert details[0]["httpStatus"] == 304
+
+
+def test_teamtailor_sources_skip_fresh_listing_without_fetching() -> None:
+        from src.jobs.adapters.plugins.provider_api import register as provider_register
+
+        calls = []
+        captured = {}
+
+        class _Deps:
+            def registry_entries(self, adapter: str):
+                assert adapter == "teamtailor"
+                return [{
+                    "name": "Paradox Teamtailor",
+                    "studio": "Paradox Interactive",
+                    "listing_url": "https://career.paradoxplaza.com/jobs",
+                    "base_url": "https://career.paradoxplaza.com",
+                    "company": "Paradox Interactive",
+                }]
+
+            def fetch_with_retries(self, url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float) -> str:
+                calls.append(url)
+                return ""
+
+            def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
+                captured["kwargs"] = kwargs
+
+        now = jf.datetime.now(jf.timezone.utc)
+        state_rows = {
+            "Paradox Teamtailor": {
+                "lastAdapter": "teamtailor",
+                "lastStatus": "ok",
+                "lastSuccessAt": (now - jf.timedelta(minutes=5)).isoformat(),
+                "lastKeptCount": 3,
+                "nextEligibleCheckAt": (now + jf.timedelta(minutes=20)).isoformat(),
+                "cacheDecision": "skip_fresh",
+                "cacheDecisionReason": "within_freshness_window",
+            }
+        }
+
+        with mock.patch.object(provider_register.runtime_deps, "facade", return_value=_Deps()):
+            rows = provider_register._run_teamtailor_sources(
+                fetch_text=lambda url, timeout: "",
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+                source_state_rows=state_rows,
+                force_refresh_all=False,
+            )
+        assert rows == []
+        assert calls == []
+        details = captured["kwargs"]["details"]
+        assert len(details) == 1
+        assert details[0]["status"] == "excluded"
+        assert details[0]["cacheDecision"] == "skip_fresh"
+        assert details[0]["cacheDecisionReason"] == "within_freshness_window"
+
+
+def test_apply_incremental_cache_exclusions_keeps_social_multi_feed_loaders_for_detail_level_refresh() -> None:
+        from src.jobs import pipeline_loader_selection as selection_pkg
+        from src.jobs import state as state_pkg
+
+        now = jf.datetime.now(jf.timezone.utc)
+        future = (now + jf.timedelta(minutes=10)).isoformat()
+        selected = [
+            ("social_x", lambda **_: []),
+            ("social_mastodon", lambda **_: []),
+            ("social_reddit", lambda **_: []),
+        ]
+        source_state_rows = {
+            "social_x": {"lastAdapter": "social", "nextEligibleCheckAt": future, "cacheDecision": "skip_fresh", "cacheDecisionReason": "within_freshness_window"},
+            "social_mastodon": {"lastAdapter": "social", "nextEligibleCheckAt": future, "cacheDecision": "skip_fresh", "cacheDecisionReason": "within_freshness_window"},
+            "social_reddit": {"lastAdapter": "social", "nextEligibleCheckAt": future, "cacheDecision": "skip_fresh", "cacheDecisionReason": "within_freshness_window"},
+        }
+        filtered, skipped = selection_pkg.apply_incremental_cache_exclusions(
+            selected,
+            incremental_cache_enabled=True,
+            force_refresh_all=False,
+            source_state_rows=source_state_rows,
+            get_incremental_cache_decision=state_pkg.get_incremental_cache_decision,
+            build_excluded_source_report=lambda name, reason: {"name": name, "exclusionReason": reason},
+            source_report_meta={
+                "social_x": {"adapter": "social"},
+                "social_mastodon": {"adapter": "social"},
+                "social_reddit": {"adapter": "social"},
+            },
+        )
+        assert [name for name, _ in filtered] == ["social_x", "social_mastodon"]
+        assert [row["name"] for row in skipped] == ["social_reddit"]
+
+
+def test_social_x_skips_fresh_query_without_fetching() -> None:
+        cfg = {
+            "enabled": True,
+            "minConfidence": 40,
+            "rejectForHirePosts": True,
+            "x": {
+                "enabled": True,
+                "queries": ["game jobs"],
+                "rssFallback": {"enabled": True, "instances": ["https://nitter.example"]},
+            },
+        }
+        now = jf.datetime.now(jf.timezone.utc)
+        state_rows = {
+            "x:game jobs": {
+                "lastAdapter": "social",
+                "lastStatus": "ok",
+                "lastSuccessAt": (now - jf.timedelta(minutes=5)).isoformat(),
+                "lastKeptCount": 2,
+                "nextEligibleCheckAt": (now + jf.timedelta(minutes=20)).isoformat(),
+                "cacheDecision": "skip_fresh",
+                "cacheDecisionReason": "within_freshness_window",
+            }
+        }
+
+        def failing_fetch(url: str, timeout: int) -> str:
+            raise AssertionError("social_x fetch should be skipped for fresh query")
+
+        rows = jf.run_social_x_source(
+            fetch_text=failing_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            social_config=cfg,
+            source_state_rows=state_rows,
+            force_refresh_all=False,
+        )
+        assert rows == []
+        diag = jf.SOURCE_DIAGNOSTICS.get("social_x") or {}
+        details = diag.get("details") or []
+        assert len(details) == 1
+        assert details[0]["status"] == "excluded"
+        assert details[0]["cacheDecision"] == "skip_fresh"
+
+
+def test_social_mastodon_skips_fresh_instance_tag_without_fetching() -> None:
+        cfg = {
+            "enabled": True,
+            "minConfidence": 40,
+            "rejectForHirePosts": True,
+            "mastodon": {
+                "enabled": True,
+                "instances": ["https://mastodon.example"],
+                "hashtags": ["gamedevjobs"],
+            },
+        }
+        now = jf.datetime.now(jf.timezone.utc)
+        state_rows = {
+            "mastodon:mastodon.example:#gamedevjobs": {
+                "lastAdapter": "social",
+                "lastStatus": "ok",
+                "lastSuccessAt": (now - jf.timedelta(minutes=5)).isoformat(),
+                "lastKeptCount": 2,
+                "nextEligibleCheckAt": (now + jf.timedelta(minutes=20)).isoformat(),
+                "cacheDecision": "skip_fresh",
+                "cacheDecisionReason": "within_freshness_window",
+            }
+        }
+
+        def failing_fetch(url: str, timeout: int) -> str:
+            raise AssertionError("social_mastodon fetch should be skipped for fresh instance/tag")
+
+        rows = jf.run_social_mastodon_source(
+            fetch_text=failing_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            social_config=cfg,
+            source_state_rows=state_rows,
+            force_refresh_all=False,
+        )
+        assert rows == []
+        diag = jf.SOURCE_DIAGNOSTICS.get("social_mastodon") or {}
+        details = diag.get("details") or []
+        assert len(details) == 1
+        assert details[0]["status"] == "excluded"
+        assert details[0]["cacheDecision"] == "skip_fresh"
+
+
+def test_social_reddit_skips_fresh_subreddit_without_fetching() -> None:
+        cfg = {
+            "enabled": True,
+            "minConfidence": 40,
+            "rejectForHirePosts": True,
+            "reddit": {
+                "enabled": True,
+                "subreddits": ["gamedev"],
+                "maxPostsPerSubreddit": 5,
+                "rssFallback": True,
+                "htmlFallback": True,
+                "rateLimitDelay": 0,
+            },
+        }
+        future = "2099-01-01T00:00:00+00:00"
+        state_rows = {
+            "reddit:r/gamedev": {
+                "lastAdapter": "social",
+                "nextEligibleCheckAt": future,
+                "cacheDecision": "skip_fresh",
+                "cacheDecisionReason": "within_freshness_window",
+            }
+        }
+
+        def failing_fetch(_: str, __: int) -> str:
+            raise AssertionError("social_reddit fetch should be skipped for fresh subreddit")
+
+        rows = jf.run_social_reddit_source(
+            fetch_text=failing_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            social_config=cfg,
+            source_state_rows=state_rows,
+            force_refresh_all=False,
+        )
+        assert rows == []
+        diag = jf.SOURCE_DIAGNOSTICS.get("social_reddit") or {}
+        details = diag.get("details") or []
+        assert len(details) == 1
+        assert details[0]["status"] == "excluded"
+        assert details[0]["cacheDecision"] == "skip_fresh"
+
+
+def test_run_social_reddit_source_keeps_successful_rss_fallback_out_of_error_state() -> None:
+        cfg = {
+            "enabled": True,
+            "minConfidence": 20,
+            "rejectForHirePosts": True,
+            "reddit": {
+                "enabled": True,
+                "subreddits": ["gamedev"],
+                "maxPostsPerSubreddit": 5,
+                "rssFallback": True,
+                "htmlFallback": False,
+                "rateLimitDelay": 0,
+            },
+        }
+        calls = []
+
+        def fake_fetch(url: str, _: int) -> str:
+            calls.append(url)
+            if url.endswith("/new.json?limit=5"):
+                raise RuntimeError("json api blocked")
+            if url.endswith("/new.rss"):
+                return "<feed />"
+            raise AssertionError(f"unexpected reddit url: {url}")
+
+        with mock.patch(
+            "src.jobs.adapters.plugins.social.register._social_parsers.parse_reddit_rss_payload",
+            return_value=(
+                [
+                    {
+                        "title": "Technical Artist",
+                        "company": "Nebula Games",
+                        "jobLink": "https://jobs.nebula.dev/ta",
+                        "sourceJobId": "reddit:gamedev:abc123",
+                        "source": "social_reddit",
+                    }
+                ],
+                0,
+            ),
+        ):
+            rows = jf.run_social_reddit_source(
+                fetch_text=fake_fetch,
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+                social_config=cfg,
+            )
+        assert len(rows) >= 1
+        diag = jf.SOURCE_DIAGNOSTICS.get("social_reddit") or {}
+        details = diag.get("details") or []
+        assert len(details) == 1
+        assert details[0]["status"] == "ok"
+        assert details[0]["error"] == ""
+
+
+def test_run_pipeline_reports_social_subsource_cache_rollup() -> None:
+        def social_loader(**_: object):
+            jf.SOURCE_DIAGNOSTICS["social_x"] = {
+                "adapter": "social",
+                "studio": "x",
+                "details": [
+                    {"name": "x:game jobs", "studio": "x", "status": "excluded", "cacheDecision": "skip_fresh", "cacheDecisionReason": "within_freshness_window"},
+                    {"name": "x:unity jobs", "studio": "x", "status": "ok", "cacheDecision": "run_now", "cacheDecisionReason": "provider_refresh_due", "fetchedCount": 1, "keptCount": 1},
+                ],
+            }
+            return [{
+                "title": "Gameplay Engineer",
+                "company": "Studio Social",
+                "city": "",
+                "country": "Unknown",
+                "workType": "",
+                "contractType": "",
+                "jobLink": "https://example.com/social/gameplay-engineer",
+                "sector": "Game",
+                "sourceJobId": "social-x-1",
+                "postedAt": "2026-03-01",
+            }]
+
+        with workspace_tmpdir("jobs-fetcher-social-subsource-rollup") as tmp:
+            report = jf.run_pipeline(
+                output_dir=Path(tmp),
+                source_loaders=[("social_x", social_loader)],
+                show_progress=False,
+                force_refresh_all=True,
+            )
+            row = next(item for item in report["sources"] if item["name"] == "social_x")
+            assert row["subsourceCount"] == 2
+            assert row["subsourceCacheDecisionCounts"] == {"skip_fresh": 1, "run_now": 1}
+            assert row["subsourceSkippedCount"] == 1
+            assert row["subsourceRefreshedCount"] == 1
+
+
+def test_run_pipeline_reports_board_level_provider_cache_rollup() -> None:
+        def provider_family_loader(**_: object):
+            jf.SOURCE_DIAGNOSTICS["greenhouse_boards"] = {
+                "adapter": "greenhouse",
+                "studio": "multiple",
+                "details": [
+                    {"name": "Board A", "studio": "Board A", "status": "excluded", "cacheDecision": "skip_fresh", "cacheDecisionReason": "within_freshness_window"},
+                    {"name": "Board B", "studio": "Board B", "status": "excluded", "cacheDecision": "revalidate_only", "cacheDecisionReason": "not_modified_304", "httpStatus": 304},
+                    {"name": "Board C", "studio": "Board C", "status": "ok", "cacheDecision": "run_now", "cacheDecisionReason": "provider_refresh_due", "fetchedCount": 1, "keptCount": 1},
+                ],
+            }
+            return [
+                {
+                    "title": "Gameplay Engineer",
+                    "company": "Board C",
+                    "city": "",
+                    "country": "Unknown",
+                    "workType": "",
+                    "contractType": "",
+                    "jobLink": "https://example.com/board-c/gameplay-engineer",
+                    "sector": "Game",
+                    "sourceJobId": "greenhouse:board-c:1",
+                    "postedAt": "2026-03-01",
+                }
+            ]
+
+        with workspace_tmpdir("jobs-fetcher-provider-board-rollup") as tmp:
+            report = jf.run_pipeline(
+                output_dir=Path(tmp),
+                source_loaders=[("greenhouse_boards", provider_family_loader)],
+                show_progress=False,
+                force_refresh_all=True,
+            )
+            row = next(item for item in report["sources"] if item["name"] == "greenhouse_boards")
+            assert row["boardCount"] == 3
+            assert row["boardCacheDecisionCounts"] == {"skip_fresh": 1, "revalidate_only": 1, "run_now": 1}
+            assert row["boardSkippedCount"] == 1
+            assert row["boardRevalidatedCount"] == 1
+            assert row["boardNotModifiedCount"] == 1
+            assert row["boardRefreshedCount"] == 1
+
 def test_run_pipeline_excludes_quarantined_source_unless_ignored() -> None:
         calls = {"count": 0}
 
@@ -2730,5 +3844,320 @@ def test_pipeline_report_snapshot_contract() -> None:
                 ],
             }
             assert snapshot == _fixture_json("jobs_fetch_report_snapshot.json")
+
+
+def test_hrmos_plugin_extracts_listing_rows_without_detail_fetch() -> None:
+        from src.jobs.adapters.plugins.static import hrmos
+
+        html = """
+        <div>
+          <a href="/pages/cygames/jobs/0001">
+            <h2>Gameplay Programmer</h2>
+            <span>Tokyo, Japan</span>
+            <span>Full-time</span>
+          </a>
+          <a href="/pages/cygames/jobs/0002">
+            <h2>Technical Artist</h2>
+            <span>Osaka, Japan</span>
+            <span>Contract</span>
+          </a>
+        </div>
+        """
+
+        rows = hrmos.run(
+            fetch_text=lambda _url, _timeout: html,
+            timeout_s=10,
+            retries=0,
+            backoff_s=0.0,
+            pages=["https://hrmos.co/pages/cygames/jobs"],
+            source_row={"id": "cygames", "name": "Cygames"},
+        )
+
+        assert len(rows) == 2
+        assert rows[0]["jobLink"] == "https://hrmos.co/pages/cygames/jobs/0001"
+        assert rows[0]["title"] == "Gameplay Programmer"
+
+
+def test_hrmos_plugin_does_not_emit_full_prose_blob_as_location() -> None:
+        from src.jobs.adapters.plugins.static import hrmos
+
+        html = """
+        <div>
+          <a href="/pages/gamefreak/jobs/10-4">
+            <h2>キャリア登録</h2>
+            <span>キャリア登録 「キャリア登録」とは？ 当社に興味・関心を持たれた方にご自身のキャリア（職務経歴）を簡易登録いただくことで、適したポジションがある場合、人事担当者から個別にご案内させていただく仕組みです。</span>
+            <span>正社員</span>
+          </a>
+        </div>
+        """
+
+        rows = hrmos.run(
+            fetch_text=lambda _url, _timeout: html,
+            timeout_s=10,
+            retries=0,
+            backoff_s=0.0,
+            pages=["https://hrmos.co/pages/gamefreak/jobs?jobtype=full"],
+            source_row={"id": "gamefreak", "name": "GAME FREAK inc."},
+        )
+
+        assert len(rows) == 1
+        assert rows[0]["title"] == "キャリア登録"
+        assert rows[0]["city"] == ""
+
+
+def test_riot_plugin_extracts_listing_rows_without_detail_fetch() -> None:
+        from src.jobs.adapters.plugins.static import riot
+
+        html = """
+        <div>
+          <a href="/en/j/7449593">
+            <span>Senior Software Engineer</span>
+            <span>Engineering</span>
+            <span>Dublin, Ireland</span>
+          </a>
+        </div>
+        """
+
+        rows = riot.run(
+            fetch_text=lambda _url, _timeout: html,
+            timeout_s=10,
+            retries=0,
+            backoff_s=0.0,
+            pages=["https://www.riotgames.com/en/work-with-us/jobs"],
+            source_row={"id": "riot", "name": "Riot Games"},
+        )
+
+        assert len(rows) == 1
+        assert rows[0]["jobLink"] == "https://www.riotgames.com/en/j/7449593"
+        assert rows[0]["title"] == "Senior Software Engineer"
+
+
+def test_choose_detail_traversal_mode_prefers_listing_only_for_verified_hosts() -> None:
+        from src.jobs.adapters.static_helpers import build_static_source_runtime_config, choose_detail_traversal_mode
+
+        runtime = build_static_source_runtime_config(4)
+        mode = choose_detail_traversal_mode(
+            "https://hrmos.co/pages/cygames/jobs",
+            runtime_config=runtime,
+            profile={"detail_fetch_required": False},
+            plugin_meta={"detailFetchRequired": False},
+            listing_jobs_found=10,
+            discovered_links=10,
+            source_key="static_source::cygames",
+            source_state_rows={},
+        )
+        assert mode == "listing_only"
+
+
+def test_personio_adapter_skips_recent_rate_limited_source_only() -> None:
+        from src.jobs.adapters import provider_api
+
+        now = jf.datetime.now(jf.timezone.utc).isoformat()
+        registry_rows = [
+            {"name": "Rate Limited Studio", "studio": "Rate Limited Studio", "feed_url": "https://example.com/rate.xml"},
+            {"name": "Healthy Studio", "studio": "Healthy Studio", "feed_url": "https://example.com/ok.xml"},
+        ]
+
+        def fake_fetch(url: str, _timeout: int) -> str:
+            if url.endswith("/ok.xml"):
+                return """<?xml version="1.0"?><workzag-jobs><position><id>1</id><name>Engine Programmer</name><office>Remote</office><employmentType>Full-time</employmentType><url>https://example.com/jobs/1</url></position></workzag-jobs>"""
+            raise AssertionError(f"unexpected fetch for {url}")
+
+        with mock.patch.object(provider_api, "registry_entries", return_value=registry_rows):
+            rows = provider_api.run_personio_sources_source(
+                fetch_text=fake_fetch,
+                timeout_s=10,
+                retries=0,
+                backoff_s=0.0,
+                source_state_rows={
+                    "Rate Limited Studio": {
+                        "lastError": "HTTP 429 Too Many Requests",
+                        "lastFailureAt": now,
+                    }
+                },
+            )
+
+        assert len(rows) == 1
+        assert rows[0]["title"] == "Engine Programmer"
+
+
+def test_run_static_studio_pages_source_globalstep_listing_only() -> None:
+        html = """
+        <a href="https://globalstep.com/jobs/unity-game-developer/">
+          <h2>Unity Game Developer</h2>
+          <span>Bucharest - Romania</span>
+          <span>3+ Years</span>
+          <span>More Details</span>
+        </a>
+        """
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=lambda _url, _timeout: html,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[{
+                "name": "GlobalStep (Sheet)",
+                "studio": "GlobalStep",
+                "company": "GlobalStep",
+                "pages": ["https://globalstep.com/careers/"],
+                "id": "static:listing_url:https://globalstep.com/careers/",
+            }],
+        )
+        assert len(rows) == 1
+        assert rows[0]["jobLink"] == "https://globalstep.com/jobs/unity-game-developer/"
+
+
+def test_run_static_studio_pages_source_climax_listing_only() -> None:
+        html = """
+        <a href="https://www.climaxstudios.com/join-our-team/jobs/eD-experienced-games-producer/">
+          <h3>Experienced Games Producer</h3>
+          <p>Exciting role</p>
+          <div>Location London England United Kingdom</div>
+          <div>Create, Permanent</div>
+        </a>
+        """
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=lambda _url, _timeout: html,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[{
+                "name": "Climax Studios (Sheet)",
+                "studio": "Climax Studios",
+                "company": "Climax Studios",
+                "pages": ["https://www.climaxstudios.com/join-our-team/jobs/"],
+                "id": "static:listing_url:https://www.climaxstudios.com/join-our-team/jobs/",
+            }],
+        )
+        assert len(rows) == 1
+        assert rows[0]["title"] == "Experienced Games Producer"
+
+
+def test_run_static_studio_pages_source_amber_jobvite_listing_only() -> None:
+        html = """
+        <a href="/amberstudiocareers/job/oSIbufwZ">
+          <div>Senior Unity Game Engineer (Project Based)</div>
+          <div>Remote, Brazil</div>
+        </a>
+        """
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=lambda _url, _timeout: html,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[{
+                "name": "Amber (Sheet)",
+                "studio": "Amber",
+                "company": "Amber",
+                "pages": ["https://jobs.jobvite.com/amberstudiocareers/search?l=Worldwide"],
+                "id": "static:listing_url:https://jobs.jobvite.com/amberstudiocareers/search?l=Worldwide",
+            }],
+        )
+        assert len(rows) == 1
+        assert rows[0]["jobLink"] == "https://jobs.jobvite.com/amberstudiocareers/job/oSIbufwZ"
+
+
+def test_run_static_studio_pages_source_amanotes_plugin_extracts_next_data_positions() -> None:
+        html = """
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "positions": [
+                {
+                  "title": "Senior Backend Developer (NodeJS)",
+                  "location": "HCMC",
+                  "type": "Full-time",
+                  "team": "Tech",
+                  "leverId": "43fa1ef6-a45e-4718-9b8f-022c673632c6",
+                  "slug": {"current": "senior-backend-developer"}
+                },
+                {
+                  "title": "[New Games] Game Unit Manager",
+                  "location": "HCMC",
+                  "type": "Full-time",
+                  "team": "Games",
+                  "leverId": "cb73238c-a74d-4d0f-9dfd-a4c32e0f1c41",
+                  "slug": {"current": "new-games-game-unit-manager"}
+                }
+              ]
+            }
+          }
+        }
+        </script>
+        """
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=lambda _url, _timeout: html,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[{
+                "name": "Amanotes (Sheet)",
+                "studio": "Amanotes",
+                "company": "Amanotes",
+                "pages": ["https://www.careers.amanotes.com/jobs"],
+                "id": "static:listing_url:https://www.careers.amanotes.com/jobs",
+            }],
+        )
+        assert [row["title"] for row in rows] == [
+            "Senior Backend Developer (NodeJS)",
+            "[New Games] Game Unit Manager",
+        ]
+        assert rows[0]["jobLink"] == (
+            "https://www.careers.amanotes.com/jobs/"
+            "senior-backend-developer/43fa1ef6-a45e-4718-9b8f-022c673632c6"
+        )
+
+
+def test_run_pipeline_records_wall_clock_timing_summary() -> None:
+        def ok_loader(**_: object):
+            return [
+                {
+                    "title": "Gameplay Engineer",
+                    "company": "Timing Studio",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "Remote",
+                    "contractType": "Full-time",
+                    "jobLink": "https://example.com/timing/gameplay-engineer",
+                    "sector": "Game",
+                    "sourceJobId": "timing-1",
+                    "postedAt": "2026-03-01",
+                }
+            ]
+
+        with workspace_tmpdir("jobs-fetcher-wall-clock") as tmp:
+            report = jf.run_pipeline(output_dir=Path(tmp), source_loaders=[("timing_source", ok_loader)], show_progress=False)
+            timing = (((report.get("runtime") or {}).get("timingSummary")) or {})
+            assert int(timing.get("wallClockDurationMs") or 0) >= 0
+
+
+def test_personio_rate_limit_cooldown_can_be_configured() -> None:
+        from src.jobs.adapters import provider_api
+
+        with mock.patch.dict("os.environ", {"BALUFFO_PERSONIO_RATE_LIMIT_COOLDOWN_MINUTES": "15"}, clear=False):
+            cutoff = provider_api._personio_rate_limit_cutoff()
+        delta_minutes = (jf.datetime.now(jf.timezone.utc) - cutoff).total_seconds() / 60
+        assert 14 <= delta_minutes <= 16
+
+
+def test_normalize_work_type_derives_remote_from_title_when_field_empty() -> None:
+    from src.jobs.normalizers import normalize_work_type
+
+    assert normalize_work_type("", "Technical Artist (Malta/Remote)") == "Remote"
+    assert normalize_work_type("", "Gameplay Programmer (Malta/Remote)") == "Remote"
+    assert normalize_work_type("", "Senior Engineer - Remote") == "Remote"
+    assert normalize_work_type("", "Ui Programmer (Remote)") == "Remote"
+    assert normalize_work_type("", "Ai Programmer (Malta/Remote)") == "Remote"
+
+    assert normalize_work_type("", "Senior Engineer - Onsite") == "Onsite"
+    assert normalize_work_type("", "Office Assistant (Malta)") == "Onsite"
+    assert normalize_work_type("", "Project Manager (Malta)") == "Onsite"
+
+    assert normalize_work_type("Remote", "Some Onsite Job") == "Remote"
+    assert normalize_work_type("Hybrid", "Onsite Engineer") == "Hybrid"
+    assert normalize_work_type("", "Engineer - Hybrid") == "Hybrid"
+    assert normalize_work_type("", "Mixed Mode Artist") == "Hybrid"
+
 
 

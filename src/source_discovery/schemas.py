@@ -44,10 +44,18 @@ class DiscoveryReportSummarySchema(BaseModel):
     probedCandidateCount: int = 0
     queuedCandidateCount: int = 0
     discoverableButDeferredCount: int = 0
+    suppressedStaticCount: int = 0
     skippedDuplicateCount: int = 0
     skippedInvalidCount: int = 0
     skippedLowEvidenceProbeCount: int = 0
     adapterCounts: Dict[str, int] = Field(default_factory=dict)
+    queuedByAdapter: Dict[str, int] = Field(default_factory=dict)
+    deferredByAdapter: Dict[str, int] = Field(default_factory=dict)
+    healthyButDeferredByAdapter: Dict[str, int] = Field(default_factory=dict)
+    suppressedStaticByReason: Dict[str, int] = Field(default_factory=dict)
+    suppressedStaticByStage: Dict[str, int] = Field(default_factory=dict)
+    queuedProviderCount: int = 0
+    queuedStaticCount: int = 0
     methodCounts: Dict[str, int] = Field(default_factory=dict)
     generatedCountByStage: Dict[str, int] = Field(default_factory=dict)
     survivedDedupeCountByStage: Dict[str, int] = Field(default_factory=dict)
@@ -59,6 +67,33 @@ class DiscoveryReportSummarySchema(BaseModel):
     lossAccounting: DiscoveryLossAccountingSchema = Field(
         default_factory=DiscoveryLossAccountingSchema
     )
+
+
+class DiscoveryTimingRowSchema(BaseModel):
+    """Schema for discovery timing row payloads."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    stage: str = ""
+    adapter: str = ""
+    durationMs: int = 0
+    generatedCount: int = 0
+    failureCount: int = 0
+    probedCount: int = 0
+    healthyCount: int = 0
+    queuedCount: int = 0
+
+
+class DiscoveryRuntimeSchema(BaseModel):
+    """Schema for discovery runtime/timing details."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    totalDurationMs: int = 0
+    stageTimingsMs: Dict[str, int] = Field(default_factory=dict)
+    stageTop: List[Dict[str, Any]] = Field(default_factory=list)
+    adapterTimings: List[DiscoveryTimingRowSchema] = Field(default_factory=list)
+    slowestAdapters: List[DiscoveryTimingRowSchema] = Field(default_factory=list)
 
 
 class DiscoveryReportSchema(BaseModel):
@@ -73,6 +108,7 @@ class DiscoveryReportSchema(BaseModel):
     summary: DiscoveryReportSummarySchema = Field(
         default_factory=DiscoveryReportSummarySchema
     )
+    runtime: DiscoveryRuntimeSchema = Field(default_factory=DiscoveryRuntimeSchema)
     candidates: List[Dict[str, Any]] = Field(default_factory=list)
     failures: List[Dict[str, Any]] = Field(default_factory=list)
     topFailures: List[Dict[str, Any]] = Field(default_factory=list)

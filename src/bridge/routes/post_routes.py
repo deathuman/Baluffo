@@ -259,7 +259,10 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         return True
 
     if path == "/tasks/run-discovery":
-        status_code, result = api.trigger_discovery_task(route_name=path)
+        status_code, result = api.trigger_discovery_task(
+            payload=payload if isinstance(payload, dict) else {},
+            route_name=path,
+        )
         handler._send_json(result, status=status_code)  # noqa: SLF001
         return True
 

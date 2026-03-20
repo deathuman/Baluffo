@@ -2185,6 +2185,11 @@ h1 {
 
 .admin-sync-config-hint {
   margin: 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0.4rem 0.6rem;
 }
 
 .admin-sync-status-card {
@@ -3211,6 +3216,10 @@ h1 {
   text-align: center;
   color: var(--text-muted);
   font-size: 0.9rem;
+}
+
+.jobs-footer-admin {
+  margin-top: 0.75rem;
 }
 
 .jobs-footer a {

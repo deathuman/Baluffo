@@ -1,6 +1,6 @@
 import { JobsStateModule as jobsStateModule } from "../../../jobs-state.js";
 import { AdminConfig as adminConfig } from "../../../admin-config.js";
-import { resolveStartupProbeEnabled } from "../../../startup-probe.js";
+import { resolveStartupProbeEnabled } from "../../../probes/startup-probe.js";
 import {
   escapeHtml,
   showToast,
@@ -20,6 +20,7 @@ import {
   mapProfession,
   isInternshipJob,
   isValidCountry,
+  isSemanticallyValidLocationValue,
   normalizeJobs,
   getJobKeyForJob,
   toJobSnapshot
@@ -1513,6 +1514,13 @@ function updateResultsSummary(total, from, to, loadedTotal = total) {
   resultsSummary.textContent = pageText;
 }
 
+function isCleanFilterOptionValue(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (text.includes("<") || text.includes(">")) return false;
+  return isSemanticallyValidLocationValue(text, "city");
+}
+
 function updateFilterOptions() {
   if (!workTypeFilter || !countryFilter || !professionFilter || !cityFilter || !sectorFilter) return;
 
@@ -1524,7 +1532,7 @@ function updateFilterOptions() {
   allJobs.forEach(job => {
     if (isValidCountry(job.country)) countries.add(job.country);
     if (job.profession) professions.add(job.profession);
-    if (job.city) cities.add(job.city);
+    if (job.city && isCleanFilterOptionValue(job.city)) cities.add(job.city);
     if (job.sector) sectors.add(job.sector);
   });
 
@@ -1549,6 +1557,7 @@ function updateFilterOptions() {
 
   cityFilter.innerHTML = '<option value="">All Cities</option>';
   Array.from(cities).sort().forEach(city => {
+    if (!isCleanFilterOptionValue(city)) return;
     const opt = document.createElement("option");
     opt.value = city;
     opt.textContent = city;

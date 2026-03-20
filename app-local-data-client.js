@@ -1,9 +1,13 @@
-const RUNTIME_MODE_KEY = "baluffo_runtime_mode";
-const HEARTBEAT_INTERVAL_MS = 10000;
+window.__baluffoModuleLoading = true;
+console.log("[baluffo] app-local-data-client.js: module script loading...");
+
 import { initBrowserLocalDataClient } from "./local-data-client.js";
 import { initDesktopLocalDataClient } from "./desktop-local-data-client.js";
 import { AdminConfig } from "./admin-config.js";
-import { bindStartupProbeErrorHandlers, emitStartupProbeMetric, resolveStartupProbePage } from "./startup-probe.js";
+import { bindStartupProbeErrorHandlers, emitStartupProbeMetric, resolveStartupProbePage } from "./probes/startup-probe.js";
+
+const RUNTIME_MODE_KEY = "baluffo_runtime_mode";
+const HEARTBEAT_INTERVAL_MS = 10000;
 
 let desktopHeartbeatStarted = false;
 
@@ -21,7 +25,12 @@ function resolveDesktopMode() {
   }
 }
 
-bindStartupProbeErrorHandlers();
+try {
+  bindStartupProbeErrorHandlers();
+  window.__baluffoDesktopMode = resolveDesktopMode();
+} catch (err) {
+  console.error("[baluffo] Error in app-local-data-client.js:", err);
+}
 
 function startDesktopHeartbeat() {
   if (desktopHeartbeatStarted) return;
@@ -45,13 +54,27 @@ function startDesktopHeartbeat() {
   window.setInterval(emitHeartbeat, HEARTBEAT_INTERVAL_MS);
 }
 
-if (resolveDesktopMode()) {
+if (window.__baluffoDesktopMode) {
   const page = resolveStartupProbePage();
   emitStartupProbeMetric(`${page}_page_boot_start`);
   emitStartupProbeMetric(`${page}_local_data_init_start`);
-  initDesktopLocalDataClient();
-  emitStartupProbeMetric(`${page}_local_data_init_ready`);
+  try {
+    initDesktopLocalDataClient();
+    window.__baluffoLocalDataLoaded = true;
+    console.log("[baluffo] Desktop local data initialized successfully");
+    emitStartupProbeMetric(`${page}_local_data_init_ready`);
+  } catch (err) {
+    console.error("[baluffo] Desktop local data init failed:", err);
+    window.__baluffoInitErrors.push(err);
+  }
   startDesktopHeartbeat();
 } else {
-  initBrowserLocalDataClient();
+  try {
+    initBrowserLocalDataClient();
+    window.__baluffoLocalDataLoaded = true;
+    console.log("[baluffo] Browser local data initialized successfully");
+  } catch (err) {
+    console.error("[baluffo] Browser local data init failed:", err);
+    window.__baluffoInitErrors.push(err);
+  }
 }

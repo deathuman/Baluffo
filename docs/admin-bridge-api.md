@@ -48,7 +48,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | GET | `/discovery/report` | Last discovery run report |
 | GET | `/discovery/log` | Discovery log (supports `?offset=`) |
 | POST | `/discovery/check-source` | Check specific source (`{sourceId: ""}`) |
-| POST | `/tasks/run-discovery` | Trigger discovery task |
+| POST | `/tasks/run-discovery` | Trigger discovery task (`{preset: "default"|"uncapped"}`) |
 
 ## Jobs Pipeline
 
@@ -57,7 +57,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | GET | `/fetcher/log` | Fetcher log (supports `?offset=`) |
 | GET | `/ops/fetch-report` | Last fetch report |
 | GET | `/ops/fetcher-metrics?windowRuns=` | Fetcher performance metrics |
-| POST | `/tasks/run-fetcher` | Run fetcher with presets (`{preset: "default"|"incremental"|"retry_failed"|"force_full", ...}`) |
+| POST | `/tasks/run-fetcher` | Run fetcher with presets (`{preset: "default"|"incremental"|"retry_failed"|"force_full"|"uncapped", ...}`) |
 | POST | `/tasks/run-jobs-pipeline` | Run jobs pipeline task |
 | GET | `/tasks/run-jobs-pipeline-status` | Pipeline task status |
 
@@ -92,3 +92,9 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 - `offset`: Log byte offset for pagination
 - `limit`: Result limit (default varies)
 - `includeFiles`: Include attachment files in backup (`0`/`1`)
+
+## Notes
+
+- Bridge-started fetch runs enable social by default unless the request payload explicitly sets `socialEnabled: false`.
+- `uncapped` is an explicit aggressive admin preset. It is distinct from `force_full`.
+- `/discovery/log` is designed for live tailing via byte offsets, and the Admin UI now re-attaches to active discovery runs after page refresh.

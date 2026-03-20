@@ -31,6 +31,7 @@ export function createAdminOpsController({
   adminActions,
   escapeHtml,
   onBridgeStatusChange,
+  onLiveDiscoveryDetected,
   bridgeStatusPollIntervalMs,
   idlePollIntervalMs
 }) {
@@ -107,6 +108,11 @@ export function createAdminOpsController({
       setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
       setBusyFlag("liveSyncRunning", liveTypes.has("sync"));
       setBusyFlag("livePipelineRunning", liveTypes.has("pipeline"));
+      if (liveTypes.has("discovery") && !state.adminBusyState.discoveryWatch) {
+        const currentRows = Array.isArray(runModel?.currentRows) ? runModel.currentRows : [];
+        const activeDiscoveryRun = currentRows.find(row => String(row?.type || "").toLowerCase() === "discovery") || null;
+        onLiveDiscoveryDetected?.(activeDiscoveryRun);
+      }
 
       renderAdminOpsAlerts(refs.adminOpsAlertsEl, health?.alerts || [], {
         onAck: async alertId => {

@@ -23,6 +23,11 @@ from src.jobs_fetcher_registry import EXCLUDED_DEFAULT_SOURCES, SOURCE_REPORT_ME
 
 LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = common_config.LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS
 LIFECYCLE_ARCHIVE_RETENTION_DAYS = common_config.LIFECYCLE_ARCHIVE_RETENTION_DAYS
+DEFAULT_INCREMENTAL_FETCH_ENABLED = common_config.DEFAULT_INCREMENTAL_FETCH_ENABLED
+DEFAULT_INCREMENTAL_PROVIDER_STABLE_MINUTES = common_config.DEFAULT_INCREMENTAL_PROVIDER_STABLE_MINUTES
+DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES = common_config.DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES
+DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES = common_config.DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES
+DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES = common_config.DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES
 fingerprint_url = common_url.fingerprint_url
 
 
@@ -48,18 +53,30 @@ def normalize_source_state_payload(payload: Dict[str, Any], *, updated_at: str =
                 continue
             entry = {
                 "lastRunAt": clean_text(raw_entry.get("lastRunAt")),
+                "lastCheckedAt": clean_text(raw_entry.get("lastCheckedAt")),
                 "lastStatus": clean_text(raw_entry.get("lastStatus")),
                 "lastDurationMs": _clamped_int(raw_entry.get("lastDurationMs"), 0, 0),
                 "lastFetchedCount": _clamped_int(raw_entry.get("lastFetchedCount"), 0, 0),
                 "lastKeptCount": _clamped_int(raw_entry.get("lastKeptCount"), 0, 0),
+                "lastJobsFound": _clamped_int(raw_entry.get("lastJobsFound"), 0, 0),
                 "lastCandidateLinksFound": _clamped_int(raw_entry.get("lastCandidateLinksFound"), 0, 0),
                 "lastDetailPagesVisited": _clamped_int(raw_entry.get("lastDetailPagesVisited"), 0, 0),
                 "lastDetailYieldPct": _clamped_int(raw_entry.get("lastDetailYieldPct"), 0, 0),
                 "lastRedirectCandidates": _clamped_int(raw_entry.get("lastRedirectCandidates"), 0, 0),
                 "lastRedirectResolved": _clamped_int(raw_entry.get("lastRedirectResolved"), 0, 0),
                 "lastRedirectCacheHits": _clamped_int(raw_entry.get("lastRedirectCacheHits"), 0, 0),
+                "lastAdapter": clean_text(raw_entry.get("lastAdapter")),
                 "lastSuccessAt": clean_text(raw_entry.get("lastSuccessAt")),
+                "lastNonEmptyAt": clean_text(raw_entry.get("lastNonEmptyAt")),
                 "lastFingerprint": clean_text(raw_entry.get("lastFingerprint")),
+                "lastListingFingerprint": clean_text(raw_entry.get("lastListingFingerprint")),
+                "lastListingCheckedAt": clean_text(raw_entry.get("lastListingCheckedAt")),
+                "lastHttpEtag": clean_text(raw_entry.get("lastHttpEtag")),
+                "lastHttpLastModified": clean_text(raw_entry.get("lastHttpLastModified")),
+                "lastHttpStatus": _clamped_int(raw_entry.get("lastHttpStatus"), 0, 0),
+                "nextEligibleCheckAt": clean_text(raw_entry.get("nextEligibleCheckAt")),
+                "cacheDecision": clean_text(raw_entry.get("cacheDecision")),
+                "cacheDecisionReason": clean_text(raw_entry.get("cacheDecisionReason")),
                 "consecutiveFailures": _clamped_int(raw_entry.get("consecutiveFailures"), 0, 0),
                 "quarantinedUntilAt": clean_text(raw_entry.get("quarantinedUntilAt")),
                 "lastFailureAt": clean_text(raw_entry.get("lastFailureAt")),
@@ -289,6 +306,102 @@ def should_skip_source_by_cadence(
     return age_seconds < float(cadence_minutes * 60)
 
 
+def _adapter_for_cache(source_name: str, entry: Dict[str, Any], adapter: str = "") -> str:
+    explicit = clean_text(adapter)
+    if explicit:
+        return explicit
+    from_meta = clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter"))
+    if from_meta:
+        return from_meta
+    return clean_text(entry.get("lastAdapter"))
+
+
+def _decision_window_minutes(entry: Dict[str, Any], *, adapter: str) -> int:
+    last_kept = int(entry.get("lastKeptCount") or entry.get("lastJobsFound") or 0)
+    last_status = norm_text(entry.get("lastStatus"))
+    last_error = norm_text(entry.get("lastError"))
+    if adapter == "static":
+        if last_status == "error" and any(token in last_error for token in ("dead_listing_page", "parser_stale", "fetch_ok_extract_zero")):
+            return DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES
+        if last_kept <= 0:
+            return DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES
+        return DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES
+    if last_kept <= 0:
+        return DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES
+    changed_at = parse_datetime(entry.get("lastChangedAt"))
+    if changed_at:
+        age_since_change_seconds = max(0.0, (datetime.now(timezone.utc) - changed_at).total_seconds())
+        if age_since_change_seconds <= 24 * 60 * 60:
+            return common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
+    return DEFAULT_INCREMENTAL_PROVIDER_STABLE_MINUTES
+
+
+def _compute_next_eligible_check_at(entry: Dict[str, Any], *, adapter: str, checked_at: str) -> str:
+    checked_dt = parse_datetime(checked_at)
+    if not checked_dt:
+        return ""
+    window_minutes = _decision_window_minutes(entry, adapter=adapter)
+    return (checked_dt + timedelta(minutes=max(1, int(window_minutes or 1)))).isoformat()
+
+
+def get_incremental_cache_decision(
+    source_name: str,
+    state_rows: Dict[str, Dict[str, Any]],
+    *,
+    adapter: str = "",
+    force_refresh_all: bool = False,
+) -> Dict[str, str]:
+    if force_refresh_all or not DEFAULT_INCREMENTAL_FETCH_ENABLED:
+        return {"cacheDecision": "run_now", "cacheDecisionReason": "force_refresh_all"}
+    entry = state_rows.get(source_name)
+    if not isinstance(entry, dict):
+        return {"cacheDecision": "run_now", "cacheDecisionReason": "no_cache_state"}
+    effective_adapter = _adapter_for_cache(source_name, entry, adapter=adapter)
+    next_eligible = parse_datetime(entry.get("nextEligibleCheckAt"))
+    now_dt = datetime.now(timezone.utc)
+    if next_eligible and next_eligible > now_dt:
+        last_decision = clean_text(entry.get("cacheDecision")) or "skip_fresh"
+        last_reason = clean_text(entry.get("cacheDecisionReason")) or "within_freshness_window"
+        if last_decision == "run_now":
+            last_decision = "skip_fresh"
+            last_reason = "within_freshness_window"
+        return {"cacheDecision": last_decision, "cacheDecisionReason": last_reason}
+    if effective_adapter == "personio":
+        last_error = norm_text(entry.get("lastError"))
+        last_failure_at = parse_datetime(entry.get("lastFailureAt"))
+        cooldown_cutoff = now_dt - timedelta(minutes=max(1, int(common_config.DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES)))
+        if "429" in last_error and last_failure_at and last_failure_at >= cooldown_cutoff:
+            return {"cacheDecision": "cooldown_skip", "cacheDecisionReason": "personio_rate_limited"}
+    last_success = parse_datetime(entry.get("lastSuccessAt"))
+    if not last_success:
+        return {"cacheDecision": "run_now", "cacheDecisionReason": "no_success_history"}
+    age_seconds = max(0.0, (now_dt - last_success).total_seconds())
+    last_kept = int(entry.get("lastKeptCount") or entry.get("lastJobsFound") or 0)
+    last_status = norm_text(entry.get("lastStatus"))
+    last_error = norm_text(entry.get("lastError"))
+    has_validators = bool(clean_text(entry.get("lastHttpEtag")) or clean_text(entry.get("lastHttpLastModified")))
+    if effective_adapter == "static":
+        if clean_text(entry.get("lastListingFingerprint")) and last_kept > 0 and age_seconds < float(DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES * 60):
+            return {"cacheDecision": "listing_only", "cacheDecisionReason": "static_listing_fresh"}
+        if last_status == "error" and any(token in last_error for token in ("dead_listing_page", "parser_stale", "fetch_ok_extract_zero")) and age_seconds < float(DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES * 60):
+            return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "static_dead_or_stale_fresh"}
+        if last_kept <= 0 and age_seconds < float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60):
+            return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "static_empty_fresh"}
+        return {"cacheDecision": "run_now", "cacheDecisionReason": "static_refresh_due"}
+    if last_kept <= 0 and age_seconds < float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60):
+        return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "empty_source_fresh"}
+    changed_at = parse_datetime(entry.get("lastChangedAt"))
+    if changed_at:
+        age_since_change_seconds = max(0.0, (now_dt - changed_at).total_seconds())
+        if age_since_change_seconds <= 24 * 60 * 60 and age_seconds < float(common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES * 60):
+            return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "provider_hot_fresh"}
+    if age_seconds < float(DEFAULT_INCREMENTAL_PROVIDER_STABLE_MINUTES * 60):
+        if has_validators:
+            return {"cacheDecision": "revalidate_only", "cacheDecisionReason": "provider_stable_revalidate"}
+        return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "provider_stable_fresh"}
+    return {"cacheDecision": "run_now", "cacheDecisionReason": "provider_refresh_due"}
+
+
 def circuit_breaker_until(source_name: str, state_rows: Dict[str, Dict[str, Any]], failure_threshold: int) -> Optional[datetime]:
     if failure_threshold <= 0:
         return None
@@ -354,16 +467,31 @@ def update_source_state_rows(
     circuit_breaker_failures: int,
     circuit_breaker_cooldown_minutes: int,
 ) -> Dict[str, Dict[str, Any]]:
-    for report in source_reports:
-        name = clean_text(report.get("name"))
-        if not name:
-            continue
+    def _apply_report_to_entry(name: str, report: Dict[str, Any]) -> None:
+        nonlocal source_state_rows
         entry = dict(source_state_rows.get(name) or {})
         entry["lastRunAt"] = finished_at
+        entry["lastCheckedAt"] = finished_at
         entry["lastStatus"] = clean_text(report.get("status"))
+        entry["lastAdapter"] = clean_text(report.get("adapter")) or clean_text(entry.get("lastAdapter"))
         entry["lastDurationMs"] = int(report.get("durationMs") or 0)
         entry["lastFetchedCount"] = int(report.get("fetchedCount") or 0)
         entry["lastKeptCount"] = int(report.get("keptCount") or 0)
+        entry["lastJobsFound"] = int(report.get("keptCount") or 0)
+        entry["cacheDecision"] = clean_text(report.get("cacheDecision")) or clean_text(entry.get("cacheDecision"))
+        entry["cacheDecisionReason"] = clean_text(report.get("cacheDecisionReason")) or clean_text(entry.get("cacheDecisionReason"))
+        if clean_text(report.get("listingFingerprint")):
+            entry["lastListingFingerprint"] = clean_text(report.get("listingFingerprint"))
+            entry["lastListingCheckedAt"] = clean_text(report.get("listingCheckedAt")) or finished_at
+        if clean_text(report.get("httpEtag")):
+            entry["lastHttpEtag"] = clean_text(report.get("httpEtag"))
+        if clean_text(report.get("httpLastModified")):
+            entry["lastHttpLastModified"] = clean_text(report.get("httpLastModified"))
+        if int(report.get("httpStatus") or 0) > 0:
+            entry["lastHttpStatus"] = int(report.get("httpStatus") or 0)
+        name = clean_text(report.get("name"))
+        if not name:
+            return
         details = report.get("details") if isinstance(report.get("details"), list) else []
         static_detail = details[0] if len(details) == 1 and isinstance(details[0], dict) else {}
         static_stats = static_detail.get("stats") if isinstance(static_detail, dict) and isinstance(static_detail.get("stats"), dict) else {}
@@ -388,6 +516,8 @@ def update_source_state_rows(
             entry.pop("lastStageTimingsMs", None)
         if entry["lastStatus"] == "ok":
             entry["lastSuccessAt"] = finished_at
+            if entry["lastKeptCount"] > 0:
+                entry["lastNonEmptyAt"] = finished_at
             reported_fingerprint = clean_text(report.get("sourceFingerprint"))
             if not reported_fingerprint and entry["lastKeptCount"] > 0:
                 reported_fingerprint = source_rows_fingerprint(
@@ -402,6 +532,11 @@ def update_source_state_rows(
             entry.pop("quarantinedUntilAt", None)
             entry.pop("lastFailureAt", None)
             entry.pop("lastError", None)
+            entry["nextEligibleCheckAt"] = _compute_next_eligible_check_at(
+                entry,
+                adapter=_adapter_for_cache(name, entry),
+                checked_at=finished_at,
+            )
         elif entry["lastStatus"] == "error":
             failure_count = int(entry.get("consecutiveFailures") or 0) + 1
             entry["consecutiveFailures"] = failure_count
@@ -411,7 +546,34 @@ def update_source_state_rows(
                 entry["quarantinedUntilAt"] = (
                     datetime.now(timezone.utc) + timedelta(minutes=circuit_breaker_cooldown_minutes)
                 ).isoformat()
+            entry["nextEligibleCheckAt"] = _compute_next_eligible_check_at(
+                entry,
+                adapter=_adapter_for_cache(name, entry),
+                checked_at=finished_at,
+            )
+        elif entry["lastStatus"] == "excluded":
+            exclusion_reason = clean_text(report.get("exclusionReason")) or clean_text(report.get("cacheDecisionReason"))
+            if exclusion_reason == "not_modified_304":
+                entry["lastSuccessAt"] = finished_at
+                entry["consecutiveFailures"] = 0
+                entry.pop("quarantinedUntilAt", None)
+                entry.pop("lastFailureAt", None)
+                entry.pop("lastError", None)
+            entry["nextEligibleCheckAt"] = _compute_next_eligible_check_at(
+                entry,
+                adapter=_adapter_for_cache(name, entry),
+                checked_at=finished_at,
+            )
         source_state_rows[name] = entry
+        for item in details:
+            if isinstance(item, dict) and clean_text(item.get("name")):
+                _apply_report_to_entry(clean_text(item.get("name")), item)
+
+    for report in source_reports:
+        name = clean_text(report.get("name"))
+        if not name:
+            continue
+        _apply_report_to_entry(name, report)
     return source_state_rows
 
 

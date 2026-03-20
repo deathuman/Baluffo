@@ -79,6 +79,46 @@ def resolve_supported_redirect_url(url: Any, *, timeout_s: int = DEFAULT_TIMEOUT
     return common_url.resolve_supported_redirect_url(url, timeout_s=timeout_s)
 
 
+def conditional_revalidate_url(
+    url: str,
+    timeout_s: int,
+    *,
+    etag: str = "",
+    last_modified: str = "",
+) -> Dict[str, Any]:
+    clean_etag = str(etag or "").strip()
+    clean_last_modified = str(last_modified or "").strip()
+    if not clean_etag and not clean_last_modified:
+        return {"supported": False, "notModified": False, "statusCode": 0, "etag": "", "lastModified": ""}
+    headers = dict(DEFAULT_HTTP_HEADERS)
+    if clean_etag:
+        headers["If-None-Match"] = clean_etag
+    if clean_last_modified:
+        headers["If-Modified-Since"] = clean_last_modified
+    if httpx is not None:
+        try:
+            with httpx.Client(follow_redirects=True, headers=headers, timeout=httpx.Timeout(float(max(1, timeout_s)))) as client:
+                response = client.request("HEAD", url)
+                return {
+                    "supported": True,
+                    "notModified": int(response.status_code) == 304,
+                    "statusCode": int(response.status_code or 0),
+                    "etag": str(response.headers.get("ETag") or ""),
+                    "lastModified": str(response.headers.get("Last-Modified") or ""),
+                }
+        except Exception as exc:  # noqa: BLE001
+            response = getattr(exc, "response", None)
+            if response is not None:
+                return {
+                    "supported": True,
+                    "notModified": int(getattr(response, "status_code", 0) or 0) == 304,
+                    "statusCode": int(getattr(response, "status_code", 0) or 0),
+                    "etag": str(response.headers.get("ETag") or ""),
+                    "lastModified": str(response.headers.get("Last-Modified") or ""),
+                }
+    return {"supported": False, "notModified": False, "statusCode": 0, "etag": "", "lastModified": ""}
+
+
 class PooledRedirectResolver:
     def __init__(
         self,
@@ -186,8 +226,8 @@ def build_redirect_resolver(
 
 
 def default_fetch_text(url: str, timeout_s: int, request: RequestConfig | None = None) -> str:
-    _ = request
-    return common_default_fetch_text(url, timeout_s)
+    headers = build_headers(request or default_request_config(timeout_s=timeout_s))
+    return common_default_fetch_text(url, timeout_s, headers=headers)
 
 
 class AsyncHttpTextFetcher:
@@ -224,10 +264,11 @@ class AsyncHttpTextFetcher:
             asyncio.set_event_loop(None)
             self._loop.close()
 
-    async def _fetch(self, url: str, timeout_s: int) -> str:
+    async def _fetch(self, url: str, timeout_s: int, request: RequestConfig | None = None) -> str:
         timeout = httpx.Timeout(float(max(1, timeout_s)))
         try:
-            response = await self._client.get(url, timeout=timeout)
+            headers = build_headers(request or default_request_config(timeout_s=timeout_s))
+            response = await self._client.get(url, timeout=timeout, headers=headers)
             response.raise_for_status()
             return response.text
         except httpx.HTTPStatusError as exc:
@@ -239,10 +280,10 @@ class AsyncHttpTextFetcher:
     async def _aclose(self) -> None:
         await self._client.aclose()
 
-    def fetch_text(self, url: str, timeout_s: int) -> str:
+    def fetch_text(self, url: str, timeout_s: int, request: RequestConfig | None = None) -> str:
         if self._closed:
             raise RuntimeError("Async HTTP fetcher is closed")
-        future = asyncio.run_coroutine_threadsafe(self._fetch(url, timeout_s), self._loop)
+        future = asyncio.run_coroutine_threadsafe(self._fetch(url, timeout_s, request=request), self._loop)
         return str(future.result())
 
     def close(self) -> None:

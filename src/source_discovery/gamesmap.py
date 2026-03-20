@@ -10,6 +10,8 @@ Responsibilities:
 
 import json
 import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
@@ -31,6 +33,101 @@ def _strip_html_tags(html: str) -> str:
 def _gamesmap_config_value(config: Optional[Dict[str, Any]], key: str, default: Any) -> Any:
     source = config if isinstance(config, dict) else {}
     return source.get(key, default)
+
+
+def _gamesmap_cache_path(config: Optional[Dict[str, Any]]) -> Optional[Path]:
+    source = config if isinstance(config, dict) else {}
+    if isinstance(source.get("gamesmap"), dict):
+        source = source.get("gamesmap") or {}
+    raw = str(source.get("cachePath") or "").strip()
+    if not raw:
+        return Path(__file__).resolve().parents[2] / "data" / "gamesmap-discovery-cache.json"
+    return Path(raw)
+
+
+def _gamesmap_cache_ttl_minutes(config: Optional[Dict[str, Any]]) -> int:
+    source = config if isinstance(config, dict) else {}
+    if isinstance(source.get("gamesmap"), dict):
+        source = source.get("gamesmap") or {}
+    raw = source.get("cacheTtlMinutes", "")
+    if raw in {"", None}:
+        raw = 360
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 360
+
+
+def _gamesmap_cache_signature(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "baseUrl": str(cfg.get("baseUrl") or "").strip(),
+        "indexUrls": [str(item).strip() for item in (cfg.get("indexUrls") or []) if str(item).strip()],
+        "preferEnglish": bool(cfg.get("preferEnglish", True)),
+        "websiteOnlyFallback": bool(cfg.get("websiteOnlyFallback", True)),
+        "websiteOnlyManualOnly": bool(cfg.get("websiteOnlyManualOnly", False)),
+        "maxDetailPages": max(0, int(cfg.get("maxDetailPages") or 0)),
+        "allowedCategoryTokens": list(cfg.get("allowedCategoryTokens") or []),
+        "blockedCategoryTokens": list(cfg.get("blockedCategoryTokens") or []),
+    }
+
+
+def _load_gamesmap_cache(config: Optional[Dict[str, Any]], cfg: Dict[str, Any], *, fetcher: Any) -> Optional[Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]]:
+    cache_path = _gamesmap_cache_path(config)
+    ttl_minutes = _gamesmap_cache_ttl_minutes(config)
+    if ttl_minutes <= 0 or cache_path is None:
+        return None
+    # Keep fixture-driven/unit test fetchers deterministic unless they explicitly opt into cache via config.
+    source = config if isinstance(config, dict) else {}
+    if isinstance(source.get("gamesmap"), dict):
+        source = source.get("gamesmap") or {}
+    if fetcher is not fetch_text and not str(source.get("cachePath") or "").strip():
+        return None
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    updated_at_raw = str(payload.get("updatedAt") or "").strip()
+    if not updated_at_raw:
+        return None
+    try:
+        updated_at = datetime.fromisoformat(updated_at_raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if datetime.now(timezone.utc) - updated_at > timedelta(minutes=ttl_minutes):
+        return None
+    if payload.get("configSignature") != _gamesmap_cache_signature(cfg):
+        return None
+    provider_rows = payload.get("providerCandidates")
+    static_rows = payload.get("staticCandidates")
+    failures = payload.get("failures")
+    if not isinstance(provider_rows, list) or not isinstance(static_rows, list) or not isinstance(failures, list):
+        return None
+    return unique_sources(provider_rows), unique_sources(static_rows), failures
+
+
+def _write_gamesmap_cache(
+    config: Optional[Dict[str, Any]],
+    cfg: Dict[str, Any],
+    *,
+    provider_candidates: List[Dict[str, Any]],
+    static_candidates: List[Dict[str, Any]],
+    failures: List[Dict[str, Any]],
+) -> None:
+    cache_path = _gamesmap_cache_path(config)
+    if cache_path is None:
+        return
+    payload = {
+        "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "configSignature": _gamesmap_cache_signature(cfg),
+        "providerCandidates": unique_sources(provider_candidates),
+        "staticCandidates": unique_sources(static_candidates),
+        "failures": failures,
+    }
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        return
 
 
 def normalize_gamesmap_category_token(value: str) -> str:
@@ -306,6 +403,9 @@ def discover_gamesmap_candidates(
     cfg = dict(_gamesmap_config_value(config, "gamesmap", DEFAULT_DISCOVERY_CONFIG["gamesmap"]))
     if not bool(cfg.get("enabled")):
         return [], [], []
+    cached = _load_gamesmap_cache(config, cfg, fetcher=fetcher)
+    if cached is not None:
+        return cached
     base_url = str(cfg.get("baseUrl") or "https://www.gamesmap.de").strip()
     index_urls = [str(item).strip() for item in (cfg.get("indexUrls") or []) if str(item).strip()]
     prefer_english = bool(cfg.get("preferEnglish", True))
@@ -424,5 +524,14 @@ def discover_gamesmap_candidates(
                 )
             )
 
-    return unique_sources(provider_candidates), unique_sources(static_candidates), failures
+    provider_candidates = unique_sources(provider_candidates)
+    static_candidates = unique_sources(static_candidates)
+    _write_gamesmap_cache(
+        config,
+        cfg,
+        provider_candidates=provider_candidates,
+        static_candidates=static_candidates,
+        failures=failures,
+    )
+    return provider_candidates, static_candidates, failures
 

@@ -7,6 +7,25 @@ from src.jobs.interfaces import SourceLoader
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.utils import env_flag
 
+BOARD_LEVEL_INCREMENTAL_PROVIDER_ADAPTERS = {
+    "ashby",
+    "breezy",
+    "greenhouse",
+    "jazzhr",
+    "lever",
+    "personio",
+    "pinpoint",
+    "recruitee",
+    "smartrecruiters",
+    "teamtailor",
+    "workable",
+}
+
+DETAIL_LEVEL_INCREMENTAL_SOURCE_NAMES = {
+    "social_mastodon",
+    "social_x",
+}
+
 
 def build_excluded_source_report(
     source_name: str,
@@ -91,6 +110,43 @@ def apply_source_cadence_exclusions(
     return filtered_loaders, cadence_skipped
 
 
+def apply_incremental_cache_exclusions(
+    selected_loaders: List[Tuple[str, SourceLoader]],
+    *,
+    incremental_cache_enabled: bool,
+    force_refresh_all: bool,
+    source_state_rows: Dict[str, Dict[str, Any]],
+    get_incremental_cache_decision: Callable[..., Dict[str, str]],
+    build_excluded_source_report: Callable[[str, str], Dict[str, Any]],
+    source_report_meta: Dict[str, Dict[str, Any]],
+) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]]]:
+    if force_refresh_all or not incremental_cache_enabled:
+        return selected_loaders, []
+    skipped_rows: list[dict[str, Any]] = []
+    filtered_loaders: list[tuple[str, SourceLoader]] = []
+    for name, loader in selected_loaders:
+        adapter = clean_text(source_report_meta.get(name, {}).get("adapter"))
+        if adapter in BOARD_LEVEL_INCREMENTAL_PROVIDER_ADAPTERS or name in DETAIL_LEVEL_INCREMENTAL_SOURCE_NAMES:
+            filtered_loaders.append((name, loader))
+            continue
+        decision = get_incremental_cache_decision(
+            name,
+            source_state_rows,
+            adapter=adapter,
+            force_refresh_all=force_refresh_all,
+        )
+        cache_decision = clean_text(decision.get("cacheDecision")) or "run_now"
+        cache_reason = clean_text(decision.get("cacheDecisionReason")) or "run_now"
+        if cache_decision in {"skip_fresh", "cooldown_skip"}:
+            row = build_excluded_source_report(name, f"cache_{cache_reason}")
+            row["cacheDecision"] = cache_decision
+            row["cacheDecisionReason"] = cache_reason
+            skipped_rows.append(row)
+            continue
+        filtered_loaders.append((name, loader))
+    return filtered_loaders, skipped_rows
+
+
 def build_pipeline_runtime_payload(
     *,
     selected_loaders: List[Tuple[str, SourceLoader]],
@@ -102,6 +158,8 @@ def build_pipeline_runtime_payload(
     static_detail_concurrency: int,
     google_sheets_redirect_concurrency: int,
     seed_from_existing_output: bool,
+    incremental_cache_enabled: bool,
+    force_refresh_all: bool,
     source_ttl_minutes: int,
     respect_source_cadence: bool,
     hot_source_cadence_minutes: int,
@@ -129,6 +187,8 @@ def build_pipeline_runtime_payload(
         "staticDetailConcurrency": static_detail_concurrency,
         "googleSheetsRedirectConcurrency": google_sheets_redirect_concurrency,
         "seedFromExistingOutput": bool(seed_from_existing_output),
+        "incrementalCacheEnabled": bool(incremental_cache_enabled),
+        "forceRefreshAll": bool(force_refresh_all),
         "sourceTtlMinutes": int(source_ttl_minutes or 0),
         "respectSourceCadence": bool(respect_source_cadence),
         "hotSourceCadenceMinutes": hot_source_cadence_minutes,

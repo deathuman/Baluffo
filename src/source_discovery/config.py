@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 _REPO_ROOT = ROOT.parent
 _STORAGE_DEFAULTS = get_storage_defaults()
 
-SEED_CATALOG_PATH = _REPO_ROOT / "scripts" / "discovery_seed_catalog.json"
+SEED_CATALOG_PATH = _REPO_ROOT / "src" / "discovery_seed_catalog.json"
 DISCOVERY_STAGES: tuple[str, ...] = (
     "curated_seed",
     "sheet_directory",
@@ -124,16 +124,16 @@ PATTERN_PROVIDER_PROBE_THRESHOLD = 30
 PATTERN_PROVIDER_QUEUE_THRESHOLD = 40
 DOMAIN_QUEUE_CAP_DEFAULT = 2
 ADAPTER_QUEUE_CAPS: Dict[str, int] = {
-    "greenhouse": 4,
-    "lever": 4,
-    "smartrecruiters": 4,
-    "workable": 4,
-    "teamtailor": 4,
-    "ashby": 4,
-    "recruitee": 4,
-    "pinpoint": 3,
+    "greenhouse": 12,
+    "lever": 10,
+    "smartrecruiters": 8,
+    "workable": 8,
+    "teamtailor": 8,
+    "ashby": 10,
+    "recruitee": 6,
+    "pinpoint": 6,
     "personio": 3,
-    "static": 6,
+    "static": 8,
 }
 
 DEFAULT_DISCOVERY_THRESHOLDS: Dict[str, int] = {

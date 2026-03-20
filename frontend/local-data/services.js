@@ -30,7 +30,7 @@ function ensureApi(api, actionName) {
 
 export const authService = {
   isReady() {
-    const api = getValidatedLocalDataApi("local data runtime");
+    const api = getLocalDataApi();
     return Boolean(api && typeof api.isReady === "function" && api.isReady());
   },
   getCurrentUser() {

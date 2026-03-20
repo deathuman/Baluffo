@@ -50,7 +50,7 @@ Saved job record fields:
 `local-data-client.js` intentionally keeps a compatibility boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
 
 ## Unified jobs feed generation
-- Run `python -m src.jobs_fetcher` to aggregate listings into:
+- Run `python src/jobs_fetcher.py` to aggregate listings into:
   - `data/jobs-unified.json` (primary feed used by Jobs page modules)
   - `data/jobs-unified.csv` (CSV fallback + inspection)
   - `data/jobs-fetch-report.json` (per-source diagnostics)
@@ -63,6 +63,7 @@ Saved job record fields:
   - Remote OK API
   - GamesIndustry HTML
   - Greenhouse, Teamtailor, Lever, SmartRecruiters, Workable, Ashby, Personio, static studio pages
+- Social-source loaders are opt-in at the CLI (`--social-enabled`), but bridge-started fetch runs from the Jobs page pipeline action and Admin Fetcher actions enable social by default unless explicitly disabled in the payload.
 - If the current run yields zero jobs, the runner keeps the previous `jobs-unified.json` output by default.
 
 ## Source discovery and approval
@@ -74,10 +75,10 @@ Saved job record fields:
   - `--mode static` to probe only static seed list
   - `--no-web-search` to skip lightweight web search expansion
 - Probe concurrency tuning (env vars; defaults benchmarked via `python scripts/benchmark_discovery_probe.py`):
-  - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TOTAL` (default `25`)
-  - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_PROVIDER` (default `25`)
+  - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TOTAL` (default `40`)
+  - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_PROVIDER` (default `40`)
   - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TEAMTAILOR` (default `15`)
-  - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_STATIC` (default `10`)
+  - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_STATIC` (default `16`)
   For faster runs on reliable networks, try total/provider 50–80 and teamtailor 25–40.
   - Optional: `BALUFFO_SHEET_DIRECTORY_MAX_ROWS` to cap how many game studio sheet rows are considered (no cap by default).
 - Run `python src/admin_bridge.py` to expose localhost admin endpoints used by `admin.html`:
@@ -89,7 +90,11 @@ Saved job record fields:
   - `POST /sync/pull`, `POST /sync/push`
   - `POST /tasks/run-discovery`, `POST /tasks/run-fetcher`
   - `POST /tasks/run-sync-pull`, `POST /tasks/run-sync-push` (preferred for UI task/history tracking)
-- If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback and shows a manual command fallback (`python -m src.jobs_fetcher`).
+- Admin task presets:
+  - Fetcher: `default`, `incremental`, `retry_failed`, `force_full`, `uncapped`
+  - Discovery: `default`, `uncapped`
+- The Admin discovery log now reconnects to already-running discovery tasks on page load/refresh and tails `/discovery/log` live while the task is active.
+- If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback only for the standard fetcher run and shows a manual command fallback (`python -m src.jobs_fetcher --social-enabled`). Bridge-only presets such as `uncapped` still require the bridge.
 
 - Optional bridge runtime options:
   - CLI:

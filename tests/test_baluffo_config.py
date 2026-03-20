@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from unittest import mock
 
@@ -91,3 +92,34 @@ def test_get_storage_defaults_resolves_configured_paths() -> None:
         assert defaults["source_discovery_config_path"] == root / "config" / "discovery.json"
         assert defaults["source_discovery_log_path"] == root / "logs" / "discovery.log"
         assert defaults["social_sources_config_path"] == root / "config" / "social.json"
+
+
+def test_get_storage_defaults_honors_baluffo_data_dir_override_for_derived_paths() -> None:
+    with workspace_tmpdir("baluffo-config") as tmp:
+        root = Path(tmp)
+        base_path = root / "baluffo.config.json"
+        local_path = root / "baluffo.config.local.json"
+        base_path.write_text(
+            json.dumps(
+                {
+                    "storage": {
+                        "data_dir": "custom-data",
+                        "source_discovery_config_path": "config/discovery.json",
+                        "source_discovery_log_path": "logs/discovery.log",
+                        "social_sources_config_path": "config/social.json",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        override_dir = root / "_out" / "isolated-discovery"
+        with mock.patch.object(baluffo_config, "ROOT", root), mock.patch.object(
+            baluffo_config, "BASE_CONFIG_PATH", base_path
+        ), mock.patch.object(baluffo_config, "LOCAL_CONFIG_PATH", local_path), mock.patch.dict(
+            os.environ, {"BALUFFO_DATA_DIR": str(override_dir)}, clear=False
+        ):
+            defaults = baluffo_config.get_storage_defaults()
+        assert defaults["data_dir"] == override_dir
+        assert defaults["source_discovery_config_path"] == override_dir / "source-discovery-config.json"
+        assert defaults["source_discovery_log_path"] == override_dir / "source-discovery.log"
+        assert defaults["social_sources_config_path"] == override_dir / "social-sources-config.json"
