@@ -1,1228 +1,130 @@
 {
   "schemaVersion": "1.0",
-  "runId": "fetch_6cee48db81",
-  "startedAt": "2026-03-20T20:21:32.139737+00:00",
-  "finishedAt": "2026-03-20T20:23:40.963992+00:00",
+  "runId": "fetch_b2026a927e",
+  "startedAt": "2026-03-21T19:17:38.906524+00:00",
+  "finishedAt": "2026-03-21T19:18:33.222469+00:00",
   "summary": {
     "queued": 0,
     "running": 0,
-    "ok": 81,
-    "error": 54
+    "ok": 13,
+    "error": 0
   },
   "tasks": [
     {
-      "name": "gracklehq",
+      "name": "teamtailor_sources",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.492459+00:00",
-      "finishedAt": "2026-03-20T20:21:45.530831+00:00",
-      "durationMs": 12036,
-      "heartbeatAt": "2026-03-20T20:21:45.530831+00:00",
+      "startedAt": "2026-03-21T19:17:47.692813+00:00",
+      "finishedAt": "2026-03-21T19:18:08.019466+00:00",
+      "durationMs": 0,
+      "heartbeatAt": "2026-03-21T19:18:08.019466+00:00",
       "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.ea.com/en_us/careers",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.493529+00:00",
-      "finishedAt": "2026-03-20T20:22:00.597422+00:00",
-      "durationMs": 27102,
-      "heartbeatAt": "2026-03-20T20:22:00.597422+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:http://jobs.andarion-games.com",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.495054+00:00",
-      "finishedAt": "2026-03-20T20:21:35.413408+00:00",
-      "durationMs": 1917,
-      "heartbeatAt": "2026-03-20T20:21:35.413408+00:00",
-      "error": "static_source::static:listing_url:http://jobs.andarion-games.com: static:Andarion Games GmbH (Gamesmap): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:http://www.aerosoft.com/de/stellenangebote",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.496123+00:00",
-      "finishedAt": "2026-03-20T20:21:34.661308+00:00",
-      "durationMs": 1161,
-      "heartbeatAt": "2026-03-20T20:21:34.661308+00:00",
-      "error": "static_source::static:listing_url:http://www.aerosoft.com/de/stellenangebote: static:Aerosoft GmbH Luftfahrt-Datentechnik (Gamesmap): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:http://www.ahoiii.com/jobs",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.499250+00:00",
-      "finishedAt": "2026-03-20T20:21:34.232197+00:00",
-      "durationMs": 731,
-      "heartbeatAt": "2026-03-20T20:21:34.232197+00:00",
-      "error": "static_source::static:listing_url:http://www.ahoiii.com/jobs: static:Ahoiii Entertainment UG (haftungsbeschränkt) (Gamesmap): no jobs extracted from source pages"
     },
     {
       "name": "lever_sources",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.500447+00:00",
-      "finishedAt": "2026-03-20T20:21:51.412998+00:00",
-      "durationMs": 17911,
-      "heartbeatAt": "2026-03-20T20:21:51.412998+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.disneycareers.com/en/search-jobs/game/391/1",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.501641+00:00",
-      "finishedAt": "2026-03-20T20:21:39.324057+00:00",
-      "durationMs": 5820,
-      "heartbeatAt": "2026-03-20T20:21:39.324057+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://tequilaworks.com/en/careers",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.503309+00:00",
-      "finishedAt": "2026-03-20T20:21:49.282412+00:00",
-      "durationMs": 15759,
-      "heartbeatAt": "2026-03-20T20:21:49.282412+00:00",
-      "error": "static_source::static:listing_url:https://tequilaworks.com/en/careers: static:Tequilaworks (Manual Website):https://tequilaworks.com/en/careers: Network error for https://tequilaworks.com/en/careers:"
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.animocabrands.com/jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.504418+00:00",
-      "finishedAt": "2026-03-20T20:21:41.385627+00:00",
-      "durationMs": 7879,
-      "heartbeatAt": "2026-03-20T20:21:41.385627+00:00",
-      "error": ""
-    },
-    {
-      "name": "personio_sources",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.505828+00:00",
-      "finishedAt": "2026-03-20T20:22:40.440760+00:00",
-      "durationMs": 66933,
-      "heartbeatAt": "2026-03-20T20:22:40.440760+00:00",
-      "error": "personio_sources: personio:InnoGames (Personio): HTTP 429 for https://innogames.jobs.personio.de/xml; personio_sources: personio:Travian (Personio): HTTP 429 for https://travian.jobs.personio.de/xml"
-    },
-    {
-      "name": "static_source::static:listing_url:https://gamejobs.work/category/environment-artist",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.506934+00:00",
-      "finishedAt": "2026-03-20T20:21:34.490683+00:00",
-      "durationMs": 982,
-      "heartbeatAt": "2026-03-20T20:21:34.490683+00:00",
-      "error": "static_source::static:listing_url:https://gamejobs.work/category/environment-artist: static:Game Jobs (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://digitalbros.com/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.508124+00:00",
-      "finishedAt": "2026-03-20T20:21:35.050252+00:00",
-      "durationMs": 1540,
-      "heartbeatAt": "2026-03-20T20:21:35.050252+00:00",
-      "error": "static_source::static:listing_url:https://digitalbros.com/careers: static:Digitalbros (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "recruitee_sources",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.509299+00:00",
-      "finishedAt": "2026-03-20T20:21:37.409218+00:00",
-      "durationMs": 3176,
-      "heartbeatAt": "2026-03-20T20:21:37.409218+00:00",
-      "error": ""
-    },
-    {
-      "name": "pinpoint_sources",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.510285+00:00",
-      "finishedAt": "2026-03-20T20:21:35.844540+00:00",
-      "durationMs": 1353,
-      "heartbeatAt": "2026-03-20T20:21:35.844540+00:00",
+      "startedAt": "2026-03-21T19:17:47.694290+00:00",
+      "finishedAt": "2026-03-21T19:18:11.190896+00:00",
+      "durationMs": 0,
+      "heartbeatAt": "2026-03-21T19:18:11.190896+00:00",
       "error": ""
     },
     {
       "name": "greenhouse_boards",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.511060+00:00",
-      "finishedAt": "2026-03-20T20:21:45.960583+00:00",
-      "durationMs": 11299,
-      "heartbeatAt": "2026-03-20T20:21:45.960583+00:00",
-      "error": "greenhouse_boards: greenhouse:examplestudio: HTTP 404 for https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.pixelmafia.com/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.511884+00:00",
-      "finishedAt": "2026-03-20T20:21:35.461999+00:00",
-      "durationMs": 411,
-      "heartbeatAt": "2026-03-20T20:21:35.461999+00:00",
-      "error": "static_source::static:listing_url:https://www.pixelmafia.com/careers: static:Pixelmafia (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "social_mastodon",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.514054+00:00",
-      "finishedAt": "2026-03-20T20:21:36.596906+00:00",
-      "durationMs": 1183,
-      "heartbeatAt": "2026-03-20T20:21:36.596906+00:00",
+      "startedAt": "2026-03-21T19:17:47.694920+00:00",
+      "finishedAt": "2026-03-21T19:17:54.717278+00:00",
+      "durationMs": 0,
+      "heartbeatAt": "2026-03-21T19:17:54.717278+00:00",
       "error": ""
     },
     {
-      "name": "teamtailor_sources",
+      "name": "recruitee_sources",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.514886+00:00",
-      "finishedAt": "2026-03-20T20:21:53.453223+00:00",
-      "durationMs": 17991,
-      "heartbeatAt": "2026-03-20T20:21:53.453223+00:00",
+      "startedAt": "2026-03-21T19:17:47.695858+00:00",
+      "finishedAt": "2026-03-21T19:18:14.410929+00:00",
+      "durationMs": 0,
+      "heartbeatAt": "2026-03-21T19:18:14.410929+00:00",
       "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.impactreality.com/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.515700+00:00",
-      "finishedAt": "2026-03-20T20:21:36.102677+00:00",
-      "durationMs": 258,
-      "heartbeatAt": "2026-03-20T20:21:36.102677+00:00",
-      "error": "static_source::static:listing_url:https://www.impactreality.com/careers: static:Impactreality (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "workwithindies",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.516514+00:00",
-      "finishedAt": "2026-03-20T20:21:36.246926+00:00",
-      "durationMs": 144,
-      "heartbeatAt": "2026-03-20T20:21:36.246926+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://blacksnow.tv/vacancies/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.517242+00:00",
-      "finishedAt": "2026-03-20T20:21:36.702850+00:00",
-      "durationMs": 455,
-      "heartbeatAt": "2026-03-20T20:21:36.702850+00:00",
-      "error": "static_source::static:listing_url:https://blacksnow.tv/vacancies/: static:Black Snow Games (Sheet):https://blacksnow.tv/vacancies/: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.miniclip.com/go/miniclip-all-jobs/9013655/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.517935+00:00",
-      "finishedAt": "2026-03-20T20:21:38.097767+00:00",
-      "durationMs": 1500,
-      "heartbeatAt": "2026-03-20T20:21:38.097767+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://chubbypixel.com",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.518803+00:00",
-      "finishedAt": "2026-03-20T20:21:37.516461+00:00",
-      "durationMs": 812,
-      "heartbeatAt": "2026-03-20T20:21:37.516461+00:00",
-      "error": "static_source::static:listing_url:https://chubbypixel.com: static:Chubbypixel (Manual Website):https://chubbypixel.com: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.plaion.com/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.519605+00:00",
-      "finishedAt": "2026-03-20T20:21:38.326449+00:00",
-      "durationMs": 917,
-      "heartbeatAt": "2026-03-20T20:21:38.326449+00:00",
-      "error": ""
-    },
-    {
-      "name": "remote_ok",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.520608+00:00",
-      "finishedAt": "2026-03-20T20:21:37.755475+00:00",
-      "durationMs": 239,
-      "heartbeatAt": "2026-03-20T20:21:37.755475+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.amd.com/careers-home/jobs?keywords=game",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.521571+00:00",
-      "finishedAt": "2026-03-20T20:21:40.213810+00:00",
-      "durationMs": 2458,
-      "heartbeatAt": "2026-03-20T20:21:40.213810+00:00",
-      "error": ""
-    },
-    {
-      "name": "gamesindustry",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.522398+00:00",
-      "finishedAt": "2026-03-20T20:21:38.498171+00:00",
-      "durationMs": 400,
-      "heartbeatAt": "2026-03-20T20:21:38.498171+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.littlechicken.nl/about-us/jobs/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.523200+00:00",
-      "finishedAt": "2026-03-20T20:21:45.035901+00:00",
-      "durationMs": 6709,
-      "heartbeatAt": "2026-03-20T20:21:45.035901+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:http://www.napsteam.com",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.524090+00:00",
-      "finishedAt": "2026-03-20T20:21:39.068895+00:00",
-      "durationMs": 570,
-      "heartbeatAt": "2026-03-20T20:21:39.068895+00:00",
-      "error": "static_source::static:listing_url:http://www.napsteam.com: static:Napsteam (Manual Website):http://www.napsteam.com: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.ea.com/en_us/careers/home/?4538=8369&4538_format=3021&listfiltermode=1",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.524849+00:00",
-      "finishedAt": "2026-03-20T20:22:10.321076+00:00",
-      "durationMs": 31252,
-      "heartbeatAt": "2026-03-20T20:22:10.321076+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://bonfirestudios.com/work-with-us/index.html",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.525601+00:00",
-      "finishedAt": "2026-03-20T20:21:39.734514+00:00",
-      "durationMs": 410,
-      "heartbeatAt": "2026-03-20T20:21:39.734514+00:00",
-      "error": "static_source::static:listing_url:https://bonfirestudios.com/work-with-us/index.html: static:Bonfire Studios (Sheet):https://bonfirestudios.com/work-with-us/index.html: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.workwithindies.com/careers/angry-mob-games-stylized-environment-artist",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.526379+00:00",
-      "finishedAt": "2026-03-20T20:21:40.779892+00:00",
-      "durationMs": 1045,
-      "heartbeatAt": "2026-03-20T20:21:40.779892+00:00",
-      "error": "static_source::static:listing_url:https://www.workwithindies.com/careers/angry-mob-games-stylized-environment-artist: static:Workwithindies (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://4jstudios.com/careers/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.527452+00:00",
-      "finishedAt": "2026-03-20T20:21:40.465247+00:00",
-      "durationMs": 251,
-      "heartbeatAt": "2026-03-20T20:21:40.465247+00:00",
-      "error": "static_source::static:listing_url:https://4jstudios.com/careers/: static:4J Studios (Sheet):https://4jstudios.com/careers/: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://inrecruitingfr.intervieweb.it/namcobandai/en/career",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.528241+00:00",
-      "finishedAt": "2026-03-20T20:21:43.297725+00:00",
-      "durationMs": 2832,
-      "heartbeatAt": "2026-03-20T20:21:43.297725+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.zenimax.com",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.529117+00:00",
-      "finishedAt": "2026-03-20T20:21:41.721240+00:00",
-      "durationMs": 941,
-      "heartbeatAt": "2026-03-20T20:21:41.721240+00:00",
-      "error": "static_source::static:listing_url:https://jobs.zenimax.com: static:Zenimax (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.blizzard.com/global/en",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.529904+00:00",
-      "finishedAt": "2026-03-20T20:21:47.694272+00:00",
-      "durationMs": 6308,
-      "heartbeatAt": "2026-03-20T20:21:47.694272+00:00",
-      "error": "static_source::static:listing_url:https://careers.blizzard.com/global/en: static:Blizzard Entertainment (Sheet):https://careers.blizzard.com/global/en: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://ioi.dk/careers/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.530694+00:00",
-      "finishedAt": "2026-03-20T20:21:44.506911+00:00",
-      "durationMs": 2785,
-      "heartbeatAt": "2026-03-20T20:21:44.506911+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.activision.com",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.532349+00:00",
-      "finishedAt": "2026-03-20T20:21:47.158941+00:00",
-      "durationMs": 3861,
-      "heartbeatAt": "2026-03-20T20:21:47.158941+00:00",
-      "error": "static_source::static:listing_url:https://careers.activision.com: static:Activision (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.climaxstudios.com/join-our-team/jobs/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.533218+00:00",
-      "finishedAt": "2026-03-20T20:21:44.850628+00:00",
-      "durationMs": 344,
-      "heartbeatAt": "2026-03-20T20:21:44.850628+00:00",
-      "error": ""
-    },
-    {
-      "name": "8bitplay",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.534014+00:00",
-      "finishedAt": "2026-03-20T20:21:48.440459+00:00",
-      "durationMs": 3589,
-      "heartbeatAt": "2026-03-20T20:21:48.440459+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.kevurugames.com/vacancy/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.534742+00:00",
-      "finishedAt": "2026-03-20T20:21:49.624238+00:00",
-      "durationMs": 4588,
-      "heartbeatAt": "2026-03-20T20:21:49.624238+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.wbd.com/global/en/job/r000087820/lead-environment-artist",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.535482+00:00",
-      "finishedAt": "2026-03-20T20:21:48.716436+00:00",
-      "durationMs": 2917,
-      "heartbeatAt": "2026-03-20T20:21:48.716436+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.jobvite.com/capcomusa",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.536303+00:00",
-      "finishedAt": "2026-03-20T20:21:46.798366+00:00",
-      "durationMs": 837,
-      "heartbeatAt": "2026-03-20T20:21:46.798366+00:00",
-      "error": "static_source::static:listing_url:https://jobs.jobvite.com/capcomusa: static:Capcom (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.aspyr.com/open_positions",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.536994+00:00",
-      "finishedAt": "2026-03-20T20:21:49.021158+00:00",
-      "durationMs": 2222,
-      "heartbeatAt": "2026-03-20T20:21:49.021158+00:00",
-      "error": "static_source::static:listing_url:https://www.aspyr.com/open_positions: static:Aspyr (Sheet):https://www.aspyr.com/open_positions: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://gismart.com/careers/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.537692+00:00",
-      "finishedAt": "2026-03-20T20:21:48.171523+00:00",
-      "durationMs": 1012,
-      "heartbeatAt": "2026-03-20T20:21:48.171523+00:00",
-      "error": "static_source::static:listing_url:https://gismart.com/careers/: static:Gismart (Manual Website):https://gismart.com/careers/: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.linkedin.com/jobs/search/?currentjobid=4148163061&geoid=92000000&keywords=sega",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.538390+00:00",
-      "finishedAt": "2026-03-20T20:21:55.968616+00:00",
-      "durationMs": 8273,
-      "heartbeatAt": "2026-03-20T20:21:55.968616+00:00",
-      "error": "static_source::static:listing_url:https://www.linkedin.com/jobs/search/?currentjobid=4148163061&geoid=92000000&keywords=sega: static:SEGA (Sheet):https://uk.linkedin.com/jobs/view/events-apprentice-22-month-ftc-at-sega-europe-4383838764?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=mxhW0nDUhyKynEGij4VQLg%3D%3D&position=12: HTTP 429 for https://uk.linkedin.com/jobs/view/events-apprentice-22-month-ftc-at-sega-europe-4383838764?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=mxhW0nDUhyKynEGij4VQLg%3D%3D&position=12; static_source::static:listing_url:https://www.linkedin.com/jobs/search/?currentjobid=4148163061&geoid=92000000&keywords=sega: static:SEGA (Sheet):https://cn.linkedin.com/jobs/view/%E4%B8%9A%E5%8A%A1%E5%91%98-at-sega-4386222104?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=e7XjduV9cUj9Lk0BMKWHog%3D%3D&position=13: HTTP 429 for https://cn.linkedin.com/jobs/view/%E4%B8%9A%E5%8A%A1%E5%91%98-at-sega-4386222104?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=e7XjduV9cUj9Lk0BMKWHog%3D%3D&position=13; static_source::static:listing_url:https://www.linkedin.com/jobs/search/?currentjobid=4148163061&geoid=92000000&keywords=sega: static:SEGA (Sheet):https://de.linkedin.com/jobs/view/c%2B%2B-software-developer-qt-%E2%8F%A4-onsite-remote-at-instalod-4126630579?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=WTtZ9fiG6JshAPuTR5jrkQ%3D%3D&position=15: HTTP 429 for https://de.linkedin.com/jobs/view/c%2B%2B-software-developer-qt-%E2%8F%A4-onsite-remote-at-instalod-4126630579?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=WTtZ9fiG6JshAPuTR5jrkQ%3D%3D&position=15; static_source::static:listing_url:https://www.linkedin.com/jobs/search/?currentjobid=4148163061&geoid=92000000&keywords=sega: static:SEGA (Sheet):https://cn.linkedin.com/jobs/view/%E8%BD%AE%E6%9C%BA%E5%AE%A1%E5%9B%BE%E7%9B%91%E9%80%A0-at-sega-4164643101?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=%2Fr65le2ggxTtKB2vVRFC%2Bw%3D%3D&position=11: HTTP 429 for https://cn.linkedin.com/jobs/view/%E8%BD%AE%E6%9C%BA%E5%AE%A1%E5%9B%BE%E7%9B%91%E9%80%A0-at-sega-4164643101?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=%2Fr65le2ggxTtKB2vVRFC%2Bw%3D%3D&position=11; static_source::static:listing_url:https://www.linkedin.com/jobs/search/?currentjobid=4148163061&geoid=92000000&keywords=sega: static:SEGA (Sheet):https://uk.linkedin.com/jobs/view/mid-to-senior-game-designer-at-sega-europe-4371022326?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=4dXCtK%2B71GfLxh7tU1GxQA%3D%3D&position=16: HTTP 429 for https://uk.linkedin.com/jobs/view/mid-to-senior-game-designer-at-sega-europe-4371022326?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=4dXCtK%2B71GfLxh7tU1GxQA%3D%3D&position=16; static_source::static:listing_url:https://www.linkedin.com/jobs/search/?currentjobid=4148163061&geoid=92000000&keywords=sega: static:SEGA (Sheet):https://cn.linkedin.com/jobs/view/%E6%B8%A0%E9%81%93%E9%94%80%E5%94%AE%EF%BC%88%E6%B8%85%E7%9C%9F%E9%A3%9F%E5%93%81%EF%BC%89-at-sega-4386281098?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=euJ76DdNpecyDA%2Fo0Kf9gg%3D%3D&position=6: HTTP 429 for https://cn.linkedin.com/jobs/view/%E6%B8%A0%E9%81%93%E9%94%80%E5%94%AE%EF%BC%88%E6%B8%85%E7%9C%9F%E9%A3%9F%E5%93%81%EF%BC%89-at-sega-4386281098?amp%3BpageNum=0&amp%3BrefId=3vY04XUwCgSDt97N9NGA%2Fg%3D%3D&amp%3BtrackingId=euJ76DdNpecyDA%2Fo0Kf9gg%3D%3D&position=6"
-    },
-    {
-      "name": "epic_games_careers",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.539106+00:00",
-      "finishedAt": "2026-03-20T20:21:55.627369+00:00",
-      "durationMs": 7455,
-      "heartbeatAt": "2026-03-20T20:21:55.627369+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.coolgames.com/careers/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.539835+00:00",
-      "finishedAt": "2026-03-20T20:21:50.916939+00:00",
-      "durationMs": 2476,
-      "heartbeatAt": "2026-03-20T20:21:50.916939+00:00",
-      "error": "static_source::static:listing_url:https://www.coolgames.com/careers/: static:Cool Games (Sheet):https://www.coolgames.com/careers/: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.wbd.com/global/en/wb-games-jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.540700+00:00",
-      "finishedAt": "2026-03-20T20:21:52.183511+00:00",
-      "durationMs": 3735,
-      "heartbeatAt": "2026-03-20T20:21:52.183511+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://supercell.com/en/careers/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.541562+00:00",
-      "finishedAt": "2026-03-20T20:21:49.928267+00:00",
-      "durationMs": 907,
-      "heartbeatAt": "2026-03-20T20:21:49.928267+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.aweinteractive.com/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.542339+00:00",
-      "finishedAt": "2026-03-20T20:21:50.620160+00:00",
-      "durationMs": 1356,
-      "heartbeatAt": "2026-03-20T20:21:50.620160+00:00",
-      "error": "static_source::static:listing_url:https://www.aweinteractive.com/careers: static:Awe Interactive (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.careers.amanotes.com/jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.543133+00:00",
-      "finishedAt": "2026-03-20T20:21:51.874993+00:00",
-      "durationMs": 2250,
-      "heartbeatAt": "2026-03-20T20:21:51.874993+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.vividgames.com/#jobs",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.543826+00:00",
-      "finishedAt": "2026-03-20T20:21:50.356528+00:00",
-      "durationMs": 428,
-      "heartbeatAt": "2026-03-20T20:21:50.356528+00:00",
-      "error": "static_source::static:listing_url:https://jobs.vividgames.com/#jobs: static:Vivid Games (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "workable_sources",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.544555+00:00",
-      "finishedAt": "2026-03-20T20:23:06.393409+00:00",
-      "durationMs": 76037,
-      "heartbeatAt": "2026-03-20T20:23:06.393409+00:00",
-      "error": "workable_sources: workable:Hutch (Workable): HTTP 403 for https://apply.workable.com/api/v1/widget/accounts/hutch?details=true; workable:Wargaming (Workable): HTTP 403 for https://apply.workable.com/api/v1/widget/accounts/wargaming?details=true; workable:Vertigo Games (Workable): HTTP 403 for https://apply.workable.com/api/v1/widget/accounts/vertigogames?details=true; workable:Sperasoft (Workable): HTTP 403 for https://apply.workable.com/api/v1/widget/accounts/sperasoft?details=true; workable:Goliath Games (Workable): HTTP 403 for https://apply.workable.com/api/v1/widget/accounts/goliathgroup?details=true; workable:Velan Studios, Inc. (Workable): HTTP 403 for https://apply.workable.com/api/v1/widget/accounts/velanstudios?details=true; workable:StoryToys (Workable): HTTP 403 for https://apply.workable.com/api/v1/widget/accounts/storytoys?details=true; workable:Soulbound (Workable): HTTP 403 for https://apply.workable.com/api/v1/widget/accounts/soulbound?details=true; workable:Carry1st (Workable): HTTP 403 for https://apply.workable.com/api/v1/widget/accounts/carry1st?details=true; workable:Big Viking Games (Workable): HTTP 403 for https://apply.workable.com/api/v1/widget/accounts/bigvikinggames3?details=true; workable:Homa Games (Workable): HTTP 403 for https://apply.workable.com/api/v1/widget/accounts/homagames?details=true"
-    },
-    {
-      "name": "static_source::static:name:little chicken",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.545271+00:00",
-      "finishedAt": "2026-03-20T20:21:58.570445+00:00",
-      "durationMs": 7621,
-      "heartbeatAt": "2026-03-20T20:21:58.570445+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.wildlifestudios.com/search-jobs/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.545960+00:00",
-      "finishedAt": "2026-03-20T20:21:52.508530+00:00",
-      "durationMs": 1591,
-      "heartbeatAt": "2026-03-20T20:21:52.508530+00:00",
-      "error": "static_source::static:listing_url:https://careers.wildlifestudios.com/search-jobs/: static:Wildlife Studios (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://larian.com/careers",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.546658+00:00",
-      "finishedAt": "2026-03-20T20:21:52.815660+00:00",
-      "durationMs": 1401,
-      "heartbeatAt": "2026-03-20T20:21:52.815660+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://hrmos.co/pages/cygames/jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.547457+00:00",
-      "finishedAt": "2026-03-20T20:21:54.479974+00:00",
-      "durationMs": 2604,
-      "heartbeatAt": "2026-03-20T20:21:54.479974+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.beenox.com/us/en/search-results",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.548305+00:00",
-      "finishedAt": "2026-03-20T20:21:57.547173+00:00",
-      "durationMs": 5363,
-      "heartbeatAt": "2026-03-20T20:21:57.547173+00:00",
-      "error": ""
-    },
-    {
-      "name": "social_reddit",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.549107+00:00",
-      "finishedAt": "2026-03-20T20:21:53.784899+00:00",
-      "durationMs": 1276,
-      "heartbeatAt": "2026-03-20T20:21:53.784899+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://area35east.com/careers",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.549873+00:00",
-      "finishedAt": "2026-03-20T20:21:54.118468+00:00",
-      "durationMs": 1303,
-      "heartbeatAt": "2026-03-20T20:21:54.118468+00:00",
-      "error": "static_source::static:listing_url:https://area35east.com/careers: static:Area 35 East (Sheet):https://area35east.com/careers: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.frontier.co.uk/careers/jobs?location=all",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.550711+00:00",
-      "finishedAt": "2026-03-20T20:21:59.202116+00:00",
-      "durationMs": 5748,
-      "heartbeatAt": "2026-03-20T20:21:59.202116+00:00",
-      "error": "static_source::static:listing_url:https://www.frontier.co.uk/careers/jobs?location=all: static:Frontier Developments (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.resolutiongames.com/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.551427+00:00",
-      "finishedAt": "2026-03-20T20:21:54.863158+00:00",
-      "durationMs": 1078,
-      "heartbeatAt": "2026-03-20T20:21:54.863158+00:00",
-      "error": "static_source::static:listing_url:https://jobs.resolutiongames.com/: static:Resolution Games (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "ashby_sources",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.552123+00:00",
-      "finishedAt": "2026-03-20T20:22:01.878958+00:00",
-      "durationMs": 7760,
-      "heartbeatAt": "2026-03-20T20:22:01.878958+00:00",
+      "startedAt": "2026-03-21T19:17:47.697019+00:00",
+      "finishedAt": "2026-03-21T19:18:20.835029+00:00",
+      "durationMs": 0,
+      "heartbeatAt": "2026-03-21T19:18:20.835029+00:00",
       "error": ""
     },
     {
-      "name": "static_source::static:listing_url:https://globalstep.com/careers/",
+      "name": "pinpoint_sources",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.552858+00:00",
-      "finishedAt": "2026-03-20T20:21:56.338289+00:00",
-      "durationMs": 1858,
-      "heartbeatAt": "2026-03-20T20:21:56.338289+00:00",
+      "startedAt": "2026-03-21T19:17:47.697896+00:00",
+      "finishedAt": "2026-03-21T19:18:04.849581+00:00",
+      "durationMs": 0,
+      "heartbeatAt": "2026-03-21T19:18:04.849581+00:00",
       "error": ""
     },
     {
-      "name": "static_source::static:listing_url:https://www.square-enix-games.com/en_us/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.553583+00:00",
-      "finishedAt": "2026-03-20T20:21:55.292405+00:00",
-      "durationMs": 429,
-      "heartbeatAt": "2026-03-20T20:21:55.292405+00:00",
-      "error": "static_source::static:listing_url:https://www.square-enix-games.com/en_us/careers: static:Square Enix (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.naconstudiomilan.com/careers",
+      "name": "workable_sources",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.554362+00:00",
-      "finishedAt": "2026-03-20T20:21:58.241709+00:00",
-      "durationMs": 2948,
-      "heartbeatAt": "2026-03-20T20:21:58.241709+00:00",
+      "startedAt": "2026-03-21T19:17:47.698911+00:00",
+      "finishedAt": "2026-03-21T19:17:51.261457+00:00",
+      "durationMs": 0,
+      "heartbeatAt": "2026-03-21T19:17:51.261457+00:00",
       "error": ""
     },
     {
-      "name": "static_source::static:listing_url:https://www.careers-page.com/playmagic#openings",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.555351+00:00",
-      "finishedAt": "2026-03-20T20:21:56.863311+00:00",
-      "durationMs": 1235,
-      "heartbeatAt": "2026-03-20T20:21:56.863311+00:00",
-      "error": "static_source::static:listing_url:https://www.careers-page.com/playmagic#openings: static:Play Magic (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://hrmos.co/pages/2052996596448374784/jobs",
+      "name": "social_mastodon",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.556043+00:00",
-      "finishedAt": "2026-03-20T20:21:57.884793+00:00",
-      "durationMs": 1917,
-      "heartbeatAt": "2026-03-20T20:21:57.884793+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.embark-studios.com/#jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.556771+00:00",
-      "finishedAt": "2026-03-20T20:21:57.194218+00:00",
-      "durationMs": 855,
-      "heartbeatAt": "2026-03-20T20:21:57.194218+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.stillfront.com/en/career/join-the-team/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.557480+00:00",
-      "finishedAt": "2026-03-20T20:22:10.748755+00:00",
-      "durationMs": 13625,
-      "heartbeatAt": "2026-03-20T20:22:10.748755+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.10chambers.com/jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.558181+00:00",
-      "finishedAt": "2026-03-20T20:21:59.644574+00:00",
-      "durationMs": 2450,
-      "heartbeatAt": "2026-03-20T20:21:59.644574+00:00",
+      "startedAt": "2026-03-21T19:17:47.699697+00:00",
+      "finishedAt": "2026-03-21T19:18:01.663755+00:00",
+      "durationMs": 0,
+      "heartbeatAt": "2026-03-21T19:18:01.663755+00:00",
       "error": ""
     },
     {
       "name": "smartrecruiters_sources",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.558879+00:00",
-      "finishedAt": "2026-03-20T20:22:04.066385+00:00",
-      "durationMs": 6519,
-      "heartbeatAt": "2026-03-20T20:22:04.066385+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.lionbridge.com/jobs/search/search-page-games",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.559575+00:00",
-      "finishedAt": "2026-03-20T20:22:01.007887+00:00",
-      "durationMs": 3123,
-      "heartbeatAt": "2026-03-20T20:22:01.007887+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://hrmos.co/pages/gamefreak/jobs?jobtype=full",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.560264+00:00",
-      "finishedAt": "2026-03-20T20:22:00.144507+00:00",
-      "durationMs": 1903,
-      "heartbeatAt": "2026-03-20T20:22:00.144507+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://24bitgames.com/careers/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.560955+00:00",
-      "finishedAt": "2026-03-20T20:22:01.394631+00:00",
-      "durationMs": 3152,
-      "heartbeatAt": "2026-03-20T20:22:01.394631+00:00",
-      "error": "static_source::static:listing_url:https://24bitgames.com/careers/: static:24 Bit Games (Sheet):https://24bitgames.com/careers/: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.king.com/us/en",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.561698+00:00",
-      "finishedAt": "2026-03-20T20:22:02.292014+00:00",
-      "durationMs": 3089,
-      "heartbeatAt": "2026-03-20T20:22:02.292014+00:00",
-      "error": "static_source::static:listing_url:https://careers.king.com/us/en: static:King (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.remedygames.com/careers",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.562432+00:00",
-      "finishedAt": "2026-03-20T20:22:02.660599+00:00",
-      "durationMs": 3013,
-      "heartbeatAt": "2026-03-20T20:22:02.660599+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.treyarch.com/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.563514+00:00",
-      "finishedAt": "2026-03-20T20:22:03.167478+00:00",
-      "durationMs": 3023,
-      "heartbeatAt": "2026-03-20T20:22:03.167478+00:00",
-      "error": "static_source::static:listing_url:https://careers.treyarch.com/: static:Treyarch (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.wbd.com/tt-games-jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.564262+00:00",
-      "finishedAt": "2026-03-20T20:22:12.435416+00:00",
-      "durationMs": 11838,
-      "heartbeatAt": "2026-03-20T20:22:12.435416+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.jobvite.com/amberstudiocareers/search?l=worldwide",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.565389+00:00",
-      "finishedAt": "2026-03-20T20:22:03.602831+00:00",
-      "durationMs": 2593,
-      "heartbeatAt": "2026-03-20T20:22:03.602831+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.ravensoftware.com/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.566297+00:00",
-      "finishedAt": "2026-03-20T20:22:06.757262+00:00",
-      "durationMs": 5062,
-      "heartbeatAt": "2026-03-20T20:22:06.757262+00:00",
-      "error": "static_source::static:listing_url:https://careers.ravensoftware.com/: static:Raven Software (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.bandainamcostudios.my/careers/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.566974+00:00",
-      "finishedAt": "2026-03-20T20:22:04.960458+00:00",
-      "durationMs": 3081,
-      "heartbeatAt": "2026-03-20T20:22:04.960458+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.sledgehammergames.com/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.567645+00:00",
-      "finishedAt": "2026-03-20T20:22:05.961415+00:00",
-      "durationMs": 3669,
-      "heartbeatAt": "2026-03-20T20:22:05.961415+00:00",
-      "error": "static_source::static:listing_url:https://careers.sledgehammergames.com/: static:Sledgehammer Games (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "gamejobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.568538+00:00",
-      "finishedAt": "2026-03-20T20:22:17.301946+00:00",
-      "durationMs": 14643,
-      "heartbeatAt": "2026-03-20T20:22:17.301946+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://milestone.it/careers",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.569410+00:00",
-      "finishedAt": "2026-03-20T20:22:04.564646+00:00",
-      "durationMs": 1397,
-      "heartbeatAt": "2026-03-20T20:22:04.564646+00:00",
-      "error": "static_source::static:listing_url:https://milestone.it/careers: static:Milestone (Manual Website):https://milestone.it/careers: no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.kojimaproductions.jp/en/careers",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.570158+00:00",
-      "finishedAt": "2026-03-20T20:22:06.344358+00:00",
-      "durationMs": 2701,
-      "heartbeatAt": "2026-03-20T20:22:06.344358+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.570876+00:00",
-      "finishedAt": "2026-03-20T20:22:07.182617+00:00",
-      "durationMs": 3116,
-      "heartbeatAt": "2026-03-20T20:22:07.182617+00:00",
-      "error": "static_source::static:listing_url:https://lazyapply.com/jobs/industry/publishing/jobs/environment-artist: static:Lazyapply (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://lilagames.com/careers/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.571603+00:00",
-      "finishedAt": "2026-03-20T20:22:07.574352+00:00",
-      "durationMs": 2618,
-      "heartbeatAt": "2026-03-20T20:22:07.574352+00:00",
-      "error": "static_source::static:listing_url:https://lilagames.com/careers/: static:Lila Games (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.thegang.io/#jobs",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.572385+00:00",
-      "finishedAt": "2026-03-20T20:22:05.503042+00:00",
-      "durationMs": 542,
-      "heartbeatAt": "2026-03-20T20:22:05.503042+00:00",
-      "error": "static_source::static:listing_url:https://careers.thegang.io/#jobs: static:The Gang (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.riotgames.com/en/work-with-us/jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.573198+00:00",
-      "finishedAt": "2026-03-20T20:22:08.185107+00:00",
-      "durationMs": 2681,
-      "heartbeatAt": "2026-03-20T20:22:08.185107+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://coffeestain.com/careers/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.573928+00:00",
-      "finishedAt": "2026-03-20T20:22:13.895022+00:00",
-      "durationMs": 7933,
-      "heartbeatAt": "2026-03-20T20:22:13.895022+00:00",
-      "error": "static_source::static:listing_url:https://coffeestain.com/careers/: static:Coffee Stain (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.574619+00:00",
-      "finishedAt": "2026-03-20T20:22:09.882692+00:00",
-      "durationMs": 2788,
-      "heartbeatAt": "2026-03-20T20:22:09.882692+00:00",
-      "error": "static_source::static:listing_url:https://www.valvesoftware.com/en/jobs: static:Valve Software (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.arrowheadgamestudios.com/jobs",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.575379+00:00",
-      "finishedAt": "2026-03-20T20:22:08.661409+00:00",
-      "durationMs": 2204,
-      "heartbeatAt": "2026-03-20T20:22:08.661409+00:00",
-      "error": "static_source::static:listing_url:https://jobs.arrowheadgamestudios.com/jobs: static:Arrowhead Game Studios (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.codewizards.io/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.576110+00:00",
-      "finishedAt": "2026-03-20T20:22:13.003257+00:00",
-      "durationMs": 5820,
-      "heartbeatAt": "2026-03-20T20:22:13.003257+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://welevel.jobs.personio.com/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.576824+00:00",
-      "finishedAt": "2026-03-20T20:22:09.091358+00:00",
-      "durationMs": 1908,
-      "heartbeatAt": "2026-03-20T20:22:09.091358+00:00",
-      "error": "static_source::static:listing_url:https://welevel.jobs.personio.com/: static:Welevel Studios (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.nintendo.com/jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.577562+00:00",
-      "finishedAt": "2026-03-20T20:23:07.543156+00:00",
-      "durationMs": 59357,
-      "heartbeatAt": "2026-03-20T20:23:07.543156+00:00",
-      "error": "static_source::static:listing_url:https://careers.nintendo.com/jobs: static:Nintendo (Manual Website):https://careers.nintendo.com/jobs/4110951009: Network error for https://careers.nintendo.com/jobs/4110951009:; static_source::static:listing_url:https://careers.nintendo.com/jobs: static:Nintendo (Manual Website):https://careers.nintendo.com/jobs/4134663009: Network error for https://careers.nintendo.com/jobs/4134663009:"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.valvesoftware.com/en/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.578268+00:00",
-      "finishedAt": "2026-03-20T20:22:13.436081+00:00",
-      "durationMs": 4774,
-      "heartbeatAt": "2026-03-20T20:22:13.436081+00:00",
-      "error": "static_source::static:listing_url:https://www.valvesoftware.com/en/: static:Valve Corporation (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "scrapy_static_sources",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.579004+00:00",
-      "finishedAt": "2026-03-20T20:22:09.478685+00:00",
+      "startedAt": "2026-03-21T19:17:47.700476+00:00",
+      "finishedAt": "2026-03-21T19:18:17.494234+00:00",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-20T20:22:09.478685+00:00",
-      "error": "scrapy_static_sources: No enabled scrapy_static sources"
-    },
-    {
-      "name": "google_sheets",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.579708+00:00",
-      "finishedAt": "2026-03-20T20:23:34.574871+00:00",
-      "durationMs": 85478,
-      "heartbeatAt": "2026-03-20T20:23:34.574871+00:00",
+      "heartbeatAt": "2026-03-21T19:18:17.494234+00:00",
       "error": ""
     },
     {
-      "name": "google_sheets_1er2oaxo",
+      "name": "personio_sources",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.580488+00:00",
-      "finishedAt": "2026-03-20T20:22:32.321574+00:00",
-      "durationMs": 23229,
-      "heartbeatAt": "2026-03-20T20:22:32.321574+00:00",
-      "error": ""
-    },
-    {
-      "name": "google_sheets_1mvqhxat",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.581223+00:00",
-      "finishedAt": "2026-03-20T20:22:15.885806+00:00",
-      "durationMs": 4732,
-      "heartbeatAt": "2026-03-20T20:22:15.885806+00:00",
+      "startedAt": "2026-03-21T19:17:47.701271+00:00",
+      "finishedAt": "2026-03-21T19:18:27.198970+00:00",
+      "durationMs": 4094,
+      "heartbeatAt": "2026-03-21T19:18:27.198970+00:00",
       "error": ""
     },
     {
       "name": "breezy_sources",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.581965+00:00",
-      "finishedAt": "2026-03-20T20:22:11.152475+00:00",
+      "startedAt": "2026-03-21T19:17:47.702035+00:00",
+      "finishedAt": "2026-03-21T19:17:57.998034+00:00",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-20T20:22:11.152475+00:00",
+      "heartbeatAt": "2026-03-21T19:17:57.998034+00:00",
       "error": ""
     },
     {
       "name": "jazzhr_sources",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.582998+00:00",
-      "finishedAt": "2026-03-20T20:22:11.563184+00:00",
+      "startedAt": "2026-03-21T19:17:47.703461+00:00",
+      "finishedAt": "2026-03-21T19:17:47.704975+00:00",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-20T20:22:11.563184+00:00",
+      "heartbeatAt": "2026-03-21T19:17:47.704975+00:00",
       "error": ""
     },
     {
       "name": "social_x",
       "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.583865+00:00",
-      "finishedAt": "2026-03-20T20:22:11.979694+00:00",
+      "startedAt": "2026-03-21T19:17:47.704127+00:00",
+      "finishedAt": "2026-03-21T19:18:23.981999+00:00",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-20T20:22:11.979694+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://34bigthings.com/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.584743+00:00",
-      "finishedAt": "2026-03-20T20:22:15.053193+00:00",
-      "durationMs": 4523,
-      "heartbeatAt": "2026-03-20T20:22:15.053193+00:00",
-      "error": "static_source::static:listing_url:https://34bigthings.com/careers: static:34bigthings (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.stormindgames.com/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.585612+00:00",
-      "finishedAt": "2026-03-20T20:22:21.495338+00:00",
-      "durationMs": 9059,
-      "heartbeatAt": "2026-03-20T20:22:21.495338+00:00",
-      "error": "static_source::static:listing_url:https://www.stormindgames.com/careers: static:Stormind Games (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.quanticdream.com/en/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.586530+00:00",
-      "finishedAt": "2026-03-20T20:22:15.459948+00:00",
-      "durationMs": 2049,
-      "heartbeatAt": "2026-03-20T20:22:15.459948+00:00",
-      "error": "static_source::static:listing_url:https://www.quanticdream.com/en/careers: static:Quanticdream (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.rockstargames.com/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.587788+00:00",
-      "finishedAt": "2026-03-20T20:22:14.488273+00:00",
-      "durationMs": 1052,
-      "heartbeatAt": "2026-03-20T20:22:14.488273+00:00",
-      "error": "static_source::static:listing_url:https://www.rockstargames.com/careers: static:Rockstar Games (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.nintendo.de",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.588761+00:00",
-      "finishedAt": "2026-03-20T20:22:18.132143+00:00",
-      "durationMs": 4236,
-      "heartbeatAt": "2026-03-20T20:22:18.132143+00:00",
-      "error": "static_source::static:listing_url:https://jobs.nintendo.de: static:Nintendo (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.589849+00:00",
-      "finishedAt": "2026-03-20T20:22:18.993682+00:00",
-      "durationMs": 4141,
-      "heartbeatAt": "2026-03-20T20:22:18.993682+00:00",
-      "error": "static_source::static:listing_url:https://www.epicgames.com/site/en-us/careers/jobs: static:Epic Games (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.arkane-studios.com/en/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.590726+00:00",
-      "finishedAt": "2026-03-20T20:22:19.812297+00:00",
-      "durationMs": 3974,
-      "heartbeatAt": "2026-03-20T20:22:19.812297+00:00",
-      "error": "static_source::static:listing_url:https://www.arkane-studios.com/en/careers: static:Arkane Studios (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:http://www.astragon.de/unternehmen/jobs",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.591461+00:00",
-      "finishedAt": "2026-03-20T20:22:22.444561+00:00",
-      "durationMs": 7391,
-      "heartbeatAt": "2026-03-20T20:22:22.444561+00:00",
-      "error": "static_source::static:listing_url:http://www.astragon.de/unternehmen/jobs: static:astragon Entertainment GmbH (Gamesmap): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.articy.com/en/company/jobs/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.592173+00:00",
-      "finishedAt": "2026-03-20T20:22:20.671080+00:00",
-      "durationMs": 5617,
-      "heartbeatAt": "2026-03-20T20:22:20.671080+00:00",
-      "error": "static_source::static:listing_url:https://www.articy.com/en/company/jobs/: static:articy Software GmbH &amp; Co. KG (Gamesmap): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.augmented-minds.com/de/unternehmen/karriere/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.592892+00:00",
-      "finishedAt": "2026-03-20T20:22:25.946343+00:00",
-      "durationMs": 8644,
-      "heartbeatAt": "2026-03-20T20:22:25.946343+00:00",
-      "error": "static_source::static:listing_url:https://www.augmented-minds.com/de/unternehmen/karriere/: static:Augmented Minds Ambrus &amp; Lonau GbR (Gamesmap): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://insomniac.games/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.593571+00:00",
-      "finishedAt": "2026-03-20T20:22:25.095673+00:00",
-      "durationMs": 6963,
-      "heartbeatAt": "2026-03-20T20:22:25.095673+00:00",
-      "error": "static_source::static:listing_url:https://insomniac.games/careers: static:Insomniac (Manual Website): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.linkedin.com/company/1047games/jobs/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.594267+00:00",
-      "finishedAt": "2026-03-20T20:22:23.392889+00:00",
-      "durationMs": 4762,
-      "heartbeatAt": "2026-03-20T20:22:23.392889+00:00",
-      "error": "static_source::static:listing_url:https://www.linkedin.com/company/1047games/jobs/: static:1047 Games (Sheet):https://www.linkedin.com/company/1047games/jobs/: HTTP 999 for https://www.linkedin.com/company/1047games/jobs/; static:1047 Games (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://atlascreative.com/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.594974+00:00",
-      "finishedAt": "2026-03-20T20:22:24.228828+00:00",
-      "durationMs": 5241,
-      "heartbeatAt": "2026-03-20T20:22:24.228828+00:00",
-      "error": "static_source::static:listing_url:https://atlascreative.com/careers: static:Atlas Creative (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.bandainamcoent.com/careers#join",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.595763+00:00",
-      "finishedAt": "2026-03-20T20:22:28.545936+00:00",
-      "durationMs": 6161,
-      "heartbeatAt": "2026-03-20T20:22:28.545936+00:00",
-      "error": "static_source::static:listing_url:https://www.bandainamcoent.com/careers#join: static:Bandai Namco Entertainment America Inc. (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.fromsoftware.jp/jp/career.html",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.596691+00:00",
-      "finishedAt": "2026-03-20T20:22:27.691019+00:00",
-      "durationMs": 5337,
-      "heartbeatAt": "2026-03-20T20:22:27.691019+00:00",
-      "error": "static_source::static:listing_url:https://careers.fromsoftware.jp/jp/career.html: static:From Software (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.reliancegames.com/careers/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.597498+00:00",
-      "finishedAt": "2026-03-20T20:22:29.500462+00:00",
-      "durationMs": 7055,
-      "heartbeatAt": "2026-03-20T20:22:29.500462+00:00",
-      "error": "static_source::static:listing_url:https://www.reliancegames.com/careers/: static:Reliance Games (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://techland.net/job-offers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.598341+00:00",
-      "finishedAt": "2026-03-20T20:22:30.332345+00:00",
-      "durationMs": 6939,
-      "heartbeatAt": "2026-03-20T20:22:30.332345+00:00",
-      "error": "static_source::static:listing_url:https://techland.net/job-offers: static:Techland (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://krafton.com/en/careers/jobs/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.599036+00:00",
-      "finishedAt": "2026-03-20T20:22:33.424535+00:00",
-      "durationMs": 9189,
-      "heartbeatAt": "2026-03-20T20:22:33.424535+00:00",
-      "error": "static_source::static:listing_url:https://krafton.com/en/careers/jobs/: static:KRAFTON Inc. (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.linkedin.com/company/nexus-studios/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.599748+00:00",
-      "finishedAt": "2026-03-20T20:22:26.832268+00:00",
-      "durationMs": 1725,
-      "heartbeatAt": "2026-03-20T20:22:26.832268+00:00",
-      "error": "static_source::static:listing_url:https://www.linkedin.com/company/nexus-studios/: static:Nexus Studios (Sheet):https://www.linkedin.com/company/nexus-studios/: HTTP 999 for https://www.linkedin.com/company/nexus-studios/; static:Nexus Studios (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://mundfish.com/en/careers",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.600470+00:00",
-      "finishedAt": "2026-03-20T20:22:34.621888+00:00",
-      "durationMs": 8675,
-      "heartbeatAt": "2026-03-20T20:22:34.621888+00:00",
-      "error": "static_source::static:listing_url:https://mundfish.com/en/careers: static:Mundfish (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.comeet.com/jobs/ludeo/d7.008",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.601222+00:00",
-      "finishedAt": "2026-03-20T20:22:41.531889+00:00",
-      "durationMs": 14711,
-      "heartbeatAt": "2026-03-20T20:22:41.531889+00:00",
-      "error": "static_source::static:listing_url:https://www.comeet.com/jobs/ludeo/d7.008: static:Ludeo (Sheet):https://www.comeet.com/jobs/ludeo/{{company.urlComeetHostedPage}}: HTTP 404 for https://www.comeet.com/jobs/ludeo/{{company.urlComeetHostedPage}}; static_source::static:listing_url:https://www.comeet.com/jobs/ludeo/d7.008: static:Ludeo (Sheet):https://www.comeet.com/jobs/ludeo/{{position.urlComeetHostedPage + getURLParams()}}: HTTP 404 for https://www.comeet.com/jobs/ludeo/{{position.urlComeetHostedPage + getURLParams()}}; static_source::static:listing_url:https://www.comeet.com/jobs/ludeo/d7.008: static:Ludeo (Sheet):https://www.comeet.com/jobs/ludeo/{{company.website}}: HTTP 404 for https://www.comeet.com/jobs/ludeo/{{company.website}}"
-    },
-    {
-      "name": "static_source::static:listing_url:https://jobs.fatsharkgames.com/#jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.601927+00:00",
-      "finishedAt": "2026-03-20T20:22:35.902026+00:00",
-      "durationMs": 9069,
-      "heartbeatAt": "2026-03-20T20:22:35.902026+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.linkedin.com/company/netease-games/jobs/",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.602596+00:00",
-      "finishedAt": "2026-03-20T20:22:31.195580+00:00",
-      "durationMs": 4362,
-      "heartbeatAt": "2026-03-20T20:22:31.195580+00:00",
-      "error": "static_source::static:listing_url:https://www.linkedin.com/company/netease-games/jobs/: static:Netease Games (Sheet):https://www.linkedin.com/company/netease-games/jobs/: HTTP 999 for https://www.linkedin.com/company/netease-games/jobs/; static:Netease Games (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://career.snowprintstudios.com/#jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.603351+00:00",
-      "finishedAt": "2026-03-20T20:22:38.298404+00:00",
-      "durationMs": 8798,
-      "heartbeatAt": "2026-03-20T20:22:38.298404+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://career.paradoxplaza.com/#jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.604144+00:00",
-      "finishedAt": "2026-03-20T20:22:39.361171+00:00",
-      "durationMs": 9028,
-      "heartbeatAt": "2026-03-20T20:22:39.361171+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://unity.com/careers/positions",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.605008+00:00",
-      "finishedAt": "2026-03-20T20:22:45.564662+00:00",
-      "durationMs": 13687,
-      "heartbeatAt": "2026-03-20T20:22:45.564662+00:00",
-      "error": "static_source::static:listing_url:https://unity.com/careers/positions: static:Unity (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://www.panteon.games/#career",
-      "status": "error",
-      "startedAt": "2026-03-20T20:21:33.605715+00:00",
-      "finishedAt": "2026-03-20T20:22:37.064189+00:00",
-      "durationMs": 4742,
-      "heartbeatAt": "2026-03-20T20:22:37.064189+00:00",
-      "error": "static_source::static:listing_url:https://www.panteon.games/#career: static:Panteon (Sheet): no jobs extracted from source pages"
-    },
-    {
-      "name": "static_source::static:listing_url:https://theonemanstudio.com/careers/",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.606428+00:00",
-      "finishedAt": "2026-03-20T20:22:47.230701+00:00",
-      "durationMs": 13812,
-      "heartbeatAt": "2026-03-20T20:22:47.230701+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.nimblegiant.com/jobs",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.607476+00:00",
-      "finishedAt": "2026-03-20T20:22:44.532774+00:00",
-      "durationMs": 9911,
-      "heartbeatAt": "2026-03-20T20:22:44.532774+00:00",
-      "error": ""
-    },
-    {
-      "name": "static_source::static:listing_url:https://careers.infinityward.com/search-results",
-      "status": "ok",
-      "startedAt": "2026-03-20T20:21:33.608496+00:00",
-      "finishedAt": "2026-03-20T20:22:43.437884+00:00",
-      "durationMs": 7535,
-      "heartbeatAt": "2026-03-20T20:22:43.437884+00:00",
+      "heartbeatAt": "2026-03-21T19:18:23.981999+00:00",
       "error": ""
     }
   ],

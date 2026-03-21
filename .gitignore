@@ -6,6 +6,7 @@ test-results/
 dist/
 .codex-test-tmp/
 .codex-tmp-tests/
+.codex-tmp/
 support/
 logs/
 _out/
@@ -17,9 +18,13 @@ _out/
 data/*.json
 data/*.csv
 data/*.log
+data/*.md
 data/local-user-data/
 !data/.gitkeep
 !data/source-discovery-config.json
+
+# Phantom/temp files
+nul
 
 # Packaged/local secrets
 packaging/github-app-sync-config.json
