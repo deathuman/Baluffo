@@ -1274,6 +1274,15 @@ function applyFiltersAndRender({ resetPage }) {
 }
 
 function sortJobs(jobs, sortMode) {
+  if (sortMode === "relevance") {
+    jobs.sort((a, b) => {
+      const aScore = a.freshnessScore ?? -1;
+      const bScore = b.freshnessScore ?? -1;
+      if (aScore !== bScore) return bScore - aScore; // Descending (higher score first)
+      return a.title.localeCompare(b.title); // Tie-breaker by title
+    });
+    return;
+  }
   if (sortMode === "title-asc") {
     jobs.sort((a, b) => a.title.localeCompare(b.title));
     return;
