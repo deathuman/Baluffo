@@ -1,0 +1,673 @@
+"""Tests for pipeline execution and Admin panel task display verification.
+
+This module tests:
+1. Pipeline execution through all stages (discovery, fetch, sync_push)
+2. Pipeline status payload accuracy at each stage
+3. Admin panel task information display (metrics, timestamps, status)
+4. Run history recording and retrieval
+"""
+
+from __future__ import annotations
+
+
+# Module-level test to satisfy test discovery contract
+def test_pipeline_execution_module_loads() -> None:
+    """Verify pipeline execution module loads correctly."""
+    from src.bridge.pipeline_service import PipelineRuntime, PipelineService
+    assert PipelineRuntime is not None
+    assert PipelineService is not None
+
+import threading
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from src.bridge.pipeline_service import PipelineRuntime, PipelineService
+
+
+class FakeLock:
+    """Fake lock for testing."""
+
+    def __init__(self):
+        self._acquired = False
+
+    def __enter__(self):
+        self._acquired = True
+        return self
+
+    def __exit__(self, *args):
+        self._acquired = False
+
+
+def make_parse_iso():
+    """Create a parse_iso function that returns datetime objects."""
+    def parse_iso(value):
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            return None
+    return parse_iso
+
+
+class TestPipelineServiceStages:
+    """Tests for pipeline service stage progression."""
+
+    def test_pipeline_status_payload_structure(self, tmp_path: Path) -> None:
+        """Test that pipeline status payload has expected structure."""
+        status: dict[str, Any] = {
+            "active": False,
+            "runId": "",
+            "stage": "idle",
+            "progress": {"currentStep": 0, "totalSteps": 3, "percent": 0, "label": "Idle"},
+            "startedAt": "",
+            "finishedAt": "",
+            "error": "",
+            "updatesFound": False,
+            "refreshRecommended": False,
+            "baselineOutputCount": 0,
+            "finalOutputCount": 0,
+            "jobsPageLoadedCount": 0,
+        }
+
+        runtime = PipelineRuntime()
+
+        service = PipelineService(
+            pipeline_state_lock=FakeLock(),
+            pipeline_status=status,
+            runtime=runtime,
+            bridge_log=lambda *a, **kw: None,
+            now_iso=lambda: "2026-03-22T12:00:00Z",
+            parse_iso=make_parse_iso(),
+            append_run_history=lambda x: x,
+            upsert_run_history=lambda x, **kw: x,
+            task_running_from_state=lambda x: False,
+            sync_task_running=lambda: False,
+            current_fetch_output_count=lambda: 0,
+            wait_for_report_completion=lambda **kw: {},
+            wait_for_sync_completion=lambda x, y: {"status": "ok"},
+            discovery_report_path=tmp_path / "discovery-report.json",
+            fetch_report_path=tmp_path / "fetch-report.json",
+            trigger_discovery_task=lambda **kw: (200, {"started": True}),
+            start_fetcher_task=lambda x: {"started": True, "startedAt": "2026-03-22T12:00:00Z"},
+            start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+            get_app_version=lambda: "1.0.0",
+        )
+
+        payload = service.get_status_payload()
+
+        # Verify core status fields
+        assert "active" in payload
+        assert "runId" in payload
+        assert "stage" in payload
+        assert "progress" in payload
+        assert "startedAt" in payload
+        assert "finishedAt" in payload
+        assert "error" in payload
+        assert "appVersion" in payload
+        assert "updatesFound" in payload
+        assert "refreshRecommended" in payload
+
+        # Verify progress structure
+        progress = payload["progress"]
+        assert "currentStep" in progress
+        assert "totalSteps" in progress
+        assert "percent" in progress
+        assert "label" in progress
+
+    def test_pipeline_start_returns_correct_response(self, tmp_path: Path) -> None:
+        """Test pipeline start returns correct response structure."""
+        status: dict[str, Any] = {
+            "active": False,
+            "runId": "",
+            "stage": "idle",
+            "progress": {"currentStep": 0, "totalSteps": 3, "percent": 0, "label": "Idle"},
+            "startedAt": "",
+            "finishedAt": "",
+            "error": "",
+            "updatesFound": False,
+            "refreshRecommended": False,
+            "baselineOutputCount": 0,
+            "finalOutputCount": 0,
+            "jobsPageLoadedCount": 0,
+        }
+
+        runtime = PipelineRuntime()
+
+        service = PipelineService(
+            pipeline_state_lock=FakeLock(),
+            pipeline_status=status,
+            runtime=runtime,
+            bridge_log=lambda *a, **kw: None,
+            now_iso=lambda: "2026-03-22T12:00:00Z",
+            parse_iso=make_parse_iso(),
+            append_run_history=lambda x: x,
+            upsert_run_history=lambda x, **kw: x,
+            task_running_from_state=lambda x: False,
+            sync_task_running=lambda: False,
+            current_fetch_output_count=lambda: 10,
+            wait_for_report_completion=lambda **kw: {},
+            wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+            discovery_report_path=tmp_path / "discovery-report.json",
+            fetch_report_path=tmp_path / "fetch-report.json",
+            trigger_discovery_task=lambda **kw: (200, {"started": True}),
+            start_fetcher_task=lambda x: {"started": True},
+            start_sync_task=lambda action, reason, automatic: {"started": True},
+            get_app_version=lambda: "1.0.0",
+        )
+
+        result = service.start_task({"jobsPageLoadedCount": 5})
+
+        # Verify correct response structure
+        assert result["started"] is True
+        assert "runId" in result
+        assert result["stage"] == "starting"
+        assert "progress" in result
+        assert result["runId"].startswith("pipeline_")
+
+    def test_pipeline_blocked_when_already_running(self, tmp_path: Path) -> None:
+        """Test pipeline cannot start when already running."""
+        status: dict[str, Any] = {
+            "active": True,
+            "runId": "existing-pipeline-123",
+            "stage": "fetch",
+            "progress": {"currentStep": 2, "totalSteps": 3, "percent": 66, "label": "Running fetch..."},
+            "startedAt": "2026-03-22T12:00:00Z",
+            "finishedAt": "",
+            "error": "",
+            "updatesFound": False,
+            "refreshRecommended": False,
+            "baselineOutputCount": 10,
+            "finalOutputCount": 0,
+            "jobsPageLoadedCount": 5,
+        }
+
+        runtime = PipelineRuntime()
+
+        service = PipelineService(
+            pipeline_state_lock=FakeLock(),
+            pipeline_status=status,
+            runtime=runtime,
+            bridge_log=lambda *a, **kw: None,
+            now_iso=lambda: "2026-03-22T12:00:00Z",
+            parse_iso=make_parse_iso(),
+            append_run_history=lambda x: x,
+            upsert_run_history=lambda x, **kw: x,
+            task_running_from_state=lambda x: False,
+            sync_task_running=lambda: False,
+            current_fetch_output_count=lambda: 0,
+            wait_for_report_completion=lambda **kw: {},
+            wait_for_sync_completion=lambda x, y: {"status": "ok"},
+            discovery_report_path=tmp_path / "discovery-report.json",
+            fetch_report_path=tmp_path / "fetch-report.json",
+            trigger_discovery_task=lambda **kw: (200, {"started": True}),
+            start_fetcher_task=lambda x: {"started": True},
+            start_sync_task=lambda action, reason, automatic: {"started": True},
+            get_app_version=lambda: "1.0.0",
+        )
+
+        result = service.start_task({})
+
+        assert result["started"] is False
+        assert "already running" in result.get("error", "").lower()
+        assert result["runId"] == "existing-pipeline-123"
+
+
+class TestPipelineStatusEndpoint:
+    """Tests for pipeline status endpoint accuracy."""
+
+    def test_status_endpoint_returns_current_state(self, tmp_path: Path) -> None:
+        """Test /tasks/run-jobs-pipeline-status returns accurate state."""
+        # This tests the bridge route handler
+        from src.bridge.routes import get_routes
+
+        status: dict[str, Any] = {
+            "active": True,
+            "runId": "test-pipeline-123",
+            "stage": "fetch",
+            "progress": {"currentStep": 2, "totalSteps": 3, "percent": 66, "label": "Running fetch..."},
+            "startedAt": "2026-03-22T12:00:00Z",
+            "finishedAt": "",
+            "error": "",
+            "updatesFound": False,
+            "refreshRecommended": False,
+            "baselineOutputCount": 10,
+            "finalOutputCount": 5,
+            "jobsPageLoadedCount": 8,
+        }
+
+        class FakeHandler:
+            def __init__(self):
+                self.sent = []
+
+            def _send_json(self, payload, status=200):
+                self.sent.append({"status": status, "payload": payload})
+
+        class FakeApi:
+            def get_jobs_pipeline_status_payload(self):
+                return {
+                    "active": status["active"],
+                    "runId": status["runId"],
+                    "stage": status["stage"],
+                    "progress": status["progress"],
+                    "startedAt": status["startedAt"],
+                    "finishedAt": status["finishedAt"],
+                    "error": status["error"],
+                    "updatesFound": status["updatesFound"],
+                    "refreshRecommended": status["refreshRecommended"],
+                    "baselineOutputCount": status["baselineOutputCount"],
+                    "finalOutputCount": status["finalOutputCount"],
+                    "jobsPageLoadedCount": status["jobsPageLoadedCount"],
+                    "appVersion": "1.0.0",
+                }
+
+        handler = FakeHandler()
+        api = FakeApi()
+
+        result = get_routes.handle_get(handler, api=api, path="/tasks/run-jobs-pipeline-status", query={})
+
+        assert result is True
+        assert handler.sent[-1]["status"] == 200
+
+        payload = handler.sent[-1]["payload"]
+        assert payload["active"] is True
+        assert payload["runId"] == "test-pipeline-123"
+        assert payload["stage"] == "fetch"
+        assert payload["progress"]["currentStep"] == 2
+        assert payload["progress"]["totalSteps"] == 3
+        assert payload["baselineOutputCount"] == 10
+        assert payload["finalOutputCount"] == 5
+
+    def test_status_endpoint_completed_state(self, tmp_path: Path) -> None:
+        """Test /tasks/run-jobs-pipeline-status returns correct state when completed."""
+
+        class FakeHandler:
+            def __init__(self):
+                self.sent = []
+
+            def _send_json(self, payload, status=200):
+                self.sent.append({"status": status, "payload": payload})
+
+        class FakeApi:
+            def get_jobs_pipeline_status_payload(self):
+                return {
+                    "active": False,
+                    "runId": "test-pipeline-123",
+                    "stage": "completed",
+                    "progress": {"currentStep": 3, "totalSteps": 3, "percent": 100, "label": "Pipeline completed"},
+                    "startedAt": "2026-03-22T12:00:00Z",
+                    "finishedAt": "2026-03-22T12:05:00Z",
+                    "error": "",
+                    "updatesFound": True,
+                    "refreshRecommended": True,
+                    "baselineOutputCount": 10,
+                    "finalOutputCount": 15,
+                    "jobsPageLoadedCount": 8,
+                    "appVersion": "1.0.0",
+                }
+
+        handler = FakeHandler()
+        api = FakeApi()
+
+        from src.bridge.routes import get_routes
+
+        result = get_routes.handle_get(handler, api=api, path="/tasks/run-jobs-pipeline-status", query={})
+
+        assert result is True
+        payload = handler.sent[-1]["payload"]
+
+        # Verify completion state
+        assert payload["active"] is False
+        assert payload["stage"] == "completed"
+        assert payload["progress"]["percent"] == 100
+        assert payload["updatesFound"] is True
+        assert payload["refreshRecommended"] is True
+
+
+class TestAdminPanelTaskDisplay:
+    """Tests for Admin panel task information display accuracy."""
+
+    def test_ops_health_returns_service_info(self, tmp_path: Path) -> None:
+        """Test ops health returns service info for Admin display."""
+        from src.bridge import ops_health
+        from src.bridge.ops_api import OpsHealthDeps
+        from datetime import datetime, timedelta
+
+        # Create minimal history for health computation
+        history = [
+            {
+                "id": "pipeline-1",
+                "type": "pipeline",
+                "status": "ok",
+                "startedAt": "2026-03-22T12:00:00Z",
+                "finishedAt": "2026-03-22T12:05:00Z",
+                "durationMs": 300000,
+                "summary": {
+                    "baselineOutputCount": 10,
+                    "jobsPageLoadedCount": 8,
+                    "finalOutputCount": 15,
+                    "updatesFound": True,
+                },
+            },
+        ]
+
+        deps = OpsHealthDeps(
+            get_history=lambda: history,
+            get_fetch_report=lambda: {"summary": {}},
+            get_state=lambda: {"active": False, "pending": []},
+            now_iso=lambda: "2026-03-22T12:10:00Z",
+            desktop_mode=True,
+            desktop_last_activity_at="2026-03-22T12:10:00Z",
+            load_alert_state_fn=lambda: {},
+            save_alert_state_fn=lambda x: None,
+            parse_schedule_metadata_fn=lambda: {"fetcher": {"intervalHours": 6}, "discovery": {"intervalHours": 24}},
+            parse_iso=make_parse_iso(),
+            now_utc=lambda: datetime(2026, 3, 22, 12, 10, 0),
+        )
+
+        health = ops_health.compute_ops_health(deps)
+
+        # Verify health includes service info for Admin display
+        assert "service" in health
+        assert health["service"] == "baluffo-bridge"
+        assert "status" in health
+
+    def test_ops_history_includes_pipeline_runs(self, tmp_path: Path) -> None:
+        """Test /ops/history endpoint returns pipeline runs for Admin display."""
+        from src.bridge.routes import get_routes
+
+        history = [
+            {
+                "id": "pipeline-123",
+                "type": "pipeline",
+                "status": "ok",
+                "startedAt": "2026-03-22T12:00:00Z",
+                "finishedAt": "2026-03-22T12:05:00Z",
+                "durationMs": 300000,
+                "summary": {
+                    "baselineOutputCount": 10,
+                    "jobsPageLoadedCount": 8,
+                    "finalOutputCount": 15,
+                    "updatesFound": True,
+                },
+            },
+            {
+                "id": "discovery-123",
+                "type": "discovery",
+                "status": "ok",
+                "startedAt": "2026-03-22T12:00:00Z",
+                "finishedAt": "2026-03-22T12:01:00Z",
+                "durationMs": 60000,
+                "summary": {"candidatesFound": 25},
+            },
+        ]
+
+        class FakeHandler:
+            def __init__(self):
+                self.sent = []
+
+            def _send_json(self, payload, status=200):
+                self.sent.append({"status": status, "payload": payload})
+
+        class FakeApi:
+            def sync_history_from_reports(self):
+                return history
+
+        handler = FakeHandler()
+        api = FakeApi()
+
+        result = get_routes.handle_get(handler, api=api, path="/ops/history", query={})
+
+        assert result is True
+        payload = handler.sent[-1]["payload"]
+
+        assert "runs" in payload
+        runs = payload["runs"]
+
+        # Verify pipeline run is included
+        pipeline_runs = [r for r in runs if r.get("type") == "pipeline"]
+        assert len(pipeline_runs) >= 1
+
+        pipeline = pipeline_runs[0]
+        assert pipeline["id"] == "pipeline-123"
+        assert pipeline["status"] == "ok"
+        assert "summary" in pipeline
+        assert pipeline["summary"]["updatesFound"] is True
+
+
+class TestPipelineMetricsTimestamps:
+    """Tests for accurate metrics and timestamps in pipeline."""
+
+    def test_pipeline_records_timing_metadata(self, tmp_path: Path) -> None:
+        """Test pipeline records accurate timing metadata."""
+        status: dict[str, Any] = {
+            "active": False,
+            "runId": "",
+            "stage": "idle",
+            "progress": {"currentStep": 0, "totalSteps": 3, "percent": 0, "label": "Idle"},
+            "startedAt": "",
+            "finishedAt": "",
+            "error": "",
+            "updatesFound": False,
+            "refreshRecommended": False,
+            "baselineOutputCount": 0,
+            "finalOutputCount": 0,
+            "jobsPageLoadedCount": 0,
+        }
+
+        runtime = PipelineRuntime()
+        history_records: list[dict[str, Any]] = []
+
+        service = PipelineService(
+            pipeline_state_lock=FakeLock(),
+            pipeline_status=status,
+            runtime=runtime,
+            bridge_log=lambda *a, **kw: None,
+            now_iso=lambda: "2026-03-22T12:00:00Z",
+            parse_iso=make_parse_iso(),
+            append_run_history=lambda x: history_records.append(x),
+            upsert_run_history=lambda x, **kw: x,
+            task_running_from_state=lambda x: False,
+            sync_task_running=lambda: False,
+            current_fetch_output_count=lambda: 10,
+            wait_for_report_completion=lambda **kw: {},
+            wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+            discovery_report_path=tmp_path / "discovery-report.json",
+            fetch_report_path=tmp_path / "fetch-report.json",
+            trigger_discovery_task=lambda **kw: (200, {"started": True, "startedAt": "2026-03-22T12:00:00Z"}),
+            start_fetcher_task=lambda x: {"started": True, "startedAt": "2026-03-22T12:00:00Z"},
+            start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+            get_app_version=lambda: "1.0.0",
+        )
+
+        service.start_task({})
+
+        # Verify initial history record
+        assert len(history_records) >= 1
+        initial_record = history_records[0]
+
+        assert "id" in initial_record
+        assert initial_record["type"] == "pipeline"
+        assert initial_record["status"] == "started"
+        assert "startedAt" in initial_record
+        assert "summary" in initial_record
+
+        # Verify summary contains baseline info
+        summary = initial_record["summary"]
+        assert "baselineOutputCount" in summary
+        assert "jobsPageLoadedCount" in summary
+        assert "stage" in summary
+
+    def test_pipeline_status_shows_baseline_count(self, tmp_path: Path) -> None:
+        """Test pipeline status includes baseline output count."""
+        status: dict[str, Any] = {
+            "active": False,
+            "runId": "",
+            "stage": "idle",
+            "progress": {"currentStep": 0, "totalSteps": 3, "percent": 0, "label": "Idle"},
+            "startedAt": "",
+            "finishedAt": "",
+            "error": "",
+            "updatesFound": False,
+            "refreshRecommended": False,
+            "baselineOutputCount": 0,
+            "finalOutputCount": 0,
+            "jobsPageLoadedCount": 0,
+        }
+
+        runtime = PipelineRuntime()
+
+        service = PipelineService(
+            pipeline_state_lock=FakeLock(),
+            pipeline_status=status,
+            runtime=runtime,
+            bridge_log=lambda *a, **kw: None,
+            now_iso=lambda: "2026-03-22T12:00:00Z",
+            parse_iso=make_parse_iso(),
+            append_run_history=lambda x: x,
+            upsert_run_history=lambda x, **kw: x,
+            task_running_from_state=lambda x: False,
+            sync_task_running=lambda: False,
+            current_fetch_output_count=lambda: 25,  # Current output count
+            wait_for_report_completion=lambda **kw: {},
+            wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+            discovery_report_path=tmp_path / "discovery-report.json",
+            fetch_report_path=tmp_path / "fetch-report.json",
+            trigger_discovery_task=lambda **kw: (200, {"started": True}),
+            start_fetcher_task=lambda x: {"started": True},
+            start_sync_task=lambda action, reason, automatic: {"started": True},
+            get_app_version=lambda: "1.0.0",
+        )
+
+        # Start pipeline with jobs page count
+        result = service.start_task({"jobsPageLoadedCount": 15})
+
+        # Verify the status includes baseline info
+        assert status["baselineOutputCount"] == 25
+        assert status["jobsPageLoadedCount"] == 15
+
+    def test_pipeline_completion_shows_updates_found(self, tmp_path: Path) -> None:
+        """Test pipeline completion correctly identifies updates found."""
+        status: dict[str, Any] = {
+            "active": False,
+            "runId": "",
+            "stage": "idle",
+            "progress": {"currentStep": 0, "totalSteps": 3, "percent": 0, "label": "Idle"},
+            "startedAt": "",
+            "finishedAt": "",
+            "error": "",
+            "updatesFound": False,
+            "refreshRecommended": False,
+            "baselineOutputCount": 0,
+            "finalOutputCount": 0,
+            "jobsPageLoadedCount": 0,
+        }
+
+        runtime = PipelineRuntime()
+
+        service = PipelineService(
+            pipeline_state_lock=FakeLock(),
+            pipeline_status=status,
+            runtime=runtime,
+            bridge_log=lambda *a, **kw: None,
+            now_iso=lambda: "2026-03-22T12:00:00Z",
+            parse_iso=make_parse_iso(),
+            append_run_history=lambda x: x,
+            upsert_run_history=lambda x, **kw: x,
+            task_running_from_state=lambda x: False,
+            sync_task_running=lambda: False,
+            current_fetch_output_count=lambda: 30,  # More than baseline of 20
+            wait_for_report_completion=lambda **kw: {},
+            wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+            discovery_report_path=tmp_path / "discovery-report.json",
+            fetch_report_path=tmp_path / "fetch-report.json",
+            trigger_discovery_task=lambda **kw: (200, {"started": True}),
+            start_fetcher_task=lambda x: {"started": True},
+            start_sync_task=lambda action, reason, automatic: {"started": True},
+            get_app_version=lambda: "1.0.0",
+        )
+
+        # Start with baseline of 20, after run output will be 30
+        status["baselineOutputCount"] = 20
+        status["jobsPageLoadedCount"] = 18
+
+        # Simulate completion by calling _set_completed
+        service._set_completed(status="ok", final_output_count=30)
+
+        # Verify updates found is set correctly
+        # updatesFound = final > max(baseline, loaded)
+        # 30 > max(20, 18) = 20, so True
+        assert status["updatesFound"] is True
+        assert status["refreshRecommended"] is True
+        assert status["finalOutputCount"] == 30
+
+
+class TestPipelineFrontendIntegration:
+    """Tests for pipeline integration with frontend."""
+
+    def test_pipeline_status_matches_frontend_contract(self, tmp_path: Path) -> None:
+        """Test pipeline status payload matches frontend expectations."""
+        from src.bridge.routes import get_routes
+
+        class FakeHandler:
+            def __init__(self):
+                self.sent = []
+
+            def _send_json(self, payload, status=200):
+                self.sent.append({"status": status, "payload": payload})
+
+        class FakeApi:
+            def get_jobs_pipeline_status_payload(self):
+                # Full status payload as would be returned to frontend
+                return {
+                    "active": False,
+                    "runId": "pipeline-abc123",
+                    "stage": "completed",
+                    "progress": {
+                        "currentStep": 3,
+                        "totalSteps": 3,
+                        "percent": 100,
+                        "label": "Pipeline completed"
+                    },
+                    "startedAt": "2026-03-22T12:00:00Z",
+                    "finishedAt": "2026-03-22T12:05:00Z",
+                    "error": "",
+                    "updatesFound": True,
+                    "refreshRecommended": True,
+                    "baselineOutputCount": 100,
+                    "finalOutputCount": 150,
+                    "jobsPageLoadedCount": 95,
+                    "appVersion": "1.0.0",
+                }
+
+        handler = FakeHandler()
+        api = FakeApi()
+
+        result = get_routes.handle_get(handler, api=api, path="/tasks/run-jobs-pipeline-status", query={})
+
+        assert result is True
+        payload = handler.sent[-1]["payload"]
+
+        # Verify all fields needed by frontend
+        # frontend/jobs/app/pipeline.js expects:
+        assert "active" in payload
+        assert "runId" in payload
+        assert "stage" in payload
+        assert "progress" in payload
+        assert "startedAt" in payload
+
+        # verify progress has needed fields
+        progress = payload["progress"]
+        assert "currentStep" in progress
+        assert "totalSteps" in progress
+        assert "percent" in progress
+        assert "label" in progress
+
+        # verify display-related fields
+        assert "updatesFound" in payload
+        assert "refreshRecommended" in payload
+        assert "appVersion" in payload

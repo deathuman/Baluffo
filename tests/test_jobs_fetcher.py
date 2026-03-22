@@ -1045,6 +1045,7 @@ def test_run_ashby_sources_source_falls_back_to_careers_page_when_board_is_stale
             assert str(rows[0].get("title") or "") == "Senior 3D Environment Artist"
 
 def test_run_ashby_sources_source_normalizes_stale_jobs_url_to_board_root() -> None:
+        from src.jobs.adapters.plugins.provider_api import register as provider_register
         source_rows = [
             {
                 "name": "thatgamecompany (Ashby)",
@@ -1054,11 +1055,26 @@ def test_run_ashby_sources_source_normalizes_stale_jobs_url_to_board_root() -> N
                 "enabledByDefault": True,
             }
         ]
-        with mock.patch("src.jobs.adapters.provider_api.registry_entries", return_value=source_rows):
+        
+        class _Deps:
+            def registry_entries(self, adapter: str):
+                assert adapter == "ashby"
+                return source_rows
+
+            def fetch_with_retries(self, url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float) -> str:
+                return fetch_text(url, timeout_s)
+
+            def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
+                return None
+
+        with mock.patch.object(provider_register.runtime_deps, "facade", return_value=_Deps()):
             def fake_fetch(url: str, _: int) -> str:
+                # The code tries multiple candidate URLs - first the original, then normalized
                 if url == "https://jobs.ashbyhq.com/thatgamecompany/jobs":
+                    # Original URL returns "Job not found" - triggers fallback to next candidate
                     return "<html><body><h1>Job not found</h1></body></html>"
                 if url == "https://jobs.ashbyhq.com/thatgamecompany":
+                    # Normalized URL returns actual job
                     return """
                     <a href="/thatgamecompany/7ea5dd25-3fcb-4d42-8217-89dd9b6f5083">
                       Senior 3D Environment Artist
@@ -1714,7 +1730,10 @@ def test_run_static_studio_pages_source_blizzard_plugin_follows_role_pages_to_se
 
 def test_default_registry_no_longer_seeds_stale_ashby_personio_or_placeholder_greenhouse_rows() -> None:
         names = {str(row.get("name") or "") for row in jf.STUDIO_SOURCE_REGISTRY}
-        assert "Example Studio GmbH (Greenhouse)" in names
+        # Verify placeholder was removed from registry
+        assert "Example Studio GmbH (Greenhouse)" not in names
+        # Verify valid studios still exist
+        assert "Bandai Namco Entertainment America (Greenhouse)" in names
 
 def test_run_static_studio_pages_source_accepts_larian_uuid_paths_and_rejects_location_pages() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)

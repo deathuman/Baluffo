@@ -1,0 +1,280 @@
+# Troubleshooting Guide
+
+> Common issues and solutions for the Baluffo project.
+
+---
+
+## Table of Contents
+
+1. [Frontend Issues](#1-frontend-issues)
+2. [Backend/Bridge Issues](#2-backendbridge-issues)
+3. [Pipeline & Fetch Issues](#3-pipeline--fetch-issues)
+4. [Discovery Issues](#4-discovery-issues)
+5. [Desktop & Packaging Issues](#5-desktop--packaging-issues)
+6. [Testing Issues](#6-testing-issues)
+7. [Data & Storage Issues](#7-data--storage-issues)
+
+---
+
+## 1. Frontend Issues
+
+### Jobs page is empty / shows no jobs
+
+| Possible Cause | Solution |
+|----------------|----------|
+| No jobs feed generated | Run `python src/jobs_fetcher.py` to generate `data/jobs-unified.json` |
+| Bridge not running | Start bridge: `npm run dev:bridge` or `python src/admin_bridge.py` |
+| CORS errors in browser | Ensure frontend is served from same origin as bridge |
+
+### Admin page shows "Bridge unavailable"
+
+| Possible Cause | Solution |
+|----------------|----------|
+| Bridge process not started | Start bridge with `python src/admin_bridge.py` |
+| Wrong port | Check `baluffo.config.json` for bridge port (default 8877) |
+| Port in use | Kill existing process or change port in config |
+
+### Saved jobs not persisting
+
+| Possible Cause | Solution |
+|----------------|----------|
+| Browser mode: IndexedDB issue | Check browser console for IndexedDB errors |
+| Desktop mode: file permissions | Ensure `data/local-user-data/` is writable |
+| Profile not signed in | Sign in to create a profile before saving jobs |
+
+### UI elements not responding
+
+| Possible Cause | Solution |
+|----------------|----------|
+| Busy state active | Wait for current operation (fetch/discovery) to complete |
+| JavaScript error | Check browser console for errors |
+| data-ui attribute missing | Verify element has `data-ui` attribute per [`selectors.js`](../frontend/shared/ui/selectors.js) |
+
+---
+
+## 2. Backend/Bridge Issues
+
+### Bridge returns 404 for all endpoints
+
+| Possible Cause | Solution |
+|----------------|----------|
+| Bridge not running | Start with `python src/admin_bridge.py` |
+| Wrong host/port | Default is `http://127.0.0.1:8877` |
+| Port conflict | Check if another process is using the port |
+
+### Bridge won't start / port already in use
+
+```powershell
+# Find process using port 8877
+netstat -ano | findstr :8877
+
+# Kill the process (replace <PID> with actual PID)
+taskkill /PID <PID> /F
+```
+
+### Bridge starts but returns errors
+
+| Error | Solution |
+|-------|----------|
+| "Module not found" | Ensure `PYTHONPATH` includes repo root |
+| "Config not found" | Check `baluffo.config.json` exists |
+| Import errors | Run `python -m pip install -r requirements.txt` |
+
+### Sync operations fail
+
+| Possible Cause | Solution |
+|----------------|----------|
+| GitHub App not configured | Run `python scripts/build_sync_app_config.py` |
+| Invalid credentials | Check `packaging/github-app-sync-config.json` |
+| Network issues | Check internet connection |
+
+---
+
+## 3. Pipeline & Fetch Issues
+
+### Jobs fetch returns 0 jobs
+
+| Check | Action |
+|-------|--------|
+| Source registry | Verify `data/source-registry-active.json` has entries |
+| Network access | Test with `python src/jobs_fetcher.py --only-sources google_sheets` |
+| Report errors | Check `data/jobs-fetch-report.json` for per-source errors |
+
+### Specific source fails
+
+```powershell
+# Run single source with verbose output
+python src/jobs_fetcher.py --only-sources <source_name> --ignore-circuit-breaker
+
+# Check fetch report for error details
+type data\jobs-fetch-report.json | findstr /C:"error"
+```
+
+### Circuit breaker blocks sources
+
+| Solution | Command |
+|----------|---------|
+| Run ignoring circuit breaker | `python src/jobs_fetcher.py --ignore-circuit-breaker` |
+| Reset source state | Delete `data/jobs-source-state.json` |
+
+### Social sources (Reddit/X/Mastodon) not fetching
+
+| Check | Action |
+|-------|--------|
+| Social enabled | Ensure `--social-enabled` flag or config |
+| Config file | Check `analysis_tools/social_sources_config_updates.json` |
+| Rate limiting | Wait and retry; social APIs have strict limits |
+
+---
+
+## 4. Discovery Issues
+
+### Discovery finds no candidates
+
+| Check | Action |
+|-------|--------|
+| Network access | Verify internet access for DuckDuckGo search |
+| Sheet ID configured | Check `GAME_STUDIOS_SHEET_ID` in `src/source_discovery/config.py` |
+| Probe concurrency | Increase `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TOTAL` |
+
+### Discovery takes too long
+
+| Solution | Notes |
+|----------|-------|
+| Use `--no-web-search` | Skip lightweight web search expansion |
+| Reduce concurrency | Set lower env vars |
+| Run in static mode | `--mode static` only probes seed list |
+
+### Source check fails for specific source
+
+```powershell
+# Run source check from admin UI or CLI
+python -c "from src.bridge.source_check_api import trigger_source_check; print(trigger_source_check({'url': 'https://example.com'}))"
+```
+
+---
+
+## 5. Desktop & Packaging Issues
+
+### Portable EXE won't start
+
+| Check | Action |
+|-------|--------|
+| Python installed | Portable EXE includes Python, but check version compatibility |
+| Admin rights | Try running as administrator |
+| Antivirus | Check if antivirus is blocking the exe |
+
+### Desktop app opens but shows blank page
+
+| Check | Action |
+|-------|--------|
+| Bridge ready | Wait for bridge to finish starting |
+| Port conflict | Check if another Baluffo instance is running |
+| Log files | Check `data/` for startup logs |
+
+### Ship bundle launcher fails
+
+| Check | Action |
+|-------|--------|
+| Version directory exists | Verify `app/versions/<version>` exists |
+| current.txt valid | Check `app/current.txt` points to valid version |
+| Permissions | Ensure scripts are not blocked by security policy |
+
+### Build fails
+
+```powershell
+# Ensure dependencies installed
+python -m pip install -r requirements.txt
+
+# Rebuild frontend config
+npm run build:frontend-runtime-config
+```
+
+---
+
+## 6. Testing Issues
+
+### Python tests fail with import errors
+
+| Solution | Command |
+|----------|---------|
+| Set PYTHONPATH | `set PYTHONPATH=%CD%` then run tests |
+| Install dev deps | `python -m pip install -r requirements.txt` |
+
+### Playwright smoke tests fail
+
+| Check | Action |
+|-------|--------|
+| Python 3 default | Ensure `python` resolves to Python 3, not Python 2 |
+| Bridge running | Start bridge before running smoke tests |
+| Port available | Ensure port 8080 (web server) and 8877 (bridge) are free |
+
+```powershell
+# Override Playwright Python
+set PLAYWRIGHT_PYTHON=py
+npm run test:smoke
+```
+
+### Temp directory errors (Windows)
+
+| Solution | Notes |
+|----------|-------|
+| Use --basetemp | `python -m pytest --basetemp ./temp_tests` |
+| Use repo fixtures | Use `workspace_tmpdir()` fixture from `tests/helpers/temp_paths.py` |
+
+---
+
+## 7. Data & Storage Issues
+
+### Data files corrupted or invalid JSON
+
+| Solution | Notes |
+|----------|-------|
+| Restore from backup | Check `data/backups/` for previous versions |
+| Regenerate | Delete file and re-run relevant command |
+| Validate | Use JSON validator to check file syntax |
+
+### Profile data lost after update
+
+| Solution | Notes |
+|----------|-------|
+| Backup before update | Use Export Backup in Saved Jobs page |
+| Check migration | Look for migration plan in `docs/RELEASE.md` |
+
+### Source registry in inconsistent state
+
+| Solution | Notes |
+|----------|-------|
+| Reset to defaults | Delete registry files; they regenerate from defaults |
+| Manual fix | Edit `data/source-registry-active.json` directly |
+
+---
+
+## Diagnostic Commands
+
+```powershell
+# Check bridge health
+curl http://127.0.0.1:8877/ops/health
+
+# Check jobs feed
+type data\jobs-unified.json | find /C "]"
+
+# Check fetch report summary
+python -c "import json; r=json.load(open('data/jobs-fetch-report.json')); print(f'Jobs: {r[\"summary\"][\"keptCount\"]}, Failed: {r[\"summary\"][\"failedSources\"]}')"
+
+# Check discovery report
+python -c "import json; r=json.load(open('data/source-discovery-report.json')); print(f'Candidates: {len(r.get(\"candidates\", []))}')"
+```
+
+---
+
+## Where to Get Help
+
+1. **Check logs:** `data/` directory contains `jobs-fetch-report.json`, `source-discovery-report.json`
+2. **Architecture:** See [`architecture-ai-map.md`](architecture-ai-map.md) for system understanding
+3. **Data contracts:** See [`DATA_CONTRACT.md`](DATA_CONTRACT.md) for expected data formats
+4. **GitHub issues:** Search existing issues for similar problems
+
+---
+
+*Last updated: 2026-03-22*
