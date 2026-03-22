@@ -55,6 +55,21 @@ export function createAdminDiscoveryController({
   loadDiscoveryData
 }) {
   function setDiscoveryProgress(view) {
+    // Validate DOM elements before attempting to update progress
+    if (!refs.adminDiscoveryProgressEl) {
+      console.warn("[Admin Discovery] Progress root element not available");
+      return;
+    }
+    if (!refs.adminDiscoveryProgressBarEl) {
+      console.warn("[Admin Discovery] Progress bar element not available");
+      return;
+    }
+    if (!refs.adminDiscoveryProgressLabelEl) {
+      console.warn("[Admin Discovery] Progress label element not available");
+      return;
+    }
+
+    console.debug("[Admin Discovery] Updating progress:", view);
     applyAdminTaskProgress(
       refs.adminDiscoveryProgressEl,
       refs.adminDiscoveryProgressBarEl,

@@ -83,6 +83,21 @@ export function createAdminFetcherController({
   }
 
   function setFetcherProgress(view) {
+    // Validate DOM elements before attempting to update progress
+    if (!refs.adminFetcherProgressEl) {
+      console.warn("[Admin Fetcher] Progress root element not available");
+      return;
+    }
+    if (!refs.adminFetcherProgressBarEl) {
+      console.warn("[Admin Fetcher] Progress bar element not available");
+      return;
+    }
+    if (!refs.adminFetcherProgressLabelEl) {
+      console.warn("[Admin Fetcher] Progress label element not available");
+      return;
+    }
+
+    console.debug("[Admin Fetcher] Updating progress:", view);
     applyAdminTaskProgress(
       refs.adminFetcherProgressEl,
       refs.adminFetcherProgressBarEl,

@@ -3,7 +3,7 @@ import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 export function cacheAdminDom(doc = document) {
   const t = UI_TOKENS.admin;
 
-  return {
+  const refs = {
     adminSourceStatusEl: doc.querySelector(ui(t.sourceStatus)),
     adminContentEl: doc.querySelector(ui(t.content)),
     adminRefreshBtnEl: doc.querySelector(ui(t.refreshBtn)),
@@ -63,4 +63,30 @@ export function cacheAdminDom(doc = document) {
     adminOpsProgressBadgeEl: doc.querySelector(ui(t.opsProgressBadge)),
     adminSourceFilterBtnEls: Array.from(doc.querySelectorAll(ui(t.sourceFilterBtn)))
   };
+
+  // Validate critical progress elements are available
+  const progressElements = [
+    { name: 'adminFetcherProgressEl', el: refs.adminFetcherProgressEl },
+    { name: 'adminFetcherProgressBarEl', el: refs.adminFetcherProgressBarEl },
+    { name: 'adminFetcherProgressLabelEl', el: refs.adminFetcherProgressLabelEl },
+    { name: 'adminDiscoveryProgressEl', el: refs.adminDiscoveryProgressEl },
+    { name: 'adminDiscoveryProgressBarEl', el: refs.adminDiscoveryProgressBarEl },
+    { name: 'adminDiscoveryProgressLabelEl', el: refs.adminDiscoveryProgressLabelEl }
+  ];
+
+  const missingProgressElements = progressElements.filter(({ name, el }) => {
+    if (!el) {
+      console.warn(`[Admin DOM] Progress element missing: ${name}`);
+      return true;
+    }
+    return false;
+  });
+
+  if (missingProgressElements.length > 0) {
+    console.warn(`[Admin DOM] ${missingProgressElements.length} progress elements not found. Progress bars may not display correctly.`);
+  } else {
+    console.debug("[Admin DOM] All progress elements found and cached successfully.");
+  }
+
+  return refs;
 }
