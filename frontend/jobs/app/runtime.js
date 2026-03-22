@@ -1276,9 +1276,9 @@ function applyFiltersAndRender({ resetPage }) {
 function sortJobs(jobs, sortMode) {
   if (sortMode === "relevance") {
     jobs.sort((a, b) => {
-      const aScore = a.freshnessScore ?? -1;
-      const bScore = b.freshnessScore ?? -1;
-      if (aScore !== bScore) return bScore - aScore; // Descending (higher score first)
+      const aScore = a.freshnessScore ?? 101;
+      const bScore = b.freshnessScore ?? 101;
+      if (aScore !== bScore) return aScore - bScore; // Ascending (lower score = fresher)
       return a.title.localeCompare(b.title); // Tie-breaker by title
     });
     return;
