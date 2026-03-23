@@ -391,7 +391,7 @@ export function deriveFetcherProgressModel(report, { running = false } = {}) {
   const determinate = totalSources > 0;
   const ratio = determinate ? Math.max(0, Math.min(1, resolvedSources / totalSources)) : 0;
   const resolvedLabel = determinate
-    ? `${compactCount(Math.min(resolvedSources, totalSources))}/${compactCount(totalSources)} sources resolved`
+    ? `${compactCount(resolvedSources)}/${compactCount(totalSources)} sources resolved`
     : `${compactCount(resolvedSources)} sources resolved`;
   return {
     active: true,
@@ -418,12 +418,12 @@ export function deriveDiscoveryProgressModel(report, { running = false } = {}) {
     };
   }
 
-  const determinate = foundCount > 0 || probedCount > 0;
-  const total = Math.max(foundCount, probedCount, 0);
-  const ratio = determinate && total > 0 ? Math.max(0, Math.min(1, probedCount / total)) : 0;
+  const determinate = foundCount > 0 || probedCount > 0 || queuedCount > 0;
+  const total = Math.max(foundCount + probedCount + queuedCount, 1);
+  const ratio = determinate && total > 0 ? Math.max(0, Math.min(1, (foundCount + probedCount) / total)) : 0;
   const label = determinate
     ? `Discovery: endpoints ${compactCount(foundCount)} | probed ${compactCount(probedCount)} | queued ${compactCount(queuedCount)} | deferred ${compactCount(deferredCount)} | failed ${compactCount(failedCount)}`
-    : `Discovery: initializing scan | queued ${compactCount(queuedCount)} | deferred ${compactCount(deferredCount)} | failed ${compactCount(failedCount)}`;
+    : `Discovery: scanning | queued ${compactCount(queuedCount)} | deferred ${compactCount(deferredCount)} | failed ${compactCount(failedCount)}`;
   return {
     active: true,
     determinate,
