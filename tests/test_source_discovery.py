@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from src import source_discovery as sd
+from src import source_registry as sr
 from src.source_discovery import orchestrator as discovery_orchestrator
 from src.source_discovery import url_patches as discovery_url_patches
 from src.source_discovery.core import classify_probe_failure_stage
@@ -1976,6 +1977,35 @@ def test_run_discovery_refreshes_url_patches_and_reprobes_candidate() -> None:
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
+
+
+def test_run_discovery_prefers_fresh_queued_candidate_over_stale_pending_duplicate() -> None:
+    stale_pending = {
+        "name": "Fresh Board",
+        "studio": "Fresh Board",
+        "adapter": "greenhouse",
+        "slug": "fresh-board",
+        "jobsFound": 0,
+        "sampleCount": 0,
+        "lastProbedAt": "2026-03-20T00:00:00Z",
+    }
+    fresh_queued = {
+        "name": "Fresh Board",
+        "studio": "Fresh Board",
+        "adapter": "greenhouse",
+        "slug": "fresh-board",
+        "jobsFound": 3,
+        "sampleCount": 3,
+        "lastProbedAt": "2026-03-23T00:00:00Z",
+    }
+
+    merged = sr.unique_sources([fresh_queued, stale_pending])
+
+    assert len(merged) == 1
+    assert merged[0]["id"] == "greenhouse:slug:fresh-board"
+    assert int(merged[0]["jobsFound"] or 0) == 3
+    assert int(merged[0]["sampleCount"] or 0) == 3
+
 
 def test_load_discovery_config_uses_configured_path() -> None:
     with workspace_tmpdir("source-discovery") as root:

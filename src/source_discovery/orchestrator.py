@@ -266,7 +266,9 @@ def run_discovery(
         f"Loaded registries: active={len(active)}, pending={len(pending_existing)}, rejected={len(rejected)}."
     )
 
-    existing_rows = [*active, *pending_existing, *rejected]
+    # Pending rows are intentionally excluded here so discovery can refresh stale
+    # pending candidates with newer probe evidence and job counts.
+    existing_rows = [*active, *rejected]
     seen_ids = {source_identity(row) for row in existing_rows if isinstance(row, dict)}
     seen_domains = {
         fp
@@ -940,7 +942,7 @@ def run_discovery(
     )
     write_progress_report(report_candidates, phase="finalizing", phase_label="Finalizing discovery report")
 
-    save_json_atomic(sd.PENDING_PATH, unique_sources([*pending_existing, *queued_candidates]))
+    save_json_atomic(sd.PENDING_PATH, unique_sources([*queued_candidates, *pending_existing]))
     save_json_atomic(sd.DISCOVERY_CANDIDATES_PATH, queued_candidates)
 
     summary = build_stage_summary(

@@ -1,9 +1,10 @@
 import base64
 import json
+import ssl
 import threading
 from datetime import timedelta
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -536,4 +537,39 @@ def test_remote_conflict_error_sets_runtime_state(source_sync_test_root):
         assert ctx.value.code == sync.RUNTIME_STATE_REMOTE_CONFLICT
         status = sync.config_status(cfg)
         assert status["state"] == sync.RUNTIME_STATE_REMOTE_CONFLICT
+
+
+def test_request_raw_json_uses_ssl_context_for_default_urlopen(monkeypatch):
+        seen = {}
+
+        def fake_urlopen(req, timeout=20, context=None):  # noqa: ANN001
+            seen["timeout"] = timeout
+            seen["context"] = context
+            return _FakeResponse(200, {"ok": True})
+
+        monkeypatch.setattr(sync, "urlopen", fake_urlopen)
+        status, payload, _headers = sync._request_raw_json(  # noqa: SLF001
+            method="GET",
+            url="https://api.github.com/test",
+            headers={"Accept": "application/json"},
+            timeout_s=12,
+        )
+        assert status == 200
+        assert payload["ok"] is True
+        assert seen["timeout"] == 12
+        assert isinstance(seen["context"], ssl.SSLContext)
+
+
+def test_request_raw_json_wraps_certificate_verify_failures():
+        def failing_opener(_req, timeout=20):  # noqa: ANN001,ARG001
+            raise URLError(ssl.SSLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"))
+
+        with pytest.raises(RuntimeError, match="SSL certificate verification failed while connecting to GitHub"):
+            sync._request_raw_json(  # noqa: SLF001
+                method="GET",
+                url="https://api.github.com/test",
+                headers={"Accept": "application/json"},
+                timeout_s=12,
+                opener=failing_opener,
+            )
 

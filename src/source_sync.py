@@ -8,6 +8,7 @@ import ctypes
 import json
 import os
 import platform
+import ssl
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -20,6 +21,11 @@ from urllib.request import Request, urlopen
 from src.baluffo_config import get_security_defaults, get_sync_defaults
 from src.shared.utils import now_iso, now_utc
 from src.source_registry import ensure_source_id, source_identity
+
+try:
+    import certifi
+except ImportError:  # pragma: no cover - optional dependency at runtime
+    certifi = None  # type: ignore[assignment]
 
 ROOT = Path(__file__).resolve().parents[1]
 _SYNC_DEFAULTS = get_sync_defaults()
@@ -613,6 +619,19 @@ def _github_json_headers(authorization: str) -> Dict[str, str]:
     }
 
 
+def _build_sync_ssl_context() -> ssl.SSLContext:
+    context = ssl.create_default_context()
+    context.load_default_certs()
+    certifi_path = ""
+    try:
+        certifi_path = str(certifi.where() if certifi else "").strip()
+    except Exception:
+        certifi_path = ""
+    if certifi_path:
+        context.load_verify_locations(cafile=certifi_path)
+    return context
+
+
 def _request_raw_json(
     *,
     method: str,
@@ -620,14 +639,23 @@ def _request_raw_json(
     headers: Dict[str, str],
     timeout_s: int,
     payload: Optional[Dict[str, Any]] = None,
-    opener: Callable[..., Any] = urlopen,
+    opener: Optional[Callable[..., Any]] = None,
 ) -> Tuple[int, Dict[str, Any], Dict[str, str]]:
     body: Optional[bytes] = None
     if payload is not None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(url=url, data=body, method=method.upper(), headers=headers)
     try:
-        with opener(request, timeout=timeout_s) as response:
+        active_opener = opener or urlopen
+        if opener is None:
+            response_ctx = active_opener(
+                request,
+                timeout=timeout_s,
+                context=_build_sync_ssl_context(),
+            )
+        else:
+            response_ctx = active_opener(request, timeout=timeout_s)
+        with response_ctx as response:
             raw = response.read().decode("utf-8")
             parsed = json.loads(raw) if raw else {}
             return int(response.getcode() or 200), parsed if isinstance(parsed, dict) else {}, {
@@ -644,7 +672,18 @@ def _request_raw_json(
             except json.JSONDecodeError:
                 parsed = {}
         return int(exc.code or 500), parsed, {key.lower(): str(value) for key, value in (exc.headers or {}).items()}
+    except ssl.SSLError as exc:
+        raise RuntimeError(
+            "Sync request failed: SSL certificate verification failed while connecting to GitHub. "
+            f"Original error: {exc}"
+        ) from exc
     except URLError as exc:
+        message = str(exc)
+        if "certificate verify failed" in message.lower():
+            raise RuntimeError(
+                "Sync request failed: SSL certificate verification failed while connecting to GitHub. "
+                f"Original error: {exc}"
+            ) from exc
         raise RuntimeError(f"Sync request failed: {exc}") from exc
 
 

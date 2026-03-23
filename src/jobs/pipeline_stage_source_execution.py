@@ -9,6 +9,7 @@ the size/complexity of that file (AI-coder context switching).
 """
 
 import inspect
+import sys
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -71,6 +72,20 @@ def _is_provider_family_adapter(adapter_name: str) -> bool:
 
 def _is_social_subsource_report(source_name: str, adapter_name: str) -> bool:
     return norm_text(adapter_name) == "social" and clean_text(source_name) in {"social_x", "social_mastodon"}
+
+
+def _console_safe_text(value: Any) -> str:
+    text = str(value or "")
+    stream = getattr(sys, "stdout", None)
+    encoding = str(getattr(stream, "encoding", "") or "").strip() or "utf-8"
+    try:
+        return text.encode(encoding, errors="backslashreplace").decode(encoding)
+    except Exception:
+        return text.encode("ascii", errors="backslashreplace").decode("ascii")
+
+
+def _emit_progress_line(message: str) -> None:
+    print(_console_safe_text(message), flush=True)
 
 
 @dataclass(frozen=True)
@@ -441,7 +456,7 @@ def run_source_execution_stage(
             task_rows[source_name]["_slowWarned"] = False
         write_task_state(force=True)
         if config.show_progress:
-            print(f"[jobs_fetcher] START source={source_name}", flush=True)
+            _emit_progress_line(f"[jobs_fetcher] START source={source_name}")
 
     def mark_task_finished(source_name: str, report: Dict[str, Any]) -> None:
         end_time = now_iso()
@@ -457,15 +472,14 @@ def run_source_execution_stage(
         if config.show_progress:
             error_text = clean_text(report.get("error"))
             if report.get("status") == "error" and error_text:
-                print(f"[jobs_fetcher] ERROR source={source_name} error={error_text}", flush=True)
+                _emit_progress_line(f"[jobs_fetcher] ERROR source={source_name} error={error_text}")
             elif error_text:
-                print(f"[jobs_fetcher] WARN source={source_name} error={error_text}", flush=True)
-            print(
+                _emit_progress_line(f"[jobs_fetcher] WARN source={source_name} error={error_text}")
+            _emit_progress_line(
                 f"[jobs_fetcher] DONE source={source_name} status={report['status']} "
                 f"fetched={int(report.get('fetchedCount') or 0)} "
                 f"kept={int(report.get('keptCount') or 0)} "
-                f"durationMs={int(report.get('durationMs') or 0)}",
-                flush=True,
+                f"durationMs={int(report.get('durationMs') or 0)}"
             )
 
     write_progress_report()

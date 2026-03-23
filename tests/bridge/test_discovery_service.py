@@ -198,8 +198,18 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     report_path.write_text(json.dumps({
         "startedAt": "2026-03-20T12:00:00Z",
         "finishedAt": "2026-03-20T12:05:00Z",
-        "summary": {"queuedCandidateCount": 0},
+        "summary": {"queuedCandidateCount": 1},
         "runtime": {},
+        "candidates": [
+            {
+                "id": "pending-ok",
+                "adapter": "static",
+                "name": "Healthy Pending",
+                "deferred": False,
+                "jobsFound": 0,
+                "sampleCount": 0,
+            }
+        ],
     }), encoding="utf-8")
     settings_path.write_text(json.dumps({"autoApproveHealthyPendingOnComplete": True}), encoding="utf-8")
 
@@ -210,7 +220,7 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     state = {
         "active": [{"id": "active-1", "adapter": "static", "name": "Already Active"}],
         "pending": [
-            {"id": "pending-ok", "adapter": "static", "name": "Healthy Pending", "jobsFound": 3, "status": "healthy"},
+            {"id": "pending-ok", "adapter": "static", "name": "Healthy Pending", "jobsFound": 0, "sampleCount": 0},
             {"id": "pending-zero", "adapter": "static", "name": "Zero Pending", "jobsFound": 0, "status": "healthy"},
             {"id": "pending-error", "adapter": "static", "name": "Errored Pending", "sampleCount": 2, "status": "error"},
         ],

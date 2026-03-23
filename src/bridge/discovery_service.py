@@ -3,7 +3,9 @@ from __future__ import annotations
 import threading
 import uuid
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Set, Tuple
+
+from src.source_registry import source_identity
 
 
 BridgeLogFunc = Callable[[str, str], None]
@@ -128,13 +130,25 @@ class DiscoveryService:
         approval["approvedSinceLastRun"] = int(approval.get("approvedSinceLastRun") or 0) + int(count)
         self._deps.save_json_atomic(self._paths.approval_state, approval)
 
-    def _auto_approve_healthy_pending_sources(self) -> int:
+    @staticmethod
+    def _queued_report_candidate_ids(report: Dict[str, Any]) -> Set[str]:
+        candidates = report.get("candidates") if isinstance(report.get("candidates"), list) else []
+        queued_ids: Set[str] = set()
+        for row in candidates:
+            if not isinstance(row, dict) or bool(row.get("deferred")):
+                continue
+            queued_ids.add(source_identity(row))
+        return queued_ids
+
+    def _auto_approve_healthy_pending_sources(self, *, queued_candidate_ids: Set[str] | None = None) -> int:
         state = self._deps.load_state()
         pending_rows = list(state.get("pending") or [])
         moved: List[Dict[str, Any]] = []
         remaining: List[Dict[str, Any]] = []
+        queued_ids = {str(item or "").strip().lower() for item in (queued_candidate_ids or set()) if str(item or "").strip()}
         for row in pending_rows:
-            if self._pending_row_is_auto_approvable(row):
+            row_id = source_identity(row)
+            if row_id in queued_ids or self._pending_row_is_auto_approvable(row):
                 approved = dict(row)
                 approved["enabledByDefault"] = True
                 moved.append(approved)
@@ -169,7 +183,9 @@ class DiscoveryService:
             auto_approve_enabled = bool(saved_config.get("autoApproveHealthyPendingOnComplete"))
             auto_approved = 0
             if auto_approve_enabled:
-                auto_approved = self._auto_approve_healthy_pending_sources()
+                auto_approved = self._auto_approve_healthy_pending_sources(
+                    queued_candidate_ids=self._queued_report_candidate_ids(report)
+                )
             runtime = dict(report.get("runtime") or {})
             runtime["autoApproval"] = {
                 "enabled": auto_approve_enabled,
