@@ -418,7 +418,7 @@ export function deriveDiscoveryProgressModel(report, { running = false } = {}) {
     };
   }
 
-  const determinate = foundCount > 0 || probedCount > 0 || queuedCount > 0;
+  const determinate = (foundCount > 0 || probedCount > 0 || queuedCount > 0) || Boolean(running);
   const total = Math.max(foundCount + probedCount + queuedCount, 1);
   const ratio = determinate && total > 0 ? Math.max(0, Math.min(1, (foundCount + probedCount) / total)) : 0;
   const label = determinate

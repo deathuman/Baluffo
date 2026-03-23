@@ -336,8 +336,10 @@ export function createAdminFetcherController({
       updateFetcherProgressFromReport(report, { running: false });
 
       const summary = report?.summary || {};
-      const totalSources = Math.max(0, Number(report?.runtime?.selectedSourceCount || 0), Number(summary.sourceCount || 0));
       const resolvedSources = Math.max(0, Number(summary.successfulSources || 0) + Number(summary.failedSources || 0) + Number(summary.excludedSources || 0));
+      // Use domain model for totalSources to ensure consistent progress display
+      const progressModel = deriveFetcherProgressModel(report, { running: false });
+      const totalSources = progressModel.determinate ? Math.max(0, Number(report?.runtime?.selectedSourceCount || 0), Number(summary.sourceCount || 0)) : 0;
       appendFetcherLog(
         `Fetcher summary: ${totalSources > 0 ? `${resolvedSources}/${totalSources} sources resolved` : `${resolvedSources} sources resolved`}, output ${Number(summary.outputCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
         Number(summary.failedSources || 0) > 0 ? "warn" : "success"
@@ -454,7 +456,9 @@ export function createAdminFetcherController({
     updateFetcherProgressFromReport(report, { running: true });
     const summary = report?.summary || {};
     const outputCount = Number(summary.outputCount || 0);
-    const selectedSourceCount = Math.max(0, Number(report?.runtime?.selectedSourceCount || 0), Number(summary.sourceCount || 0));
+    // Use domain model for consistent progress calculation
+    const progressModel = deriveFetcherProgressModel(report, { running: true });
+    const selectedSourceCount = progressModel.determinate ? Math.max(0, Number(report?.runtime?.selectedSourceCount || 0), Number(summary.sourceCount || 0)) : 0;
     const failedSources = Number(summary.failedSources || 0);
     const excludedSources = Number(summary.excludedSources || 0);
     const successfulSources = Number(summary.successfulSources || 0);
