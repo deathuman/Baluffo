@@ -337,7 +337,7 @@ export function createAdminFetcherController({
 
       const summary = report?.summary || {};
       const resolvedSources = Math.max(0, Number(summary.successfulSources || 0) + Number(summary.failedSources || 0) + Number(summary.excludedSources || 0));
-      // Use domain model for totalSources to ensure consistent progress display
+      // Use domain model for consistent progress display
       const progressModel = deriveFetcherProgressModel(report, { running: false });
       const totalSources = progressModel.determinate ? Math.max(0, Number(report?.runtime?.selectedSourceCount || 0), Number(summary.sourceCount || 0)) : 0;
       appendFetcherLog(
@@ -600,10 +600,18 @@ export function createAdminFetcherController({
     }
 
     const report = await fetchJobsFetchReportJson();
-    const startedMs = parseReportTimestampMs(report?.startedAt);
-    if (startedMs >= (state.fetcherLaunchAtMs - 1000)) {
-      appendFetcherProgressFromReport(report, now);
+    
+    // Always update progress during polling for real-time updates
+    if (report) {
+      const startedMs = parseReportTimestampMs(report?.startedAt);
+      if (startedMs >= (state.fetcherLaunchAtMs - 1000)) {
+        appendFetcherProgressFromReport(report, now);
+      }
+      
+      // Update progress even if not started yet, for better UX
+      updateFetcherProgressFromReport(report, { running: true });
     }
+    
     const finishedMs = parseReportTimestampMs(report?.finishedAt);
     if (finishedMs >= (state.fetcherLaunchAtMs - 1000)) {
       const summary = report?.summary || {};
