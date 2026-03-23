@@ -70,6 +70,7 @@ def _run_reddit(
         entry = {"adapter": "social", "studio": f"reddit/{sub}", "name": source_name, "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
         parsed_rows: List[RawJob] = []
         low_conf_sub = 0
+        reject_reason_counts: Dict[str, int] = {}
         error_messages = []
         
         # Add delay between requests to avoid rate limiting
@@ -84,6 +85,7 @@ def _run_reddit(
                 subreddit=sub,
                 min_confidence=min_conf,
                 reject_for_hire_posts=reject_for_hire,
+                reject_reasons=reject_reason_counts,
             )
             entry["fetchedCount"] = len((((payload.get("data") or {}).get("children")) if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else []) or [])
             
@@ -101,6 +103,7 @@ def _run_reddit(
                     subreddit=sub,
                     min_confidence=min_conf,
                     reject_for_hire_posts=reject_for_hire,
+                    reject_reasons=reject_reason_counts,
                 )
                 entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
                 
@@ -120,6 +123,7 @@ def _run_reddit(
                     subreddit=sub,
                     min_confidence=min_conf,
                     reject_for_hire_posts=reject_for_hire,
+                    reject_reasons=reject_reason_counts,
                 )
                 entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
                 
@@ -132,6 +136,8 @@ def _run_reddit(
             entry["error"] = "; ".join(error_messages)
             errors.append(f"reddit:{sub}: {entry['error']}")
         entry["keptCount"] = len(parsed_rows)
+        if reject_reason_counts:
+            entry["rejectReasonCounts"] = reject_reason_counts
         low_conf_total += int(low_conf_sub)
         jobs.extend(parsed_rows)
         details.append(entry)
@@ -172,6 +178,7 @@ def _run_x(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: in
         entry = {"adapter": "social", "studio": "x", "name": source_name, "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
         parsed_rows: List[RawJob] = []
         low_conf_sub = 0
+        reject_reason_counts: Dict[str, int] = {}
         error_messages = []
         
         try:
@@ -182,6 +189,7 @@ def _run_x(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: in
                 query_label=query,
                 min_confidence=min_conf,
                 reject_for_hire_posts=reject_for_hire,
+                reject_reasons=reject_reason_counts,
             )
             entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
             
@@ -202,6 +210,7 @@ def _run_x(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: in
                     query_label=query,
                     min_confidence=min_conf,
                     reject_for_hire_posts=reject_for_hire,
+                    reject_reasons=reject_reason_counts,
                 )
                 entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
                 
@@ -217,6 +226,8 @@ def _run_x(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: in
             errors.append(f"x:{query}: {entry['error']}")
         
         entry["keptCount"] = len(parsed_rows)
+        if reject_reason_counts:
+            entry["rejectReasonCounts"] = reject_reason_counts
         low_conf_total += int(low_conf_sub)
         jobs.extend(parsed_rows)
         details.append(entry)
@@ -258,6 +269,7 @@ def _run_mastodon(*, fetch_text: Callable[[str, int], str], timeout_s: int, retr
             entry = {"adapter": "social", "studio": "mastodon", "name": source_name, "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
             parsed_rows: List[RawJob] = []
             low_conf_sub = 0
+            reject_reason_counts: Dict[str, int] = {}
             error_messages = []
             
             try:
@@ -269,6 +281,7 @@ def _run_mastodon(*, fetch_text: Callable[[str, int], str], timeout_s: int, retr
                     tag=hashtag,
                     min_confidence=min_conf,
                     reject_for_hire_posts=reject_for_hire,
+                    reject_reasons=reject_reason_counts,
                 )
                 entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
                 
@@ -284,6 +297,8 @@ def _run_mastodon(*, fetch_text: Callable[[str, int], str], timeout_s: int, retr
                 errors.append(f"mastodon:{instance}/{hashtag}: {entry['error']}")
             
             entry["keptCount"] = len(parsed_rows)
+            if reject_reason_counts:
+                entry["rejectReasonCounts"] = reject_reason_counts
             low_conf_total += int(low_conf_sub)
             jobs.extend(parsed_rows)
             details.append(entry)

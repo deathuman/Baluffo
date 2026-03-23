@@ -13,7 +13,7 @@ from src.jobs_fetcher_registry import SOURCE_REPORT_META
 def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count: int) -> Dict[str, Any]:
     src = runtime if isinstance(runtime, dict) else {}
     payload = {
-        "selectedSourceCount": int(selected_source_count),
+        "selectedSourceCount": _clamped_int(src.get("selectedSourceCount"), selected_source_count, 0),
         "sourceTtlMinutes": _clamped_int(src.get("sourceTtlMinutes"), 0, 0),
         "maxWorkers": _clamped_int(src.get("maxWorkers"), 1, 1),
         "maxPerDomain": _clamped_int(src.get("maxPerDomain"), 1, 1),
@@ -347,6 +347,42 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+def normalize_task_progress_payload(payload: Dict[str, Any] | None) -> Dict[str, Any]:
+    src = payload if isinstance(payload, dict) else {}
+    mode = clean_text(src.get("mode")).lower()
+    if mode not in {"determinate", "indeterminate"}:
+        mode = "indeterminate"
+    counts_src = src.get("counts") if isinstance(src.get("counts"), dict) else {}
+    counts: Dict[str, Any] = {}
+    for key, value in counts_src.items():
+        clean_key = clean_text(key)
+        if not clean_key:
+            continue
+        if isinstance(value, bool):
+            counts[clean_key] = bool(value)
+            continue
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            counts[clean_key] = _clamped_int(value, 0, 0)
+            continue
+        text = clean_text(value)
+        if text:
+            counts[clean_key] = text
+    ratio_value = src.get("ratio")
+    try:
+        ratio = float(ratio_value)
+    except (TypeError, ValueError):
+        ratio = 0.0
+    ratio = max(0.0, min(1.0, ratio))
+    return {
+        "active": bool(src.get("active")),
+        "phaseKey": clean_text(src.get("phaseKey")),
+        "phaseLabel": clean_text(src.get("phaseLabel")),
+        "mode": mode,
+        "ratio": ratio,
+        "counts": counts,
+    }
+
+
 def normalize_task_state_payload(
     payload: Dict[str, Any],
     *,
@@ -385,6 +421,7 @@ def normalize_task_state_payload(
             "ok": _clamped_int(summary.get("ok"), 0, 0),
             "error": _clamped_int(summary.get("error"), 0, 0),
         },
+        "taskProgress": normalize_task_progress_payload(src.get("taskProgress")),
         "tasks": normalized_rows,
         "outputs": {"report": clean_text((src.get("outputs") or {}).get("report")) or clean_text(report_path)},
     }
@@ -407,6 +444,7 @@ def normalize_fetch_report_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "finishedAt": clean_text(src.get("finishedAt")),
         "runtime": normalize_runtime_payload(runtime, selected_source_count=len(source_rows)),
         "summary": dict(summary),
+        "taskProgress": normalize_task_progress_payload(src.get("taskProgress")),
         "contaminationAudit": {
             "totalRows": _clamped_int(contamination_audit.get("totalRows"), 0, 0),
             "contaminatedRows": _clamped_int(contamination_audit.get("contaminatedRows"), 0, 0),

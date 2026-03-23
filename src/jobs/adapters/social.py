@@ -100,7 +100,20 @@ def run_social_reddit_source(
             errors.append(f"reddit:{sub}: {exc}")
         details.append(entry)
 
+    plugin_diag = deps.SOURCE_DIAGNOSTICS.get("social_reddit") if isinstance(deps.SOURCE_DIAGNOSTICS.get("social_reddit"), dict) else {}
+    plugin_detail_by_name = {
+        clean_text(item.get("name")): item
+        for item in (plugin_diag.get("details") or [])
+        if isinstance(item, dict) and clean_text(item.get("name"))
+    }
+    for entry in details:
+        plugin_detail = plugin_detail_by_name.get(clean_text(entry.get("name"))) or {}
+        reject_reason_counts = plugin_detail.get("rejectReasonCounts")
+        if isinstance(reject_reason_counts, dict) and reject_reason_counts:
+            entry["rejectReasonCounts"] = dict(reject_reason_counts)
+
     deps.set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=details, partial_errors=errors)
+    deps.SOURCE_DIAGNOSTICS["social_reddit"]["lowConfidenceDropped"] = int(plugin_diag.get("lowConfidenceDropped") or 0)
     if rows:
         return rows
     if errors:
@@ -161,6 +174,7 @@ def run_social_x_source(
         entry["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
         parsed_rows: List[RawJob] = []
         low_conf_query = 0
+        reject_reason_counts: Dict[str, int] = {}
         if entry["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
             entry["status"] = "excluded"
             entry["error"] = entry["cacheDecisionReason"]
@@ -197,9 +211,12 @@ def run_social_x_source(
                     query_label=query,
                     min_confidence=min_conf,
                     reject_for_hire_posts=reject_for_hire,
+                    reject_reasons=reject_reason_counts,
                 )
                 entry["fetchedCount"] = len(parsed_rows) + int(low_conf_query)
                 entry["keptCount"] = len(parsed_rows)
+                if reject_reason_counts:
+                    entry["rejectReasonCounts"] = reject_reason_counts
                 low_conf_total += int(low_conf_query)
                 jobs.extend(parsed_rows)
                 details.append(entry)
@@ -216,6 +233,7 @@ def run_social_x_source(
                 query_label=query,
                 min_confidence=min_conf,
                 reject_for_hire_posts=reject_for_hire,
+                reject_reasons=reject_reason_counts,
             )
             if isinstance(payload, dict) and isinstance(payload.get("data"), list):
                 entry["fetchedCount"] = len(payload.get("data") or [])
@@ -226,6 +244,8 @@ def run_social_x_source(
             entry["error"] = str(exc)
             errors.append(f"x:{query}: {exc}")
         entry["keptCount"] = len(parsed_rows)
+        if reject_reason_counts:
+            entry["rejectReasonCounts"] = reject_reason_counts
         low_conf_total += int(low_conf_query)
         jobs.extend(parsed_rows)
         details.append(entry)
@@ -281,6 +301,7 @@ def run_social_mastodon_source(
                 "keptCount": 0,
                 "error": "",
             }
+            reject_reason_counts: Dict[str, int] = {}
             cache_decision = get_incremental_cache_decision(
                 entry["name"],
                 source_state_rows or {},
@@ -305,9 +326,12 @@ def run_social_mastodon_source(
                     tag=tag,
                     min_confidence=min_conf,
                     reject_for_hire_posts=reject_for_hire,
+                    reject_reasons=reject_reason_counts,
                 )
                 entry["fetchedCount"] = len(payload) if isinstance(payload, list) else len(parsed_rows) + int(low_conf_tag)
                 entry["keptCount"] = len(parsed_rows)
+                if reject_reason_counts:
+                    entry["rejectReasonCounts"] = reject_reason_counts
                 low_conf_total += int(low_conf_tag)
                 jobs.extend(parsed_rows)
             except Exception as exc:  # noqa: BLE001

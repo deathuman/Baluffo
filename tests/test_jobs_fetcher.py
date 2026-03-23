@@ -183,6 +183,26 @@ def test_parse_google_sheets_csv_ignores_email_only_source_contact() -> None:
         assert len(rows) == 1
         assert rows[0]["jobLink"] == ""
 
+def test_parse_google_sheets_csv_infers_company_from_smartrecruiters_url() -> None:
+        csv_text = (
+            "Company,Job Title,City,Country,Job Link\n"
+            ",Senior Environment Artist,Remote,Remote,https://jobs.smartrecruiters.com/CDPROJEKTRED/744000112115839\n"
+            ",Technical Artist,Burbank,US,https://www.smartrecruiters.com/Insomniac-Games/744000999\n"
+        )
+        rows = jf.parse_google_sheets_csv(csv_text)
+        assert len(rows) == 2
+        assert rows[0]["company"] == "CDPROJEKTRED"
+        assert rows[1]["company"] == "Insomniac Games"
+
+def test_parse_google_sheets_csv_infers_company_from_smartrecruiters_url_when_company_is_unknown() -> None:
+        csv_text = (
+            "Company,Job Title,City,Country,Job Link\n"
+            "FarBridge,Senior Environment Artist,Remote,Remote,https://jobs.smartrecruiters.com/CDPROJEKTRED/744000112115839\n"
+        )
+        rows = jf.parse_google_sheets_csv(csv_text)
+        assert len(rows) == 1
+        assert rows[0]["company"] == "CDPROJEKTRED"
+
 def test_canonicalize_job_with_reason_preserves_known_bad_company_labels_as_unknown() -> None:
         normalized, reason = jf.canonicalize_job_with_reason(
             {
@@ -420,6 +440,157 @@ def test_parse_x_rss_payload() -> None:
         assert dropped == 0
         assert "jobs.orbit.dev" in rows[0]["jobLink"]
 
+def test_social_parsers_drop_discussion_and_not_hiring_posts() -> None:
+        reddit_payload = {
+            "data": {
+                "children": [
+                    {
+                        "data": {
+                            "id": "bad001",
+                            "title": "Why is nobody hiring gameplay programmers anymore?",
+                            "selftext": "This industry is rough. https://studio.example/blog/hiring-rant",
+                            "link_flair_text": "Discussion",
+                            "permalink": "/r/gamedev/comments/bad001/test/",
+                            "url": "https://www.reddit.com/r/gamedev/comments/bad001/test/",
+                            "created_utc": 1700000000,
+                            "author": "someone",
+                        }
+                    },
+                    {
+                        "data": {
+                            "id": "bad002",
+                            "title": "We are not hiring right now at Nebula Games",
+                            "selftext": "Please stop asking.",
+                            "link_flair_text": "Meta",
+                            "permalink": "/r/gamedev/comments/bad002/test/",
+                            "url": "https://www.reddit.com/r/gamedev/comments/bad002/test/",
+                            "created_utc": 1700000000,
+                            "author": "nebula_hr",
+                        }
+                    },
+                ]
+            }
+        }
+        rows, dropped = jf.parse_reddit_json_payload(
+            reddit_payload,
+            subreddit="gamedev",
+            min_confidence=20,
+            reject_for_hire_posts=True,
+        )
+        assert rows == []
+        assert dropped == 2
+
+
+def test_social_parsers_reject_reddit_article_links_with_author_fallback_company() -> None:
+        reject_reasons = {}
+        reddit_payload = {
+            "data": {
+                "children": [
+                    {
+                        "data": {
+                            "id": "bad003",
+                            "title": "A study on why games raise shadow levels, occasionally making OLEDs look like LCDs!",
+                            "selftext": "We're hiring curious rendering engineers. https://gammastudios.tech/technical-color-grading-1-raised-blacks",
+                            "link_flair_text": "Hiring",
+                            "permalink": "/r/gamedev/comments/bad003/test/",
+                            "url": "https://gammastudios.tech/technical-color-grading-1-raised-blacks",
+                            "created_utc": 1700000000,
+                            "author": "filoppi",
+                        }
+                    }
+                ]
+            }
+        }
+        rows, dropped = jf.parse_reddit_json_payload(
+            reddit_payload,
+            subreddit="gamedev",
+            min_confidence=20,
+            reject_for_hire_posts=True,
+            reject_reasons=reject_reasons,
+        )
+        assert rows == []
+        assert dropped == 1
+        assert reject_reasons["non_job_destination_url"] == 1
+
+
+def test_social_parsers_reject_reddit_rss_article_links() -> None:
+        reject_reasons = {}
+        rss = """<?xml version="1.0" encoding="UTF-8"?>
+<rss><channel>
+  <item>
+    <title>A study on why games raise shadow levels, occasionally making OLEDs look like LCDs!</title>
+    <link>https://gammastudios.tech/technical-color-grading-1-raised-blacks</link>
+    <description>We're hiring curious rendering engineers.</description>
+    <pubDate>Mon, 09 Mar 2026 11:00:00 GMT</pubDate>
+  </item>
+</channel></rss>"""
+        rows, dropped = jf.parse_reddit_rss_payload(
+            rss,
+            subreddit="gamedev",
+            min_confidence=20,
+            reject_for_hire_posts=True,
+            reject_reasons=reject_reasons,
+        )
+        assert rows == []
+        assert dropped == 1
+        assert reject_reasons["non_job_destination_url"] == 1
+
+def test_social_parsers_drop_reposts_and_generic_job_chatter() -> None:
+        rss = """<?xml version="1.0" encoding="UTF-8"?>
+<rss><channel>
+  <item>
+    <title>Orbit Games is hiring a Unity Engineer</title>
+    <link>https://nitter.net/orbit/status/123</link>
+    <description>Posting this here because people should see it.</description>
+    <pubDate>Mon, 09 Mar 2026 11:00:00 GMT</pubDate>
+  </item>
+</channel></rss>"""
+        rows, dropped = jf.parse_x_rss_payload(
+            rss,
+            query_label="#gamedevjobs",
+            min_confidence=20,
+            reject_for_hire_posts=True,
+        )
+        assert rows == []
+        assert dropped == 1
+
+        mastodon_rows, mastodon_dropped = jf.parse_mastodon_payload(
+            [
+                {
+                    "id": "m2",
+                    "content": "<p>Anyone hiring Unity devs? My portfolio is at https://portfolio.example</p>",
+                    "created_at": "2026-03-09T11:05:00Z",
+                    "url": "https://mastodon.gamedev.place/@artist/112",
+                    "account": {"display_name": "Artist Person"},
+                }
+            ],
+            instance="https://mastodon.gamedev.place",
+            tag="gamedevjobs",
+            min_confidence=20,
+            reject_for_hire_posts=True,
+        )
+        assert mastodon_rows == []
+        assert mastodon_dropped == 1
+
+def test_social_parsers_allow_explicit_hiring_with_company_root_apply_link() -> None:
+        x_rows, x_dropped = jf.parse_x_payload(
+            {
+                "data": [
+                    {
+                        "id": "988",
+                        "text": "Moonshot Games is hiring gameplay engineers. Apply at https://moonshotgames.com",
+                        "created_at": "2026-03-09T11:00:00Z",
+                    }
+                ]
+            },
+            query_label="#gamedevjobs",
+            min_confidence=20,
+            reject_for_hire_posts=True,
+        )
+        assert len(x_rows) == 1
+        assert x_dropped == 0
+        assert x_rows[0]["jobLink"] == "https://moonshotgames.com/"
+
 def test_run_social_x_source_uses_rss_fallback_without_credentials() -> None:
         social_cfg = {
             "enabled": True,
@@ -437,7 +608,7 @@ def test_run_social_x_source_uses_rss_fallback_without_credentials() -> None:
         rss = """<?xml version="1.0" encoding="UTF-8"?>
 <rss><channel>
   <item>
-    <title>Hiring Technical Artist at Nova Studio</title>
+    <title>We're hiring a Technical Artist at Nova Studio</title>
     <link>https://nitter.net/nova/status/42</link>
     <description>Apply https://careers.nova.dev/ta</description>
     <pubDate>Mon, 09 Mar 2026 11:05:00 GMT</pubDate>
@@ -458,6 +629,117 @@ def test_run_social_x_source_uses_rss_fallback_without_credentials() -> None:
         )
         assert len(rows) == 1
         assert "careers.nova.dev" in rows[0]["jobLink"]
+
+def test_normalize_url_strips_language_query_param() -> None:
+        from src.jobs.common.url import fingerprint_url
+        from src.jobs.text_utils import normalize_url
+        base = "https://www.personio.de/job/1317878"
+        with_lang = "https://www.personio.de/job/1317878?language=en"
+        with_lang_short = "https://www.personio.de/job/1317878?lang"
+        with_lang_other = "https://www.personio.de/job/1317878?other=val"
+        assert fingerprint_url(with_lang) == fingerprint_url(base)
+        assert fingerprint_url(with_lang_short) == fingerprint_url(base)
+        assert fingerprint_url(with_lang_other) != fingerprint_url(base)
+        assert normalize_url(with_lang) == with_lang
+        assert normalize_url(with_lang_short) == "https://www.personio.de/job/1317878?lang="
+
+def test_fingerprint_url_keeps_language_query_significant_for_non_personio_urls() -> None:
+        from src.jobs.common.url import fingerprint_url
+        from src.jobs.text_utils import normalize_url
+        base = "https://example.com/jobs/1317878"
+        with_lang = "https://example.com/jobs/1317878?language=en"
+        assert fingerprint_url(with_lang) != fingerprint_url(base)
+        assert normalize_url(with_lang) == with_lang
+
+def test_deduplicate_jobs_enriches_unknown_company_from_shared_gracklehq_redirect() -> None:
+        unk_row = {
+            "id": "",
+            "title": "Senior Environment Artist",
+            "company": "Unknown company",
+            "city": "Remote",
+            "country": "Remote",
+            "workType": "",
+            "contractType": "",
+            "jobLink": "https://www.smartrecruiters.com/CDPROJEKTRED/744000112115839",
+            "sector": "Game",
+            "source": "google_sheets",
+            "sourceJobId": "sheet-5",
+            "fetchedAt": jf.now_iso(),
+            "postedAt": "2026-03-09T10:00:00Z",
+            "status": "active",
+            "sourceBundle": [
+                {"source": "google_sheets", "jobLink": "https://gracklehq.com/rd/373481", "postedAt": "2026-03-09T10:00:00Z"}
+            ],
+        }
+        known_row = {
+            "id": "",
+            "title": "Senior Environment Artist",
+            "company": "CD PROJEKT RED",
+            "city": "Remote",
+            "country": "Remote",
+            "workType": "",
+            "contractType": "",
+            "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693",
+            "sector": "Game",
+            "source": "smartrecruiters_sources",
+            "sourceJobId": "smartrecruiters:CDPROJEKTRED:744000098332693",
+            "fetchedAt": jf.now_iso(),
+            "postedAt": "2026-03-09T10:00:00Z",
+            "status": "active",
+            "sourceBundle": [
+                {"source": "google_sheets", "jobLink": "https://gracklehq.com/rd/373481", "postedAt": "2026-03-09T10:00:00Z"},
+                {"source": "smartrecruiters_sources", "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693", "postedAt": "2026-03-09T10:00:00Z"},
+            ],
+        }
+        rows, stats = jf.deduplicate_jobs([unk_row, known_row])
+        assert stats["outputCount"] == 2
+        companies = {r.get("company") or "" for r in rows}
+        assert companies == {"CD PROJEKT RED"}
+
+def test_deduplicate_jobs_does_not_overwrite_known_company_from_shared_gracklehq_redirect() -> None:
+        first_known = {
+            "id": "",
+            "title": "Senior Environment Artist",
+            "company": "Known Studio A",
+            "city": "Remote",
+            "country": "Remote",
+            "workType": "",
+            "contractType": "",
+            "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000112115839",
+            "sector": "Game",
+            "source": "google_sheets",
+            "sourceJobId": "sheet-5",
+            "fetchedAt": jf.now_iso(),
+            "postedAt": "2026-03-09T10:00:00Z",
+            "status": "active",
+            "sourceBundle": [
+                {"source": "google_sheets", "jobLink": "https://gracklehq.com/rd/373481", "postedAt": "2026-03-09T10:00:00Z"}
+            ],
+        }
+        second_known = {
+            "id": "",
+            "title": "Senior Environment Artist",
+            "company": "Known Studio B",
+            "city": "Remote",
+            "country": "Remote",
+            "workType": "",
+            "contractType": "",
+            "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693",
+            "sector": "Game",
+            "source": "smartrecruiters_sources",
+            "sourceJobId": "smartrecruiters:CDPROJEKTRED:744000098332693",
+            "fetchedAt": jf.now_iso(),
+            "postedAt": "2026-03-09T10:00:00Z",
+            "status": "active",
+            "sourceBundle": [
+                {"source": "google_sheets", "jobLink": "https://gracklehq.com/rd/373481", "postedAt": "2026-03-09T10:00:00Z"},
+                {"source": "smartrecruiters_sources", "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693", "postedAt": "2026-03-09T10:00:00Z"},
+            ],
+        }
+        rows, stats = jf.deduplicate_jobs([first_known, second_known])
+        assert stats["outputCount"] == 2
+        companies = {r.get("company") or "" for r in rows}
+        assert companies == {"Known Studio A", "Known Studio B"}
 
 def test_deduplicate_jobs_uses_social_source_id_fallback() -> None:
         row_a = {

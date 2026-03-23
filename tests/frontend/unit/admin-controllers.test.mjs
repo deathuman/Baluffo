@@ -4,6 +4,7 @@ import { createAdminAuthController } from "../../../frontend/admin/app/auth.js";
 import { createAdminDiscoveryController } from "../../../frontend/admin/app/discovery.js";
 import { createAdminFetcherController } from "../../../frontend/admin/app/fetcher.js";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
+import { applyAdminTaskProgress } from "../../../frontend/admin/app/progress-ui.js";
 import { createAdminRegistryController } from "../../../frontend/admin/app/registry.js";
 import { createAdminSyncController } from "../../../frontend/admin/app/sync.js";
 import { appendAdminLogRow } from "../../../frontend/admin/render.js";
@@ -178,6 +179,9 @@ test("admin auth controller initializes the composed admin view immediately", as
     loadSyncStatus: async options => {
       calls.push(`loadSyncStatus:${String(Boolean(options?.silent))}:${String(Boolean(options?.forceForm))}`);
     },
+    loadDiscoveryConfig: async options => {
+      calls.push(`loadDiscoveryConfig:${String(Boolean(options?.silent))}:${String(Boolean(options?.forceForm))}`);
+    },
     getErrorMessage: err => String(err?.message || err || "unknown"),
     logAdminError() {},
     showToast(message, level) {
@@ -197,6 +201,7 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.ok(calls.includes("refreshOverview"));
   assert.ok(calls.includes("loadDiscoveryData"));
   assert.ok(calls.includes("loadOpsHealthData"));
+  assert.ok(calls.includes("loadDiscoveryConfig:true:true"));
   assert.ok(calls.includes("scheduleOpsHealthPolling:900"));
   assert.equal(refs.adminSyncStatusEl.textContent, "Loading sync status...");
   assert.equal(toasts.length, 0);
@@ -233,6 +238,7 @@ test("admin auth controller session view model tracks bridge badge state", async
     loadDiscoveryData: async () => {},
     loadOpsHealthData: async () => {},
     loadSyncStatus: async () => {},
+    loadDiscoveryConfig: async () => {},
     logAdminError() {},
     showToast() {}
   });
@@ -736,6 +742,9 @@ test("admin discovery controller emits summary-first live progress and updates p
     assert.ok(logs.some(line => /scanning known careers pages/i.test(line)));
     assert.ok(logs.some(line => /found 12 candidates, probed 5, queued 3/i.test(line)));
     assert.equal(refs.adminDiscoveryProgressEl.classList.contains("hidden"), false);
+    assert.equal(refs.adminDiscoveryProgressEl.classList.contains("determinate"), true);
+    assert.equal(refs.adminDiscoveryProgressEl.classList.contains("indeterminate"), false);
+    assert.equal(refs.adminDiscoveryProgressBarEl.style.width, "50%");
     assert.match(refs.adminDiscoveryProgressLabelEl.textContent, /discovery:/i);
   } finally {
     global.setTimeout = previousSetTimeout;
@@ -807,6 +816,416 @@ test("admin discovery controller forwards uncapped preset payload", async () => 
   assert.ok(calls.includes('/tasks/run-discovery:{"preset":"uncapped"}'));
 });
 
+test("admin discovery controller loads and saves auto-approve config", async () => {
+  const calls = [];
+  const toasts = [];
+  const state = {
+    adminPin: "1234",
+    latestDiscoveryConfigCache: null,
+    discoveryConfigDirty: false,
+    discoveryLogRemoteOffset: 0,
+    discoveryLaunchAtMs: 0,
+    discoveryCompletionPollDeadline: 0,
+    discoveryReportPollTimeoutMs: 60000,
+    discoveryReportPollIntervalMs: 5000,
+    discoveryCompletionPollTimer: null,
+    discoveryLiveProgressState: null,
+    discoveryOptimisticRun: null,
+    adminBusyState: {
+      discoveryRun: false,
+      discoveryWatch: false,
+      discoveryLoad: false,
+      discoveryWrite: false,
+      manualAdd: false,
+      manualCheck: false,
+      liveDiscoveryRunning: false
+    }
+  };
+  const refs = {
+    adminDiscoveryLogEl: createElement(),
+    adminDiscoveryAutoApproveToggleEl: createElement({ checked: true })
+  };
+
+  const controller = createAdminDiscoveryController({
+    state,
+    refs,
+    getBridge: async path => {
+      calls.push(path);
+      if (path === "/discovery/config") {
+        return {
+          ok: true,
+          savedConfig: {
+            autoApproveHealthyPendingOnComplete: false
+          }
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async (path, payload) => {
+      calls.push(`${path}:${JSON.stringify(payload)}`);
+      if (path === "/discovery/config") {
+        return {
+          ok: true,
+          savedConfig: {
+            autoApproveHealthyPendingOnComplete: Boolean(payload?.autoApproveHealthyPendingOnComplete)
+          }
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    },
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    logAdminError() {},
+    showToast(message, level) {
+      toasts.push({ message, level });
+    },
+    createLogEvent(scope, message, level) {
+      return { scope, message, level, timestamp: "2026-03-08T10:01:00.000Z" };
+    },
+    appendLogRow() {},
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    loadDiscoveryData: async () => {}
+  });
+
+  const loaded = await controller.loadDiscoveryConfig({ forceForm: true });
+  assert.equal(loaded.savedConfig.autoApproveHealthyPendingOnComplete, false);
+  assert.equal(refs.adminDiscoveryAutoApproveToggleEl.checked, false);
+
+  refs.adminDiscoveryAutoApproveToggleEl.checked = true;
+  state.discoveryConfigDirty = true;
+  await controller.saveDiscoveryConfig();
+
+  assert.ok(calls.includes("/discovery/config"));
+  assert.ok(calls.includes('/discovery/config:{"autoApproveHealthyPendingOnComplete":true}'));
+  assert.equal(state.discoveryConfigDirty, false);
+  assert.equal(state.latestDiscoveryConfigCache.savedConfig.autoApproveHealthyPendingOnComplete, true);
+  assert.ok(
+    toasts.some(
+      item =>
+        item.message === "Discovery auto-approve preference updated." &&
+        item.level === "success"
+    )
+  );
+});
+
+test("admin discovery controller recovers when launch response is lost but report shows a fresh run", async () => {
+  const logs = [];
+  const toasts = [];
+  const calls = [];
+  const previousSetTimeout = global.setTimeout;
+  const previousClearTimeout = global.clearTimeout;
+  const scheduled = [];
+  global.setTimeout = callback => {
+    scheduled.push(callback);
+    return scheduled.length;
+  };
+  global.clearTimeout = () => {};
+
+  try {
+    const state = {
+      adminPin: "1234",
+      discoveryLogRemoteOffset: 0,
+      discoveryLaunchAtMs: 0,
+      discoveryCompletionPollDeadline: 0,
+      discoveryReportPollTimeoutMs: 60000,
+      discoveryReportPollIntervalMs: 5000,
+      discoveryCompletionPollTimer: null,
+      discoveryLiveProgressState: null,
+      discoveryOptimisticRun: null,
+      adminBusyState: {
+        discoveryRun: false,
+        discoveryWatch: false,
+        discoveryLoad: false,
+        discoveryWrite: false,
+        manualAdd: false,
+        manualCheck: false,
+        liveDiscoveryRunning: false
+      }
+    };
+    const refs = {
+      adminDiscoveryLogEl: createElement(),
+      adminDiscoveryProgressEl: createElement({ style: {}, classList: createClassList(["hidden"]) }),
+      adminDiscoveryProgressBarEl: createElement({ style: {} }),
+      adminDiscoveryProgressLabelEl: createElement()
+    };
+    const controller = createAdminDiscoveryController({
+      state,
+      refs,
+      getBridge: async path => {
+        calls.push(path);
+        if (path === "/discovery/report") {
+          return {
+            startedAt: new Date().toISOString(),
+            finishedAt: "",
+            summary: { queuedCandidateCount: 0, foundEndpointCount: 0, probedCandidateCount: 0, failedProbeCount: 0 },
+            candidates: [],
+            failures: []
+          };
+        }
+        if (String(path).startsWith("/discovery/log?offset=")) {
+          return { text: "", nextOffset: 0 };
+        }
+        throw new Error(`unexpected path ${path}`);
+      },
+      postBridge: async () => {
+        throw new Error("Network error: bridge unreachable");
+      },
+      setBusyFlag(key, value) {
+        state.adminBusyState[key] = value;
+      },
+      getErrorMessage: err => String(err?.message || err || "unknown"),
+      logAdminError() {},
+      showToast(message, level) {
+        toasts.push({ message, level });
+      },
+      createLogEvent(scope, message, level) {
+        return { scope, message, level, timestamp: "2026-03-08T10:01:00.000Z" };
+      },
+      appendLogRow(_container, event) {
+        logs.push(String(event.message || ""));
+      },
+      loadOpsHealthData: async () => {
+        calls.push("loadOpsHealthData");
+      },
+      scheduleOpsHealthPolling(delay) {
+        calls.push(`scheduleOpsHealthPolling:${delay}`);
+      },
+      loadDiscoveryData: async () => {}
+    });
+
+    await controller.runDiscoveryTask();
+
+    assert.equal(state.adminBusyState.discoveryWatch, true);
+    assert.equal(state.adminBusyState.liveDiscoveryRunning, true);
+    assert.ok(calls.includes("/discovery/report"));
+    assert.ok(logs.some(line => /response was lost, but the run is active/i.test(line)));
+    assert.ok(toasts.some(item => /reattached after a dropped bridge response/i.test(item.message) && item.level === "warning"));
+  } finally {
+    global.setTimeout = previousSetTimeout;
+    global.clearTimeout = previousClearTimeout;
+  }
+});
+
+test("admin discovery controller still shows error when launch recovery finds no fresh run", async () => {
+  const toasts = [];
+  const state = {
+    adminPin: "1234",
+    discoveryLogRemoteOffset: 0,
+    discoveryLaunchAtMs: 0,
+    discoveryCompletionPollDeadline: 0,
+    discoveryReportPollTimeoutMs: 60000,
+    discoveryReportPollIntervalMs: 5000,
+    discoveryCompletionPollTimer: null,
+    discoveryLiveProgressState: null,
+    discoveryOptimisticRun: null,
+    adminBusyState: {
+      discoveryRun: false,
+      discoveryWatch: false,
+      discoveryLoad: false,
+      discoveryWrite: false,
+      manualAdd: false,
+      manualCheck: false,
+      liveDiscoveryRunning: false
+    }
+  };
+  const refs = {
+    adminDiscoveryLogEl: createElement(),
+    adminDiscoveryProgressEl: createElement({ style: {}, classList: createClassList(["hidden"]) }),
+    adminDiscoveryProgressBarEl: createElement({ style: {} }),
+    adminDiscoveryProgressLabelEl: createElement()
+  };
+  const controller = createAdminDiscoveryController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/discovery/report") {
+        return {
+          startedAt: "2020-01-01T00:00:00.000Z",
+          finishedAt: "",
+          summary: {},
+          candidates: [],
+          failures: []
+        };
+      }
+      if (String(path).startsWith("/discovery/log?offset=")) {
+        return { text: "", nextOffset: 0 };
+      }
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => {
+      throw new Error("Network error: bridge unreachable");
+    },
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    logAdminError() {},
+    showToast(message, level) {
+      toasts.push({ message, level });
+    },
+    createLogEvent(scope, message, level) {
+      return { scope, message, level, timestamp: "2026-03-08T10:01:00.000Z" };
+    },
+    appendLogRow() {},
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    loadDiscoveryData: async () => {}
+  });
+
+  await controller.runDiscoveryTask();
+
+  assert.equal(state.adminBusyState.discoveryWatch, false);
+  assert.equal(state.adminBusyState.liveDiscoveryRunning, false);
+  assert.ok(toasts.some(item => item.message === "Could not trigger source discovery task." && item.level === "error"));
+});
+
+test("admin discovery controller does not reattach when the fresh report is a launch failure", async () => {
+  const logs = [];
+  const toasts = [];
+  const state = {
+    adminPin: "1234",
+    discoveryLogRemoteOffset: 0,
+    discoveryLaunchAtMs: 0,
+    discoveryCompletionPollDeadline: 0,
+    discoveryReportPollTimeoutMs: 60000,
+    discoveryReportPollIntervalMs: 5000,
+    discoveryCompletionPollTimer: null,
+    discoveryLiveProgressState: null,
+    discoveryOptimisticRun: null,
+    adminBusyState: {
+      discoveryRun: false,
+      discoveryWatch: false,
+      discoveryLoad: false,
+      discoveryWrite: false,
+      manualAdd: false,
+      manualCheck: false,
+      liveDiscoveryRunning: false
+    }
+  };
+  const refs = {
+    adminDiscoveryLogEl: createElement(),
+    adminDiscoveryProgressEl: createElement({ style: {}, classList: createClassList(["hidden"]) }),
+    adminDiscoveryProgressBarEl: createElement({ style: {} }),
+    adminDiscoveryProgressLabelEl: createElement()
+  };
+  const controller = createAdminDiscoveryController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/discovery/report") {
+        return {
+          startedAt: new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+          summary: { failedProbeCount: 1 },
+          candidates: [],
+          failures: [
+            { adapter: "bridge", stage: "launch", error: "WinError 233" }
+          ]
+        };
+      }
+      if (String(path).startsWith("/discovery/log?offset=")) {
+        return { text: "[2026-03-08T10:01:01.000Z] Launch failed: [WinError 233] No process is on the other end of the pipe\n", nextOffset: 99 };
+      }
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => {
+      throw new Error("Network error: bridge unreachable");
+    },
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    logAdminError() {},
+    showToast(message, level) {
+      toasts.push({ message, level });
+    },
+    createLogEvent(scope, message, level) {
+      return { scope, message, level, timestamp: "2026-03-08T10:01:00.000Z" };
+    },
+    appendLogRow(_container, event) {
+      logs.push(String(event.message || ""));
+    },
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    loadDiscoveryData: async () => {}
+  });
+
+  await controller.runDiscoveryTask();
+
+  assert.equal(state.adminBusyState.discoveryWatch, false);
+  assert.equal(state.adminBusyState.liveDiscoveryRunning, false);
+  assert.ok(logs.some(line => /launch failed/i.test(line)));
+  assert.ok(!logs.some(line => /reattaching to live progress/i.test(line)));
+  assert.ok(toasts.some(item => item.message === "Could not trigger source discovery task." && item.level === "error"));
+});
+
+test("admin discovery controller updates progress label from server log phases before report progress arrives", () => {
+  const logs = [];
+  const state = {
+    adminPin: "1234",
+    discoveryLogRemoteOffset: 0,
+    discoveryLaunchAtMs: 0,
+    discoveryCompletionPollDeadline: 0,
+    discoveryReportPollTimeoutMs: 60000,
+    discoveryReportPollIntervalMs: 5000,
+    discoveryCompletionPollTimer: null,
+    discoveryLiveProgressState: {
+      phaseLabel: "",
+      summarySignature: "",
+      candidateCount: 0,
+      failureCount: 0,
+      serverPhaseLabel: "",
+      serverLogSignatures: new Set(),
+      lastHeartbeatAtMs: 0
+    },
+    discoveryOptimisticRun: null,
+    adminBusyState: {
+      discoveryRun: false,
+      discoveryWatch: true,
+      discoveryLoad: false,
+      discoveryWrite: false,
+      manualAdd: false,
+      manualCheck: false,
+      liveDiscoveryRunning: true
+    }
+  };
+  const refs = {
+    adminDiscoveryLogEl: createElement(),
+    adminDiscoveryProgressEl: createElement({ style: {}, classList: createClassList(["hidden"]) }),
+    adminDiscoveryProgressBarEl: createElement({ style: {} }),
+    adminDiscoveryProgressLabelEl: createElement()
+  };
+  const controller = createAdminDiscoveryController({
+    state,
+    refs,
+    getBridge: async () => ({}),
+    postBridge: async () => ({}),
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    logAdminError() {},
+    showToast() {},
+    createLogEvent(scope, message, level) {
+      return { scope, message, level, timestamp: "2026-03-08T10:01:00.000Z" };
+    },
+    appendLogRow(_container, event) {
+      logs.push(String(event.message || ""));
+    },
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    loadDiscoveryData: async () => {}
+  });
+
+  controller.appendDiscoveryServerLogText("[2026-03-08T10:01:01.000Z] Scanning known careers pages from the seed catalog.\n");
+
+  assert.match(refs.adminDiscoveryProgressLabelEl.textContent, /Scanning known careers pages/i);
+  assert.ok(logs.some(line => /Scanning known careers pages/i.test(line)));
+});
+
 test("admin ops controller preserves optimistic discovery row while history lags", async () => {
   const state = {
     adminPin: "1234",
@@ -842,28 +1261,21 @@ test("admin ops controller preserves optimistic discovery row while history lags
     getBridge: async path => {
       if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
+      if (path === "/ops/task-state") return { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
       throw new Error(`unexpected path ${path}`);
     },
     postBridge: async () => ({}),
-    normalizeOpsRuns: () => ({
-      currentRows: [],
-      visibleCompletedRows: [],
-      olderCompletedRows: [],
-      hasLiveRuns: false,
-      liveTypes: []
-    }),
-    applyOptimisticDiscoveryRun: (_model, optimisticRun) => {
+    deriveAdminRunsModel: ({ optimisticDiscoveryRun }) => {
       optimisticApplied += 1;
       return {
-        currentRows: [{ type: "discovery", startedAt: optimisticRun.startedAt, isLive: true }],
+        currentRows: [{ type: "discovery", startedAt: optimisticDiscoveryRun.startedAt, isLive: true }],
         visibleCompletedRows: [],
         olderCompletedRows: [],
         hasLiveRuns: true,
         liveTypes: ["discovery"]
       };
     },
-    applyOptimisticFetchRun: model => model,
     getOpsPollIntervalMs: () => 5000,
     renderAdminOpsAlerts() {},
     renderAdminOpsKpis() {},
@@ -932,22 +1344,15 @@ test("admin ops controller preserves optimistic fetch row while history lags", a
     getBridge: async path => {
       if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
+      if (path === "/ops/task-state") return { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
       throw new Error(`unexpected path ${path}`);
     },
     postBridge: async () => ({}),
-    normalizeOpsRuns: () => ({
-      currentRows: [],
-      visibleCompletedRows: [],
-      olderCompletedRows: [],
-      hasLiveRuns: false,
-      liveTypes: []
-    }),
-    applyOptimisticDiscoveryRun: model => model,
-    applyOptimisticFetchRun: (_model, optimisticRun) => {
+    deriveAdminRunsModel: ({ optimisticFetchRun }) => {
       optimisticApplied += 1;
       return {
-        currentRows: [{ type: "fetch", startedAt: optimisticRun.startedAt, runId: optimisticRun.runId, isLive: true }],
+        currentRows: [{ type: "fetch", startedAt: optimisticFetchRun.startedAt, runId: optimisticFetchRun.runId, isLive: true }],
         visibleCompletedRows: [],
         olderCompletedRows: [],
         hasLiveRuns: true,
@@ -1091,7 +1496,7 @@ test("admin fetcher controller stores optimistic run metadata while fetch watch 
   }
 });
 
-test("admin fetcher controller emits summary-first progress and updates progress bar", async () => {
+test("admin fetcher controller renders progress from the shared task progress contract", async () => {
   const logs = [];
   const state = {
     adminPin: "1234",
@@ -1148,6 +1553,20 @@ test("admin fetcher controller emits summary-first progress and updates progress
       fetchJobsFetchReportJson: async () => ({
         startedAt: "2026-03-08T10:00:00.000Z",
         finishedAt: "",
+        taskProgress: {
+          active: true,
+          phaseKey: "executing_sources",
+          phaseLabel: "Executing sources",
+          mode: "determinate",
+          ratio: 0.5,
+          counts: {
+            resolvedSources: 6,
+            sourceCount: 12,
+            outputCount: 18,
+            failedSources: 1,
+            excludedSources: 1
+          }
+        },
         runtime: {
           selectedSourceCount: 10,
           timingSummary: {
@@ -1193,12 +1612,205 @@ test("admin fetcher controller emits summary-first progress and updates progress
 
     controller.startFetcherCompletionWatch();
     await scheduled[0]();
+    await scheduled[1]();
 
     assert.ok(logs.some(line => /fetcher started\. watching live progress/i.test(line)));
     assert.ok(logs.some(line => /start source=studio a/i.test(line)));
     assert.ok(logs.some(line => /warn source=studio b http 403/i.test(line)));
+    assert.ok(logs.some(line => /6\/12 sources resolved/i.test(line)));
     assert.equal(refs.adminFetcherProgressEl.classList.contains("hidden"), false);
-    assert.match(String(refs.adminFetcherProgressLabelEl.textContent || ""), /fetcher:/i);
+    assert.equal(refs.adminFetcherProgressEl.classList.contains("determinate"), true);
+    assert.equal(refs.adminFetcherProgressEl.classList.contains("indeterminate"), false);
+    assert.equal(refs.adminFetcherProgressBarEl.style.width, "50%");
+    assert.equal(refs.adminFetcherProgressBarEl.style.left, "0");
+    assert.equal(refs.adminFetcherProgressEl.attributes["aria-valuenow"], "50");
+    assert.match(String(refs.adminFetcherProgressLabelEl.textContent || ""), /executing sources/i);
+    assert.match(String(refs.adminFetcherProgressLabelEl.textContent || ""), /6\/12 sources resolved/i);
+  } finally {
+    controller?.stopFetcherCompletionWatch?.();
+    global.setTimeout = previousSetTimeout;
+    global.clearTimeout = previousClearTimeout;
+    Date.now = previousDateNow;
+  }
+});
+
+test("shared admin task progress renderer resets indeterminate state before determinate fill", () => {
+  const rootEl = createElement({ style: {}, classList: createClassList(["hidden"]) });
+  const barEl = createElement({ style: {} });
+  const labelEl = createElement();
+
+  applyAdminTaskProgress(rootEl, barEl, labelEl, {
+    active: true,
+    determinate: false,
+    label: "Fetcher: Executing sources"
+  });
+  assert.equal(rootEl.classList.contains("indeterminate"), true);
+  assert.equal(barEl.style.width, "36%");
+  assert.equal(rootEl.attributes["aria-hidden"], "false");
+  assert.equal(rootEl.attributes["aria-valuetext"], "Fetcher: Executing sources");
+
+  applyAdminTaskProgress(rootEl, barEl, labelEl, {
+    active: true,
+    determinate: true,
+    ratio: 0.65,
+    label: "Fetcher: 65% complete"
+  });
+  assert.equal(rootEl.classList.contains("determinate"), true);
+  assert.equal(rootEl.classList.contains("indeterminate"), false);
+  assert.equal(barEl.style.width, "65%");
+  assert.equal(barEl.style.left, "0");
+  assert.equal(barEl.style.animation, "none");
+  assert.equal(rootEl.attributes["aria-valuenow"], "65");
+  assert.equal(rootEl.attributes["aria-valuetext"], "Fetcher: 65% complete");
+
+  applyAdminTaskProgress(rootEl, barEl, labelEl, {
+    active: false
+  });
+  assert.equal(rootEl.classList.contains("hidden"), true);
+  assert.equal(barEl.style.width, "0%");
+  assert.equal(rootEl.attributes["aria-hidden"], "true");
+
+  applyAdminTaskProgress(rootEl, barEl, labelEl, {
+    active: true,
+    determinate: true,
+    ratio: 1,
+    label: "Discovery: Discovery completed"
+  });
+  assert.equal(rootEl.classList.contains("complete"), true);
+  assert.equal(barEl.style.width, "100%");
+  assert.equal(rootEl.attributes["aria-valuenow"], "100");
+});
+
+test("admin fetcher controller only emits generic active heartbeat after sustained idle time", async () => {
+  const logs = [];
+  const scheduled = [];
+  const previousSetTimeout = global.setTimeout;
+  const previousClearTimeout = global.clearTimeout;
+  const previousDateNow = Date.now;
+  let nowMs = Date.parse("2026-03-08T10:00:00.000Z");
+  global.setTimeout = callback => {
+    scheduled.push(callback);
+    return scheduled.length;
+  };
+  global.clearTimeout = () => {};
+  Date.now = () => nowMs;
+
+  const report = {
+    startedAt: "2026-03-08T10:00:00.000Z",
+    finishedAt: "",
+    taskProgress: {
+      active: true,
+      phaseKey: "executing_sources",
+      phaseLabel: "Executing sources",
+      mode: "determinate",
+      ratio: 0.5,
+      counts: {
+        resolvedSources: 6,
+        sourceCount: 12,
+        outputCount: 18,
+        failedSources: 1,
+        excludedSources: 1
+      }
+    },
+    runtime: {
+      selectedSourceCount: 12
+    },
+    summary: {
+      successfulSources: 4,
+      failedSources: 1,
+      excludedSources: 1,
+      outputCount: 18,
+      sourceCount: 12
+    },
+    sources: [
+      { name: "Studio A", status: "ok", keptCount: 4, durationMs: 1200 }
+    ]
+  };
+
+  let controller;
+  try {
+    const state = {
+      adminPin: "1234",
+      latestFetcherReportCache: null,
+      fetcherLaunchAtMs: nowMs,
+      fetcherCompletionPollDeadline: nowMs + 600000,
+      fetcherLogRemoteOffset: 0,
+      fetcherCompletionPollTimer: null,
+      fetcherLogPollTimer: null,
+      fetcherLiveProgressState: null,
+      fetchOptimisticRun: null,
+      adminBusyState: {
+        fetcherRun: false,
+        fetcherWatch: false,
+        fetcherReportLoad: false,
+        liveFetchRunning: false
+      }
+    };
+    const refs = {
+      adminFetcherLogEl: createElement(),
+      adminFetcherProgressEl: createElement({ style: {}, classList: createClassList(["hidden"]) }),
+      adminFetcherProgressBarEl: createElement({ style: {} }),
+      adminFetcherProgressLabelEl: createElement(),
+      adminRunFetcherBtnEl: createElement(),
+      adminRunFetcherIncrementalBtnEl: createElement(),
+      adminRunFetcherUncappedBtnEl: createElement(),
+      adminRunFetcherForceBtnEl: createElement(),
+      adminRetryFailedBtnEl: createElement()
+    };
+
+    controller = createAdminFetcherController({
+      state,
+      refs,
+      getBridge: async path => {
+        if (String(path).startsWith("/fetcher/log?offset=")) {
+          return { text: "", nextOffset: 0 };
+        }
+        return {};
+      },
+      postBridge: async () => ({}),
+      fetchJobsFetchReportJson: async () => report,
+      writeJobsAutoRefreshSignal() {},
+      showToast() {},
+      getErrorMessage: err => String(err?.message || err || "unknown"),
+      logAdminError() {},
+      setBusyFlag(key, value) {
+        state.adminBusyState[key] = value;
+      },
+      getSourceStatusSetter: () => () => {},
+      loadOpsHealthData: async () => {},
+      startOpsHealthPolling() {},
+      fetchReportPollIntervalMs: 5000,
+      fetchReportPollTimeoutMs: 600000,
+      jobsAutoRefreshSignalKey: "k",
+      jobsFetcherCommand: "python -m src.jobs_fetcher",
+      jobsFetcherTaskLabel: "Run jobs fetcher",
+      jobsFetchReportUrl: "data/jobs-fetch-report.json",
+      createLogEvent(scope, message, level) {
+        return { scope, message, level, timestamp: "2026-03-08T10:00:00.000Z" };
+      },
+      appendLogRow(_container, event) {
+        logs.push(String(event.message || ""));
+      }
+    });
+
+    controller.startFetcherCompletionWatch();
+
+    const runLatestScheduled = async () => {
+      const callback = scheduled[scheduled.length - 1];
+      await callback();
+    };
+
+    await runLatestScheduled();
+    assert.equal(logs.filter(line => /Fetcher active:/i.test(line)).length, 0);
+
+    nowMs += 30_000;
+    await runLatestScheduled();
+    assert.equal(logs.filter(line => /Fetcher active:/i.test(line)).length, 0);
+
+    nowMs += 31_000;
+    await runLatestScheduled();
+    assert.equal(logs.filter(line => /Fetcher active:/i.test(line)).length, 1);
+    assert.ok(logs.some(line => /Fetcher: 6\/12 sources resolved/i.test(line)));
   } finally {
     controller?.stopFetcherCompletionWatch?.();
     global.setTimeout = previousSetTimeout;
@@ -1239,19 +1851,20 @@ test("admin ops controller auto-attaches discovery watch when a live discovery r
     getBridge: async path => {
       if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
+      if (path === "/ops/task-state") return {
+        tasks: [{ type: "discovery", taskType: "discovery", startedAt: "2026-03-08T10:01:00.000Z", active: true, status: "running" }]
+      };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
       throw new Error(`unexpected path ${path}`);
     },
     postBridge: async () => ({}),
-    normalizeOpsRuns: () => ({
-      currentRows: [{ type: "discovery", startedAt: "2026-03-08T10:01:00.000Z", isLive: true }],
+    deriveAdminRunsModel: ({ taskState }) => ({
+      currentRows: (taskState?.tasks || []).map(row => ({ ...row, isLive: true })),
       visibleCompletedRows: [],
       olderCompletedRows: [],
       hasLiveRuns: true,
       liveTypes: ["discovery"]
     }),
-    applyOptimisticDiscoveryRun: model => model,
-    applyOptimisticFetchRun: model => model,
     getOpsPollIntervalMs: () => 5000,
     renderAdminOpsAlerts() {},
     renderAdminOpsKpis() {},
@@ -1529,6 +2142,63 @@ test("appendAdminLogRow passes Date to custom toLocalTime and renders its result
     assert.ok(rowEl.children.length >= 1);
     const stampEl = rowEl.children[0];
     assert.equal(String(stampEl.textContent), "10:00:00");
+  } finally {
+    global.document = previousDocument;
+  }
+});
+
+test("appendAdminLogRow falls back safely when timestamp is invalid", () => {
+  const previousDocument = global.document;
+  global.document = {
+    createElement(tagName) {
+      const el = createElement({
+        tagName,
+        dataset: {},
+        children: [],
+        append(...items) {
+          this.children.push(...items);
+        }
+      });
+      return el;
+    }
+  };
+  try {
+    const container = createElement({
+      children: [],
+      firstChild: null,
+      appendChild(child) {
+        this.children.push(child);
+        this.firstChild = this.children[0] || null;
+      },
+      removeChild(child) {
+        const index = this.children.indexOf(child);
+        if (index >= 0) {
+          this.children.splice(index, 1);
+        }
+        this.firstChild = this.children[0] || null;
+      },
+      scrollTop: 0,
+      scrollHeight: 0
+    });
+    appendAdminLogRow(
+      container,
+      {
+        timestamp: "[[2026-03-08T10:01:00.000Z",
+        level: "info",
+        scope: "fetcher",
+        sourceId: "",
+        message: "Broken timestamp"
+      },
+      {
+        normalizeLogLevel: value => value,
+        toLocalTime: value => value.toString(),
+        formatLogEventText: row => String(row?.message || "")
+      }
+    );
+
+    const rowEl = container.children[0];
+    const stampEl = rowEl.children[0];
+    assert.notEqual(String(stampEl.textContent), "Invalid Date");
   } finally {
     global.document = previousDocument;
   }

@@ -1,5 +1,11 @@
 # Baluffo Data Contracts
 
+> **AI usage**
+> - **Use this when:** changing payload shape, schema fields, saved-job structure, discovery output shape, or UI interaction handles
+> - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
+> - **Not canonical for:** subsystem ownership or route wiring
+> - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, `src/jobs/common/contracts.py`, relevant tests, and any affected UI/runtime docs
+
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
 
 **CRITICAL:** The frontend expects `camelCase` keys in all `data/*.json` files. The Python backend maps these explicitly in `src/jobs/common/contracts.py`.
@@ -169,3 +175,27 @@ Do not change signatures or remove without a dedicated plan:
 - **Report summary** must retain: counts, stage maps (`generatedCountByStage`, `survivedDedupeCountByStage`, `probedCountByStage`, `queuedCountByStage`), `lossAccounting`, `adapterCounts`, `methodCounts`.
 - **Candidates** and **failures** objects must retain the fields asserted in `test_discovery_report_snapshot_contract`.
 - Any contract change requires: updated snapshot fixture (`tests/fixtures/source_discovery_report_snapshot.json`), doc update, and a focused PR.
+
+---
+
+## 8. Admin task progress contract
+
+Fetcher and discovery reports may include a shared `taskProgress` object for the admin loading bars. This is the preferred progress contract for the frontend.
+
+### Stable fields
+
+| Field | Type | Description |
+|---|---|---|
+| `active` | `boolean` | True while the task should render as in progress. |
+| `phaseKey` | `string` | Stable machine-readable phase token such as `executing_sources` or `probing_candidates`. |
+| `phaseLabel` | `string` | Human-readable phase label shown in the admin UI. |
+| `mode` | `string` | Either `indeterminate` or `determinate`. |
+| `ratio` | `number` | `0..1` progress ratio when `mode` is `determinate`; ignored otherwise. |
+| `counts` | `object` | Display-only task metrics used to enrich the label, not to redefine primary progress semantics. |
+
+### Frontend contract
+
+- Controllers consume `taskProgress` and pass raw report state plus optional log-derived phase hints into the domain layer.
+- The domain layer is responsible for mapping `taskProgress` into the rendered progress view.
+- The shared progress renderer only renders the derived view model; it must not infer phases or ratios from raw report counters.
+- Raw report counters remain useful for details and backward-compatible fallbacks, but the primary loading-bar state comes from `taskProgress`.

@@ -1,4 +1,4 @@
-import { deriveDiscoveryProgressModel, deriveDiscoveryQueuedCount } from "../domain.js";
+import { deriveDiscoveryProgressModel, deriveDiscoveryQueuedCount, deriveDiscoveryTaskProgress } from "../domain.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
 
 export function isDiscoveryMobileViewport(width = window.innerWidth) {
@@ -54,6 +54,49 @@ export function createAdminDiscoveryController({
   scheduleOpsHealthPolling,
   loadDiscoveryData
 }) {
+  function populateDiscoveryConfigForm(savedConfig = {}, { force = false } = {}) {
+    if (!refs.adminDiscoveryAutoApproveToggleEl) return;
+    if (state.discoveryConfigDirty && !force) return;
+    refs.adminDiscoveryAutoApproveToggleEl.checked = savedConfig.autoApproveHealthyPendingOnComplete !== false;
+  }
+
+  function collectDiscoveryConfigPayload() {
+    return {
+      autoApproveHealthyPendingOnComplete: Boolean(refs.adminDiscoveryAutoApproveToggleEl?.checked)
+    };
+  }
+
+  async function loadDiscoveryConfig(options = {}) {
+    const silent = Boolean(options?.silent);
+    const forceForm = Boolean(options?.forceForm);
+    try {
+      const payload = await getBridge("/discovery/config");
+      state.latestDiscoveryConfigCache = payload || null;
+      populateDiscoveryConfigForm((payload || {}).savedConfig || {}, { force: forceForm });
+      return payload || null;
+    } catch (err) {
+      if (!silent) showToast(`Could not load discovery settings: ${getErrorMessage(err)}`, "error");
+      throw err;
+    }
+  }
+
+  async function saveDiscoveryConfig() {
+    setBusyFlag("discoveryWrite", true);
+    try {
+      const result = await postBridge("/discovery/config", collectDiscoveryConfigPayload());
+      state.latestDiscoveryConfigCache = result || null;
+      state.discoveryConfigDirty = false;
+      populateDiscoveryConfigForm((result || {}).savedConfig || {}, { force: true });
+      showToast("Discovery auto-approve preference updated.", "success");
+      return result || null;
+    } catch (err) {
+      showToast(`Could not save discovery settings: ${getErrorMessage(err)}`, "error");
+      throw err;
+    } finally {
+      setBusyFlag("discoveryWrite", false);
+    }
+  }
+
   function setDiscoveryProgress(view) {
     // Validate DOM elements before attempting to update progress
     if (!refs.adminDiscoveryProgressEl) {
@@ -69,7 +112,6 @@ export function createAdminDiscoveryController({
       return;
     }
 
-    console.debug("[Admin Discovery] Updating progress:", view);
     applyAdminTaskProgress(
       refs.adminDiscoveryProgressEl,
       refs.adminDiscoveryProgressBarEl,
@@ -78,8 +120,15 @@ export function createAdminDiscoveryController({
     );
   }
 
+  function getDiscoveryProgressPhaseHint() {
+    return String(state.discoveryLiveProgressState?.serverPhaseLabel || "").trim();
+  }
+
   function updateDiscoveryProgressFromReport(report, { running = false } = {}) {
-    setDiscoveryProgress(deriveDiscoveryProgressModel(report, { running }));
+    setDiscoveryProgress(deriveDiscoveryProgressModel(report, {
+      running,
+      phaseHint: getDiscoveryProgressPhaseHint()
+    }));
   }
 
   function normalizeDiscoveryServerLine(rawLine) {
@@ -110,6 +159,78 @@ export function createAdminDiscoveryController({
 
   function clearOptimisticDiscoveryRun() {
     state.discoveryOptimisticRun = null;
+  }
+
+  function inferDiscoveryPhaseLabelFromServerMessage(message) {
+    const normalized = String(message || "").trim().toLowerCase();
+    if (!normalized) return "";
+    if (/generating curated seed candidates/.test(normalized)) return "Generating seed candidates";
+    if (/scanning game studios sheet directory/.test(normalized)) return "Scanning game studios sheet directory";
+    if (/generating provider-pattern candidates/.test(normalized)) return "Generating provider-pattern candidates";
+    if (/scanning known careers pages/.test(normalized)) return "Scanning known careers pages";
+    if (/scanning gamesmap directory/.test(normalized)) return "Scanning Gamesmap directory";
+    if (/running web-search discovery queries/.test(normalized)) return "Running web-search discovery queries";
+    if (/starting probe phase for \d+ candidate/.test(normalized)) {
+      const match = String(message || "").match(/Starting probe phase for (\d+ candidate(?:s)?)/i);
+      return match ? `Probing ${match[1]}` : "Starting probe phase";
+    }
+    return "";
+  }
+
+  function updateDiscoveryProgressFromLivePhase(phaseLabel) {
+    const nextLabel = String(phaseLabel || "").trim();
+    if (!nextLabel) return;
+    const liveState = state.discoveryLiveProgressState;
+    if (!liveState) return;
+    if (liveState.serverPhaseLabel === nextLabel) return;
+    liveState.serverPhaseLabel = nextLabel;
+    liveState.lastActivityAtMs = Date.now();
+    updateDiscoveryProgressFromReport(null, { running: true });
+  }
+
+  function hasDiscoveryLaunchFailure(report) {
+    const failures = Array.isArray(report?.failures) ? report.failures : [];
+    return failures.some(item => {
+      const stage = String(item?.stage || "").trim().toLowerCase();
+      const adapter = String(item?.adapter || "").trim().toLowerCase();
+      return stage === "launch" || adapter === "bridge";
+    });
+  }
+
+  function parseFreshDiscoveryRun(report, launchedAtMs) {
+    if (!report || typeof report !== "object" || Array.isArray(report)) return null;
+    const startedAt = String(report?.startedAt || "").trim();
+    const finishedAt = String(report?.finishedAt || "").trim();
+    const startedAtMs = parseReportTimestampMs(startedAt);
+    if (startedAtMs <= 0) return null;
+    const lowerBound = Math.max(0, Number(launchedAtMs) - 5000);
+    const upperBound = Number(launchedAtMs) + 30000;
+    if (startedAtMs < lowerBound || startedAtMs > upperBound) return null;
+    if (finishedAt) return null;
+    if (hasDiscoveryLaunchFailure(report)) return null;
+    return {
+      runId: String(report?.runId || state.discoveryOptimisticRun?.runId || ""),
+      startedAt
+    };
+  }
+
+  async function recoverDiscoveryLaunchAfterTransportError(launchAttemptAtMs) {
+    const [report, logChunk] = await Promise.all([
+      getBridge("/discovery/report"),
+      loadDiscoveryLogChunk({ reset: true }).catch(() => null)
+    ]);
+    if (logChunk) {
+      state.discoveryLogRemoteOffset = Math.max(0, Number(logChunk?.nextOffset) || 0);
+    }
+    const recoveredRun = parseFreshDiscoveryRun(report, launchAttemptAtMs);
+    if (!recoveredRun) return false;
+    setOptimisticDiscoveryRun(recoveredRun);
+    appendDiscoveryLog("Discovery launch response was lost, but the run is active. Reattaching to live progress...", "warn");
+    showToast("Source discovery started; reattached after a dropped bridge response.", "warning");
+    startDiscoveryCompletionWatch();
+    loadOpsHealthData().catch(() => {});
+    scheduleOpsHealthPolling(250);
+    return true;
   }
 
   function attachToActiveDiscoveryRun(runMeta = null) {
@@ -151,6 +272,10 @@ export function createAdminDiscoveryController({
       if (!normalizedLine) return;
       if (state.discoveryLiveProgressState?.serverLogSignatures?.has(normalizedLine.message)) return;
       state.discoveryLiveProgressState?.serverLogSignatures?.add(normalizedLine.message);
+      if (state.discoveryLiveProgressState) {
+        state.discoveryLiveProgressState.lastActivityAtMs = Date.now();
+      }
+      updateDiscoveryProgressFromLivePhase(inferDiscoveryPhaseLabelFromServerMessage(normalizedLine.message));
       if (match) {
         appendDiscoveryLogEvent({
           timestamp: match[1],
@@ -187,22 +312,30 @@ export function createAdminDiscoveryController({
     if (!liveState) return;
     updateDiscoveryProgressFromReport(report, { running: true });
     const summary = report?.summary || {};
-    const phaseLabel = String(summary.phaseLabel || summary.phase || "").trim();
-    const foundCount = Number(summary.foundEndpointCount ?? 0);
-    const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
-    const queuedCount = deriveDiscoveryQueuedCount(report);
-    const deferredCount = Number(summary.discoverableButDeferredCount ?? 0);
-    const failedCount = Number(summary.failedProbeCount || 0);
+    const progress = deriveDiscoveryTaskProgress(report, {
+      running: true,
+      phaseHint: getDiscoveryProgressPhaseHint()
+    });
+    const phaseLabel = String(progress?.phaseLabel || summary.phaseLabel || summary.phase || "").trim();
+    const counts = progress?.counts && typeof progress.counts === "object" ? progress.counts : {};
+    const foundCount = Number(counts.foundEndpoints ?? summary.foundEndpointCount ?? 0);
+    const probedCount = Number(counts.probedCandidates ?? summary.probedCandidateCount ?? summary.probedCount ?? 0);
+    const queuedCount = Number(counts.queuedCandidates ?? deriveDiscoveryQueuedCount(report));
+    const deferredCount = Number(counts.deferredCandidates ?? summary.discoverableButDeferredCount ?? 0);
+    const failedCount = Number(counts.failedProbes ?? summary.failedProbeCount ?? 0);
     const skippedCount = Number(summary.skippedDuplicateCount || 0);
     const invalidCount = Number(summary.skippedInvalidCount || 0);
+    let sawActivity = false;
 
     const summarySignature = [foundCount, probedCount, queuedCount, deferredCount, failedCount, skippedCount, invalidCount].join("|");
     if (phaseLabel && phaseLabel !== liveState.phaseLabel) {
       liveState.phaseLabel = phaseLabel;
+      sawActivity = true;
       appendDiscoveryLog(`Discovery phase: ${phaseLabel}.`, "muted");
     }
     if (summarySignature !== liveState.summarySignature) {
       liveState.summarySignature = summarySignature;
+      sawActivity = true;
       appendDiscoveryLog(
         `Discovery: endpoints ${foundCount}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}, failed ${failedCount}, skipped dupes ${skippedCount}, invalid ${invalidCount}.`,
         failedCount > 0 ? "warn" : "info"
@@ -227,6 +360,7 @@ export function createAdminDiscoveryController({
         "muted"
       );
       liveState.candidateCount = candidates.length;
+      sawActivity = true;
     } else {
       liveState.candidateCount = candidates.length;
     }
@@ -246,11 +380,17 @@ export function createAdminDiscoveryController({
         .join(" | ");
       appendDiscoveryLog(`Failure cluster: ${cluster}`, "warn");
       liveState.failureCount = failures.length;
+      sawActivity = true;
     } else {
       liveState.failureCount = failures.length;
     }
 
-    if ((nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 12000) {
+    if (sawActivity) {
+      liveState.lastActivityAtMs = nowMs;
+    }
+
+    const idleMs = nowMs - Number(liveState.lastActivityAtMs || 0);
+    if (idleMs >= 60000 && (nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 60000) {
       liveState.lastHeartbeatAtMs = nowMs;
       appendDiscoveryLog(
         `Discovery active${phaseLabel ? ` (${phaseLabel})` : ""}: endpoints ${foundCount}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}.`,
@@ -280,8 +420,10 @@ export function createAdminDiscoveryController({
       summarySignature: "",
       candidateCount: 0,
       failureCount: 0,
+      serverPhaseLabel: "",
       serverLogSignatures: new Set(),
-      lastHeartbeatAtMs: 0
+      lastHeartbeatAtMs: 0,
+      lastActivityAtMs: Date.now()
     };
     updateDiscoveryProgressFromReport(null, { running: true });
     appendDiscoveryLog("Discovery started. Watching live progress...", "info");
@@ -365,6 +507,7 @@ export function createAdminDiscoveryController({
     state.discoveryLogRemoteOffset = 0;
     updateDiscoveryProgressFromReport(null, { running: true });
     appendDiscoveryLog("Triggering source discovery task...");
+    const launchAttemptAtMs = Date.now();
     try {
       const payload = (runOptions && typeof runOptions === "object" && !Array.isArray(runOptions))
         ? { ...runOptions }
@@ -379,6 +522,16 @@ export function createAdminDiscoveryController({
       loadOpsHealthData().catch(() => {});
       scheduleOpsHealthPolling(250);
     } catch (err) {
+      let recovered = false;
+      const message = getErrorMessage(err);
+      if (/network|empty response|bridge unreachable|fetch/i.test(String(message || ""))) {
+        try {
+          recovered = await recoverDiscoveryLaunchAfterTransportError(launchAttemptAtMs);
+        } catch (recoveryErr) {
+          logAdminError("Discovery launch recovery probe failed", recoveryErr);
+        }
+      }
+      if (recovered) return;
       appendDiscoveryLog(`Could not trigger discovery task: ${getErrorMessage(err)}`, "error");
       showToast("Could not trigger source discovery task.", "error");
       clearOptimisticDiscoveryRun();
@@ -400,6 +553,10 @@ export function createAdminDiscoveryController({
   }
 
   return {
+    populateDiscoveryConfigForm,
+    collectDiscoveryConfigPayload,
+    loadDiscoveryConfig,
+    saveDiscoveryConfig,
     appendDiscoveryLog,
     appendDiscoveryLogEvent,
     appendDiscoveryServerLogText,

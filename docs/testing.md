@@ -1,5 +1,11 @@
 # Testing
 
+> **AI usage**
+> - **Use this when:** choosing the narrowest verification step, finding relevant test files, or understanding fixture layout
+> - **Canonical for:** test commands, targeted test routing, and fixture references
+> - **Not canonical for:** runtime architecture or data contracts
+> - **Then inspect:** the nearest `tests/` module for the subsystem you changed
+
 ## Python tests (pytest)
 
 Run the Python test suite:

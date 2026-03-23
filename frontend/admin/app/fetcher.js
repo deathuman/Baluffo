@@ -1,4 +1,4 @@
-import { deriveFetcherFailureSummary, deriveFetcherProgressModel } from "../domain.js";
+import { deriveFetcherFailureSummary, deriveFetcherProgressModel, deriveFetcherTaskProgress } from "../domain.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
 
 export const FETCHER_FALLBACK_MESSAGES = {
@@ -97,13 +97,23 @@ export function createAdminFetcherController({
       return;
     }
 
-    console.debug("[Admin Fetcher] Updating progress:", view);
     applyAdminTaskProgress(
       refs.adminFetcherProgressEl,
       refs.adminFetcherProgressBarEl,
       refs.adminFetcherProgressLabelEl,
       view
     );
+  }
+
+  function getFetcherTaskProgress(report, { running = false } = {}) {
+    return deriveFetcherTaskProgress(report, { running }) || {
+      active: Boolean(running),
+      phaseKey: "",
+      phaseLabel: "",
+      mode: "indeterminate",
+      ratio: 0,
+      counts: {}
+    };
   }
 
   function updateFetcherProgressFromReport(report, { running = false } = {}) {
@@ -170,6 +180,9 @@ export function createAdminFetcherController({
       if (!normalizedLine) return;
       if (state.fetcherLiveProgressState?.serverLogSignatures?.has(normalizedLine.message)) return;
       state.fetcherLiveProgressState?.serverLogSignatures?.add(normalizedLine.message);
+      if (state.fetcherLiveProgressState) {
+        state.fetcherLiveProgressState.lastActivityAtMs = Date.now();
+      }
       if (match) {
         const event = {
           timestamp: String(match[1] || new Date().toISOString()),
@@ -336,13 +349,16 @@ export function createAdminFetcherController({
       updateFetcherProgressFromReport(report, { running: false });
 
       const summary = report?.summary || {};
-      const resolvedSources = Math.max(0, Number(summary.successfulSources || 0) + Number(summary.failedSources || 0) + Number(summary.excludedSources || 0));
-      // Use domain model for consistent progress display
-      const progressModel = deriveFetcherProgressModel(report, { running: false });
-      const totalSources = progressModel.determinate ? Math.max(0, Number(report?.runtime?.selectedSourceCount || 0), Number(summary.sourceCount || 0)) : 0;
+      const progress = getFetcherTaskProgress(report, { running: false });
+      const counts = progress.counts && typeof progress.counts === "object" ? progress.counts : {};
+      const resolvedSources = Math.max(0, Number(counts.resolvedSources ?? (Number(summary.successfulSources || 0) + Number(summary.failedSources || 0) + Number(summary.excludedSources || 0))));
+      const totalSources = progress.mode === "determinate" ? Math.max(0, Number(counts.sourceCount || 0)) : 0;
+      const outputCount = Math.max(0, Number(counts.outputCount ?? summary.outputCount ?? 0));
+      const failedSourceCount = Math.max(0, Number(counts.failedSources ?? summary.failedSources ?? 0));
+      const excludedSourceCount = Math.max(0, Number(counts.excludedSources ?? summary.excludedSources ?? 0));
       appendFetcherLog(
-        `Fetcher summary: ${totalSources > 0 ? `${resolvedSources}/${totalSources} sources resolved` : `${resolvedSources} sources resolved`}, output ${Number(summary.outputCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
-        Number(summary.failedSources || 0) > 0 ? "warn" : "success"
+        `Fetcher summary: ${totalSources > 0 ? `${resolvedSources}/${totalSources} sources resolved` : `${resolvedSources} sources resolved`}, output ${outputCount.toLocaleString()}, failed ${failedSourceCount}, excluded ${excludedSourceCount}.`,
+        failedSourceCount > 0 ? "warn" : "success"
       );
 
       const sources = Array.isArray(report?.sources) ? report.sources : [];
@@ -455,14 +471,20 @@ export function createAdminFetcherController({
     if (!liveState) return;
     updateFetcherProgressFromReport(report, { running: true });
     const summary = report?.summary || {};
-    const outputCount = Number(summary.outputCount || 0);
-    // Use domain model for consistent progress calculation
-    const progressModel = deriveFetcherProgressModel(report, { running: true });
-    const selectedSourceCount = progressModel.determinate ? Math.max(0, Number(report?.runtime?.selectedSourceCount || 0), Number(summary.sourceCount || 0)) : 0;
-    const failedSources = Number(summary.failedSources || 0);
-    const excludedSources = Number(summary.excludedSources || 0);
-    const successfulSources = Number(summary.successfulSources || 0);
-    const resolvedSources = successfulSources + failedSources + excludedSources;
+    const progress = getFetcherTaskProgress(report, { running: true });
+    const counts = progress.counts && typeof progress.counts === "object" ? progress.counts : {};
+    const outputCount = Math.max(0, Number(counts.outputCount ?? summary.outputCount ?? 0));
+    const selectedSourceCount = progress.mode === "determinate" ? Math.max(0, Number(counts.sourceCount || 0)) : 0;
+    const failedSources = Math.max(0, Number(counts.failedSources ?? summary.failedSources ?? 0));
+    const excludedSources = Math.max(0, Number(counts.excludedSources ?? summary.excludedSources ?? 0));
+    const resolvedSources = Math.max(
+      0,
+      Number(
+        counts.resolvedSources
+        ?? (Number(summary.successfulSources || 0) + Number(summary.failedSources || 0) + Number(summary.excludedSources || 0))
+      )
+    );
+    let sawActivity = false;
 
     const summarySignature = [
       outputCount,
@@ -473,6 +495,7 @@ export function createAdminFetcherController({
     ].join("|");
     if (summarySignature !== liveState.summarySignature) {
       liveState.summarySignature = summarySignature;
+      sawActivity = true;
       appendFetcherLog(
         `Fetcher: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, output ${outputCount.toLocaleString()}, failed ${failedSources}, excluded ${excludedSources}.`,
         failedSources > 0 ? "warn" : "info"
@@ -518,6 +541,9 @@ export function createAdminFetcherController({
     notableEvents.slice(0, 2).forEach(item => {
       appendFetcherLog(item.message, item.level);
     });
+    if (notableEvents.length) {
+      sawActivity = true;
+    }
 
     const slowSourceLine = selectSlowSources(report)
       .slice(0, 2)
@@ -525,16 +551,23 @@ export function createAdminFetcherController({
       .join(" | ");
     if (slowSourceLine && slowSourceLine !== liveState.slowSourceSummarySignature) {
       liveState.slowSourceSummarySignature = slowSourceLine;
+      sawActivity = true;
       appendFetcherLog(`Slowest sources: ${slowSourceLine}`, "muted");
     }
 
     const slowStageLine = formatStageTopSummary(report);
     if (slowStageLine && slowStageLine !== liveState.slowStageSummarySignature) {
       liveState.slowStageSummarySignature = slowStageLine;
+      sawActivity = true;
       appendFetcherLog(`Slowest stages: ${slowStageLine}`, "muted");
     }
 
-    if ((nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 12000) {
+    if (sawActivity) {
+      liveState.lastActivityAtMs = nowMs;
+    }
+
+    const idleMs = nowMs - Number(liveState.lastActivityAtMs || 0);
+    if (idleMs >= 60000 && (nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 60000) {
       liveState.lastHeartbeatAtMs = nowMs;
       appendFetcherLog(
         `Fetcher active: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} resolved` : `${resolvedSources} resolved`}, output ${outputCount.toLocaleString()}.`,
@@ -560,7 +593,8 @@ export function createAdminFetcherController({
       serverLogSignatures: new Set(),
       slowSourceSummarySignature: "",
       slowStageSummarySignature: "",
-      lastHeartbeatAtMs: 0
+      lastHeartbeatAtMs: 0,
+      lastActivityAtMs: Date.now()
     };
     updateFetcherProgressFromReport(null, { running: true });
     appendFetcherLog("Fetcher started. Watching live progress...", "info");

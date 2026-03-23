@@ -172,6 +172,10 @@ def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
     api.normalize_discovery_report_contract = lambda r: r
     api.load_json_object = lambda p, default=None: default
     api.get_sync_status_payload = lambda: {"ready": True, "enabled": True}
+    api.get_discovery_config_payload = lambda: {
+        "ok": True,
+        "savedConfig": {"autoApproveHealthyPendingOnComplete": True},
+    }
     api.get_jobs_pipeline_status_payload = lambda: {"running": False}
     api.trigger_discovery_task = lambda payload, route_name: (
         200,
@@ -205,6 +209,57 @@ def test_discovery_report_missing_file(tmp_path: Path) -> None:
     result = handle_get(handler, api=api, path="/discovery/report", query={})
 
     assert result is True
+
+
+def test_discovery_report_reconciles_stale_in_progress_run(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    saved_reports: list[dict[str, Any]] = []
+    pruned: list[tuple[str, str]] = []
+    cleared: list[str] = []
+    bridge_logs: list[str] = []
+
+    raw_report = {
+        "schemaVersion": 1,
+        "mode": "dynamic",
+        "startedAt": "2026-03-08T10:00:00.000Z",
+        "finishedAt": "",
+        "summary": {
+            "phase": "probe",
+            "phaseLabel": "Probing 124 candidate(s)",
+            "queuedCandidateCount": 0,
+            "foundEndpointCount": 12,
+            "probedCandidateCount": 5,
+            "failedProbeCount": 0,
+        },
+        "runtime": {"totalDurationMs": 1234},
+        "candidates": [],
+        "failures": [],
+        "topFailures": [],
+        "outputs": {},
+    }
+
+    api.load_json_object = lambda _path, default=None: raw_report
+    api.normalize_discovery_report_contract = lambda payload: payload
+    api.report_is_stale_in_progress = lambda *_args, **_kwargs: True
+    api.now_iso = lambda: "2026-03-08T10:05:00.000Z"
+    api.save_json_atomic = lambda _path, payload: saved_reports.append(payload)
+    api.prune_started_rows_for_type = lambda run_type, *, finished_at="", keep_started_at="": pruned.append((run_type, finished_at or keep_started_at))
+    api.clear_task_state = lambda task_type: cleared.append(task_type)
+    api.bridge_log = lambda _level, message, **_fields: bridge_logs.append(message)
+
+    handler = _FakeHandler()
+    result = handle_get(handler, api=api, path="/discovery/report", query={})
+
+    assert result is True
+    payload = handler.bytes_sent[-1]
+    report = json.loads(payload["body"].decode("utf-8"))
+    assert report["finishedAt"] == "2026-03-08T10:05:00.000Z"
+    assert report["summary"]["phaseLabel"] == "Probing 124 candidate(s)"
+    assert saved_reports[-1]["finishedAt"] == "2026-03-08T10:05:00.000Z"
+    assert pruned == [("discovery", "2026-03-08T10:05:00.000Z")]
+    assert cleared == ["discovery"]
+    assert "discovery_report_reconciled" in bridge_logs
 
 
 def test_session_with_user(tmp_path: Path) -> None:
@@ -378,6 +433,26 @@ def test_discovery_log_invalid_offset(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["offset"] == 0
 
 
+def test_discovery_config_returns_saved_payload(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+
+    handler = _FakeHandler()
+    result = handle_get(
+        handler, api=api, path="/discovery/config", query={}
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["ok"] is True
+    assert (
+        handler.sent[-1]["payload"]["savedConfig"][
+            "autoApproveHealthyPendingOnComplete"
+        ]
+        is True
+    )
+
+
 def test_fetcher_log_with_content(tmp_path: Path) -> None:
     """Test /fetcher/log endpoint."""
     store = _FakeDesktopLocalDataStore()
@@ -443,6 +518,20 @@ def test_ops_history_invalid_limit(tmp_path: Path) -> None:
     )
 
     assert result is True
+
+
+def test_ops_task_state(tmp_path: Path) -> None:
+    """Test /ops/task-state endpoint."""
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    api.get_current_task_state_payload = lambda: {"tasks": [{"taskType": "fetch", "runId": "fetch_1", "active": True}], "count": 1}
+
+    handler = _FakeHandler()
+    result = handle_get(handler, api=api, path="/ops/task-state", query={})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["count"] == 1
 
 
 def test_ops_fetcher_metrics_default(tmp_path: Path) -> None:

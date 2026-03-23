@@ -121,6 +121,10 @@ def _queue_balancing_order(candidates: List[Dict[str, Any]]) -> List[Dict[str, A
     return [*providers, *static_rows]
 
 
+def is_google_sheet_candidate(candidate: Dict[str, Any]) -> bool:
+    return str(candidate.get("sourceDirectory") or "").strip().lower() == "game_studios_sheet"
+
+
 def classify_static_suppression(
     candidate: Dict[str, Any],
     *,
@@ -181,8 +185,11 @@ def apply_sheet_directory_static_probe_cap(
     candidates: List[Dict[str, Any]],
     *,
     top_n: int,
+    bypass_cap: bool = False,
     source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    if bool(bypass_cap):
+        return list(candidates), []
     cap = sheet_directory_static_probe_cap(top_n)
     if cap <= 0:
         return list(candidates), []
@@ -250,11 +257,12 @@ def apply_queue_balancing(
             adapter = str(row.get("adapter") or "unknown")
             family = queue_family_key(row)
             defer_reason = ""
+            bypass_adapter_cap = is_google_sheet_candidate(row)
             if top_n > 0 and len(queued) >= top_n:
                 defer_reason = "top_n_cap"
             elif enforce_provider_reservation and provider_target > 0 and len(queued) < provider_target:
                 defer_reason = "provider_reservation"
-            elif adapter_counts[adapter] >= ADAPTER_QUEUE_CAPS.get(adapter, 3):
+            elif not bypass_adapter_cap and adapter_counts[adapter] >= ADAPTER_QUEUE_CAPS.get(adapter, 3):
                 defer_reason = "adapter_cap"
             elif family and family_counts[family] >= DOMAIN_QUEUE_CAP_DEFAULT:
                 defer_reason = "domain_cap"
@@ -287,7 +295,14 @@ def apply_queue_balancing(
 
 def classify_probe_failure_stage(error: str) -> str:
     text = str(error or "").lower()
-    if "http error 404" in text or "http error 410" in text:
+    if (
+        "http error 404" in text
+        or "http error 410" in text
+        or "404 not found" in text
+        or "410 gone" in text
+        or "client error '404" in text
+        or "client error '410" in text
+    ):
         return "probe_miss"
     if "not well-formed (invalid token)" in text:
         return "probe_miss"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import traceback
+from contextlib import suppress
 from http.server import BaseHTTPRequestHandler
 from typing import Any, Dict, List
 from urllib.parse import parse_qs, urlparse
@@ -32,15 +33,30 @@ def make_handler(*, api: Any):
                 body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
             except UnicodeEncodeError:
                 body = json.dumps(payload, ensure_ascii=True, default=str).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as exc:  # noqa: BLE001
+                route_path = ""
+                with suppress(Exception):
+                    route_path = self._route_path()
+                with suppress(Exception):
+                    api.bridge_log(
+                        "error",
+                        "http_response_write_failed",
+                        method=getattr(self, "command", ""),
+                        path=route_path or getattr(self, "path", ""),
+                        status=int(status),
+                        error=str(exc),
+                    )
+                raise
 
         def _send_bytes(
             self,
@@ -51,17 +67,32 @@ def make_handler(*, api: Any):
             disposition: str = "inline",
             status: int = 200,
         ) -> None:
-            self.send_response(status)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Content-Length", str(len(body)))
-            if filename:
-                safe_filename = str(filename).replace('"', "")
-                safe_disposition = "attachment" if str(disposition).lower() == "attachment" else "inline"
-                self.send_header("Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"')
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(body)))
+                if filename:
+                    safe_filename = str(filename).replace('"', "")
+                    safe_disposition = "attachment" if str(disposition).lower() == "attachment" else "inline"
+                    self.send_header("Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"')
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as exc:  # noqa: BLE001
+                route_path = ""
+                with suppress(Exception):
+                    route_path = self._route_path()
+                with suppress(Exception):
+                    api.bridge_log(
+                        "error",
+                        "http_response_write_failed",
+                        method=getattr(self, "command", ""),
+                        path=route_path or getattr(self, "path", ""),
+                        status=int(status),
+                        error=str(exc),
+                    )
+                raise
 
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
             runtime_config = getattr(api, "runtime_config", None)
@@ -123,8 +154,12 @@ def make_handler(*, api: Any):
                 if handle_post(self, api=api, path=path, payload=payload):
                     return
                 self._send_json({"error": "Not found"}, status=404)
-            except Exception as exc:  # noqa: BLE001
-                api.bridge_log("error", "http_post_handler_failed", path=path, error=str(exc))
+            except BaseException as exc:  # noqa: BLE001
+                # Logging must never prevent the error response from being sent.
+                try:
+                    api.bridge_log("error", "http_post_handler_failed", path=path, error=str(exc), detail=traceback.format_exc())
+                except Exception:  # noqa: BLE001
+                    pass
                 self._send_json(
                     {
                         "error": "Internal server error",

@@ -25,6 +25,61 @@ class PipelineTaskRuntime:
     show_progress: bool = False
 
 
+def build_fetch_task_progress_payload(
+    *,
+    phase_key: str,
+    phase_label: str,
+    task_rows: Dict[str, Dict[str, Any]],
+    source_reports: List[Dict[str, Any]],
+    output_count: int = 0,
+    finished: bool = False,
+) -> Dict[str, Any]:
+    rows = [row for row in task_rows.values() if isinstance(row, dict)]
+    total_tasks = len(rows)
+    queued_tasks = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "queued")
+    running_tasks = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "running")
+    ok_tasks = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "ok")
+    error_tasks = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "error")
+    completed_tasks = ok_tasks + error_tasks
+    failed_sources = sum(1 for row in source_reports if str(row.get("status") or "").strip().lower() == "error")
+    excluded_sources = sum(1 for row in source_reports if str(row.get("status") or "").strip().lower() == "excluded")
+    successful_sources = sum(1 for row in source_reports if str(row.get("status") or "").strip().lower() == "ok")
+    resolved_sources = successful_sources + failed_sources + excluded_sources
+
+    mode = "indeterminate"
+    ratio = 0.0
+    if phase_key == "executing_sources" and total_tasks > 0:
+        mode = "determinate"
+        ratio = 0.10 + (0.70 * (completed_tasks / max(1, total_tasks)))
+    elif phase_key == "merging_results":
+        mode = "determinate"
+        ratio = 0.88
+    elif phase_key == "writing_outputs":
+        mode = "determinate"
+        ratio = 0.96
+    elif phase_key == "completed":
+        mode = "determinate"
+        ratio = 1.0
+
+    return {
+        "active": not bool(finished),
+        "phaseKey": str(phase_key or "").strip(),
+        "phaseLabel": str(phase_label or "").strip(),
+        "mode": mode,
+        "ratio": max(0.0, min(1.0, ratio)),
+        "counts": {
+            "totalTasks": total_tasks,
+            "queuedTasks": queued_tasks,
+            "runningTasks": running_tasks,
+            "completedTasks": completed_tasks,
+            "resolvedSources": resolved_sources,
+            "outputCount": max(0, int(output_count or 0)),
+            "failedSources": failed_sources,
+            "excludedSources": excluded_sources,
+        },
+    }
+
+
 def initialize_task_runtime(selected_loaders: List[Tuple[str, Any]], *, show_progress: bool = False) -> PipelineTaskRuntime:
     return PipelineTaskRuntime(
         task_rows={
@@ -66,6 +121,9 @@ def write_progress_report(
     normalize_fetch_report_payload: Callable[[Dict[str, Any]], Dict[str, Any]],
     write_text_if_changed: Callable[[Any, str], Any],
     deduplicator_factory: Callable[[], Any],
+    task_rows: Dict[str, Dict[str, Any]],
+    phase_key: str,
+    phase_label: str,
     run_id: str = "",
 ) -> None:
     deduplicator = deduplicator_factory()
@@ -79,6 +137,14 @@ def write_progress_report(
         "startedAt": started_at,
         "finishedAt": "",
         "runtime": runtime_payload,
+        "taskProgress": build_fetch_task_progress_payload(
+            phase_key=phase_key,
+            phase_label=phase_label,
+            task_rows=task_rows,
+            source_reports=source_reports,
+            output_count=int(dedup_progress_stats.get("outputCount") or 0),
+            finished=False,
+        ),
         "summary": build_pipeline_summary(
             dedup_progress_stats,
             deduped_progress_rows,
@@ -133,6 +199,14 @@ def make_task_state_writer(
                 "ok": sum(1 for row in rows_snapshot if row.get("status") == "ok"),
                 "error": sum(1 for row in rows_snapshot if row.get("status") == "error"),
             },
+            "taskProgress": build_fetch_task_progress_payload(
+                phase_key="completed" if finished_at else "executing_sources",
+                phase_label="Completed" if finished_at else "Executing sources",
+                task_rows={str(row.get("name") or ""): row for row in rows_snapshot if str(row.get("name") or "").strip()},
+                source_reports=[],
+                output_count=0,
+                finished=bool(finished_at),
+            ),
             "tasks": rows_snapshot,
             "outputs": {"report": str(report_path)},
         }, run_id=run_id, started_at=started_at, finished_at=finished_at, report_path=str(report_path))

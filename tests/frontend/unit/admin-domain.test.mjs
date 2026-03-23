@@ -11,6 +11,7 @@ import {
   normalizeOpsRuns,
   applyOptimisticDiscoveryRun,
   applyOptimisticFetchRun,
+  deriveAdminRunsModel,
   deriveFetcherProgressModel,
   deriveDiscoveryProgressModel,
   deriveDiscoveryQueuedCount,
@@ -266,6 +267,82 @@ test("admin domain suppresses optimistic fetch row once a matching completed run
   assert.equal(model.visibleCompletedRows.length, 1);
 });
 
+test("admin domain derives current runs from task state and completed runs from history", () => {
+  const model = deriveAdminRunsModel(
+    {
+      taskState: {
+        tasks: [
+          {
+            taskType: "discovery",
+            runId: "disc_1",
+            active: true,
+            startedAt: "2026-03-08T10:00:30.000Z",
+            status: "running",
+            taskProgress: {
+              active: true,
+              phaseKey: "scanning_sources",
+              phaseLabel: "Scanning known careers pages",
+              mode: "indeterminate",
+              ratio: 0,
+              counts: {}
+            },
+            summary: { queuedCandidateCount: 3 }
+          }
+        ]
+      },
+      historyRuns: [
+        { id: "h1", runId: "disc_1", type: "discovery", status: "started", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "", durationMs: 0 },
+        { id: "h2", runId: "fetch_1", type: "fetch", status: "ok", startedAt: "2026-03-08T09:00:00.000Z", finishedAt: "2026-03-08T09:01:00.000Z", durationMs: 60000 }
+      ]
+    },
+    Date.parse("2026-03-08T10:01:00.000Z")
+  );
+
+  assert.equal(model.currentRows.length, 1);
+  assert.equal(model.currentRows[0].type, "discovery");
+  assert.equal(model.currentRows[0].runId, "disc_1");
+  assert.equal(model.currentRows[0].isLive, true);
+  assert.equal(model.currentRows[0].taskProgress.phaseLabel, "Scanning known careers pages");
+  assert.equal(model.visibleCompletedRows.length, 1);
+  assert.equal(model.visibleCompletedRows[0].type, "fetch");
+});
+
+test("admin domain drops optimistic fetch row once task state confirms the active run", () => {
+  const model = deriveAdminRunsModel(
+    {
+      taskState: {
+        tasks: [
+          {
+            taskType: "fetch",
+            runId: "fetch_1",
+            active: true,
+            startedAt: "2026-03-08T10:00:30.000Z",
+            status: "running",
+            taskProgress: {
+              active: true,
+              phaseKey: "executing_sources",
+              phaseLabel: "Executing sources",
+              mode: "determinate",
+              ratio: 0.5,
+              counts: {}
+            }
+          }
+        ]
+      },
+      historyRuns: [],
+      optimisticFetchRun: {
+        runId: "fetch_1",
+        startedAt: "2026-03-08T10:00:30.000Z"
+      }
+    },
+    Date.parse("2026-03-08T10:01:00.000Z")
+  );
+
+  assert.equal(model.currentRows.length, 1);
+  assert.equal(model.currentRows[0].optimistic, undefined);
+  assert.equal(model.currentRows[0].runId, "fetch_1");
+});
+
 test("admin domain collapses legacy duplicate completed fetch rows without run ids", () => {
   const model = normalizeOpsRuns([
     { id: "f1", type: "fetch", status: "warning", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 },
@@ -297,6 +374,116 @@ test("admin domain derives determinate fetcher progress when total sources are k
   assert.match(view.label, /11\/20 sources resolved/i);
 });
 
+test("admin domain prefers shared fetch task progress contract over raw mixed-unit counters", () => {
+  const view = deriveFetcherProgressModel({
+    summary: {
+      successfulSources: 13,
+      failedSources: 0,
+      excludedSources: 511,
+      outputCount: 34828,
+      sourceCount: 524
+    },
+    runtime: {
+      selectedSourceCount: 13
+    },
+    taskProgress: {
+      active: true,
+      phaseKey: "executing_sources",
+      phaseLabel: "Executing sources",
+      mode: "determinate",
+      ratio: 0.5,
+      counts: {
+        resolvedSources: 6,
+        sourceCount: 12,
+        outputCount: 34828,
+        failedSources: 0,
+        excludedSources: 3
+      }
+    }
+  }, { running: true });
+
+  assert.equal(view.active, true);
+  assert.equal(view.determinate, true);
+  assert.equal(view.ratio, 0.5);
+  assert.match(view.label, /Executing sources/i);
+  assert.match(view.label, /6\/12 sources resolved/i);
+  assert.doesNotMatch(view.label, /524\/13/i);
+});
+
+test("admin domain keeps fetcher progress indeterminate while only reported source rows are growing", () => {
+  const view = deriveFetcherProgressModel({
+    summary: {
+      successfulSources: 1,
+      failedSources: 0,
+      excludedSources: 510,
+      outputCount: 34828,
+      sourceCount: 511
+    },
+    runtime: {
+      selectedSourceCount: 0
+    }
+  }, { running: true });
+
+  assert.equal(view.active, true);
+  assert.equal(view.determinate, false);
+  assert.equal(view.ratio, 0);
+  assert.match(view.label, /511 sources resolved/i);
+  assert.doesNotMatch(view.label, /511\/511/i);
+});
+
+test("admin domain ignores stale active fetch task progress when report is finished", () => {
+  const view = deriveFetcherProgressModel({
+    finishedAt: "2026-03-23T16:18:10.053424+00:00",
+    summary: {
+      successfulSources: 38,
+      failedSources: 23,
+      excludedSources: 0,
+      outputCount: 3683,
+      sourceCount: 61
+    },
+    taskProgress: {
+      active: true,
+      phaseKey: "executing_sources",
+      phaseLabel: "Executing sources",
+      mode: "determinate",
+      ratio: 0.18,
+      counts: {
+        resolvedSources: 61,
+        sourceCount: 520,
+        outputCount: 3683,
+        failedSources: 23,
+        excludedSources: 0
+      }
+    }
+  }, { running: false });
+
+  assert.equal(view.active, false);
+  assert.equal(view.determinate, false);
+  assert.equal(view.ratio, 0);
+  assert.equal(view.label, "");
+});
+
+test("admin domain keeps fetcher progress indeterminate when runtime loader count and resolved source rows use different units", () => {
+  const view = deriveFetcherProgressModel({
+    summary: {
+      successfulSources: 13,
+      failedSources: 0,
+      excludedSources: 511,
+      outputCount: 34828,
+      sourceCount: 524
+    },
+    runtime: {
+      selectedSourceCount: 13
+    }
+  }, { running: true });
+
+  assert.equal(view.active, true);
+  assert.equal(view.determinate, false);
+  assert.equal(view.ratio, 0);
+  assert.match(view.label, /524 sources resolved/i);
+  assert.doesNotMatch(view.label, /524\/13/i);
+});
+
 test("admin domain falls back to indeterminate discovery progress when only scanning is known", () => {
   const view = deriveDiscoveryProgressModel({
     summary: {
@@ -307,10 +494,23 @@ test("admin domain falls back to indeterminate discovery progress when only scan
   }, { running: true });
 
   assert.equal(view.active, true);
-  assert.equal(view.determinate, false);
+  assert.equal(view.determinate, true);
+  assert.equal(view.ratio, 0.5);
   assert.match(view.label, /initializing scan/i);
   assert.match(view.label, /queued 3/i);
   assert.match(view.label, /deferred 2/i);
+});
+
+test("admin domain uses phase hints through the shared discovery progress mapper before report progress arrives", () => {
+  const view = deriveDiscoveryProgressModel(null, {
+    running: true,
+    phaseHint: "Scanning known careers pages"
+  });
+
+  assert.equal(view.active, true);
+  assert.equal(view.determinate, true);
+  assert.equal(view.ratio, 0.5);
+  assert.match(view.label, /Scanning known careers pages/i);
 });
 
 test("admin domain derives queued discovery count from candidate rows when summary is stale", () => {
@@ -326,4 +526,121 @@ test("admin domain derives queued discovery count from candidate rows when summa
   });
 
   assert.equal(queued, 2);
+});
+
+test("admin domain uses probe totals instead of found endpoints for discovery progress", () => {
+  const view = deriveDiscoveryProgressModel({
+    summary: {
+      phaseLabel: "Probing 124 candidate(s)",
+      foundEndpointCount: 785,
+      probedCandidateCount: 0,
+      queuedCandidateCount: 0,
+      failedProbeCount: 0,
+      lossAccounting: {
+        generated: 785,
+        dedupSkipped: 661,
+        validationSkipped: 2,
+        lowEvidenceSkipped: 2
+      }
+    }
+  }, { running: true });
+
+  assert.equal(view.active, true);
+  assert.equal(view.determinate, true);
+  assert.equal(view.ratio, 0.6);
+  assert.match(view.label, /probed 0\/120/i);
+});
+
+test("admin domain prefers shared discovery task progress contract over legacy summary inference", () => {
+  const view = deriveDiscoveryProgressModel({
+    summary: {
+      phaseLabel: "Initializing scan",
+      foundEndpointCount: 785,
+      probedCandidateCount: 0,
+      queuedCandidateCount: 0
+    },
+    taskProgress: {
+      active: true,
+      phaseKey: "probing_candidates",
+      phaseLabel: "Probing candidates",
+      mode: "determinate",
+      ratio: 0.25,
+      counts: {
+        foundEndpoints: 785,
+        probedCandidates: 30,
+        probeTotal: 120,
+        queuedCandidates: 4,
+        deferredCandidates: 2,
+        failedProbes: 1
+      }
+    }
+  }, { running: true, phaseHint: "Scanning known careers pages" });
+
+  assert.equal(view.active, true);
+  assert.equal(view.determinate, true);
+  assert.ok(Math.abs(view.ratio - 0.68) < 1e-9);
+  assert.match(view.label, /Probing candidates/i);
+  assert.match(view.label, /probed 30\/120/i);
+  assert.doesNotMatch(view.label, /Scanning known careers pages/i);
+});
+
+test("admin domain lets live discovery phase hints override a stale starting task progress shell", () => {
+  const view = deriveDiscoveryProgressModel({
+    summary: {
+      phaseLabel: "Initializing scan",
+      foundEndpointCount: 0,
+      probedCandidateCount: 0,
+      queuedCandidateCount: 0
+    },
+    taskProgress: {
+      active: true,
+      phaseKey: "starting",
+      phaseLabel: "Initializing scan",
+      mode: "indeterminate",
+      ratio: 0,
+      counts: {
+        foundEndpoints: 0,
+        probedCandidates: 0,
+        probeTotal: 0,
+        queuedCandidates: 0,
+        deferredCandidates: 0,
+        failedProbes: 0
+      }
+    }
+  }, { running: true, phaseHint: "Running web-search discovery queries" });
+
+  assert.equal(view.active, true);
+  assert.equal(view.determinate, true);
+  assert.equal(view.ratio, 0.28);
+  assert.match(view.label, /Running web-search discovery queries/i);
+  assert.doesNotMatch(view.label, /Initializing scan/i);
+});
+
+test("admin domain maps discovery finalizing and completed phases to near-complete and complete fill", () => {
+  const finalizing = deriveDiscoveryProgressModel({
+    taskProgress: {
+      active: true,
+      phaseKey: "finalizing",
+      phaseLabel: "Finalizing discovery report",
+      mode: "indeterminate",
+      ratio: 0,
+      counts: {}
+    }
+  }, { running: true });
+  const completed = deriveDiscoveryProgressModel({
+    finishedAt: "2026-03-08T10:02:00.000Z",
+    taskProgress: {
+      active: false,
+      phaseKey: "completed",
+      phaseLabel: "Discovery completed",
+      mode: "determinate",
+      ratio: 1,
+      counts: {}
+    }
+  }, { running: false });
+
+  assert.equal(finalizing.determinate, true);
+  assert.equal(finalizing.ratio, 0.96);
+  assert.match(finalizing.label, /Finalizing discovery report/i);
+  assert.equal(completed.active, false);
 });

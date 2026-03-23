@@ -94,6 +94,10 @@
                 <button id="admin-run-discovery-uncapped-btn" data-ui="admin-run-discovery-uncapped-btn" class="btn clear-filters-btn" title="Run discovery with the uncapped bridge preset.">Uncapped Run</button>
                 <button id="admin-load-discovery-btn" data-ui="admin-load-discovery-btn" class="btn clear-filters-btn">Load Discovery Report</button>
               </div>
+              <label class="backup-toggle admin-zero-toggle admin-sync-toggle">
+                <input id="admin-discovery-auto-approve-toggle" data-ui="admin-discovery-auto-approve-toggle" type="checkbox" checked>
+                Auto-approve healthy pending sources after discovery completes
+              </label>
               <div id="admin-discovery-progress" data-ui="admin-discovery-progress" class="admin-task-progress hidden" role="progressbar" aria-label="Discovery progress" aria-valuemin="0" aria-valuemax="100">
                 <div class="admin-task-progress-track">
                   <div id="admin-discovery-progress-bar" data-ui="admin-discovery-progress-bar" class="admin-task-progress-bar"></div>
@@ -173,11 +177,23 @@
               </details>
             </div>
             <h4 class="admin-section-title">Pending Sources</h4>
+            <label class="admin-select-all-label">
+              <input id="admin-pending-sources-select-all" data-ui="admin-pending-sources-select-all" type="checkbox" class="admin-select-all-checkbox">
+              Select All
+            </label>
             <div id="admin-pending-sources" data-ui="admin-pending-sources" class="jobs-list"></div>
             <h4 class="admin-section-title">Active Sources</h4>
+            <label class="admin-select-all-label">
+              <input id="admin-active-sources-select-all" data-ui="admin-active-sources-select-all" type="checkbox" class="admin-select-all-checkbox">
+              Select All
+            </label>
             <div id="admin-active-sources" data-ui="admin-active-sources" class="jobs-list"></div>
             <details class="admin-rejected-section">
               <summary class="admin-rejected-summary">Rejected Sources</summary>
+              <label class="admin-select-all-label">
+                <input id="admin-rejected-sources-select-all" data-ui="admin-rejected-sources-select-all" type="checkbox" class="admin-select-all-checkbox">
+                Select All
+              </label>
               <div id="admin-rejected-sources" data-ui="admin-rejected-sources" class="jobs-list"></div>
             </details>
           </div>

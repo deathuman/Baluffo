@@ -1,5 +1,11 @@
 # Admin Bridge API Reference
 
+> **AI usage**
+> - **Use this when:** editing frontend bridge consumers, route handlers, or task launch/status flows
+> - **Canonical for:** endpoint surface, route naming, and high-level request intent
+> - **Not canonical for:** backend business logic internals or service ownership
+> - **Then inspect:** `src/bridge/routes/*`, `src/bridge/*.py`, `frontend/*/services.js`
+
 Compact reference for AI coders. Endpoints are local-only (localhost).
 
 ## Desktop Local Data
@@ -46,9 +52,11 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/discovery/report` | Last discovery run report |
+| GET | `/discovery/config` | Saved Source Discovery admin preferences |
 | GET | `/discovery/log` | Discovery log (supports `?offset=`) |
 | POST | `/discovery/check-source` | Check specific source (`{sourceId: ""}`) |
-| POST | `/tasks/run-discovery` | Trigger discovery task (`{preset: "default"|"uncapped"}`) |
+| POST | `/discovery/config` | Update Source Discovery admin preferences (`{autoApproveHealthyPendingOnComplete: true|false}`) |
+| POST | `/tasks/run-discovery` | Trigger discovery task (`{preset: "default"|"uncapped"}`); `uncapped` bypasses queue `top_n` and sheet-directory static probe caps but keeps evidence/probe safety guardrails |
 
 ## Jobs Pipeline
 
@@ -98,3 +106,4 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 - Bridge-started fetch runs enable social by default unless the request payload explicitly sets `socialEnabled: false`.
 - `uncapped` is an explicit aggressive admin preset. It is distinct from `force_full`.
 - `/discovery/log` is designed for live tailing via byte offsets, and the Admin UI now re-attaches to active discovery runs after page refresh.
+- Source Discovery keeps a bridge-persisted admin preference, enabled by default, that auto-approves healthy pending sources with jobs after discovery completes and before any follow-on auto-sync push decision.

@@ -146,53 +146,88 @@ def _match_run_identity(row: Dict[str, Any], *, run_type: str, run_id: str, star
     return bool(started_at) and str(row.get("startedAt") or "").strip() == started_at
 
 
+def _row_score(row: Dict[str, Any]) -> tuple[int, int, int, int]:
+    finished = 1 if str(row.get("finishedAt") or "").strip() else 0
+    has_run_id = 1 if str(row.get("runId") or "").strip() else 0
+    has_summary = 1 if isinstance(row.get("summary"), dict) and row.get("summary") else 0
+    duration = int(row.get("durationMs") or 0)
+    return (finished, has_run_id, has_summary, duration)
+
+
+def _merge_history_rows(preferred: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    merged = {**dict(incoming), **dict(preferred)}
+    if _row_score(incoming) > _row_score(preferred):
+        merged = {**dict(preferred), **dict(incoming)}
+    run_id = str(preferred.get("runId") or incoming.get("runId") or "").strip()
+    if run_id:
+        merged["runId"] = run_id
+        merged["id"] = str(preferred.get("id") or incoming.get("id") or run_id)
+    elif str(preferred.get("id") or incoming.get("id") or "").strip():
+        merged["id"] = str(preferred.get("id") or incoming.get("id") or "")
+    return merged
+
+
+def _find_history_match_index(
+    rows: List[Dict[str, Any]], *, run_type: str, run_id: str, started_at: str
+) -> int:
+    for idx, row in enumerate(rows):
+        if _match_run_identity(row, run_type=run_type, run_id=run_id, started_at=started_at):
+            return idx
+    return -1
+
+
 def _collapse_duplicate_history_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     deduped: List[Dict[str, Any]] = []
     row_keys: Dict[tuple[str, str], int] = {}
     legacy_keys: Dict[tuple[str, str], int] = {}
-
-    def _score(row: Dict[str, Any]) -> tuple[int, int, int, int]:
-        finished = 1 if str(row.get("finishedAt") or "").strip() else 0
-        has_run_id = 1 if str(row.get("runId") or "").strip() else 0
-        has_summary = 1 if isinstance(row.get("summary"), dict) and row.get("summary") else 0
-        duration = int(row.get("durationMs") or 0)
-        return (finished, has_run_id, has_summary, duration)
 
     for row in rows:
         if not isinstance(row, dict):
             continue
         row_type = str(row.get("type") or "").strip().lower()
         started_at = str(row.get("startedAt") or "").strip()
-        finished_at = str(row.get("finishedAt") or "").strip()
-        status = str(row.get("status") or "").strip().lower()
         run_id = str(row.get("runId") or "").strip()
 
-        target_key = None
-        target_map = None
-        if row_type and run_id:
-            target_key = (row_type, run_id)
-            target_map = row_keys
-        elif row_type and started_at:
-            target_key = (row_type, started_at)
-            target_map = legacy_keys
-
-        if target_key is None or target_map is None:
+        if not row_type:
             deduped.append(dict(row))
             continue
 
-        existing_idx = target_map.get(target_key)
+        matching_indexes: List[int] = []
+        if run_id:
+            idx = row_keys.get((row_type, run_id))
+            if idx is not None:
+                matching_indexes.append(idx)
+        if started_at:
+            idx = legacy_keys.get((row_type, started_at))
+            if idx is not None and idx not in matching_indexes:
+                matching_indexes.append(idx)
+
+        existing_idx = matching_indexes[0] if matching_indexes else None
         if existing_idx is None:
-            target_map[target_key] = len(deduped)
-            deduped.append(dict(row))
+            deduped.append(_merge_history_rows(dict(row), {}))
+            existing_idx = len(deduped) - 1
+            if run_id:
+                row_keys[(row_type, run_id)] = existing_idx
+            if started_at:
+                legacy_keys[(row_type, started_at)] = existing_idx
             continue
 
-        existing = deduped[existing_idx]
-        merged = {**existing, **dict(row)}
-        if _score(existing) > _score(row):
-            merged = {**dict(row), **existing}
+        merged = _merge_history_rows(deduped[existing_idx], dict(row))
         deduped[existing_idx] = merged
 
-    return deduped
+        for duplicate_idx in matching_indexes[1:]:
+            merged = _merge_history_rows(merged, deduped[duplicate_idx])
+            deduped[existing_idx] = merged
+            deduped[duplicate_idx] = {}
+
+        merged_run_id = str(merged.get("runId") or "").strip()
+        merged_started_at = str(merged.get("startedAt") or "").strip()
+        if merged_run_id:
+            row_keys[(row_type, merged_run_id)] = existing_idx
+        if merged_started_at:
+            legacy_keys[(row_type, merged_started_at)] = existing_idx
+
+    return [row for row in deduped if isinstance(row, dict) and row.get("type")]
 
 
 def reconcile_sync_history_locked(deps: SyncHistoryDeps) -> None:
@@ -220,7 +255,7 @@ def reconcile_sync_history_locked(deps: SyncHistoryDeps) -> None:
 
 
 def reconcile_started_task_history_locked(run_type: str, deps: SyncHistoryDeps) -> None:
-    history = deps.load_run_history()
+    history = _collapse_duplicate_history_rows(deps.load_run_history())
     now_dt = deps.now_utc()
     next_rows: List[Dict[str, Any]] = []
     changed = False
@@ -288,21 +323,33 @@ def sync_history_from_reports(deps: SyncHistoryDeps) -> List[Dict[str, Any]]:
         if fetch_started_at and not fetch_finished_at:
             deps.prune_started_rows_for_type("fetch", keep_started_at=fetch_started_at)
             fetch_summary = deps.summarize_fetch_report(fetch_report)
-            deps.upsert_run_history(
-                {
-                    "type": "fetch",
-                    "status": "started",
-                    "startedAt": fetch_started_at,
-                    "finishedAt": "",
-                    "durationMs": int(fetch_summary["durationMs"]),
-                    "summary": {
-                        "outputCount": int(fetch_summary["outputCount"]),
-                        "failedSources": int(fetch_summary["failedSources"]),
-                        "sourceCount": int(fetch_summary["sourceCount"]),
-                    },
+            history = deps.load_run_history()
+            run_id = str(fetch_report.get("runId") or "").strip()
+            entry = {
+                "runId": run_id,
+                "id": run_id or "",
+                "type": "fetch",
+                "status": "started",
+                "startedAt": fetch_started_at,
+                "finishedAt": "",
+                "durationMs": int(fetch_summary["durationMs"]),
+                "summary": {
+                    "outputCount": int(fetch_summary["outputCount"]),
+                    "failedSources": int(fetch_summary["failedSources"]),
+                    "sourceCount": int(fetch_summary["sourceCount"]),
                 },
-                dedupe_fields=("type", "status", "startedAt"),
+            }
+            match_idx = _find_history_match_index(
+                history, run_type="fetch", run_id=run_id, started_at=fetch_started_at
             )
+            if match_idx >= 0:
+                history[match_idx] = _merge_history_rows(entry, history[match_idx])
+                deps.save_run_history(_collapse_duplicate_history_rows(history))
+            else:
+                deps.upsert_run_history(
+                    entry,
+                    dedupe_fields=("type", "status", "startedAt"),
+                )
         if fetch_report.get("finishedAt"):
             fetch_summary = deps.summarize_fetch_report(fetch_report)
             deps.prune_started_rows_for_type(
@@ -327,14 +374,12 @@ def sync_history_from_reports(deps: SyncHistoryDeps) -> List[Dict[str, Any]]:
                     "sourceCount": int(fetch_summary["sourceCount"]),
                 },
             }
-            match_idx = -1
-            for idx, row in enumerate(history):
-                if _match_run_identity(row, run_type="fetch", run_id=run_id, started_at=started_at):
-                    match_idx = idx
-                    break
+            match_idx = _find_history_match_index(
+                history, run_type="fetch", run_id=run_id, started_at=started_at
+            )
             if match_idx >= 0:
-                history[match_idx] = {**dict(history[match_idx]), **entry}
-                deps.save_run_history(history)
+                history[match_idx] = _merge_history_rows(entry, history[match_idx])
+                deps.save_run_history(_collapse_duplicate_history_rows(history))
             else:
                 deps.upsert_run_history(entry, dedupe_fields=("type", "finishedAt"))
 

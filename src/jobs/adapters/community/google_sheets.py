@@ -151,6 +151,22 @@ def _normalize_company_value(value: Any) -> str:
     return company
 
 
+def _needs_company_inference(company: str) -> bool:
+    normalized = norm_text(company)
+    return not normalized or normalized in {norm_text(UNKNOWN_COMPANY_LABEL), "unknown"}
+
+
+def _company_from_smartrecruiters_url(url: str) -> str:
+    match = re.search(r"(?:jobs\.)?smartrecruiters\.com/([^/]+)/\d", url)
+    if match:
+        raw = match.group(1)
+        cleaned = re.sub(r"-+", " ", raw).strip()
+        if cleaned.isupper():
+            return cleaned
+        return cleaned.title()
+    return ""
+
+
 def _resolve_company_name(row: Sequence[str], primary_idx: int, candidate_indexes: Sequence[int]) -> str:
     values: List[str] = []
     if 0 <= primary_idx < len(row):
@@ -231,7 +247,14 @@ def parse_google_sheets_csv(csv_text: str) -> List[RawJob]:
         row = rows[idx]
         title = clean_text(row[title_idx] if title_idx < len(row) else "")
         company = _resolve_company_name(row, company_idx, company_candidates)
-        if not title or not company:
+        job_link = resolve_google_sheets_job_link(row, link_candidates)
+        if not title:
+            continue
+        if _needs_company_inference(company):
+            inferred_company = _company_from_smartrecruiters_url(job_link)
+            if inferred_company:
+                company = inferred_company
+        if not company:
             continue
         jobs.append(
             {
@@ -242,7 +265,7 @@ def parse_google_sheets_csv(csv_text: str) -> List[RawJob]:
                 "country": clean_text(row[country_idx] if 0 <= country_idx < len(row) else default_country),
                 "workType": clean_text(row[location_idx] if 0 <= location_idx < len(row) else "On-site"),
                 "contractType": clean_text(row[contract_idx] if 0 <= contract_idx < len(row) else ""),
-                "jobLink": resolve_google_sheets_job_link(row, link_candidates),
+                "jobLink": job_link,
                 "sector": clean_text(row[sector_idx] if 0 <= sector_idx < len(row) else ""),
             }
         )

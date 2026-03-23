@@ -56,7 +56,7 @@ def fetch_text(url: str, timeout_s: int) -> str:
 
 
 async def async_fetch_text_httpx(client: httpx.AsyncClient, url: str, timeout_s: int) -> str:
-    resp = await client.get(url, headers=discovery_request_headers())
+    resp = await client.get(url, headers=discovery_request_headers(), follow_redirects=True)
     resp.raise_for_status()
     resp.encoding = resp.encoding or "utf-8"
     return resp.text

@@ -15,6 +15,71 @@ from src.core.schemas import SavedJobSchema
 logger = logging.getLogger(__name__)
 
 
+def _coerce_report_duration_ms(started_at: str, finished_at: str) -> int:
+    started_dt = None
+    finished_dt = None
+    try:
+        started_dt = datetime.fromisoformat(str(started_at).replace("Z", "+00:00")) if started_at else None
+    except ValueError:
+        started_dt = None
+    try:
+        finished_dt = datetime.fromisoformat(str(finished_at).replace("Z", "+00:00")) if finished_at else None
+    except ValueError:
+        finished_dt = None
+    if not started_dt or not finished_dt:
+        return 0
+    return max(0, int((finished_dt - started_dt).total_seconds() * 1000))
+
+
+def _reconcile_discovery_report(api: Any, report: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(report, dict):
+        return report
+    started_at = str(report.get("startedAt") or "").strip()
+    finished_at = str(report.get("finishedAt") or "").strip()
+    if not started_at or finished_at:
+        return report
+    report_path = getattr(api, "DISCOVERY_REPORT_PATH", None)
+    report_is_stale_fn = getattr(api, "report_is_stale_in_progress", None)
+    if not callable(report_is_stale_fn) or report_path is None:
+        return report
+    if not report_is_stale_fn("discovery", report_path, report):
+        return report
+
+    summary = dict(report.get("summary") or {})
+    runtime = dict(report.get("runtime") or {})
+    reconciled_finished_at = str(getattr(api, "now_iso", lambda: "")() or "").strip()
+    if not reconciled_finished_at:
+        reconciled_finished_at = started_at
+    runtime["totalDurationMs"] = int(runtime.get("totalDurationMs") or _coerce_report_duration_ms(started_at, reconciled_finished_at))
+    summary["phase"] = str(summary.get("phase") or "completed")
+    summary["phaseLabel"] = str(summary.get("phaseLabel") or "Discovery completed")
+    reconciled = {
+        **report,
+        "finishedAt": reconciled_finished_at,
+        "summary": summary,
+        "runtime": runtime,
+    }
+    save_fn = getattr(api, "save_json_atomic", None)
+    if callable(save_fn):
+        save_fn(report_path, reconciled)
+    prune_fn = getattr(api, "prune_started_rows_for_type", None)
+    if callable(prune_fn):
+        prune_fn("discovery", finished_at=reconciled_finished_at)
+    clear_task_state_fn = getattr(api, "clear_task_state", None)
+    if callable(clear_task_state_fn):
+        clear_task_state_fn("discovery")
+    try:
+        api.bridge_log(
+            "info",
+            "discovery_report_reconciled",
+            startedAt=started_at,
+            finishedAt=reconciled_finished_at,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return reconciled
+
+
 def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]) -> bool:
     """Handle GET routes for the admin bridge.
 
@@ -34,6 +99,7 @@ def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]
 
             normalizer_fn = getattr(api, "normalize_discovery_report_contract", None)
             report = normalizer_fn(raw) if callable(normalizer_fn) else raw
+            report = _reconcile_discovery_report(api, report if isinstance(report, dict) else {})
 
             try:
                 api.bridge_log(
@@ -254,6 +320,14 @@ def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]
             limit = 30
         rows = api.sync_history_from_reports()
         handler._send_json({"runs": rows[-limit:], "count": len(rows)})  # noqa: SLF001
+        return True
+
+    if path == "/discovery/config":
+        handler._send_json(api.get_discovery_config_payload())  # noqa: SLF001
+        return True
+
+    if path == "/ops/task-state":
+        handler._send_json(api.get_current_task_state_payload())  # noqa: SLF001
         return True
 
     if path == "/ops/fetcher-metrics":

@@ -130,6 +130,56 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
     return CanonicalJob.from_mapping(merged)
 
 
+def _is_unknown_company(job: Dict[str, Any]) -> bool:
+    company = clean_text(job.get("company"))
+    return norm_text(company) in {norm_text(common_config.UNKNOWN_COMPANY_LABEL), "unknown"}
+
+
+def _gracklehq_redirect_urls(job: Dict[str, Any]) -> List[str]:
+    urls: List[str] = []
+    bundle = job.get("sourceBundle")
+    if not isinstance(bundle, list):
+        return urls
+    for item in bundle:
+        if not isinstance(item, dict):
+            continue
+        url = normalize_url(item.get("jobLink") or "")
+        if "gracklehq.com/rd/" in url:
+            urls.append(url)
+    return urls
+
+
+def _enrich_unknown_company_from_gracklehq_redirect(rows: List[CanonicalJob]) -> List[CanonicalJob]:
+    url_to_company: Dict[str, str] = {}
+    for row in rows:
+        payload = row.to_dict()
+        if not _is_unknown_company(payload):
+            for url in _gracklehq_redirect_urls(payload):
+                url_to_company[url] = clean_text(payload.get("company"))
+
+    if not url_to_company:
+        return rows
+
+    enriched = []
+    for row in rows:
+        payload = row.to_dict()
+        if _is_unknown_company(payload):
+            for url in _gracklehq_redirect_urls(payload):
+                known_company = url_to_company.get(url)
+                if known_company:
+                    merged = dict(payload)
+                    merged["company"] = known_company
+                    merged["qualityScore"] = compute_quality_score(merged)
+                    merged["focusScore"] = compute_focus_score(merged)
+                    enriched.append(CanonicalJob.from_mapping(merged))
+                    break
+            else:
+                enriched.append(row)
+        else:
+            enriched.append(row)
+    return enriched
+
+
 def deduplicate_jobs(rows: Sequence[CanonicalJob | Dict[str, Any]]) -> Tuple[List[CanonicalJob], Dict[str, Any]]:
     merged_rows: List[CanonicalJob] = []
     by_primary: Dict[str, int] = {}
@@ -231,7 +281,7 @@ def deduplicate_jobs(rows: Sequence[CanonicalJob | Dict[str, Any]]) -> Tuple[Lis
         ),
         reverse=True,
     )
-    merged_rows = [CanonicalJob.from_mapping({**row.to_dict(), "id": idx}) for idx, row in enumerate(merged_rows, start=1)]
+    merged_rows = _enrich_unknown_company_from_gracklehq_redirect(merged_rows)
     merged_rows = [CanonicalJob.from_mapping({**row.to_dict(), "id": idx}) for idx, row in enumerate(merged_rows, start=1)]
     return merged_rows, {
         "inputCount": len(rows),

@@ -15,6 +15,8 @@ class DiscoveryPaths:
     candidates: Any
     pending: Any
     log: Any
+    settings: Any
+    approval_state: Any
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,8 @@ class DiscoveryDeps:
     run_background_script: Callable[[str, List[str] | None], int]
     append_run_history: Callable[[Dict[str, Any]], Dict[str, Any]]
     normalize_discovery_report_contract: Callable[[Dict[str, Any]], Dict[str, Any]]
+    load_state: Callable[[], Dict[str, List[Dict[str, Any]]]]
+    persist_state_and_auto_sync: Callable[..., Dict[str, List[Dict[str, Any]]]]
     load_sync_runtime_state: Callable[[], Dict[str, Any]]
     maybe_trigger_auto_sync_push: Callable[[str], bool]
     mark_discovery_sync_finished: Callable[[str], None]
@@ -51,6 +55,102 @@ class DiscoveryService:
             except (TypeError, ValueError):
                 return 1
 
+    @staticmethod
+    def _normalize_discovery_settings(payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        data = payload if isinstance(payload, dict) else {}
+        raw = data.get("autoApproveHealthyPendingOnComplete", True)
+        if isinstance(raw, bool):
+            enabled = raw
+        else:
+            enabled = str(raw or "").strip().lower() not in {"", "0", "false", "no", "off"}
+        return {"autoApproveHealthyPendingOnComplete": bool(enabled)}
+
+    def load_saved_discovery_settings(self) -> Dict[str, Any]:
+        raw = self._deps.load_json_object(self._paths.settings, {})
+        if isinstance(raw, dict) and "autoApproveHealthyPendingOnComplete" in raw:
+            return self._normalize_discovery_settings(raw)
+        return {}
+
+    def get_saved_discovery_config_payload(self) -> Dict[str, Any]:
+        settings = self.load_saved_discovery_settings()
+        if "autoApproveHealthyPendingOnComplete" in settings:
+            return {"autoApproveHealthyPendingOnComplete": bool(settings.get("autoApproveHealthyPendingOnComplete"))}
+        return self._normalize_discovery_settings({})
+
+    def get_discovery_config_payload(self) -> Dict[str, Any]:
+        return {
+            "ok": True,
+            "savedConfig": self.get_saved_discovery_config_payload(),
+        }
+
+    def update_saved_discovery_settings(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = self._normalize_discovery_settings(payload)
+        self._deps.save_json_atomic(self._paths.settings, normalized)
+        return normalized
+
+    @staticmethod
+    def _normalize_health_status(value: Any) -> str:
+        token = str(value or "").strip().lower()
+        if token in {"healthy", "success"}:
+            return "ok"
+        if token in {"failed", "failure"}:
+            return "error"
+        return token
+
+    @classmethod
+    def _pending_row_is_auto_approvable(cls, row: Dict[str, Any]) -> bool:
+        if not isinstance(row, dict):
+            return False
+        jobs_found = row.get("jobsFound")
+        sample_count = row.get("sampleCount")
+        jobs_count = 0
+        for value in (jobs_found, sample_count):
+            try:
+                numeric = int(value or 0)
+            except (TypeError, ValueError):
+                numeric = 0
+            if numeric > 0:
+                jobs_count = numeric
+                break
+        if jobs_count <= 0:
+            return False
+        if str(row.get("lastProbeError") or "").strip():
+            return False
+        status = cls._normalize_health_status(row.get("_lastStatus") or row.get("status"))
+        if status == "error":
+            return False
+        return True
+
+    def _increment_approval_state(self, count: int) -> None:
+        if count <= 0:
+            return
+        approval = self._deps.load_json_object(self._paths.approval_state, {"approvedSinceLastRun": 0})
+        approval["approvedSinceLastRun"] = int(approval.get("approvedSinceLastRun") or 0) + int(count)
+        self._deps.save_json_atomic(self._paths.approval_state, approval)
+
+    def _auto_approve_healthy_pending_sources(self) -> int:
+        state = self._deps.load_state()
+        pending_rows = list(state.get("pending") or [])
+        moved: List[Dict[str, Any]] = []
+        remaining: List[Dict[str, Any]] = []
+        for row in pending_rows:
+            if self._pending_row_is_auto_approvable(row):
+                approved = dict(row)
+                approved["enabledByDefault"] = True
+                moved.append(approved)
+            else:
+                remaining.append(row)
+        if not moved:
+            return 0
+        next_state = {
+            "active": [*list(state.get("active") or []), *moved],
+            "pending": remaining,
+            "rejected": list(state.get("rejected") or []),
+        }
+        self._deps.persist_state_and_auto_sync(next_state, reason="discovery_auto_approve")
+        self._increment_approval_state(len(moved))
+        return len(moved)
+
     def watch_discovery_run_for_auto_sync(self, run_id: str, pid: int, started_at: str) -> None:
         started_dt = self._deps.parse_iso(started_at) or self._deps.now_utc()
         while self._deps.pid_is_running(pid):
@@ -65,7 +165,26 @@ class DiscoveryService:
                 return
             summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
             queued = int(summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0)
-            if queued <= 0:
+            saved_config = self.get_saved_discovery_config_payload()
+            auto_approve_enabled = bool(saved_config.get("autoApproveHealthyPendingOnComplete"))
+            auto_approved = 0
+            if auto_approve_enabled:
+                auto_approved = self._auto_approve_healthy_pending_sources()
+            runtime = dict(report.get("runtime") or {})
+            runtime["autoApproval"] = {
+                "enabled": auto_approve_enabled,
+                "approvedCount": int(auto_approved),
+            }
+            report["runtime"] = runtime
+            self._deps.save_json_atomic(self._paths.report, report)
+            self._deps.bridge_log(
+                "info",
+                "discovery_auto_approval_completed",
+                runId=run_id,
+                enabled=auto_approve_enabled,
+                approved=int(auto_approved),
+            )
+            if queued <= 0 and auto_approved <= 0:
                 self._deps.mark_discovery_sync_finished(finished_at)
                 return
             runtime_state = self._deps.load_sync_runtime_state()
@@ -79,6 +198,7 @@ class DiscoveryService:
                     runId=run_id,
                     reason="discovery_completed",
                     queued=queued,
+                    autoApproved=int(auto_approved),
                 )
         except Exception as exc:  # noqa: BLE001
             self._deps.bridge_log(
@@ -100,6 +220,13 @@ class DiscoveryService:
         preset = str(data.get("preset") or "default").strip().lower()
         run_id = f"discovery_{uuid.uuid4().hex[:10]}"
         started_at = self._deps.now_iso()
+        self._deps.bridge_log(
+            "info",
+            "discovery_launch_started",
+            runId=run_id,
+            route=route_name,
+            preset=preset or "default",
+        )
         self._deps.save_json_atomic(
             self._paths.report,
             {
@@ -118,13 +245,19 @@ class DiscoveryService:
                 "candidates": [],
                 "failures": [],
                 "topFailures": [],
-                "outputs": {
-                    "report": str(self._paths.report),
-                    "candidates": str(self._paths.candidates),
-                    "pending": str(self._paths.pending),
+                    "outputs": {
+                        "report": str(self._paths.report),
+                        "candidates": str(self._paths.candidates),
+                        "pending": str(self._paths.pending),
+                    },
+                    "runtime": {
+                        "autoApproval": {
+                            "enabled": bool(self.get_saved_discovery_config_payload().get("autoApproveHealthyPendingOnComplete")),
+                            "approvedCount": 0,
+                        }
+                    },
                 },
-            },
-        )
+            )
         try:
             self._paths.log.parent.mkdir(parents=True, exist_ok=True)
             self._paths.log.write_text(
@@ -145,9 +278,10 @@ class DiscoveryService:
         )
         spawn_args = ["--mode", "dynamic"]
         if preset == "uncapped":
-            spawn_args.extend(["--top", "0"])
+            spawn_args.extend(["--top", "0", "--preset", "uncapped"])
         else:
             preset = "default"
+            spawn_args.extend(["--preset", "default"])
         try:
             pid = self._deps.run_background_script("source_discovery.py", spawn_args)
         except Exception as exc:  # noqa: BLE001
@@ -178,6 +312,12 @@ class DiscoveryService:
                         "report": str(self._paths.report),
                         "candidates": str(self._paths.candidates),
                         "pending": str(self._paths.pending),
+                    },
+                    "runtime": {
+                        "autoApproval": {
+                            "enabled": bool(self.get_saved_discovery_config_payload().get("autoApproveHealthyPendingOnComplete")),
+                            "approvedCount": 0,
+                        }
                     },
                 },
             )

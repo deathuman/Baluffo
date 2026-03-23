@@ -299,8 +299,327 @@ export function normalizeOpsRuns(runs, nowMs = Date.now()) {
   };
 }
 
+function normalizeCurrentTaskStateRow(row, nowMs = Date.now()) {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  const taskType = String(row.taskType || row.type || "").trim().toLowerCase();
+  if (!taskType) return null;
+  const startedAt = String(row.startedAt || "").trim();
+  const finishedAt = String(row.finishedAt || "").trim();
+  const startedMs = Date.parse(startedAt);
+  const active = Boolean(row.active);
+  const taskProgress = normalizeTaskProgressContract(row.taskProgress);
+  return {
+    ...row,
+    type: taskType,
+    taskType,
+    runId: String(row.runId || row.id || "").trim(),
+    startedAt,
+    finishedAt,
+    active,
+    isLive: active,
+    summary: row.summary && typeof row.summary === "object" && !Array.isArray(row.summary) ? row.summary : {},
+    outputs: row.outputs && typeof row.outputs === "object" && !Array.isArray(row.outputs) ? row.outputs : {},
+    taskProgress,
+    elapsedMs: active && Number.isFinite(startedMs) ? Math.max(0, Number(nowMs || Date.now()) - startedMs) : Number(row.durationMs || 0),
+    displayStatus: active ? "running" : String(row.status || "unknown").trim().toLowerCase()
+  };
+}
+
+export function deriveAdminRunsModel(
+  {
+    taskState,
+    historyRuns,
+    optimisticDiscoveryRun = null,
+    optimisticFetchRun = null
+  } = {},
+  nowMs = Date.now()
+) {
+  const taskRows = Array.isArray(taskState?.tasks) ? taskState.tasks : [];
+  let normalizedCurrentRows = taskRows
+    .map(row => normalizeCurrentTaskStateRow(row, nowMs))
+    .filter(row => row && row.isLive);
+
+  if (!normalizedCurrentRows.length) {
+    const legacyModel = normalizeOpsRuns(Array.isArray(historyRuns) ? historyRuns : [], nowMs);
+    normalizedCurrentRows = Array.isArray(legacyModel.currentRows) ? legacyModel.currentRows : [];
+  }
+
+  const currentByType = new Map();
+  normalizedCurrentRows
+    .sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a))
+    .forEach(row => {
+      const taskType = String(row?.taskType || row?.type || "").trim().toLowerCase();
+      if (!taskType || currentByType.has(taskType)) return;
+      currentByType.set(taskType, row);
+    });
+
+  const completedOnlyHistory = (Array.isArray(historyRuns) ? historyRuns : []).filter(
+    row => row && typeof row === "object" && String(row?.finishedAt || "").trim()
+  );
+  const completedModel = normalizeOpsRuns(completedOnlyHistory, nowMs);
+
+  const baseModel = {
+    currentRows: Array.from(currentByType.values()),
+    visibleCompletedRows: Array.isArray(completedModel.visibleCompletedRows) ? completedModel.visibleCompletedRows : [],
+    olderCompletedRows: Array.isArray(completedModel.olderCompletedRows) ? completedModel.olderCompletedRows : [],
+    hasLiveRuns: currentByType.size > 0,
+    liveTypes: Array.from(currentByType.keys())
+  };
+
+  const withDiscoveryOptimism = optimisticDiscoveryRun
+    ? applyOptimisticDiscoveryRun(baseModel, optimisticDiscoveryRun, nowMs)
+    : baseModel;
+  const withFetchOptimism = optimisticFetchRun
+    ? applyOptimisticFetchRun(withDiscoveryOptimism, optimisticFetchRun, nowMs)
+    : withDiscoveryOptimism;
+  return withFetchOptimism;
+}
+
 function compactCount(value) {
   return Number(value || 0).toLocaleString();
+}
+
+function normalizeTaskProgressContract(progress) {
+  if (!progress || typeof progress !== "object" || Array.isArray(progress)) return null;
+  const mode = String(progress.mode || "").trim().toLowerCase() === "determinate" ? "determinate" : "indeterminate";
+  const counts = progress.counts && typeof progress.counts === "object" && !Array.isArray(progress.counts)
+    ? progress.counts
+    : {};
+  const ratioValue = Number(progress.ratio);
+  return {
+    active: Boolean(progress.active),
+    phaseKey: String(progress.phaseKey || "").trim(),
+    phaseLabel: String(progress.phaseLabel || "").trim(),
+    mode,
+    ratio: Number.isFinite(ratioValue) ? Math.max(0, Math.min(1, ratioValue)) : 0,
+    counts
+  };
+}
+
+function inferDiscoveryPhaseKeyFromLabel(label, fallback = "") {
+  const normalized = String(label || "").trim().toLowerCase();
+  if (!normalized) return String(fallback || "").trim();
+  if (/prob/i.test(normalized)) return "probing_candidates";
+  if (/final/i.test(normalized)) return "finalizing";
+  if (/scan/i.test(normalized)) return "scanning_sources";
+  if (/seed|provider-pattern|web-search|generating/i.test(normalized)) return "generating_candidates";
+  return String(fallback || "").trim() || "starting";
+}
+
+function deriveTaskProgressView(progress, {
+  taskLabel,
+  fallbackPhaseLabel = "",
+  formatCountsLabel
+} = {}) {
+  const normalized = normalizeTaskProgressContract(progress);
+  if (!normalized || !normalized.active) {
+    return {
+      active: false,
+      determinate: false,
+      ratio: 0,
+      label: ""
+    };
+  }
+  const phaseLabel = normalized.phaseLabel || fallbackPhaseLabel || "In progress";
+  const countsLabel = typeof formatCountsLabel === "function"
+    ? String(formatCountsLabel(normalized.counts, normalized) || "").trim()
+    : "";
+  return {
+    active: true,
+    determinate: normalized.mode === "determinate",
+    ratio: normalized.mode === "determinate" ? normalized.ratio : 0,
+    label: `${taskLabel}: ${phaseLabel}${countsLabel ? ` | ${countsLabel}` : ""}`
+  };
+}
+
+function mapDiscoveryHybridRatio(progress) {
+  const normalized = normalizeTaskProgressContract(progress);
+  if (!normalized || !normalized.active) return null;
+  const phaseKey = String(normalized.phaseKey || "").trim().toLowerCase();
+  const ratio = Number(normalized.ratio || 0);
+  switch (phaseKey) {
+    case "starting":
+      return 0.05;
+    case "generating_candidates":
+      return 0.28;
+    case "scanning_sources":
+      return 0.5;
+    case "probing_candidates":
+      return 0.6 + (Math.max(0, Math.min(1, ratio)) * 0.32);
+    case "finalizing":
+      return 0.96;
+    case "completed":
+      return 1;
+    default:
+      return null;
+  }
+}
+
+function deriveDiscoveryHybridProgressView(progress, {
+  taskLabel,
+  fallbackPhaseLabel = "",
+  formatCountsLabel
+} = {}) {
+  const normalized = normalizeTaskProgressContract(progress);
+  if (!normalized || !normalized.active) {
+    return {
+      active: false,
+      determinate: false,
+      ratio: 0,
+      label: ""
+    };
+  }
+  const phaseLabel = normalized.phaseLabel || fallbackPhaseLabel || "In progress";
+  const countsLabel = typeof formatCountsLabel === "function"
+    ? String(formatCountsLabel(normalized.counts, normalized) || "").trim()
+    : "";
+  const hybridRatio = mapDiscoveryHybridRatio(normalized);
+  const determinate = Number.isFinite(hybridRatio) && hybridRatio !== null;
+  return {
+    active: true,
+    determinate,
+    ratio: determinate ? hybridRatio : 0,
+    label: `${taskLabel}: ${phaseLabel}${countsLabel ? ` | ${countsLabel}` : ""}`
+  };
+}
+
+function deriveLegacyFetcherTaskProgress(report, { running = false } = {}) {
+  const summary = report?.summary || {};
+  const runtime = report?.runtime || {};
+  const runtimeSelectedSourceCount = Math.max(0, Number(runtime.selectedSourceCount || 0));
+  const summarySourceCount = Math.max(0, Number(summary.sourceCount || 0));
+  const successfulSources = Math.max(0, Number(summary.successfulSources || 0));
+  const failedSources = Math.max(0, Number(summary.failedSources || 0));
+  const excludedSources = Math.max(0, Number(summary.excludedSources || 0));
+  const resolvedSources = successfulSources + failedSources + excludedSources;
+  const outputCount = Math.max(0, Number(summary.outputCount || 0));
+  const active = Boolean(running) || (!String(report?.finishedAt || "").trim() && (resolvedSources > 0 || outputCount > 0));
+  if (!active) return null;
+  const finished = Boolean(String(report?.finishedAt || "").trim());
+  const runtimeCountMatchesResolvedUnit = (
+    runtimeSelectedSourceCount > 0
+    && resolvedSources <= runtimeSelectedSourceCount
+    && (summarySourceCount <= 0 || summarySourceCount <= runtimeSelectedSourceCount)
+  );
+  const totalSources = finished
+    ? Math.max(summarySourceCount, resolvedSources)
+    : (runtimeCountMatchesResolvedUnit ? runtimeSelectedSourceCount : 0);
+  return {
+    active: true,
+    phaseKey: finished ? "completed" : "executing_sources",
+    phaseLabel: finished ? "Completed" : "Executing sources",
+    mode: totalSources > 0 ? "determinate" : "indeterminate",
+    ratio: totalSources > 0 ? Math.max(0, Math.min(1, resolvedSources / totalSources)) : 0,
+    counts: {
+      resolvedSources,
+      sourceCount: totalSources || summarySourceCount || resolvedSources,
+      outputCount,
+      failedSources,
+      excludedSources
+    }
+  };
+}
+
+function deriveLegacyDiscoveryTaskProgress(report, { running = false, phaseHint = "" } = {}) {
+  const summary = report?.summary || {};
+  const phaseLabel = String(phaseHint || summary.phaseLabel || summary.phase || "").trim();
+  const foundCount = Math.max(0, Number(summary.foundEndpointCount ?? 0));
+  const probedCount = Math.max(0, Number(summary.probedCandidateCount ?? summary.probedCount ?? 0));
+  const queuedCount = deriveDiscoveryQueuedCount(report);
+  const deferredCount = Math.max(0, Number(summary.discoverableButDeferredCount ?? 0));
+  const failedCount = Math.max(0, Number(summary.failedProbeCount || 0));
+  const active = Boolean(running) || (!String(report?.finishedAt || "").trim() && (foundCount > 0 || probedCount > 0 || queuedCount > 0 || failedCount > 0 || Boolean(phaseLabel)));
+  if (!active) return null;
+  const loss = summary?.lossAccounting && typeof summary.lossAccounting === "object"
+    ? summary.lossAccounting
+    : {};
+  const probeTotal = Math.max(
+    0,
+    Number(loss.generated ?? 0)
+      - Number(loss.dedupSkipped ?? 0)
+      - Number(loss.validationSkipped ?? 0)
+      - Number(loss.lowEvidenceSkipped ?? 0)
+      - Number(summary.suppressedStaticCount ?? 0)
+  ) || Math.max(0, probedCount, failedCount, queuedCount);
+  const finished = Boolean(report?.finishedAt);
+  const phaseKey = finished
+    ? "completed"
+    : (/prob/i.test(phaseLabel) ? "probing_candidates" : (String(summary.phaseKey || summary.phase || "").trim() || "scanning_sources"));
+  return {
+    active: !finished,
+    phaseKey,
+    phaseLabel: finished ? "Discovery completed" : (phaseLabel || "Initializing scan"),
+    mode: (finished || (phaseKey === "probing_candidates" && probeTotal > 0)) ? "determinate" : "indeterminate",
+    ratio: finished ? 1 : (phaseKey === "probing_candidates" && probeTotal > 0 ? Math.max(0, Math.min(1, probedCount / probeTotal)) : 0),
+    counts: {
+      foundEndpoints: foundCount,
+      probedCandidates: probedCount,
+      probeTotal,
+      queuedCandidates: queuedCount,
+      deferredCandidates: deferredCount,
+      failedProbes: failedCount
+    }
+  };
+}
+
+export function deriveFetcherTaskProgress(report, { running = false } = {}) {
+  const normalized = normalizeTaskProgressContract(report?.taskProgress);
+  const finished = Boolean(String(report?.finishedAt || "").trim());
+  if (finished) {
+    return deriveLegacyFetcherTaskProgress(report, { running: false });
+  }
+  return normalized || deriveLegacyFetcherTaskProgress(report, { running });
+}
+
+export function deriveDiscoveryTaskProgress(report, { running = false, phaseHint = "" } = {}) {
+  const normalized = normalizeTaskProgressContract(report?.taskProgress);
+  const nextPhaseHint = String(phaseHint || "").trim();
+  if (normalized) {
+    const finished = Boolean(String(report?.finishedAt || "").trim());
+    const phaseKey = String(normalized.phaseKey || "").trim();
+    const phaseLabel = String(normalized.phaseLabel || "").trim();
+    const shouldUsePhaseHint = !finished && normalized.active && nextPhaseHint && (
+      !phaseLabel
+      || /^initializing scan$/i.test(phaseLabel)
+      || !phaseKey
+      || phaseKey === "starting"
+    );
+    if (shouldUsePhaseHint) {
+      return {
+        ...normalized,
+        phaseKey: inferDiscoveryPhaseKeyFromLabel(nextPhaseHint, phaseKey),
+        phaseLabel: nextPhaseHint
+      };
+    }
+    return normalized;
+  }
+  return deriveLegacyDiscoveryTaskProgress(report, { running, phaseHint });
+}
+
+function formatFetcherCountsLabel(counts, progress) {
+  const resolved = Math.max(0, Number(counts?.resolvedSources || 0));
+  const total = Math.max(0, Number(counts?.sourceCount || 0));
+  const output = Math.max(0, Number(counts?.outputCount || 0));
+  const failed = Math.max(0, Number(counts?.failedSources || 0));
+  const excluded = Math.max(0, Number(counts?.excludedSources || 0));
+  const showTotal = String(progress?.mode || "").toLowerCase() === "determinate" && total > 0;
+  const resolvedLabel = showTotal
+    ? `${compactCount(resolved)}/${compactCount(total)} sources resolved`
+    : `${compactCount(resolved)} sources resolved`;
+  return `${resolvedLabel} | output ${compactCount(output)} | failed ${compactCount(failed)} | excluded ${compactCount(excluded)}`;
+}
+
+function formatDiscoveryCountsLabel(counts, progress) {
+  const found = Math.max(0, Number(counts?.foundEndpoints || 0));
+  const probed = Math.max(0, Number(counts?.probedCandidates || 0));
+  const probeTotal = Math.max(0, Number(counts?.probeTotal || 0));
+  const queued = Math.max(0, Number(counts?.queuedCandidates || 0));
+  const deferred = Math.max(0, Number(counts?.deferredCandidates || 0));
+  const failed = Math.max(0, Number(counts?.failedProbes || 0));
+  const probedLabel = progress?.mode === "determinate" && probeTotal > 0
+    ? `${compactCount(probed)}/${compactCount(probeTotal)}`
+    : compactCount(probed);
+  return `endpoints ${compactCount(found)} | probed ${probedLabel} | queued ${compactCount(queued)} | deferred ${compactCount(deferred)} | failed ${compactCount(failed)}`;
 }
 
 export function applyOptimisticDiscoveryRun(model, optimisticRun, nowMs = Date.now()) {
@@ -367,69 +686,25 @@ export function applyOptimisticDiscoveryRun(model, optimisticRun, nowMs = Date.n
 }
 
 export function deriveFetcherProgressModel(report, { running = false } = {}) {
-  const summary = report?.summary || {};
-  const runtime = report?.runtime || {};
-  const totalSources = Math.max(
-    0,
-    Number(runtime.selectedSourceCount || 0),
-    Number(summary.sourceCount || 0)
+  return deriveTaskProgressView(
+    deriveFetcherTaskProgress(report, { running }),
+    {
+      taskLabel: "Fetcher",
+      fallbackPhaseLabel: "Executing sources",
+      formatCountsLabel: formatFetcherCountsLabel
+    }
   );
-  const successfulSources = Math.max(0, Number(summary.successfulSources || 0));
-  const failedSources = Math.max(0, Number(summary.failedSources || 0));
-  const excludedSources = Math.max(0, Number(summary.excludedSources || 0));
-  const resolvedSources = successfulSources + failedSources + excludedSources;
-  const outputCount = Math.max(0, Number(summary.outputCount || 0));
-  const active = Boolean(running) || (!String(report?.finishedAt || "").trim() && (resolvedSources > 0 || outputCount > 0));
-  if (!active) {
-    return {
-      active: false,
-      determinate: false,
-      ratio: 0,
-      label: ""
-    };
-  }
-  const determinate = totalSources > 0;
-  const ratio = determinate ? Math.max(0, Math.min(1, resolvedSources / totalSources)) : 0;
-  const resolvedLabel = determinate
-    ? `${compactCount(resolvedSources)}/${compactCount(totalSources)} sources resolved`
-    : `${compactCount(resolvedSources)} sources resolved`;
-  return {
-    active: true,
-    determinate,
-    ratio,
-    label: `Fetcher: ${resolvedLabel} | output ${compactCount(outputCount)} | failed ${compactCount(failedSources)} | excluded ${compactCount(excludedSources)}`
-  };
 }
 
-export function deriveDiscoveryProgressModel(report, { running = false } = {}) {
-  const summary = report?.summary || {};
-  const foundCount = Math.max(0, Number(summary.foundEndpointCount ?? 0));
-  const probedCount = Math.max(0, Number(summary.probedCandidateCount ?? summary.probedCount ?? 0));
-  const queuedCount = deriveDiscoveryQueuedCount(report);
-  const deferredCount = Math.max(0, Number(summary.discoverableButDeferredCount ?? 0));
-  const failedCount = Math.max(0, Number(summary.failedProbeCount || 0));
-  const active = Boolean(running) || (!String(report?.finishedAt || "").trim() && (foundCount > 0 || probedCount > 0 || queuedCount > 0 || failedCount > 0));
-  if (!active) {
-    return {
-      active: false,
-      determinate: false,
-      ratio: 0,
-      label: ""
-    };
-  }
-
-  const determinate = (foundCount > 0 || probedCount > 0 || queuedCount > 0) || Boolean(running);
-  const total = Math.max(foundCount + probedCount + queuedCount, 1);
-  const ratio = determinate && total > 0 ? Math.max(0, Math.min(1, (foundCount + probedCount) / total)) : 0;
-  const label = determinate
-    ? `Discovery: endpoints ${compactCount(foundCount)} | probed ${compactCount(probedCount)} | queued ${compactCount(queuedCount)} | deferred ${compactCount(deferredCount)} | failed ${compactCount(failedCount)}`
-    : `Discovery: scanning | queued ${compactCount(queuedCount)} | deferred ${compactCount(deferredCount)} | failed ${compactCount(failedCount)}`;
-  return {
-    active: true,
-    determinate,
-    ratio,
-    label
-  };
+export function deriveDiscoveryProgressModel(report, { running = false, phaseHint = "" } = {}) {
+  return deriveDiscoveryHybridProgressView(
+    deriveDiscoveryTaskProgress(report, { running, phaseHint }),
+    {
+      taskLabel: "Discovery",
+      fallbackPhaseLabel: "Initializing scan",
+      formatCountsLabel: formatDiscoveryCountsLabel
+    }
+  );
 }
 
 export function applyOptimisticFetchRun(model, optimisticRun, nowMs = Date.now()) {

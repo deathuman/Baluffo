@@ -1645,6 +1645,57 @@ h1 {
   transform: rotate(45deg);
 }
 
+.admin-select-all-checkbox,
+.admin-select-all-label .admin-select-all-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, #d6d6d6 72%, var(--surface-11));
+  background: color-mix(in srgb, #d6d6d6 20%, transparent);
+  cursor: pointer;
+  position: relative;
+  vertical-align: middle;
+}
+
+.admin-select-all-checkbox:hover,
+.admin-select-all-label .admin-select-all-checkbox:hover {
+  border-color: color-mix(in srgb, #dcdcdc 86%, var(--surface-11));
+  background: color-mix(in srgb, #dedede 28%, transparent);
+}
+
+.admin-select-all-checkbox:checked,
+.admin-select-all-label .admin-select-all-checkbox:checked {
+  border-color: color-mix(in srgb, #cfcfcf 90%, var(--surface-11));
+  background: color-mix(in srgb, #cfcfcf 55%, transparent);
+}
+
+.admin-select-all-checkbox:checked::after,
+.admin-select-all-label .admin-select-all-checkbox:checked::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0px;
+  width: 4px;
+  height: 8px;
+  border: solid color-mix(in srgb, #f4f4f4 92%, #ffffff);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.admin-select-all-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 4px;
+}
+
 .admin-select-cell-inner {
   display: inline-flex;
   align-items: center;
@@ -2052,9 +2103,26 @@ h1 {
   height: 100%;
   width: 0%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent-2), var(--accent), color-mix(in srgb, var(--accent-hover) 82%, white 18%));
+  background-color: var(--accent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 62%, white 38%),
+    var(--accent),
+    color-mix(in srgb, var(--accent-hover) 82%, white 18%)
+  );
   box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 28%, transparent);
   transition: width 0.22s ease;
+  position: relative;
+  left: 0;
+  transform: none;
+  animation: none;
+}
+
+.admin-task-progress.determinate .admin-task-progress-bar {
+  position: relative;
+  left: 0;
+  transform: none;
+  animation: none;
 }
 
 .admin-task-progress.indeterminate .admin-task-progress-bar {

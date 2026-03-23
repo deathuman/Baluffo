@@ -31,8 +31,9 @@ def test_registry_social_config_merges_defaults() -> None:
     assert "reddit" in config
     reddit_config = config.get("reddit") or {}
     subreddits = reddit_config.get("subreddits") or []
-    assert len(subreddits) == 1
-    expected_subreddits = ["gamedev"]
+    assert reddit_config.get("enabled") is False
+    assert len(subreddits) == 0
+    expected_subreddits = []
     assert subreddits == expected_subreddits
 
 

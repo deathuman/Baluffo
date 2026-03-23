@@ -12,6 +12,20 @@ from src.jobs.common.config import SOURCE_REGISTRY_ACTIVE_PATH
 # and are imported here at runtime to avoid circularity during migration.
 
 
+def _looks_like_placeholder_registry_row(row: Dict[str, Any]) -> bool:
+    name = str(row.get("name") or "").strip().lower()
+    studio = str(row.get("studio") or "").strip().lower()
+    slug = str(row.get("slug") or "").strip().lower()
+    careers_url = str(row.get("careersUrl") or "").strip().lower()
+    api_url = str(row.get("api_url") or "").strip().lower()
+    return bool(
+        slug == "examplestudio"
+        or "example studio gmbh (greenhouse)" == name
+        or ("example studio gmbh" == studio and "boards.greenhouse.io/examplestudio" in careers_url)
+        or "boards-api.greenhouse.io/v1/boards/examplestudio/jobs" in api_url
+    )
+
+
 def load_registry_from_file(path: Path, fallback: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     try:
         if not path.exists():
@@ -38,5 +52,7 @@ def read_approved_since_last_run(path: Path) -> int:
 
 
 def load_studio_source_registry(default_registry: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return load_registry_from_file(SOURCE_REGISTRY_ACTIVE_PATH, default_registry)
+    rows = load_registry_from_file(SOURCE_REGISTRY_ACTIVE_PATH, default_registry)
+    filtered = [row for row in rows if isinstance(row, dict) and not _looks_like_placeholder_registry_row(row)]
+    return filtered if filtered else [dict(row) for row in default_registry]
 

@@ -1,0 +1,37 @@
+{
+  "enabled": true,
+  "minConfidence": 40,
+  "rejectForHirePosts": true,
+  "lookbackMinutes": 30,
+  "reddit": {
+    "enabled": false,
+    "subreddits": [],
+    "maxPostsPerSubreddit": 25,
+    "rssFallback": true,
+    "htmlFallback": false,
+    "rateLimitDelay": 0.5,
+    "timeoutSeconds": 10,
+    "retries": 1
+  },
+  "x": {
+    "enabled": false,
+    "minConfidence": 40,
+    "queries": [
+      "#gamedevjobs",
+      "#gamejobs",
+      "\"game designer\" \"we're hiring\"",
+      "\"gamedev\" \"hiring\""
+    ],
+    "maxPostsPerQuery": 10,
+    "timeoutSeconds": 8,
+    "retries": 1
+  },
+  "mastodon": {
+    "enabled": true,
+    "instances": ["https://mastodon.gamedev.place"],
+    "hashtags": ["gamedevjobs", "indiegamejobs"],
+    "maxPostsPerTag": 40,
+    "timeoutSeconds": 20,
+    "retries": 3
+  }
+}

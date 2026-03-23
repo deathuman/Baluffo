@@ -13,9 +13,7 @@ export function createAdminOpsController({
   refs,
   getBridge,
   postBridge,
-  normalizeOpsRuns,
-  applyOptimisticDiscoveryRun,
-  applyOptimisticFetchRun,
+  deriveAdminRunsModel,
   getOpsPollIntervalMs,
   renderAdminOpsAlerts,
   renderAdminOpsKpis,
@@ -83,6 +81,15 @@ export function createAdminOpsController({
         getBridge("/ops/health"),
         getBridge("/ops/history?limit=80")
       ]);
+      let taskStatePayload = { tasks: [], count: 0 };
+      try {
+        const loadedTaskState = await getBridge("/ops/task-state");
+        if (loadedTaskState && typeof loadedTaskState === "object") {
+          taskStatePayload = loadedTaskState;
+        }
+      } catch {
+        taskStatePayload = { tasks: [], count: 0 };
+      }
       let fetcherMetrics = null;
       try {
         fetcherMetrics = await getBridge("/ops/fetcher-metrics?windowRuns=80");
@@ -90,19 +97,15 @@ export function createAdminOpsController({
         fetcherMetrics = null;
       }
       state.latestOpsHealthCache = health || null;
-      const rawRunModel = normalizeOpsRuns(historyPayload?.runs || [], Date.now());
-      const optimisticDiscoveryActive = Boolean(
-        String(state.discoveryOptimisticRun?.startedAt || "").trim()
+      const runModel = deriveAdminRunsModel(
+        {
+          taskState: taskStatePayload || {},
+          historyRuns: historyPayload?.runs || [],
+          optimisticDiscoveryRun: state.discoveryOptimisticRun,
+          optimisticFetchRun: state.fetchOptimisticRun
+        },
+        Date.now()
       );
-      const optimisticFetchActive = Boolean(
-        String(state.fetchOptimisticRun?.startedAt || "").trim()
-      );
-      const discoveryAdjustedModel = optimisticDiscoveryActive
-        ? applyOptimisticDiscoveryRun(rawRunModel, state.discoveryOptimisticRun, Date.now())
-        : rawRunModel;
-      const runModel = optimisticFetchActive
-        ? applyOptimisticFetchRun(discoveryAdjustedModel, state.fetchOptimisticRun, Date.now())
-        : discoveryAdjustedModel;
       const liveTypes = new Set(Array.isArray(runModel?.liveTypes) ? runModel.liveTypes : []);
       setBusyFlag("liveFetchRunning", liveTypes.has("fetch"));
       setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));

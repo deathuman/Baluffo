@@ -68,6 +68,7 @@ from src.source_registry import (  # noqa: F401
     DISCOVERY_REPORT_PATH,
     PENDING_PATH,
     REJECTED_PATH,
+    URL_PATCH_MANIFEST_PATH,
 )
 from .io_runtime import endpoint_url  # noqa: F401
 from .scoring import resolve_discovery_thresholds, unique_string_list  # noqa: F401
@@ -96,6 +97,13 @@ from .core import (  # noqa: F401
     probe_concurrency_defaults,
     queue_family_key,
     sheet_directory_static_probe_cap,
+)
+from .url_patches import (  # noqa: F401
+    apply_url_patches_to_candidate,
+    load_url_patch_manifest,
+    load_url_patches,
+    merge_url_patches,
+    save_url_patch_manifest,
 )
 from .orchestrator import main, parse_args, run_discovery  # noqa: F401
 

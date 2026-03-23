@@ -19,8 +19,8 @@ DEFAULT_SOCIAL_CONFIG: Dict[str, Any] = {
     "minConfidence": DEFAULT_SOCIAL_MIN_CONFIDENCE,
     "rejectForHirePosts": True,
     "reddit": {
-        "enabled": True,
-        "subreddits": ["gamedev"],
+        "enabled": False,
+        "subreddits": [],
         "maxPostsPerSubreddit": 25,
         "rssFallback": True,
         "htmlFallback": False,
@@ -61,7 +61,7 @@ DEFAULT_SOCIAL_CONFIG: Dict[str, Any] = {
     "mastodon": {
         "enabled": True,
         "instances": ["https://mastodon.gamedev.place"],
-        "hashtags": ["gamedevjobs", "gamejobs", "hiring", "unityjobs", "unrealjobs"],
+        "hashtags": ["gamedevjobs", "indiegamejobs"],
         "maxPostsPerTag": 40,
     },
 }

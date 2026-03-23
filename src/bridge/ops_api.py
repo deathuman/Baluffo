@@ -15,6 +15,7 @@ class OpsPaths:
     ops_alert_state: Path
     jobs_fetch_report: Path
     discovery_report: Path
+    task_state: Path
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,8 @@ class OpsDeps:
     task_running_from_state: Callable[[str], bool]
     report_is_stale_in_progress: Callable[..., bool]
     get_active_sync_runs: Callable[[], set[str]]
+    get_sync_status_payload: Callable[[], Dict[str, Any]]
+    get_jobs_pipeline_status_payload: Callable[[], Dict[str, Any]]
     normalize_fetch_report_contract: Callable[[Dict[str, Any]], Dict[str, Any]]
     normalize_discovery_report_contract: Callable[[Dict[str, Any]], Dict[str, Any]]
     desktop_mode: bool
@@ -154,6 +157,196 @@ class OpsApi:
 
     def compute_ops_health(self) -> Dict[str, Any]:
         return _ops_health.compute_ops_health(self.build_ops_health_deps())
+
+    @staticmethod
+    def _coerce_task_progress(payload: Any) -> Dict[str, Any]:
+        src = payload if isinstance(payload, dict) else {}
+        counts = src.get("counts") if isinstance(src.get("counts"), dict) else {}
+        try:
+            ratio = float(src.get("ratio"))
+        except (TypeError, ValueError):
+            ratio = 0.0
+        return {
+            "active": bool(src.get("active")),
+            "phaseKey": str(src.get("phaseKey") or "").strip(),
+            "phaseLabel": str(src.get("phaseLabel") or "").strip(),
+            "mode": "determinate" if str(src.get("mode") or "").strip().lower() == "determinate" else "indeterminate",
+            "ratio": max(0.0, min(1.0, ratio)),
+            "counts": dict(counts),
+        }
+
+    @staticmethod
+    def _build_pipeline_task_progress(payload: Dict[str, Any]) -> Dict[str, Any]:
+        progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
+        current_step = max(0, int(progress.get("currentStep") or 0))
+        total_steps = max(1, int(progress.get("totalSteps") or 1))
+        percent = max(0, min(100, int(progress.get("percent") or 0)))
+        ratio = max(0.0, min(1.0, percent / 100.0 if total_steps <= 0 else current_step / total_steps))
+        return {
+            "active": bool(payload.get("active")),
+            "phaseKey": str(payload.get("stage") or "").strip() or "pipeline",
+            "phaseLabel": str(progress.get("label") or payload.get("stage") or "Running pipeline").strip(),
+            "mode": "determinate",
+            "ratio": ratio,
+            "counts": {
+                "currentStep": current_step,
+                "totalSteps": total_steps,
+                "baselineOutputCount": int(payload.get("baselineOutputCount") or 0),
+                "finalOutputCount": int(payload.get("finalOutputCount") or 0),
+            },
+        }
+
+    def get_current_task_state_payload(self) -> Dict[str, Any]:
+        raw_state = self._deps.load_json_object(self._paths.task_state, {})
+        task_state = raw_state if isinstance(raw_state, dict) else {}
+        tasks: List[Dict[str, Any]] = []
+
+        history = self.sync_history_from_reports()
+        history_by_type: Dict[str, List[Dict[str, Any]]] = {}
+        for row in history:
+            if not isinstance(row, dict):
+                continue
+            row_type = str(row.get("type") or "").strip().lower()
+            if not row_type:
+                continue
+            history_by_type.setdefault(row_type, []).append(row)
+
+        def append_if_active(task_type: str, entry: Dict[str, Any]) -> None:
+            if not isinstance(entry, dict):
+                return
+            if not bool(entry.get("active")):
+                return
+            tasks.append(entry)
+
+        fetch_state = task_state.get("fetch") if isinstance(task_state.get("fetch"), dict) else {}
+        fetch_report = self._deps.normalize_fetch_report_contract(
+            self._deps.load_json_object(self._paths.jobs_fetch_report, {})
+        )
+        fetch_active = (
+            self._deps.task_running_from_state("fetch")
+            or (
+                isinstance(fetch_report, dict)
+                and str(fetch_report.get("startedAt") or "").strip()
+                and not str(fetch_report.get("finishedAt") or "").strip()
+            )
+        )
+        append_if_active(
+            "fetch",
+            {
+                "taskType": "fetch",
+                "type": "fetch",
+                "runId": str(fetch_report.get("runId") or fetch_state.get("runId") or "").strip(),
+                "active": bool(fetch_active),
+                "startedAt": str(fetch_report.get("startedAt") or fetch_state.get("startedAt") or "").strip(),
+                "finishedAt": str(fetch_report.get("finishedAt") or "").strip(),
+                "status": "running" if fetch_active else str(fetch_report.get("status") or "").strip().lower(),
+                "taskProgress": self._coerce_task_progress(fetch_report.get("taskProgress")),
+                "summary": dict(fetch_report.get("summary") or {}),
+                "outputs": dict(fetch_report.get("outputs") or {}),
+            },
+        )
+
+        discovery_state = task_state.get("discovery") if isinstance(task_state.get("discovery"), dict) else {}
+        discovery_report = self._deps.normalize_discovery_report_contract(
+            self._deps.load_json_object(self._paths.discovery_report, {})
+        )
+        discovery_active = (
+            self._deps.task_running_from_state("discovery")
+            or (
+                isinstance(discovery_report, dict)
+                and str(discovery_report.get("startedAt") or "").strip()
+                and not str(discovery_report.get("finishedAt") or "").strip()
+            )
+        )
+        append_if_active(
+            "discovery",
+            {
+                "taskType": "discovery",
+                "type": "discovery",
+                "runId": str(discovery_report.get("runId") or discovery_state.get("runId") or "").strip(),
+                "active": bool(discovery_active),
+                "startedAt": str(discovery_report.get("startedAt") or discovery_state.get("startedAt") or "").strip(),
+                "finishedAt": str(discovery_report.get("finishedAt") or "").strip(),
+                "status": "running" if discovery_active else "",
+                "taskProgress": self._coerce_task_progress(discovery_report.get("taskProgress")),
+                "summary": dict(discovery_report.get("summary") or {}),
+                "outputs": {"report": str(self._paths.discovery_report)},
+            },
+        )
+
+        pipeline_status = self._deps.get_jobs_pipeline_status_payload()
+        pipeline_active = bool((pipeline_status or {}).get("active"))
+        append_if_active(
+            "pipeline",
+            {
+                "taskType": "pipeline",
+                "type": "pipeline",
+                "runId": str((pipeline_status or {}).get("runId") or "").strip(),
+                "active": pipeline_active,
+                "startedAt": str((pipeline_status or {}).get("startedAt") or "").strip(),
+                "finishedAt": str((pipeline_status or {}).get("finishedAt") or "").strip(),
+                "status": "running" if pipeline_active else str((pipeline_status or {}).get("stage") or "").strip().lower(),
+                "taskProgress": self._build_pipeline_task_progress(pipeline_status if isinstance(pipeline_status, dict) else {}),
+                "summary": {
+                    "stage": str((pipeline_status or {}).get("stage") or "").strip(),
+                    "updatesFound": bool((pipeline_status or {}).get("updatesFound")),
+                    "refreshRecommended": bool((pipeline_status or {}).get("refreshRecommended")),
+                },
+                "outputs": {},
+            },
+        )
+
+        sync_status = self._deps.get_sync_status_payload()
+        active_sync_runs = self._deps.get_active_sync_runs()
+        for run_id in active_sync_runs:
+            match = next(
+                (
+                    row for row in reversed(history_by_type.get("sync", []))
+                    if str(row.get("id") or row.get("runId") or "").strip() == str(run_id)
+                    and not str(row.get("finishedAt") or "").strip()
+                ),
+                None,
+            )
+            summary = dict(match.get("summary") or {}) if isinstance(match, dict) else {}
+            action = str(summary.get("action") or "").strip().lower()
+            phase_label = f"Sync {action}" if action else "Sync running"
+            append_if_active(
+                "sync",
+                {
+                    "taskType": "sync",
+                    "type": "sync",
+                    "runId": str(run_id or "").strip(),
+                    "active": True,
+                    "startedAt": str((match or {}).get("startedAt") or "").strip(),
+                    "finishedAt": "",
+                    "status": "running",
+                    "taskProgress": {
+                        "active": True,
+                        "phaseKey": f"sync_{action}" if action else "sync_running",
+                        "phaseLabel": phase_label,
+                        "mode": "indeterminate",
+                        "ratio": 0.0,
+                        "counts": {
+                            "lastAction": str((sync_status.get("runtime") or {}).get("lastAction") or action or "").strip(),
+                        },
+                    },
+                    "summary": summary,
+                    "outputs": {},
+                },
+            )
+
+        tasks.sort(key=lambda item: str(item.get("startedAt") or ""), reverse=True)
+        latest_by_type: Dict[str, Dict[str, Any]] = {}
+        for row in tasks:
+            task_type = str(row.get("taskType") or row.get("type") or "").strip().lower()
+            if not task_type or task_type in latest_by_type:
+                continue
+            latest_by_type[task_type] = row
+        final_tasks = list(latest_by_type.values())
+        return {
+            "tasks": final_tasks,
+            "count": len(final_tasks),
+        }
 
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> Dict[str, Any]:
         latest_fetch_report = self._deps.normalize_fetch_report_contract(

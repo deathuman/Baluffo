@@ -6,7 +6,7 @@ import hashlib
 import re
 from typing import Any, Optional
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 from src.jobs.common.config import (
@@ -24,6 +24,7 @@ def canonical_url_fingerprint_seed(url: Any) -> str:
     parsed = urlparse(normalized)
     host = parsed.netloc.lower()
     path = parsed.path or "/"
+    query = parsed.query
 
     if host in {"jobs.smartrecruiters.com", "api.smartrecruiters.com"}:
         jobs_match = re.match(r"^/([^/]+)/(\d+)(?:-[^/]+)?$", path)
@@ -34,6 +35,17 @@ def canonical_url_fingerprint_seed(url: Any) -> str:
         if api_match:
             company_id, posting_id = api_match.groups()
             return f"smartrecruiters:{company_id.lower()}:{posting_id}"
+
+    if host == "www.personio.de" and re.match(r"^/job/\d+$", path):
+        pairs = []
+        for key, values in parse_qs(query, keep_blank_values=True).items():
+            if key.lower() in {"language", "lang"}:
+                continue
+            for value in values:
+                pairs.append((key, value))
+        pairs.sort(key=lambda item: (item[0].lower(), item[1]))
+        scoped_query = urlencode(pairs, doseq=True)
+        return urlunparse((parsed.scheme.lower(), host, path, "", scoped_query, ""))
 
     return normalized
 

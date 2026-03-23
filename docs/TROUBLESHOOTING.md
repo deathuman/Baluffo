@@ -122,8 +122,9 @@ type data\jobs-fetch-report.json | findstr /C:"error"
 | Check | Action |
 |-------|--------|
 | Social enabled | Ensure `--social-enabled` flag or config |
-| Config file | Check `analysis_tools/social_sources_config_updates.json` |
+| Config file | Check `data/social-sources-config.json` |
 | Rate limiting | Wait and retry; social APIs have strict limits |
+| Stale bad social rows still in `jobs-unified.json` | Run `python scripts\\jobs_fetcher.py --force-refresh-all --social-enabled` so incremental cache skips do not preserve old Reddit/Mastodon contamination |
 
 ---
 
@@ -277,4 +278,4 @@ python -c "import json; r=json.load(open('data/source-discovery-report.json')); 
 
 ---
 
-*Last updated: 2026-03-22*
+*Last updated: 2026-03-23*

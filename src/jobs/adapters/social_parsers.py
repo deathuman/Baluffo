@@ -19,6 +19,7 @@ SOCIAL_HIRING_KEYWORDS = {
     "hiring",
     "we're hiring",
     "we are hiring",
+    "is hiring",
     "job opening",
     "open role",
     "join our team",
@@ -35,6 +36,141 @@ SOCIAL_FOR_HIRE_KEYWORDS = {
     "hire me",
     "open to work",
 }
+SOCIAL_EXPLICIT_OPENING_PHRASES = {
+    "we're hiring",
+    "we are hiring",
+    "is hiring",
+    "job opening",
+    "job openings",
+    "open role",
+    "open roles",
+    "open position",
+    "open positions",
+    "apply now",
+    "join our team",
+    "hiring for",
+}
+SOCIAL_NEGATIVE_NOT_HIRING_PHRASES = {
+    "we're not hiring",
+    "we are not hiring",
+    "not hiring",
+    "wish we were hiring",
+    "wish we could hire",
+    "nobody is hiring",
+    "why is nobody hiring",
+    "why is no one hiring",
+    "laid off",
+    "layoff",
+    "layoffs",
+}
+SOCIAL_DISCUSSION_PHRASES = {
+    "anyone hiring",
+    "who is hiring",
+    "how do i get a job",
+    "how do i get hired",
+    "how do i find a job",
+    "jobs are bad",
+    "job market",
+    "why are jobs",
+    "why is hiring",
+    "rant",
+    "beware",
+    "avoid",
+}
+SOCIAL_BLOCKED_HOSTS = {
+    "reddit.com",
+    "www.reddit.com",
+    "old.reddit.com",
+    "x.com",
+    "www.x.com",
+    "twitter.com",
+    "www.twitter.com",
+    "t.co",
+    "mastodon.gamedev.place",
+    "xcancel.com",
+    "rss.xcancel.com",
+    "nitter.net",
+    "nitter.poast.org",
+    "bsky.app",
+    "www.linkedin.com",
+    "linkedin.com",
+    "youtube.com",
+    "www.youtube.com",
+    "youtu.be",
+    "twitch.tv",
+    "www.twitch.tv",
+    "discord.gg",
+}
+SOCIAL_APPLY_HOST_HINTS = (
+    "boards.greenhouse.io",
+    "jobs.ashbyhq.com",
+    "ashbyhq.com",
+    "jobs.lever.co",
+    "lever.co",
+    "myworkdayjobs.com",
+    "workday.com",
+    "jobs.smartrecruiters.com",
+    "smartrecruiters.com",
+    "teamtailor.com",
+    "job-boards.greenhouse.io",
+    "jobvite.com",
+    "breezy.hr",
+    "pinpointhq.com",
+    "personio",
+)
+SOCIAL_APPLY_PATH_HINTS = (
+    "/job",
+    "/jobs",
+    "/career",
+    "/careers",
+    "/apply",
+    "/application",
+    "/opening",
+    "/openings",
+    "/position",
+    "/positions",
+    "/vacan",
+)
+SOCIAL_CONTENT_ONLY_HOST_HINTS = (
+    "medium.com",
+    "substack.com",
+    "wordpress.com",
+    "blogspot.com",
+    "notion.site",
+)
+SOCIAL_BLOCKED_PATH_HINTS = (
+    "/status/",
+    "/statuses/",
+    "/post/",
+    "/posts/",
+    "/comment/",
+    "/comments/",
+    "/thread/",
+    "/threads/",
+    "/blog",
+    "/news",
+    "/article",
+    "/articles",
+    "/watch",
+    "/video",
+    "/videos",
+    "/podcast",
+)
+SOCIAL_CONTENT_ONLY_PATH_HINTS = (
+    "/blog",
+    "/blogs",
+    "/article",
+    "/articles",
+    "/news",
+    "/post",
+    "/posts",
+    "/study",
+    "/studies",
+    "/research",
+    "/technical",
+    "/tutorial",
+    "/guide",
+)
 
 
 def _clean_text(value: Any) -> str:
@@ -53,25 +189,105 @@ def social_extract_urls(text: str) -> List[str]:
     ]
 
 
+def _increment_reason(counter: Dict[str, int] | None, reason: str) -> None:
+    if counter is None or not reason:
+        return
+    counter[reason] = int(counter.get(reason) or 0) + 1
+
+
+def social_has_explicit_opening_signal(*values: Any) -> bool:
+    text = " ".join(_norm_text(value) for value in values if value is not None)
+    if any(token in text for token in SOCIAL_EXPLICIT_OPENING_PHRASES):
+        return True
+    return bool(re.search(r"\b[a-z0-9][a-z0-9& .'\-]{1,50}\s+is hiring\b", text))
+
+
+def social_has_negative_hiring_signal(*values: Any) -> str:
+    text = " ".join(_norm_text(value) for value in values if value is not None)
+    if any(token in text for token in SOCIAL_NEGATIVE_NOT_HIRING_PHRASES):
+        return "not_hiring_or_layoff"
+    if any(token in text for token in SOCIAL_DISCUSSION_PHRASES):
+        return "discussion_or_question"
+    if text.endswith("?") and not social_has_explicit_opening_signal(text):
+        return "discussion_or_question"
+    return ""
+
+
+def social_is_job_destination_url(url: str, *, context_text: str = "") -> bool:
+    normalized_url = normalize_url(url)
+    if not normalized_url:
+        return False
+    parsed = urlparse(normalized_url)
+    host = _clean_text(parsed.netloc).lower()
+    path = _clean_text(parsed.path).lower()
+    query = _clean_text(parsed.query).lower()
+    if not host or host in SOCIAL_BLOCKED_HOSTS:
+        return False
+    if any(blocked in path for blocked in SOCIAL_BLOCKED_PATH_HINTS):
+        return False
+    if any(host_hint in host for host_hint in SOCIAL_APPLY_HOST_HINTS):
+        return True
+    if host.startswith(("jobs.", "careers.", "apply.")):
+        return True
+    if any(path_hint in path for path_hint in SOCIAL_APPLY_PATH_HINTS):
+        return True
+    if any(path_hint.strip("/") in query for path_hint in SOCIAL_APPLY_PATH_HINTS):
+        return True
+    normalized_context = _norm_text(context_text)
+    return bool(normalized_context) and (
+        "apply" in normalized_context or "careers" in normalized_context or "application" in normalized_context
+    )
+
+
+def social_is_content_only_url(url: str) -> bool:
+    normalized_url = normalize_url(url)
+    if not normalized_url:
+        return False
+    parsed = urlparse(normalized_url)
+    host = _clean_text(parsed.netloc).lower()
+    path = _clean_text(parsed.path).lower()
+    if any(host_hint in host for host_hint in SOCIAL_CONTENT_ONLY_HOST_HINTS):
+        return True
+    return any(path_hint in path for path_hint in SOCIAL_CONTENT_ONLY_PATH_HINTS)
+
+
+def social_has_social_repost_only(*values: Any) -> bool:
+    urls = []
+    for value in values:
+        urls.extend(social_extract_urls(_clean_text(value)))
+    if not urls:
+        return False
+    return not any(social_is_job_destination_url(url, context_text=" ".join(_clean_text(v) for v in values)) for url in urls)
+
+
 def social_extract_apply_url(*texts: Any) -> str:
-    blocked_hosts = {
-        "reddit.com",
-        "www.reddit.com",
-        "x.com",
-        "www.x.com",
-        "twitter.com",
-        "www.twitter.com",
-        "t.co",
-        "mastodon.gamedev.place",
-        "xcancel.com",
-        "rss.xcancel.com",
-    }
+    context = " ".join(_clean_text(text) for text in texts if _clean_text(text))
     for text in texts:
         for url in social_extract_urls(_clean_text(text)):
-            host = _clean_text(urlparse(url).netloc).lower()
-            if host in blocked_hosts:
-                continue
-            return url
+            if social_is_job_destination_url(url, context_text=context):
+                return url
+    return ""
+
+
+def social_should_reject_non_job_reddit_post(
+    *,
+    title: str,
+    text: str,
+    apply_url: str,
+    company: str,
+    fallback_company: str,
+) -> str:
+    normalized_apply_url = normalize_url(apply_url)
+    if not normalized_apply_url:
+        return "missing_apply_url"
+    if social_is_content_only_url(normalized_apply_url):
+        return "non_job_destination_url"
+    if company and fallback_company and _norm_text(company) == _norm_text(fallback_company):
+        combined = _norm_text(f"{title} {text}")
+        if not looks_like_game_job(title, text):
+            return "discussion_or_commentary"
+        if "apply" not in combined and "careers" not in combined and "job" not in combined:
+            return "discussion_or_commentary"
     return ""
 
 
@@ -125,15 +341,50 @@ def social_should_keep_post(
     reject_for_hire_posts: bool,
     has_apply_url: bool,
 ) -> Tuple[bool, int]:
+    keep, confidence, _reason = social_evaluate_post(
+        title=title,
+        text=text,
+        min_confidence=min_confidence,
+        reject_for_hire_posts=reject_for_hire_posts,
+        has_apply_url=has_apply_url,
+    )
+    return keep, confidence
+
+
+def social_evaluate_post(
+    *,
+    title: str,
+    text: str,
+    min_confidence: int,
+    reject_for_hire_posts: bool,
+    has_apply_url: bool,
+) -> Tuple[bool, int, str]:
     normalized = f"{_norm_text(title)} {_norm_text(text)}"
     if reject_for_hire_posts and any(
         token in normalized for token in SOCIAL_FOR_HIRE_KEYWORDS
     ):
-        return False, 0
+        return False, 0, "for_hire"
+    negative_reason = social_has_negative_hiring_signal(title, text)
+    if negative_reason:
+        return False, 0, negative_reason
+    if not social_has_explicit_opening_signal(title, text):
+        confidence = social_compute_confidence(
+            title, text, has_apply_url=has_apply_url, has_remote_hint=("remote" in normalized)
+        )
+        return False, confidence, "missing_explicit_opening"
+    if not has_apply_url:
+        confidence = social_compute_confidence(
+            title, text, has_apply_url=False, has_remote_hint=("remote" in normalized)
+        )
+        if social_has_social_repost_only(title, text):
+            return False, confidence, "social_repost_or_commentary"
+        return False, confidence, "missing_valid_apply_url"
     confidence = social_compute_confidence(
         title, text, has_apply_url=has_apply_url, has_remote_hint=("remote" in normalized)
     )
-    return confidence >= max(0, min(100, int(min_confidence or 0))), confidence
+    if confidence < max(0, min(100, int(min_confidence or 0))):
+        return False, confidence, "low_confidence"
+    return True, confidence, ""
 
 
 def parse_reddit_json_payload(
@@ -142,6 +393,7 @@ def parse_reddit_json_payload(
     subreddit: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
+    reject_reasons: Dict[str, int] | None = None,
 ) -> Tuple[List[RawJob], int]:
     rows: List[Dict[str, Any]] = []
     if isinstance(payload, dict):
@@ -168,7 +420,7 @@ def parse_reddit_json_payload(
         )
         external_url = normalize_url(item.get("url"))
         apply_url = social_extract_apply_url(body, external_url)
-        keep, confidence = social_should_keep_post(
+        keep, confidence, reject_reason = social_evaluate_post(
             title=title,
             text=f"{body} {flair}",
             min_confidence=min_confidence,
@@ -177,11 +429,26 @@ def parse_reddit_json_payload(
         )
         if not keep:
             low_conf_count += 1
+            if reject_reason in {"missing_apply_url", "missing_valid_apply_url", "social_repost_or_commentary"} and social_is_content_only_url(external_url):
+                reject_reason = "non_job_destination_url"
+            _increment_reason(reject_reasons, reject_reason)
             continue
         job_link = apply_url or permalink or external_url
         if not title or not job_link:
             continue
-        company = social_infer_company(title, body, fallback=_clean_text(item.get("author")))
+        fallback_company = _clean_text(item.get("author"))
+        company = social_infer_company(title, body, fallback=fallback_company)
+        reject_reason = social_should_reject_non_job_reddit_post(
+            title=title,
+            text=f"{body} {flair}",
+            apply_url=job_link,
+            company=company,
+            fallback_company=fallback_company,
+        )
+        if reject_reason:
+            low_conf_count += 1
+            _increment_reason(reject_reasons, reject_reason)
+            continue
         post_source_id = f"reddit:{_clean_text(subreddit)}:{post_id or hashlib.sha1(job_link.encode('utf-8')).hexdigest()[:12]}"
         out.append({
             "sourceJobId": post_source_id,
@@ -214,6 +481,7 @@ def parse_reddit_html_payload(
     subreddit: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
+    reject_reasons: Dict[str, int] | None = None,
 ) -> Tuple[List[RawJob], int]:
     """Parse Reddit HTML content for job posts when JSON and RSS fail."""
     out: List[RawJob] = []
@@ -248,37 +516,46 @@ def parse_reddit_html_payload(
             posted_match = re.search(r"(?is)<time\b[^>]*>(.*?)</time>", container)
             posted_at = _clean_text(strip_html_text(posted_match.group(1))) if posted_match else ""
 
-            confidence = social_compute_confidence(
-                title,
-                link,
-                has_apply_url=bool(link),
-                has_remote_hint=False
+            apply_url = social_extract_apply_url(container, link)
+            keep, confidence, reject_reason = social_evaluate_post(
+                title=title,
+                text=strip_html_text(container),
+                min_confidence=min_confidence,
+                reject_for_hire_posts=reject_for_hire_posts,
+                has_apply_url=bool(apply_url),
             )
-
-            title_lower = title.lower()
-            if any(keyword in title_lower for keyword in SOCIAL_HIRING_KEYWORDS):
-                confidence += 20
-            elif any(keyword in title_lower for keyword in SOCIAL_FOR_HIRE_KEYWORDS):
-                if reject_for_hire_posts:
-                    continue
-                confidence -= 30
-            
-            if confidence < min_confidence:
+            if not keep:
                 low_conf_count += 1
+                if reject_reason in {"missing_apply_url", "missing_valid_apply_url", "social_repost_or_commentary"} and social_is_content_only_url(link):
+                    reject_reason = "non_job_destination_url"
+                _increment_reason(reject_reasons, reject_reason)
                 continue
 
-            company = social_infer_company(title, link)
-
-            job_entry = RawJob(
+            fallback_company = link
+            company = social_infer_company(title, strip_html_text(container), fallback=fallback_company)
+            reject_reason = social_should_reject_non_job_reddit_post(
                 title=title,
+                text=strip_html_text(container),
+                apply_url=apply_url or link,
                 company=company,
-                job_link=link,
-                source="social_reddit",
-                source_job_id=f"html:{subreddit}:{hash(title)}",
-                posted_at=posted_at,
-                adapter="social",
-                studio=subreddit,
+                fallback_company=fallback_company,
             )
+            if reject_reason:
+                low_conf_count += 1
+                _increment_reason(reject_reasons, reject_reason)
+                continue
+
+            job_entry = {
+                "title": title,
+                "company": company,
+                "jobLink": apply_url or link,
+                "source": "social_reddit",
+                "sourceJobId": f"html:{subreddit}:{hash(title)}",
+                "postedAt": posted_at,
+                "adapter": "social",
+                "studio": subreddit,
+                "sector": "Game",
+            }
             out.append(job_entry)
 
     except Exception:
@@ -293,6 +570,7 @@ def parse_reddit_rss_payload(
     subreddit: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
+    reject_reasons: Dict[str, int] | None = None,
 ) -> Tuple[List[RawJob], int]:
     try:
         root = ET.fromstring(_clean_text(rss_text).lstrip())
@@ -308,7 +586,7 @@ def parse_reddit_rss_payload(
             unescape(_clean_text(item.findtext("description")))
         )
         apply_url = social_extract_apply_url(description, link)
-        keep, confidence = social_should_keep_post(
+        keep, confidence, reject_reason = social_evaluate_post(
             title=title,
             text=description,
             min_confidence=min_confidence,
@@ -317,10 +595,25 @@ def parse_reddit_rss_payload(
         )
         if not keep:
             low_conf_count += 1
+            if reject_reason in {"missing_apply_url", "missing_valid_apply_url", "social_repost_or_commentary"} and social_is_content_only_url(link):
+                reject_reason = "non_job_destination_url"
+            _increment_reason(reject_reasons, reject_reason)
             continue
         if not title or not link:
             continue
-        company = social_infer_company(title, description, fallback=_clean_text(subreddit))
+        fallback_company = _clean_text(subreddit)
+        company = social_infer_company(title, description, fallback=fallback_company)
+        reject_reason = social_should_reject_non_job_reddit_post(
+            title=title,
+            text=description,
+            apply_url=apply_url or link,
+            company=company,
+            fallback_company=fallback_company,
+        )
+        if reject_reason:
+            low_conf_count += 1
+            _increment_reason(reject_reasons, reject_reason)
+            continue
         post_source_id = f"reddit:{_clean_text(subreddit)}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:12]}"
         out.append({
             "sourceJobId": post_source_id,
@@ -353,6 +646,7 @@ def parse_x_payload(
     query_label: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
+    reject_reasons: Dict[str, int] | None = None,
 ) -> Tuple[List[RawJob], int]:
     rows = (
         payload.get("data")
@@ -374,7 +668,7 @@ def parse_x_payload(
             if isinstance(item, dict)
         ]
         apply_url = social_extract_apply_url(text, " ".join(expanded_urls))
-        keep, confidence = social_should_keep_post(
+        keep, confidence, reject_reason = social_evaluate_post(
             title=text,
             text=text,
             min_confidence=min_confidence,
@@ -383,6 +677,7 @@ def parse_x_payload(
         )
         if not keep:
             low_conf_count += 1
+            _increment_reason(reject_reasons, reject_reason)
             continue
         permalink = (
             normalize_url(f"https://x.com/i/web/status/{post_id}") if post_id else ""
@@ -420,6 +715,7 @@ def parse_x_rss_payload(
     query_label: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
+    reject_reasons: Dict[str, int] | None = None,
 ) -> Tuple[List[RawJob], int]:
     raw_text = _clean_text(rss_text).lstrip()
     safe_text = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#\d+;)", "&amp;", raw_text)
@@ -439,10 +735,11 @@ def parse_x_rss_payload(
         banner_text = _norm_text(f"{title} {description}")
         if "not yet whitelisted" in banner_text or "rss reader" in banner_text:
             low_conf_count += 1
+            _increment_reason(reject_reasons, "rss_banner_or_whitelist")
             continue
         text = f"{title} {description}"
         apply_url = social_extract_apply_url(text, link)
-        keep, confidence = social_should_keep_post(
+        keep, confidence, reject_reason = social_evaluate_post(
             title=title,
             text=text,
             min_confidence=min_confidence,
@@ -451,6 +748,7 @@ def parse_x_rss_payload(
         )
         if not keep:
             low_conf_count += 1
+            _increment_reason(reject_reasons, reject_reason)
             continue
         if not title or not link:
             continue
@@ -489,6 +787,7 @@ def parse_mastodon_payload(
     tag: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
+    reject_reasons: Dict[str, int] | None = None,
 ) -> Tuple[List[RawJob], int]:
     rows = payload if isinstance(payload, list) else []
     out: List[RawJob] = []
@@ -501,7 +800,7 @@ def parse_mastodon_payload(
         post_url = normalize_url(row.get("url"))
         card = row.get("card") if isinstance(row.get("card"), dict) else {}
         apply_url = social_extract_apply_url(text, _clean_text(card.get("url")))
-        keep, confidence = social_should_keep_post(
+        keep, confidence, reject_reason = social_evaluate_post(
             title=text,
             text=text,
             min_confidence=min_confidence,
@@ -510,6 +809,7 @@ def parse_mastodon_payload(
         )
         if not keep:
             low_conf_count += 1
+            _increment_reason(reject_reasons, reject_reason)
             continue
         post_id = _clean_text(row.get("id"))
         account = row.get("account") if isinstance(row.get("account"), dict) else {}

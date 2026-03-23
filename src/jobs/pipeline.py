@@ -52,6 +52,7 @@ from src.jobs.pipeline_loader_selection import (
     sort_selected_loaders,
 )
 from src.jobs.pipeline_runtime import (
+    build_fetch_task_progress_payload,
     initialize_task_runtime,
     make_fetch_text_limited,
     make_task_state_writer,
@@ -522,6 +523,10 @@ def run_pipeline(
         fetch_text_impl=fetch_text_impl,
         write_task_state=write_task_state,
     )
+    progress_phase = {
+        "key": "selecting_sources",
+        "label": "Selecting sources",
+    }
     write_progress_report = lambda: write_pipeline_progress_report(
         canonical_rows=canonical_rows,
         lifecycle_rows=lifecycle_rows,
@@ -538,8 +543,12 @@ def run_pipeline(
         normalize_fetch_report_payload=normalize_fetch_report_payload,
         write_text_if_changed=write_text_if_changed,
         deduplicator_factory=CanonicalDeduplicator,
+        task_rows=task_runtime.task_rows,
+        phase_key=str(progress_phase["key"]),
+        phase_label=str(progress_phase["label"]),
         run_id=run_id,
     )
+    write_progress_report()
 
     stage_config = SourceExecutionStageConfig(
         max_workers=max_workers,
@@ -552,6 +561,8 @@ def run_pipeline(
         show_progress=show_progress,
         force_refresh_all=force_refresh_all,
     )
+    progress_phase["key"] = "executing_sources"
+    progress_phase["label"] = "Executing sources"
     try:
         run_source_execution_stage(
             config=stage_config,
@@ -595,6 +606,9 @@ def run_pipeline(
             if clean_text(_reg.get("listing_url")):
                 _report["listingUrl"] = clean_text(_reg.get("listing_url"))
 
+    progress_phase["key"] = "merging_results"
+    progress_phase["label"] = "Merging results"
+    write_progress_report()
     deduplicator = CanonicalDeduplicator()
     deduped_rows = deduplicator.process(canonical_rows)
     dedup_stats = deduplicator.stats
@@ -657,6 +671,9 @@ def run_pipeline(
     wrote_json = False
     wrote_csv = False
     wrote_light_json = False
+    progress_phase["key"] = "writing_outputs"
+    progress_phase["label"] = "Writing outputs"
+    write_progress_report()
     if deduped_payload_rows:
         validate_canonical_jobs_payload(deduped_payload_rows)
         wrote_json = write_atomic_if_changed(paths.json_path, serialize_rows_for_json(deduped_payload_rows, OUTPUT_FIELDS))
@@ -695,6 +712,14 @@ def run_pipeline(
         "startedAt": started_at,
         "finishedAt": lifecycle_finished_at,
         "runtime": runtime_payload,
+        "taskProgress": build_fetch_task_progress_payload(
+            phase_key="completed",
+            phase_label="Completed",
+            task_rows=task_runtime.task_rows,
+            source_reports=source_reports,
+            output_count=len(deduped_rows),
+            finished=True,
+        ),
         "summary": build_pipeline_summary(
             dedup_stats,
             deduped_rows,

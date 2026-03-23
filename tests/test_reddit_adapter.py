@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Dict, List
+from unittest.mock import patch
 
 import pytest
 
@@ -65,15 +66,16 @@ def test_reddit_adapter_loads_all_subreddits():
 
 
 def test_reddit_adapter_configuration():
-    """Test that Reddit configuration includes all expected subreddits."""
+    """Default config should not poll broad Reddit discussion sources."""
     from src.jobs.registry import load_social_config
     
     config = load_social_config(enabled=True)
     reddit_config = config.get("reddit") or {}
     subreddits = reddit_config.get("subreddits") or []
     
-    assert len(subreddits) == 1
-    expected_subreddits = ["gamedev"]
+    assert reddit_config.get("enabled") is False
+    assert len(subreddits) == 0
+    expected_subreddits = []
     assert subreddits == expected_subreddits
 
 
@@ -172,4 +174,72 @@ def test_reddit_adapter_rate_limiting():
             
     finally:
         # Restore original config
+        register_module._SOCIAL_CONFIG = original_social_config
+
+
+def test_reddit_adapter_reports_reject_reason_counts():
+    """Rejected posts should expose reason counts in diagnostics for later auditing."""
+    social_config = {
+        "enabled": True,
+        "minConfidence": 20,
+        "rejectForHirePosts": True,
+        "reddit": {
+            "enabled": True,
+            "subreddits": ["gamedev"],
+            "maxPostsPerSubreddit": 5,
+            "rssFallback": False,
+            "htmlFallback": False,
+            "rateLimitDelay": 0,
+        }
+    }
+    payload = {
+        "data": {
+            "children": [
+                {
+                    "data": {
+                        "id": "good123",
+                        "title": "We're hiring a Unity Technical Artist at Nebula Games",
+                        "selftext": "Apply https://jobs.nebula.dev/ta",
+                        "link_flair_text": "Hiring",
+                        "permalink": "/r/gamedev/comments/good123/test/",
+                        "url": "https://www.reddit.com/r/gamedev/comments/good123/test/",
+                        "created_utc": 1700000000,
+                        "author": "nebula_hr",
+                    }
+                },
+                {
+                    "data": {
+                        "id": "bad123",
+                        "title": "Why is nobody hiring gameplay programmers anymore?",
+                        "selftext": "This industry is rough",
+                        "link_flair_text": "Discussion",
+                        "permalink": "/r/gamedev/comments/bad123/test/",
+                        "url": "https://www.reddit.com/r/gamedev/comments/bad123/test/",
+                        "created_utc": 1700000000,
+                        "author": "someone",
+                    }
+                },
+            ]
+        }
+    }
+
+    import src.jobs.adapters.plugins.social.register as register_module
+    original_social_config = register_module._SOCIAL_CONFIG
+    register_module._SOCIAL_CONFIG = social_config
+
+    try:
+        with patch("src.jobs.adapters.plugins.social.register.fetch_with_retries", return_value=json.dumps(payload)):
+            jobs = _run_reddit(
+                fetch_text=lambda url, timeout: json.dumps(payload),
+                timeout_s=10,
+                retries=0,
+                backoff_s=0.0,
+            )
+
+        assert len(jobs) == 1
+        details = SOURCE_DIAGNOSTICS["social_reddit"]["details"]
+        assert len(details) == 1
+        assert details[0]["keptCount"] == 1
+        assert details[0]["rejectReasonCounts"]["not_hiring_or_layoff"] == 1
+    finally:
         register_module._SOCIAL_CONFIG = original_social_config

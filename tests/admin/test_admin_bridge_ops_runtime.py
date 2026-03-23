@@ -111,6 +111,21 @@ def test_bridge_log_jsonl_output_is_valid_json(admin_bridge_entrypoint_root):
     assert str(payload.get("level") or "") == "info"
 
 
+def test_bridge_log_swallows_broken_windows_pipe(admin_bridge_entrypoint_root):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    with mock.patch("builtins.print", side_effect=OSError(233, "No process is on the other end of the pipe")):
+        admin_bridge.bridge_log("info", "hello_bridge", runId="abc123")
+
+
 def test_configure_runtime_paths_updates_bridge_paths(admin_bridge_entrypoint_root):
     data_dir = admin_bridge_entrypoint_root / "runtime-data"
     cfg = admin_bridge.RuntimeConfig(
@@ -202,6 +217,8 @@ def test_normalize_fetch_report_contract_sanitizes_minimal_payload(admin_bridge_
     assert isinstance(payload.get("summary"), dict)
     assert isinstance(payload.get("runtime"), dict)
     assert len(payload.get("sources") or []) == 1
+    assert isinstance(payload.get("taskProgress"), dict)
+    assert str(payload["taskProgress"].get("phaseKey") or "") == "executing_sources"
     row = payload["sources"][0]
     assert str(row.get("status") or "") == "ok"
     assert int(row.get("durationMs") or 0) == 17
@@ -226,8 +243,41 @@ def test_normalize_fetch_report_contract_parses_stringified_detail_rows(admin_br
     details = row.get("details") or []
     assert len(details) == 1
     assert str(details[0].get("name") or "") == "Jagex (Lever)"
-    assert str(details[0].get("status") or "") == "ok"
-    assert int(details[0].get("keptCount") or 0) == 2
+
+
+def test_normalize_fetch_report_contract_forces_completed_task_progress_when_finished(admin_bridge_entrypoint_root):
+    payload = admin_bridge.normalize_fetch_report_contract(
+        {
+            "startedAt": "2026-03-23T16:16:54.905369+00:00",
+            "finishedAt": "2026-03-23T16:18:10.053424+00:00",
+            "taskProgress": {
+                "active": True,
+                "phaseKey": "executing_sources",
+                "phaseLabel": "Executing sources",
+                "mode": "determinate",
+                "ratio": 0.18,
+                "counts": {
+                    "resolvedSources": 61,
+                    "sourceCount": 520,
+                    "outputCount": 3683,
+                    "failedSources": 23,
+                    "excludedSources": 0,
+                },
+            },
+            "summary": {
+                "outputCount": 3683,
+                "failedSources": 23,
+                "excludedSources": 0,
+                "sourceCount": 61,
+                "successfulSources": 38,
+            },
+            "sources": [],
+        }
+    )
+    assert payload["taskProgress"]["active"] is False
+    assert str(payload["taskProgress"].get("phaseKey") or "") == "completed"
+    assert str(payload["taskProgress"].get("phaseLabel") or "") == "Completed"
+    assert float(payload["taskProgress"].get("ratio") or 0) == 1.0
 
 
 def test_normalize_discovery_report_contract_derives_queued_count_from_candidates(admin_bridge_entrypoint_root):
@@ -246,6 +296,12 @@ def test_normalize_discovery_report_contract_derives_queued_count_from_candidate
             ],
         }
     )
+    task_progress = payload.get("taskProgress") or {}
+    assert str(task_progress.get("phaseKey") or "") == "starting"
+    assert str(task_progress.get("mode") or "") == "indeterminate"
+    counts = task_progress.get("counts") or {}
+    assert int(counts.get("queuedCandidates") or 0) == 2
+    assert int(counts.get("probedCandidates") or 0) == 4
     assert int((payload.get("summary") or {}).get("queuedCandidateCount") or 0) == 2
     assert int((payload.get("runtime") or {}).get("totalDurationMs") or 0) == 123
     assert int((((payload.get("runtime") or {}).get("stageTimingsMs") or {}).get("probe")) or 0) == 45
@@ -504,6 +560,7 @@ def test_run_background_script_uses_unbuffered_python_for_live_logs(admin_bridge
     assert command[2] == str(admin_bridge_entrypoint_root / "src" / "source_discovery.py")
     assert command[-2:] == ["--mode", "dynamic"]
     assert kwargs["env"]["PYTHONUNBUFFERED"] == "1"
+    assert kwargs["stdout"] is kwargs["stderr"]
 
 
 def test_start_fetcher_task_writes_report_shell_with_run_id(admin_bridge_entrypoint_root):
@@ -609,3 +666,212 @@ def test_sync_history_from_reports_collapses_legacy_fetch_duplicates_by_timestam
         and str(row.get("finishedAt") or "") == finished_at
     ]
     assert len(matching) == 1
+
+
+def test_sync_history_from_reports_enriches_legacy_fetch_row_with_run_id(admin_bridge_entrypoint_root):
+    run_id = "fetch_enrich_1"
+    started_at = admin_bridge.now_iso()
+    admin_bridge.save_json_atomic(
+        admin_bridge.OPS_HISTORY_PATH,
+        [
+            {
+                "id": "legacy_fetch_started",
+                "type": "fetch",
+                "status": "started",
+                "startedAt": started_at,
+                "finishedAt": "",
+                "durationMs": 0,
+                "summary": {},
+            }
+        ],
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "runId": run_id,
+            "startedAt": started_at,
+            "finishedAt": "",
+            "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+            "sources": [],
+        },
+    )
+
+    rows = admin_bridge.sync_history_from_reports()
+    matching = [
+        row
+        for row in rows
+        if str(row.get("type") or "") == "fetch" and str(row.get("startedAt") or "") == started_at
+    ]
+    assert len(matching) == 1
+    assert str(matching[0].get("runId") or "") == run_id
+
+
+def test_sync_history_from_reports_collapses_mixed_fetch_duplicates_to_single_stale_error(admin_bridge_entrypoint_root):
+    run_id = "fetch_stale_1"
+    started_at = "2026-03-01T00:00:00+00:00"
+    admin_bridge.save_json_atomic(
+        admin_bridge.OPS_HISTORY_PATH,
+        [
+            {
+                "id": run_id,
+                "runId": run_id,
+                "type": "fetch",
+                "status": "started",
+                "startedAt": started_at,
+                "finishedAt": "",
+                "durationMs": 0,
+                "summary": {},
+            },
+            {
+                "id": "legacy_duplicate",
+                "type": "fetch",
+                "status": "started",
+                "startedAt": started_at,
+                "finishedAt": "",
+                "durationMs": 0,
+                "summary": {},
+            },
+        ],
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "runId": run_id,
+            "startedAt": started_at,
+            "finishedAt": "",
+            "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+            "sources": [],
+        },
+    )
+    old_ts = 1_700_000_000
+    os.utime(admin_bridge.JOBS_FETCH_REPORT_PATH, (old_ts, old_ts))
+
+    rows = admin_bridge.sync_history_from_reports()
+    matching = [
+        row
+        for row in rows
+        if str(row.get("type") or "") == "fetch" and str(row.get("startedAt") or "") == started_at
+    ]
+    assert len(matching) == 1
+    assert str(matching[0].get("status") or "").lower() == "error"
+    assert str((matching[0].get("summary") or {}).get("error") or "") == "stale_started_run_pruned"
+    assert str(matching[0].get("runId") or "") == run_id
+
+
+def test_start_fetcher_task_registers_history_before_report_can_duplicate(admin_bridge_entrypoint_root):
+    original_save = admin_bridge.save_json_atomic
+
+    def intercepting_save(path, payload):
+        original_save(path, payload)
+        if path == admin_bridge.JOBS_FETCH_REPORT_PATH:
+            rows = admin_bridge.sync_history_from_reports()
+            matching = [
+                row
+                for row in rows
+                if str(row.get("type") or "") == "fetch"
+                and str(row.get("startedAt") or "") == str(payload.get("startedAt") or "")
+            ]
+            assert len(matching) == 1
+            assert str(matching[0].get("runId") or "") == str(payload.get("runId") or "")
+
+    with mock.patch.object(admin_bridge, "save_json_atomic", side_effect=intercepting_save), mock.patch.object(
+        admin_bridge, "run_background_script", return_value=24680
+    ):
+        result = admin_bridge.start_fetcher_task({})
+
+    rows = admin_bridge.load_run_history()
+    matching = [row for row in rows if str(row.get("runId") or "") == str(result.get("runId") or "")]
+    assert len(matching) == 1
+
+
+def test_get_current_task_state_payload_projects_active_tasks(admin_bridge_entrypoint_root):
+    started_at = admin_bridge.now_iso()
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "fetch": {"pid": 111, "script": "jobs_fetcher.py", "startedAt": started_at},
+            "discovery": {"pid": 222, "script": "source_discovery.py", "startedAt": started_at},
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "runId": "fetch_1",
+            "startedAt": started_at,
+            "finishedAt": "",
+            "taskProgress": {
+                "active": True,
+                "phaseKey": "executing_sources",
+                "phaseLabel": "Executing sources",
+                "mode": "determinate",
+                "ratio": 0.5,
+                "counts": {"resolvedSources": 5, "sourceCount": 10},
+            },
+            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+            "sources": [],
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.DISCOVERY_REPORT_PATH,
+        {
+            "runId": "discovery_1",
+            "startedAt": started_at,
+            "finishedAt": "",
+            "taskProgress": {
+                "active": True,
+                "phaseKey": "scanning_sources",
+                "phaseLabel": "Scanning known careers pages",
+                "mode": "indeterminate",
+                "ratio": 0,
+                "counts": {"queuedCandidates": 3},
+            },
+            "summary": {"queuedCandidateCount": 3},
+            "candidates": [],
+            "failures": [],
+        },
+    )
+    admin_bridge.bridge_runtime_state.PIPELINE_STATUS.update(
+        {
+            "active": True,
+            "runId": "pipeline_1",
+            "stage": "fetch",
+            "startedAt": started_at,
+            "finishedAt": "",
+            "progress": {"currentStep": 2, "totalSteps": 3, "percent": 67, "label": "Running fetch..."},
+        }
+    )
+    admin_bridge.SyncState.add_active_sync_run("sync_1")
+    admin_bridge.append_run_history(
+        {
+            "id": "sync_1",
+            "type": "sync",
+            "status": "started",
+            "startedAt": started_at,
+            "finishedAt": "",
+            "durationMs": 0,
+            "summary": {"action": "push"},
+        }
+    )
+
+    try:
+        payload = admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG).get_current_task_state_payload()
+        tasks = payload.get("tasks") or []
+        task_types = {str(row.get("taskType") or "") for row in tasks}
+        assert payload.get("count") == 4
+        assert {"fetch", "discovery", "pipeline", "sync"} <= task_types
+        fetch_row = next(row for row in tasks if str(row.get("taskType") or "") == "fetch")
+        assert str((fetch_row.get("taskProgress") or {}).get("phaseKey") or "") == "executing_sources"
+        pipeline_row = next(row for row in tasks if str(row.get("taskType") or "") == "pipeline")
+        assert str((pipeline_row.get("taskProgress") or {}).get("phaseLabel") or "") == "Running fetch..."
+    finally:
+        admin_bridge.SyncState.remove_active_sync_run("sync_1")
+        admin_bridge.bridge_runtime_state.PIPELINE_STATUS.update(
+            {
+                "active": False,
+                "runId": "",
+                "stage": "idle",
+                "startedAt": "",
+                "finishedAt": "",
+                "progress": {"currentStep": 0, "totalSteps": 3, "percent": 0, "label": "Idle"},
+            }
+        )

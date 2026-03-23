@@ -1,80 +1,73 @@
 {
   "schemaVersion": "1.0",
   "mode": "dynamic",
-  "startedAt": "2026-03-21T19:16:55.783665+00:00",
-  "finishedAt": "2026-03-21T19:17:38.663348+00:00",
+  "startedAt": "2026-03-23T17:09:51.534246+00:00",
+  "finishedAt": "2026-03-23T17:10:26.265093+00:00",
   "summary": {
     "phase": "completed",
+    "phaseKey": "completed",
     "phaseLabel": "Discovery completed",
-    "probedCount": 112,
-    "healthyCount": 34,
-    "newCandidateCount": 34,
+    "probedCount": 55,
+    "healthyCount": 0,
+    "newCandidateCount": 0,
     "taEnvCandidateCount": 0,
     "nlCandidateCount": 0,
-    "failedProbeCount": 77,
-    "probeMissCount": 0,
-    "foundEndpointCount": 786,
-    "probedCandidateCount": 112,
-    "queuedCandidateCount": 8,
-    "discoverableButDeferredCount": 26,
-    "suppressedStaticCount": 0,
-    "skippedDuplicateCount": 668,
+    "failedProbeCount": 41,
+    "probeMissCount": 8,
+    "foundEndpointCount": 785,
+    "probedCandidateCount": 55,
+    "queuedCandidateCount": 0,
+    "discoverableButDeferredCount": 0,
+    "suppressedStaticCount": 14,
+    "skippedDuplicateCount": 714,
     "skippedInvalidCount": 2,
-    "skippedLowEvidenceProbeCount": 4,
-    "adapterCounts": {
-      "static": 34
+    "skippedLowEvidenceProbeCount": 0,
+    "adapterCounts": {},
+    "queuedByAdapter": {},
+    "deferredByAdapter": {},
+    "healthyButDeferredByAdapter": {},
+    "suppressedStaticByReason": {
+      "blocked_domain": 14
     },
-    "queuedByAdapter": {
-      "static": 8
+    "suppressedStaticByStage": {
+      "sheet_directory": 14
     },
-    "deferredByAdapter": {
-      "static": 26
-    },
-    "healthyButDeferredByAdapter": {
-      "static": 26
-    },
-    "suppressedStaticByReason": {},
-    "suppressedStaticByStage": {},
     "queuedProviderCount": 0,
-    "queuedStaticCount": 8,
-    "methodCounts": {
-      "sheet_directory": 34
-    },
+    "queuedStaticCount": 0,
+    "methodCounts": {},
     "generatedCountByStage": {
       "curated_seed": 10,
-      "sheet_directory": 725,
+      "sheet_directory": 726,
       "provider_pattern": 24,
-      "web_provider": 13,
+      "web_provider": 11,
       "generic_static": 14
     },
     "survivedDedupeCountByStage": {
       "curated_seed": 1,
-      "sheet_directory": 104,
-      "provider_pattern": 12,
+      "sheet_directory": 58,
+      "provider_pattern": 11,
       "web_provider": 1,
       "generic_static": 0
     },
     "probedCountByStage": {
       "curated_seed": 1,
-      "sheet_directory": 98,
-      "provider_pattern": 12,
+      "sheet_directory": 42,
+      "provider_pattern": 11,
       "web_provider": 1,
       "generic_static": 0
     },
     "queuedCountByStage": {
       "curated_seed": 0,
-      "sheet_directory": 8,
+      "sheet_directory": 0,
       "provider_pattern": 0,
       "web_provider": 0,
       "generic_static": 0
     },
     "duplicateReasons": {
-      "existing_id": 655,
-      "existing_domain": 13
+      "existing_id": 698,
+      "existing_domain": 16
     },
-    "deferredReasons": {
-      "adapter_cap": 26
-    },
+    "deferredReasons": {},
     "thresholds": {
       "minProviderEvidenceToProbe": 18,
       "minStaticEvidenceToProbe": 22,
@@ -85,86 +78,86 @@
       "patternProviderQueueThreshold": 40
     },
     "lossAccounting": {
-      "generated": 786,
-      "dedupSkipped": 668,
+      "generated": 785,
+      "dedupSkipped": 714,
       "dedupSkippedReasons": {
-        "existing_id": 655,
-        "existing_domain": 13
+        "existing_id": 698,
+        "existing_domain": 16
       },
       "validationSkipped": 2,
-      "lowEvidenceSkipped": 4,
-      "probeFailed": 77,
-      "queueFiltered": 1,
-      "deferredByCap": 26,
-      "queued": 8
+      "lowEvidenceSkipped": 0,
+      "probeFailed": 49,
+      "queueFiltered": 6,
+      "deferredByCap": 0,
+      "queued": 0
     }
   },
   "runtime": {
-    "totalDurationMs": 42879,
+    "totalDurationMs": 34730,
     "stageTimingsMs": {
       "curatedSeed": 0,
-      "sheetDirectory": 549,
+      "sheetDirectory": 631,
       "providerPatterns": 0,
-      "seedCareersScan": 18417,
+      "seedCareersScan": 17293,
       "gamesmap": 0,
-      "webSearch": 9263,
-      "dedupeFilter": 6,
-      "probe": 14611,
+      "webSearch": 4069,
+      "dedupeFilter": 4,
+      "probe": 12424,
       "queueBalancing": 0
     },
     "stageTop": [
       {
         "stage": "seedCareersScan",
-        "durationMs": 18417
+        "durationMs": 17293
       },
       {
         "stage": "probe",
-        "durationMs": 14611
+        "durationMs": 12424
       },
       {
         "stage": "webSearch",
-        "durationMs": 9263
+        "durationMs": 4069
       },
       {
         "stage": "sheetDirectory",
-        "durationMs": 549
+        "durationMs": 631
       },
       {
         "stage": "dedupeFilter",
-        "durationMs": 6
+        "durationMs": 4
       }
     ],
     "adapterTimings": [
       {
         "adapter": "static",
-        "durationMs": 112190,
-        "generatedCount": 662,
-        "failureCount": 49,
-        "probedCount": 83,
-        "healthyCount": 34,
-        "queuedCount": 34
+        "durationMs": 65149,
+        "generatedCount": 663,
+        "failureCount": 29,
+        "probedCount": 29,
+        "healthyCount": 0,
+        "queuedCount": 0
+      },
+      {
+        "adapter": "greenhouse",
+        "durationMs": 7558,
+        "generatedCount": 41,
+        "failureCount": 6,
+        "probedCount": 11,
+        "healthyCount": 0,
+        "queuedCount": 0
       },
       {
         "adapter": "workable",
-        "durationMs": 9537,
-        "generatedCount": 27,
+        "durationMs": 7150,
+        "generatedCount": 25,
         "failureCount": 11,
         "probedCount": 11,
         "healthyCount": 0,
         "queuedCount": 0
       },
       {
-        "adapter": "greenhouse",
-        "durationMs": 6851,
-        "generatedCount": 41,
-        "failureCount": 13,
-        "probedCount": 13,
-        "healthyCount": 0,
-        "queuedCount": 0
-      },
-      {
         "adapter": "lever",
-        "durationMs": 6274,
+        "durationMs": 4196,
         "generatedCount": 16,
         "failureCount": 2,
         "probedCount": 2,
@@ -173,16 +166,16 @@
       },
       {
         "adapter": "seed_careers_page",
-        "durationMs": 1848,
+        "durationMs": 2886,
         "generatedCount": 0,
-        "failureCount": 3,
+        "failureCount": 5,
         "probedCount": 0,
         "healthyCount": 0,
         "queuedCount": 0
       },
       {
         "adapter": "personio",
-        "durationMs": 1841,
+        "durationMs": 1729,
         "generatedCount": 5,
         "failureCount": 0,
         "probedCount": 0,
@@ -191,7 +184,7 @@
       },
       {
         "adapter": "smartrecruiters",
-        "durationMs": 1476,
+        "durationMs": 1300,
         "generatedCount": 8,
         "failureCount": 0,
         "probedCount": 1,
@@ -200,16 +193,16 @@
       },
       {
         "adapter": "teamtailor",
-        "durationMs": 968,
+        "durationMs": 705,
         "generatedCount": 7,
-        "failureCount": 2,
-        "probedCount": 2,
+        "failureCount": 1,
+        "probedCount": 1,
         "healthyCount": 0,
         "queuedCount": 0
       },
       {
         "adapter": "ashby",
-        "durationMs": 617,
+        "durationMs": 581,
         "generatedCount": 8,
         "failureCount": 0,
         "probedCount": 0,
@@ -218,7 +211,7 @@
       },
       {
         "adapter": "recruitee",
-        "durationMs": 4,
+        "durationMs": 5,
         "generatedCount": 7,
         "failureCount": 0,
         "probedCount": 0,
@@ -238,34 +231,34 @@
     "slowestAdapters": [
       {
         "adapter": "static",
-        "durationMs": 112190,
-        "generatedCount": 662,
-        "failureCount": 49,
-        "probedCount": 83,
-        "healthyCount": 34,
-        "queuedCount": 34
+        "durationMs": 65149,
+        "generatedCount": 663,
+        "failureCount": 29,
+        "probedCount": 29,
+        "healthyCount": 0,
+        "queuedCount": 0
+      },
+      {
+        "adapter": "greenhouse",
+        "durationMs": 7558,
+        "generatedCount": 41,
+        "failureCount": 6,
+        "probedCount": 11,
+        "healthyCount": 0,
+        "queuedCount": 0
       },
       {
         "adapter": "workable",
-        "durationMs": 9537,
-        "generatedCount": 27,
+        "durationMs": 7150,
+        "generatedCount": 25,
         "failureCount": 11,
         "probedCount": 11,
         "healthyCount": 0,
         "queuedCount": 0
       },
       {
-        "adapter": "greenhouse",
-        "durationMs": 6851,
-        "generatedCount": 41,
-        "failureCount": 13,
-        "probedCount": 13,
-        "healthyCount": 0,
-        "queuedCount": 0
-      },
-      {
         "adapter": "lever",
-        "durationMs": 6274,
+        "durationMs": 4196,
         "generatedCount": 16,
         "failureCount": 2,
         "probedCount": 2,
@@ -274,1351 +267,38 @@
       },
       {
         "adapter": "seed_careers_page",
-        "durationMs": 1848,
+        "durationMs": 2886,
         "generatedCount": 0,
-        "failureCount": 3,
+        "failureCount": 5,
         "probedCount": 0,
         "healthyCount": 0,
         "queuedCount": 0
       }
-    ]
+    ],
+    "urlPatchStats": {
+      "loaded": 100,
+      "added": 0,
+      "updated": 0,
+      "reprobed": 1
+    },
+    "urlPatchRecoveredCount": 0
   },
-  "candidates": [
-    {
-      "name": "You Pass Universe LLC. (Sheet)",
-      "studio": "You Pass Universe LLC.",
-      "company": "You Pass Universe LLC.",
-      "adapter": "static",
-      "pages": [
-        "https://www.ypuniverse.com/career"
-      ],
-      "listing_url": "https://www.ypuniverse.com/career",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.ypuniverse.com/career",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.ypuniverse.com/career",
-      "id": "static:listing_url:https://www.ypuniverse.com/career",
-      "discoveredAt": "2026-03-21T19:17:24.027103+00:00",
-      "score": 36,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 13,
-      "jobsFound": 13,
-      "confidence": "high",
-      "lastProbedAt": "2026-03-21T19:17:38.654826+00:00",
-      "deferred": false
-    },
-    {
-      "name": "Hadean (Sheet)",
-      "studio": "Hadean",
-      "company": "Hadean",
-      "adapter": "static",
-      "pages": [
-        "https://hadean.com/careers/"
-      ],
-      "listing_url": "https://hadean.com/careers/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://hadean.com/careers/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://hadean.com/careers/",
-      "id": "static:listing_url:https://hadean.com/careers/",
-      "discoveredAt": "2026-03-21T19:17:24.026027+00:00",
-      "score": 29,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 6,
-      "jobsFound": 6,
-      "confidence": "high",
-      "lastProbedAt": "2026-03-21T19:17:38.640479+00:00",
-      "deferred": false
-    },
-    {
-      "name": "Ultra Factory Inc (Sheet)",
-      "studio": "Ultra Factory Inc",
-      "company": "Ultra Factory Inc",
-      "adapter": "static",
-      "pages": [
-        "https://www.ultra-factory.com/jobs"
-      ],
-      "listing_url": "https://www.ultra-factory.com/jobs",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.ultra-factory.com/jobs",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.ultra-factory.com/jobs",
-      "id": "static:listing_url:https://www.ultra-factory.com/jobs",
-      "discoveredAt": "2026-03-21T19:17:24.027015+00:00",
-      "score": 28,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 5,
-      "jobsFound": 5,
-      "confidence": "high",
-      "lastProbedAt": "2026-03-21T19:17:38.652354+00:00",
-      "deferred": false
-    },
-    {
-      "name": "Turtle Rock Studios (Sheet)",
-      "studio": "Turtle Rock Studios",
-      "company": "Turtle Rock Studios",
-      "adapter": "static",
-      "pages": [
-        "https://turtlerockstudios.com/careers/#job-openings"
-      ],
-      "listing_url": "https://turtlerockstudios.com/careers/#job-openings",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://turtlerockstudios.com/careers/#job-openings",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://turtlerockstudios.com/careers/#job-openings",
-      "id": "static:listing_url:https://turtlerockstudios.com/careers/#job-openings",
-      "discoveredAt": "2026-03-21T19:17:24.027007+00:00",
-      "score": 28,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 5,
-      "jobsFound": 5,
-      "confidence": "high",
-      "lastProbedAt": "2026-03-21T19:17:38.650156+00:00",
-      "deferred": false
-    },
-    {
-      "name": "Siege Camp (Sheet)",
-      "studio": "Siege Camp",
-      "company": "Siege Camp",
-      "adapter": "static",
-      "pages": [
-        "https://www.siegecamp.com/careers"
-      ],
-      "listing_url": "https://www.siegecamp.com/careers",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.siegecamp.com/careers",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.siegecamp.com/careers",
-      "id": "static:listing_url:https://www.siegecamp.com/careers",
-      "discoveredAt": "2026-03-21T19:17:24.026808+00:00",
-      "score": 28,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 5,
-      "jobsFound": 5,
-      "confidence": "high",
-      "lastProbedAt": "2026-03-21T19:17:38.645099+00:00",
-      "deferred": false
-    },
-    {
-      "name": "Oxalis Games (Sheet)",
-      "studio": "Oxalis Games",
-      "company": "Oxalis Games",
-      "adapter": "static",
-      "pages": [
-        "https://www.oxalis.games/job-board"
-      ],
-      "listing_url": "https://www.oxalis.games/job-board",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.oxalis.games/job-board",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.oxalis.games/job-board",
-      "id": "static:listing_url:https://www.oxalis.games/job-board",
-      "discoveredAt": "2026-03-21T19:17:24.026505+00:00",
-      "score": 28,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 5,
-      "jobsFound": 5,
-      "confidence": "high",
-      "lastProbedAt": "2026-03-21T19:17:38.642777+00:00",
-      "deferred": false
-    },
-    {
-      "name": "Ogre Head Studio (Sheet)",
-      "studio": "Ogre Head Studio",
-      "company": "Ogre Head Studio",
-      "adapter": "static",
-      "pages": [
-        "https://www.ogreheadstudio.com/career"
-      ],
-      "listing_url": "https://www.ogreheadstudio.com/career",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.ogreheadstudio.com/career",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.ogreheadstudio.com/career",
-      "id": "static:listing_url:https://www.ogreheadstudio.com/career",
-      "discoveredAt": "2026-03-21T19:17:24.026482+00:00",
-      "score": 28,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 5,
-      "jobsFound": 5,
-      "confidence": "high",
-      "lastProbedAt": "2026-03-21T19:17:38.642755+00:00",
-      "deferred": false
-    },
-    {
-      "name": "Wenkly Studio (Sheet)",
-      "studio": "Wenkly Studio",
-      "company": "Wenkly Studio",
-      "adapter": "static",
-      "pages": [
-        "https://www.wenklystudio.com/"
-      ],
-      "listing_url": "https://www.wenklystudio.com/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.wenklystudio.com/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.wenklystudio.com/",
-      "id": "static:listing_url:https://www.wenklystudio.com/",
-      "discoveredAt": "2026-03-21T19:17:24.027072+00:00",
-      "score": 27,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 4,
-      "jobsFound": 4,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.652421+00:00",
-      "deferred": false
-    },
-    {
-      "name": "TRACE Studio (Sheet)",
-      "studio": "TRACE Studio",
-      "company": "TRACE Studio",
-      "adapter": "static",
-      "pages": [
-        "https://www.trace-studio.com/career/"
-      ],
-      "listing_url": "https://www.trace-studio.com/career/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.trace-studio.com/career/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.trace-studio.com/career/",
-      "id": "static:listing_url:https://www.trace-studio.com/career/",
-      "discoveredAt": "2026-03-21T19:17:24.026986+00:00",
-      "score": 27,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 4,
-      "jobsFound": 4,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.650188+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Moving Stone Digital (Sheet)",
-      "studio": "Moving Stone Digital",
-      "company": "Moving Stone Digital",
-      "adapter": "static",
-      "pages": [
-        "https://www.movingstonedigital.com/careers/"
-      ],
-      "listing_url": "https://www.movingstonedigital.com/careers/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.movingstonedigital.com/careers/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.movingstonedigital.com/careers/",
-      "id": "static:listing_url:https://www.movingstonedigital.com/careers/",
-      "discoveredAt": "2026-03-21T19:17:24.026389+00:00",
-      "score": 27,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 4,
-      "jobsFound": 4,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.647646+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Hangar 13 (Sheet)",
-      "studio": "Hangar 13",
-      "company": "Hangar 13",
-      "adapter": "static",
-      "pages": [
-        "https://2k.com/studios/hangar-13/"
-      ],
-      "listing_url": "https://2k.com/studios/hangar-13/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://2k.com/studios/hangar-13/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://2k.com/studios/hangar-13/",
-      "id": "static:listing_url:https://2k.com/studios/hangar-13/",
-      "discoveredAt": "2026-03-21T19:17:24.026031+00:00",
-      "score": 27,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 4,
-      "jobsFound": 4,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.638163+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Amplitude Studios (Sheet)",
-      "studio": "Amplitude Studios",
-      "company": "Amplitude Studios",
-      "adapter": "static",
-      "pages": [
-        "https://www.amplitude-studios.com/"
-      ],
-      "listing_url": "https://www.amplitude-studios.com/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.amplitude-studios.com/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.amplitude-studios.com/",
-      "id": "static:listing_url:https://www.amplitude-studios.com/",
-      "discoveredAt": "2026-03-21T19:17:24.025245+00:00",
-      "score": 27,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 4,
-      "jobsFound": 4,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.633303+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Urban Games (Sheet)",
-      "studio": "Urban Games",
-      "company": "Urban Games",
-      "adapter": "static",
-      "pages": [
-        "https://www.urbangames.com/career/"
-      ],
-      "listing_url": "https://www.urbangames.com/career/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.urbangames.com/career/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.urbangames.com/career/",
-      "id": "static:listing_url:https://www.urbangames.com/career/",
-      "discoveredAt": "2026-03-21T19:17:24.027025+00:00",
-      "score": 26,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 3,
-      "jobsFound": 3,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.652333+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Third Kind Games (Sheet)",
-      "studio": "Third Kind Games",
-      "company": "Third Kind Games",
-      "adapter": "static",
-      "pages": [
-        "https://thirdkindgames.com/careers/"
-      ],
-      "listing_url": "https://thirdkindgames.com/careers/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://thirdkindgames.com/careers/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://thirdkindgames.com/careers/",
-      "id": "static:listing_url:https://thirdkindgames.com/careers/",
-      "discoveredAt": "2026-03-21T19:17:24.026971+00:00",
-      "score": 26,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 3,
-      "jobsFound": 3,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.647736+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Series Entertainment (Sheet)",
-      "studio": "Series Entertainment",
-      "company": "Series Entertainment",
-      "adapter": "static",
-      "pages": [
-        "https://series.inc/careers/"
-      ],
-      "listing_url": "https://series.inc/careers/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://series.inc/careers/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://series.inc/careers/",
-      "id": "static:listing_url:https://series.inc/careers/",
-      "discoveredAt": "2026-03-21T19:17:24.026795+00:00",
-      "score": 26,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 3,
-      "jobsFound": 3,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.645071+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Paxie Games (Sheet)",
-      "studio": "Paxie Games",
-      "company": "Paxie Games",
-      "adapter": "static",
-      "pages": [
-        "https://paxiegames.com/jobs/"
-      ],
-      "listing_url": "https://paxiegames.com/jobs/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://paxiegames.com/jobs/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://paxiegames.com/jobs/",
-      "id": "static:listing_url:https://paxiegames.com/jobs/",
-      "discoveredAt": "2026-03-21T19:17:24.026531+00:00",
-      "score": 26,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 3,
-      "jobsFound": 3,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.645050+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Papagallo Games (Sheet)",
-      "studio": "Papagallo Games",
-      "company": "Papagallo Games",
-      "adapter": "static",
-      "pages": [
-        "https://pappagallogames.com/jobs/"
-      ],
-      "listing_url": "https://pappagallogames.com/jobs/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://pappagallogames.com/jobs/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://pappagallogames.com/jobs/",
-      "id": "static:listing_url:https://pappagallogames.com/jobs/",
-      "discoveredAt": "2026-03-21T19:17:24.026518+00:00",
-      "score": 26,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 3,
-      "jobsFound": 3,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.657256+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Immutable (Sheet)",
-      "studio": "Immutable",
-      "company": "Immutable",
-      "adapter": "static",
-      "pages": [
-        "https://www.immutable.com/careers"
-      ],
-      "listing_url": "https://www.immutable.com/careers",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.immutable.com/careers",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.immutable.com/careers",
-      "id": "static:listing_url:https://www.immutable.com/careers",
-      "discoveredAt": "2026-03-21T19:17:24.026071+00:00",
-      "score": 26,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 3,
-      "jobsFound": 3,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.640502+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "HTX Labs (Sheet)",
-      "studio": "HTX Labs",
-      "company": "HTX Labs",
-      "adapter": "static",
-      "pages": [
-        "https://htxlabs.com/careers/"
-      ],
-      "listing_url": "https://htxlabs.com/careers/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://htxlabs.com/careers/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://htxlabs.com/careers/",
-      "id": "static:listing_url:https://htxlabs.com/careers/",
-      "discoveredAt": "2026-03-21T19:17:24.026060+00:00",
-      "score": 26,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 3,
-      "jobsFound": 3,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.642797+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Fuse Games (Sheet)",
-      "studio": "Fuse Games",
-      "company": "Fuse Games",
-      "adapter": "static",
-      "pages": [
-        "https://fusegames.com/careers/"
-      ],
-      "listing_url": "https://fusegames.com/careers/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://fusegames.com/careers/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://fusegames.com/careers/",
-      "id": "static:listing_url:https://fusegames.com/careers/",
-      "discoveredAt": "2026-03-21T19:17:24.025906+00:00",
-      "score": 26,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 3,
-      "jobsFound": 3,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.638198+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Bad Robot Games (Sheet)",
-      "studio": "Bad Robot Games",
-      "company": "Bad Robot Games",
-      "adapter": "static",
-      "pages": [
-        "https://www.badrobotgames.com/careers"
-      ],
-      "listing_url": "https://www.badrobotgames.com/careers",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.badrobotgames.com/careers",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.badrobotgames.com/careers",
-      "id": "static:listing_url:https://www.badrobotgames.com/careers",
-      "discoveredAt": "2026-03-21T19:17:24.025346+00:00",
-      "score": 26,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 3,
-      "jobsFound": 3,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.633231+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "BULKHEAD (Sheet)",
-      "studio": "BULKHEAD",
-      "company": "BULKHEAD",
-      "adapter": "static",
-      "pages": [
-        "https://bulkhead.com/careers/"
-      ],
-      "listing_url": "https://bulkhead.com/careers/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://bulkhead.com/careers/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://bulkhead.com/careers/",
-      "id": "static:listing_url:https://bulkhead.com/careers/",
-      "discoveredAt": "2026-03-21T19:17:24.025490+00:00",
-      "score": 26,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 3,
-      "jobsFound": 3,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.633328+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "The Coalition Studio (Sheet)",
-      "studio": "The Coalition Studio",
-      "company": "The Coalition Studio",
-      "adapter": "static",
-      "pages": [
-        "https://www.thecoalitionstudio.com/careers/"
-      ],
-      "listing_url": "https://www.thecoalitionstudio.com/careers/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.thecoalitionstudio.com/careers/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.thecoalitionstudio.com/careers/",
-      "id": "static:listing_url:https://www.thecoalitionstudio.com/careers/",
-      "discoveredAt": "2026-03-21T19:17:24.026963+00:00",
-      "score": 25,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 2,
-      "jobsFound": 2,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.652391+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Onyx Studio (Sheet)",
-      "studio": "Onyx Studio",
-      "company": "Onyx Studio",
-      "adapter": "static",
-      "pages": [
-        "https://www.onyx.studio/careers"
-      ],
-      "listing_url": "https://www.onyx.studio/careers",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.onyx.studio/careers",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.onyx.studio/careers",
-      "id": "static:listing_url:https://www.onyx.studio/careers",
-      "discoveredAt": "2026-03-21T19:17:24.026491+00:00",
-      "score": 25,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 2,
-      "jobsFound": 2,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.642787+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Blind Squirrel Games (Sheet)",
-      "studio": "Blind Squirrel Games",
-      "company": "Blind Squirrel Games",
-      "adapter": "static",
-      "pages": [
-        "https://blindsquirrelentertainment.com/careers/"
-      ],
-      "listing_url": "https://blindsquirrelentertainment.com/careers/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://blindsquirrelentertainment.com/careers/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://blindsquirrelentertainment.com/careers/",
-      "id": "static:listing_url:https://blindsquirrelentertainment.com/careers/",
-      "discoveredAt": "2026-03-21T19:17:24.025457+00:00",
-      "score": 25,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 2,
-      "jobsFound": 2,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.638186+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "k-ID (Sheet)",
-      "studio": "k-ID",
-      "company": "k-ID",
-      "adapter": "static",
-      "pages": [
-        "https://k-id.com/careers"
-      ],
-      "listing_url": "https://k-id.com/careers",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://k-id.com/careers",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://k-id.com/careers",
-      "id": "static:listing_url:https://k-id.com/careers",
-      "discoveredAt": "2026-03-21T19:17:24.026114+00:00",
-      "score": 24,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 1,
-      "jobsFound": 1,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.642676+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Infernozilla (Sheet)",
-      "studio": "Infernozilla",
-      "company": "Infernozilla",
-      "adapter": "static",
-      "pages": [
-        "https://www.infernozilla.com/careers"
-      ],
-      "listing_url": "https://www.infernozilla.com/careers",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.infernozilla.com/careers",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.infernozilla.com/careers",
-      "id": "static:listing_url:https://www.infernozilla.com/careers",
-      "discoveredAt": "2026-03-21T19:17:24.026074+00:00",
-      "score": 24,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 1,
-      "jobsFound": 1,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.640588+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "AppLovin (Sheet)",
-      "studio": "AppLovin",
-      "company": "AppLovin",
-      "adapter": "static",
-      "pages": [
-        "https://www.applovin.com/en"
-      ],
-      "listing_url": "https://www.applovin.com/en",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.applovin.com/en",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.applovin.com/en",
-      "id": "static:listing_url:https://www.applovin.com/en",
-      "discoveredAt": "2026-03-21T19:17:24.025275+00:00",
-      "score": 24,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 1,
-      "jobsFound": 1,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.633264+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Refactor Games (Sheet)",
-      "studio": "Refactor Games",
-      "company": "Refactor Games",
-      "adapter": "static",
-      "pages": [
-        "https://www.refactorgames.com/"
-      ],
-      "listing_url": "https://www.refactorgames.com/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.refactorgames.com/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.refactorgames.com/",
-      "id": "static:listing_url:https://www.refactorgames.com/",
-      "discoveredAt": "2026-03-21T19:17:24.026668+00:00",
-      "score": 23,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-21T19:17:38.647800+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Crater Studios (Sheet)",
-      "studio": "Crater Studios",
-      "company": "Crater Studios",
-      "adapter": "static",
-      "pages": [
-        "https://craterstudiosgames.com/career"
-      ],
-      "listing_url": "https://craterstudiosgames.com/career",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://craterstudiosgames.com/career",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_yes"
-      ],
-      "evidenceScore": 46,
-      "weakSignal": false,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://craterstudiosgames.com/career",
-      "id": "static:listing_url:https://craterstudiosgames.com/career",
-      "discoveredAt": "2026-03-21T19:17:24.025575+00:00",
-      "score": 23,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-21T19:17:38.636050+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Studio 444 (Sheet)",
-      "studio": "Studio 444",
-      "company": "Studio 444",
-      "adapter": "static",
-      "pages": [
-        "https://www.444group.co/careers"
-      ],
-      "listing_url": "https://www.444group.co/careers",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.444group.co/careers",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_speculative"
-      ],
-      "evidenceScore": 18,
-      "weakSignal": true,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.444group.co/careers",
-      "id": "static:listing_url:https://www.444group.co/careers",
-      "discoveredAt": "2026-03-21T19:17:24.027202+00:00",
-      "score": 14,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 5,
-      "jobsFound": 5,
-      "confidence": "high",
-      "lastProbedAt": "2026-03-21T19:17:38.654784+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Uken Games (Sheet)",
-      "studio": "Uken Games",
-      "company": "Uken Games",
-      "adapter": "static",
-      "pages": [
-        "https://uken.com/careers"
-      ],
-      "listing_url": "https://uken.com/careers",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://uken.com/careers",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_speculative"
-      ],
-      "evidenceScore": 18,
-      "weakSignal": true,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://uken.com/careers",
-      "id": "static:listing_url:https://uken.com/careers",
-      "discoveredAt": "2026-03-21T19:17:24.027214+00:00",
-      "score": 11,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 2,
-      "jobsFound": 2,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.654851+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "Limbic Entertainment (Sheet)",
-      "studio": "Limbic Entertainment",
-      "company": "Limbic Entertainment",
-      "adapter": "static",
-      "pages": [
-        "https://www.limbic-entertainment.de/careers/"
-      ],
-      "listing_url": "https://www.limbic-entertainment.de/careers/",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://www.limbic-entertainment.de/careers/",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_no"
-      ],
-      "evidenceScore": 12,
-      "weakSignal": true,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://www.limbic-entertainment.de/careers/",
-      "id": "static:listing_url:https://www.limbic-entertainment.de/careers/",
-      "discoveredAt": "2026-03-21T19:17:24.027158+00:00",
-      "score": 9,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 3,
-      "jobsFound": 3,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.657212+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
-    },
-    {
-      "name": "BebopBee, Inc. (Sheet)",
-      "studio": "BebopBee, Inc.",
-      "company": "BebopBee, Inc.",
-      "adapter": "static",
-      "pages": [
-        "https://careers.bitkraft.vc/companies/bebopbee?filter=eyJpbmR1c3RyeV90YWdzIjpbIkdhbWluZyJdfQ%3D%3D#content"
-      ],
-      "listing_url": "https://careers.bitkraft.vc/companies/bebopbee?filter=eyJpbmR1c3RyeV90YWdzIjpbIkdhbWluZyJdfQ%3D%3D#content",
-      "nlPriority": false,
-      "discoveryMethod": "sheet_directory",
-      "discoveryStage": "sheet_directory",
-      "careersUrl": "https://careers.bitkraft.vc/companies/bebopbee?filter=eyJpbmR1c3RyeV90YWdzIjpbIkdhbWluZyJdfQ%3D%3D#content",
-      "evidenceSource": "game_studios_sheet",
-      "evidenceTypes": [
-        "sheet_directory",
-        "sheet_row",
-        "sheet_roles_open_no"
-      ],
-      "evidenceScore": 12,
-      "weakSignal": true,
-      "sourceDirectory": "game_studios_sheet",
-      "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
-      "sourceDirectoryEntryUrl": "https://careers.bitkraft.vc/companies/bebopbee?filter=eyJpbmR1c3RyeV90YWdzIjpbIkdhbWluZyJdfQ%3D%3D#content",
-      "id": "static:listing_url:https://careers.bitkraft.vc/companies/bebopbee?filter=eyjpbmr1c3ryev90ywdzijpbikdhbwluzyjdfq%3d%3d#content",
-      "discoveredAt": "2026-03-21T19:17:24.027122+00:00",
-      "score": 7,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 1,
-      "jobsFound": 1,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-21T19:17:38.657190+00:00",
-      "deferred": true,
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap"
+  "taskProgress": {
+    "active": false,
+    "phaseKey": "completed",
+    "phaseLabel": "Discovery completed",
+    "mode": "determinate",
+    "ratio": 1.0,
+    "counts": {
+      "foundEndpoints": 785,
+      "probedCandidates": 55,
+      "probeTotal": 55,
+      "queuedCandidates": 0,
+      "deferredCandidates": 0,
+      "failedProbes": 41
     }
-  ],
+  },
+  "candidates": [],
   "failures": [
     {
       "name": "https://www.epicgames.com/site/careers/jobs",
@@ -1632,6 +312,22 @@
       "name": "https://careers.rebellion.com/",
       "adapter": "seed_careers_page",
       "error": "HTTP Error 403: Forbidden",
+      "stage": "page_fetch",
+      "dropStage": "page_fetch",
+      "dropReason": "page_fetch"
+    },
+    {
+      "name": "https://apply.workable.com/hutch/",
+      "adapter": "seed_careers_page",
+      "error": "HTTP Error 429: Too Many Requests",
+      "stage": "page_fetch",
+      "dropStage": "page_fetch",
+      "dropReason": "page_fetch"
+    },
+    {
+      "name": "https://apply.workable.com/wargaming/",
+      "adapter": "seed_careers_page",
+      "error": "HTTP Error 429: Too Many Requests",
       "stage": "page_fetch",
       "dropStage": "page_fetch",
       "dropReason": "page_fetch"
@@ -1989,6 +685,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Niantic, Inc. (Greenhouse)",
+      "adapter": "greenhouse",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Penn Interactive (Greenhouse)",
       "adapter": "greenhouse",
       "stage": "dedupe_skipped",
@@ -2103,6 +807,14 @@
     {
       "name": "StoryToys (Workable)",
       "adapter": "workable",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Tanglewood Games (Teamtailor)",
+      "adapter": "teamtailor",
       "stage": "dedupe_skipped",
       "error": "existing_id",
       "dropStage": "dedupe_skipped",
@@ -2285,6 +997,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "AB Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Abstraction Games (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -2381,6 +1101,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Amplitude Studios (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Amrita Studio (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -2430,6 +1158,14 @@
     },
     {
       "name": "Anzu.io (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "AppLovin (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -2574,6 +1310,14 @@
     },
     {
       "name": "Backlight Studio (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Bad Robot Games (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -2749,6 +1493,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Blind Squirrel Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Blizzard Entertainment (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -2806,6 +1558,14 @@
     },
     {
       "name": "Boombit (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "BULKHEAD (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -2966,6 +1726,14 @@
     },
     {
       "name": "Corsair (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Crater Studios (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -3413,6 +2181,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Floating Rock (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Flowplay (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -3518,6 +2294,14 @@
     },
     {
       "name": "Funcraft Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Fuse Games (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -3773,6 +2557,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Good Game Design Folks (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Greensky Games Studio (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -3869,7 +2661,23 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Hadean (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Halo Studios (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Hangar 13 (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -3981,6 +2789,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "HTX Labs (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Hutch (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -4006,6 +2822,22 @@
     },
     {
       "name": "iLogos (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Immutable (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Infernozilla (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -4085,6 +2917,14 @@
       "dropReason": "existing_domain"
     },
     {
+      "name": "Ironbelly Studios (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Ironbird Creations (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -4126,6 +2966,14 @@
     },
     {
       "name": "Jyamma Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_domain",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_domain"
+    },
+    {
+      "name": "k-ID (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -4261,6 +3109,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Kwalee (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Leartes Studios (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -4342,6 +3198,14 @@
     },
     {
       "name": "LO-FI GAMES LTD (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Lucky VR (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -4552,9 +3416,9 @@
       "name": "Microsoft (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
-      "error": "existing_domain",
+      "error": "existing_id",
       "dropStage": "dedupe_skipped",
-      "dropReason": "existing_domain"
+      "dropReason": "existing_id"
     },
     {
       "name": "Midas Games (Sheet)",
@@ -4677,6 +3541,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Moving Stone Digital (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Muddy Robot (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -4728,9 +3600,9 @@
       "name": "nDreams (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
-      "error": "existing_id",
+      "error": "existing_domain",
       "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
+      "dropReason": "existing_domain"
     },
     {
       "name": "Nekcom Games (Sheet)",
@@ -4877,6 +3749,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Ogre Head Studio (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Omnio Games (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -4886,6 +3766,14 @@
     },
     {
       "name": "One Man Studio (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Onyx Studio (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -4917,6 +3805,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Oxalis Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Oxide Games (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -4941,6 +3837,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Papagallo Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Paradox Interactive (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -4958,6 +3862,14 @@
     },
     {
       "name": "Passion Republic (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Paxie Games (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -5277,6 +4189,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Refactor Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Reflector Entertainment (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -5565,6 +4485,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Series Entertainment (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Sharkmob (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -5582,6 +4510,22 @@
     },
     {
       "name": "Shortgun Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Side, inc. (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Siege Camp (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -5989,6 +4933,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "The Coalition Studio (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "The Farm 51 (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -6006,6 +4958,14 @@
     },
     {
       "name": "The Gang (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Third Kind Games (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -6038,6 +4998,14 @@
     },
     {
       "name": "Toca Boca (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "TRACE Studio (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -6101,6 +5069,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Turtle Rock Studios (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_domain",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_domain"
+    },
+    {
       "name": "Twitch (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -6125,6 +5101,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Ultra Factory Inc (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Unity (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -6142,6 +5126,14 @@
     },
     {
       "name": "Upsurge Studios (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Urban Games (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -6293,6 +5285,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Wenkly Studio (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Whiteboard Games (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -6357,6 +5357,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Xbox Game Studios (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Xsolla (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -6374,6 +5382,22 @@
     },
     {
       "name": "Yodo1 Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_domain",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_domain"
+    },
+    {
+      "name": "Yostar Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "You Pass Universe LLC. (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -6430,6 +5454,14 @@
     },
     {
       "name": "Aither Entertainment (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "BebopBee, Inc. (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -6501,6 +5533,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Joker Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Kevuru Games (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -6510,6 +5550,14 @@
     },
     {
       "name": "Lava Labs (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Limbic Entertainment (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -6637,6 +5685,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Studio 444 (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Studio Gobo (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -6669,7 +5725,23 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Uken Games (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Unknown Worlds Entertainment (Sheet)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Worldwinner (Sheet)",
       "adapter": "static",
       "stage": "dedupe_skipped",
       "error": "existing_id",
@@ -6679,6 +5751,14 @@
     {
       "name": "Wushu Studios (Sheet)",
       "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
+      "name": "Guerrilla Games (Greenhouse)",
+      "adapter": "greenhouse",
       "stage": "dedupe_skipped",
       "error": "existing_id",
       "dropStage": "dedupe_skipped",
@@ -6807,22 +5887,6 @@
     {
       "name": "Paradox Interactive (Teamtailor)",
       "adapter": "teamtailor",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Hutch (Workable)",
-      "adapter": "workable",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Wargaming (Workable)",
-      "adapter": "workable",
       "stage": "dedupe_skipped",
       "error": "existing_id",
       "dropStage": "dedupe_skipped",
@@ -7007,40 +6071,130 @@
       "dropReason": "validation"
     },
     {
-      "name": "Secret Dimension (Sheet)",
+      "name": "762 Interactive (Sheet)",
       "adapter": "static",
-      "domain": "secretdimension.com",
-      "error": "evidence score 12 below probe threshold 22",
-      "stage": "probe_skipped",
-      "dropStage": "low_evidence_skipped",
-      "dropReason": "low_evidence_probe_cap"
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "Couch Heroes (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "Elsewhere Entertainment (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "Fusebox Games (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "Keen Games (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "Klang Games (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "Lighthouse Games (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "Skystone Games (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "Threeclipse Inc. (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "Vertigo Games (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "Vertpaint Studios (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "Aurory (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
+    },
+    {
+      "name": "MercurySteam (Sheet)",
+      "adapter": "static",
+      "domain": "www.linkedin.com",
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
     },
     {
       "name": "Spliced Inc. (Sheet)",
       "adapter": "static",
       "domain": "www.linkedin.com",
-      "error": "evidence score 12 below probe threshold 22",
-      "stage": "probe_skipped",
-      "dropStage": "low_evidence_skipped",
-      "dropReason": "low_evidence_probe_cap"
-    },
-    {
-      "name": "Thunderful Games (Sheet)",
-      "adapter": "static",
-      "domain": "career.thunderfulgames.com",
-      "error": "evidence score 12 below probe threshold 22",
-      "stage": "probe_skipped",
-      "dropStage": "low_evidence_skipped",
-      "dropReason": "low_evidence_probe_cap"
-    },
-    {
-      "name": "Worldwinner (Sheet)",
-      "adapter": "static",
-      "domain": "corp.worldwinner.com",
-      "error": "evidence score 12 below probe threshold 22",
-      "stage": "probe_skipped",
-      "dropStage": "low_evidence_skipped",
-      "dropReason": "low_evidence_probe_cap"
+      "error": "blocked_domain",
+      "stage": "suppressed_static",
+      "dropStage": "suppressed_static",
+      "dropReason": "blocked_domain"
     },
     {
       "name": "Bandai Namco Entertainment America (Greenhouse)",
@@ -7052,46 +6206,19 @@
       "dropReason": "probe"
     },
     {
-      "name": "Tanglewood Games (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "tanglewoodgameslive-1744291072.teamtailor.com",
-      "error": "https://tanglewoodgameslive-1744291072.teamtailor.com/jobs: Redirect response '301 Moved Permanently' for url 'https://tanglewoodgameslive-1744291072.teamtailor.com/jobs'\nRedirect location: 'https://careers.tanglewoodgames.com/jobs'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Couch Heroes (Sheet)",
+      "name": "Engines of Fury (Sheet)",
       "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/couch-heroes/jobs/: Redirect response '301 Moved Permanently' for url 'https://www.linkedin.com/company/couch-heroes/jobs/'\nRedirect location: 'https://uk.linkedin.com/company/couch-heroes'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
+      "domain": "careers.eof.gg",
+      "error": "https://careers.eof.gg: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "Companion Group (Sheet)",
+      "name": "Black Soup (Sheet)",
       "adapter": "static",
-      "domain": "companiongroup.io",
-      "error": "https://companiongroup.io/careers: Client error '404 Not Found' for url 'https://companiongroup.io/careers'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "762 Interactive (Sheet)",
-      "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/762-interactive/jobs/: Redirect response '301 Moved Permanently' for url 'https://www.linkedin.com/company/762-interactive/jobs/'\nRedirect location: 'https://www.linkedin.com/company/762-interactive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Niantic, Inc. (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/niantic: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/niantic'\nRedirect location: 'https://job-boards.greenhouse.io/niantic'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
+      "domain": "careers.blacksoup.gg",
+      "error": "https://careers.blacksoup.gg: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7099,35 +6226,8 @@
     {
       "name": "Crate Entertainment (Sheet)",
       "adapter": "static",
-      "domain": "www.crateentertainment.com",
-      "error": "https://www.crateentertainment.com/jobs/: Client error '404 Not Found' for url 'https://www.crateentertainment.com/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Aesir Interactive GmbH (Sheet)",
-      "adapter": "static",
-      "domain": "aesir-interactive.com",
-      "error": "https://aesir-interactive.com/vacancy/: Client error '404 Not Found' for url 'https://aesir-interactive.com/vacancy/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Elsewhere Entertainment (Sheet)",
-      "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/elsewhere-ent/jobs/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/elsewhere-ent/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "AB Games (Sheet)",
-      "adapter": "static",
-      "domain": "ab-games.com",
-      "error": "https://ab-games.com/#vacancies: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
+      "domain": "careers.crateentertainment.com",
+      "error": "https://careers.crateentertainment.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7142,6 +6242,42 @@
       "dropReason": "probe"
     },
     {
+      "name": "Chillchat (Sheet)",
+      "adapter": "static",
+      "domain": "careers.chillchat.com",
+      "error": "https://careers.chillchat.com: [Errno 11001] getaddrinfo failed",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Remedy Entertainment (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "www.remedygames.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
+      "name": "Netspeak Games (Teamtailor)",
+      "adapter": "teamtailor",
+      "domain": "careers.netspeakgames.teamtailor.com",
+      "error": "https://careers.netspeakgames.teamtailor.com: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'careers.netspeakgames.teamtailor.com'. (_ssl.c:1032)",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Aesir Interactive GmbH (Sheet)",
+      "adapter": "static",
+      "domain": "careers.aesir-interactive.com",
+      "error": "https://careers.aesir-interactive.com: [Errno 11001] getaddrinfo failed",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
       "name": "GameChanger (Sheet)",
       "adapter": "static",
       "domain": "gc.com",
@@ -7151,253 +6287,19 @@
       "dropReason": "probe"
     },
     {
-      "name": "Arkadium (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "https://apply.workable.com/arkadium1: Redirect response '302 Found' for url 'https://apply.workable.com/arkadium1'\nRedirect location: '/oops'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Square Enix (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "https://apply.workable.com/squareenixamerica: Redirect response '302 Found' for url 'https://apply.workable.com/squareenixamerica'\nRedirect location: '/oops'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Fusebox Games (Sheet)",
-      "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/fusebox-games/jobs/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/fusebox-games/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Black Soup (Sheet)",
-      "adapter": "static",
-      "domain": "www.blacksoup.gg",
-      "error": "https://www.blacksoup.gg/careers: Client error '404 Not Found' for url 'https://www.blacksoup.gg/careers'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Universally Speaking (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "https://apply.workable.com/universallyspeaking: Redirect response '302 Found' for url 'https://apply.workable.com/universallyspeaking'\nRedirect location: '/oops'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "High Voltage Studios (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "https://apply.workable.com/highvoltagesoftware: Redirect response '302 Found' for url 'https://apply.workable.com/highvoltagesoftware'\nRedirect location: '/oops'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Engines of Fury (Sheet)",
-      "adapter": "static",
-      "domain": "www.eof.gg",
-      "error": "https://www.eof.gg/careers: Client error '404 Not Found' for url 'https://www.eof.gg/careers'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Moonbug Entertainment (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "https://apply.workable.com/moonbugentertainment: Redirect response '302 Found' for url 'https://apply.workable.com/moonbugentertainment'\nRedirect location: '/oops'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Devoted Studios (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "https://apply.workable.com/devotedstudios1: Redirect response '302 Found' for url 'https://apply.workable.com/devotedstudios1'\nRedirect location: '/oops'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Jagex (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "https://apply.workable.com/jagexlimited: Redirect response '302 Found' for url 'https://apply.workable.com/jagexlimited'\nRedirect location: '/oops'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Intrepid Studios, Inc (Sheet)",
-      "adapter": "static",
-      "domain": "intrepidstudios.com",
-      "error": "https://intrepidstudios.com/careers: [Errno 11002] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Forgotten Empires (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "https://apply.workable.com/forgottenempires: Redirect response '302 Found' for url 'https://apply.workable.com/forgottenempires'\nRedirect location: '/oops'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
+      "name": "Remedy Entertainment (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "www.remedygames.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
     },
     {
       "name": "Frag Games (Sheet)",
       "adapter": "static",
-      "domain": "www.frag-games.com",
-      "error": "https://www.frag-games.com/career: Client error '404 Not Found' for url 'https://www.frag-games.com/career'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Ironbelly Studios (Sheet)",
-      "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/ironbelly-studios/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/ironbelly-studios/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Good Game Design Folks (Sheet)",
-      "adapter": "static",
-      "domain": "www.goodgamedesignfolks.com",
-      "error": "https://www.goodgamedesignfolks.com/en/career: Redirect response '301 Moved Permanently' for url 'https://www.goodgamedesignfolks.com/en/career'\nRedirect location: 'https://coolgamestube.com/rise-of-the-dead/en/career'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Digital Happiness (Sheet)",
-      "adapter": "static",
-      "domain": "www.digitalhappiness.net",
-      "error": "https://www.digitalhappiness.net/career/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Keen Games (Sheet)",
-      "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/keen-games/jobs/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/keen-games/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Jam City (Sheet)",
-      "adapter": "static",
-      "domain": "www.jamcity.com",
-      "error": "https://www.jamcity.com/job-openings/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Lighthouse Games (Sheet)",
-      "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/lighthousegames/jobs/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/lighthousegames/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Atomic Arcade (Sheet)",
-      "adapter": "static",
-      "domain": "atomicarcade.com",
-      "error": "https://atomicarcade.com/careers: Server error '500 Internal Server Error' for url 'https://atomicarcade.com/careers'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Klang Games (Sheet)",
-      "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/klang-games/jobs/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/klang-games/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Lucky VR (Sheet)",
-      "adapter": "static",
-      "domain": "lucky-vr.breezy.hr",
-      "error": "https://lucky-vr.breezy.hr/: Redirect response '302 Found' for url 'https://lucky-vr.breezy.hr/'\nRedirect location: 'https://breezy.hr/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Kinetic Games (Sheet)",
-      "adapter": "static",
-      "domain": "www.kineticgames.co.uk",
-      "error": "https://www.kineticgames.co.uk/careers: Client error '404 Not Found' for url 'https://www.kineticgames.co.uk/careers'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Netspeak Games (Teamtailor)",
-      "adapter": "teamtailor",
-      "domain": "netspeakgames.teamtailor.com",
-      "error": "https://netspeakgames.teamtailor.com/jobs: Client error '404 Not Found' for url 'https://netspeakgames.teamtailor.com/jobs'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Skystone Games (Sheet)",
-      "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/skystone-games/jobs/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/skystone-games/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Guerrilla Games (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/guerrillagames: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/guerrillagames'\nRedirect location: 'https://job-boards.greenhouse.io/guerrillagames'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "PlayStation Global (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/playstation-global: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/playstation-global'\nRedirect location: 'https://job-boards.greenhouse.io/playstation-global'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Team 17 (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "https://apply.workable.com/team17digital: Redirect response '302 Found' for url 'https://apply.workable.com/team17digital'\nRedirect location: '/oops'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
+      "domain": "careers.frag-games.com",
+      "error": "https://careers.frag-games.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7412,163 +6314,10 @@
       "dropReason": "queue_threshold"
     },
     {
-      "name": "Bandai Namco Entertainment (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/bandai-namco-entertainment: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/bandai-namco-entertainment'\nRedirect location: 'https://job-boards.greenhouse.io/bandai-namco-entertainment'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Threeclipse Inc. (Sheet)",
+      "name": "Kinetic Games (Sheet)",
       "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/threeclipse/jobs/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/threeclipse/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Bandai Namco Entertainment (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/bandainamcoentertainment: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/bandainamcoentertainment'\nRedirect location: 'https://job-boards.greenhouse.io/bandainamcoentertainment'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "PlayStation Global (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/playstationglobal: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/playstationglobal'\nRedirect location: 'https://job-boards.greenhouse.io/playstationglobal'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Remedy Entertainment (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/remedyentertainment: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/remedyentertainment'\nRedirect location: 'https://job-boards.greenhouse.io/remedyentertainment'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Skymap Games (Sheet)",
-      "adapter": "static",
-      "domain": "skymap.com",
-      "error": "https://skymap.com/careers: Client error '404 Not Found' for url 'https://skymap.com/careers'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Larian Studios (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/larianstudios: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/larianstudios'\nRedirect location: 'https://job-boards.greenhouse.io/larianstudios'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "To The Sky (Sheet)",
-      "adapter": "static",
-      "domain": "www.tothesky.se",
-      "error": "https://www.tothesky.se/jobs: Client error '404 Not Found' for url 'https://www.tothesky.se/jobs'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Supercell (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/supercell: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/supercell'\nRedirect location: 'https://job-boards.greenhouse.io/supercell'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Astrid Entertainment (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "https://apply.workable.com/astridentertainment: Redirect response '302 Found' for url 'https://apply.workable.com/astridentertainment'\nRedirect location: '/oops'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Snowed In Studios (Workable)",
-      "adapter": "workable",
-      "domain": "apply.workable.com",
-      "error": "https://apply.workable.com/snowedinstudios3: Redirect response '302 Found' for url 'https://apply.workable.com/snowedinstudios3'\nRedirect location: '/oops'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "IO Interactive (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/iointeractive: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/iointeractive'\nRedirect location: 'https://job-boards.greenhouse.io/iointeractive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "QUANTIC DREAM (Lever)",
-      "adapter": "lever",
-      "domain": "api.lever.co",
-      "error": "https://jobs.lever.co/quanticdream: Client error '404 Not Found' for url 'https://jobs.lever.co/quanticdream'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Remedy Entertainment (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/remedy-entertainment: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/remedy-entertainment'\nRedirect location: 'https://job-boards.greenhouse.io/remedy-entertainment'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Vertigo Games (Sheet)",
-      "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/vertigogames/jobs/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/vertigogames/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Floating Rock (Sheet)",
-      "adapter": "static",
-      "domain": "floating-rock.com",
-      "error": "https://floating-rock.com/careers/: Redirect response '301 Moved Permanently' for url 'https://floating-rock.com/careers/'\nRedirect location: 'https://www.floating-rock.com/careers/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Vertpaint Studios (Sheet)",
-      "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/vertpaint-ltd/jobs/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/vertpaint-ltd/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Xbox Game Studios (Sheet)",
-      "adapter": "static",
-      "domain": "jobs.careers.microsoft.com",
-      "error": "https://jobs.careers.microsoft.com/global/en/search?q=Xbox%20Game%20studios: Redirect response '307 Temporary Redirect' for url 'https://jobs.careers.microsoft.com/global/en/search?q=Xbox%20Game%20studios'\nRedirect location: 'https://careers.microsoft.com/?q=Xbox%20Game%20studios'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/307",
+      "domain": "careers.kineticgames.co.uk",
+      "error": "https://careers.kineticgames.co.uk: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7583,19 +6332,46 @@
       "dropReason": "probe"
     },
     {
-      "name": "Wildlight Games (Sheet)",
+      "name": "Fumb Games (Sheet)",
       "adapter": "static",
-      "domain": "www.wildlight.gg",
-      "error": "https://www.wildlight.gg/join-us: Client error '404 Not Found' for url 'https://www.wildlight.gg/join-us'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "domain": "careers.fumbgames.com",
+      "error": "https://careers.fumbgames.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "Mojiworks (Sheet)",
+      "name": "Intrepid Studios, Inc (Sheet)",
       "adapter": "static",
-      "domain": "mojiworks.com",
-      "error": "https://mojiworks.com/careers: Client error '404 Not Found' for url 'https://mojiworks.com/careers'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "domain": "intrepidstudios.com",
+      "error": "https://intrepidstudios.com/careers: [Errno 11002] getaddrinfo failed",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Wildlight Games (Sheet)",
+      "adapter": "static",
+      "domain": "careers.wildlight.gg",
+      "error": "https://careers.wildlight.gg: [Errno 11001] getaddrinfo failed",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Giant Enemy Crab (Sheet)",
+      "adapter": "static",
+      "domain": "careers.giantenemycrab.net",
+      "error": "https://careers.giantenemycrab.net: [Errno 11001] getaddrinfo failed",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Farcana (Sheet)",
+      "adapter": "static",
+      "domain": "careers.farcana.com",
+      "error": "https://careers.farcana.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7610,100 +6386,272 @@
       "dropReason": "probe"
     },
     {
-      "name": "Aurory (Sheet)",
+      "name": "Mojiworks (Sheet)",
       "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/aurory/jobs/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/aurory/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
+      "domain": "careers.mojiworks.com",
+      "error": "https://careers.mojiworks.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "Yostar Games (Sheet)",
+      "name": "Thunderful Games (Sheet)",
       "adapter": "static",
-      "domain": "app.mokahr.com",
-      "error": "https://app.mokahr.com/apply/yostar/26843#/: Redirect response '302 Found' for url 'https://app.mokahr.com/apply/yostar/26843#/'\nRedirect location: '/apply/yostar/26843'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302",
+      "domain": "careers.career.thunderfulgames.com",
+      "error": "https://careers.career.thunderfulgames.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "Joker Games (Sheet)",
+      "name": "Jam City (Sheet)",
       "adapter": "static",
-      "domain": "www.jokergame.net",
-      "error": "https://www.jokergame.net/jobs/: Redirect response '301 Moved Permanently' for url 'https://www.jokergame.net/jobs/'\nRedirect location: 'https://joker.games/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
+      "domain": "www.jamcity.com",
+      "error": "https://www.jamcity.com/job-openings/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "Farcana (Sheet)",
+      "name": "Companion Group (Sheet)",
       "adapter": "static",
-      "domain": "www.farcana.com",
-      "error": "https://www.farcana.com/career: Client error '404 Not Found' for url 'https://www.farcana.com/career'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "domain": "careers.companiongroup.io",
+      "error": "https://careers.companiongroup.io: [SSL: TLSV1_ALERT_INTERNAL_ERROR] tlsv1 alert internal error (_ssl.c:1032)",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "MercurySteam (Sheet)",
+      "name": "Secret Dimension (Sheet)",
       "adapter": "static",
-      "domain": "www.linkedin.com",
-      "error": "https://www.linkedin.com/company/mercurysteam/jobs/: Invalid status code '999 Request denied' for url 'https://www.linkedin.com/company/mercurysteam/jobs/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/999",
+      "domain": "careers.secretdimension.com",
+      "error": "https://careers.secretdimension.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "Fumb Games (Sheet)",
+      "name": "To The Sky (Sheet)",
       "adapter": "static",
-      "domain": "www.fumbgames.com",
-      "error": "https://www.fumbgames.com/careers: Client error '404 Not Found' for url 'https://www.fumbgames.com/careers'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
+      "domain": "careers.tothesky.se",
+      "error": "https://careers.tothesky.se: [Errno 11001] getaddrinfo failed",
+      "stage": "probe_miss",
       "dropStage": "probe_failed",
-      "dropReason": "probe"
+      "dropReason": "probe_miss",
+      "urlPatchRetried": true
     },
     {
-      "name": "Giant Enemy Crab (Sheet)",
-      "adapter": "static",
-      "domain": "www.giantenemycrab.net",
-      "error": "https://www.giantenemycrab.net/jobs: Client error '404 Not Found' for url 'https://www.giantenemycrab.net/jobs'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
+      "name": "Larian Studios (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "larian.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
     },
     {
       "name": "IO Interactive (Greenhouse)",
       "adapter": "greenhouse",
-      "domain": "boards-api.greenhouse.io",
-      "error": "https://boards.greenhouse.io/io-interactive: Redirect response '301 Moved Permanently' for url 'https://boards.greenhouse.io/io-interactive'\nRedirect location: 'https://job-boards.greenhouse.io/io-interactive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301",
+      "domain": "careers.boards.greenhouse.io",
+      "error": "https://boards.greenhouse.io/iointeractive: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/iointeractive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
+    },
+    {
+      "name": "Bandai Namco Entertainment (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.boards.greenhouse.io",
+      "error": "https://boards.greenhouse.io/bandainamcoentertainment: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/bandainamcoentertainment'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
+    },
+    {
+      "name": "Bandai Namco Entertainment (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.boards.greenhouse.io",
+      "error": "https://boards.greenhouse.io/bandai-namco-entertainment: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/bandai-namco-entertainment'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
+    },
+    {
+      "name": "Universally Speaking (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "https://apply.workable.com/universallyspeaking: Client error '429 Too Many Requests' for url 'https://apply.workable.com/universallyspeaking'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
+    },
+    {
+      "name": "Devoted Studios (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "https://apply.workable.com/devotedstudios1: Client error '429 Too Many Requests' for url 'https://apply.workable.com/devotedstudios1'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Forgotten Empires (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "https://apply.workable.com/forgottenempires: Client error '429 Too Many Requests' for url 'https://apply.workable.com/forgottenempires'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Moonbug Entertainment (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "https://apply.workable.com/moonbugentertainment: Client error '429 Too Many Requests' for url 'https://apply.workable.com/moonbugentertainment'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Arkadium (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "https://apply.workable.com/arkadium1: Client error '429 Too Many Requests' for url 'https://apply.workable.com/arkadium1'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "High Voltage Studios (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "https://apply.workable.com/highvoltagesoftware: Client error '429 Too Many Requests' for url 'https://apply.workable.com/highvoltagesoftware'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Jagex (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "https://apply.workable.com/jagexlimited: Client error '429 Too Many Requests' for url 'https://apply.workable.com/jagexlimited'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Team 17 (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "https://apply.workable.com/team17digital: Client error '429 Too Many Requests' for url 'https://apply.workable.com/team17digital'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Astrid Entertainment (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "https://apply.workable.com/astridentertainment: Client error '429 Too Many Requests' for url 'https://apply.workable.com/astridentertainment'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Square Enix (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "https://apply.workable.com/squareenixamerica: Client error '429 Too Many Requests' for url 'https://apply.workable.com/squareenixamerica'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Snowed In Studios (Workable)",
+      "adapter": "workable",
+      "domain": "apply.workable.com",
+      "error": "https://apply.workable.com/snowedinstudios3: Client error '429 Too Many Requests' for url 'https://apply.workable.com/snowedinstudios3'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "PlayStation Global (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.playstation.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
+      "name": "PlayStation Global (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.playstation.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
+      "name": "Atomic Arcade (Sheet)",
+      "adapter": "static",
+      "domain": "atomicarcade.com",
+      "error": "https://atomicarcade.com/careers: Server error '500 Internal Server Error' for url 'https://atomicarcade.com/careers'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Supercell (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "supercell.com",
+      "error": "https://boards.greenhouse.io/supercell: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/supercell'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
+    },
+    {
+      "name": "Digital Happiness (Sheet)",
+      "adapter": "static",
+      "domain": "www.digitalhappiness.net",
+      "error": "https://www.digitalhappiness.net/career/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "QUANTIC DREAM (Lever)",
+      "adapter": "lever",
+      "domain": "careers.jobs.lever.co",
+      "error": "https://jobs.lever.co/quanticdream: Client error '404 Not Found' for url 'https://jobs.lever.co/quanticdream'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
     },
     {
       "name": "Stoic (Lever)",
       "adapter": "lever",
-      "domain": "api.lever.co",
+      "domain": "careers.jobs.lever.co",
       "error": "https://jobs.lever.co/stoic: Client error '404 Not Found' for url 'https://jobs.lever.co/stoic'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
+      "stage": "probe_miss",
       "dropStage": "probe_failed",
-      "dropReason": "probe"
+      "dropReason": "probe_miss"
     },
     {
-      "name": "Chillchat (Sheet)",
-      "adapter": "static",
-      "domain": "chillchat.com",
-      "error": "https://chillchat.com/careers/: Client error '404 Not Found' for url 'https://chillchat.com/careers/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe",
+      "name": "IO Interactive (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.boards.greenhouse.io",
+      "error": "https://boards.greenhouse.io/io-interactive: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/io-interactive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
       "dropStage": "probe_failed",
-      "dropReason": "probe"
+      "dropReason": "probe_miss"
     },
     {
-      "name": "Cult of the North (Sheet)",
+      "name": "Skymap Games (Sheet)",
       "adapter": "static",
-      "domain": "www.cultofthenorth.com",
-      "error": "https://www.cultofthenorth.com/careers/: ",
+      "domain": "careers.skymap.com",
+      "error": "https://careers.skymap.com: All connection attempts failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7718,19 +6666,19 @@
       "dropReason": "probe"
     },
     {
-      "name": "MagMic (Sheet)",
+      "name": "Cult of the North (Sheet)",
       "adapter": "static",
-      "domain": "magmic.com",
-      "error": "https://magmic.com/jobs/: ",
+      "domain": "www.cultofthenorth.com",
+      "error": "https://www.cultofthenorth.com/careers/: ",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "Kwalee (Sheet)",
+      "name": "MagMic (Sheet)",
       "adapter": "static",
-      "domain": "www.kwalee.com",
-      "error": "https://www.kwalee.com/careers: ",
+      "domain": "magmic.com",
+      "error": "https://magmic.com/jobs/: ",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7748,22 +6696,22 @@
   "topFailures": [
     {
       "key": "static",
-      "count": 575
+      "count": 620
     },
     {
       "key": "greenhouse",
-      "count": 27
-    },
-    {
-      "key": "workable",
-      "count": 16
-    },
-    {
-      "key": "static:www.linkedin.com",
-      "count": 15
+      "count": 29
     },
     {
       "key": "lever",
+      "count": 14
+    },
+    {
+      "key": "workable",
+      "count": 14
+    },
+    {
+      "key": "static:www.linkedin.com",
       "count": 14
     }
   ],
@@ -7771,11 +6719,12 @@
     "fetchFailed": false,
     "parseFailed": false,
     "failureCount": 0,
-    "generatedCount": 725
+    "generatedCount": 726
   },
   "outputs": {
     "report": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-discovery-report.json",
     "candidates": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-discovery-candidates.json",
-    "pending": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-registry-pending.json"
+    "pending": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\source-registry-pending.json",
+    "urlPatches": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\url-patch-manifest.json"
   }
 }

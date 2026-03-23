@@ -1,5 +1,11 @@
 # Baluffo Architecture AI Map
 
+> **AI usage**
+> - **Use this when:** locating the correct subsystem, choosing edit boundaries, mapping task-to-files, or checking runtime guardrails
+> - **Canonical for:** system boundaries, task routing, stable vs transitional edit guidance, and fast verification hints
+> - **Not canonical for:** exact endpoint payloads or field-level data schema details
+> - **Then inspect:** the minimal source files listed in the relevant task table row, plus the matching contract doc if shape changes are involved
+
 Scan-first architecture guide for AI-assisted coding. Use this to load minimal context while keeping edits inside the right subsystem boundaries.
 
 ## 1) System boundary map

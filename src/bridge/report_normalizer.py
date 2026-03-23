@@ -53,6 +53,128 @@ def coerce_fetch_report_detail_row(detail: Any) -> Dict[str, Any] | None:
     }
 
 
+def _normalize_task_progress(payload: Any) -> Dict[str, Any]:
+    src = payload if isinstance(payload, dict) else {}
+    mode = str(src.get("mode") or "").strip().lower()
+    if mode not in {"determinate", "indeterminate"}:
+        mode = "indeterminate"
+    counts_raw = src.get("counts") if isinstance(src.get("counts"), dict) else {}
+    counts: Dict[str, Any] = {}
+    for key, value in counts_raw.items():
+        clean_key = str(key or "").strip()
+        if not clean_key:
+            continue
+        if isinstance(value, bool):
+            counts[clean_key] = bool(value)
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            counts[clean_key] = safe_int(value, 0, 0, 1_000_000_000)
+        else:
+            text = str(value or "").strip()
+            if text:
+                counts[clean_key] = text
+    try:
+        ratio = float(src.get("ratio"))
+    except (TypeError, ValueError):
+        ratio = 0.0
+    return {
+        "active": bool(src.get("active")),
+        "phaseKey": str(src.get("phaseKey") or "").strip(),
+        "phaseLabel": str(src.get("phaseLabel") or "").strip(),
+        "mode": mode,
+        "ratio": max(0.0, min(1.0, ratio)),
+        "counts": counts,
+    }
+
+
+def _derive_fetch_task_progress(src: Dict[str, Any], summary: Dict[str, Any]) -> Dict[str, Any]:
+    finished_at = str(src.get("finishedAt") or "").strip()
+    successful = safe_int(summary.get("successfulSources"), 0, 0, 1_000_000)
+    failed = safe_int(summary.get("failedSources"), 0, 0, 1_000_000)
+    excluded = safe_int(summary.get("excludedSources"), 0, 0, 1_000_000)
+    resolved = successful + failed + excluded
+    output_count = safe_int(summary.get("outputCount"), 0, 0, 1_000_000_000)
+    source_count = safe_int(summary.get("sourceCount"), resolved, 0, 1_000_000)
+    if finished_at:
+        return {
+            "active": False,
+            "phaseKey": "completed",
+            "phaseLabel": "Completed",
+            "mode": "determinate",
+            "ratio": 1.0,
+            "counts": {
+                "resolvedSources": resolved,
+                "sourceCount": max(source_count, resolved),
+                "outputCount": output_count,
+                "failedSources": failed,
+                "excludedSources": excluded,
+            },
+        }
+    ratio = 0.0
+    mode = "indeterminate"
+    if source_count > 0 and resolved <= source_count:
+        mode = "determinate"
+        ratio = max(0.0, min(1.0, resolved / max(1, source_count)))
+    return {
+        "active": True,
+        "phaseKey": "executing_sources",
+        "phaseLabel": "Executing sources",
+        "mode": mode,
+        "ratio": ratio,
+        "counts": {
+            "resolvedSources": resolved,
+            "sourceCount": source_count,
+            "outputCount": output_count,
+            "failedSources": failed,
+            "excludedSources": excluded,
+        },
+    }
+
+
+def _derive_discovery_task_progress(src: Dict[str, Any], summary: Dict[str, Any]) -> Dict[str, Any]:
+    finished_at = str(src.get("finishedAt") or "").strip()
+    phase_key = str(summary.get("phaseKey") or summary.get("phase") or "").strip() or ("completed" if finished_at else "starting")
+    phase_label = str(summary.get("phaseLabel") or "").strip() or ("Discovery completed" if finished_at else "Initializing scan")
+    found = safe_int(summary.get("foundEndpointCount"), 0, 0, 1_000_000)
+    probed = safe_int(summary.get("probedCandidateCount") or summary.get("probedCount"), 0, 0, 1_000_000)
+    queued = safe_int(summary.get("queuedCandidateCount"), 0, 0, 1_000_000)
+    deferred = safe_int(summary.get("discoverableButDeferredCount"), 0, 0, 1_000_000)
+    failed = safe_int(summary.get("failedProbeCount"), 0, 0, 1_000_000)
+    loss = summary.get("lossAccounting") if isinstance(summary.get("lossAccounting"), dict) else {}
+    probe_total = max(
+        0,
+        safe_int(loss.get("generated"), 0, 0, 1_000_000)
+        - safe_int(loss.get("dedupSkipped"), 0, 0, 1_000_000)
+        - safe_int(loss.get("validationSkipped"), 0, 0, 1_000_000)
+        - safe_int(loss.get("lowEvidenceSkipped"), 0, 0, 1_000_000)
+        - safe_int(summary.get("suppressedStaticCount"), 0, 0, 1_000_000),
+    ) or max(probed, failed, queued)
+    mode = "indeterminate"
+    ratio = 0.0
+    if finished_at:
+        mode = "determinate"
+        ratio = 1.0
+        phase_key = "completed"
+        phase_label = "Discovery completed"
+    elif phase_key == "probing_candidates" and probe_total > 0:
+        mode = "determinate"
+        ratio = max(0.0, min(1.0, probed / max(1, probe_total)))
+    return {
+        "active": not bool(finished_at),
+        "phaseKey": phase_key,
+        "phaseLabel": phase_label,
+        "mode": mode,
+        "ratio": ratio,
+        "counts": {
+            "foundEndpoints": found,
+            "probedCandidates": probed,
+            "probeTotal": probe_total,
+            "queuedCandidates": queued,
+            "deferredCandidates": deferred,
+            "failedProbes": failed,
+        },
+    }
+
+
 def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
@@ -102,7 +224,7 @@ def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
     adapter_timings_raw = timing_summary_raw.get("adapterTimings") if isinstance(timing_summary_raw.get("adapterTimings"), list) else []
     slowest_adapters_raw = timing_summary_raw.get("slowestAdapters") if isinstance(timing_summary_raw.get("slowestAdapters"), list) else []
     high_cost_raw = timing_summary_raw.get("highCostLowYieldSources") if isinstance(timing_summary_raw.get("highCostLowYieldSources"), list) else []
-    return {
+    normalized = {
         "schemaVersion": safe_schema_version(src.get("schemaVersion")),
         "runId": str(src.get("runId") or "").strip(),
         "startedAt": str(src.get("startedAt") or "").strip(),
@@ -172,9 +294,16 @@ def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
             },
         },
         "summary": dict(summary),
+        "taskProgress": _normalize_task_progress(src.get("taskProgress")),
         "sources": normalized_sources,
         "outputs": dict(src.get("outputs") or {}),
     }
+    finished_at = str(normalized.get("finishedAt") or "").strip()
+    if finished_at:
+        normalized["taskProgress"] = _derive_fetch_task_progress(normalized, normalized["summary"])
+    elif not normalized["taskProgress"].get("phaseKey"):
+        normalized["taskProgress"] = _derive_fetch_task_progress(normalized, normalized["summary"])
+    return normalized
 
 
 def derive_discovery_queued_count(report: Dict[str, Any], summary: Dict[str, Any]) -> int:
@@ -242,6 +371,7 @@ def normalize_discovery_report_contract(payload: Dict[str, Any]) -> Dict[str, An
                 if isinstance(row, dict)
             ],
         },
+        "taskProgress": _normalize_task_progress(src.get("taskProgress")),
         "candidates": list(candidates) if isinstance(candidates, list) else [],
         "failures": list(failures) if isinstance(failures, list) else [],
         "topFailures": list(top_failures) if isinstance(top_failures, list) else [],
@@ -250,6 +380,8 @@ def normalize_discovery_report_contract(payload: Dict[str, Any]) -> Dict[str, An
     normalized["summary"]["queuedCandidateCount"] = derive_discovery_queued_count(
         normalized, normalized["summary"]
     )
+    if not normalized["taskProgress"].get("phaseKey"):
+        normalized["taskProgress"] = _derive_discovery_task_progress(normalized, normalized["summary"])
     return normalized
 
 

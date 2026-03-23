@@ -105,6 +105,11 @@ class TaskLaunchApi:
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 log_handle = open(log_path, "a", encoding="utf-8")
                 popen_kwargs["stdout"] = log_handle
+                # On Windows, redirecting stderr via the STDOUT sentinel can
+                # intermittently fail at spawn time with pipe/handle errors.
+                # Bind both streams to the same concrete file handle instead.
+                popen_kwargs["stderr"] = log_handle
+            elif stdout_target is not None:
                 popen_kwargs["stderr"] = stdout_target
             proc = spawn_process(command, **popen_kwargs)
         finally:

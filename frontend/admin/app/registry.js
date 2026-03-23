@@ -68,6 +68,19 @@ export function createAdminRegistryController({
     return out;
   }
 
+  function toggleSelectAllSources(type, checkAll) {
+    const classMap = {
+      pending: ".pending-source-checkbox",
+      active: ".active-source-checkbox",
+      rejected: ".rejected-source-checkbox"
+    };
+    const selector = classMap[type];
+    if (!selector) return;
+    document.querySelectorAll(selector).forEach(cb => {
+      cb.checked = Boolean(checkAll);
+    });
+  }
+
   function toAdminFilterState() {
     return {
       activeSourceFilter: normalizeSourceFilter(state.activeSourceFilter),
@@ -327,6 +340,7 @@ export function createAdminRegistryController({
     approveSelectedSources,
     rejectSelectedSources,
     restoreRejectedSources,
-    deleteSelectedSources
+    deleteSelectedSources,
+    toggleSelectAllSources
   };
 }

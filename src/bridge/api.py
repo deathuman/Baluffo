@@ -113,6 +113,7 @@ class BridgeApi:
     compute_ops_health: Callable[[], Dict[str, Any]] = lambda: {"ok": True}  # type: ignore[assignment]
     compute_fetcher_metrics: Callable[..., Dict[str, Any]] = lambda **_kw: {"ok": True}  # type: ignore[assignment]
     sync_history_from_reports: Callable[[], List[Dict[str, Any]]] = lambda: []  # type: ignore[assignment]
+    get_current_task_state_payload: Callable[[], Dict[str, Any]] = lambda: {"tasks": [], "count": 0}  # type: ignore[assignment]
 
     # Sync-specific helpers used by routes.
     get_sync_status_payload: Callable[[], Dict[str, Any]] = lambda: {"ok": True}  # type: ignore[assignment]
@@ -123,6 +124,8 @@ class BridgeApi:
     update_saved_sync_settings: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda _payload: {}  # type: ignore[assignment]
     sync_config_status: Callable[[], Dict[str, Any]] = lambda: {"enabled": False, "ready": False}  # type: ignore[assignment]
     set_sync_status: Callable[..., None] = lambda **_kw: None  # type: ignore[assignment]
+    get_discovery_config_payload: Callable[[], Dict[str, Any]] = lambda: {"ok": True, "savedConfig": {}}  # type: ignore[assignment]
+    update_saved_discovery_settings: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda _payload: {}  # type: ignore[assignment]
     load_alert_state: Callable[[], Dict[str, Any]] = lambda: {"acked": {}}  # type: ignore[assignment]
     save_alert_state: Callable[[Dict[str, Any]], None] = lambda _payload: None  # type: ignore[assignment]
 
@@ -183,6 +186,10 @@ class BridgeApi:
         if self.discovery is not None:
             if self._field_is_default("trigger_discovery_task"):
                 self.trigger_discovery_task = self.discovery.trigger_discovery_task  # type: ignore[assignment]
+            if self._field_is_default("get_discovery_config_payload"):
+                self.get_discovery_config_payload = self.discovery.get_discovery_config_payload  # type: ignore[assignment]
+            if self._field_is_default("update_saved_discovery_settings"):
+                self.update_saved_discovery_settings = self.discovery.update_saved_discovery_settings  # type: ignore[assignment]
 
     def mark_desktop_session_activity(self, path: str) -> None:
         # Keep routes compatible with the legacy module-global `DESKTOP_SESSION_ACTIVITY_AT`.

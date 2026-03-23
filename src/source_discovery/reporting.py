@@ -44,8 +44,11 @@ def build_stage_summary(
     """Build the discovery report summary dict. Pure function; all inputs passed explicitly."""
     deferred_reason_rows = deferred_counts or {}
     deferred_by_cap = int(sum(int(value or 0) for value in deferred_reason_rows.values()))
+    failed_probe_count_final = len([row for row in failures if str(row.get("stage")) == "probe"])
+    probe_miss_count_final = len([row for row in failures if str(row.get("stage")) == "probe_miss"])
     return {
         "phase": str(phase or ""),
+        "phaseKey": str(phase or ""),
         "phaseLabel": str(phase_label or ""),
         "probedCount": probed,
         "healthyCount": healthy,
@@ -54,8 +57,8 @@ def build_stage_summary(
             1 for row in current_candidates if "target_role_signal" in row.get("reasons", [])
         ),
         "nlCandidateCount": sum(1 for row in current_candidates if bool(row.get("nlPriority"))),
-        "failedProbeCount": len([row for row in failures if str(row.get("stage")) == "probe"]),
-        "probeMissCount": len([row for row in failures if str(row.get("stage")) == "probe_miss"]),
+        "failedProbeCount": failed_probe_count_final,
+        "probeMissCount": probe_miss_count_final,
         "foundEndpointCount": found_endpoint_count,
         "probedCandidateCount": probed,
         "queuedCandidateCount": len([row for row in current_candidates if not bool(row.get("deferred"))]),
@@ -86,10 +89,58 @@ def build_stage_summary(
             "dedupSkippedReasons": dict(duplicate_reasons),
             "validationSkipped": int(validation_skipped_count),
             "lowEvidenceSkipped": int(skipped_low_evidence_probe_count),
-            "probeFailed": int(probe_failed_count),
+            "probeFailed": int(failed_probe_count_final + probe_miss_count_final),
             "queueFiltered": int(queue_filtered_count),
             "deferredByCap": deferred_by_cap,
             "queued": int(len([row for row in current_candidates if not bool(row.get("deferred"))])),
+        },
+    }
+
+
+def build_discovery_task_progress(
+    *,
+    summary: Dict[str, Any],
+    finished: bool,
+) -> Dict[str, Any]:
+    phase_key = str(summary.get("phaseKey") or summary.get("phase") or "").strip() or ("completed" if finished else "starting")
+    phase_label = str(summary.get("phaseLabel") or "").strip() or ("Discovery completed" if finished else "Initializing scan")
+    found_count = int(summary.get("foundEndpointCount") or 0)
+    probed_count = int(summary.get("probedCandidateCount") or summary.get("probedCount") or 0)
+    queued_count = int(summary.get("queuedCandidateCount") or 0)
+    deferred_count = int(summary.get("discoverableButDeferredCount") or 0)
+    failed_count = int(summary.get("failedProbeCount") or 0)
+    loss = summary.get("lossAccounting") if isinstance(summary.get("lossAccounting"), dict) else {}
+    probe_total = max(
+        0,
+        int(loss.get("generated") or 0)
+        - int(loss.get("dedupSkipped") or 0)
+        - int(loss.get("validationSkipped") or 0)
+        - int(loss.get("lowEvidenceSkipped") or 0)
+        - int(summary.get("suppressedStaticCount") or 0),
+    ) or max(probed_count, failed_count, queued_count)
+    mode = "indeterminate"
+    ratio = 0.0
+    if finished:
+        mode = "determinate"
+        ratio = 1.0
+        phase_key = "completed"
+        phase_label = "Discovery completed"
+    elif phase_key == "probing_candidates" and probe_total > 0:
+        mode = "determinate"
+        ratio = max(0.0, min(1.0, probed_count / max(1, probe_total)))
+    return {
+        "active": not bool(finished),
+        "phaseKey": phase_key,
+        "phaseLabel": phase_label,
+        "mode": mode,
+        "ratio": ratio,
+        "counts": {
+            "foundEndpoints": found_count,
+            "probedCandidates": probed_count,
+            "probeTotal": probe_total,
+            "queuedCandidates": queued_count,
+            "deferredCandidates": deferred_count,
+            "failedProbes": failed_count,
         },
     }
 

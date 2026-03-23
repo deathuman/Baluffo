@@ -27,6 +27,7 @@ export function cacheAdminDom(doc = document) {
     adminRunDiscoveryBtnEl: doc.querySelector(ui(t.runDiscoveryBtn)),
     adminRunDiscoveryUncappedBtnEl: doc.querySelector(ui(t.runDiscoveryUncappedBtn)),
     adminLoadDiscoveryBtnEl: doc.querySelector(ui(t.loadDiscoveryBtn)),
+    adminDiscoveryAutoApproveToggleEl: doc.querySelector(ui(t.discoveryAutoApproveToggle)),
     adminApproveSourcesBtnEl: doc.querySelector(ui(t.approveSourcesBtn)),
     adminRejectSourcesBtnEl: doc.querySelector(ui(t.rejectSourcesBtn)),
     adminDeleteSourcesBtnEl: doc.querySelector(ui(t.deleteSourcesBtn)),
@@ -35,8 +36,11 @@ export function cacheAdminDom(doc = document) {
     adminAddManualSourceBtnEl: doc.querySelector(ui(t.addManualSourceBtn)),
     adminManualSourceFeedbackEl: doc.querySelector(ui(t.manualSourceFeedback)),
     adminPendingSourcesEl: doc.querySelector(ui(t.pendingSources)),
+    adminPendingSourcesSelectAllEl: doc.querySelector(ui(t.pendingSourcesSelectAll)),
     adminActiveSourcesEl: doc.querySelector(ui(t.activeSources)),
+    adminActiveSourcesSelectAllEl: doc.querySelector(ui(t.activeSourcesSelectAll)),
     adminRejectedSourcesEl: doc.querySelector(ui(t.rejectedSources)),
+    adminRejectedSourcesSelectAllEl: doc.querySelector(ui(t.rejectedSourcesSelectAll)),
     adminRestoreRejectedBtnEl: doc.querySelector(ui(t.restoreRejectedBtn)),
     adminDiscoveryLogEl: doc.querySelector(ui(t.discoveryLog)),
     adminDiscoveryProgressEl: doc.querySelector(ui(t.discoveryProgress)),
@@ -84,8 +88,6 @@ export function cacheAdminDom(doc = document) {
 
   if (missingProgressElements.length > 0) {
     console.warn(`[Admin DOM] ${missingProgressElements.length} progress elements not found. Progress bars may not display correctly.`);
-  } else {
-    console.debug("[Admin DOM] All progress elements found and cached successfully.");
   }
 
   return refs;

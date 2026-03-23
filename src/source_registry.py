@@ -21,6 +21,7 @@ PENDING_PATH = DATA_DIR / "source-registry-pending.json"
 REJECTED_PATH = DATA_DIR / "source-registry-rejected.json"
 DISCOVERY_REPORT_PATH = DATA_DIR / "source-discovery-report.json"
 DISCOVERY_CANDIDATES_PATH = DATA_DIR / "source-discovery-candidates.json"
+URL_PATCH_MANIFEST_PATH = DATA_DIR / "url-patch-manifest.json"
 APPROVAL_STATE_PATH = DATA_DIR / "source-approval-state.json"
 
 

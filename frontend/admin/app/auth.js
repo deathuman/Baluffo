@@ -22,6 +22,7 @@ export function createAdminAuthController({
   refreshOverview,
   loadLatestFetcherReport,
   loadDiscoveryData,
+  loadDiscoveryConfig,
   loadOpsHealthData,
   loadSyncStatus,
   logAdminError,
@@ -57,6 +58,9 @@ export function createAdminAuthController({
     });
     loadDiscoveryData().catch(err => {
       logAdminError("Failed to load discovery data", err);
+    });
+    loadDiscoveryConfig({ silent: true, forceForm: true }).catch(err => {
+      logAdminError("Failed to load discovery config", err);
     });
     loadOpsHealthData().catch(err => {
       logAdminError("Failed to load ops health data", err);

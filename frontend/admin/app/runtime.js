@@ -31,9 +31,7 @@ import {
   applySourceFilter as applySourceFilterFromDomain,
   getSourceJobsFoundCount as getSourceJobsFoundCountFromDomain,
   deriveSourceStatus as deriveSourceStatusFromDomain,
-  normalizeOpsRuns as normalizeOpsRunsFromDomain,
-  applyOptimisticDiscoveryRun as applyOptimisticDiscoveryRunFromDomain,
-  applyOptimisticFetchRun as applyOptimisticFetchRunFromDomain,
+  deriveAdminRunsModel as deriveAdminRunsModelFromDomain,
   getOpsPollIntervalMs as getOpsPollIntervalMsFromDomain
 } from "../domain.js";
 import {
@@ -335,9 +333,7 @@ function composeControllers() {
     refs,
     getBridge,
     postBridge,
-    normalizeOpsRuns: (runs, nowMs = Date.now()) => normalizeOpsRunsFromDomain(runs, nowMs),
-    applyOptimisticDiscoveryRun: (runModel, optimisticRun, nowMs = Date.now()) => applyOptimisticDiscoveryRunFromDomain(runModel, optimisticRun, nowMs),
-    applyOptimisticFetchRun: (runModel, optimisticRun, nowMs = Date.now()) => applyOptimisticFetchRunFromDomain(runModel, optimisticRun, nowMs),
+    deriveAdminRunsModel: (payload, nowMs = Date.now()) => deriveAdminRunsModelFromDomain(payload, nowMs),
     getOpsPollIntervalMs: hasLiveRuns => getOpsPollIntervalMsFromDomain(hasLiveRuns, OPS_POLL_IDLE_INTERVAL_MS, OPS_POLL_LIVE_INTERVAL_MS),
     renderAdminOpsAlerts,
     renderAdminOpsKpis,
@@ -466,6 +462,7 @@ function composeControllers() {
     refreshOverview,
     loadLatestFetcherReport: (...args) => fetcherController.loadLatestFetcherReport(...args),
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
+    loadDiscoveryConfig: (...args) => discoveryController.loadDiscoveryConfig(...args),
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
     loadSyncStatus: (...args) => syncController.loadSyncStatus(...args),
     logAdminError,
@@ -511,6 +508,16 @@ function bindEvents() {
   bindAsyncClick(refs.adminRestoreRejectedBtnEl, () => registryController.restoreRejectedSources());
   bindAsyncClick(refs.adminAddManualSourceBtnEl, () => registryController.addManualSource());
 
+  function bindSelectAllCheckbox(checkboxEl, type) {
+    if (!checkboxEl) return;
+    checkboxEl.addEventListener("change", () => {
+      registryController.toggleSelectAllSources(type, checkboxEl.checked);
+    });
+  }
+  bindSelectAllCheckbox(refs.adminPendingSourcesSelectAllEl, "pending");
+  bindSelectAllCheckbox(refs.adminActiveSourcesSelectAllEl, "active");
+  bindSelectAllCheckbox(refs.adminRejectedSourcesSelectAllEl, "rejected");
+
   if (refs.adminDiscoveryLogDetailsEl) {
     refs.adminDiscoveryLogDetailsEl.addEventListener("toggle", () => {
       if (state.discoveryLogDetailsSyncing) return;
@@ -539,6 +546,17 @@ function bindEvents() {
       registryController.loadDiscoveryData().catch(() => {});
     });
   }
+
+  [refs.adminDiscoveryAutoApproveToggleEl].forEach(el => {
+    if (!el) return;
+    el.addEventListener("input", () => {
+      state.discoveryConfigDirty = true;
+    });
+    el.addEventListener("change", () => {
+      state.discoveryConfigDirty = true;
+      discoveryController.saveDiscoveryConfig().catch(() => {});
+    });
+  });
 
   bindAsyncClick(refs.adminRefreshOpsBtnEl, () => opsController.loadOpsHealthData());
   bindAsyncClick(refs.adminSyncTestBtnEl, () => syncController.testSyncConfig());

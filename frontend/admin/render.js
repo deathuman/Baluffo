@@ -198,8 +198,9 @@ export function appendAdminLogRow(container, event, options = {}) {
   // If a custom toLocalTime formatter was provided, it expects a Date instance
   // (existing behavior from runtime.js). Otherwise, we use the built-in
   // safeFormatLogTimestamp on the raw timestamp string.
+  const parsedTimestamp = new Date(event.timestamp || "");
   const timestampText = options.toLocalTime
-    ? toLocalTime(new Date(event.timestamp || ""))
+    ? (Number.isNaN(parsedTimestamp.getTime()) ? safeFormatLogTimestamp(event.timestamp) : toLocalTime(parsedTimestamp))
     : toLocalTime(event.timestamp);
   stamp.textContent = timestampText;
 
@@ -677,6 +678,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     const rawStatus = String(row?.displayStatus || row?.status || "unknown");
     const statusToken = rawStatus.toLowerCase();
     const summary = row?.summary || {};
+    const taskProgress = row?.taskProgress || {};
     const type = String(row?.type || "unknown");
     const syncAction = String(summary?.action || "").trim().toLowerCase();
     const syncLabel = syncAction ? `Sync ${syncAction}` : "Sync";
@@ -684,9 +686,17 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       .map(value => Number(value || 0))
       .map(value => value.toLocaleString())
       .join("/");
+    const phaseLabel = String(taskProgress?.phaseLabel || taskProgress?.phaseKey || "").trim();
+    const progressPct = String(taskProgress?.mode || "").toLowerCase() === "determinate"
+      ? `${Math.round(Math.max(0, Math.min(1, Number(taskProgress?.ratio || 0))) * 100)}%`
+      : "";
+    const currentRunDetail = phaseLabel
+      ? `${phaseLabel}${progressPct ? ` (${progressPct})` : ""}`
+      : "";
     const key = [
       rowArea,
       String(row?.id || ""),
+      String(row?.runId || ""),
       type,
       String(row?.startedAt || ""),
       String(row?.finishedAt || ""),
@@ -701,11 +711,13 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       statusTitle: buildRunStatusTooltip(row),
       isRunning: statusToken === "running" || statusToken === "started",
       durationText: formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),
-      outputOrQueuedText: row?.type === "discovery"
-        ? `Queued (new): ${Number(summary?.queuedCandidateCount || 0).toLocaleString()}`
-        : row?.type === "sync"
-          ? `${syncLabel} (${syncCounts})`
-          : Number(summary?.outputCount || 0).toLocaleString(),
+      outputOrQueuedText: (row?.isLive && currentRunDetail)
+        ? currentRunDetail
+        : row?.type === "discovery"
+          ? `Queued (new): ${Number(summary?.queuedCandidateCount || 0).toLocaleString()}`
+          : row?.type === "sync"
+            ? `${syncLabel} (${syncCounts})`
+            : Number(summary?.outputCount || 0).toLocaleString(),
       failedText: (row?.type === "discovery"
         ? Number(summary?.failedProbeCount || 0)
         : row?.type === "sync"

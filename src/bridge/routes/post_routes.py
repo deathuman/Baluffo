@@ -259,11 +259,34 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         return True
 
     if path == "/tasks/run-discovery":
-        status_code, result = api.trigger_discovery_task(
-            payload=payload if isinstance(payload, dict) else {},
-            route_name=path,
-        )
-        handler._send_json(result, status=status_code)  # noqa: SLF001
+        try:
+            status_code, result = api.trigger_discovery_task(
+                payload=payload if isinstance(payload, dict) else {},
+                route_name=path,
+            )
+            try:
+                api.bridge_log(
+                    "info",
+                    "discovery_launch_response_sent",
+                    route=path,
+                    status=int(status_code),
+                    started=bool((result or {}).get("started")),
+                    runId=str((result or {}).get("runId") or ""),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            handler._send_json(result, status=status_code)  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            try:
+                api.bridge_log(
+                    "error",
+                    "discovery_launch_response_write_failed",
+                    route=path,
+                    error=str(exc),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            handler._send_json({"started": False, "task": "discovery", "error": str(exc)}, status=500)  # noqa: SLF001,E501
         return True
 
     if path == "/tasks/run-jobs-pipeline":
@@ -296,6 +319,14 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             handler._send_json(result)  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"started": False, "task": "jobs_fetcher", "error": str(exc)}, status=500)  # noqa: SLF001,E501
+        return True
+
+    if path == "/discovery/config":
+        try:
+            api.update_saved_discovery_settings(payload if isinstance(payload, dict) else {})
+            handler._send_json(api.get_discovery_config_payload())  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc), "savedConfig": api.get_discovery_config_payload().get("savedConfig", {})}, status=400)  # noqa: SLF001,E501
         return True
 
     if path == "/ops/alerts/ack":

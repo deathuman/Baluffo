@@ -7,6 +7,10 @@ from pathlib import Path
 from unittest import mock
 
 from src import source_discovery as sd
+from src.source_discovery import orchestrator as discovery_orchestrator
+from src.source_discovery import url_patches as discovery_url_patches
+from src.source_discovery.core import classify_probe_failure_stage
+from src.source_discovery.web_search import async_fetch_text_httpx
 from src.source_discovery.schemas import DiscoveryReportSummarySchema
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -223,6 +227,153 @@ def test_apply_queue_balancing_prefers_provider_candidates_over_static_in_bounde
     assert int(stats.get("providerTarget") or 0) == 2
 
 
+def test_apply_queue_balancing_does_not_adapter_cap_google_sheet_candidates() -> None:
+    candidates = []
+    for index in range(10):
+        candidates.append(
+            {
+                "name": f"Sheet Static {index}",
+                "studio": f"Sheet Static {index}",
+                "adapter": "static",
+                "score": 90 - index,
+                "evidenceScore": 70,
+                "jobsFound": 2,
+                "pages": [f"https://sheet-{index}.example/jobs"],
+                "discoveryStage": "sheet_directory",
+                "sourceDirectory": "game_studios_sheet",
+                "careersUrl": f"https://sheet-{index}.example/jobs",
+                "sourceDirectoryEntryUrl": f"https://sheet-{index}.example/jobs",
+            }
+        )
+
+    queued, report_rows, stats = sd.apply_queue_balancing(candidates, top_n=0)
+
+    assert len(queued) == 10
+    assert len([row for row in report_rows if bool(row.get("deferred"))]) == 0
+    assert int((stats.get("queuedByAdapter") or {}).get("static") or 0) == 10
+    assert int((stats.get("deferredByAdapter") or {}).get("static") or 0) == 0
+    assert int((stats.get("healthyButDeferredByAdapter") or {}).get("static") or 0) == 0
+    assert "adapter_cap" not in (stats.get("deferredReasons") or {})
+
+
+def test_apply_sheet_directory_static_probe_cap_bypasses_cap_for_uncapped_mode() -> None:
+    candidates = [
+        {
+            "name": f"Sheet Static {index}",
+            "studio": f"Sheet Static {index}",
+            "adapter": "static",
+            "score": 90 - index,
+            "evidenceScore": 70,
+            "jobsFound": 2,
+            "pages": [f"https://sheet-{index}.example/jobs"],
+            "discoveryStage": "sheet_directory",
+            "sourceDirectory": "game_studios_sheet",
+        }
+        for index in range(12)
+    ]
+
+    kept, suppressed = discovery_orchestrator.apply_sheet_directory_static_probe_cap(
+        candidates,
+        top_n=6,
+        bypass_cap=True,
+        source_state_rows={},
+    )
+
+    assert len(kept) == 12
+    assert suppressed == []
+
+
+def test_run_discovery_uncapped_reports_runtime_cap_bypass_flags() -> None:
+    dynamic_candidates = [
+        {
+            "name": f"Sheet Static {index}",
+            "studio": f"Sheet Static {index}",
+            "adapter": "static",
+            "score": 90 - index,
+            "evidenceScore": 80,
+            "pages": [f"https://sheet-{index}.example/jobs"],
+            "careersUrl": f"https://sheet-{index}.example/jobs",
+            "sourceDirectoryEntryUrl": f"https://sheet-{index}.example/jobs",
+            "discoveryStage": "sheet_directory",
+            "sourceDirectory": "game_studios_sheet",
+            "discoveryMethod": "static",
+            "evidenceTypes": ["sheet_directory"],
+        }
+        for index in range(12)
+    ]
+
+    def fake_probe(row, timeout_s, fetcher=None, try_playwright=None, playwright_semaphore=None):
+        return True, 2, ""
+
+    config = sd.load_discovery_config()
+    with workspace_tmpdir("source-discovery") as tmp:
+        root = Path(tmp)
+        previous_paths = {
+            "ACTIVE_PATH": sd.ACTIVE_PATH,
+            "PENDING_PATH": sd.PENDING_PATH,
+            "REJECTED_PATH": sd.REJECTED_PATH,
+            "DISCOVERY_REPORT_PATH": sd.DISCOVERY_REPORT_PATH,
+            "DISCOVERY_CANDIDATES_PATH": sd.DISCOVERY_CANDIDATES_PATH,
+            "URL_PATCH_MANIFEST_PATH": getattr(sd, "URL_PATCH_MANIFEST_PATH", None),
+        }
+        sd.ACTIVE_PATH = root / "source-registry-active.json"
+        sd.PENDING_PATH = root / "source-registry-pending.json"
+        sd.REJECTED_PATH = root / "source-registry-rejected.json"
+        sd.DISCOVERY_REPORT_PATH = root / "source-discovery-report.json"
+        sd.DISCOVERY_CANDIDATES_PATH = root / "source-discovery-candidates.json"
+        if previous_paths["URL_PATCH_MANIFEST_PATH"] is not None:
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+        for path in (sd.ACTIVE_PATH, sd.PENDING_PATH, sd.REJECTED_PATH):
+            path.write_text("[]", encoding="utf-8")
+        try:
+            with mock.patch.object(
+                discovery_orchestrator,
+                "discover_game_studio_sheet_candidates",
+                return_value=([], list(dynamic_candidates), []),
+            ), mock.patch.object(
+                discovery_orchestrator, "stage_curated_seed_candidates", return_value=[]
+            ), mock.patch.object(
+                discovery_orchestrator.sd, "build_pattern_candidates", return_value=[]
+            ), mock.patch.object(
+                discovery_orchestrator.sd, "discover_seed_careers_page_candidates", return_value=([], [], [])
+            ), mock.patch.object(
+                discovery_orchestrator, "discover_web_search_candidates", return_value=([], [])
+            ), mock.patch.object(
+                discovery_orchestrator, "discover_gamesmap_candidates", return_value=([], [], [])
+            ), mock.patch.object(
+                discovery_orchestrator, "async_probe_candidate", side_effect=fake_probe
+            ), mock.patch.object(
+                discovery_orchestrator, "load_url_patches", return_value={}
+            ), mock.patch.object(
+                discovery_orchestrator, "save_url_patch_manifest", return_value=None
+            ), mock.patch.object(
+                discovery_orchestrator, "read_source_state", return_value={}
+            ):
+                report = discovery_orchestrator.run_discovery(
+                    timeout_s=1,
+                    top_n=0,
+                    preset="uncapped",
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config=config,
+                )
+        finally:
+            sd.ACTIVE_PATH = previous_paths["ACTIVE_PATH"]
+            sd.PENDING_PATH = previous_paths["PENDING_PATH"]
+            sd.REJECTED_PATH = previous_paths["REJECTED_PATH"]
+            sd.DISCOVERY_REPORT_PATH = previous_paths["DISCOVERY_REPORT_PATH"]
+            sd.DISCOVERY_CANDIDATES_PATH = previous_paths["DISCOVERY_CANDIDATES_PATH"]
+            if previous_paths["URL_PATCH_MANIFEST_PATH"] is not None:
+                sd.URL_PATCH_MANIFEST_PATH = previous_paths["URL_PATCH_MANIFEST_PATH"]
+
+    runtime = report.get("runtime") or {}
+    assert str(runtime.get("preset") or "") == "uncapped"
+    assert bool(runtime.get("topCapBypassed")) is True
+    assert bool(runtime.get("sheetStaticProbeCapBypassed")) is True
+    assert int((report.get("summary") or {}).get("probedCandidateCount") or 0) == 12
+    assert int((report.get("summary") or {}).get("suppressedStaticCount") or 0) == 0
+
+
 def test_classify_static_suppression_suppresses_weak_repeat_low_yield_static_candidate() -> None:
     reason = sd.classify_static_suppression(
         {
@@ -382,11 +533,50 @@ def test_source_registry_paths_honor_baluffo_data_dir_override() -> None:
         assert source_registry.REJECTED_PATH == Path(override_root) / "source-registry-rejected.json"
         assert source_registry.DISCOVERY_REPORT_PATH == Path(override_root) / "source-discovery-report.json"
         assert source_registry.DISCOVERY_CANDIDATES_PATH == Path(override_root) / "source-discovery-candidates.json"
+        assert source_registry.URL_PATCH_MANIFEST_PATH == Path(override_root) / "url-patch-manifest.json"
     finally:
         if previous is None:
             os.environ.pop("BALUFFO_DATA_DIR", None)
         else:
             os.environ["BALUFFO_DATA_DIR"] = previous
+
+
+def test_async_fetch_text_httpx_enables_redirect_following() -> None:
+    calls = []
+
+    class _Response:
+        def __init__(self):
+            self.encoding = None
+            self.text = "ok"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class _Client:
+        async def get(self, url: str, **kwargs):
+            calls.append((url, kwargs))
+            return _Response()
+
+    result = asyncio.run(async_fetch_text_httpx(_Client(), "https://example.com/jobs", timeout_s=5))
+    assert result == "ok"
+    assert calls == [
+        (
+            "https://example.com/jobs",
+            {
+                "headers": mock.ANY,
+                "follow_redirects": True,
+            },
+        )
+    ]
+
+
+def test_classify_probe_failure_stage_treats_httpx_404_as_probe_miss() -> None:
+    assert (
+        classify_probe_failure_stage(
+            "https://example.com/jobs: Client error '404 Not Found' for url 'https://example.com/jobs'"
+        )
+        == "probe_miss"
+    )
 
 
 def test_probe_candidate_maps_jobs_found_for_greenhouse_and_teamtailor() -> None:
@@ -857,6 +1047,7 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
             sd.REJECTED_PATH,
             sd.DISCOVERY_CANDIDATES_PATH,
             sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
         )
         prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
         prev_seeds = list(sd.STUDIO_SEEDS)
@@ -866,6 +1057,7 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
             sd.REJECTED_PATH = root / "rejected.json"
             sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
             sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
             sd.STUDIO_SEEDS = []
             sd.STATIC_DISCOVERY_CANDIDATES = []
 
@@ -914,6 +1106,7 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
                 sd.REJECTED_PATH,
                 sd.DISCOVERY_CANDIDATES_PATH,
                 sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
@@ -926,6 +1119,7 @@ def test_run_discovery_dynamic_tracks_stage_metrics_and_queue_contract() -> None
             sd.REJECTED_PATH,
             sd.DISCOVERY_CANDIDATES_PATH,
             sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
         )
         prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
         prev_seeds = list(sd.STUDIO_SEEDS)
@@ -935,6 +1129,7 @@ def test_run_discovery_dynamic_tracks_stage_metrics_and_queue_contract() -> None
             sd.REJECTED_PATH = root / "rejected.json"
             sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
             sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
             sd.STUDIO_SEEDS = []
             sd.STATIC_DISCOVERY_CANDIDATES = [
                 {
@@ -995,6 +1190,7 @@ def test_run_discovery_dynamic_tracks_stage_metrics_and_queue_contract() -> None
                 sd.REJECTED_PATH,
                 sd.DISCOVERY_CANDIDATES_PATH,
                 sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
@@ -1007,6 +1203,7 @@ def test_run_discovery_emits_phase_logs_for_candidate_generation() -> None:
             sd.REJECTED_PATH,
             sd.DISCOVERY_CANDIDATES_PATH,
             sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
         )
         prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
         prev_seeds = list(sd.STUDIO_SEEDS)
@@ -1016,6 +1213,7 @@ def test_run_discovery_emits_phase_logs_for_candidate_generation() -> None:
             sd.REJECTED_PATH = root / "rejected.json"
             sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
             sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
             sd.STUDIO_SEEDS = []
             sd.STATIC_DISCOVERY_CANDIDATES = []
 
@@ -1042,6 +1240,7 @@ def test_run_discovery_emits_phase_logs_for_candidate_generation() -> None:
                 sd.REJECTED_PATH,
                 sd.DISCOVERY_CANDIDATES_PATH,
                 sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
@@ -1054,6 +1253,7 @@ def test_run_discovery_skips_duplicate_endpoint_fingerprints() -> None:
             sd.REJECTED_PATH,
             sd.DISCOVERY_CANDIDATES_PATH,
             sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
         )
         prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
         prev_seeds = list(sd.STUDIO_SEEDS)
@@ -1079,6 +1279,7 @@ def test_run_discovery_skips_duplicate_endpoint_fingerprints() -> None:
                 sd.REJECTED_PATH,
                 sd.DISCOVERY_CANDIDATES_PATH,
                 sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
@@ -1091,6 +1292,7 @@ def test_run_discovery_balances_queue_with_deferrals() -> None:
             sd.REJECTED_PATH,
             sd.DISCOVERY_CANDIDATES_PATH,
             sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
         )
         prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
         prev_seeds = list(sd.STUDIO_SEEDS)
@@ -1101,6 +1303,7 @@ def test_run_discovery_balances_queue_with_deferrals() -> None:
             sd.REJECTED_PATH = root / "rejected.json"
             sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
             sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
             sd.STUDIO_SEEDS = []
             sd.ADAPTER_QUEUE_CAPS["lever"] = 1
             sd.STATIC_DISCOVERY_CANDIDATES = [
@@ -1124,6 +1327,7 @@ def test_run_discovery_balances_queue_with_deferrals() -> None:
                 sd.REJECTED_PATH,
                 sd.DISCOVERY_CANDIDATES_PATH,
                 sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
@@ -1138,6 +1342,7 @@ def test_run_discovery_pattern_candidates_below_reinforced_threshold_are_skipped
             sd.REJECTED_PATH,
             sd.DISCOVERY_CANDIDATES_PATH,
             sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
         )
         prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
         prev_seeds = list(sd.STUDIO_SEEDS)
@@ -1179,6 +1384,7 @@ def test_run_discovery_pattern_candidates_below_reinforced_threshold_are_skipped
                 sd.REJECTED_PATH,
                 sd.DISCOVERY_CANDIDATES_PATH,
                 sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
@@ -1191,6 +1397,7 @@ def test_run_discovery_tracks_probe_miss_separately_from_failures() -> None:
             sd.REJECTED_PATH,
             sd.DISCOVERY_CANDIDATES_PATH,
             sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
         )
         prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
         prev_seeds = list(sd.STUDIO_SEEDS)
@@ -1200,6 +1407,7 @@ def test_run_discovery_tracks_probe_miss_separately_from_failures() -> None:
             sd.REJECTED_PATH = root / "rejected.json"
             sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
             sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
             sd.STUDIO_SEEDS = []
             sd.STATIC_DISCOVERY_CANDIDATES = [
                 {"name": "Demo Lever", "studio": "Demo", "adapter": "lever", "account": "demo", "api_url": "https://api.lever.co/v0/postings/demo?mode=json"}
@@ -1223,6 +1431,7 @@ def test_run_discovery_tracks_probe_miss_separately_from_failures() -> None:
                 sd.REJECTED_PATH,
                 sd.DISCOVERY_CANDIDATES_PATH,
                 sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
@@ -1235,6 +1444,7 @@ def test_run_discovery_uses_seed_careers_pages_without_web_search() -> None:
             sd.REJECTED_PATH,
             sd.DISCOVERY_CANDIDATES_PATH,
             sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
         )
         prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
         prev_seeds = list(sd.STUDIO_SEEDS)
@@ -1284,6 +1494,7 @@ def test_run_discovery_uses_seed_careers_pages_without_web_search() -> None:
                 sd.REJECTED_PATH,
                 sd.DISCOVERY_CANDIDATES_PATH,
                 sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
@@ -1296,6 +1507,7 @@ def test_discovery_report_snapshot_contract() -> None:
             sd.REJECTED_PATH,
             sd.DISCOVERY_CANDIDATES_PATH,
             sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
         )
         prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
         prev_seeds = list(sd.STUDIO_SEEDS)
@@ -1305,6 +1517,7 @@ def test_discovery_report_snapshot_contract() -> None:
             sd.REJECTED_PATH = root / "rejected.json"
             sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
             sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
             sd.STUDIO_SEEDS = []
             sd.STATIC_DISCOVERY_CANDIDATES = [
                 {"name": "Demo Lever", "studio": "Demo", "adapter": "lever", "account": "demo", "api_url": "https://api.lever.co/v0/postings/demo?mode=json"},
@@ -1353,6 +1566,68 @@ def test_discovery_report_snapshot_contract() -> None:
                 sd.REJECTED_PATH,
                 sd.DISCOVERY_CANDIDATES_PATH,
                 sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
+            ) = prev_paths
+            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+            sd.STUDIO_SEEDS = prev_seeds
+
+def test_run_discovery_writes_phase_progress_before_probe() -> None:
+    with workspace_tmpdir("source-discovery") as root:
+        prev_paths = (
+            sd.ACTIVE_PATH,
+            sd.PENDING_PATH,
+            sd.REJECTED_PATH,
+            sd.DISCOVERY_CANDIDATES_PATH,
+            sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
+        )
+        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+        prev_seeds = list(sd.STUDIO_SEEDS)
+        saved_reports = []
+        original_save_json_atomic = discovery_orchestrator.save_json_atomic
+
+        def capture_save(path, payload):
+            if Path(path) == sd.DISCOVERY_REPORT_PATH and isinstance(payload, dict):
+                saved_reports.append(payload)
+            original_save_json_atomic(path, payload)
+
+        try:
+            sd.ACTIVE_PATH = root / "active.json"
+            sd.PENDING_PATH = root / "pending.json"
+            sd.REJECTED_PATH = root / "rejected.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+            sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+            sd.STUDIO_SEEDS = []
+            sd.STATIC_DISCOVERY_CANDIDATES = []
+
+            with mock.patch.object(discovery_orchestrator, "save_json_atomic", side_effect=capture_save):
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config={"gamesmap": {"enabled": False}},
+                    fetcher=lambda *_: json.dumps([{"id": 1}]),
+                )
+
+            phase_labels = [
+                str(((payload.get("taskProgress") or {}).get("phaseLabel")) or "")
+                for payload in saved_reports
+            ]
+            assert "Generating seed candidates" in phase_labels
+            assert "Scanning game studios sheet directory" in phase_labels
+            assert "Generating provider-pattern candidates" in phase_labels
+            assert "Scanning known careers pages" in phase_labels
+            assert "Discovery completed" == str((report.get("taskProgress") or {}).get("phaseLabel") or "")
+        finally:
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
@@ -1433,6 +1708,7 @@ def test_run_discovery_sheet_directory_candidates_flow_into_queue() -> None:
             sd.REJECTED_PATH,
             sd.DISCOVERY_CANDIDATES_PATH,
             sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
         )
         prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
         prev_seeds = list(sd.STUDIO_SEEDS)
@@ -1443,6 +1719,7 @@ def test_run_discovery_sheet_directory_candidates_flow_into_queue() -> None:
             sd.REJECTED_PATH = root / "rejected.json"
             sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
             sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
             sd.STUDIO_SEEDS = []
             sd.STATIC_DISCOVERY_CANDIDATES = []
             sd.GAME_STUDIOS_SHEET_ID = "sheet_test"
@@ -1491,10 +1768,214 @@ x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
                 sd.REJECTED_PATH,
                 sd.DISCOVERY_CANDIDATES_PATH,
                 sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
             sd.GAME_STUDIOS_SHEET_ID, sd.GAME_STUDIOS_SHEET_GID = prev_sheet
+
+
+def test_run_discovery_applies_existing_url_patches_before_probe() -> None:
+    with workspace_tmpdir("source-discovery") as root:
+        prev_paths = (
+            sd.ACTIVE_PATH,
+            sd.PENDING_PATH,
+            sd.REJECTED_PATH,
+            sd.DISCOVERY_CANDIDATES_PATH,
+            sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
+        )
+        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+        prev_seeds = list(sd.STUDIO_SEEDS)
+        try:
+            sd.ACTIVE_PATH = root / "active.json"
+            sd.PENDING_PATH = root / "pending.json"
+            sd.REJECTED_PATH = root / "rejected.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+            sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+            discovery_url_patches.save_url_patch_manifest(
+                {"https://old.example/jobs": "https://new.example/jobs"},
+                path=sd.URL_PATCH_MANIFEST_PATH,
+                added=1,
+                updated=0,
+                reprobed=0,
+            )
+            sd.STUDIO_SEEDS = []
+            sd.STATIC_DISCOVERY_CANDIDATES = [
+                {
+                    "name": "Patched Static",
+                    "studio": "Patched Static",
+                    "adapter": "static",
+                    "listing_url": "https://old.example/jobs",
+                    "pages": ["https://old.example/jobs"],
+                    "evidenceScore": 52,
+                    "evidenceTypes": ["seed_curated"],
+                }
+            ]
+
+            seen_urls = []
+
+            def fake_fetch(url: str, _timeout: int) -> str:
+                seen_urls.append(url)
+                if url == "https://new.example/jobs":
+                    return '<a href="https://new.example/jobs/role-1">Role</a>'
+                raise RuntimeError(f"unexpected URL: {url}")
+
+            report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=False,
+                discovery_config={"gamesmap": {"enabled": False}},
+                fetcher=fake_fetch,
+            )
+            assert "https://old.example/jobs" not in seen_urls
+            assert report["summary"]["queuedCandidateCount"] == 1
+            assert report["runtime"]["urlPatchStats"]["loaded"] == 1
+            queued = json.loads(sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8"))
+            assert queued[0]["listing_url"] == "https://new.example/jobs"
+        finally:
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
+            ) = prev_paths
+            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+            sd.STUDIO_SEEDS = prev_seeds
+
+
+def test_run_discovery_suppresses_blocked_static_domains_before_probe() -> None:
+    with workspace_tmpdir("source-discovery") as root:
+        prev_paths = (
+            sd.ACTIVE_PATH,
+            sd.PENDING_PATH,
+            sd.REJECTED_PATH,
+            sd.DISCOVERY_CANDIDATES_PATH,
+            sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
+        )
+        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+        prev_seeds = list(sd.STUDIO_SEEDS)
+        try:
+            sd.ACTIVE_PATH = root / "active.json"
+            sd.PENDING_PATH = root / "pending.json"
+            sd.REJECTED_PATH = root / "rejected.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+            sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+            sd.STUDIO_SEEDS = []
+            sd.STATIC_DISCOVERY_CANDIDATES = [
+                {
+                    "name": "Blocked Static",
+                    "studio": "Blocked Static",
+                    "adapter": "static",
+                    "listing_url": "https://www.linkedin.com/company/example/jobs/",
+                    "pages": ["https://www.linkedin.com/company/example/jobs/"],
+                    "evidenceScore": 52,
+                    "evidenceTypes": ["seed_curated"],
+                }
+            ]
+            calls = []
+            report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=False,
+                discovery_config={"gamesmap": {"enabled": False}},
+                fetcher=lambda *args, **kwargs: calls.append((args, kwargs)) or "",
+            )
+            assert not any(args and args[0] == "https://www.linkedin.com/company/example/jobs/" for args, _kwargs in calls)
+            assert report["summary"]["suppressedStaticCount"] == 1
+            assert report["summary"]["failedProbeCount"] == 0
+            assert any(str(row.get("dropReason") or "") == "blocked_domain" for row in (report.get("failures") or []))
+        finally:
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
+            ) = prev_paths
+            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+            sd.STUDIO_SEEDS = prev_seeds
+
+
+def test_run_discovery_refreshes_url_patches_and_reprobes_candidate() -> None:
+    with workspace_tmpdir("source-discovery") as root:
+        prev_paths = (
+            sd.ACTIVE_PATH,
+            sd.PENDING_PATH,
+            sd.REJECTED_PATH,
+            sd.DISCOVERY_CANDIDATES_PATH,
+            sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
+        )
+        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+        prev_seeds = list(sd.STUDIO_SEEDS)
+        try:
+            sd.ACTIVE_PATH = root / "active.json"
+            sd.PENDING_PATH = root / "pending.json"
+            sd.REJECTED_PATH = root / "rejected.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+            sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+            sd.STUDIO_SEEDS = []
+            sd.STATIC_DISCOVERY_CANDIDATES = [
+                {
+                    "name": "Recoverable Static",
+                    "studio": "Recoverable Static",
+                    "adapter": "static",
+                    "listing_url": "https://old.example/jobs",
+                    "pages": ["https://old.example/jobs"],
+                    "evidenceScore": 52,
+                    "evidenceTypes": ["seed_curated"],
+                }
+            ]
+
+            def fake_fetch(url: str, _timeout: int) -> str:
+                if url == "https://old.example/jobs":
+                    raise RuntimeError("Client error '404 Not Found' for url 'https://old.example/jobs'")
+                if url == "https://new.example/jobs":
+                    return '<a href="https://new.example/jobs/role-1">Role</a>'
+                raise RuntimeError(f"unexpected URL: {url}")
+
+            with mock.patch.object(
+                discovery_orchestrator,
+                "resolve_patch_target",
+                return_value="https://new.example/jobs",
+            ):
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config={"gamesmap": {"enabled": False}},
+                    fetcher=fake_fetch,
+                )
+
+            manifest = json.loads(sd.URL_PATCH_MANIFEST_PATH.read_text(encoding="utf-8"))
+            assert manifest["patches"]["https://old.example/jobs"] == "https://new.example/jobs"
+            assert report["summary"]["queuedCandidateCount"] == 1
+            assert report["summary"]["failedProbeCount"] == 0
+            assert report["runtime"]["urlPatchStats"]["added"] == 1
+            assert report["runtime"]["urlPatchStats"]["reprobed"] == 1
+            assert report["runtime"]["urlPatchRecoveredCount"] == 1
+        finally:
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
+            ) = prev_paths
+            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+            sd.STUDIO_SEEDS = prev_seeds
 
 def test_load_discovery_config_uses_configured_path() -> None:
     with workspace_tmpdir("source-discovery") as root:

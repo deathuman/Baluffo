@@ -158,6 +158,15 @@ def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
     api.start_sync_task = lambda action, reason, automatic: {"started": True}
     api.start_fetcher_task = lambda payload: {"started": True}
     api.update_saved_sync_settings = lambda p: None
+    api.update_saved_discovery_settings = lambda payload: {
+        "autoApproveHealthyPendingOnComplete": bool(
+            (payload or {}).get("autoApproveHealthyPendingOnComplete", True)
+        )
+    }
+    api.get_discovery_config_payload = lambda: {
+        "ok": True,
+        "savedConfig": {"autoApproveHealthyPendingOnComplete": True},
+    }
     api.sync_config_status = lambda: {"ready": True}
     api.test_sync_config = lambda: {"ok": True}
     api.sync_pull_sources = lambda: {"pulled": True, "sources": []}
@@ -412,6 +421,41 @@ def test_run_discovery(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["started"] is True
 
 
+def test_run_discovery_response_write_failure_is_logged_and_returns_error_json(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    log_calls: list[tuple[str, dict[str, Any]]] = []
+
+    def bridge_log(level: str, message: str, **fields: Any) -> None:
+        log_calls.append((message, {"level": level, **fields}))
+
+    class _FlakyHandler(_FakeHandler):
+        def __init__(self) -> None:
+            super().__init__()
+            self._first = True
+
+        def _send_json(self, payload: Any, status: int = 200) -> None:
+            if self._first:
+                self._first = False
+                raise BrokenPipeError("socket closed")
+            super()._send_json(payload, status=status)
+
+    api.bridge_log = bridge_log
+    handler = _FlakyHandler()
+
+    result = handle_post(
+        handler,
+        api=api,
+        path="/tasks/run-discovery",
+        payload={"preset": "default"},
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 500
+    assert handler.sent[-1]["payload"]["started"] is False
+    assert any(message == "discovery_launch_response_write_failed" for message, _fields in log_calls)
+
+
 def test_run_jobs_pipeline(tmp_path: Path) -> None:
     """Test triggering jobs pipeline."""
     store = _FakeDesktopLocalDataStore()
@@ -477,6 +521,46 @@ def test_run_fetcher(tmp_path: Path) -> None:
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
+
+
+def test_save_discovery_config_persists_and_returns_saved_payload(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    saved_payloads: list[dict[str, Any]] = []
+
+    def update_saved_discovery_settings(payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = {
+            "autoApproveHealthyPendingOnComplete": bool(
+                (payload or {}).get("autoApproveHealthyPendingOnComplete", True)
+            )
+        }
+        saved_payloads.append(normalized)
+        return normalized
+
+    api.update_saved_discovery_settings = update_saved_discovery_settings
+    api.get_discovery_config_payload = lambda: {
+        "ok": True,
+        "savedConfig": saved_payloads[-1],
+    }
+
+    handler = _FakeHandler()
+    result = handle_post(
+        handler,
+        api=api,
+        path="/discovery/config",
+        payload={"autoApproveHealthyPendingOnComplete": False},
+    )
+
+    assert result is True
+    assert saved_payloads == [{"autoApproveHealthyPendingOnComplete": False}]
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["ok"] is True
+    assert (
+        handler.sent[-1]["payload"]["savedConfig"][
+            "autoApproveHealthyPendingOnComplete"
+        ]
+        is False
+    )
 
 
 def test_ack_alert_success(tmp_path: Path) -> None:

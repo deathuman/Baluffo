@@ -100,6 +100,7 @@ TASK_STATE_PATH = ROOT / "data" / "admin-task-state.json"
 DISCOVERY_LOG_PATH = ROOT / "data" / "source-discovery.log"
 FETCHER_LOG_PATH = ROOT / "data" / "jobs-fetcher.log"
 SYNC_CONFIG_PATH = ROOT / "data" / "source-sync-config.json"
+DISCOVERY_CONFIG_PATH = ROOT / "data" / "source-discovery-config.json"
 SYNC_RUNTIME_PATH = ROOT / "data" / "source-sync-runtime.json"
 STARTUP_METRICS_PATH = ROOT / "data" / "desktop-startup-metrics.jsonl"
 
@@ -205,6 +206,8 @@ def _get_discovery_service() -> DiscoveryService:
                     candidates=DISCOVERY_CANDIDATES_PATH,
                     pending=PENDING_PATH,
                     log=DISCOVERY_LOG_PATH,
+                    settings=DISCOVERY_CONFIG_PATH,
+                    approval_state=APPROVAL_STATE_PATH,
                 ),
                 deps=DiscoveryDeps(
                     schema_version=SCHEMA_VERSION,
@@ -218,6 +221,8 @@ def _get_discovery_service() -> DiscoveryService:
                     run_background_script=run_background_script,
                     append_run_history=append_run_history,
                     normalize_discovery_report_contract=normalize_discovery_report_contract,
+                    load_state=load_state,
+                    persist_state_and_auto_sync=persist_state_and_auto_sync,
                     load_sync_runtime_state=load_sync_runtime_state,
                     maybe_trigger_auto_sync_push=_maybe_trigger_auto_sync_push,
                     mark_discovery_sync_finished=_mark_discovery_sync_finished,
@@ -260,6 +265,7 @@ def _get_ops_api() -> _ops_api.OpsApi:
             ops_alert_state=OPS_ALERT_STATE_PATH,
             jobs_fetch_report=JOBS_FETCH_REPORT_PATH,
             discovery_report=DISCOVERY_REPORT_PATH,
+            task_state=TASK_STATE_PATH,
         ),
         deps=_ops_api.OpsDeps(
             load_json_object=load_json_object,
@@ -279,6 +285,8 @@ def _get_ops_api() -> _ops_api.OpsApi:
             task_running_from_state=task_running_from_state,
             report_is_stale_in_progress=report_is_stale_in_progress,
             get_active_sync_runs=SyncState.get_active_sync_runs,
+            get_sync_status_payload=get_sync_status_payload,
+            get_jobs_pipeline_status_payload=get_jobs_pipeline_status_payload,
             normalize_fetch_report_contract=normalize_fetch_report_contract,
             normalize_discovery_report_contract=normalize_discovery_report_contract,
             desktop_mode=RUNTIME_CONFIG.desktop_mode,
@@ -370,13 +378,19 @@ def bridge_log(level: str, message: str, **fields: Any) -> None:
         **{key: value for key, value in fields.items() if value is not None and value != ""},
     }
     if _normalize_log_format(RUNTIME_CONFIG.log_format) == "jsonl":
-        print(json.dumps(payload, ensure_ascii=False), flush=True)
+        try:
+            print(json.dumps(payload, ensure_ascii=False), flush=True)
+        except OSError:
+            pass
         return
     field_text = " ".join(f"{key}={value}" for key, value in payload.items() if key not in {"ts", "level", "message"})
     line = f"[admin_bridge][{normalized_level.upper()}] {payload['message']}"
     if field_text:
         line = f"{line} {field_text}"
-    print(line, flush=True)
+    try:
+        print(line, flush=True)
+    except OSError:
+        pass
 
 
 def configure_runtime_paths(config: RuntimeConfig) -> None:
@@ -384,7 +398,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     global _TASK_HISTORY_MANAGER
     global OPS_HISTORY_PATH, OPS_ALERT_STATE_PATH, JOBS_FETCH_REPORT_PATH, TASK_STATE_PATH, DISCOVERY_LOG_PATH, FETCHER_LOG_PATH
     global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
-    global TASKS_CONFIG_PATH, SYNC_CONFIG_PATH, SYNC_RUNTIME_PATH, STARTUP_METRICS_PATH
+    global TASKS_CONFIG_PATH, SYNC_CONFIG_PATH, DISCOVERY_CONFIG_PATH, SYNC_RUNTIME_PATH, STARTUP_METRICS_PATH
     global _REGISTRY_SERVICE, _REGISTRY_SERVICE_PATHS
     global _DISCOVERY_SERVICE, _DISCOVERY_SERVICE_PATHS
 
@@ -400,6 +414,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     DISCOVERY_LOG_PATH = data_dir / "source-discovery.log"
     FETCHER_LOG_PATH = data_dir / "jobs-fetcher.log"
     SYNC_CONFIG_PATH = data_dir / "source-sync-config.json"
+    DISCOVERY_CONFIG_PATH = data_dir / "source-discovery-config.json"
     SYNC_RUNTIME_PATH = data_dir / "source-sync-runtime.json"
     STARTUP_METRICS_PATH = data_dir / "desktop-startup-metrics.jsonl"
     ACTIVE_PATH = data_dir / "source-registry-active.json"
@@ -465,9 +480,12 @@ def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
         save_json_atomic=save_json_atomic,
         start_fetcher_task=start_fetcher_task,
         start_sync_task=start_sync_task,
+        get_discovery_config_payload=get_discovery_config_payload,
+        update_saved_discovery_settings=update_saved_discovery_settings,
         compute_ops_health=compute_ops_health,
         compute_fetcher_metrics=compute_fetcher_metrics,
         sync_history_from_reports=sync_history_from_reports,
+        get_current_task_state_payload=_get_ops_api().get_current_task_state_payload,
         load_alert_state=load_alert_state,
         save_alert_state=save_alert_state,
     )
@@ -501,6 +519,18 @@ def get_saved_sync_config_payload() -> Dict[str, Any]:
 
 def update_saved_sync_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
     return _get_sync_service().update_saved_sync_settings(payload)
+
+
+def load_saved_discovery_settings() -> Dict[str, Any]:
+    return _get_discovery_service().load_saved_discovery_settings()
+
+
+def get_discovery_config_payload() -> Dict[str, Any]:
+    return _get_discovery_service().get_discovery_config_payload()
+
+
+def update_saved_discovery_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return _get_discovery_service().update_saved_discovery_settings(payload)
 
 
 def load_sync_runtime_state() -> Dict[str, Any]:
@@ -1050,21 +1080,6 @@ def start_fetcher_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, An
     fetcher_args, preset = build_fetcher_args_from_payload(payload if isinstance(payload, dict) else {})
     FETCHER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     FETCHER_LOG_PATH.write_text(f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8")
-    save_json_atomic(
-        JOBS_FETCH_REPORT_PATH,
-        normalize_fetch_report_contract(
-            {
-                "runId": run_id,
-                "schemaVersion": SCHEMA_VERSION,
-                "startedAt": started_at,
-                "finishedAt": "",
-                "runtime": {},
-                "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
-                "sources": [],
-                "outputs": {"report": str(JOBS_FETCH_REPORT_PATH)},
-            }
-        ),
-    )
     append_run_history({
         "id": run_id,
         "runId": run_id,
@@ -1085,6 +1100,21 @@ def start_fetcher_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, An
             "BALUFFO_FETCH_RUN_ID": run_id,
             "BALUFFO_FETCH_STARTED_AT": started_at,
         },
+    )
+    save_json_atomic(
+        JOBS_FETCH_REPORT_PATH,
+        normalize_fetch_report_contract(
+            {
+                "runId": run_id,
+                "schemaVersion": SCHEMA_VERSION,
+                "startedAt": started_at,
+                "finishedAt": "",
+                "runtime": {},
+                "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+                "sources": [],
+                "outputs": {"report": str(JOBS_FETCH_REPORT_PATH)},
+            }
+        ),
     )
     approval = load_json_object(APPROVAL_STATE_PATH, {"approvedSinceLastRun": 0})
     approval["approvedSinceLastRun"] = 0

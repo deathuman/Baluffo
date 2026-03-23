@@ -1,4 +1,4 @@
-"""Integration test for Reddit subreddits expansion and improved error handling."""
+"""Integration test for the current Reddit defaults and error handling."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 from typing import Any, Dict
 
 def test_complete_reddit_implementation():
-    """Test the complete Reddit implementation with 6 subreddits and improved error handling."""
+    """Test the current Reddit implementation defaults and error handling settings."""
     
     # Test 1: Configuration loading
     print("Test 1: Configuration loading...")
@@ -16,8 +16,9 @@ def test_complete_reddit_implementation():
     reddit_config = config.get("reddit") or {}
     subreddits = reddit_config.get("subreddits") or []
     
-    assert len(subreddits) == 1, f"Expected 1 subreddit, got {len(subreddits)}"
-    expected_subreddits = ["gamedev"]
+    assert reddit_config.get("enabled") is False, "Expected Reddit polling to be disabled by default"
+    assert len(subreddits) == 0, f"Expected 0 subreddits, got {len(subreddits)}"
+    expected_subreddits = []
     assert subreddits == expected_subreddits, f"Expected {expected_subreddits}, got {subreddits}"
     print("✓ Configuration loading test passed")
     
@@ -58,9 +59,9 @@ def test_complete_reddit_implementation():
     # Note: This test would require a custom config file, but we can test the structure
     print("✓ Configuration merging test passed")
     
-    print("\n🎉 All tests passed! Reddit implementation is working correctly.")
+    print("\nAll tests passed! Reddit implementation is working correctly.")
     print(f"📊 Current configuration: {len(subreddits)} subreddits configured")
-    print(f"📋 Subreddits: {', '.join(subreddits)}")
+    print(f"📋 Subreddits: {', '.join(subreddits) if subreddits else '(none)'}")
     print("🔧 Enhanced error handling: JSON → RSS → HTML fallback chain")
     print("⚡ Rate limiting: Enabled with configurable delays")
 

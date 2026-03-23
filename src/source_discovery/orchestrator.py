@@ -22,7 +22,13 @@ import httpx
 import src.source_discovery as sd
 from src.contracts import SCHEMA_VERSION
 from src.jobs.state import read_source_state
-from src.source_registry import load_json_array, save_json_atomic, source_identity, unique_sources
+from src.source_registry import (
+    URL_PATCH_MANIFEST_PATH as DEFAULT_URL_PATCH_MANIFEST_PATH,
+    load_json_array,
+    save_json_atomic,
+    source_identity,
+    unique_sources,
+)
 
 from .core import (
     adapter_domain_fingerprint,
@@ -40,16 +46,31 @@ from .core import (
 )
 from .gamesmap import discover_gamesmap_candidates
 from .probe import async_probe_candidate, validate_candidate_for_probe
-from .reporting import build_stage_summary, merge_candidate_streams, stage_curated_seed_candidates
+from .reporting import (
+    build_discovery_task_progress,
+    build_stage_summary,
+    merge_candidate_streams,
+    stage_curated_seed_candidates,
+)
 from .schemas import DiscoveryReportSchema, DiscoveryReportSummarySchema
 from .scoring import resolve_discovery_thresholds
 from .sheet_directory import discover_game_studio_sheet_candidates
 from .static_candidates import build_static_candidate_from_page
+from .url_patches import (
+    apply_url_patches_to_candidate,
+    load_url_patches,
+    merge_url_patches,
+    resolve_patch_target,
+    save_url_patch_manifest,
+    should_attempt_patch_recovery,
+    summarize_url_patch_runtime,
+)
 from .web_search import (
     async_fetch_text_httpx,
     discover_web_search_candidates,
     fetch_text,
     infer_provider_candidates_from_html,
+    is_blocked_generic_static_url,
 )
 
 
@@ -106,6 +127,22 @@ def _increment_adapter_runtime(
     row["queuedCount"] = int(row.get("queuedCount") or 0) + max(0, int(queued or 0))
 
 
+def _adjust_adapter_runtime(
+    adapter_runtime: Dict[str, Dict[str, int | str]],
+    adapter: Any,
+    *,
+    failures: int = 0,
+    healthy: int = 0,
+    queued: int = 0,
+) -> None:
+    adapter_name = str(adapter or "").strip().lower() or "unknown"
+    row = adapter_runtime.setdefault(adapter_name, {"adapter": adapter_name, **_empty_adapter_runtime()})
+    row["adapter"] = adapter_name
+    row["failureCount"] = max(0, int(row.get("failureCount") or 0) + int(failures or 0))
+    row["healthyCount"] = max(0, int(row.get("healthyCount") or 0) + int(healthy or 0))
+    row["queuedCount"] = max(0, int(row.get("queuedCount") or 0) + int(queued or 0))
+
+
 def _distribute_duration_by_adapter(
     adapter_runtime: Dict[str, Dict[str, int | str]],
     *,
@@ -139,6 +176,9 @@ def _build_discovery_runtime_payload(
     total_duration_ms: int,
     stage_timings_ms: Dict[str, int],
     adapter_runtime: Dict[str, Dict[str, int | str]],
+    preset: str,
+    top_cap_bypassed: bool,
+    sheet_static_probe_cap_bypassed: bool,
 ) -> Dict[str, Any]:
     stage_rows = [
         {"stage": stage, "durationMs": int(duration_ms)}
@@ -161,6 +201,9 @@ def _build_discovery_runtime_payload(
     adapter_rows.sort(key=lambda row: int(row.get("durationMs") or 0), reverse=True)
     return {
         "totalDurationMs": max(0, int(total_duration_ms or 0)),
+        "preset": str(preset or "default"),
+        "topCapBypassed": bool(top_cap_bypassed),
+        "sheetStaticProbeCapBypassed": bool(sheet_static_probe_cap_bypassed),
         "stageTimingsMs": {key: int(stage_timings_ms.get(key) or 0) for key in DISCOVERY_TIMING_STAGE_KEYS},
         "stageTop": stage_rows[:5],
         "adapterTimings": adapter_rows,
@@ -172,6 +215,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Discover new job source candidates.")
     parser.add_argument("--timeout", type=int, default=12)
     parser.add_argument("--top", type=int, default=0, help="Limit new candidates written this run; 0 = no limit.")
+    parser.add_argument("--preset", choices=("default", "uncapped"), default="default")
     parser.add_argument("--mode", choices=("dynamic", "static"), default="dynamic")
     parser.add_argument("--no-web-search", action="store_true", help="Disable lightweight web search phase.")
     parser.add_argument(
@@ -192,6 +236,7 @@ def run_discovery(
     *,
     timeout_s: int,
     top_n: int,
+    preset: str = "default",
     mode: str = "dynamic",
     include_web_search: bool = True,
     discovery_config: Optional[Dict[str, Any]] = None,
@@ -204,12 +249,18 @@ def run_discovery(
     stage_timings_ms: Dict[str, int] = {key: 0 for key in DISCOVERY_TIMING_STAGE_KEYS}
     adapter_runtime: Dict[str, Dict[str, int | str]] = {}
 
+    preset_name = str(preset or "default").strip().lower() or "default"
+    if preset_name not in {"default", "uncapped"}:
+        preset_name = "default"
+    top_cap_bypassed = int(top_n or 0) <= 0
+    sheet_static_probe_cap_bypassed = preset_name == "uncapped"
+
     active = load_json_array(sd.ACTIVE_PATH, [])
     pending_existing = load_json_array(sd.PENDING_PATH, [])
     rejected = load_json_array(sd.REJECTED_PATH, [])
 
     sd.emit_log(
-        f"Starting source discovery: mode={mode}, top_n={top_n}, web_search={'on' if include_web_search else 'off'}."
+        f"Starting source discovery: mode={mode}, preset={preset_name}, top_n={top_n}, web_search={'on' if include_web_search else 'off'}."
     )
     sd.emit_log(
         f"Loaded registries: active={len(active)}, pending={len(pending_existing)}, rejected={len(rejected)}."
@@ -227,7 +278,107 @@ def run_discovery(
 
     web_failures: List[Dict[str, Any]] = []
     streams: List[Tuple[str, List[Dict[str, Any]]]] = []
+    generated_count_by_stage = init_stage_counter()
+    survived_dedupe_count_by_stage = init_stage_counter()
+    probed_count_by_stage = init_stage_counter()
+    queued_count_by_stage = init_stage_counter()
+    duplicate_reasons: Counter[str] = Counter()
+    dedupe_drop_rows: List[Dict[str, Any]] = []
+    found_endpoint_count = 0
+    skipped_duplicate_count = 0
+    filtered: List[Dict[str, Any]] = []
+    queueable_candidates: List[Dict[str, Any]] = []
+    failures: List[Dict[str, Any]] = []
+    healthy = 0
+    probed = 0
+    adapter_counter: Counter[str] = Counter()
+    method_counter: Counter[str] = Counter()
+    skipped_invalid = 0
+    skipped_low_evidence_probe_count = 0
+    suppressed_static_count = 0
+    suppressed_static_by_reason: Counter[str] = Counter()
+    suppressed_static_by_stage: Counter[str] = Counter()
+    validation_skipped_count = 0
+    queue_filtered_count = 0
+    probe_failed_count = 0
+    url_patch_manifest_path = getattr(sd, "URL_PATCH_MANIFEST_PATH", None)
+    url_patch_manifest_enabled = bool(url_patch_manifest_path) and (
+        fetcher is fetch_text or str(url_patch_manifest_path) != str(DEFAULT_URL_PATCH_MANIFEST_PATH)
+    )
+    url_patches = load_url_patches(url_patch_manifest_path) if url_patch_manifest_enabled else {}
+    url_patch_stats = summarize_url_patch_runtime(
+        loaded=len(url_patches),
+        added=0,
+        updated=0,
+        reprobed=0,
+    )
 
+    def write_progress_report(current_candidates: List[Dict[str, Any]], *, phase: str, phase_label: str) -> None:
+        runtime_payload = _build_discovery_runtime_payload(
+            total_duration_ms=max(0, int((time.perf_counter() - run_started_mono) * 1000)),
+            stage_timings_ms=stage_timings_ms,
+            adapter_runtime=adapter_runtime,
+            preset=preset_name,
+            top_cap_bypassed=top_cap_bypassed,
+            sheet_static_probe_cap_bypassed=sheet_static_probe_cap_bypassed,
+        )
+        runtime_payload["urlPatchStats"] = dict(url_patch_stats)
+        summary = build_stage_summary(
+            current_candidates,
+            found_endpoint_count=found_endpoint_count,
+            generated_count_by_stage=generated_count_by_stage,
+            survived_dedupe_count_by_stage=survived_dedupe_count_by_stage,
+            probed_count_by_stage=probed_count_by_stage,
+            queued_count_by_stage=queued_count_by_stage,
+            probed=probed,
+            healthy=healthy,
+            failures=failures,
+            skipped_duplicate_count=skipped_duplicate_count,
+            skipped_invalid=skipped_invalid,
+            skipped_low_evidence_probe_count=skipped_low_evidence_probe_count,
+            validation_skipped_count=validation_skipped_count,
+            probe_failed_count=probe_failed_count,
+            queue_filtered_count=queue_filtered_count,
+            adapter_counter=adapter_counter,
+            method_counter=method_counter,
+            duplicate_reasons=duplicate_reasons,
+            deferred_counts=None,
+            queued_by_adapter=None,
+            deferred_by_adapter=None,
+            healthy_but_deferred_by_adapter=None,
+            suppressed_static_count=suppressed_static_count,
+            suppressed_static_by_reason=dict(suppressed_static_by_reason),
+            suppressed_static_by_stage=dict(suppressed_static_by_stage),
+            thresholds=thresholds,
+            phase=phase,
+            phase_label=phase_label,
+        )
+        task_progress = build_discovery_task_progress(summary=summary, finished=False)
+        save_json_atomic(
+            sd.DISCOVERY_REPORT_PATH,
+            {
+                "schemaVersion": SCHEMA_VERSION,
+                "mode": mode,
+                "startedAt": started_at,
+                "finishedAt": "",
+                "summary": summary,
+                "runtime": runtime_payload,
+                "taskProgress": task_progress,
+                "candidates": current_candidates,
+                "failures": failures,
+                "topFailures": [],
+                "outputs": {
+                    "report": str(sd.DISCOVERY_REPORT_PATH),
+                    "candidates": str(sd.DISCOVERY_CANDIDATES_PATH),
+                    "pending": str(sd.PENDING_PATH),
+                    "urlPatches": str(getattr(sd, "URL_PATCH_MANIFEST_PATH", "")),
+                },
+            },
+        )
+
+    write_progress_report([], phase="starting", phase_label="Initializing scan")
+
+    write_progress_report([], phase="generating_candidates", phase_label="Generating seed candidates")
     sd.emit_log("Generating curated seed candidates from static discovery inputs.")
     stage_started = time.perf_counter()
     curated_seed_candidates = stage_curated_seed_candidates()
@@ -238,6 +389,7 @@ def run_discovery(
     sd.emit_log(f"Curated seed generation complete: {len(curated_seed_candidates)} candidate(s).")
     streams.append(("curated_seed", curated_seed_candidates))
 
+    write_progress_report([], phase="scanning_sources", phase_label="Scanning game studios sheet directory")
     sd.emit_log("Scanning game studios sheet directory for candidate sources.")
     stage_started = time.perf_counter()
     provider_sheet_candidates, static_sheet_candidates, sheet_failures = discover_game_studio_sheet_candidates(
@@ -268,6 +420,7 @@ def run_discovery(
     streams.append(("sheet_directory", static_sheet_candidates))
 
     if mode == "dynamic":
+        write_progress_report([], phase="generating_candidates", phase_label="Generating provider-pattern candidates")
         sd.emit_log("Generating provider-pattern candidates from the studio seed catalog.")
         stage_started = time.perf_counter()
         provider_pattern_candidates = sd.build_pattern_candidates()
@@ -278,6 +431,7 @@ def run_discovery(
         sd.emit_log(f"Provider-pattern generation complete: {len(provider_pattern_candidates)} candidate(s).")
         streams.append(("provider_pattern", provider_pattern_candidates))
 
+        write_progress_report([], phase="scanning_sources", phase_label="Scanning known careers pages")
         sd.emit_log("Scanning known careers pages from the seed catalog.")
         stage_started = time.perf_counter()
         provider_web_candidates, static_web_candidates, seed_failures = sd.discover_seed_careers_page_candidates(
@@ -299,6 +453,7 @@ def run_discovery(
         streams.append(("web_provider", provider_web_candidates))
         streams.append(("generic_static", static_web_candidates))
 
+        write_progress_report([], phase="scanning_sources", phase_label="Scanning Gamesmap directory")
         sd.emit_log("Scanning Gamesmap directory for discoverable studios.")
         stage_started = time.perf_counter()
         provider_gamesmap_candidates, static_gamesmap_candidates, gamesmap_failures = discover_gamesmap_candidates(
@@ -323,6 +478,7 @@ def run_discovery(
         streams.append(("generic_static", static_gamesmap_candidates))
 
         if include_web_search:
+            write_progress_report([], phase="generating_candidates", phase_label="Running web-search discovery queries")
             sd.emit_log("Running web-search discovery queries.")
             stage_started = time.perf_counter()
             provider_search_candidates, static_search_candidates, search_failures = discover_web_search_candidates(
@@ -345,13 +501,6 @@ def run_discovery(
             web_failures.extend(search_failures)
             streams.append(("web_provider", provider_search_candidates))
             streams.append(("generic_static", static_search_candidates))
-
-    generated_count_by_stage = init_stage_counter()
-    survived_dedupe_count_by_stage = init_stage_counter()
-    probed_count_by_stage = init_stage_counter()
-    queued_count_by_stage = init_stage_counter()
-    duplicate_reasons: Counter[str] = Counter()
-    dedupe_drop_rows: List[Dict[str, Any]] = []
 
     stage_started = time.perf_counter()
     discovered = merge_candidate_streams(streams)
@@ -440,6 +589,7 @@ def run_discovery(
     filtered, sheet_static_suppressed = apply_sheet_directory_static_probe_cap(
         filtered,
         top_n=top_n,
+        bypass_cap=sheet_static_probe_cap_bypassed,
         source_state_rows=source_state_rows,
     )
     sd.emit_log(
@@ -448,23 +598,13 @@ def run_discovery(
         + f"; skipped_duplicates={skipped_duplicate_count}."
     )
 
-    queueable_candidates: List[Dict[str, Any]] = []
-    failures: List[Dict[str, Any]] = [
+    failures = [
         {**row, "dropStage": "page_fetch", "dropReason": "page_fetch"}
         for row in list(web_failures)
         if isinstance(row, dict)
     ]
     failures.extend(dedupe_drop_rows)
 
-    healthy = 0
-    probed = 0
-    adapter_counter: Counter[str] = Counter()
-    method_counter: Counter[str] = Counter()
-    skipped_invalid = 0
-    skipped_low_evidence_probe_count = 0
-    suppressed_static_count = 0
-    suppressed_static_by_reason: Counter[str] = Counter()
-    suppressed_static_by_stage: Counter[str] = Counter()
     for raw in sheet_static_suppressed:
         stage = str(raw.get("discoveryStage") or "provider_pattern")
         suppressed_static_count += 1
@@ -482,73 +622,34 @@ def run_discovery(
             }
         )
     low_evidence_probes_used = 0
-    validation_skipped_count = 0
-    queue_filtered_count = 0
-    probe_failed_count = 0
 
-    def write_progress_report(current_candidates: List[Dict[str, Any]], *, phase: str, phase_label: str) -> None:
-        runtime_payload = _build_discovery_runtime_payload(
-            total_duration_ms=max(0, int((time.perf_counter() - run_started_mono) * 1000)),
-            stage_timings_ms=stage_timings_ms,
-            adapter_runtime=adapter_runtime,
-        )
-        summary = build_stage_summary(
-            current_candidates,
-            found_endpoint_count=found_endpoint_count,
-            generated_count_by_stage=generated_count_by_stage,
-            survived_dedupe_count_by_stage=survived_dedupe_count_by_stage,
-            probed_count_by_stage=probed_count_by_stage,
-            queued_count_by_stage=queued_count_by_stage,
-            probed=probed,
-            healthy=healthy,
-            failures=failures,
-            skipped_duplicate_count=skipped_duplicate_count,
-            skipped_invalid=skipped_invalid,
-            skipped_low_evidence_probe_count=skipped_low_evidence_probe_count,
-            validation_skipped_count=validation_skipped_count,
-            probe_failed_count=probe_failed_count,
-            queue_filtered_count=queue_filtered_count,
-            adapter_counter=adapter_counter,
-            method_counter=method_counter,
-            duplicate_reasons=duplicate_reasons,
-            deferred_counts=None,
-            queued_by_adapter=None,
-            deferred_by_adapter=None,
-            healthy_but_deferred_by_adapter=None,
-            suppressed_static_count=suppressed_static_count,
-            suppressed_static_by_reason=dict(suppressed_static_by_reason),
-            suppressed_static_by_stage=dict(suppressed_static_by_stage),
-            thresholds=thresholds,
-            phase=phase,
-            phase_label=phase_label,
-        )
-        save_json_atomic(
-            sd.DISCOVERY_REPORT_PATH,
-            {
-                "schemaVersion": SCHEMA_VERSION,
-                "mode": mode,
-                "startedAt": started_at,
-                "finishedAt": "",
-                "summary": summary,
-                "runtime": runtime_payload,
-                "candidates": current_candidates,
-                "failures": failures,
-                "topFailures": [],
-                "outputs": {
-                    "report": str(sd.DISCOVERY_REPORT_PATH),
-                    "candidates": str(sd.DISCOVERY_CANDIDATES_PATH),
-                    "pending": str(sd.PENDING_PATH),
-                },
-            },
-        )
-
-    write_progress_report([], phase="candidate_generation", phase_label="Generating initial discovery candidates")
+    write_progress_report([], phase="generating_candidates", phase_label="Generating initial discovery candidates")
     sd.emit_log(f"Starting probe phase for {len(filtered)} candidate(s).")
-    write_progress_report(queueable_candidates, phase="probe", phase_label=f"Probing {len(filtered)} candidate(s)")
+    write_progress_report(queueable_candidates, phase="probing_candidates", phase_label=f"Probing {len(filtered)} candidate(s)")
 
     probe_inputs: List[Dict[str, Any]] = []
+    failed_probe_records: List[Dict[str, Any]] = []
     for raw in filtered:
+        raw, _patch_applied = apply_url_patches_to_candidate(raw, url_patches)
         stage = str(raw.get("discoveryStage") or "provider_pattern")
+        if str(raw.get("adapter") or "").strip().lower() == "static":
+            blocked_url = str(raw.get("listing_url") or raw.get("careersUrl") or sd.endpoint_url(raw) or "").strip()
+            if blocked_url and is_blocked_generic_static_url(blocked_url):
+                suppressed_static_count += 1
+                suppressed_static_by_reason["blocked_domain"] += 1
+                suppressed_static_by_stage[stage] += 1
+                failures.append(
+                    {
+                        "name": raw.get("name"),
+                        "adapter": raw.get("adapter"),
+                        "domain": (urlparse(blocked_url).netloc or "").lower(),
+                        "error": "blocked_domain",
+                        "stage": "suppressed_static",
+                        "dropStage": "suppressed_static",
+                        "dropReason": "blocked_domain",
+                    }
+                )
+                continue
         suppression_reason = classify_static_suppression(
             raw,
             source_state_rows=source_state_rows,
@@ -684,17 +785,17 @@ def run_discovery(
             probe_failed_count += 1
             probe_stage = classify_probe_failure_stage(error)
             _increment_adapter_runtime(adapter_runtime, raw.get("adapter"), failures=1)
-            failures.append(
-                {
-                    "name": raw.get("name"),
-                    "adapter": raw.get("adapter"),
-                    "domain": (urlparse(sd.endpoint_url(raw)).netloc or "").lower(),
-                    "error": error,
-                    "stage": probe_stage,
-                    "dropStage": "probe_failed",
-                    "dropReason": probe_stage,
-                }
-            )
+            failure_row = {
+                "name": raw.get("name"),
+                "adapter": raw.get("adapter"),
+                "domain": (urlparse(sd.endpoint_url(raw)).netloc or "").lower(),
+                "error": error,
+                "stage": probe_stage,
+                "dropStage": "probe_failed",
+                "dropReason": probe_stage,
+            }
+            failures.append(failure_row)
+            failed_probe_records.append({"candidate": dict(raw), "failure": failure_row})
         elif not should_queue_candidate(raw, jobs_found, thresholds):
             queue_filtered_count += 1
             failures.append(
@@ -723,8 +824,102 @@ def run_discovery(
                 f"probe_misses={len([row for row in failures if str(row.get('stage')) == 'probe_miss'])}, "
                 f"skipped_low_evidence={skipped_low_evidence_probe_count}."
             )
-            write_progress_report(queueable_candidates, phase="probe", phase_label=f"Probing {len(filtered)} candidate(s)")
+            write_progress_report(queueable_candidates, phase="probing_candidates", phase_label=f"Probing {len(filtered)} candidate(s)")
     _record_stage_timing(stage_timings_ms, "probe", probe_stage_started)
+
+    patch_added = 0
+    patch_updated = 0
+    recovered_count = 0
+    if failed_probe_records:
+        write_progress_report(queueable_candidates, phase="resolving_url_patches", phase_label="Refreshing URL patches")
+        new_patches: Dict[str, str] = {}
+        reprobe_candidates: List[Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]] = []
+        for record in failed_probe_records:
+            candidate = dict(record.get("candidate") or {})
+            failure_row = record.get("failure") if isinstance(record.get("failure"), dict) else {}
+            error_text = str(failure_row.get("error") or "")
+            if not should_attempt_patch_recovery(error_text):
+                continue
+            original_url = str(sd.endpoint_url(candidate) or candidate.get("careersUrl") or "").strip()
+            if not original_url:
+                continue
+            patched_url = str(
+                resolve_patch_target(candidate=candidate, error_text=error_text, timeout_s=timeout_s) or ""
+            ).strip()
+            if not patched_url:
+                continue
+            new_patches[original_url] = patched_url
+            patched_candidate, changed = apply_url_patches_to_candidate(candidate, {original_url: patched_url})
+            if changed:
+                reprobe_candidates.append((candidate, patched_candidate, failure_row))
+
+        if new_patches:
+            url_patches, patch_added, patch_updated = merge_url_patches(url_patches, new_patches)
+            if url_patch_manifest_enabled:
+                save_url_patch_manifest(
+                    url_patches,
+                    path=url_patch_manifest_path,
+                    added=patch_added,
+                    updated=patch_updated,
+                    reprobed=len(reprobe_candidates),
+                )
+            url_patch_stats["added"] = patch_added
+            url_patch_stats["updated"] = patch_updated
+
+        if reprobe_candidates:
+            reprobe_results = asyncio.run(_run_probe_batch([patched for _original, patched, _failure in reprobe_candidates]))
+            url_patch_stats["reprobed"] = len(reprobe_results)
+            failure_by_identity = {
+                str(source_identity(patched_candidate)): (original_candidate, failure_row)
+                for original_candidate, patched_candidate, failure_row in reprobe_candidates
+            }
+            for patched_candidate, ok, jobs_found, reprobe_error, _probe_duration_ms in reprobe_results:
+                _original_candidate, original_failure = failure_by_identity.get(
+                    str(source_identity(patched_candidate)),
+                    ({}, None),
+                )
+                if not isinstance(original_failure, dict):
+                    continue
+                if ok:
+                    if original_failure in failures:
+                        failures.remove(original_failure)
+                    probe_failed_count = max(0, probe_failed_count - 1)
+                    _adjust_adapter_runtime(adapter_runtime, patched_candidate.get("adapter"), failures=-1)
+                    recovered_count += 1
+                    if not should_queue_candidate(patched_candidate, jobs_found, thresholds):
+                        queue_filtered_count += 1
+                        failures.append(
+                            {
+                                "name": patched_candidate.get("name"),
+                                "adapter": patched_candidate.get("adapter"),
+                                "domain": (urlparse(sd.endpoint_url(patched_candidate)).netloc or "").lower(),
+                                "error": (
+                                    f"candidate passed probe after url patch but evidence "
+                                    f"{int(patched_candidate.get('evidenceScore') or 0)} is below queue threshold"
+                                ),
+                                "stage": "queue_filtered",
+                                "dropStage": "queue_filtered",
+                                "dropReason": "queue_threshold",
+                            }
+                        )
+                        continue
+                    healthy += 1
+                    score, reasons = compute_candidate_score(patched_candidate, jobs_found)
+                    normalized = sd.normalize_candidate(
+                        patched_candidate,
+                        score,
+                        reasons,
+                        jobs_found,
+                        probed_at=sd.now_iso(),
+                    )
+                    queueable_candidates.append(normalized)
+                    _adjust_adapter_runtime(adapter_runtime, normalized.get("adapter"), healthy=1, queued=1)
+                    adapter_counter[str(normalized.get("adapter") or "unknown")] += 1
+                    method_counter[str(normalized.get("discoveryMethod") or "unknown")] += 1
+                else:
+                    original_failure["error"] = reprobe_error
+                    original_failure["domain"] = (urlparse(sd.endpoint_url(patched_candidate)).netloc or "").lower()
+                    original_failure["urlPatchRetried"] = True
 
     queue_balancing_started = time.perf_counter()
     queued_candidates, report_candidates, balancing_summary = apply_queue_balancing(queueable_candidates, top_n)
@@ -743,6 +938,7 @@ def run_discovery(
         f"Probe phase finished: healthy={healthy}, queued={len(queued_candidates)}, "
         f"deferred={len([row for row in report_candidates if bool(row.get('deferred'))])}, probe_misses={len([row for row in failures if str(row.get('stage')) == 'probe_miss'])}."
     )
+    write_progress_report(report_candidates, phase="finalizing", phase_label="Finalizing discovery report")
 
     save_json_atomic(sd.PENDING_PATH, unique_sources([*pending_existing, *queued_candidates]))
     save_json_atomic(sd.DISCOVERY_CANDIDATES_PATH, queued_candidates)
@@ -777,6 +973,7 @@ def run_discovery(
         phase="completed",
         phase_label="Discovery completed",
     )
+    task_progress = build_discovery_task_progress(summary=summary, finished=True)
     failure_counter: Counter[str] = Counter()
     for row in failures:
         adapter = str(row.get("adapter") or "unknown")
@@ -801,7 +998,11 @@ def run_discovery(
             total_duration_ms=max(0, int((time.perf_counter() - run_started_mono) * 1000)),
             stage_timings_ms=stage_timings_ms,
             adapter_runtime=adapter_runtime,
+            preset=preset_name,
+            top_cap_bypassed=top_cap_bypassed,
+            sheet_static_probe_cap_bypassed=sheet_static_probe_cap_bypassed,
         ),
+        "taskProgress": task_progress,
         "candidates": report_candidates,
         "failures": failures,
         "topFailures": [{"key": key, "count": count} for key, count in failure_counter.most_common(5)],
@@ -810,8 +1011,11 @@ def run_discovery(
             "report": str(sd.DISCOVERY_REPORT_PATH),
             "candidates": str(sd.DISCOVERY_CANDIDATES_PATH),
             "pending": str(sd.PENDING_PATH),
+            "urlPatches": str(getattr(sd, "URL_PATCH_MANIFEST_PATH", "")),
         },
     }
+    report["runtime"]["urlPatchStats"] = dict(url_patch_stats)
+    report["runtime"]["urlPatchRecoveredCount"] = int(recovered_count)
     DiscoveryReportSchema.model_validate(report)
     save_json_atomic(sd.DISCOVERY_REPORT_PATH, report)
     sd.emit_log(f"Discovery report written to {sd.DISCOVERY_REPORT_PATH}.")
@@ -833,6 +1037,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     report = run_discovery(
         timeout_s=int(args.timeout),
         top_n=int(args.top),
+        preset=str(args.preset or "default"),
         mode=str(args.mode),
         include_web_search=not bool(args.no_web_search),
         discovery_config=discovery_config,

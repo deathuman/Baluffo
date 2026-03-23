@@ -1,130 +1,125 @@
 # Documentation Index
 
-> **Navigation guide for Baluffo project documentation.** Use this page to find the right document for your task.
+> **Navigation guide for Baluffo project documentation.** Use this page to find the smallest authoritative document set for your task.
 
 ---
 
-## Quick Reference
+## Start Here
 
-| Your Goal | Start Here |
-|-----------|------------|
-| **I need to understand the project** | [`README.md`](../README.md) |
-| **I'm an AI agent coding on this repo** | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) |
-| **I need to make a code change** | [`AGENTS.md`](../AGENTS.md) |
-| **I want to understand the architecture** | [`architecture-ai-map.md`](architecture-ai-map.md) |
-| **I need to debug an issue** | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) |
-
----
-
-## All Documentation Files
-
-### Project Overview
-
-| File | Lines | Description |
-|------|-------|-------------|
-| [`README.md`](../README.md) | 136 | Project overview, quick start, features, developer setup |
-| [`AGENTS.md`](../AGENTS.md) | 223 | AI agent guardrails, command cheat sheet, verification matrix |
-| [`LICENSE`](../LICENSE) | 21 | MIT License |
-
-### Architecture & Design
-
-| File | Lines | Description |
-|------|-------|-------------|
-| [`architecture-ai-map.md`](architecture-ai-map.md) | 369 | **Comprehensive architecture guide** — system boundaries, frontend/backend topology, data flow, task-to-files mapping |
-| [`LOCAL_SETUP.md`](LOCAL_SETUP.md) | 192 | Local-first mode setup, storage model, backup/restore, source discovery, ship bundle, portable EXE |
-
-### Data & Contracts
-
-| File | Lines | Description |
-|------|-------|-------------|
-| [`DATA_CONTRACT.md`](DATA_CONTRACT.md) | 171 | Data structures between Python pipeline and JS frontend, CanonicalJob/SavedJob schemas, UI interaction contracts |
-| [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md) | 85 | Fetcher CLI options, admin presets (default/incremental/retry_failed/force_full/uncapped), runtime files |
-| [`game-studios-sheet.md`](game-studios-sheet.md) | 26 | Google Sheet contract for game studios directory |
-
-### API & Integration
-
-| File | Lines | Description |
-|------|-------|-------------|
-| [`admin-bridge-api.md`](admin-bridge-api.md) | 100 | **API reference** — all Admin Bridge endpoints (GET/POST) for desktop local data, registry, discovery, pipeline, sync, ops |
-| [`scraping-pipeline.md`](scraping-pipeline.md) | 62 | Scraping flow overview, where Playwright is used, before/after job count comparison |
-
-### Development & Build
-
-| File | Lines | Description |
-|------|-------|-------------|
-| [`RELEASE.md`](RELEASE.md) | 222 | **Release process** — ship bundle, portable EXE, versioning policy, build procedures, verification checklist |
-| [`testing.md`](testing.md) | 89 | Testing guide — Python pytest, frontend smoke (Playwright), test layout, fixtures |
-| [`refactor-charter-template.md`](refactor-charter-template.md) | 76 | Template for planning structural refactors |
-
-### Source Adapters
-
-| File | Lines | Description |
-|------|-------|-------------|
-| [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) | 161 | Adapter plugin inventory — source loaders map, static plugins, how to add new sources by family |
-
-### Historical / Archive
-
-| File | Lines | Description |
-|------|-------|-------------|
-| [`scraping-pipeline-run-notes.md`](scraping-pipeline-run-notes.md) | 147 | Historical run notes from 2026-03-17 — **may be outdated**, consider archiving |
+| Document | Role | Use it when |
+|----------|------|-------------|
+| [`README.md`](../README.md) | Overview | You need the product summary, top-level structure, and developer-facing quick start |
+| [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | **AI entrypoint** | You are an AI coder and need read order, guardrails, common misconceptions, and edit-routing guidance |
+| [`architecture-ai-map.md`](architecture-ai-map.md) | **Architecture map** | You need system boundaries, task-to-file routing, runtime guardrails, and verification hints |
+| [`../AGENTS.md`](../AGENTS.md) | Workflow guardrails | You need repo-specific editing discipline, validation habits, and operational rules while changing code |
 
 ---
 
-## Documentation by Role
+## Canonical Contracts
 
-### For Developers
+These documents are the closest thing to source-of-truth references for stable interfaces and runtime expectations.
 
-1. Start: [`README.md`](../README.md) for overview
-2. Setup: [`LOCAL_SETUP.md`](LOCAL_SETUP.md) for local dev environment
-3. Reference: [`architecture-ai-map.md`](architecture-ai-map.md) for architecture
-4. Testing: [`testing.md`](testing.md) for test execution
-
-### For AI Agents
-
-1. Start: [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) — comprehensive guide
-2. Guardrails: [`AGENTS.md`](../AGENTS.md) — repo-specific rules
-3. Reference: [`admin-bridge-api.md`](admin-bridge-api.md) — API endpoints
-
-### For Release Management
-
-1. Process: [`RELEASE.md`](RELEASE.md) — build and release
-2. Versioning: See versioning policy in [`RELEASE.md`](RELEASE.md)
-3. Config: [`baluffo.config.json`](../baluffo.config.json)
-
-### For Debugging
-
-1. Start: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — common issues
-2. Logs: Check `data/` directory for reports
-3. Architecture: [`architecture-ai-map.md`](architecture-ai-map.md) for system understanding
+| Document | Authority | Canonical for |
+|----------|-----------|---------------|
+| [`DATA_CONTRACT.md`](DATA_CONTRACT.md) | **Canonical contract** | Data structures between pipeline, bridge, frontend, local saved data, and discovery outputs |
+| [`admin-bridge-api.md`](admin-bridge-api.md) | **Canonical contract** | Admin Bridge endpoint surface and request/response routing expectations |
+| [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md) | **Canonical contract** | Fetcher presets, runtime files, and fetch execution expectations |
+| [`game-studios-sheet.md`](game-studios-sheet.md) | Narrow contract | Google Sheet input contract for the game studios directory funnel |
 
 ---
 
-## Documenting Changes
+## Subsystem Deep Dives
+
+Load these only when your task touches that subsystem.
+
+| Document | Scope | Use it when |
+|----------|-------|-------------|
+| [`testing.md`](testing.md) | Verification strategy | You need the narrowest relevant tests, fixture layout, or test-to-source map |
+| [`scraping-pipeline.md`](scraping-pipeline.md) | Scraping/browser fallback flow | You are working on adapters, browser queue, Scrapy-Playwright, or extraction flow |
+| [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) | Source adapter inventory | You are adding/changing a source family, plugin, or loader path |
+| [`LOCAL_SETUP.md`](LOCAL_SETUP.md) | Local runtime/setup | You need local-first development setup, storage model, backup/restore, or packaging setup details |
+
+---
+
+## Operational / Process Docs
+
+Important for maintenance, release, and support workflows, but usually not the first docs an AI should load for coding tasks.
+
+| Document | Scope | Use it when |
+|----------|-------|-------------|
+| [`RELEASE.md`](RELEASE.md) | Build and release | You are changing packaging, versioning, release flow, or artifact expectations |
+| [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Debugging help | You are investigating a known issue or checking common failure modes |
+| [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
+| [`refactor-charter-template.md`](refactor-charter-template.md) | Planning template | You are drafting a structured refactor proposal |
+
+---
+
+## Historical / Archive-like Docs
+
+Useful as context, but **not authoritative** for current implementation unless explicitly revalidated.
+
+| Document | Status | Notes |
+|----------|--------|-------|
+| [`scraping-pipeline-run-notes.md`](scraping-pipeline-run-notes.md) | **Historical** | Snapshot run notes from 2026-03-17; useful for context but should not override current code/contracts |
+
+---
+
+## Quick Routing by Goal
+
+| Your Goal | Start Here | Then Load |
+|-----------|------------|-----------|
+| Understand the repo quickly | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
+| Understand product and top-level layout | [`README.md`](../README.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
+| Change frontend behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then task-specific source files |
+| Change bridge/API behavior | [`architecture-ai-map.md`](architecture-ai-map.md) | [`admin-bridge-api.md`](admin-bridge-api.md) |
+| Change payload/schema shape | [`DATA_CONTRACT.md`](DATA_CONTRACT.md) | `src/core/*`, related tests, task-specific runtime docs |
+| Work on scraping/adapters | [`scraping-pipeline.md`](scraping-pipeline.md) | [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) |
+| Run the right tests | [`testing.md`](testing.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
+| Debug an issue | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | [`architecture-ai-map.md`](architecture-ai-map.md), related contract docs |
+| Package or release | [`RELEASE.md`](RELEASE.md) | [`testing.md`](testing.md) |
+
+---
+
+## Recommended AI read sequence
+
+For most coding tasks, load only this minimal set:
+
+1. [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md)
+2. [`architecture-ai-map.md`](architecture-ai-map.md)
+3. One canonical contract doc relevant to the task
+4. One subsystem deep dive only if needed
+5. [`../AGENTS.md`](../AGENTS.md) for repo workflow guardrails
+
+This keeps context tight and reduces hallucinations from loading too many overlapping docs.
+
+---
+
+## Documentation maintenance rules
 
 When adding or modifying documentation:
 
-1. **Update this INDEX.md** — add new files to the appropriate table
-2. **Cross-reference** — link related documents (e.g., architecture-ai-map.md → DATA_CONTRACT.md)
-3. **Keep AI_ASSISTANT_GUIDE.md in sync** — it's the primary AI entry point
-4. **Use consistent formatting** — see style guide below
-
-### Style Guide
-
-- Use tables for lists of files/endpoints/commands
-- Use `code` for file names, paths, and commands
-- Use **bold** for key terms
-- Include line counts for reference
-- Add last-updated dates where appropriate
-
----
-
-## Related Resources
-
-- Source code: [`src/`](../src/) — Python backend
-- Frontend: [`frontend/`](../frontend/) — Vanilla JS
-- Tests: [`tests/`](../tests/) — Python pytest
-- Scripts: [`scripts/`](../scripts/) — Build automation
+1. **Update this index** with the correct category
+2. **Label authority clearly**:
+   - AI entrypoint
+   - Canonical contract
+   - Deep dive
+   - Operational
+   - Historical
+3. **Prefer small authoritative docs over broad overlapping prose**
+4. **Cross-link related source-of-truth docs**
+5. **Mark historical notes clearly** so they are not mistaken for current guidance
+6. **Keep `AI_ASSISTANT_GUIDE.md` aligned** with actual repo structure and existing file paths
 
 ---
 
-*Last updated: 2026-03-22*
+## Related code areas
+
+- Source code: [`src/`](../src/)
+- Frontend: [`frontend/`](../frontend/)
+- Tests: [`tests/`](../tests/)
+- Scripts: [`scripts/`](../scripts/)
+- Runtime data/artifacts: [`data/`](../data/), [`_out/`](../_out/)
+
+---
+
+*Last updated: 2026-03-23*
