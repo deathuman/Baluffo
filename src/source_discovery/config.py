@@ -40,6 +40,14 @@ DISCOVERY_STAGES: tuple[str, ...] = (
 #   - Shared structural (keep as-is): careers_keyword, structured_job_links, jobposting_jsonld,
 #     studio_domain_match, careers_page, html_embed
 EVIDENCE_TYPES: tuple[str, ...] = (
+    # Gameprog evidence
+    "gameprog_directory",
+    "gameprog_website",
+    "gameprog_website_only",
+    "gameprog_manual_website_only",
+    "gameprog_careers_url",
+    "gameprog_location",
+    "gameprog_website_fetch",
     # Gamesmap evidence
     "gamesmap_directory",
     "gamesmap_category_match",
@@ -195,6 +203,12 @@ DEFAULT_STUDIO_SEEDS: List[Dict[str, Any]] = [
 ]
 
 DEFAULT_DISCOVERY_CONFIG: Dict[str, Any] = {
+    "gameprog": {
+        "enabled": True,
+        "teamsUrl": "https://gameprog.it/teams.json",
+        "websiteOnlyFallback": True,
+        "maxStudios": 200,
+    },
     "gamesmap": {
         "enabled": False,
         "baseUrl": "https://www.gamesmap.de",

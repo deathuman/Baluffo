@@ -86,6 +86,10 @@ from .gamesmap import (  # noqa: F401
     parse_gamesmap_index_entries,
     parse_gamesmap_index_links,
 )
+from .gameprog import (  # noqa: F401
+    discover_gameprog_candidates,
+    parse_gameprog_teams_json,
+)
 from .core import (  # noqa: F401
     adapter_domain_fingerprint,
     apply_queue_balancing,

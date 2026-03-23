@@ -342,6 +342,8 @@ def test_run_discovery_uncapped_reports_runtime_cap_bypass_flags() -> None:
             ), mock.patch.object(
                 discovery_orchestrator, "discover_gamesmap_candidates", return_value=([], [], [])
             ), mock.patch.object(
+                discovery_orchestrator, "discover_gameprog_candidates", return_value=([], [], [])
+            ), mock.patch.object(
                 discovery_orchestrator, "async_probe_candidate", side_effect=fake_probe
             ), mock.patch.object(
                 discovery_orchestrator, "load_url_patches", return_value={}
@@ -1071,7 +1073,10 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
                     "maxDetailPages": 10,
                     "allowedCategoryTokens": ["developer", "publisher", "pc", "console"],
                     "blockedCategoryTokens": ["association", "education"],
-                }
+                },
+                "gameprog": {
+                    "enabled": False,
+                },
             }
             payloads = {
                 "https://www.gamesmap.de/en": _fixture_text("gamesmap_index.html"),
@@ -1163,7 +1168,7 @@ def test_run_discovery_dynamic_tracks_stage_metrics_and_queue_contract() -> None
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}},
+                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
                 fetcher=fake_fetch,
             )
             summary = report["summary"]
@@ -1224,7 +1229,7 @@ def test_run_discovery_emits_phase_logs_for_candidate_generation() -> None:
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={"gamesmap": {"enabled": False}},
+                    discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
                     fetcher=lambda *_: "",
                 )
 
@@ -1418,7 +1423,7 @@ def test_run_discovery_tracks_probe_miss_separately_from_failures() -> None:
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}},
+                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
                 fetcher=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("HTTP Error 404: Not Found")),
             )
             assert int(report["summary"].get("probedCandidateCount") or 0) == 1
@@ -1478,7 +1483,7 @@ def test_run_discovery_uses_seed_careers_pages_without_web_search() -> None:
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}},
+                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
                 fetcher=fake_fetch,
             )
             assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
@@ -1537,7 +1542,7 @@ def test_discovery_report_snapshot_contract() -> None:
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}},
+                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
                 fetcher=fake_fetch,
             )
             DiscoveryReportSummarySchema.model_validate(report["summary"])
@@ -1608,7 +1613,7 @@ def test_run_discovery_writes_phase_progress_before_probe() -> None:
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={"gamesmap": {"enabled": False}},
+                    discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
                     fetcher=lambda *_: json.dumps([{"id": 1}]),
                 )
 
@@ -1747,7 +1752,7 @@ x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}},
+                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
                 fetcher=fake_fetch,
             )
             assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
@@ -1828,7 +1833,7 @@ def test_run_discovery_applies_existing_url_patches_before_probe() -> None:
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}},
+                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
                 fetcher=fake_fetch,
             )
             assert "https://old.example/jobs" not in seen_urls
@@ -1886,7 +1891,7 @@ def test_run_discovery_suppresses_blocked_static_domains_before_probe() -> None:
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}},
+                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
                 fetcher=lambda *args, **kwargs: calls.append((args, kwargs)) or "",
             )
             assert not any(args and args[0] == "https://www.linkedin.com/company/example/jobs/" for args, _kwargs in calls)
@@ -1955,7 +1960,7 @@ def test_run_discovery_refreshes_url_patches_and_reprobes_candidate() -> None:
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={"gamesmap": {"enabled": False}},
+                    discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
                     fetcher=fake_fetch,
                 )
 
@@ -2037,4 +2042,102 @@ def test_resolve_discovery_thresholds_overrides_defaults() -> None:
     assert int(thresholds.get("minStaticEvidenceToQueue") or 0) == int(
         sd.DEFAULT_DISCOVERY_THRESHOLDS["minStaticEvidenceToQueue"]
     )
+
+
+def test_parse_gameprog_teams_json_returns_studios() -> None:
+    json_text = """[
+        {"name": "Test Studio", "url": "https://test-studio.com/", "place": "Rome"},
+        {"name": "Another Studio", "url": "https://another.it/", "place": "Milan"}
+    ]"""
+    rows = sd.parse_gameprog_teams_json(json_text)
+    assert len(rows) == 2
+    assert rows[0]["studio"] == "Test Studio"
+    assert rows[0]["url"] == "https://test-studio.com/"
+    assert rows[0]["place"] == "Rome"
+
+
+def test_parse_gameprog_teams_json_handles_missing_fields() -> None:
+    json_text = """[
+        {"name": "Valid Studio", "url": "https://valid.com/", "place": "Turin"},
+        {"name": "No URL"},
+        {"url": "https://no-name.com/"},
+        {"name": "", "url": ""}
+    ]"""
+    rows = sd.parse_gameprog_teams_json(json_text)
+    assert len(rows) == 1
+    assert rows[0]["studio"] == "Valid Studio"
+
+
+def test_discover_gameprog_candidates_emits_provider_and_static() -> None:
+    config = {
+        "gameprog": {
+            "enabled": True,
+            "teamsUrl": "https://gameprog.it/teams.json",
+            "websiteOnlyFallback": True,
+            "maxStudios": 10,
+        }
+    }
+
+    teams_json = """[
+        {"name": "Studio With Careers", "url": "https://example-studio.com/", "place": "Rome"},
+        {"name": "Studio Website Only", "url": "https://website-only.it/", "place": "Milan"}
+    ]"""
+
+    careers_html = """<!DOCTYPE html>
+    <html><body>
+    <a href="https://boards.greenhouse.io/example">Jobs</a>
+    </body></html>"""
+
+    website_html = """<!DOCTYPE html>
+    <html><body><h1>Welcome</h1></body></html>"""
+
+    payloads = {
+        "https://gameprog.it/teams.json": teams_json,
+        "https://example-studio.com/": careers_html,
+        "https://website-only.it/": website_html,
+    }
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url not in payloads:
+            raise RuntimeError(f"unexpected URL: {url}")
+        return payloads[url]
+
+    provider_rows, static_rows, failures = sd.discover_gameprog_candidates(5, config=config, fetcher=fake_fetch)
+    assert len(failures) == 0
+    assert len(provider_rows) >= 1
+    assert str(provider_rows[0].get("adapter") or "") == "greenhouse"
+    assert str(provider_rows[0].get("discoveryMethod") or "") == "gameprog"
+    assert str(provider_rows[0].get("sourceDirectory") or "") == "gameprog"
+    assert len(static_rows) >= 1
+    assert str(static_rows[0].get("adapter") or "") == "static"
+    assert str(static_rows[0].get("sourceDirectoryEntryUrl") or "").startswith("https://")
+
+
+def test_discover_gameprog_candidates_handles_fetch_failure() -> None:
+    config = {
+        "gameprog": {
+            "enabled": True,
+            "teamsUrl": "https://gameprog.it/teams.json",
+            "websiteOnlyFallback": True,
+            "maxStudios": 10,
+        }
+    }
+
+    teams_json = """[{"name": "Test Studio", "url": "https://example.com/", "place": "Rome"}]"""
+
+    payloads = {
+        "https://gameprog.it/teams.json": teams_json,
+    }
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url not in payloads:
+            raise RuntimeError(f"unexpected URL: {url}")
+        if url == "https://example.com/":
+            raise RuntimeError("fetch failed")
+        return payloads[url]
+
+    provider_rows, static_rows, failures = sd.discover_gameprog_candidates(5, config=config, fetcher=fake_fetch)
+    assert len(failures) >= 1
+    assert len(static_rows) >= 1
+    assert bool(static_rows[0].get("manualOnly"))
 

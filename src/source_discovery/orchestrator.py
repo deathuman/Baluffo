@@ -45,6 +45,7 @@ from .core import (
     _evidence_threshold_for_probe,
 )
 from .gamesmap import discover_gamesmap_candidates
+from .gameprog import discover_gameprog_candidates
 from .probe import async_probe_candidate, validate_candidate_for_probe
 from .reporting import (
     build_discovery_task_progress,
@@ -80,6 +81,7 @@ DISCOVERY_TIMING_STAGE_KEYS = [
     "providerPatterns",
     "seedCareersScan",
     "gamesmap",
+    "gameprog",
     "webSearch",
     "dedupeFilter",
     "probe",
@@ -228,6 +230,22 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         type=int,
         default=0,
         help="Optional Gamesmap crawl cap override for this run; 0 = config default.",
+    )
+    parser.add_argument(
+        "--gameprog-enabled",
+        action="store_true",
+        help="Enable Gameprog directory scanning.",
+    )
+    parser.add_argument(
+        "--gameprog-max-studios",
+        type=int,
+        default=0,
+        help="Optional Gameprog studio cap override for this run; 0 = config default.",
+    )
+    parser.add_argument(
+        "--gameprog-website-only-fallback",
+        action="store_true",
+        help="Include Gameprog website-only candidates.",
     )
     return parser.parse_args(argv)
 
@@ -478,6 +496,33 @@ def run_discovery(
         web_failures.extend(gamesmap_failures)
         streams.append(("web_provider", provider_gamesmap_candidates))
         streams.append(("generic_static", static_gamesmap_candidates))
+
+        write_progress_report([], phase="scanning_sources", phase_label="Scanning Gameprog directory")
+        sd.emit_log("Scanning Gameprog directory for discoverable studios.")
+        stage_started = time.perf_counter()
+        gameprog_config = dict(effective_config.get("gameprog") or {})
+        config_with_gameprog = dict(effective_config)
+        config_with_gameprog["gameprog"] = gameprog_config
+        provider_gameprog_candidates, static_gameprog_candidates, gameprog_failures = discover_gameprog_candidates(
+            timeout_s,
+            config=config_with_gameprog,
+            fetcher=fetcher,
+        )
+        gameprog_stage_rows = [*provider_gameprog_candidates, *static_gameprog_candidates]
+        stage_duration_ms = _record_stage_timing(stage_timings_ms, "gameprog", stage_started)
+        _distribute_duration_by_adapter(adapter_runtime, duration_ms=stage_duration_ms, rows=gameprog_stage_rows, failure_rows=gameprog_failures)
+        for row in gameprog_stage_rows:
+            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+        for row in gameprog_failures:
+            if isinstance(row, dict):
+                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
+        sd.emit_log(
+            "Gameprog scan complete: "
+            f"provider={len(provider_gameprog_candidates)}, static={len(static_gameprog_candidates)}, failures={len(gameprog_failures)}."
+        )
+        web_failures.extend(gameprog_failures)
+        streams.append(("web_provider", provider_gameprog_candidates))
+        streams.append(("generic_static", static_gameprog_candidates))
 
         if include_web_search:
             write_progress_report([], phase="generating_candidates", phase_label="Running web-search discovery queries")
@@ -1036,6 +1081,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         gamesmap_cfg = dict(discovery_config.get("gamesmap") or {})
         gamesmap_cfg["maxDetailPages"] = int(args.gamesmap_max_detail_pages)
         discovery_config["gamesmap"] = gamesmap_cfg
+    if bool(getattr(args, "gameprog_enabled", False)):
+        gameprog_cfg = dict(discovery_config.get("gameprog") or {})
+        gameprog_cfg["enabled"] = True
+        discovery_config["gameprog"] = gameprog_cfg
+    if int(getattr(args, "gameprog_max_studios", 0) or 0) > 0:
+        gameprog_cfg = dict(discovery_config.get("gameprog") or {})
+        gameprog_cfg["maxStudios"] = int(args.gameprog_max_studios)
+        discovery_config["gameprog"] = gameprog_cfg
+    if bool(getattr(args, "gameprog_website_only_fallback", False)):
+        gameprog_cfg = dict(discovery_config.get("gameprog") or {})
+        gameprog_cfg["websiteOnlyFallback"] = True
+        discovery_config["gameprog"] = gameprog_cfg
     report = run_discovery(
         timeout_s=int(args.timeout),
         top_n=int(args.top),
