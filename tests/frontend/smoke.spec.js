@@ -47,12 +47,12 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await expect(page.locator("#jobs-list")).toBeVisible();
   await expect(page.locator("#refresh-jobs-btn")).toBeEnabled();
   await expect(page.locator("#auth-sign-in-btn")).toBeEnabled();
-  
+
   // Verify admin bridge is running by checking the admin button state
   const adminBtn = page.locator("#admin-page-btn");
   await expect(adminBtn).toHaveAttribute("data-bridge-state", "online", { timeout: 10000 });
   await expect(adminBtn).not.toBeDisabled();
-  
+
   await expect(pageErrors).toEqual([]);
   await page.selectOption("#work-type-filter", "Remote");
   await page.click("#refresh-jobs-btn");
@@ -111,7 +111,7 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await page.goto("/admin.html");
   await expect(page.locator("#admin-content")).toBeVisible();
   await expect(page.locator("h1")).toContainText(/Administration/i);
-  
+
   // Load the fetch report - requires bridge to be running
   await page.click("#admin-refresh-report-btn");
   await expect(page.locator("#admin-ops-fetcher-metrics")).not.toContainText(/Loading/i, { timeout: 15000 });
