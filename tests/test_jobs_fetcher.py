@@ -2015,7 +2015,7 @@ def test_default_registry_no_longer_seeds_stale_ashby_personio_or_placeholder_gr
         # Verify placeholder was removed from registry
         assert "Example Studio GmbH (Greenhouse)" not in names
         # Verify valid studios still exist
-        assert "Bandai Namco Entertainment America Inc. (Sheet)" in names
+        assert "Bandai Namco Entertainment America (Greenhouse)" in names
 
 def test_run_static_studio_pages_source_accepts_larian_uuid_paths_and_rejects_location_pages() -> None:
         prev = list(jf.STUDIO_SOURCE_REGISTRY)

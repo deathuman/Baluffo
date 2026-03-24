@@ -495,7 +495,7 @@ class LocalDataStore:
             if not target:
                 raise ValueError("Attachment not found.")
             file_path = self.paths.attachment_dir(uid) / str(target.get("path") or "")
-            if not file_path.exists():
+            if not file_path.exists() or not file_path.is_file():
                 raise FileNotFoundError("Attachment data not found.")
             return file_path.read_bytes(), str(target.get("type") or "application/octet-stream"), str(target.get("name") or "attachment")
 
