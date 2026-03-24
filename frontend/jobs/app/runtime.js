@@ -11,7 +11,7 @@ import {
 } from "../../shared/ui/index.js";
 import { emitStartupMetric, logError, logInfo, markFirstInteractive } from "../../shared/app-boot.js";
 import { sanitizeUrl as sanitizeUrlValue } from "../../shared/data/index.js";
-import { BaluffoJobsParsing as jobsParsing } from "../../../jobs-parsing-utils.js";
+import { BaluffoJobsParsing as jobsParsing, parseUnifiedJobsPayload } from "../../../jobs-parsing-utils.js";
 import {
   detectWorkType,
   detectContractType,

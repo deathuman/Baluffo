@@ -149,7 +149,6 @@ test("saved-jobs domain updateJobNotes does not mutate updatedAt ordering field"
         get() {
           return {
             result: existingRow,
-            onsuccess: null,
             onerror: null,
             set onsuccess(handler) {
               this._onsuccess = handler;
@@ -160,7 +159,6 @@ test("saved-jobs domain updateJobNotes does not mutate updatedAt ordering field"
         put(row) {
           writes.push(row);
           return {
-            onsuccess: null,
             onerror: null,
             set onsuccess(handler) {
               setTimeout(() => handler(), 0);

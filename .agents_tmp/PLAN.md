@@ -1,62 +1,49 @@
 # 1. OBJECTIVE
 
-Provide a lint report and fix remaining issues in phases.
+Fix remaining 25 ESLint errors, prioritizing test file issues first.
 
-# 2. CONTEXT SUMMARY
+# 2. CURRENT STATE
 
-## ESLint Config Status
+- **Ruff**: ✅ Clean (commit 9a92b20)
+- **ESLint**: ❌ 25 errors remaining
 
-The `eslint.config.js` has already been updated with extensive browser and test globals:
+# 3. FIX ORDER (Recommended)
 
-**Browser globals defined** (60+ including):
-- window, document, localStorage, sessionStorage, indexedDB
-- fetch, URL, URLSearchParams, FormData
-- navigator, history, location, alert
-- Blob, FileReader, TextEncoder, TextDecoder
-- atob, btoa, requestAnimationFrame, performance
+## Priority 1: Test File Errors (highest impact)
+Fix test files first - these are actual errors, not warnings:
+- Duplicate keys in test fixtures
+- Missing globals in test files
 
-**Test globals defined**:
-- describe, it, test, expect, before, beforeEach, after, afterEach
+## Priority 2: Root-level JS Files
+Fix any remaining issues in root JS files
 
-## Ruff Config Status
+## Priority 3: Frontend Files
+Fix any remaining issues in frontend code
 
-`ruff.toml` selects: E, F, I, B, UP (errors, flakes, isort, bugs, pyupgrade)
+# 4. IMPLEMENTATION STEPS
 
-# 3. PHASED EXECUTION
-
-## Phase 1: Ruff Run + Autofix
+## Step 1: Run ESLint to Get Error List
 ```bash
-pip install ruff
-ruff check . --fix
-# Review diff - expect ~3200+ UP035/UP006 changes
-ruff check .  # See remaining
+npx eslint . 2>&1 | head -50
 ```
 
-## Phase 2: ESLint Run
+## Step 2: Fix Test File Errors First
+Common fixes:
+- Remove duplicate keys in test fixtures
+- Add missing test globals (if any)
+
+## Step 3: Fix Remaining Issues
+- Fix root-level JS file issues
+- Fix frontend file issues
+
+## Step 4: Verify
 ```bash
-npx eslint .  # Should show remaining issues
+npx eslint .  # Should show 0 errors
 ```
-
-## Phase 3: Fix Remaining
-- B008 issues (function calls in default args - real code quality)
-- Any remaining ESLint no-undef issues
-
-# 4. EXPECTED REMAINING ISSUES
-
-After running the commands above, report will show:
-
-**Ruff**:
-- B008: Function calls in default arguments (real issues)
-- Any non-fixable style issues
-
-**ESLint**:
-- Any remaining no-undef for missing globals
-- No-unused-vars warnings
 
 # 5. VALIDATION CHECKLIST
 
-- [ ] Run ruff check . --fix
-- [ ] Report ruff remaining issues
-- [ ] Run npx eslint .
-- [ ] Report eslint remaining issues
-- [ ] Fix manually
+- [ ] Get 25 ESLint error list
+- [ ] Fix test file errors (priority)
+- [ ] Fix remaining errors
+- [ ] Verify: npx eslint . returns 0 errors

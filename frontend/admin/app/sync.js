@@ -137,7 +137,7 @@ export function createAdminSyncController({
       const result = await postBridge("/sync/test", {});
       if (result?.ok) {
         showToast(
-          Boolean(result?.remoteFound)
+          result?.remoteFound
             ? "Sync test passed. Remote snapshot found."
             : "Sync test passed. Remote snapshot not created yet.",
           "success"

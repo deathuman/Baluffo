@@ -150,6 +150,28 @@ export default [
         btoa: "readonly",
         IDBKeyRange: "readonly",
         indexedDB: "readonly",
+        performance: "readonly",
+      },
+    },
+    rules: {
+      "no-unused-vars": "warn",
+      "no-undef": "error",
+    },
+  },
+
+  // Probe scripts (browser environment)
+  {
+    files: ["probes/**/*.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        console: "readonly",
+        window: "readonly",
+        document: "readonly",
+        fetch: "readonly",
+        URL: "readonly",
+        performance: "readonly",
       },
     },
     rules: {

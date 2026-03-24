@@ -884,5 +884,5 @@ export function deriveDiscoveryQueuedCount(report) {
 }
 
 export function getOpsPollIntervalMs(hasLiveRuns, idleMs = 10000, liveMs = 2000) {
-  return Boolean(hasLiveRuns) ? Number(liveMs) : Number(idleMs);
+  return hasLiveRuns ? Number(liveMs) : Number(idleMs);
 }

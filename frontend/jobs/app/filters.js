@@ -258,7 +258,7 @@ export function applyQuickFilterToState(quick, filters, quickFilters, {
     return;
   }
   if (item.type === "flag" && typeof item.value === "string" && item.value in filters) {
-    filters[item.value] = !Boolean(filters[item.value]);
+    filters[item.value] = !filters[item.value];
   }
 }
 

@@ -33,7 +33,9 @@ export function set(key, value) {
     keyListeners.forEach((cb) => {
       try {
         cb(value);
-      } catch (_) {}
+      } catch (_) {
+        // ignore listener errors
+      }
     });
   }
   const allListeners = listeners["*"];
@@ -41,7 +43,9 @@ export function set(key, value) {
     allListeners.forEach((cb) => {
       try {
         cb(key, value);
-      } catch (_) {}
+      } catch (_) {
+        // ignore listener errors
+      }
     });
   }
 }
@@ -59,7 +63,9 @@ export function subscribe(key, callback) {
     try {
       if (key === "*") callback(key, current);
       else callback(current);
-    } catch (_) {}
+    } catch (_) {
+      // ignore listener errors
+    }
   }
   return () => {
     const list = listeners[key];
