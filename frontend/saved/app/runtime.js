@@ -78,12 +78,12 @@ import {
 import { computeAnchorScrollDelta } from "./render-cycle.js";
 import {
   SAVED_FILTER_ALL,
-  SAVED_FILTER_CUSTOM,
-  SAVED_FILTER_IMPORTED,
+  _SAVED_FILTER_CUSTOM,
+  _SAVED_FILTER_IMPORTED,
   SORT_UPDATED,
-  SORT_SAVED,
-  SORT_REMINDER,
-  SORT_PERSONAL,
+  _SORT_SAVED,
+  _SORT_REMINDER,
+  _SORT_PERSONAL,
   isCustomJob,
   filterSavedJobs,
   isValidSavedFilter,
@@ -92,8 +92,8 @@ import {
   REMINDER_SOON_HOURS,
 } from "./view-state.js";
 import {
-  isAllowedAttachment,
-  formatFileSize,
+  _isAllowedAttachment,
+  _formatFileSize,
   hydrateAttachmentLists as hydrateAttachmentListsFromModule,
   uploadAttachments as uploadAttachmentsFromModule,
   getAttachmentPreviewUrl as getAttachmentPreviewUrlFromModule,
@@ -103,8 +103,8 @@ import {
 import { createSavedPageState } from "./runtime/state.js";
 import { createSavedStartupMetrics } from "./runtime/effects.js";
 import { setStatusText, setElementText } from "./runtime/view.js";
-import { runSavedAction } from "./runtime/actions.js";
-import { bindDocumentKeydown } from "./runtime/events.js";
+import { _runSavedAction } from "./runtime/actions.js";
+import { _bindDocumentKeydown } from "./runtime/events.js";
 let savedJobsListEl;
 let savedSourceStatusEl;
 let savedAuthStatusEl;
@@ -140,7 +140,7 @@ let savedSortBarEl;
 let savedSortBtnEls = [];
 let savedReminderCounterEl;
 let historyPanelToggleBtnEl;
-let savedWorkspaceLayoutEl;
+let savedWorkspaceLayoutEl; // eslint-disable-line no-unused-vars -- used in cacheDom destructuring
 let savedMetricTotalEl;
 let savedMetricRemindersEl;
 let savedMetricActivityEl;
@@ -173,7 +173,7 @@ let timelineScope = "all";
 let lastActivityPulse = null;
 let savedAuthReadyPollTimer = null;
 let savedAuthListenerBound = false;
-let savedInteractiveMetricSent = false;
+let savedInteractiveMetricSent = false; // eslint-disable-line no-unused-vars -- used in markSavedFirstInteractive
 let adminBridgeStatusPollTimer = null;
 let adminBridgeButtonState = "checking";
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
@@ -201,8 +201,8 @@ const PHASE_LABELS = {
 const MAX_ATTACHMENTS_PER_JOB = 20;
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const NOTE_AUTOSAVE_MS = 600;
-const NOTES_RERENDER_SETTLE_MS = 1200;
-const ALLOWED_EXTENSIONS = new Set(["pdf", "doc", "docx", "txt", "png", "jpg", "jpeg"]);
+const _NOTES_RERENDER_SETTLE_MS = 1200;
+const _ALLOWED_EXTENSIONS = new Set(["pdf", "doc", "docx", "txt", "png", "jpg", "jpeg"]);
 const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
 
 /**
@@ -1481,7 +1481,7 @@ function renderReminderCounter(allJobs) {
   savedReminderCounterEl.textContent = soonCount > 0 ? `${soonCount} due soon` : "";
 }
 
-function toCanonicalCountry(value) {
+function _toCanonicalCountry(value) {
   return toCanonicalCountryFromDomain(value);
 }
 
@@ -1489,7 +1489,7 @@ function normalizeCustomJobInput(values) {
   return normalizeCustomJobInputFromDomain(values, { customSourceLabel: CUSTOM_SOURCE_LABEL });
 }
 
-function normalizeReminderInput(value) {
+function _normalizeReminderInput(value) {
   return normalizeReminderInputFromDomain(value);
 }
 
@@ -1769,7 +1769,7 @@ function renderTimeline() {
   });
 }
 
-function shouldPulseEntry(entry) {
+function _shouldPulseEntry(entry) {
   clearExpiredPulse();
   return shouldPulseEntryFromModule(entry, lastActivityPulse);
 }

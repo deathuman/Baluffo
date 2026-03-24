@@ -63,13 +63,13 @@ export function createAdminFetcherController({
   setBusyFlag,
   getSourceStatusSetter,
   loadOpsHealthData,
-  startOpsHealthPolling,
+  _startOpsHealthPolling,
   fetchReportPollIntervalMs,
   fetchReportPollTimeoutMs,
   jobsAutoRefreshSignalKey,
   jobsFetcherCommand,
   jobsFetcherTaskLabel,
-  jobsFetchReportUrl,
+  _jobsFetchReportUrl,
   createLogEvent,
   appendLogRow
 }) {
@@ -249,7 +249,7 @@ export function createAdminFetcherController({
     }, Math.max(250, Number(delayMs) || 900));
   }
 
-  function formatFetcherRuntimeOptions(report) {
+  function _formatFetcherRuntimeOptions(report) {
     const runtime = report?.runtime || {};
     const maxWorkers = Number(runtime.maxWorkers || 0);
     const maxPerDomain = Number(runtime.maxPerDomain || 0);
@@ -282,7 +282,7 @@ export function createAdminFetcherController({
     ].join(", ");
   }
 
-  function formatLifecycleSummary(report) {
+  function _formatLifecycleSummary(report) {
     const summary = report?.summary || {};
     const active = Number(summary.lifecycleActiveCount || 0);
     const likelyRemoved = Number(summary.lifecycleLikelyRemovedCount || 0);

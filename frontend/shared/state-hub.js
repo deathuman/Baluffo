@@ -33,7 +33,7 @@ export function set(key, value) {
     keyListeners.forEach((cb) => {
       try {
         cb(value);
-      } catch (_) {
+      } catch (_ignored) {
         // ignore listener errors
       }
     });
@@ -43,7 +43,7 @@ export function set(key, value) {
     allListeners.forEach((cb) => {
       try {
         cb(key, value);
-      } catch (_) {
+      } catch (_ignored) {
         // ignore listener errors
       }
     });
@@ -63,7 +63,7 @@ export function subscribe(key, callback) {
     try {
       if (key === "*") callback(key, current);
       else callback(current);
-    } catch (_) {
+    } catch (_ignored) {
       // ignore listener errors
     }
   }

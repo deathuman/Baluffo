@@ -1,49 +1,66 @@
 # 1. OBJECTIVE
 
-Fix remaining 25 ESLint errors, prioritizing test file issues first.
+Fix remaining ESLint warnings using the detailed action plan provided.
 
 # 2. CURRENT STATE
 
-- **Ruff**: ✅ Clean (commit 9a92b20)
-- **ESLint**: ❌ 25 errors remaining
+- **Ruff**: ✅ Clean
+- **ESLint**: ✅ 0 errors, ~40 warnings
+- **Previous commits**: f26a634 (lint fixes), dbf04d1 (docs), readiness report done
 
-# 3. FIX ORDER (Recommended)
+# 3. DETAILED FIX PLAN (From User Input)
 
-## Priority 1: Test File Errors (highest impact)
-Fix test files first - these are actual errors, not warnings:
-- Duplicate keys in test fixtures
-- Missing globals in test files
+## Priority 1: Quick Wins (Do First)
 
-## Priority 2: Root-level JS Files
-Fix any remaining issues in root JS files
+### frontend/shared/state-hub.js
+- Rename catch vars to `_err` or `_ignored`
 
-## Priority 3: Frontend Files
-Fix any remaining issues in frontend code
+### theme.js
+- Rename bare `_` vars to `_ignored`, `_theme`, `_err`
 
-# 4. IMPLEMENTATION STEPS
+### tests/frontend/packaged-desktop-smoke.mjs
+- Delete `trigger` var (unused test local)
 
-## Step 1: Run ESLint to Get Error List
-```bash
-npx eslint . 2>&1 | head -50
-```
+### frontend/admin/app/runtime.js
+- Delete `adminPageService` var (dead local)
 
-## Step 2: Fix Test File Errors First
-Common fixes:
-- Remove duplicate keys in test fixtures
-- Add missing test globals (if any)
+### frontend/admin/domain.js
+- Delete `finishedAt` var (likely extracted, no longer used)
+- Delete `status` var
 
-## Step 3: Fix Remaining Issues
-- Fix root-level JS file issues
-- Fix frontend file issues
+## Priority 2: Dead Locals (Do Second)
 
-## Step 4: Verify
-```bash
-npx eslint .  # Should show 0 errors
-```
+### frontend/admin/app/fetcher.js
+- Delete `formatFetcherRuntimeOptions` var
+- Delete `formatLifecycleSummary` var
+- Rename callback args: `startOpsHealthPolling`, `jobsFetchReportUrl`
 
-# 5. VALIDATION CHECKLIST
+### frontend/jobs/app/runtime.js
+- Delete `writeAutoRefreshSignal`, `markSeenJobsBulk`, `lastFilterOptionsSignature`
+- Delete/rename `clearJobsPipelinePolling`
+- Delete `showLoading` var
 
-- [ ] Get 25 ESLint error list
-- [ ] Fix test file errors (priority)
-- [ ] Fix remaining errors
-- [ ] Verify: npx eslint . returns 0 errors
+### frontend/saved/app/runtime.js
+- Delete most unused helpers/constants
+
+## Priority 3: Callback Shape Params (Rename)
+
+### frontend/admin/app/auth.js
+- Rename: `renderUsersEmpty`, `stopBridgeStatusWatch`, `stopOpsHealthPolling`, `showToast`
+
+### frontend/admin/app/discovery.js
+- Rename: `loadDiscoveryData` arg
+
+# 4. RECOMMENDED COMMITS
+
+## Commit 1: "chore: silence intentional unused callback params"
+- Rename intentionally unused args to `_name`
+- Rename catch vars to `_ignored`
+
+## Commit 2: "chore: remove dead frontend locals and helpers"
+- Delete dead vars/helpers
+
+# 5. VALIDATION
+
+- [ ] Run `npx eslint .` after each commit
+- [ ] Verify no new errors introduced

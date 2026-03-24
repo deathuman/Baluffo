@@ -34,7 +34,7 @@ import {
   writeAutoRefreshAppliedId,
   readQuickFilterPreferences,
   writeQuickFilterPreferences,
-  writeAutoRefreshSignal,
+  _writeAutoRefreshSignal,
   rememberJobsUrl
 } from "../state-sync/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
@@ -59,7 +59,7 @@ import {
   writeJobsCache,
   loadSeenJobKeys,
   markSeenJob,
-  markSeenJobsBulk,
+  _markSeenJobsBulk,
   isJobsCacheStale
 } from "./cache.js";
 import {
@@ -247,7 +247,7 @@ let visibleQuickFilterKeys = [];
 let hasInitializedJobsFeed = false;
 let pendingAutoRefreshSignal = null;
 let lastHandledAutoRefreshSignalId = readAppliedAutoRefreshId();
-let lastFilterOptionsSignature = "";
+let _lastFilterOptionsSignature = "";
 let authReadyPollTimer = null;
 let authStateListenerBound = false;
 let nonCriticalStartupScheduled = false;
@@ -620,7 +620,7 @@ function updateJobsPipelineUi({ running = false, disabled = false, buttonLabel =
   );
 }
 
-function clearJobsPipelinePolling() {
+function _clearJobsPipelinePolling() {
   clearJobsPipelinePollingFromModule(jobsPipelineUiState);
 }
 
@@ -1884,7 +1884,7 @@ function setJobsStartupState(state, detail = "") {
   }
 }
 
-function showLoading(text) {
+function _showLoading(text) {
   showJobsLoading(jobsList, text);
 }
 

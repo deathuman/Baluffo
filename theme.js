@@ -8,7 +8,7 @@
   function getSystemTheme() {
     try {
       return window.matchMedia("(prefers-color-scheme: light)").matches ? THEMES.LIGHT : THEMES.DARK;
-    } catch (_) {
+    } catch (_ignored) {
       return THEMES.DARK;
     }
   }
@@ -17,7 +17,7 @@
     try {
       const value = localStorage.getItem(THEME_KEY);
       if (value === THEMES.DARK || value === THEMES.LIGHT) return value;
-    } catch (_) {
+    } catch (_ignored) {
       // Ignore storage errors and use system fallback.
     }
     return "";
@@ -36,7 +36,7 @@
   function persistTheme(theme) {
     try {
       localStorage.setItem(THEME_KEY, theme);
-    } catch (_) {
+    } catch (_ignored) {
       // Ignore storage errors.
     }
   }

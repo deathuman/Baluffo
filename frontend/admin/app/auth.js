@@ -14,11 +14,11 @@ export function createAdminAuthController({
   setManualSourceFeedback,
   setOpsPlaceholders,
   setBridgeStatusBadge,
-  renderUsersEmpty,
+  _renderUsersEmpty,
   startBridgeStatusWatch,
-  stopBridgeStatusWatch,
+  _stopBridgeStatusWatch,
   scheduleOpsHealthPolling,
-  stopOpsHealthPolling,
+  _stopOpsHealthPolling,
   refreshOverview,
   loadLatestFetcherReport,
   loadDiscoveryData,
@@ -26,7 +26,7 @@ export function createAdminAuthController({
   loadOpsHealthData,
   loadSyncStatus,
   logAdminError,
-  showToast
+  _showToast
 }) {
   function initAdminPage() {
     syncAdminBusyUi();

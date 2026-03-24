@@ -52,7 +52,7 @@ export function createAdminDiscoveryController({
   appendLogRow,
   loadOpsHealthData,
   scheduleOpsHealthPolling,
-  loadDiscoveryData
+  _loadDiscoveryData
 }) {
   function populateDiscoveryConfigForm(savedConfig = {}, { force = false } = {}) {
     if (!refs.adminDiscoveryAutoApproveToggleEl) return;

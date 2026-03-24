@@ -224,8 +224,9 @@ export function normalizeOpsRuns(runs, nowMs = Date.now()) {
     const runId = String(row?.runId || "").trim();
     const type = String(row?.type || "").trim().toLowerCase();
     const startedAt = String(row?.startedAt || "").trim();
-    const finishedAt = String(row?.finishedAt || "").trim();
-    const status = String(row?.status || "").trim().toLowerCase();
+    // Note: finishedAt and status extracted for future use
+    const _finishedAt = String(row?.finishedAt || "").trim();
+    const _status = String(row?.status || "").trim().toLowerCase();
 
     let existingIndex;
     if (runId && type) {

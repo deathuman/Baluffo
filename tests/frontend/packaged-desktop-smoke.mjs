@@ -324,7 +324,7 @@ async function main() {
     }, scenarios);
 
     await runScenario("Trigger first available admin action with no immediate error", async () => {
-      const trigger = await triggerFirstAvailableAdminAction(page);
+      await triggerFirstAvailableAdminAction(page);
       const errorToast = page.locator(".toast.error").first();
       let toastSeen = false;
       try {
