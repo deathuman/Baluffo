@@ -45,6 +45,13 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
 
+      - name: Start Admin Bridge
+        run: npm run dev:bridge &
+        shell: bash
+
+      - name: Wait for services
+        run: sleep 5
+
       - name: Run frontend unit tests
         run: npm run test:unit
 
