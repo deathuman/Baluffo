@@ -53,7 +53,7 @@ jobs:
         run: sleep 15
 
       - name: Verify bridge is running
-        run: curl -s http://127.0.0.1:8877/health || echo "Bridge not ready yet, continuing..."
+        run: curl -s http://127.0.0.1:8877/ops/fetcher-metrics | python3 -c "import sys,json; d=json.load(sys.stdin); print('Bridge ready - failedSources:', d.get('latestRun',{}).get('failedSources'))" || echo "Bridge not ready yet, continuing..."
 
       - name: Run frontend unit tests
         run: npm run test:unit
