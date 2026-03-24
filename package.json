@@ -26,9 +26,14 @@
     "test:frontend:headed": "playwright test --headed",
     "test:frontend:ci": "playwright test --reporter=line",
     "test:py": "scripts\\run_py_tests.cmd",
-    "test:py:timing": "npm run check:python-version && python -m pytest tests -q --durations=25 --durations-min=0.2 --color=no"
+    "test:py:timing": "npm run check:python-version && python -m pytest tests -q --durations=25 --durations-min=0.2 --color=no",
+    "lint:py": "ruff check .",
+    "format:py": "ruff format .",
+    "lint:js": "eslint ."
   },
   "devDependencies": {
-    "@playwright/test": "^1.52.0"
+    "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.52.0",
+    "eslint": "^9.39.1"
   }
 }

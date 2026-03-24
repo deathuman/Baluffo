@@ -37,3 +37,10 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]
+
+      - id: eslint
+        name: eslint
+        entry: npx eslint .
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
