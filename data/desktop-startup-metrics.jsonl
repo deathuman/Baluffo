@@ -401,3 +401,11 @@
 {"ts": "2026-03-20T20:24:08.873576+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
 {"ts": "2026-03-20T20:24:08.878490+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
 {"ts": "2026-03-20T20:24:08.878738+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}
+{"ts": "2026-03-24T22:11:54.726720+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-24T22:11:54.726890+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 3}}
+{"ts": "2026-03-24T22:34:29.773421+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-24T22:34:29.773608+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 3}}
+{"ts": "2026-03-24T22:38:58.873463+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-24T22:38:58.874180+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 3}}
+{"ts": "2026-03-24T22:40:42.871940+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-24T22:40:42.872213+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 3}}
