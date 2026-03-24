@@ -1,66 +1,51 @@
 # 1. OBJECTIVE
 
-Fix remaining ESLint warnings using the detailed action plan provided.
+Upgrade GitHub Actions to support Node 24 before June 2026 deprecation.
 
-# 2. CURRENT STATE
+# 2. CONTEXT SUMMARY
 
-- **Ruff**: ✅ Clean
-- **ESLint**: ✅ 0 errors, ~40 warnings
-- **Previous commits**: f26a634 (lint fixes), dbf04d1 (docs), readiness report done
+**Deadline**: Node 20 deprecated June 2, 2026, removed Fall 2026
 
-# 3. DETAILED FIX PLAN (From User Input)
+**Current workflow files to check**:
+- `.github/workflows/lint.yml`
+- `.github/workflows/test.yml`
+- `.github/workflows/build-portable-exe.yml`
 
-## Priority 1: Quick Wins (Do First)
+**Actions to upgrade**:
+| Current | New | Notes |
+|---------|-----|-------|
+| actions/checkout@v4 | actions/checkout@v6 | Node 24, credential changes |
+| actions/setup-python@v5 | actions/setup-python@v6 | Node 24 |
+| actions/setup-node@v4 | actions/setup-node@v6 | Node 24, npm caching changes |
+| actions/cache@v4 | actions/cache@v5 | Node 24, requires runner 2.327.1+ |
 
-### frontend/shared/state-hub.js
-- Rename catch vars to `_err` or `_ignored`
+# 3. IMPLEMENTATION STEPS
 
-### theme.js
-- Rename bare `_` vars to `_ignored`, `_theme`, `_err`
+## Step 1: Audit Current Workflow Files
+Check all `.github/workflows/*.yml` files for action versions.
 
-### tests/frontend/packaged-desktop-smoke.mjs
-- Delete `trigger` var (unused test local)
+## Step 2: Upgrade Action Versions
+Update each workflow file:
+- checkout@v4 → v6
+- setup-python@v5 → v6
+- setup-node@v4 → v6
+- cache@v4 → v5
 
-### frontend/admin/app/runtime.js
-- Delete `adminPageService` var (dead local)
+## Step 3: Add Node 24 Test Flag
+Add to test compatibility before June 2026:
+```yaml
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+```
 
-### frontend/admin/domain.js
-- Delete `finishedAt` var (likely extracted, no longer used)
-- Delete `status` var
+## Step 4: Verify Behavior Changes
+Watch for:
+- `setup-node@v6` npm auto-caching
+- `checkout@v6` credential persistence
 
-## Priority 2: Dead Locals (Do Second)
+# 4. VALIDATION CHECKLIST
 
-### frontend/admin/app/fetcher.js
-- Delete `formatFetcherRuntimeOptions` var
-- Delete `formatLifecycleSummary` var
-- Rename callback args: `startOpsHealthPolling`, `jobsFetchReportUrl`
-
-### frontend/jobs/app/runtime.js
-- Delete `writeAutoRefreshSignal`, `markSeenJobsBulk`, `lastFilterOptionsSignature`
-- Delete/rename `clearJobsPipelinePolling`
-- Delete `showLoading` var
-
-### frontend/saved/app/runtime.js
-- Delete most unused helpers/constants
-
-## Priority 3: Callback Shape Params (Rename)
-
-### frontend/admin/app/auth.js
-- Rename: `renderUsersEmpty`, `stopBridgeStatusWatch`, `stopOpsHealthPolling`, `showToast`
-
-### frontend/admin/app/discovery.js
-- Rename: `loadDiscoveryData` arg
-
-# 4. RECOMMENDED COMMITS
-
-## Commit 1: "chore: silence intentional unused callback params"
-- Rename intentionally unused args to `_name`
-- Rename catch vars to `_ignored`
-
-## Commit 2: "chore: remove dead frontend locals and helpers"
-- Delete dead vars/helpers
-
-# 5. VALIDATION
-
-- [ ] Run `npx eslint .` after each commit
-- [ ] Verify no new errors introduced
+- [ ] All workflow files updated
+- [ ] Node 24 test flag added
+- [ ] Workflows run successfully
+- [ ] No breaking behavior changes

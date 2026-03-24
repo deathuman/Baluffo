@@ -24,6 +24,7 @@ from src.jobs.adapters.plugins.errors import NoPluginFoundError
 from src.jobs.adapters.plugins.static import register_static_plugins
 from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.static_scrapy import run_scrapy_static_source
 from src.jobs.adapters.static_helpers import (
     add_detail_link,
     build_static_entry_report,
