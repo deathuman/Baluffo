@@ -16,6 +16,7 @@ from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.social.register import ensure_registered as ensure_social_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.common import config as common_config
+from src.jobs.common.diagnostics import SOURCE_DIAGNOSTICS, set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.state import get_incremental_cache_decision
@@ -44,14 +45,14 @@ def run_social_reddit_source(
     deps = runtime_deps.facade()
     cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
-        deps.set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
+        set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
         return []
 
     ensure_social_plugins(social_config=social_config)
     plugin, _selection = default_registry.select(AdapterPluginContext(family="social", adapter_key="social_reddit"))
     subs = [clean_text(item) for item in (cfg.get("subreddits") or []) if clean_text(item)]
     if not subs:
-        deps.set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
+        set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
         return []
 
     details: list[dict[str, Any]] = []
@@ -99,7 +100,7 @@ def run_social_reddit_source(
             errors.append(f"reddit:{sub}: {exc}")
         details.append(entry)
 
-    plugin_diag = deps.SOURCE_DIAGNOSTICS.get("social_reddit") if isinstance(deps.SOURCE_DIAGNOSTICS.get("social_reddit"), dict) else {}
+    plugin_diag = SOURCE_DIAGNOSTICS.get("social_reddit") if isinstance(SOURCE_DIAGNOSTICS.get("social_reddit"), dict) else {}
     plugin_detail_by_name = {
         clean_text(item.get("name")): item
         for item in (plugin_diag.get("details") or [])
@@ -111,8 +112,8 @@ def run_social_reddit_source(
         if isinstance(reject_reason_counts, dict) and reject_reason_counts:
             entry["rejectReasonCounts"] = dict(reject_reason_counts)
 
-    deps.set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=details, partial_errors=errors)
-    deps.SOURCE_DIAGNOSTICS["social_reddit"]["lowConfidenceDropped"] = int(plugin_diag.get("lowConfidenceDropped") or 0)
+    set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=details, partial_errors=errors)
+    SOURCE_DIAGNOSTICS["social_reddit"]["lowConfidenceDropped"] = int(plugin_diag.get("lowConfidenceDropped") or 0)
     if rows:
         return rows
     if errors:
@@ -133,7 +134,7 @@ def run_social_x_source(
     deps = runtime_deps.facade()
     cfg = social_config.get("x") if isinstance(social_config.get("x"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
-        deps.set_source_diagnostics("social_x", adapter="social", studio="x", details=[], partial_errors=[])
+        set_source_diagnostics("social_x", adapter="social", studio="x", details=[], partial_errors=[])
         return []
     queries = [clean_text(item) for item in (cfg.get("queries") or []) if clean_text(item)]
     if not queries:
@@ -249,8 +250,8 @@ def run_social_x_source(
         jobs.extend(parsed_rows)
         details.append(entry)
 
-    deps.set_source_diagnostics("social_x", adapter="social", studio="x", details=details, partial_errors=errors)
-    deps.SOURCE_DIAGNOSTICS["social_x"]["lowConfidenceDropped"] = int(low_conf_total)
+    set_source_diagnostics("social_x", adapter="social", studio="x", details=details, partial_errors=errors)
+    SOURCE_DIAGNOSTICS["social_x"]["lowConfidenceDropped"] = int(low_conf_total)
     if jobs:
         return jobs
     if errors:
@@ -271,7 +272,7 @@ def run_social_mastodon_source(
     deps = runtime_deps.facade()
     cfg = social_config.get("mastodon") if isinstance(social_config.get("mastodon"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
-        deps.set_source_diagnostics(
+        set_source_diagnostics(
             "social_mastodon",
             adapter="social",
             studio="mastodon",
@@ -339,8 +340,8 @@ def run_social_mastodon_source(
                 errors.append(f"mastodon:{instance}:#{tag}: {exc}")
             details.append(entry)
 
-    deps.set_source_diagnostics("social_mastodon", adapter="social", studio="mastodon", details=details, partial_errors=errors)
-    deps.SOURCE_DIAGNOSTICS["social_mastodon"]["lowConfidenceDropped"] = int(low_conf_total)
+    set_source_diagnostics("social_mastodon", adapter="social", studio="mastodon", details=details, partial_errors=errors)
+    SOURCE_DIAGNOSTICS["social_mastodon"]["lowConfidenceDropped"] = int(low_conf_total)
     if jobs:
         return jobs
     if errors:

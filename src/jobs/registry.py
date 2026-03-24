@@ -12,10 +12,7 @@ from src.jobs.common import social as common_social
 from src.jobs.common import sources as common_sources
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.common.registry import registry_entries as common_registry_entries
-from src.jobs.common.registry_defaults import (
-    DEFAULT_STUDIO_SOURCE_REGISTRY,
-    REDUNDANT_STATIC_IF_PROVIDER,
-)
+from src.jobs.common.registry_defaults import DEFAULT_STUDIO_SOURCE_REGISTRY, REDUNDANT_STATIC_IF_PROVIDER
 from src.jobs.models import SourceConfig
 
 DEFAULT_SOCIAL_CONFIG = common_social.DEFAULT_SOCIAL_CONFIG
