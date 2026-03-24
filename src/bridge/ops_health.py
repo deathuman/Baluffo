@@ -122,6 +122,7 @@ def summarize_fetch_report(report: dict[str, Any]) -> dict[str, Any]:
     elif failed > 0:
         status = "warning"
     return {
+        "status": status,
         "outputCount": output,
         "failedSources": failed,
         "sourceCount": source_count,

@@ -1,40 +1,62 @@
 # 1. OBJECTIVE
 
-Run linters in phases with review between each, fixing issues methodically.
+Provide a lint report and fix remaining issues in phases.
 
-# 2. PHASED APPROACH
+# 2. CONTEXT SUMMARY
 
-## Phase 1: Ruff Autofix + Review
-1. Run `ruff check . --fix` to auto-fix safe changes
-2. Review the diff (expect ~3200+ changes - mostly UP035/UP006 modernization)
-3. Run `ruff check .` to see what remains
-4. Focus on: B008 issues (real code quality), non-fixable issues
+## ESLint Config Status
 
-## Phase 2: Fix ESLint Config
-1. Add missing browser globals (window, document, fetch, URL, etc.) to config
-2. Add test globals (describe, it, expect, etc.) for test files
-3. Run `npx eslint .`
-4. Review remaining issues
+The `eslint.config.js` has already been updated with extensive browser and test globals:
 
-## Phase 3: Manual Fixes
-1. Fix remaining Ruff issues (especially B008)
-2. Fix remaining ESLint issues
+**Browser globals defined** (60+ including):
+- window, document, localStorage, sessionStorage, indexedDB
+- fetch, URL, URLSearchParams, FormData
+- navigator, history, location, alert
+- Blob, FileReader, TextEncoder, TextDecoder
+- atob, btoa, requestAnimationFrame, performance
 
-# 3. EXPECTED ISSUES
+**Test globals defined**:
+- describe, it, test, expect, before, beforeEach, after, afterEach
 
-## Ruff
-- UP035/UP006: Modernization (Dict → dict, etc.) - ~3200+ safe changes
-- B008: Function calls in default arguments - often real issues
-- Unused imports, import sorting
+## Ruff Config Status
 
-## ESLint
-- no-undef: Missing browser globals (window, document, fetch, URL, etc.)
-- Missing test globals (describe, it, expect)
+`ruff.toml` selects: E, F, I, B, UP (errors, flakes, isort, bugs, pyupgrade)
 
-# 4. VALIDATION CHECKLIST
+# 3. PHASED EXECUTION
 
-- [ ] Phase 1: ruff check . --fix + review diff
-- [ ] Phase 1: ruff check . (see remaining)
-- [ ] Phase 2: Fix eslint.config.js with browser/test globals
-- [ ] Phase 2: npx eslint . (check remaining)
-- [ ] Phase 3: Manual fixes for remaining issues
+## Phase 1: Ruff Run + Autofix
+```bash
+pip install ruff
+ruff check . --fix
+# Review diff - expect ~3200+ UP035/UP006 changes
+ruff check .  # See remaining
+```
+
+## Phase 2: ESLint Run
+```bash
+npx eslint .  # Should show remaining issues
+```
+
+## Phase 3: Fix Remaining
+- B008 issues (function calls in default args - real code quality)
+- Any remaining ESLint no-undef issues
+
+# 4. EXPECTED REMAINING ISSUES
+
+After running the commands above, report will show:
+
+**Ruff**:
+- B008: Function calls in default arguments (real issues)
+- Any non-fixable style issues
+
+**ESLint**:
+- Any remaining no-undef for missing globals
+- No-unused-vars warnings
+
+# 5. VALIDATION CHECKLIST
+
+- [ ] Run ruff check . --fix
+- [ ] Report ruff remaining issues
+- [ ] Run npx eslint .
+- [ ] Report eslint remaining issues
+- [ ] Fix manually

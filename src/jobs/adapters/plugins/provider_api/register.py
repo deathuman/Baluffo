@@ -507,9 +507,7 @@ def _run_html_board_sources(
             candidate_urls = _iter_ashby_candidate_urls(source) if adapter_name == "ashby" else [board_url]
             parsed = []
             last_text = ""
-            last_url = board_url
             for candidate_url in candidate_urls:
-                last_url = candidate_url
                 last_text = deps.fetch_with_retries(candidate_url, fetch_text, timeout_s, retries, backoff_s)
                 parsed = parse_html(last_text, candidate_url, studio)
                 if parsed:

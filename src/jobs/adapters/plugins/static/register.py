@@ -47,7 +47,6 @@ from . import (
 
 def _pilot_can_handle(ctx: AdapterPluginContext) -> bool:
     """Pilot: handle no host yet; can_handle returns False so fallback is always used."""
-    identity = (ctx.source_identity or "").strip().lower()
     return False
 
 
