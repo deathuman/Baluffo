@@ -1,0 +1,31 @@
+# Code Ownership
+# See https://help.github.com/en/articles/about-code-owners
+
+# Default ownership
+* @deathuman
+
+# Frontend
+frontend/ @deathuman
+
+# Backend/Bridge
+src/bridge/ @deathuman
+src/admin_bridge.py @deathuman
+
+# Jobs Pipeline
+src/jobs/ @deathuman
+src/jobs_fetcher.py @deathuman
+
+# Source Discovery
+src/source_discovery/ @deathuman
+src/source_discovery.py @deathuman
+
+# Desktop/Runtime
+src/ship/ @deathuman
+
+# Documentation
+docs/ @deathuman
+AGENTS.md @deathuman
+README.md @deathuman
+
+# Build Scripts
+scripts/ @deathuman
