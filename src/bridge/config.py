@@ -1,3 +1,8 @@
+"""Bridge configuration helpers for runtime initialization.
+
+This module provides RuntimeConfig dataclass and path resolution.
+"""
+
 from __future__ import annotations
 
 import argparse

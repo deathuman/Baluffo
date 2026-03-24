@@ -1,3 +1,9 @@
+"""Discovery service for source discovery operations.
+
+This module provides DiscoveryService for managing source discovery
+tasks and auto-sync watch functionality.
+"""
+
 from __future__ import annotations
 
 import threading

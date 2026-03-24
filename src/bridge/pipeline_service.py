@@ -1,3 +1,9 @@
+"""Pipeline service for jobs pipeline operations.
+
+This module provides PipelineService for managing jobs pipeline
+tasks and status polling.
+"""
+
 from __future__ import annotations
 
 import threading

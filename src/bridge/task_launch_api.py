@@ -1,3 +1,9 @@
+"""Task launch API for async task management.
+
+This module provides TaskLaunchApi for launching and managing
+background tasks.
+"""
+
 from __future__ import annotations
 
 import os

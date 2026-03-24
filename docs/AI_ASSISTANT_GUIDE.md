@@ -50,7 +50,12 @@ Do **not** load many docs by default. Start narrow and pull in task-specific ref
   - `src/jobs/common/contracts.py`
   - related tests
   - relevant docs in `docs/`
-- **Some files are compatibility or transitional boundaries**. Do not “clean up” by moving logic blindly without checking [`architecture-ai-map.md`](architecture-ai-map.md).
+- **Some files are compatibility or transitional boundaries**. Do not "clean up" by moving logic blindly without checking [`architecture-ai-map.md`](architecture-ai-map.md).
+- **Never guess UI selectors** — always use `frontend/shared/ui/selectors.js` as the source of truth for all UI element handles.
+- **Build/packaging scripts must NOT import composition roots** — avoid importing `src.jobs`, `src.admin_bridge`, or other top-level re-export modules from build scripts. Use leaf modules like `src/bridge/*`, `src/core/*`, or direct data-file reads instead.
+- **Don't assume endpoint payloads** — always check [`docs/admin-bridge-api.md`](admin-bridge-api.md) first before making assumptions about bridge API structures.
+- **Don't assume local bridge reflects code changes** — if behavior looks stale after a fix, restart the bridge (`npm run dev:bridge`) before concluding the fix failed.
+- **Bridge changes require both frontend AND backend verification** — when modifying bridge routes or payloads, verify both the Python backend tests and any affected frontend tests.
 
 ---
 
@@ -73,6 +78,8 @@ Each page typically flows through:
 - `app.js`
 - `app/runtime.js`
 - supporting `actions.js`, `services.js`, `render.js`, `domain.js`, `data-source.js`, `state-sync/`, and `app/*` modules
+
+**Frontend import structure**: The `app/runtime.js` files import many modules (often 20+) to wire up the entire page. However, most behavior changes should go to specific modules in `app/*.js` (e.g., `filters.js`, `feed.js`, `cache.js`) rather than the runtime orchestration file itself. Only edit runtime.js when you need to add new module wiring or orchestration-level changes.
 
 ### Backend / local control plane
 - `src/admin_bridge.py` — entrypoint and composition root

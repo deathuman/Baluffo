@@ -1,3 +1,8 @@
+"""Registry sync flow for auto-sync workflows.
+
+This module provides registry auto-sync persistence and start logic.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, List

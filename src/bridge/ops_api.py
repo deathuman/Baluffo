@@ -1,3 +1,9 @@
+"""Ops API for admin bridge operational endpoints.
+
+This module provides the OpsApi class for health checks,
+startup metrics, and operational status endpoints.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

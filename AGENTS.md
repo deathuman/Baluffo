@@ -203,6 +203,14 @@ To minimize token consumption and exploration overhead, AI agents MUST favor the
 - **UI Registry**: Refer to `frontend/shared/ui/selectors.js` before adding new UI interaction logic.
 - **Test layout and runs:** Python tests are 100% pytest. Use `docs/testing.md` for test layout, fixtures, and targeted run commands. Use `workspace_tmpdir` from `tests/helpers/temp_paths.py` for temp dirs; admin tests use `admin_bridge_ops_root` from `tests/admin/conftest.py`. The "Fast verification matrix" in `docs/architecture-ai-map.md` (section 5) lists the fastest command per change area.
 
+### 4. What NOT to Do (Common Mistakes)
+- **DO NOT use `grep` or `find` without proper filters** — always use `rg` (ripgrep) with specific patterns instead of recursive directory searches.
+- **DO NOT assume a running local bridge reflects code changes** — if behavior looks stale after a fix, restart the bridge with `npm run dev:bridge` before concluding the fix failed.
+- **DO NOT add new dependencies** (Python packages in `requirements*.txt`, Node modules in `package.json`, or vendored libraries) without explicit user approval.
+- **DO NOT import composition roots in build/packaging scripts** — avoid importing `src.jobs`, `src.admin_bridge`, or other top-level re-export modules from scripts under `scripts/`. Use leaf modules like `src/bridge/*`, `src/core/*`, or direct data/config file paths.
+- **DO NOT guess UI selectors** — always look up handles in `frontend/shared/ui/selectors.js` rather than guessing class names or IDs.
+- **DO NOT assume endpoint payloads** — check `docs/admin-bridge-api.md` before making assumptions about bridge API structures.
+
 ## Command Cheat Sheet
 
 Use these standard commands for routine development and verification. All commands automatically run version/env checks.

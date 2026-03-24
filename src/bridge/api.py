@@ -1,3 +1,9 @@
+"""Bridge API composition object for admin bridge.
+
+This module provides the BridgeApi composition object that wires
+all bridge services together for use by HTTP routes.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

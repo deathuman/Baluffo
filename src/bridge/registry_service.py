@@ -1,3 +1,9 @@
+"""Registry service for source registry operations.
+
+This module provides RegistryService for managing active/pending/rejected
+source registry state.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
