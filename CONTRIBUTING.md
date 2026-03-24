@@ -12,7 +12,7 @@ Thank you for your interest in contributing to Baluffo!
 
 ### Prerequisites
 - Node.js 18+
-- Python 3.11+
+- Python 3.13+ (see `src/python_version_guard.py` for requirements)
 - npm
 
 ### Install Dependencies
