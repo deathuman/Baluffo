@@ -631,3 +631,8 @@ def write_success_cache(cache_path: Path, source_reports: Sequence[dict[str, Any
     write_text_if_changed(cache_path, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
+
+__all__ = [
+    normalize_source_state_payload,
+    normalize_job_lifecycle_payload,
+]

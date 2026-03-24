@@ -110,7 +110,7 @@ apply_job_lifecycle_state = state_pkg.apply_job_lifecycle_state
 read_previously_successful_sources = state_pkg.read_previously_successful_sources
 read_success_cache = state_pkg.read_success_cache
 write_success_cache = state_pkg.write_success_cache
-normalize_task_state_payload = state_pkg.normalize_task_state_payload
+normalize_source_state_payload = state_pkg.normalize_source_state_payload
 should_skip_source_by_ttl = state_pkg.should_skip_source_by_ttl
 should_skip_source_by_cadence = state_pkg.should_skip_source_by_cadence
 get_incremental_cache_decision = state_pkg.get_incremental_cache_decision
@@ -520,7 +520,7 @@ def run_pipeline(
         started_at=started_at,
         report_path=str(paths.report_path),
         task_state_path=paths.task_state_path,
-        normalize_task_state_payload=normalize_task_state_payload,
+        normalize_source_state_payload=normalize_source_state_payload,
         write_text_if_changed=write_text_if_changed,
     )
     fetch_text_limited = make_fetch_text_limited(
