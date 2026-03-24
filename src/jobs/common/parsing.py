@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, List
+from typing import Any
 
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text
@@ -28,7 +28,7 @@ def normalize_contract_type(contract_text: Any, title: Any = "") -> str:
     return "Unknown"
 
 
-def parse_remote_ok_payload(payload: Any, *, looks_like_game_job) -> List[RawJob]:
+def parse_remote_ok_payload(payload: Any, *, looks_like_game_job) -> list[RawJob]:
     """
     Parse RemoteOK API responses into RawJob rows.
 
@@ -43,7 +43,7 @@ def parse_remote_ok_payload(payload: Any, *, looks_like_game_job) -> List[RawJob
     else:
         return []
 
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     for row in rows:
         title = clean_text(row.get("position") or row.get("title"))
         company = clean_text(row.get("company") or row.get("company_name"))

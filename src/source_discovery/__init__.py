@@ -13,15 +13,15 @@ from .config import (  # noqa: F401
     DUCKDUCKGO_HTML_SEARCH,
     FETCH_MAX_RETRIES,
     FOCUS_KEYWORDS,
-    GENERIC_STATIC_BLOCKED_DOMAINS,
     GAME_STUDIOS_SHEET_GID,
     GAME_STUDIOS_SHEET_ID,
     GAME_STUDIOS_SHEET_URL,
+    GENERIC_STATIC_BLOCKED_DOMAINS,
+    LOW_EVIDENCE_PROBE_LIMIT,
     MIN_PROVIDER_EVIDENCE_TO_PROBE,
     MIN_PROVIDER_EVIDENCE_TO_QUEUE,
     MIN_STATIC_EVIDENCE_TO_PROBE,
     MIN_STATIC_EVIDENCE_TO_QUEUE,
-    LOW_EVIDENCE_PROBE_LIMIT,
     PATTERN_PROVIDER_PROBE_THRESHOLD,
     PATTERN_PROVIDER_QUEUE_THRESHOLD,
     RETRYABLE_HTTP_CODES,
@@ -40,12 +40,12 @@ def load_discovery_config():
     pkg = sys.modules[__name__]
     path = getattr(pkg, "DISCOVERY_CONFIG_PATH", _config.DISCOVERY_CONFIG_PATH)
     return _config.load_discovery_config(path)
+from .provider_patterns import build_pattern_candidates as _build_pattern_candidates
 from .sheet_directory import (  # noqa: F401
     discover_game_studio_sheet_candidates,
     game_studios_sheet_candidate_urls,
     parse_game_studio_sheet_csv,
 )
-from .provider_patterns import build_pattern_candidates as _build_pattern_candidates
 
 
 def build_pattern_candidates(studio_seeds=None):
@@ -53,15 +53,7 @@ def build_pattern_candidates(studio_seeds=None):
     if studio_seeds is None:
         studio_seeds = STUDIO_SEEDS
     return _build_pattern_candidates(studio_seeds)
-from .web_search import (  # noqa: F401
-    discover_web_search_candidates,
-    fetch_text,
-    fetch_text_with_retry,
-    infer_provider_candidates_from_html,
-    infer_web_candidate,
-)
-from .static_candidates import build_static_candidate_from_page  # noqa: F401
-from .reporting import emit_log, merge_candidate_streams, stage_curated_seed_candidates  # noqa: F401
+from src.shared.utils import now_iso  # noqa: F401
 from src.source_registry import (  # noqa: F401
     ACTIVE_PATH,
     DISCOVERY_CANDIDATES_PATH,
@@ -70,14 +62,23 @@ from src.source_registry import (  # noqa: F401
     REJECTED_PATH,
     URL_PATCH_MANIFEST_PATH,
 )
-from .io_runtime import endpoint_url  # noqa: F401
-from .scoring import resolve_discovery_thresholds, unique_string_list  # noqa: F401
-from .probe import (  # noqa: F401
-    async_probe_candidate,
-    probe_candidate,
-    validate_candidate_for_probe,
+
+from .core import (  # noqa: F401
+    adapter_domain_fingerprint,
+    apply_queue_balancing,
+    apply_sheet_directory_static_probe_cap,
+    classify_probe_failure_stage,
+    classify_static_suppression,
+    compute_candidate_score,
+    normalize_candidate,
+    probe_concurrency_defaults,
+    queue_family_key,
+    sheet_directory_static_probe_cap,
 )
-from src.shared.utils import now_iso  # noqa: F401
+from .gameprog import (  # noqa: F401
+    discover_gameprog_candidates,
+    parse_gameprog_teams_json,
+)
 from .gamesmap import (  # noqa: F401
     discover_gamesmap_candidates,
     gamesmap_matches_category,
@@ -86,22 +87,20 @@ from .gamesmap import (  # noqa: F401
     parse_gamesmap_index_entries,
     parse_gamesmap_index_links,
 )
-from .gameprog import (  # noqa: F401
-    discover_gameprog_candidates,
-    parse_gameprog_teams_json,
+from .io_runtime import endpoint_url  # noqa: F401
+from .orchestrator import main, parse_args, run_discovery  # noqa: F401
+from .probe import (  # noqa: F401
+    async_probe_candidate,
+    probe_candidate,
+    validate_candidate_for_probe,
 )
-from .core import (  # noqa: F401
-    adapter_domain_fingerprint,
-    apply_queue_balancing,
-    apply_sheet_directory_static_probe_cap,
-    classify_static_suppression,
-    classify_probe_failure_stage,
-    compute_candidate_score,
-    normalize_candidate,
-    probe_concurrency_defaults,
-    queue_family_key,
-    sheet_directory_static_probe_cap,
+from .reporting import (  # noqa: F401
+    emit_log,
+    merge_candidate_streams,
+    stage_curated_seed_candidates,
 )
+from .scoring import resolve_discovery_thresholds, unique_string_list  # noqa: F401
+from .static_candidates import build_static_candidate_from_page  # noqa: F401
 from .url_patches import (  # noqa: F401
     apply_url_patches_to_candidate,
     load_url_patch_manifest,
@@ -109,7 +108,13 @@ from .url_patches import (  # noqa: F401
     merge_url_patches,
     save_url_patch_manifest,
 )
-from .orchestrator import main, parse_args, run_discovery  # noqa: F401
+from .web_search import (  # noqa: F401
+    discover_web_search_candidates,
+    fetch_text,
+    fetch_text_with_retry,
+    infer_provider_candidates_from_html,
+    infer_web_candidate,
+)
 
 
 def discover_seed_careers_page_candidates(timeout_s: int, *, fetcher=None):

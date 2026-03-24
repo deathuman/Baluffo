@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any
 
 from src.jobs.adapters import community
 from src.jobs.adapters import html_parsers as _html_parsers
@@ -31,7 +31,7 @@ def parse_jobpostings_from_html(
     base_url: str,
     fallback_company: str = "",
     fallback_source_id_prefix: str = "",
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _html_parsers.parse_jobpostings_from_html(
         html_text,
         base_url=base_url,
@@ -63,6 +63,6 @@ parse_jazzhr_jobs_html = _provider_parsers.parse_jazzhr_jobs_html
 parse_personio_feed_xml = _provider_parsers.parse_personio_feed_xml
 
 
-def parse_remote_ok_payload(payload: Any) -> List[RawJob]:
+def parse_remote_ok_payload(payload: Any) -> list[RawJob]:
     return _parse_remote_ok_payload(payload, looks_like_game_job=looks_like_game_job)
 

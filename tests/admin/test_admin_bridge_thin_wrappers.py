@@ -1,8 +1,6 @@
 """Tests for thin wrapper functions and utility functions in admin_bridge."""
 
-from unittest import mock
 
-import pytest
 
 from src import admin_bridge
 

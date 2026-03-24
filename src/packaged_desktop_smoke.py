@@ -15,17 +15,21 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.shared.utils import utc_now_iso
-from src.ship.startup_profile import render_startup_summary, summarize_startup_metrics, write_startup_summary
 from src.python_version_guard import ensure_required_python
+from src.shared.utils import utc_now_iso
+from src.ship.startup_profile import (
+    render_startup_summary,
+    summarize_startup_metrics,
+    write_startup_summary,
+)
 
 DEFAULT_EXE_PATH = ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
 DEFAULT_REPORT_PATH = ROOT / "data" / "packaged-desktop-smoke-report.json"
@@ -82,12 +86,12 @@ def slugify_token(value: str) -> str:
     return compact or "scenario"
 
 
-def write_json(path: Path, payload: Dict[str, Any]) -> None:
+def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def fetch_json(url: str, timeout_s: float = 2.5) -> Dict[str, Any]:
+def fetch_json(url: str, timeout_s: float = 2.5) -> dict[str, Any]:
     with urllib.request.urlopen(url, timeout=timeout_s) as response:
         body = response.read().decode("utf-8", errors="replace")
     parsed = json.loads(body or "{}")
@@ -99,17 +103,17 @@ def fetch_text(url: str, timeout_s: float = 2.5) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
-def fetch_startup_metrics(bridge_base_url: str, limit: int = 1000) -> List[Dict[str, Any]]:
+def fetch_startup_metrics(bridge_base_url: str, limit: int = 1000) -> list[dict[str, Any]]:
     metrics_payload = fetch_json(f"{bridge_base_url}/desktop-local-data/startup-metrics?limit={int(limit)}")
     rows = metrics_payload.get("rows") if isinstance(metrics_payload.get("rows"), list) else []
     return [row for row in rows if isinstance(row, dict)]
 
 
-def read_startup_metrics_file(data_dir: Path, limit: int = 1000) -> List[Dict[str, Any]]:
+def read_startup_metrics_file(data_dir: Path, limit: int = 1000) -> list[dict[str, Any]]:
     metrics_path = Path(data_dir) / "desktop-startup-metrics.jsonl"
     if not metrics_path.exists():
         return []
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for line in metrics_path.read_text(encoding="utf-8", errors="replace").splitlines():
         stripped = line.strip()
         if not stripped:
@@ -141,7 +145,7 @@ def run_portable_build(output_dir: Path | None = None) -> Path:
     return DEFAULT_EXE_PATH
 
 
-def resolve_node_command() -> List[str]:
+def resolve_node_command() -> list[str]:
     local_node = ROOT / "node_modules" / ".bin" / ("node.cmd" if os.name == "nt" else "node")
     if local_node.exists():
         return [str(local_node)]
@@ -196,9 +200,9 @@ def collect_packaged_smoke_env_diagnostics(
     *,
     artifacts_dir: Path,
     exe_path: Path,
-    node_command: List[str] | None = None,
-    env: Dict[str, str] | None = None,
-) -> Dict[str, Any]:
+    node_command: list[str] | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any]:
     env_map = env if env is not None else os.environ
     node_cmd = list(node_command or resolve_node_command())
     diagnostics = {
@@ -223,7 +227,7 @@ def build_packaged_smoke_env(
     artifacts_dir: Path,
     headed: bool,
     pause_on_failure: bool,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     env = os.environ.copy()
     output_dir = artifacts_dir / "smoke-output"
     temp_dir = artifacts_dir / "node-temp"
@@ -321,8 +325,8 @@ def wait_for_packaged_runtime(
     bridge_base_url: str,
     timeout_s: float,
     open_path: str = "jobs.html",
-    required_events: List[str] | tuple[str, ...] = STARTUP_REQUIRED_EVENTS,
-) -> Dict[str, Any]:
+    required_events: list[str] | tuple[str, ...] = STARTUP_REQUIRED_EVENTS,
+) -> dict[str, Any]:
     deadline = time.monotonic() + max(1.0, float(timeout_s))
     last_error = ""
     normalized = tuple(str(event or "").strip() for event in required_events if str(event or "").strip())
@@ -361,7 +365,7 @@ def wait_for_packaged_runtime(
     )
 
 
-def capture_runtime_snapshot(bridge_base_url: str, artifacts_dir: Path) -> Dict[str, str]:
+def capture_runtime_snapshot(bridge_base_url: str, artifacts_dir: Path) -> dict[str, str]:
     snapshots = {
         "opsHealthSnapshot": artifacts_dir / "ops-health.json",
         "sessionSnapshot": artifacts_dir / "session.json",
@@ -374,7 +378,7 @@ def capture_runtime_snapshot(bridge_base_url: str, artifacts_dir: Path) -> Dict[
     return {key: str(path) for key, path in snapshots.items()}
 
 
-def wait_for_runtime_events(bridge_base_url: str, required_events: List[str] | tuple[str, ...], timeout_s: float) -> List[Dict[str, Any]]:
+def wait_for_runtime_events(bridge_base_url: str, required_events: list[str] | tuple[str, ...], timeout_s: float) -> list[dict[str, Any]]:
     deadline = time.monotonic() + max(1.0, float(timeout_s))
     normalized = [str(event or "").strip() for event in required_events if str(event or "").strip()]
     last_events: set[str] = set()
@@ -391,12 +395,12 @@ def wait_for_runtime_events(bridge_base_url: str, required_events: List[str] | t
 def run_embedded_runtime_probe(
     *,
     exe_path: Path,
-    probe: Dict[str, Any],
+    probe: dict[str, Any],
     artifacts_root: Path,
     runtime_timeout_s: float,
     startup_probe: bool,
     profile_mode: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     slug = slugify_token(str(probe.get("name") or "embedded-probe"))
     probe_dir = artifacts_root / slug
     runtime_data_dir = probe_dir / "runtime-data"
@@ -476,7 +480,7 @@ def run_embedded_runtime_probe(
             stderr_handle.close()
 
 
-def parse_packaged_node_smoke_report(path: Path) -> List[Dict[str, Any]]:
+def parse_packaged_node_smoke_report(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     payload = json.loads(path.read_text(encoding="utf-8") or "{}")
@@ -484,7 +488,7 @@ def parse_packaged_node_smoke_report(path: Path) -> List[Dict[str, Any]]:
     return [row for row in rows if isinstance(row, dict)]
 
 
-def read_packaged_node_smoke_payload(path: Path) -> Dict[str, Any]:
+def read_packaged_node_smoke_payload(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     payload = json.loads(path.read_text(encoding="utf-8") or "{}")
@@ -499,7 +503,7 @@ def run_packaged_node_smoke(
     headed: bool,
     pause_on_failure: bool,
     timeout_s: float,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     output_dir = artifacts_dir / "smoke-output"
     report_path = artifacts_dir / "smoke-report.json"
     command = [*resolve_node_command(), str(DEFAULT_NODE_SMOKE_SCRIPT)]
@@ -564,7 +568,7 @@ def run_packaged_node_smoke(
     }
 
 
-def build_failure_payload(step: str, error: Exception | str, *, category: str = "") -> Dict[str, Any]:
+def build_failure_payload(step: str, error: Exception | str, *, category: str = "") -> dict[str, Any]:
     payload = {
         "step": str(step or "unknown"),
         "message": str(error),
@@ -609,9 +613,9 @@ def run_warmup_launch(exe_path: Path, *, open_path: str, runtime_timeout_s: floa
             stderr_handle.close()
 
 
-def run_packaged_smoke(args: argparse.Namespace) -> Dict[str, Any]:
+def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     started_at = utc_now_iso()
-    run_token = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    run_token = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     artifacts_dir = Path(args.artifacts_dir or (DEFAULT_ARTIFACT_ROOT / run_token)).expanduser().resolve()
     runtime_data_dir = artifacts_dir / "runtime-data"
     embedded_artifacts_dir = artifacts_dir / "embedded-runtime-probes"
@@ -636,7 +640,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> Dict[str, Any]:
     rebuild_output_dir = artifacts_dir / "portable-build" if bool(args.rebuild) and requested_exe_path == DEFAULT_EXE_PATH.resolve() else None
     exe_path = ensure_portable_exe(requested_exe_path, rebuild=bool(args.rebuild), rebuild_output_dir=rebuild_output_dir)
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "ok": False,
         "startedAt": started_at,
         "finishedAt": "",
@@ -816,7 +820,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> Dict[str, Any]:
     return report
 
 
-def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run packaged desktop smoke validation against Baluffo.exe.")
     parser.add_argument("--exe-path", default=str(DEFAULT_EXE_PATH))
     parser.add_argument("--report-path", default=str(DEFAULT_REPORT_PATH))
@@ -836,7 +840,7 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: List[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ensure_required_python()
     args = parse_args(argv)
     report = run_packaged_smoke(args)

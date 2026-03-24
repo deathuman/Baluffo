@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
 from unittest.mock import patch
 
 import pytest
 
 from src.exceptions import AdapterValidationError
-from src.jobs.adapters.plugins.social.register import _run_reddit, set_source_diagnostics
-from src.jobs.models import RawJob
+from src.jobs.adapters.plugins.social.register import _run_reddit
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 
 

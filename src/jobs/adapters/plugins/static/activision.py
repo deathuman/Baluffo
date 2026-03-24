@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from src.jobs.adapters.plugins.static import _heuristics
@@ -23,12 +24,12 @@ def run(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    pages: List[str],
-    source_row: Dict[str, Any],
-    parse_jobpostings_from_html: Callable[..., List[Dict[str, Any]]] | None = None,
+    pages: list[str],
+    source_row: dict[str, Any],
+    parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     **kwargs: Any,
-) -> List[RawJob]:
+) -> list[RawJob]:
     _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []

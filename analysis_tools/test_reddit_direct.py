@@ -4,11 +4,10 @@ Direct Reddit Adapter Test
 Tests the Reddit adapter functionality directly without the full pipeline.
 """
 
-import sys
-import os
 import json
+import os
+import sys
 import time
-from unittest.mock import Mock, patch
 
 # Add current directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -21,8 +20,8 @@ def test_reddit_adapter_direct():
     try:
         # Import required modules
         from src.jobs.adapters.plugins.social.register import _run_reddit, ensure_registered
-        from src.jobs.registry import load_social_config
         from src.jobs.common.config import SOURCE_DIAGNOSTICS
+        from src.jobs.registry import load_social_config
         
         # Load social config
         config = load_social_config(enabled=True)
@@ -108,7 +107,7 @@ def test_reddit_adapter_direct():
                 backoff_s=1.0
             )
             
-            print(f"✓ Reddit adapter completed")
+            print("✓ Reddit adapter completed")
             print(f"  Jobs found: {len(jobs)}")
             
             # Print job details

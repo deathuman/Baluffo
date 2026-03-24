@@ -6,8 +6,9 @@ source registry state.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any
 
 from src.source_registry import (
     ensure_source_id,
@@ -19,8 +20,7 @@ from src.source_registry import (
     unique_sources,
 )
 
-
-NormalizeManualStaticFunc = Callable[[Dict[str, Any]], Dict[str, Any]]
+NormalizeManualStaticFunc = Callable[[dict[str, Any]], dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -35,14 +35,14 @@ class RegistryService:
         self,
         *,
         paths: RegistryPaths,
-        default_active: List[Dict[str, Any]],
+        default_active: list[dict[str, Any]],
         normalize_manual_static: NormalizeManualStaticFunc,
     ) -> None:
         self._paths = paths
         self._default_active = [dict(row) for row in (default_active or []) if isinstance(row, dict)]
         self._normalize_manual_static = normalize_manual_static
 
-    def ensure_active_registry(self) -> List[Dict[str, Any]]:
+    def ensure_active_registry(self) -> list[dict[str, Any]]:
         active = load_json_array(self._paths.active, [])
         if active:
             return active
@@ -50,10 +50,10 @@ class RegistryService:
         save_json_atomic(self._paths.active, active)
         return active
 
-    def normalize_state(self, state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+    def normalize_state(self, state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
         # Precedence is explicit: active > pending > rejected.
         seen = set()
-        normalized: Dict[str, List[Dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
+        normalized: dict[str, list[dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
         for bucket in ("active", "pending", "rejected"):
             for row in state.get(bucket, []):
                 if not isinstance(row, dict):
@@ -67,7 +67,7 @@ class RegistryService:
                 normalized[bucket].append(ensure_source_id(row))
         return normalized
 
-    def load_state(self) -> Dict[str, List[Dict[str, Any]]]:
+    def load_state(self) -> dict[str, list[dict[str, Any]]]:
         return self.normalize_state(
             {
                 "active": self.ensure_active_registry(),
@@ -77,14 +77,14 @@ class RegistryService:
         )
 
     @staticmethod
-    def summarize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, int]:
+    def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
         return {
             "activeCount": len(state["active"]),
             "pendingCount": len(state["pending"]),
             "rejectedCount": len(state["rejected"]),
         }
 
-    def persist_state(self, state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+    def persist_state(self, state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
         normalized = self.normalize_state(state)
         save_json_atomic(self._paths.active, normalized["active"])
         save_json_atomic(self._paths.pending, normalized["pending"])
@@ -93,11 +93,11 @@ class RegistryService:
 
     @staticmethod
     def move_entries(
-        pending: List[Dict[str, Any]], selected_ids: List[str]
-    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        pending: list[dict[str, Any]], selected_ids: list[str]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         selected = set(str(item) for item in selected_ids)
-        moved: List[Dict[str, Any]] = []
-        remaining: List[Dict[str, Any]] = []
+        moved: list[dict[str, Any]] = []
+        remaining: list[dict[str, Any]] = []
         for row in pending:
             if source_identity(row) in selected:
                 moved.append(row)
@@ -106,15 +106,15 @@ class RegistryService:
         return moved, remaining
 
     @staticmethod
-    def unique_sources(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def unique_sources(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return unique_sources(rows)
 
     @staticmethod
-    def source_identity(row: Dict[str, Any]) -> str:
+    def source_identity(row: dict[str, Any]) -> str:
         return source_identity(row)
 
     @staticmethod
-    def source_url_fingerprint(row: Dict[str, Any]) -> str:
+    def source_url_fingerprint(row: dict[str, Any]) -> str:
         return source_url_fingerprint(row)
 
     @staticmethod

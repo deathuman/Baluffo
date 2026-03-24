@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 import json
-
-import pytest
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from src.bridge.api import BridgeApi
 from src.bridge.routes.get_routes import handle_get
@@ -27,8 +25,8 @@ class _FakeHandler:
     """Captures all sent responses for assertions."""
 
     def __init__(self) -> None:
-        self.sent: List[Dict[str, Any]] = []
-        self.bytes_sent: List[Dict[str, Any]] = []
+        self.sent: list[dict[str, Any]] = []
+        self.bytes_sent: list[dict[str, Any]] = []
 
     def _send_json(self, payload: Any, status: int = 200) -> None:
         self.sent.append({"status": status, "payload": payload})
@@ -45,12 +43,12 @@ class _FakeDesktopLocalDataStore:
     """Mock for desktop local data operations."""
 
     def __init__(self) -> None:
-        self.users: Dict[str, Any] = {}
-        self.saved_jobs: Dict[str, List[Dict]] = {}
-        self.attachments: Dict[str, Any] = {}
-        self._current_user: Optional[Dict] = None
+        self.users: dict[str, Any] = {}
+        self.saved_jobs: dict[str, list[dict]] = {}
+        self.attachments: dict[str, Any] = {}
+        self._current_user: dict | None = None
 
-    def sign_in(self, name: str) -> Dict[str, Any]:
+    def sign_in(self, name: str) -> dict[str, Any]:
         if not name.strip():
             raise ValueError("Name required")
         uid = f"user_{hash(name) % 10000}"
@@ -97,20 +95,20 @@ class _FakeDesktopLocalDataStore:
         self.attachments[att_id] = {"uid": uid, "job_key": job_key, **file_meta}
         return att_id
 
-    def get_current_user(self) -> Optional[Dict]:
+    def get_current_user(self) -> dict | None:
         return self._current_user
 
-    def get_saved_jobs(self, uid: str) -> List[Dict]:
+    def get_saved_jobs(self, uid: str) -> list[dict]:
         return self.saved_jobs.get(uid, [])
 
-    def get_attachment(self, att_id: str) -> Optional[Dict]:
+    def get_attachment(self, att_id: str) -> dict | None:
         return self.attachments.get(att_id)
 
 
 def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
     """Create a BridgeApi with all mocked dependencies."""
 
-    def load_state() -> Dict[str, List[Dict[str, Any]]]:
+    def load_state() -> dict[str, list[dict[str, Any]]]:
         return {
             "active": [
                 {"id": "src-1", "adapter": "static", "name": "Active Source"}
@@ -123,7 +121,7 @@ def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
             ],
         }
 
-    def summarize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, int]:
+    def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
         return {
             "activeCount": len(state.get("active") or []),
             "pendingCount": len(state.get("pending") or []),
@@ -131,8 +129,8 @@ def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
         }
 
     def persist_state_and_auto_sync(
-        state: Dict[str, Any], reason: str = None
-    ) -> Dict[str, Any]:
+        state: dict[str, Any], reason: str = None
+    ) -> dict[str, Any]:
         return state
 
     def source_identity(row: dict) -> str:

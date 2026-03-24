@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urljoin, urlparse
 
-from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.html_parsers import strip_html_text
+from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
@@ -24,12 +25,12 @@ def run(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    pages: List[str],
-    source_row: Dict[str, Any],
-    parse_jobpostings_from_html: Callable[..., List[Dict[str, Any]]] | None = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    pages: list[str],
+    source_row: dict[str, Any],
+    parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     **kwargs: Any,
-) -> List[RawJob]:
+) -> list[RawJob]:
     _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
@@ -114,8 +115,8 @@ def run(
     return cleaned
 
 
-def _extract_blizzard_role_links(html: str, page_url: str) -> List[str]:
-    out: List[str] = []
+def _extract_blizzard_role_links(html: str, page_url: str) -> list[str]:
+    out: list[str] = []
     seen = set()
     for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html):
         absolute = normalize_url(urljoin(page_url, clean_text(href)))
@@ -141,8 +142,8 @@ def _extract_blizzard_role_links(html: str, page_url: str) -> List[str]:
     return out
 
 
-def _extract_blizzard_search_results_links(html: str, page_url: str) -> List[str]:
-    out: List[str] = []
+def _extract_blizzard_search_results_links(html: str, page_url: str) -> list[str]:
+    out: list[str] = []
     seen = set()
     for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']*search-results[^"\']*)["\']', html):
         absolute = normalize_url(urljoin(page_url, clean_text(href)))
@@ -153,8 +154,8 @@ def _extract_blizzard_search_results_links(html: str, page_url: str) -> List[str
     return out
 
 
-def _parse_blizzard_search_results(*, html: str, company: str, source_id: str) -> List[RawJob]:
-    rows: List[RawJob] = []
+def _parse_blizzard_search_results(*, html: str, company: str, source_id: str) -> list[RawJob]:
+    rows: list[RawJob] = []
     seen = set()
     pattern = re.compile(r'(?is)<a[^>]+href=["\']([^"\']+/global/en/job/([^/"\']+)/[^"\']+)["\'][^>]*>(.*?)</a>')
     for match in pattern.finditer(html):
@@ -195,8 +196,8 @@ def _collect_blizzard_jobs(
     listing_html: str,
     company: str,
     source_id: str,
-) -> List[RawJob]:
-    rows: List[RawJob] = []
+) -> list[RawJob]:
+    rows: list[RawJob] = []
     seen_links = set()
     search_pages = _extract_blizzard_search_results_links(listing_html, page_url)
     if not search_pages:

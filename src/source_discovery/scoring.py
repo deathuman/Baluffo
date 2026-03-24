@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
 import re
-from typing import Any, Dict, List, Optional, Sequence
-
+from collections.abc import Sequence
+from typing import Any
 from urllib.parse import urlparse
 
-from .config import CAREERS_URL_HINTS, DEFAULT_DISCOVERY_CONFIG, DEFAULT_DISCOVERY_THRESHOLDS
+from .config import CAREERS_URL_HINTS, DEFAULT_DISCOVERY_THRESHOLDS
 
 
 def careers_keyword_count(text: str) -> int:
@@ -46,8 +45,8 @@ def _parse_sheet_openings_flag(value: Any) -> str:
     return "unknown"
 
 
-def unique_string_list(items: Sequence[str]) -> List[str]:
-    out: List[str] = []
+def unique_string_list(items: Sequence[str]) -> list[str]:
+    out: list[str] = []
     seen = set()
     for item in items:
         text = str(item or "").strip()
@@ -66,10 +65,10 @@ def to_slug(value: str) -> str:
     return re.sub(r"-{2,}", "-", re.sub(r"[^a-z0-9]+", "-", value.lower())).strip("-")
 
 
-def resolve_discovery_thresholds(config: Optional[Dict[str, Any]]) -> Dict[str, int]:
+def resolve_discovery_thresholds(config: dict[str, Any] | None) -> dict[str, int]:
     source = config if isinstance(config, dict) else {}
     raw = source.get("thresholds") if isinstance(source.get("thresholds"), dict) else {}
-    out: Dict[str, int] = {}
+    out: dict[str, int] = {}
     for key, default in DEFAULT_DISCOVERY_THRESHOLDS.items():
         value = raw.get(key, default)
         try:

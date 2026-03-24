@@ -5,7 +5,8 @@ or JS shell so JS-rendered content can be extracted.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
 from src.jobs.adapters.plugins.types import AdapterPluginContext
@@ -24,12 +25,12 @@ def run(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    pages: List[str],
-    source_row: Dict[str, Any],
-    parse_jobpostings_from_html: Callable[..., List[Dict[str, Any]]] | None = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    pages: list[str],
+    source_row: dict[str, Any],
+    parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     **kwargs: Any,
-) -> List[RawJob]:
+) -> list[RawJob]:
     if not pages or not callable(parse_jobpostings_from_html):
         return []
     page_url = clean_text(pages[0])

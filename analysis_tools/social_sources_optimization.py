@@ -5,16 +5,16 @@ Fine-tunes rate limits, confidence thresholds, and performance settings based on
 from production monitoring and analysis.
 """
 
-import sys
 import json
 import statistics
+import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any
 
 # Add current directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-def load_current_config(config_path: Path) -> Dict[str, Any]:
+def load_current_config(config_path: Path) -> dict[str, Any]:
     """Load the current social sources configuration."""
     try:
         with open(config_path) as f:
@@ -23,7 +23,7 @@ def load_current_config(config_path: Path) -> Dict[str, Any]:
         print(f"❌ Error loading config {config_path}: {e}")
         return {}
 
-def analyze_performance_data(report_path: Path) -> Dict[str, Any]:
+def analyze_performance_data(report_path: Path) -> dict[str, Any]:
     """Analyze performance data from pipeline reports."""
     try:
         with open(report_path) as f:
@@ -98,7 +98,7 @@ def analyze_performance_data(report_path: Path) -> Dict[str, Any]:
     
     return analysis
 
-def generate_optimization_recommendations(current_config: Dict[str, Any], performance_data: Dict[str, Any]) -> Dict[str, Any]:
+def generate_optimization_recommendations(current_config: dict[str, Any], performance_data: dict[str, Any]) -> dict[str, Any]:
     """Generate optimization recommendations based on performance analysis."""
     recommendations = {
         "rate_limit_optimizations": [],
@@ -207,7 +207,7 @@ def generate_optimization_recommendations(current_config: Dict[str, Any], perfor
     
     return recommendations
 
-def apply_optimizations(current_config: Dict[str, Any], recommendations: Dict[str, Any]) -> Dict[str, Any]:
+def apply_optimizations(current_config: dict[str, Any], recommendations: dict[str, Any]) -> dict[str, Any]:
     """Apply optimization recommendations to create new configuration."""
     optimized_config = current_config.copy()
     
@@ -244,8 +244,8 @@ def apply_optimizations(current_config: Dict[str, Any], recommendations: Dict[st
     
     return optimized_config
 
-def generate_optimization_report(current_config: Dict[str, Any], optimized_config: Dict[str, Any], 
-                                recommendations: Dict[str, Any], performance_data: Dict[str, Any]) -> str:
+def generate_optimization_report(current_config: dict[str, Any], optimized_config: dict[str, Any], 
+                                recommendations: dict[str, Any], performance_data: dict[str, Any]) -> str:
     """Generate a comprehensive optimization report."""
     report = []
     report.append("=" * 60)

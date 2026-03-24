@@ -4,7 +4,7 @@ import json
 import traceback
 from contextlib import suppress
 from http.server import BaseHTTPRequestHandler
-from typing import Any, Dict, List
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from src.bridge.request_utils import read_json_from_request
@@ -23,7 +23,7 @@ def make_handler(*, api: Any):
             # whitespace/control characters that otherwise cause routes to miss.
             return str(urlparse(self.path).path or "").strip()
 
-        def _route_query(self) -> Dict[str, List[str]]:
+        def _route_query(self) -> dict[str, list[str]]:
             return parse_qs(urlparse(self.path).query)
 
         def _send_json(self, payload: Any, status: int = 200) -> None:

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from src.jobs.text_utils import clean_text
 
 
-def parse_datetime(value: Any) -> Optional[datetime]:
+def parse_datetime(value: Any) -> datetime | None:
     if value is None:
         return None
     if isinstance(value, (int, float)):
@@ -19,7 +19,7 @@ def parse_datetime(value: Any) -> Optional[datetime]:
         if num > 10_000_000_000:
             num /= 1000.0
         try:
-            return datetime.fromtimestamp(num, tz=timezone.utc)
+            return datetime.fromtimestamp(num, tz=UTC)
         except (OverflowError, OSError, ValueError):
             return None
     text = clean_text(value)
@@ -34,8 +34,8 @@ def parse_datetime(value: Any) -> Optional[datetime]:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def to_iso(value: Any) -> str:

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List
+from collections.abc import Iterable
+from typing import Any
 
 from src.source_registry import (
-    ACTIVE_PATH,
     DISCOVERY_CANDIDATES_PATH,
     DISCOVERY_REPORT_PATH,
-    PENDING_PATH,
-    REJECTED_PATH,
     load_json_array,
     save_json_atomic,
     source_identity,
@@ -17,7 +15,7 @@ from src.source_registry import (
 from .scoring import careers_keyword_count, clean_token, studio_domain_match
 
 
-def endpoint_url(candidate: Dict[str, Any]) -> str:
+def endpoint_url(candidate: dict[str, Any]) -> str:
     for key in ("api_url", "feed_url", "board_url", "listing_url"):
         raw = str(candidate.get(key) or "").strip()
         if raw:
@@ -25,7 +23,7 @@ def endpoint_url(candidate: Dict[str, Any]) -> str:
     return ""
 
 
-def candidate_variant_key(candidate: Dict[str, Any]) -> str:
+def candidate_variant_key(candidate: dict[str, Any]) -> str:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     studio = clean_token(str(candidate.get("studio") or candidate.get("name") or ""))
     careers_url = str(candidate.get("careersUrl") or "").strip().lower()
@@ -34,9 +32,9 @@ def candidate_variant_key(candidate: Dict[str, Any]) -> str:
     return f"{adapter}:{studio}:{careers_url}"
 
 
-def collapse_competing_candidates(candidates: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    preferred: Dict[str, Dict[str, Any]] = {}
-    passthrough: List[Dict[str, Any]] = []
+def collapse_competing_candidates(candidates: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    preferred: dict[str, dict[str, Any]] = {}
+    passthrough: list[dict[str, Any]] = []
     for raw in candidates:
         if not isinstance(raw, dict):
             continue
@@ -69,9 +67,9 @@ def collapse_competing_candidates(candidates: Iterable[Dict[str, Any]]) -> List[
     return unique_sources([*passthrough, *preferred.values()])
 
 
-def collapse_competing_candidates_by_identity(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def collapse_competing_candidates_by_identity(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """Merge candidates by source_identity (e.g. for sheet_directory provider list)."""
-    seen: Dict[str, Dict[str, Any]] = {}
+    seen: dict[str, dict[str, Any]] = {}
     for row in rows:
         identity = source_identity(row)
         if not identity:
@@ -85,10 +83,10 @@ def collapse_competing_candidates_by_identity(rows: Iterable[Dict[str, Any]]) ->
     return list(seen.values())
 
 
-def load_existing_candidates() -> List[Dict[str, Any]]:
+def load_existing_candidates() -> list[dict[str, Any]]:
     return load_json_array(DISCOVERY_CANDIDATES_PATH)
 
 
-def write_discovery_outputs(report: Dict[str, Any]) -> None:
+def write_discovery_outputs(report: dict[str, Any]) -> None:
     save_json_atomic(DISCOVERY_REPORT_PATH, report)
 

@@ -7,16 +7,14 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.common import config as common_config
 from src.jobs.common.datetime_utils import to_iso
-from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
-from src.shared.utils import env_flag
-from src.shared.utils import coerce_int
+from src.shared.utils import coerce_int, env_flag
 
 TIMEOUT_BUCKET_SOURCE_NAMES = {
     "andarion games gmbh (gamesmap)",
@@ -25,7 +23,7 @@ TIMEOUT_BUCKET_SOURCE_NAMES = {
 }
 
 
-def _clean_errors(values: Any) -> List[str]:
+def _clean_errors(values: Any) -> list[str]:
     if not isinstance(values, list):
         return []
     cleaned = []
@@ -36,7 +34,7 @@ def _clean_errors(values: Any) -> List[str]:
     return cleaned
 
 
-def _base_detail(source_row: Dict[str, Any], *, status: str = "error", error: str = "") -> Dict[str, Any]:
+def _base_detail(source_row: dict[str, Any], *, status: str = "error", error: str = "") -> dict[str, Any]:
     source_name = clean_text(source_row.get("name")) or "unknown"
     studio_name = clean_text(source_row.get("studio")) or source_name
     pages = source_row.get("pages") if isinstance(source_row.get("pages"), list) else []
@@ -68,7 +66,7 @@ def _coerce_int(value: Any) -> int:
     return coerce_int(value, 0, minimum=0, maximum=2**31 - 1)
 
 
-def _normalize_job(raw: Any, source_row: Dict[str, Any]) -> Optional[RawJob]:
+def _normalize_job(raw: Any, source_row: dict[str, Any]) -> RawJob | None:
     if not isinstance(raw, dict):
         return None
     strict_validation = env_flag("BALUFFO_SCRAPY_VALIDATION_STRICT", common_config.DEFAULT_SCRAPY_VALIDATION_STRICT)
@@ -93,7 +91,7 @@ def _normalize_job(raw: Any, source_row: Dict[str, Any]) -> Optional[RawJob]:
     if not job_link:
         return None
     if not source_job_id:
-        source_job_id = hashlib.sha1(f"{title}|{company}|{job_link}".encode("utf-8")).hexdigest()[:12]
+        source_job_id = hashlib.sha1(f"{title}|{company}|{job_link}".encode()).hexdigest()[:12]
     posted_at = to_iso(raw.get("postedAt"))
     source_bundle = raw.get("sourceBundle")
     if not isinstance(source_bundle, list) or not source_bundle:
@@ -132,13 +130,13 @@ def run_scrapy_static_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-) -> List[RawJob]:
+) -> list[RawJob]:
     del fetch_text
 
     deps = runtime_deps.facade()
-    results_list: List[RawJob] = []
-    errors_list: List[str] = []
-    details: List[Dict[str, Any]] = []
+    results_list: list[RawJob] = []
+    errors_list: list[str] = []
+    details: list[dict[str, Any]] = []
 
     sources = deps.registry_entries("scrapy_static")
     if not sources:

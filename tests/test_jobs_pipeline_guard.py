@@ -1,8 +1,7 @@
-import json
-from pathlib import Path
 from unittest import mock
 
 from src import jobs_fetcher
+
 
 def test_pipeline_output_contract_preserves_camelcase_schema() -> None:
     """

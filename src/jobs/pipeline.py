@@ -8,40 +8,27 @@ import os
 import sys
 import time
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
+from src.contracts import SCHEMA_VERSION
+from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs import canonicalize as canonicalize_pkg
 from src.jobs import dedup as dedup_pkg
 from src.jobs import reporting as reporting_pkg
 from src.jobs import state as state_pkg
 from src.jobs import transport as transport_pkg
 from src.jobs.adapters import community as community_adapter
-from src.jobs.adapters.api import default_source_loaders as adapters_default_source_loaders
-from src.jobs.adapters import default_source_loaders as package_default_source_loaders
 from src.jobs.adapters import static as static_adapter
-from src.core.contracts import validate_canonical_jobs_payload
-from src.jobs.interfaces import SourceLoader
-from src.jobs.models import CanonicalJob
-from src.jobs.models import RawJob
+from src.jobs.adapters.api import default_source_loaders as adapters_default_source_loaders
 from src.jobs.common import config as common_config
 from src.jobs.common import social as common_social
 from src.jobs.common import sources as common_sources
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
-from src.contracts import SCHEMA_VERSION
-from src.jobs_fetcher_registry import SOURCE_REPORT_META
-from src.pipeline_io import (
-    read_existing_output as read_existing_output_from_file,
-    serialize_rows_for_csv,
-    serialize_rows_for_json,
-    write_atomic_if_changed,
-    write_text_if_changed,
-)
 from src.jobs.contamination_audit import build_public_text_quality_report
-from src.shared.utils import env_flag, now_iso
-from src.jobs.registry import STUDIO_SOURCE_REGISTRY, registry_entries
-from src.jobs.text_utils import clean_text, norm_text, sanitize_location_text
-from src.jobs.pipeline_stage_source_execution import SourceExecutionStageConfig, run_source_execution_stage
+from src.jobs.interfaces import SourceLoader
+from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_bootstrap import build_pipeline_paths
 from src.jobs.pipeline_loader_selection import (
     apply_incremental_cache_exclusions,
@@ -56,8 +43,27 @@ from src.jobs.pipeline_runtime import (
     initialize_task_runtime,
     make_fetch_text_limited,
     make_task_state_writer,
+)
+from src.jobs.pipeline_runtime import (
     write_progress_report as write_pipeline_progress_report,
 )
+from src.jobs.pipeline_stage_source_execution import (
+    SourceExecutionStageConfig,
+    run_source_execution_stage,
+)
+from src.jobs.registry import STUDIO_SOURCE_REGISTRY, registry_entries
+from src.jobs.text_utils import clean_text, norm_text, sanitize_location_text
+from src.jobs_fetcher_registry import SOURCE_REPORT_META
+from src.pipeline_io import (
+    read_existing_output as read_existing_output_from_file,
+)
+from src.pipeline_io import (
+    serialize_rows_for_csv,
+    serialize_rows_for_json,
+    write_atomic_if_changed,
+    write_text_if_changed,
+)
+from src.shared.utils import now_iso
 
 DEFAULT_OUTPUT_DIR = common_config.DEFAULT_OUTPUT_DIR
 DEFAULT_TIMEOUT_S = common_config.DEFAULT_TIMEOUT_S
@@ -113,14 +119,14 @@ append_excluded_default_sources = state_pkg.append_excluded_default_sources
 update_source_state_rows = state_pkg.update_source_state_rows
 
 
-def _rows_to_legacy_dicts(rows: List[CanonicalJob]) -> List[Dict[str, Any]]:
+def _rows_to_legacy_dicts(rows: list[CanonicalJob]) -> list[dict[str, Any]]:
     return [row.to_dict() if isinstance(row, CanonicalJob) else dict(row) for row in rows]
 
 
-def _apply_final_location_quality_guardrail(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _apply_final_location_quality_guardrail(rows: list[dict[str, Any]]) -> dict[str, Any]:
     field_counts: Counter[str] = Counter()
     reason_counts: Counter[str] = Counter()
-    examples: List[Dict[str, Any]] = []
+    examples: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -167,7 +173,7 @@ def _apply_final_location_quality_guardrail(rows: List[Dict[str, Any]]) -> Dict[
     }
 
 
-def _canonicalize_existing_output_row(row: Dict[str, Any], *, source: str, fetched_at: str) -> Dict[str, Any] | None:
+def _canonicalize_existing_output_row(row: dict[str, Any], *, source: str, fetched_at: str) -> dict[str, Any] | None:
     normalized = canonicalize_job(row, source=source, fetched_at=fetched_at)
     if not normalized:
         return None
@@ -177,7 +183,7 @@ def _canonicalize_existing_output_row(row: Dict[str, Any], *, source: str, fetch
     return payload
 
 
-def _percentile_ms(values: List[int], percentile: float) -> int:
+def _percentile_ms(values: list[int], percentile: float) -> int:
     if not values:
         return 0
     ordered = sorted(max(0, int(value or 0)) for value in values)
@@ -187,7 +193,7 @@ def _percentile_ms(values: List[int], percentile: float) -> int:
     return int(ordered[index])
 
 
-def build_runtime_timing_summary(source_reports: List[Dict[str, Any]], *, wall_clock_duration_ms: int = 0) -> Dict[str, Any]:
+def build_runtime_timing_summary(source_reports: list[dict[str, Any]], *, wall_clock_duration_ms: int = 0) -> dict[str, Any]:
     rows = [row for row in source_reports if isinstance(row, dict)]
     durations = [max(0, int(row.get("durationMs") or 0)) for row in rows]
     stage_keys = [
@@ -199,12 +205,12 @@ def build_runtime_timing_summary(source_reports: List[Dict[str, Any]], *, wall_c
         "redirectResolve",
         "canonicalization",
     ]
-    stage_totals: Dict[str, int] = {key: 0 for key in stage_keys}
+    stage_totals: dict[str, int] = {key: 0 for key in stage_keys}
     for row in rows:
         stage_timings = row.get("stageTimingsMs") if isinstance(row.get("stageTimingsMs"), dict) else {}
         for key in stage_keys:
             stage_totals[key] += max(0, int(stage_timings.get(key) or 0))
-    adapter_totals: Dict[str, Dict[str, int | str]] = {}
+    adapter_totals: dict[str, dict[str, int | str]] = {}
     for row in rows:
         adapter_name = clean_text(row.get("adapter")) or "custom"
         adapter_row = adapter_totals.setdefault(
@@ -322,8 +328,8 @@ def build_runtime_timing_summary(source_reports: List[Dict[str, Any]], *, wall_c
 def default_source_loaders(
     *,
     social_enabled: bool = False,
-    social_config: Optional[Dict[str, Any]] = None,
-) -> List[Tuple[str, SourceLoader]]:
+    social_config: dict[str, Any] | None = None,
+) -> list[tuple[str, SourceLoader]]:
     facade = sys.modules.get("src.jobs_fetcher")
     facade_loader = getattr(facade, "default_source_loaders", None) if facade is not None else None
     if callable(facade_loader) and facade_loader is not default_source_loaders:
@@ -354,7 +360,7 @@ def run_pipeline(
     backoff_s: float = DEFAULT_BACKOFF_S,
     preserve_previous_on_empty: bool = True,
     fetch_text: Callable[[str, int], str] = default_fetch_text,
-    source_loaders: Optional[List[Tuple[str, SourceLoader]]] = None,
+    source_loaders: list[tuple[str, SourceLoader]] | None = None,
     seed_from_existing_output: bool = False,
     source_ttl_minutes: int = 0,
     max_workers: int = 1,
@@ -369,13 +375,13 @@ def run_pipeline(
     circuit_breaker_cooldown_minutes: int = 180,
     ignore_circuit_breaker: bool = False,
     social_enabled: bool = False,
-    social_config_path: Optional[Path] = None,
+    social_config_path: Path | None = None,
     social_lookback_minutes: int = DEFAULT_SOCIAL_LOOKBACK_MINUTES,
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
     show_progress: bool = True,
-    selection_exclusions: Optional[List[Dict[str, Any]]] = None,
+    selection_exclusions: list[dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     output_dir = Path(output_dir)
     run_started_mono = time.perf_counter()
     paths = build_pipeline_paths(output_dir)
@@ -383,10 +389,10 @@ def run_pipeline(
     reset_location_quality_audit()
 
     started_at = clean_text(started_at_override) or now_iso()
-    source_reports: List[Dict[str, Any]] = []
+    source_reports: list[dict[str, Any]] = []
     if isinstance(selection_exclusions, list):
         source_reports.extend([row for row in selection_exclusions if isinstance(row, dict)])
-    canonical_rows: List[CanonicalJob] = []
+    canonical_rows: list[CanonicalJob] = []
     max_workers = max(1, int(max_workers or 1))
     max_per_domain = max(1, int(max_per_domain or 1))
     adapter_http_concurrency = max(1, int(adapter_http_concurrency or 1))
@@ -415,7 +421,7 @@ def run_pipeline(
             clean_text=clean_text,
         )
         canonical_rows.extend(CanonicalJob.from_mapping(row) for row in seeded_rows)
-    runtime_payload: Dict[str, Any] = {}
+    runtime_payload: dict[str, Any] = {}
 
     effective_social_config_path = Path(social_config_path) if social_config_path else (output_dir / "social-sources-config.json")
     social_config = load_social_config(
@@ -589,7 +595,7 @@ def run_pipeline(
         append_excluded_default_sources(source_reports)
 
     # Attach provenance for static sources (e.g. game_studios_sheet) so fetch report can filter by sourceDirectory
-    _static_name_to_row: Dict[str, Dict[str, Any]] = {}
+    _static_name_to_row: dict[str, dict[str, Any]] = {}
     for _row in registry_entries("static"):
         _name = static_adapter.static_source_name_for_registry_row(_row)
         _static_name_to_row[_name] = _row
@@ -891,9 +897,9 @@ def main() -> int:
     args = parse_args()
     env_run_id = clean_text(os.environ.get("BALUFFO_FETCH_RUN_ID"))
     env_started_at = clean_text(os.environ.get("BALUFFO_FETCH_STARTED_AT"))
-    source_loaders: Optional[List[Tuple[str, SourceLoader]]] = None
+    source_loaders: list[tuple[str, SourceLoader]] | None = None
     seed_from_existing_output = False
-    selection_exclusions: List[Dict[str, Any]] = []
+    selection_exclusions: list[dict[str, Any]] = []
     social_config = load_social_config(
         config_path=Path(args.social_config_path),
         enabled=bool(args.social_enabled),
@@ -952,7 +958,7 @@ def main() -> int:
             )
 
     forced_only_sources = bool(only_sources)
-    deduped_selection_exclusions: List[Dict[str, Any]] = []
+    deduped_selection_exclusions: list[dict[str, Any]] = []
     seen_selection_exclusions = set()
     for row in selection_exclusions:
         name = clean_text(row.get("name"))

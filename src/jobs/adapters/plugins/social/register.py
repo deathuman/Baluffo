@@ -2,19 +2,19 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import quote
+from xml.etree import ElementTree as ET
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import social_parsers as _social_parsers
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
-from src.jobs.models import RawJob
-from src.jobs.common.config import SOURCE_DIAGNOSTICS
+from src.jobs.common.config import DEFAULT_SOCIAL_MIN_CONFIDENCE, SOURCE_DIAGNOSTICS
 from src.jobs.common.fetch import fetch_with_retries
-from src.jobs.common.config import DEFAULT_SOCIAL_MIN_CONFIDENCE
+from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
-from xml.etree import ElementTree as ET
 
 
 def set_source_diagnostics(
@@ -22,8 +22,8 @@ def set_source_diagnostics(
     *,
     adapter: str,
     studio: str,
-    details: List[Dict[str, Any]] | None = None,
-    partial_errors: List[str] | None = None,
+    details: list[dict[str, Any]] | None = None,
+    partial_errors: list[str] | None = None,
 ) -> None:
     SOURCE_DIAGNOSTICS[source_name] = {
         "adapter": clean_text(adapter) or "unknown",
@@ -33,7 +33,7 @@ def set_source_diagnostics(
     }
 
 _REGISTERED = False
-_SOCIAL_CONFIG: Dict[str, Any] = {}
+_SOCIAL_CONFIG: dict[str, Any] = {}
 
 
 def _run_reddit(
@@ -42,8 +42,8 @@ def _run_reddit(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    subreddits: List[str] | None = None,
-) -> List[RawJob]:
+    subreddits: list[str] | None = None,
+) -> list[RawJob]:
     social_config = _SOCIAL_CONFIG if isinstance(_SOCIAL_CONFIG, dict) else {}
     cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
@@ -58,9 +58,9 @@ def _run_reddit(
     rss_fallback = bool(cfg.get("rssFallback", True))
     html_fallback = bool(cfg.get("htmlFallback", True))
     rate_limit_delay = float(cfg.get("rateLimitDelay", 2.0))  # Default 2 second delay between requests
-    details: List[Dict[str, Any]] = []
-    errors: List[str] = []
-    jobs: List[RawJob] = []
+    details: list[dict[str, Any]] = []
+    errors: list[str] = []
+    jobs: list[RawJob] = []
     low_conf_total = 0
 
     for i, sub in enumerate(subs):
@@ -68,9 +68,9 @@ def _run_reddit(
         json_url = f"https://www.reddit.com/r/{quote(sub, safe='')}/new.json?limit={max_posts}"
         rss_url = f"https://www.reddit.com/r/{quote(sub, safe='')}/new.rss"
         entry = {"adapter": "social", "studio": f"reddit/{sub}", "name": source_name, "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
-        parsed_rows: List[RawJob] = []
+        parsed_rows: list[RawJob] = []
         low_conf_sub = 0
-        reject_reason_counts: Dict[str, int] = {}
+        reject_reason_counts: dict[str, int] = {}
         error_messages = []
         
         # Add delay between requests to avoid rate limiting
@@ -151,7 +151,7 @@ def _run_reddit(
     return []
 
 
-def _run_x(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def _run_x(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     social_config = _SOCIAL_CONFIG if isinstance(_SOCIAL_CONFIG, dict) else {}
     cfg = social_config.get("x") if isinstance(social_config.get("x"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
@@ -165,9 +165,9 @@ def _run_x(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: in
     timeout_s = max(1, int(cfg.get("timeoutSeconds") or timeout_s))
     retries = max(0, int(cfg.get("retries") or retries))
     
-    details: List[Dict[str, Any]] = []
-    errors: List[str] = []
-    jobs: List[RawJob] = []
+    details: list[dict[str, Any]] = []
+    errors: list[str] = []
+    jobs: list[RawJob] = []
     low_conf_total = 0
 
     for query in queries:
@@ -176,9 +176,9 @@ def _run_x(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: in
         api_url = f"https://api.x.com/2/tweets/search/recent?query={quote(query, safe='')}&max_results={max_posts}"
         
         entry = {"adapter": "social", "studio": "x", "name": source_name, "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
-        parsed_rows: List[RawJob] = []
+        parsed_rows: list[RawJob] = []
         low_conf_sub = 0
-        reject_reason_counts: Dict[str, int] = {}
+        reject_reason_counts: dict[str, int] = {}
         error_messages = []
         
         try:
@@ -241,7 +241,7 @@ def _run_x(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: in
     return []
 
 
-def _run_mastodon(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def _run_mastodon(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     social_config = _SOCIAL_CONFIG if isinstance(_SOCIAL_CONFIG, dict) else {}
     cfg = social_config.get("mastodon") if isinstance(social_config.get("mastodon"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
@@ -256,9 +256,9 @@ def _run_mastodon(*, fetch_text: Callable[[str, int], str], timeout_s: int, retr
     timeout_s = max(1, int(cfg.get("timeoutSeconds") or timeout_s))
     retries = max(0, int(cfg.get("retries") or retries))
     
-    details: List[Dict[str, Any]] = []
-    errors: List[str] = []
-    jobs: List[RawJob] = []
+    details: list[dict[str, Any]] = []
+    errors: list[str] = []
+    jobs: list[RawJob] = []
     low_conf_total = 0
 
     for instance in instances:
@@ -267,9 +267,9 @@ def _run_mastodon(*, fetch_text: Callable[[str, int], str], timeout_s: int, retr
             api_url = f"{instance.rstrip('/')}/api/v1/timelines/tag/{hashtag}?limit={max_posts}"
             
             entry = {"adapter": "social", "studio": "mastodon", "name": source_name, "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
-            parsed_rows: List[RawJob] = []
+            parsed_rows: list[RawJob] = []
             low_conf_sub = 0
-            reject_reason_counts: Dict[str, int] = {}
+            reject_reason_counts: dict[str, int] = {}
             error_messages = []
             
             try:
@@ -312,7 +312,7 @@ def _run_mastodon(*, fetch_text: Callable[[str, int], str], timeout_s: int, retr
     return []
 
 
-def ensure_registered(*, social_config: Dict[str, Any]) -> None:
+def ensure_registered(*, social_config: dict[str, Any]) -> None:
     global _REGISTERED
     global _SOCIAL_CONFIG
     _SOCIAL_CONFIG = dict(social_config or {})

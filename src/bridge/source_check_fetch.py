@@ -5,7 +5,8 @@ or other callers wire discovery and bridge modules once. Used by check_static_so
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Tuple
+from collections.abc import Callable
+from typing import Any
 
 
 def fetch_html_with_fallback(
@@ -15,9 +16,9 @@ def fetch_html_with_fallback(
     fetch_text: Callable[[str, int], str],
     looks_like_challenge: Callable[[str], bool],
     has_extractable_job_data: Callable[[str, str], bool],
-    try_playwright: Callable[[str, int], Tuple[str, str]],
+    try_playwright: Callable[[str, int], tuple[str, str]],
     is_http_forbidden: Callable[[Exception], bool],
-) -> Tuple[str, str, bool, bool]:
+) -> tuple[str, str, bool, bool]:
     """Return (html, error, browser_attempted, browser_used)."""
     try:
         html = fetch_text(url, timeout_s)
@@ -56,11 +57,11 @@ def fetch_static_page_with_alternates(
     page_url: str,
     timeout_s: int,
     *,
-    fetch_html_with_fallback_fn: Callable[[str, int], Tuple[str, str, bool, bool]],
+    fetch_html_with_fallback_fn: Callable[[str, int], tuple[str, str, bool, bool]],
     suggest_alternate_urls: Callable[[str], list],
     discover_redirect_career_candidates: Callable[[str, int], Any],
     is_not_found_error_text: Callable[[str], bool],
-) -> Tuple[str, str, bool, bool, str]:
+) -> tuple[str, str, bool, bool, str]:
     """Return (html, error, browser_attempted, browser_used, alt_url_used)."""
     html, fetch_error, attempted, used = fetch_html_with_fallback_fn(page_url, timeout_s)
     if not fetch_error or not is_not_found_error_text(fetch_error):

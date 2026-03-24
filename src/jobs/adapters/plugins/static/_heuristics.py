@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from typing import List
-from urllib.parse import urljoin
-
 import re
+from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.text_utils import clean_text, normalize_url
@@ -74,10 +72,10 @@ def detect_no_openings(html: str) -> bool:
     return any(m in s for m in markers)
 
 
-def detect_outbound_ats_links(html: str, *, base_url: str) -> List[str]:
+def detect_outbound_ats_links(html: str, *, base_url: str) -> list[str]:
     """Find outbound links to known ATS/job platforms."""
     s = normalize_html(html)
-    links: List[str] = []
+    links: list[str] = []
     for m in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', s):
         href = clean_text(m.group(1))
         if not href:
@@ -102,7 +100,7 @@ def detect_outbound_ats_links(html: str, *, base_url: str) -> List[str]:
         ):
             links.append(absolute)
     # Dedup but keep stable order.
-    out: List[str] = []
+    out: list[str] = []
     seen = set()
     for url in links:
         if url in seen:

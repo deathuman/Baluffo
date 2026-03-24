@@ -14,23 +14,24 @@ import sys
 import tempfile
 import time
 import traceback
-import uuid
 import urllib.error
 import urllib.request
+import uuid
 import webbrowser
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any
 
 if os.name == "nt":
     import ctypes
     import winreg
 
-from src.ship.runtime_launcher import wait_for_url
-from src.ship.startup_profile import summarize_startup_metrics, write_startup_summary
 from src.app_version import get_app_version
 from src.baluffo_config import get_desktop_defaults
+from src.ship.runtime_launcher import wait_for_url
+from src.ship.startup_profile import summarize_startup_metrics, write_startup_summary
 
 DESKTOP_DEFAULTS = get_desktop_defaults()
 WINDOW_TITLE = "Baluffo"
@@ -82,7 +83,7 @@ class InstanceLock:
 
 def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
     row = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "event": str(event or "").strip() or "unknown",
         "fields": {key: value for key, value in fields.items()},
     }
@@ -491,7 +492,7 @@ def _read_instance_lock_payload(path: Path) -> dict[str, object]:
 def _make_lock_payload(*, launcher_token: str, state: str, session_root: Path, created_at: str | None = None) -> dict[str, object]:
     return {
         "pid": int(os.getpid()),
-        "createdAt": str(created_at or datetime.now(timezone.utc).isoformat()),
+        "createdAt": str(created_at or datetime.now(UTC).isoformat()),
         "launcherToken": str(launcher_token or ""),
         "exePath": _current_exe_path(),
         "sessionRoot": str(session_root),
@@ -624,12 +625,12 @@ def update_instance_lock_state(lock: InstanceLock, state: str) -> None:
             launcher_token=str(lock.launcher_token or uuid.uuid4().hex),
             state=str(state or "launching"),
             session_root=lock.path.parent,
-            created_at=str(lock.created_at or datetime.now(timezone.utc).isoformat()),
+            created_at=str(lock.created_at or datetime.now(UTC).isoformat()),
         )
     else:
         payload["state"] = str(state or "launching")
         payload.setdefault("launcherToken", str(lock.launcher_token or ""))
-        payload.setdefault("createdAt", str(lock.created_at or datetime.now(timezone.utc).isoformat()))
+        payload.setdefault("createdAt", str(lock.created_at or datetime.now(UTC).isoformat()))
         payload.setdefault("exePath", _current_exe_path())
     if int(lock.handle or 0) <= 2:
         with contextlib.suppress(OSError):
@@ -1181,7 +1182,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             "appVersion": get_app_version(),
             "launcherPid": os.getpid(),
             "launcherToken": str(instance_lock.launcher_token or launcher_token),
-            "launcherStartedAt": str(instance_lock.created_at or datetime.now(timezone.utc).isoformat()),
+            "launcherStartedAt": str(instance_lock.created_at or datetime.now(UTC).isoformat()),
             "sitePort": int(config.site_port),
             "bridgePort": int(config.bridge_port),
             "bridgeHost": str(config.bridge_host),
@@ -1190,7 +1191,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             "browserPath": str(launch_result.get("browserPath") or ""),
             "exePath": _current_exe_path(),
             "dataDir": str(config.data_dir),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
         update_instance_lock_state(instance_lock, "running")
         session_state_written = True

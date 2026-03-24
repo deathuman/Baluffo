@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from src.baluffo_config import get_storage_defaults
 
@@ -139,5 +139,5 @@ LIFECYCLE_ARCHIVE_RETENTION_DAYS = 120
 TARGET_PROFESSIONS = {"technical-artist", "environment-artist"}
 
 # Mutable diagnostics map used across fetch runs.
-SOURCE_DIAGNOSTICS: Dict[str, Dict[str, Any]] = {}
+SOURCE_DIAGNOSTICS: dict[str, dict[str, Any]] = {}
 

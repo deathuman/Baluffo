@@ -5,17 +5,16 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import functools
 import json
 import os
 import runpy
 import socket
 import sys
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Iterator
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -23,9 +22,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.ship import update_manager
 from src.app_version import get_app_version
 from src.baluffo_config import get_bridge_defaults, get_desktop_defaults
+from src.ship import update_manager
 
 BRIDGE_DEFAULTS = get_bridge_defaults()
 DESKTOP_DEFAULTS = get_desktop_defaults()

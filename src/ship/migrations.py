@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List
 
 
 @dataclass(frozen=True)
@@ -32,13 +32,13 @@ class NoopMigration(BaseMigration):
     name = "noop"
 
 
-MIGRATIONS: Dict[str, BaseMigration] = {
+MIGRATIONS: dict[str, BaseMigration] = {
     "noop": NoopMigration(),
 }
 
 
-def resolve_migrations(names: Iterable[str]) -> List[BaseMigration]:
-    resolved: List[BaseMigration] = []
+def resolve_migrations(names: Iterable[str]) -> list[BaseMigration]:
+    resolved: list[BaseMigration] = []
     for raw_name in names:
         name = str(raw_name or "").strip()
         if not name:

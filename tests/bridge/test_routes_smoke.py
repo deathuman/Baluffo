@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.bridge.api import BridgeApi
 from src.bridge.registry_service import RegistryPaths, RegistryService
@@ -23,7 +23,7 @@ class _RuntimeConfig:
 
 class _FakeHandler:
     def __init__(self) -> None:
-        self.sent: List[Dict[str, Any]] = []
+        self.sent: list[dict[str, Any]] = []
 
     def _send_json(self, payload: Any, status: int = 200) -> None:  # noqa: SLF001
         self.sent.append({"status": int(status), "payload": payload})
@@ -31,9 +31,9 @@ class _FakeHandler:
 
 class _FakeDesktopLocalDataStore:
     def __init__(self) -> None:
-        self.sign_in_calls: List[str] = []
+        self.sign_in_calls: list[str] = []
 
-    def sign_in(self, name: str) -> Dict[str, Any]:
+    def sign_in(self, name: str) -> dict[str, Any]:
         self.sign_in_calls.append(str(name))
         return {"uid": "u1", "name": str(name)}
 
@@ -41,10 +41,10 @@ class _FakeDesktopLocalDataStore:
 def _make_api(tmp_path: Path) -> BridgeApi:
     store = _FakeDesktopLocalDataStore()
 
-    def load_state() -> Dict[str, List[Dict[str, Any]]]:
+    def load_state() -> dict[str, list[dict[str, Any]]]:
         return {"active": [{"adapter": "static", "listing_url": "https://example.com/jobs"}], "pending": [], "rejected": []}
 
-    def summarize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, int]:
+    def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
         return {
             "activeCount": len(state.get("active") or []),
             "pendingCount": len(state.get("pending") or []),
@@ -120,7 +120,7 @@ def test_get_routes_discovery_report_never_drops_connection_on_error(tmp_path: P
     handler = _FakeHandler()
 
     # Force a failure in the loader so the route must return a 500 JSON body.
-    def _broken_loader(*_a: Any, **_kw: Any) -> Dict[str, Any]:  # noqa: ANN001
+    def _broken_loader(*_a: Any, **_kw: Any) -> dict[str, Any]:  # noqa: ANN001
         raise RuntimeError("boom")
 
     api.load_json_object = _broken_loader  # type: ignore[assignment]
@@ -144,9 +144,9 @@ def test_post_routes_smoke_desktop_sign_in(tmp_path: Path) -> None:
 def test_post_routes_run_discovery_passes_payload_by_keyword(tmp_path: Path) -> None:
     api = _make_api(tmp_path)
     handler = _FakeHandler()
-    calls: List[Dict[str, Any]] = []
+    calls: list[dict[str, Any]] = []
 
-    def _trigger_discovery_task(*, route_name: str, payload: Dict[str, Any] | None = None) -> tuple[int, Dict[str, Any]]:
+    def _trigger_discovery_task(*, route_name: str, payload: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
         calls.append({"route_name": route_name, "payload": payload})
         return 200, {"started": True, "route": route_name, "preset": str((payload or {}).get("preset") or "")}
 

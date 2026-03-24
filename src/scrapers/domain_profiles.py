@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 
@@ -11,7 +11,7 @@ def _clean_text(value: Any) -> str:
     return str(value or "").strip()
 
 
-DOMAIN_PROFILES: Dict[str, Dict[str, Any]] = {
+DOMAIN_PROFILES: dict[str, dict[str, Any]] = {
     "www.valvesoftware.com": {
         "include_query_keys": ["job_id"],
         "exclude_path_tokens": ["/faq", "/team", "/about"],
@@ -128,13 +128,13 @@ DOMAIN_PROFILES: Dict[str, Dict[str, Any]] = {
 }
 
 
-def domain_profile_for_url(url: str) -> Dict[str, Any]:
+def domain_profile_for_url(url: str) -> dict[str, Any]:
     """Return the domain profile dict for the given URL (host key); empty dict if unknown."""
     host = _clean_text(urlparse(url).netloc).lower()
     return dict(DOMAIN_PROFILES.get(host) or {})
 
 
-def is_probable_job_detail_url(url: str, profile: Dict[str, Any]) -> bool:
+def is_probable_job_detail_url(url: str, profile: dict[str, Any]) -> bool:
     """True if the URL looks like a job detail page given the domain profile."""
     parsed = urlparse(url)
     path = _clean_text(parsed.path).lower()
@@ -168,7 +168,7 @@ def is_probable_job_detail_url(url: str, profile: Dict[str, Any]) -> bool:
     return False
 
 
-def is_likely_listing_url(url: str, profile: Dict[str, Any]) -> bool:
+def is_likely_listing_url(url: str, profile: dict[str, Any]) -> bool:
     """True if the URL looks like a job listing page (not a sub-page like 'our offices')."""
     parsed = urlparse(url)
     path = _clean_text(parsed.path).lower()
@@ -179,7 +179,7 @@ def is_likely_listing_url(url: str, profile: Dict[str, Any]) -> bool:
     return True
 
 
-def pick_canonical_listing_url(pages: List[str]) -> Optional[str]:
+def pick_canonical_listing_url(pages: list[str]) -> str | None:
     """Pick one canonical listing URL from a list (shortest path among listing-like URLs)."""
     if not pages:
         return None

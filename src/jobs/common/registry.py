@@ -6,7 +6,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 from src.jobs.common.config import SCRAPY_BROWSER_QUEUE_PATH
@@ -14,7 +14,7 @@ from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
 
 
-def _static_source_primary_host(row: Dict[str, Any]) -> str:
+def _static_source_primary_host(row: dict[str, Any]) -> str:
     pages = row.get("pages") if isinstance(row.get("pages"), list) else []
     url = (pages[0] if pages else None) or clean_text(row.get("listing_url")) or ""
     if not url:
@@ -29,7 +29,7 @@ def _static_source_primary_host(row: Dict[str, Any]) -> str:
         return ""
 
 
-def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> List[Dict[str, Any]]:
+def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> list[dict[str, Any]]:
     queue_path = SCRAPY_BROWSER_QUEUE_PATH
     common_module = sys.modules.get("src.jobs.common")
     if common_module is not None:
@@ -45,7 +45,7 @@ def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> 
     except (OSError, json.JSONDecodeError):
         return []
 
-    by_source: Dict[str, List[Dict[str, Any]]] = {}
+    by_source: dict[str, list[dict[str, Any]]] = {}
     for row in payload:
         if not isinstance(row, dict):
             continue
@@ -57,10 +57,10 @@ def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> 
         source_id = clean_text(row.get("sourceId")) or f"scrapy_static:{hashlib.sha1(page.encode('utf-8')).hexdigest()[:12]}"
         by_source.setdefault(source_id, []).append(row)
 
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for source_id, group in by_source.items():
-        def path_len(r: Dict[str, Any]) -> int:
-            return len((urlparse(clean_text(r.get("page")) or "").path))
+        def path_len(r: dict[str, Any]) -> int:
+            return len(urlparse(clean_text(r.get("page")) or "").path)
 
         best = min(group, key=path_len)
         page = clean_text(best.get("page")) or ""
@@ -84,8 +84,8 @@ def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> 
 
 
 def _provider_keys_present_in_registry(
-    studio_source_registry: List[Dict[str, Any]],
-    redundant_static_rules: List[Dict[str, Any]],
+    studio_source_registry: list[dict[str, Any]],
+    redundant_static_rules: list[dict[str, Any]],
     *,
     enabled_only: bool = True,
 ) -> set[tuple[str, str]]:
@@ -111,13 +111,13 @@ def registry_entries(
     adapter: str,
     *,
     enabled_only: bool = True,
-    studio_source_registry: List[Dict[str, Any]],
-    redundant_static_rules: Optional[List[Dict[str, Any]]] = None,
-) -> List[Dict[str, Any]]:
+    studio_source_registry: list[dict[str, Any]],
+    redundant_static_rules: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     if adapter == "scrapy_static":
         return _scrapy_static_registry_from_browser_queue(enabled_only=enabled_only)
 
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for row in studio_source_registry:
         if clean_text(row.get("adapter")) != adapter:
             continue
@@ -131,7 +131,7 @@ def registry_entries(
     rules = redundant_static_rules if isinstance(redundant_static_rules, list) else []
     if adapter == "static" and rules:
         provider_keys = _provider_keys_present_in_registry(studio_source_registry, rules, enabled_only=enabled_only)
-        filtered: List[Dict[str, Any]] = []
+        filtered: list[dict[str, Any]] = []
         for r in rows:
             host = _static_source_primary_host(r)
             if not host:

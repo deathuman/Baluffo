@@ -9,7 +9,7 @@ import json
 import os
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,13 +17,13 @@ DIST_DIR = ROOT / "dist" / "baluffo-ship"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.app_version import APP_VERSION
-from src.baluffo_config import get_sync_defaults
 from scripts.build_frontend_runtime_config import (
     build_frontend_runtime_config_payload,
     render_frontend_runtime_config_js,
     write_frontend_runtime_config,
 )
+from src.app_version import APP_VERSION
+from src.baluffo_config import get_sync_defaults
 from src.python_version_guard import ensure_required_python
 
 DEFAULT_BUNDLE_VERSION = APP_VERSION
@@ -150,7 +150,7 @@ def _resolve_runtime_asset_source(rel: str) -> Path:
 
 
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _hash_file(path: Path) -> str:
@@ -344,7 +344,10 @@ def _maybe_generate_packaged_sync_config() -> Path | None:
             "Packaged sync build configuration did not provide a usable private key PEM."
         )
 
-    from scripts.build_sync_app_config import build_packaged_sync_payload, write_packaged_sync_config
+    from scripts.build_sync_app_config import (
+        build_packaged_sync_payload,
+        write_packaged_sync_config,
+    )
     from src import source_sync
 
     branch = _env_value(PACKAGED_SYNC_BUILD_ENV["branch"]) or str(SYNC_DEFAULTS["default_branch"])

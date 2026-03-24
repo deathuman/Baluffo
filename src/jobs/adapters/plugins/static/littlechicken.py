@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urljoin, urlparse
 
-from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.html_parsers import strip_html_text
+from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
@@ -23,11 +24,11 @@ def run(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    pages: List[str],
-    source_row: Dict[str, Any],
-    parse_jobpostings_from_html: Callable[..., List[Dict[str, Any]]] | None = None,
+    pages: list[str],
+    source_row: dict[str, Any],
+    parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]] | None = None,
     **kwargs: Any,
-) -> List[RawJob]:
+) -> list[RawJob]:
     _ = kwargs
     if not pages or not callable(parse_jobpostings_from_html):
         return []
@@ -35,9 +36,9 @@ def run(
     source_id = (source_row.get("id") or "").strip() or "littlechicken"
     source_name = clean_text(source_row.get("name")) or "littlechicken"
 
-    fetched_pages: Dict[str, str] = {}
-    listing_urls: List[str] = []
-    detail_urls: List[str] = []
+    fetched_pages: dict[str, str] = {}
+    listing_urls: list[str] = []
+    detail_urls: list[str] = []
     for raw_url in pages:
         page_url = clean_text(raw_url)
         if not page_url or page_url in fetched_pages:
@@ -58,7 +59,7 @@ def run(
         else:
             listing_urls.append(page_url)
 
-    rows: List[RawJob] = []
+    rows: list[RawJob] = []
     seen_links = set()
 
     for listing_url in listing_urls:

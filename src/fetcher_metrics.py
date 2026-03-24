@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
-from typing import Any, Dict, List, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 
@@ -54,11 +54,11 @@ def sanitize_source_label(value: Any, *, max_len: int = 64) -> str:
     return clean
 
 
-def summarize_source_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+def summarize_source_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     total = max(1, len(rows))
     failed = [row for row in rows if str(row.get("status") or "").strip().lower() == "error"]
     excluded = [row for row in rows if str(row.get("status") or "").strip().lower() == "excluded"]
-    durations: List[Tuple[str, int]] = []
+    durations: list[tuple[str, int]] = []
     for row in rows:
         try:
             ms = int(row.get("durationMs") or 0)
@@ -76,7 +76,7 @@ def summarize_source_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def percentile(values: List[int], pct: float) -> int:
+def percentile(values: list[int], pct: float) -> int:
     if not values:
         return 0
     ordered = sorted(int(max(0, value)) for value in values)
@@ -86,14 +86,14 @@ def percentile(values: List[int], pct: float) -> int:
     return int(ordered[index])
 
 
-def summarize_run_history(rows: List[Dict[str, Any]], window: int) -> Dict[str, Any]:
+def summarize_run_history(rows: list[dict[str, Any]], window: int) -> dict[str, Any]:
     clean_rows = [row for row in rows if isinstance(row, dict) and str(row.get("type") or "").lower() == "fetch"]
     clean_rows.sort(
         key=lambda row: parse_iso(row.get("finishedAt") or row.get("startedAt")) or datetime.min,
         reverse=True,
     )
     sampled = clean_rows[: max(1, int(window or 1))]
-    durations: List[int] = []
+    durations: list[int] = []
     for row in sampled:
         try:
             durations.append(max(0, int(row.get("durationMs") or 0)))
@@ -114,7 +114,7 @@ def summarize_run_history(rows: List[Dict[str, Any]], window: int) -> Dict[str, 
     }
 
 
-def build_metrics(report: Dict[str, Any], history: List[Dict[str, Any]], window: int) -> Dict[str, Any]:
+def build_metrics(report: dict[str, Any], history: list[dict[str, Any]], window: int) -> dict[str, Any]:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     sources = report.get("sources") if isinstance(report.get("sources"), list) else []
     input_count = int(summary.get("inputCount") or 0)
@@ -126,7 +126,7 @@ def build_metrics(report: Dict[str, Any], history: List[Dict[str, Any]], window:
     timing_summary = runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
     durations = [max(0, int(row.get("durationMs") or 0)) for row in sources if isinstance(row, dict)]
     return {
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": datetime.now(UTC).isoformat(),
         "latestRun": {
             "startedAt": str(report.get("startedAt") or ""),
             "finishedAt": str(report.get("finishedAt") or ""),

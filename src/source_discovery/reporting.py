@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Any
 
 from src.shared.utils import now_iso
 
@@ -11,16 +12,16 @@ from .scoring import unique_string_list
 
 
 def build_stage_summary(
-    current_candidates: List[Dict[str, Any]],
+    current_candidates: list[dict[str, Any]],
     *,
     found_endpoint_count: int,
-    generated_count_by_stage: Dict[str, int],
-    survived_dedupe_count_by_stage: Dict[str, int],
-    probed_count_by_stage: Dict[str, int],
-    queued_count_by_stage: Dict[str, int],
+    generated_count_by_stage: dict[str, int],
+    survived_dedupe_count_by_stage: dict[str, int],
+    probed_count_by_stage: dict[str, int],
+    queued_count_by_stage: dict[str, int],
     probed: int,
     healthy: int,
-    failures: List[Dict[str, Any]],
+    failures: list[dict[str, Any]],
     skipped_duplicate_count: int,
     skipped_invalid: int,
     skipped_low_evidence_probe_count: int,
@@ -29,18 +30,18 @@ def build_stage_summary(
     queue_filtered_count: int,
     adapter_counter: Counter[str],
     method_counter: Counter[str],
-    duplicate_reasons: Dict[str, int],
-    deferred_counts: Optional[Dict[str, int]] = None,
-    queued_by_adapter: Optional[Dict[str, int]] = None,
-    deferred_by_adapter: Optional[Dict[str, int]] = None,
-    healthy_but_deferred_by_adapter: Optional[Dict[str, int]] = None,
+    duplicate_reasons: dict[str, int],
+    deferred_counts: dict[str, int] | None = None,
+    queued_by_adapter: dict[str, int] | None = None,
+    deferred_by_adapter: dict[str, int] | None = None,
+    healthy_but_deferred_by_adapter: dict[str, int] | None = None,
     suppressed_static_count: int = 0,
-    suppressed_static_by_reason: Optional[Dict[str, int]] = None,
-    suppressed_static_by_stage: Optional[Dict[str, int]] = None,
-    thresholds: Dict[str, Any],
+    suppressed_static_by_reason: dict[str, int] | None = None,
+    suppressed_static_by_stage: dict[str, int] | None = None,
+    thresholds: dict[str, Any],
     phase: str = "",
     phase_label: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build the discovery report summary dict. Pure function; all inputs passed explicitly."""
     deferred_reason_rows = deferred_counts or {}
     deferred_by_cap = int(sum(int(value or 0) for value in deferred_reason_rows.values()))
@@ -74,7 +75,7 @@ def build_stage_summary(
         "suppressedStaticByReason": dict(suppressed_static_by_reason or {}),
         "suppressedStaticByStage": dict(suppressed_static_by_stage or {}),
         "queuedProviderCount": int(sum(value for key, value in dict(queued_by_adapter or {}).items() if str(key) != "static")),
-        "queuedStaticCount": int((dict(queued_by_adapter or {}).get("static") or 0)),
+        "queuedStaticCount": int(dict(queued_by_adapter or {}).get("static") or 0),
         "methodCounts": dict(method_counter),
         "generatedCountByStage": dict(generated_count_by_stage),
         "survivedDedupeCountByStage": dict(survived_dedupe_count_by_stage),
@@ -99,9 +100,9 @@ def build_stage_summary(
 
 def build_discovery_task_progress(
     *,
-    summary: Dict[str, Any],
+    summary: dict[str, Any],
     finished: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     phase_key = str(summary.get("phaseKey") or summary.get("phase") or "").strip() or ("completed" if finished else "starting")
     phase_label = str(summary.get("phaseLabel") or "").strip() or ("Discovery completed" if finished else "Initializing scan")
     found_count = int(summary.get("foundEndpointCount") or 0)
@@ -150,7 +151,7 @@ def emit_log(message: str) -> None:
     print(line, flush=True)
 
 
-def _validate_evidence_types(values: List[str], *, context: str) -> List[str]:
+def _validate_evidence_types(values: list[str], *, context: str) -> list[str]:
     cleaned = unique_string_list([str(item or "").strip() for item in (values or []) if str(item or "").strip()])
     unknown = [item for item in cleaned if item not in EVIDENCE_TYPES_SET]
     if unknown:
@@ -158,7 +159,7 @@ def _validate_evidence_types(values: List[str], *, context: str) -> List[str]:
     return [item for item in cleaned if item in EVIDENCE_TYPES_SET]
 
 
-def summarize_failures(failures: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def summarize_failures(failures: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     counter: Counter[str] = Counter()
     for row in failures:
         key = str(row.get("key") or row.get("adapter") or "unknown")
@@ -166,11 +167,11 @@ def summarize_failures(failures: Iterable[Dict[str, Any]]) -> List[Dict[str, Any
     return [{"key": key, "count": count} for key, count in counter.most_common(5)]
 
 
-def stage_curated_seed_candidates() -> List[Dict[str, Any]]:
-    from src.source_registry import unique_sources
+def stage_curated_seed_candidates() -> list[dict[str, Any]]:
     import src.source_discovery as sd
+    from src.source_registry import unique_sources
 
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for raw in getattr(sd, "STATIC_DISCOVERY_CANDIDATES", []):
         if not isinstance(raw, dict):
             continue
@@ -189,9 +190,9 @@ def stage_curated_seed_candidates() -> List[Dict[str, Any]]:
 
 
 def merge_candidate_streams(
-    streams: Iterable[Tuple[str, List[Dict[str, Any]]]],
-) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
+    streams: Iterable[tuple[str, list[dict[str, Any]]]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for stage, items in streams:
         for raw in items:
             if not isinstance(raw, dict):

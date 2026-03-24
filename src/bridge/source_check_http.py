@@ -7,7 +7,7 @@ for bridge/source_checker.check_static_source.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
@@ -57,7 +57,7 @@ def normalize_error_code(error_text: str) -> str:
     return "probe_failed"
 
 
-def suggest_alternate_career_urls(url: str) -> List[str]:
+def suggest_alternate_career_urls(url: str) -> list[str]:
     parsed = urlparse(str(url or "").strip())
     host = (parsed.netloc or "").strip().lower()
     if not host:
@@ -84,7 +84,7 @@ def suggest_alternate_career_urls(url: str) -> List[str]:
     else:
         candidates_raw.append(f"https://www.{base_host}{path}")
 
-    out: List[str] = []
+    out: list[str] = []
     seen = set()
     for raw in candidates_raw:
         normalized = normalize_source_url(raw)
@@ -95,7 +95,7 @@ def suggest_alternate_career_urls(url: str) -> List[str]:
     return out[:5]
 
 
-def discover_redirect_career_candidates(source_url: str, timeout_s: int) -> List[str]:
+def discover_redirect_career_candidates(source_url: str, timeout_s: int) -> list[str]:
     parsed = urlparse(str(source_url or "").strip())
     host = (parsed.netloc or "").strip().lower()
     if not host:
@@ -108,7 +108,7 @@ def discover_redirect_career_candidates(source_url: str, timeout_s: int) -> List
     if not base_host.startswith("www."):
         roots.append(f"https://www.{base_host}/")
 
-    out: List[str] = []
+    out: list[str] = []
     seen = set()
     for root in roots:
         body = ""
@@ -178,9 +178,9 @@ def looks_like_browser_challenge_page(html: str) -> bool:
 
 def build_check_failure_details(
     error_text: str, source_url: str, *, browser_fallback_attempted: bool = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     code = normalize_error_code(error_text)
-    details: Dict[str, Any] = {
+    details: dict[str, Any] = {
         "errorCode": code,
         "browserFallbackAttempted": bool(browser_fallback_attempted),
     }

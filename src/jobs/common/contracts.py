@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from src.contracts import SCHEMA_VERSION
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text, norm_text
-from src.jobs_fetcher_registry import SOURCE_REPORT_META
 
 
-def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count: int) -> Dict[str, Any]:
+def normalize_runtime_payload(runtime: dict[str, Any], *, selected_source_count: int) -> dict[str, Any]:
     src = runtime if isinstance(runtime, dict) else {}
     payload = {
         "selectedSourceCount": _clamped_int(src.get("selectedSourceCount"), selected_source_count, 0),
@@ -130,10 +129,10 @@ def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count:
     return payload
 
 
-def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     src = row if isinstance(row, dict) else {}
 
-    def _normalize_loss(loss: Any) -> Dict[str, Any]:
+    def _normalize_loss(loss: Any) -> dict[str, Any]:
         payload = loss if isinstance(loss, dict) else {}
         drop_reasons = payload.get("canonicalDropReasons") if isinstance(payload.get("canonicalDropReasons"), dict) else {}
         return {
@@ -156,7 +155,7 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
             "staticDetailParseEmpty": _clamped_int(payload.get("staticDetailParseEmpty"), 0, 0),
         }
 
-    normalized: Dict[str, Any] = {
+    normalized: dict[str, Any] = {
         "name": clean_text(src.get("name")),
         "status": norm_text(src.get("status")) or "error",
         "adapter": clean_text(src.get("adapter")) or "custom",
@@ -256,10 +255,10 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
         normalized["loss"] = _normalize_loss(src.get("loss"))
     details = src.get("details")
     if isinstance(details, list):
-        clean_details: List[Any] = []
+        clean_details: list[Any] = []
         for item in details:
             if isinstance(item, dict):
-                clean_item: Dict[str, Any] = {
+                clean_item: dict[str, Any] = {
                     "adapter": clean_text(item.get("adapter")),
                     "studio": clean_text(item.get("studio")),
                     "name": clean_text(item.get("name")),
@@ -347,13 +346,13 @@ def normalize_source_report_row(row: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
-def normalize_task_progress_payload(payload: Dict[str, Any] | None) -> Dict[str, Any]:
+def normalize_task_progress_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     mode = clean_text(src.get("mode")).lower()
     if mode not in {"determinate", "indeterminate"}:
         mode = "indeterminate"
     counts_src = src.get("counts") if isinstance(src.get("counts"), dict) else {}
-    counts: Dict[str, Any] = {}
+    counts: dict[str, Any] = {}
     for key, value in counts_src.items():
         clean_key = clean_text(key)
         if not clean_key:
@@ -384,16 +383,16 @@ def normalize_task_progress_payload(payload: Dict[str, Any] | None) -> Dict[str,
 
 
 def normalize_task_state_payload(
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     *,
     run_id: str = "",
     started_at: str,
     finished_at: str = "",
     report_path: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     rows = src.get("tasks")
-    normalized_rows: List[Dict[str, Any]] = []
+    normalized_rows: list[dict[str, Any]] = []
     if isinstance(rows, list):
         for row in rows:
             if not isinstance(row, dict):
@@ -427,7 +426,7 @@ def normalize_task_state_payload(
     }
 
 
-def normalize_fetch_report_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
     outputs = src.get("outputs") if isinstance(src.get("outputs"), dict) else {}

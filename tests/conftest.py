@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CODEX_TMP_ROOT = REPO_ROOT / ".codex-tmp-tests"
 

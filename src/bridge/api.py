@@ -6,9 +6,11 @@ all bridge services together for use by HTTP routes.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
+
 from src.source_registry import normalize_source_url as normalize_source_url_impl
 from src.source_registry import source_identity as source_identity_impl
 from src.source_registry import source_url_fingerprint as source_url_fingerprint_impl
@@ -34,17 +36,17 @@ DesktopLocalDataStoreFactory = Callable[[], Any]
 LoadJsonObjectFunc = Callable[[Path, Any], Any]
 SaveJsonAtomicFunc = Callable[[Path, Any], None]
 
-LoadStateFunc = Callable[[], Dict[str, List[Dict[str, Any]]]]
-SummarizeStateFunc = Callable[[Dict[str, List[Dict[str, Any]]]], Dict[str, int]]
-PersistStateFunc = Callable[[Dict[str, List[Dict[str, Any]]]], Dict[str, List[Dict[str, Any]]]]
+LoadStateFunc = Callable[[], dict[str, list[dict[str, Any]]]]
+SummarizeStateFunc = Callable[[dict[str, list[dict[str, Any]]]], dict[str, int]]
+PersistStateFunc = Callable[[dict[str, list[dict[str, Any]]]], dict[str, list[dict[str, Any]]]]
 
 BridgeLogFunc = Callable[[str, str], None]
 BridgeLogWithFieldsFunc = Callable[[str, str], None]
 
-TriggerDiscoveryTaskFunc = Callable[..., Tuple[int, Dict[str, Any]]]
-StartTaskFunc = Callable[[Optional[Dict[str, Any]]], Dict[str, Any]]
-StartSyncTaskFunc = Callable[..., Dict[str, Any]]
-NormalizeReportContractFunc = Callable[[Dict[str, Any]], Dict[str, Any]]
+TriggerDiscoveryTaskFunc = Callable[..., tuple[int, dict[str, Any]]]
+StartTaskFunc = Callable[[dict[str, Any] | None], dict[str, Any]]
+StartSyncTaskFunc = Callable[..., dict[str, Any]]
+NormalizeReportContractFunc = Callable[[dict[str, Any]], dict[str, Any]]
 
 
 @dataclass
@@ -69,10 +71,10 @@ class BridgeApi:
     STARTUP_METRICS_PATH: Path
 
     # Grouped services (optional during migration).
-    registry: "RegistryService | None" = None
-    sync: "SyncService | None" = None
-    pipeline: "PipelineService | None" = None
-    discovery: "DiscoveryService | None" = None
+    registry: RegistryService | None = None
+    sync: SyncService | None = None
+    pipeline: PipelineService | None = None
+    discovery: DiscoveryService | None = None
 
     # Report contract normalizers used by GET routes.
     normalize_discovery_report_contract: NormalizeReportContractFunc = lambda payload: payload  # type: ignore[assignment]
@@ -87,24 +89,24 @@ class BridgeApi:
     _mark_desktop_session_activity: Callable[[str], None] = lambda _path: None  # type: ignore[assignment]
 
     desktop_local_data_store: DesktopLocalDataStoreFactory = lambda: None  # type: ignore[assignment]
-    append_startup_metric: Callable[[str, Dict[str, Any] | None], None] = lambda _event, _payload=None: None  # type: ignore[assignment]
-    read_startup_metrics: Callable[[int], List[Dict[str, Any]]] = lambda _limit=200: []  # type: ignore[assignment]
+    append_startup_metric: Callable[[str, dict[str, Any] | None], None] = lambda _event, _payload=None: None  # type: ignore[assignment]
+    read_startup_metrics: Callable[[int], list[dict[str, Any]]] = lambda _limit=200: []  # type: ignore[assignment]
 
     load_state: LoadStateFunc = lambda: {"active": [], "pending": [], "rejected": []}  # type: ignore[assignment]
     summarize_state: SummarizeStateFunc = lambda _state: {"activeCount": 0, "pendingCount": 0, "rejectedCount": 0}  # type: ignore[assignment]
-    persist_state_and_auto_sync: Callable[..., Dict[str, List[Dict[str, Any]]]] = (  # type: ignore[assignment]
+    persist_state_and_auto_sync: Callable[..., dict[str, list[dict[str, Any]]]] = (  # type: ignore[assignment]
         lambda state, **_kw: state
     )
-    add_manual_source: Callable[[str], Dict[str, Any]] = lambda _url: {"status": "invalid", "error": "not_implemented"}  # type: ignore[assignment]
-    trigger_source_check: Callable[..., Dict[str, Any]] = lambda _source_id, **_kw: {"started": False, "error": "not_implemented"}  # type: ignore[assignment]
+    add_manual_source: Callable[[str], dict[str, Any]] = lambda _url: {"status": "invalid", "error": "not_implemented"}  # type: ignore[assignment]
+    trigger_source_check: Callable[..., dict[str, Any]] = lambda _source_id, **_kw: {"started": False, "error": "not_implemented"}  # type: ignore[assignment]
 
     # Registry helpers used by POST routes.
-    move_entries: Callable[[List[Dict[str, Any]], List[str]], Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]] = (  # type: ignore[assignment]
+    move_entries: Callable[[list[dict[str, Any]], list[str]], tuple[list[dict[str, Any]], list[dict[str, Any]]]] = (  # type: ignore[assignment]
         lambda pending, _ids: ([], list(pending))
     )
-    unique_sources: Callable[[List[Dict[str, Any]]], List[Dict[str, Any]]] = unique_sources_impl  # type: ignore[assignment]
-    source_identity: Callable[[Dict[str, Any]], str] = source_identity_impl  # type: ignore[assignment]
-    source_url_fingerprint: Callable[[Dict[str, Any]], str] = source_url_fingerprint_impl  # type: ignore[assignment]
+    unique_sources: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] = unique_sources_impl  # type: ignore[assignment]
+    source_identity: Callable[[dict[str, Any]], str] = source_identity_impl  # type: ignore[assignment]
+    source_url_fingerprint: Callable[[dict[str, Any]], str] = source_url_fingerprint_impl  # type: ignore[assignment]
     normalize_source_url: Callable[[str], str] = normalize_source_url_impl  # type: ignore[assignment]
 
     load_json_object: LoadJsonObjectFunc = lambda _path, default: default  # type: ignore[assignment]
@@ -116,27 +118,27 @@ class BridgeApi:
     start_jobs_pipeline_task: StartTaskFunc = lambda _payload=None: {"started": False, "error": "not_implemented"}  # type: ignore[assignment]
     start_sync_task: StartSyncTaskFunc = lambda *_a, **_kw: {"started": False, "error": "not_implemented"}  # type: ignore[assignment]
 
-    compute_ops_health: Callable[[], Dict[str, Any]] = lambda: {"ok": True}  # type: ignore[assignment]
-    compute_fetcher_metrics: Callable[..., Dict[str, Any]] = lambda **_kw: {"ok": True}  # type: ignore[assignment]
-    sync_history_from_reports: Callable[[], List[Dict[str, Any]]] = lambda: []  # type: ignore[assignment]
-    get_current_task_state_payload: Callable[[], Dict[str, Any]] = lambda: {"tasks": [], "count": 0}  # type: ignore[assignment]
+    compute_ops_health: Callable[[], dict[str, Any]] = lambda: {"ok": True}  # type: ignore[assignment]
+    compute_fetcher_metrics: Callable[..., dict[str, Any]] = lambda **_kw: {"ok": True}  # type: ignore[assignment]
+    sync_history_from_reports: Callable[[], list[dict[str, Any]]] = lambda: []  # type: ignore[assignment]
+    get_current_task_state_payload: Callable[[], dict[str, Any]] = lambda: {"tasks": [], "count": 0}  # type: ignore[assignment]
 
     # Sync-specific helpers used by routes.
-    get_sync_status_payload: Callable[[], Dict[str, Any]] = lambda: {"ok": True}  # type: ignore[assignment]
+    get_sync_status_payload: Callable[[], dict[str, Any]] = lambda: {"ok": True}  # type: ignore[assignment]
     refresh_sync_config: Callable[[], Any] = lambda: None  # type: ignore[assignment]
-    test_sync_config: Callable[[], Dict[str, Any]] = lambda: {"ok": False, "error": "not_implemented"}  # type: ignore[assignment]
-    sync_pull_sources: Callable[[], Dict[str, Any]] = lambda: {"ok": False, "error": "not_implemented"}  # type: ignore[assignment]
-    sync_push_sources: Callable[[], Dict[str, Any]] = lambda: {"ok": False, "error": "not_implemented"}  # type: ignore[assignment]
-    update_saved_sync_settings: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda _payload: {}  # type: ignore[assignment]
-    sync_config_status: Callable[[], Dict[str, Any]] = lambda: {"enabled": False, "ready": False}  # type: ignore[assignment]
+    test_sync_config: Callable[[], dict[str, Any]] = lambda: {"ok": False, "error": "not_implemented"}  # type: ignore[assignment]
+    sync_pull_sources: Callable[[], dict[str, Any]] = lambda: {"ok": False, "error": "not_implemented"}  # type: ignore[assignment]
+    sync_push_sources: Callable[[], dict[str, Any]] = lambda: {"ok": False, "error": "not_implemented"}  # type: ignore[assignment]
+    update_saved_sync_settings: Callable[[dict[str, Any]], dict[str, Any]] = lambda _payload: {}  # type: ignore[assignment]
+    sync_config_status: Callable[[], dict[str, Any]] = lambda: {"enabled": False, "ready": False}  # type: ignore[assignment]
     set_sync_status: Callable[..., None] = lambda **_kw: None  # type: ignore[assignment]
-    get_discovery_config_payload: Callable[[], Dict[str, Any]] = lambda: {"ok": True, "savedConfig": {}}  # type: ignore[assignment]
-    update_saved_discovery_settings: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda _payload: {}  # type: ignore[assignment]
-    load_alert_state: Callable[[], Dict[str, Any]] = lambda: {"acked": {}}  # type: ignore[assignment]
-    save_alert_state: Callable[[Dict[str, Any]], None] = lambda _payload: None  # type: ignore[assignment]
+    get_discovery_config_payload: Callable[[], dict[str, Any]] = lambda: {"ok": True, "savedConfig": {}}  # type: ignore[assignment]
+    update_saved_discovery_settings: Callable[[dict[str, Any]], dict[str, Any]] = lambda _payload: {}  # type: ignore[assignment]
+    load_alert_state: Callable[[], dict[str, Any]] = lambda: {"acked": {}}  # type: ignore[assignment]
+    save_alert_state: Callable[[dict[str, Any]], None] = lambda _payload: None  # type: ignore[assignment]
 
     # Jobs pipeline status (GET route).
-    get_jobs_pipeline_status_payload: Callable[[], Dict[str, Any]] = lambda: {"active": False}  # type: ignore[assignment]
+    get_jobs_pipeline_status_payload: Callable[[], dict[str, Any]] = lambda: {"active": False}  # type: ignore[assignment]
 
     def _field_is_default(self, field_name: str) -> bool:
         try:

@@ -3,7 +3,7 @@ from __future__ import annotations
 """Static-site candidate heuristics (HTML-only discovery)."""
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .scoring import careers_keyword_count, studio_domain_match
 from .web_search import extract_jobish_links, is_blocked_generic_static_url
@@ -16,7 +16,7 @@ def build_static_candidate_from_page(
     studio: str,
     nl_priority: bool,
     discovery_method: str,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     if is_blocked_generic_static_url(page_url):
         return None
     if not careers_keyword_count(page_url) and careers_keyword_count(html) == 0:

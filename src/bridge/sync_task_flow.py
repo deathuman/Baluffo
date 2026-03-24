@@ -5,16 +5,16 @@ This module provides shared worker logic for sync tasks.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable, Dict
+from typing import Any
 
-
-RunSyncActionFunc = Callable[[], Dict[str, Any]]
+RunSyncActionFunc = Callable[[], dict[str, Any]]
 SetSyncStatusFunc = Callable[..., None]
 RemoveActiveSyncRunFunc = Callable[[str], None]
 RemoveActiveSyncThreadFunc = Callable[[str], None]
 PruneStartedRowsFunc = Callable[[str, str], None]
-UpsertRunHistoryFunc = Callable[[Dict[str, Any]], None]
+UpsertRunHistoryFunc = Callable[[dict[str, Any]], None]
 BridgeLogFunc = Callable[..., None]
 
 
@@ -38,7 +38,7 @@ def run_sync_task_worker(
 ) -> None:
     started_dt = parse_iso(started_at) or now_utc()
     status = "ok"
-    summary: Dict[str, Any] = {"action": action}
+    summary: dict[str, Any] = {"action": action}
 
     try:
         if action == "pull":

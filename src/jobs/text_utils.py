@@ -1,8 +1,8 @@
 """Text and URL normalization utilities (extracted from common)."""
 from __future__ import annotations
 
-from html import unescape
 import re
+from html import unescape
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 

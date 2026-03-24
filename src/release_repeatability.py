@@ -5,14 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
-from typing import Any, Dict, Iterable, List
+from typing import Any
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def read_json(path: Path, fallback: Any) -> Any:
@@ -33,7 +34,7 @@ def safe_text(value: Any) -> str:
     return str(value or "").strip()
 
 
-def summarize_run(path: Path) -> Dict[str, Any]:
+def summarize_run(path: Path) -> dict[str, Any]:
     report = read_json(path, {})
     if not isinstance(report, dict):
         report = {}
@@ -81,16 +82,16 @@ def summarize_run(path: Path) -> Dict[str, Any]:
     }
 
 
-def build_source_volatility(runs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def build_source_volatility(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     all_names = sorted({name for run in runs for name in run.get("sources", {})})
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for name in all_names:
-        kept_counts: List[int] = []
+        kept_counts: list[int] = []
         error_runs = 0
         nonzero_runs = 0
         adapters = set()
-        statuses: List[str] = []
-        errors: List[str] = []
+        statuses: list[str] = []
+        errors: list[str] = []
         for run in runs:
             source = (run.get("sources") or {}).get(name) or {}
             kept = safe_int(source.get("keptCount"))
@@ -138,7 +139,7 @@ def build_source_volatility(runs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return rows
 
 
-def build_gate(runs: List[Dict[str, Any]], release_floor: int) -> Dict[str, Any]:
+def build_gate(runs: list[dict[str, Any]], release_floor: int) -> dict[str, Any]:
     output_counts = [safe_int(run.get("outputCount")) for run in runs]
     failed_counts = [safe_int(run.get("failedSources")) for run in runs]
     social_nonzero = any(
@@ -161,7 +162,7 @@ def build_gate(runs: List[Dict[str, Any]], release_floor: int) -> Dict[str, Any]
     }
 
 
-def build_report(report_paths: Iterable[Path], release_floor: int) -> Dict[str, Any]:
+def build_report(report_paths: Iterable[Path], release_floor: int) -> dict[str, Any]:
     runs = [summarize_run(path) for path in report_paths]
     output_counts = [safe_int(run.get("outputCount")) for run in runs]
     failed_counts = [safe_int(run.get("failedSources")) for run in runs]
@@ -187,8 +188,8 @@ def build_report(report_paths: Iterable[Path], release_floor: int) -> Dict[str, 
     }
 
 
-def build_recommendations(runs: List[Dict[str, Any]], volatility: List[Dict[str, Any]], release_floor: int) -> List[str]:
-    items: List[str] = []
+def build_recommendations(runs: list[dict[str, Any]], volatility: list[dict[str, Any]], release_floor: int) -> list[str]:
+    items: list[str] = []
     gate = build_gate(runs, release_floor)
     if not gate.get("passesReleaseFloor"):
         items.append(
@@ -207,7 +208,7 @@ def build_recommendations(runs: List[Dict[str, Any]], volatility: List[Dict[str,
     return items[:5]
 
 
-def render_markdown(report: Dict[str, Any]) -> str:
+def render_markdown(report: dict[str, Any]) -> str:
     totals = report.get("totals") if isinstance(report.get("totals"), dict) else {}
     gate = report.get("gate") if isinstance(report.get("gate"), dict) else {}
     lines = [

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urljoin
 
 from src.jobs.adapters.plugins.static import _heuristics
@@ -22,10 +23,10 @@ def run(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    pages: List[str],
-    source_row: Dict[str, Any],
+    pages: list[str],
+    source_row: dict[str, Any],
     **kwargs: Any,
-) -> List[RawJob]:
+) -> list[RawJob]:
     _ = (retries, backoff_s, kwargs)
     if not pages:
         return []
@@ -46,7 +47,7 @@ def run(
         }
         return []
 
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     seen = set()
     for match in re.finditer(
         r'(?is)<h4[^>]*>\s*(.*?)\s*</h4>.*?<a[^>]+href=["\']([^"\']*/careers/[^"\']+/)["\'][^>]*>\s*Learn more\s*</a>',

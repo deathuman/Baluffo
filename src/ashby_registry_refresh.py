@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -17,10 +18,9 @@ from src.jobs.text_utils import clean_text
 from src.shared.utils import now_iso
 from src.source_registry import ACTIVE_PATH, ensure_source_id, load_json_array, save_json_atomic
 
-
 ASHBY_REFRESH_REPORT_PATH = Path("data/ashby-registry-refresh-report.json")
 
-CURATED_ASHBY_ROWS: List[Dict[str, Any]] = [
+CURATED_ASHBY_ROWS: list[dict[str, Any]] = [
     {"name": "Bigger Games (Ashby)", "studio": "Bigger Games", "board_url": "https://jobs.ashbyhq.com/biggergames", "careersUrl": "https://jobs.ashbyhq.com/biggergames"},
     {"name": "Battle Creek Games (Ashby)", "studio": "Battle Creek Games", "board_url": "https://jobs.ashbyhq.com/battle-creek-games", "careersUrl": "https://jobs.ashbyhq.com/battle-creek-games"},
     {"name": "Day[9]'s Game Studio (Ashby)", "studio": "Day[9]'s Game Studio", "board_url": "https://jobs.ashbyhq.com/day9", "careersUrl": "https://jobs.ashbyhq.com/day9"},
@@ -32,7 +32,7 @@ CURATED_ASHBY_ROWS: List[Dict[str, Any]] = [
     {"name": "Voldex Games (Ashby)", "studio": "Voldex Games", "board_url": "https://jobs.ashbyhq.com/voldex", "careersUrl": "https://jobs.ashbyhq.com/voldex"},
 ]
 
-DISCOVERY_ASHBY_ROWS: List[Dict[str, Any]] = [
+DISCOVERY_ASHBY_ROWS: list[dict[str, Any]] = [
     {"name": "GameChanger (Ashby)", "studio": "GameChanger", "board_url": "https://jobs.ashbyhq.com/gamechanger", "careersUrl": "https://jobs.ashbyhq.com/gamechanger", "relevanceHint": "sports-tech"},
     {"name": "Level (Ashby)", "studio": "Level", "board_url": "https://jobs.ashbyhq.com/level", "careersUrl": "https://jobs.ashbyhq.com/level"},
     {"name": "Unblocked (Ashby)", "studio": "Unblocked", "board_url": "https://jobs.ashbyhq.com/Unblocked", "careersUrl": "https://jobs.ashbyhq.com/Unblocked"},
@@ -70,7 +70,7 @@ def _default_fetch_text(url: str, timeout_s: int) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
-def _probe_ashby_board(row: Dict[str, Any], *, fetch_text=_default_fetch_text, timeout_s: int = 15) -> Dict[str, Any]:
+def _probe_ashby_board(row: dict[str, Any], *, fetch_text=_default_fetch_text, timeout_s: int = 15) -> dict[str, Any]:
     board_url = _normalize_board_url(clean_text(row.get("board_url")) or clean_text(row.get("careersUrl")))
     if not board_url:
         return {"status": "invalid", "board_url": "", "postingsCount": 0, "organizationName": "", "error": "missing board_url"}
@@ -102,7 +102,7 @@ def _probe_ashby_board(row: Dict[str, Any], *, fetch_text=_default_fetch_text, t
     }
 
 
-def _is_relevant_ashby_candidate(row: Dict[str, Any], validation: Dict[str, Any]) -> bool:
+def _is_relevant_ashby_candidate(row: dict[str, Any], validation: dict[str, Any]) -> bool:
     hint = clean_text(row.get("relevanceHint")).lower()
     if hint in {"game", "games", "gaming", "sports-tech", "esports"}:
         return True
@@ -116,7 +116,7 @@ def _is_relevant_ashby_candidate(row: Dict[str, Any], validation: Dict[str, Any]
     return any(token in haystack for token in GAME_RELEVANCE_TOKENS)
 
 
-def _ashby_row_from_validation(row: Dict[str, Any], validation: Dict[str, Any]) -> Dict[str, Any]:
+def _ashby_row_from_validation(row: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(row)
     normalized["adapter"] = "ashby"
     normalized["name"] = clean_text(normalized.get("name")) or f"{clean_text(normalized.get('studio'))} (Ashby)"
@@ -143,16 +143,16 @@ def refresh_active_ashby_registry(
     *,
     active_path: Path = ACTIVE_PATH,
     report_path: Path = ASHBY_REFRESH_REPORT_PATH,
-    curated_rows: Iterable[Dict[str, Any]] = CURATED_ASHBY_ROWS,
-    discovery_rows: Iterable[Dict[str, Any]] = DISCOVERY_ASHBY_ROWS,
+    curated_rows: Iterable[dict[str, Any]] = CURATED_ASHBY_ROWS,
+    discovery_rows: Iterable[dict[str, Any]] = DISCOVERY_ASHBY_ROWS,
     fetch_text=_default_fetch_text,
     timeout_s: int = 15,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     active_rows = load_json_array(active_path, [])
     non_ashby_rows = [dict(row) for row in active_rows if clean_text(row.get("adapter")).lower() != "ashby"]
     existing_ashby_rows = [dict(row) for row in active_rows if clean_text(row.get("adapter")).lower() == "ashby"]
 
-    candidates_by_key: Dict[str, Dict[str, Any]] = {}
+    candidates_by_key: dict[str, dict[str, Any]] = {}
     curated_names = {clean_text(row.get("name")) for row in curated_rows}
     for row in [*existing_ashby_rows, *list(curated_rows), *list(discovery_rows)]:
         key = _normalize_board_url(clean_text(row.get("board_url")) or clean_text(row.get("careersUrl")) or clean_text(row.get("name")))
@@ -165,9 +165,9 @@ def refresh_active_ashby_registry(
             merged.update({k: v for k, v in dict(row).items() if clean_text(v)})
             candidates_by_key[key] = merged
 
-    kept_rows: List[Dict[str, Any]] = []
-    removed_rows: List[Dict[str, Any]] = []
-    rejected_candidates: List[Dict[str, Any]] = []
+    kept_rows: list[dict[str, Any]] = []
+    removed_rows: list[dict[str, Any]] = []
+    rejected_candidates: list[dict[str, Any]] = []
     added_count = 0
     normalized_existing_keys = {_normalize_board_url(clean_text(row.get("board_url")) or clean_text(row.get("careersUrl"))) for row in existing_ashby_rows}
 

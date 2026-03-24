@@ -12,31 +12,31 @@ import inspect
 import sys
 import time
 from collections import Counter
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from threading import Lock
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from src.jobs.canonicalize import CanonicalNormalizer
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.models import CanonicalJob
-from src.jobs.state import source_rows_fingerprint
 from src.jobs.reporting import format_source_error
+from src.jobs.state import source_rows_fingerprint
 from src.jobs.text_utils import clean_text, norm_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
 from src.shared.utils import now_iso
-
 
 FetchTextLimited = Callable[[str, int], str]
 WriteTaskStateFunc = Callable[..., None]
 WriteProgressReportFunc = Callable[[], None]
 
 
-def _rows_to_legacy_dicts(rows: List[CanonicalJob]) -> List[Dict[str, Any]]:
+def _rows_to_legacy_dicts(rows: list[CanonicalJob]) -> list[dict[str, Any]]:
     return [row.to_dict() if isinstance(row, CanonicalJob) else dict(row) for row in rows]  # type: ignore[arg-type]
 
 
-def _best_effort_get_try_playwright() -> Optional[Callable[[str, int], Tuple[str, str]]]:
+def _best_effort_get_try_playwright() -> Callable[[str, int], tuple[str, str]] | None:
     try:
         from src.bridge.source_check_http import try_fetch_with_playwright
 
@@ -45,7 +45,7 @@ def _best_effort_get_try_playwright() -> Optional[Callable[[str, int], Tuple[str
         return None
 
 
-def _default_adapter_for_loader(name: str, base_meta: Dict[str, Any]) -> str:
+def _default_adapter_for_loader(name: str, base_meta: dict[str, Any]) -> str:
     adapter = clean_text(base_meta.get("adapter"))
     if adapter:
         return adapter
@@ -104,17 +104,17 @@ class SourceExecutionStageConfig:
 def run_source_execution_stage(
     *,
     config: SourceExecutionStageConfig,
-    selected_loaders: List[Tuple[str, Callable[..., List[Dict[str, Any]]]]],
+    selected_loaders: list[tuple[str, Callable[..., list[dict[str, Any]]]]],
     fetch_text_limited: FetchTextLimited,
-    source_state_rows: Dict[str, Dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
     redirect_resolver: Any,
-    task_rows: Dict[str, Dict[str, Any]],
+    task_rows: dict[str, dict[str, Any]],
     task_lock: Lock,
     thread_local: Any,
     write_task_state: WriteTaskStateFunc,
     write_progress_report: WriteProgressReportFunc,
-    canonical_rows: List[CanonicalJob],
-    source_reports: List[Dict[str, Any]],
+    canonical_rows: list[CanonicalJob],
+    source_reports: list[dict[str, Any]],
 ) -> None:
     """
     Executes selected source loaders, mutating `canonical_rows` and `source_reports` in-place,
@@ -124,10 +124,10 @@ def run_source_execution_stage(
     # Resolve optional Playwright fetch helper.
     _try_playwright = _best_effort_get_try_playwright()
 
-    def execute_loader(name: str, loader: Callable[..., List[Dict[str, Any]]]) -> Tuple[Dict[str, Any], List[CanonicalJob]]:
+    def execute_loader(name: str, loader: Callable[..., list[dict[str, Any]]]) -> tuple[dict[str, Any], list[CanonicalJob]]:
         source_started = time.perf_counter()
         base_meta = SOURCE_REPORT_META.get(name, {})
-        report: Dict[str, Any] = {
+        report: dict[str, Any] = {
             "name": name,
             "status": "ok",
             "adapter": _default_adapter_for_loader(name, base_meta),
@@ -158,12 +158,12 @@ def run_source_execution_stage(
                 "staticDetailParseEmpty": 0,
             },
         }
-        canonical_batch: List[CanonicalJob] = []
+        canonical_batch: list[CanonicalJob] = []
 
         try:
             thread_local.source_name = name
             loader_started = time.perf_counter()
-            loader_kwargs: Dict[str, Any] = {
+            loader_kwargs: dict[str, Any] = {
                 "fetch_text": fetch_text_limited,
                 "timeout_s": config.timeout_s,
                 "retries": config.retries,
@@ -210,7 +210,7 @@ def run_source_execution_stage(
             drop_reasons = normalizer.drop_reasons
 
             kept = len(canonical_batch)
-            google_sheet_redirect_stats: Dict[str, int] = {}
+            google_sheet_redirect_stats: dict[str, int] = {}
             if name.startswith("google_sheets"):
                 google_sheet_redirect_stats = normalizer.stats
                 canonicalization_ms = int(google_sheet_redirect_stats.get("canonicalize_ms") or 0)
@@ -419,7 +419,7 @@ def run_source_execution_stage(
                 mark_task_finished(source_name, report)
 
     # The closure below expects `now_iso()` and `fallback_error_report()`/`mark_task_finished()`.
-    def fallback_error_report(source_name: str, exc: Exception) -> Dict[str, Any]:
+    def fallback_error_report(source_name: str, exc: Exception) -> dict[str, Any]:
         return {
             "name": source_name,
             "status": "error",
@@ -458,7 +458,7 @@ def run_source_execution_stage(
         if config.show_progress:
             _emit_progress_line(f"[jobs_fetcher] START source={source_name}")
 
-    def mark_task_finished(source_name: str, report: Dict[str, Any]) -> None:
+    def mark_task_finished(source_name: str, report: dict[str, Any]) -> None:
         end_time = now_iso()
         with task_lock:
             task_rows[source_name]["status"] = "ok" if report.get("status") == "ok" else "error"

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from html import unescape
-from typing import Any, Callable, Dict, List
+from typing import Any
 from urllib.parse import urljoin
 
 from src.jobs.adapters.plugins.types import AdapterPluginContext
@@ -26,10 +27,10 @@ def run(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    pages: List[str],
-    source_row: Dict[str, Any],
+    pages: list[str],
+    source_row: dict[str, Any],
     **kwargs: Any,
-) -> List[RawJob]:
+) -> list[RawJob]:
     _ = (retries, backoff_s, kwargs)
     if not pages:
         return []
@@ -57,12 +58,12 @@ def run(
     )
     source_name = clean_text(source_row.get("name")) or company
     source_id = clean_text(source_row.get("id")) or "amanotes"
-    rows: List[RawJob] = []
+    rows: list[RawJob] = []
     for position in positions:
         if not isinstance(position, dict):
             continue
         title = clean_text(position.get("title"))
-        slug = clean_text(((position.get("slug") or {}).get("current")))
+        slug = clean_text((position.get("slug") or {}).get("current"))
         lever_id = clean_text(position.get("leverId") or position.get("_id"))
         if not title or not slug or not lever_id:
             continue

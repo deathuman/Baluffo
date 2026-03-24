@@ -5,7 +5,7 @@ See docs/DATA_CONTRACT.md for field definitions.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,7 +15,7 @@ class CanonicalJobSchema(BaseModel):
 
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
-    id: Optional[Any] = None
+    id: Any | None = None
     title: str = Field(default="", description="Job title")
     company: str = Field(default="", description="Employer or studio name")
     city: str = Field(default="", description="City or empty if remote")
@@ -39,7 +39,7 @@ class CanonicalJobSchema(BaseModel):
     qualityScore: int = 0
     focusScore: int = 0
     sourceBundleCount: int = 0
-    sourceBundle: List[Dict[str, Any]] = Field(default_factory=list)
+    sourceBundle: list[dict[str, Any]] = Field(default_factory=list)
     adapter: str = ""
     studio: str = ""
 
@@ -62,7 +62,7 @@ class SavedJobSchema(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     jobKey: str = Field(default="", description="Primary key job_<hash>")
-    snapshot: Optional[SavedJobSnapshotSchema] = Field(default=None, description="Display subset: title, company, location, workType")
+    snapshot: SavedJobSnapshotSchema | None = Field(default=None, description="Display subset: title, company, location, workType")
     createdAt: str = Field(default="", description="ISO 8601 when bookmark/custom row was created")
     updatedAt: str = Field(default="", description="ISO 8601 last modified")
     status: str = Field(default="", description="User stage e.g. saved, applied, interviewing_1")
@@ -99,4 +99,4 @@ class ManifestSchema(BaseModel):
     summary: str = Field(default="", description="Human-readable status")
     src_hash: str = Field(default="", description="SHA256 of src/")
     artifacts_root: str = Field(default="", description="Path to run directory")
-    artifacts: Optional[ManifestArtifactsSchema] = Field(default=None, description="Paths and test flags")
+    artifacts: ManifestArtifactsSchema | None = Field(default=None, description="Paths and test flags")

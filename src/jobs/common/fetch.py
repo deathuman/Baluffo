@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 
 def fetch_with_retries(
@@ -14,7 +14,7 @@ def fetch_with_retries(
     backoff_s: float,
 ) -> str:
     attempts = max(0, int(retries or 0)) + 1
-    last_error: Optional[Exception] = None
+    last_error: Exception | None = None
     for attempt in range(attempts):
         try:
             return fetch_text(url, int(timeout_s or 1))

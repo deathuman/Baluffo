@@ -13,10 +13,11 @@ import shutil
 import sys
 import time
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,10 +34,10 @@ REQUIRED_VERSION_FILES = ("src/admin_bridge.py", "index.html", "jobs.html", "sav
 
 
 def iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def read_json(path: Path, fallback: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def read_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
     if not path.exists():
         return dict(fallback or {})
     return json.loads(path.read_text(encoding="utf-8"))
@@ -61,7 +62,7 @@ def _write_atomic(path: Path, payload: str) -> None:
                 tmp.unlink()
 
 
-def write_json_atomic(path: Path, payload: Dict[str, Any]) -> None:
+def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     _write_atomic(path, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
@@ -77,8 +78,8 @@ def compute_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _parse_version(v: str) -> Tuple[int, ...]:
-    numbers: List[int] = []
+def _parse_version(v: str) -> tuple[int, ...]:
+    numbers: list[int] = []
     for part in str(v or "").split("."):
         if part.isdigit():
             numbers.append(int(part))
@@ -114,7 +115,7 @@ class ShipPaths:
     logs: Path
 
     @staticmethod
-    def from_root(root: Path) -> "ShipPaths":
+    def from_root(root: Path) -> ShipPaths:
         app = root / "app"
         data = root / "data"
         return ShipPaths(
@@ -131,7 +132,7 @@ class ShipPaths:
         )
 
 
-def ensure_state(paths: ShipPaths) -> Dict[str, Any]:
+def ensure_state(paths: ShipPaths) -> dict[str, Any]:
     if not paths.current.exists():
         raise RuntimeError(f"Missing current pointer file: {paths.current}")
     current_version = paths.current.read_text(encoding="utf-8").strip()
@@ -147,7 +148,7 @@ def ensure_state(paths: ShipPaths) -> Dict[str, Any]:
     preferred_state_path = paths.state
     fallback_state_path = paths.data / STATE_NAME
     state_path = preferred_state_path
-    state: Dict[str, Any] = {}
+    state: dict[str, Any] = {}
     try:
         state = read_json(preferred_state_path, fallback_state)
     except OSError:
@@ -167,7 +168,7 @@ def ensure_state(paths: ShipPaths) -> Dict[str, Any]:
     return state
 
 
-def write_state(paths: ShipPaths, state: Dict[str, Any], *, status: str, error: str = "") -> None:
+def write_state(paths: ShipPaths, state: dict[str, Any], *, status: str, error: str = "") -> None:
     state_path_raw = str(state.get("__state_path") or "")
     state_path = Path(state_path_raw).expanduser().resolve() if state_path_raw else paths.state
     transient_keys = [key for key in state.keys() if str(key).startswith("__")]
@@ -183,14 +184,14 @@ def write_state(paths: ShipPaths, state: Dict[str, Any], *, status: str, error: 
         state["__state_path"] = str(fallback_state_path)
 
 
-def log_event(paths: ShipPaths, event: str, payload: Dict[str, Any]) -> None:
+def log_event(paths: ShipPaths, event: str, payload: dict[str, Any]) -> None:
     paths.logs.mkdir(parents=True, exist_ok=True)
     record = {"time": iso_now(), "event": event, **payload}
     with (paths.logs / LOG_NAME).open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def validate_manifest(manifest: Dict[str, Any]) -> None:
+def validate_manifest(manifest: dict[str, Any]) -> None:
     required = ("version", "artifact_url", "sha256", "signature", "min_updater_version", "migration_plan", "rollback_allowed")
     missing = [key for key in required if key not in manifest]
     if missing:
@@ -214,19 +215,19 @@ def validate_data_dir(paths: ShipPaths, data_dir: Path) -> None:
         raise ValueError("User data directory must be outside app/versions.")
 
 
-def verify_artifact(bundle_zip: Path, manifest: Dict[str, Any], signing_key: str) -> None:
+def verify_artifact(bundle_zip: Path, manifest: dict[str, Any], signing_key: str) -> None:
     expected_hash = str(manifest["sha256"]).strip().lower()
     computed_hash = compute_sha256(bundle_zip).lower()
     if computed_hash != expected_hash:
         raise ValueError("Checksum mismatch for update artifact.")
 
-    message = f"{manifest['version']}:{expected_hash}".encode("utf-8")
+    message = f"{manifest['version']}:{expected_hash}".encode()
     expected_signature = hmac.new(signing_key.encode("utf-8"), message, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected_signature, str(manifest["signature"]).strip().lower()):
         raise ValueError("Signature verification failed.")
 
 
-def health_check_version(version_dir: Path) -> Tuple[bool, str]:
+def health_check_version(version_dir: Path) -> tuple[bool, str]:
     for rel in REQUIRED_VERSION_FILES:
         if not (version_dir / rel).exists():
             return False, f"missing_required_file:{rel}"
@@ -234,7 +235,7 @@ def health_check_version(version_dir: Path) -> Tuple[bool, str]:
 
 
 def create_data_backup(paths: ShipPaths) -> Path:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     backup_path = paths.backups / f"data-backup-{timestamp}.zip"
     paths.backups.mkdir(parents=True, exist_ok=True)
     with ZipFile(backup_path, "w", compression=ZIP_DEFLATED) as archive:
@@ -255,8 +256,8 @@ def restore_data_backup(paths: ShipPaths, backup_path: Path) -> None:
         archive.extractall(paths.data)
 
 
-def run_migrations(paths: ShipPaths, migration_names: Iterable[str], backup_ref: Path) -> Dict[str, Any]:
-    report: Dict[str, Any] = {"applied": [], "verified": [], "rolled_back": []}
+def run_migrations(paths: ShipPaths, migration_names: Iterable[str], backup_ref: Path) -> dict[str, Any]:
+    report: dict[str, Any] = {"applied": [], "verified": [], "rolled_back": []}
     migrations = resolve_migrations(migration_names)
     for migration in migrations:
         result = migration.apply(paths.data)
@@ -270,8 +271,8 @@ def run_migrations(paths: ShipPaths, migration_names: Iterable[str], backup_ref:
     return report
 
 
-def rollback_migrations(paths: ShipPaths, migration_names: Iterable[str], backup_ref: Path) -> Dict[str, Any]:
-    report: Dict[str, Any] = {"rolled_back": []}
+def rollback_migrations(paths: ShipPaths, migration_names: Iterable[str], backup_ref: Path) -> dict[str, Any]:
+    report: dict[str, Any] = {"rolled_back": []}
     for migration in reversed(resolve_migrations(migration_names)):
         result = migration.rollback(paths.data, backup_ref)
         report["rolled_back"].append({"name": migration.name, "ok": result.ok, "detail": result.detail})
@@ -285,7 +286,7 @@ def locate_staged_version_dir(stage_root: Path, version: str) -> Path:
     return candidates[0]
 
 
-def apply_update(root: Path, bundle_zip: Path, manifest_path: Path, signing_key: str) -> Dict[str, Any]:
+def apply_update(root: Path, bundle_zip: Path, manifest_path: Path, signing_key: str) -> dict[str, Any]:
     paths = ShipPaths.from_root(root.resolve())
     state = ensure_state(paths)
     manifest = read_json(manifest_path)
@@ -311,7 +312,7 @@ def apply_update(root: Path, bundle_zip: Path, manifest_path: Path, signing_key:
     stage_root.mkdir(parents=True, exist_ok=True)
 
     backup_ref = create_data_backup(paths)
-    migration_report: Dict[str, Any] = {"backup_ref": str(backup_ref), "applied": [], "verified": [], "rolled_back": []}
+    migration_report: dict[str, Any] = {"backup_ref": str(backup_ref), "applied": [], "verified": [], "rolled_back": []}
     target_dir = paths.versions / next_version
     if target_dir.exists():
         shutil.rmtree(target_dir)
@@ -344,7 +345,7 @@ def apply_update(root: Path, bundle_zip: Path, manifest_path: Path, signing_key:
         log_event(paths, "update_failed", {"from": current_version, "to": next_version, "error": str(exc)})
         raise
     finally:
-        report_path = paths.migration_reports / f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{next_version}.json"
+        report_path = paths.migration_reports / f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{next_version}.json"
         write_json_atomic(report_path, migration_report)
         if stage_root.exists():
             shutil.rmtree(stage_root)
@@ -352,7 +353,7 @@ def apply_update(root: Path, bundle_zip: Path, manifest_path: Path, signing_key:
     return {"ok": True, "current_version": next_version, "previous_version": current_version}
 
 
-def recover_previous(root: Path) -> Dict[str, Any]:
+def recover_previous(root: Path) -> dict[str, Any]:
     paths = ShipPaths.from_root(root.resolve())
     state = ensure_state(paths)
     current = str(state.get("current_version") or "").strip()
@@ -371,7 +372,7 @@ def recover_previous(root: Path) -> Dict[str, Any]:
     return {"ok": True, "current_version": previous, "previous_version": current}
 
 
-def startup_check(root: Path, data_dir: Path) -> Dict[str, Any]:
+def startup_check(root: Path, data_dir: Path) -> dict[str, Any]:
     paths = ShipPaths.from_root(root.resolve())
     state = ensure_state(paths)
     validate_data_dir(paths, data_dir)
@@ -398,7 +399,7 @@ def create_support_bundle(root: Path, output: Path | None = None) -> Path:
     paths = ShipPaths.from_root(root.resolve())
     state = ensure_state(paths)
     state_path = Path(str(state.get("__state_path") or paths.state))
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     out = output or (paths.root / "support" / f"support-bundle-{timestamp}.zip")
     out.parent.mkdir(parents=True, exist_ok=True)
     targets = [
@@ -418,7 +419,7 @@ def create_support_bundle(root: Path, output: Path | None = None) -> Path:
 
 
 def sign_manifest(version: str, sha256: str, signing_key: str) -> str:
-    message = f"{version}:{sha256}".encode("utf-8")
+    message = f"{version}:{sha256}".encode()
     return hmac.new(signing_key.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 

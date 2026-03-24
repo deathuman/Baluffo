@@ -13,9 +13,9 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from src.shared.utils import now_iso
 
@@ -70,7 +70,7 @@ def sanitize_job_url(url: str) -> str:
     return ""
 
 
-def generate_job_key(job: Dict[str, Any]) -> str:
+def generate_job_key(job: dict[str, Any]) -> str:
     explicit = str(job.get("jobKey") or "").strip().lower()
     if re.match(r"^job_[a-f0-9]{8}$", explicit):
         return explicit
@@ -127,7 +127,7 @@ def _normalize_iso(value: Any, fallback: str = "") -> str:
     if not text:
         return fallback
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc).isoformat()
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(UTC).isoformat()
     except ValueError:
         return fallback
 
@@ -152,7 +152,7 @@ class LocalDataPaths:
     users: Path
 
     @staticmethod
-    def from_data_dir(data_dir: Path) -> "LocalDataPaths":
+    def from_data_dir(data_dir: Path) -> LocalDataPaths:
         root = data_dir / "local-user-data"
         return LocalDataPaths(root=root, profiles=root / "profiles.json", session=root / "session.json", users=root / "users")
 
@@ -182,26 +182,26 @@ class LocalDataStore:
         if not self.paths.session.exists():
             _write_json(self.paths.session, {"currentProfileId": ""})
 
-    def _load_profiles(self) -> List[Dict[str, Any]]:
+    def _load_profiles(self) -> list[dict[str, Any]]:
         raw = _read_json(self.paths.profiles, [])
         return raw if isinstance(raw, list) else []
 
-    def _save_profiles(self, profiles: List[Dict[str, Any]]) -> None:
+    def _save_profiles(self, profiles: list[dict[str, Any]]) -> None:
         _write_json(self.paths.profiles, profiles)
 
-    def _load_session(self) -> Dict[str, Any]:
+    def _load_session(self) -> dict[str, Any]:
         raw = _read_json(self.paths.session, {"currentProfileId": ""})
         return raw if isinstance(raw, dict) else {"currentProfileId": ""}
 
     def _save_session(self, uid: str = "") -> None:
         _write_json(self.paths.session, {"currentProfileId": str(uid or "")})
 
-    def _make_user(self, profile: Dict[str, Any] | None) -> Dict[str, Any] | None:
+    def _make_user(self, profile: dict[str, Any] | None) -> dict[str, Any] | None:
         if not profile:
             return None
         return {"uid": str(profile.get("id") or ""), "displayName": str(profile.get("name") or ""), "email": str(profile.get("email") or "")}
 
-    def _profile_for_uid(self, uid: str) -> Dict[str, Any] | None:
+    def _profile_for_uid(self, uid: str) -> dict[str, Any] | None:
         for profile in self._load_profiles():
             if str(profile.get("id") or "") == str(uid or ""):
                 return profile
@@ -212,42 +212,42 @@ class LocalDataStore:
         if not current or str(current.get("uid") or "") != str(uid or ""):
             raise ValueError("User mismatch.")
 
-    def _load_rows(self, path: Path) -> List[Dict[str, Any]]:
+    def _load_rows(self, path: Path) -> list[dict[str, Any]]:
         raw = _read_json(path, [])
         return raw if isinstance(raw, list) else []
 
-    def _save_rows(self, path: Path, rows: List[Dict[str, Any]]) -> None:
+    def _save_rows(self, path: Path, rows: list[dict[str, Any]]) -> None:
         _write_json(path, rows)
 
     def _ensure_user_dirs(self, uid: str) -> None:
         self.paths.user_dir(uid).mkdir(parents=True, exist_ok=True)
         self.paths.attachment_dir(uid).mkdir(parents=True, exist_ok=True)
 
-    def _load_saved_jobs(self, uid: str) -> List[Dict[str, Any]]:
+    def _load_saved_jobs(self, uid: str) -> list[dict[str, Any]]:
         rows = self._load_rows(self.paths.saved_jobs(uid))
         rows.sort(key=lambda row: str(row.get("savedAt") or ""), reverse=True)
         return rows
 
-    def _save_saved_jobs(self, uid: str, rows: List[Dict[str, Any]]) -> None:
+    def _save_saved_jobs(self, uid: str, rows: list[dict[str, Any]]) -> None:
         self._save_rows(self.paths.saved_jobs(uid), rows)
 
-    def _load_activity(self, uid: str) -> List[Dict[str, Any]]:
+    def _load_activity(self, uid: str) -> list[dict[str, Any]]:
         rows = self._load_rows(self.paths.activity(uid))
         rows.sort(key=lambda row: str(row.get("createdAt") or ""), reverse=True)
         return rows
 
-    def _save_activity(self, uid: str, rows: List[Dict[str, Any]]) -> None:
+    def _save_activity(self, uid: str, rows: list[dict[str, Any]]) -> None:
         self._save_rows(self.paths.activity(uid), rows)
 
-    def _load_attachments(self, uid: str) -> List[Dict[str, Any]]:
+    def _load_attachments(self, uid: str) -> list[dict[str, Any]]:
         rows = self._load_rows(self.paths.attachments(uid))
         rows.sort(key=lambda row: str(row.get("createdAt") or ""), reverse=True)
         return rows
 
-    def _save_attachments(self, uid: str, rows: List[Dict[str, Any]]) -> None:
+    def _save_attachments(self, uid: str, rows: list[dict[str, Any]]) -> None:
         self._save_rows(self.paths.attachments(uid), rows)
 
-    def sign_in(self, name: str) -> Dict[str, Any]:
+    def sign_in(self, name: str) -> dict[str, Any]:
         with LOCK:
             trimmed = str(name or "").strip()
             if not trimmed:
@@ -266,12 +266,12 @@ class LocalDataStore:
         with LOCK:
             self._save_session("")
 
-    def get_current_user(self) -> Dict[str, Any] | None:
+    def get_current_user(self) -> dict[str, Any] | None:
         with LOCK:
             uid = str(self._load_session().get("currentProfileId") or "")
             return self._make_user(self._profile_for_uid(uid))
 
-    def _normalize_saved_job(self, uid: str, row: Dict[str, Any], fallback: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    def _normalize_saved_job(self, uid: str, row: dict[str, Any], fallback: dict[str, Any] | None = None) -> dict[str, Any]:
         source = dict(row or {})
         base = dict(fallback or {})
         job_key = generate_job_key(
@@ -314,7 +314,7 @@ class LocalDataStore:
             "updatedAt": _normalize_iso(source.get("updatedAt") or base.get("updatedAt"), now_iso()),
         }
 
-    def _merge_saved_job(self, uid: str, existing: Dict[str, Any], imported: Dict[str, Any]) -> Dict[str, Any]:
+    def _merge_saved_job(self, uid: str, existing: dict[str, Any], imported: dict[str, Any]) -> dict[str, Any]:
         current = self._normalize_saved_job(uid, existing)
         incoming = self._normalize_saved_job(uid, imported, current)
         merged = {**current, **incoming}
@@ -329,7 +329,7 @@ class LocalDataStore:
         merged["phaseTimestamps"] = phase_timestamps
         return merged
 
-    def _add_activity(self, uid: str, event_type: str, job: Dict[str, Any], details: Dict[str, Any] | None = None) -> None:
+    def _add_activity(self, uid: str, event_type: str, job: dict[str, Any], details: dict[str, Any] | None = None) -> None:
         rows = self._load_activity(uid)
         rows.append(
             {
@@ -356,15 +356,15 @@ class LocalDataStore:
             target["updatedAt"] = now_iso()
             self._save_saved_jobs(uid, rows)
 
-    def list_saved_jobs(self, uid: str) -> List[Dict[str, Any]]:
+    def list_saved_jobs(self, uid: str) -> list[dict[str, Any]]:
         self._require_current_user(uid)
         with LOCK:
             return self._load_saved_jobs(uid)
 
-    def get_saved_job_keys(self, uid: str) -> List[str]:
+    def get_saved_job_keys(self, uid: str) -> list[str]:
         return [str(row.get("jobKey") or "") for row in self.list_saved_jobs(uid)]
 
-    def save_job_for_user(self, uid: str, job: Dict[str, Any], options: Dict[str, Any] | None = None) -> str:
+    def save_job_for_user(self, uid: str, job: dict[str, Any], options: dict[str, Any] | None = None) -> str:
         self._require_current_user(uid)
         with LOCK:
             self._ensure_user_dirs(uid)
@@ -420,7 +420,7 @@ class LocalDataStore:
                 event_type = "custom_job_removed" if bool(removed.get("isCustom")) else "job_removed"
                 self._add_activity(uid, event_type, removed, {"fromStatus": str(removed.get("applicationStatus") or "bookmark")})
 
-    def update_application_status(self, uid: str, job_key: str, status: str, options: Dict[str, Any] | None = None) -> None:
+    def update_application_status(self, uid: str, job_key: str, status: str, options: dict[str, Any] | None = None) -> None:
         self._require_current_user(uid)
         options = options or {}
         with LOCK:
@@ -455,12 +455,12 @@ class LocalDataStore:
             target["notes"] = str(notes or "")
             self._save_saved_jobs(uid, rows)
 
-    def list_attachments_for_job(self, uid: str, job_key: str) -> List[Dict[str, Any]]:
+    def list_attachments_for_job(self, uid: str, job_key: str) -> list[dict[str, Any]]:
         self._require_current_user(uid)
         with LOCK:
             return [row for row in self._load_attachments(uid) if str(row.get("jobKey") or "") == str(job_key or "")]
 
-    def add_attachment_for_job(self, uid: str, job_key: str, file_meta: Dict[str, Any], blob_data_url: str) -> str:
+    def add_attachment_for_job(self, uid: str, job_key: str, file_meta: dict[str, Any], blob_data_url: str) -> str:
         self._require_current_user(uid)
         with LOCK:
             self._ensure_user_dirs(uid)
@@ -512,12 +512,12 @@ class LocalDataStore:
             self._touch_attachment_count(uid, job_key)
             self._add_activity(uid, "attachment_deleted", {"jobKey": job_key}, {"attachmentId": str(attachment_id or "")})
 
-    def list_activity_for_user(self, uid: str, limit: int = 300) -> List[Dict[str, Any]]:
+    def list_activity_for_user(self, uid: str, limit: int = 300) -> list[dict[str, Any]]:
         self._require_current_user(uid)
         with LOCK:
             return self._load_activity(uid)[: max(1, min(2000, int(limit or 300)))]
 
-    def export_profile_data(self, uid: str, include_files: bool = False) -> Dict[str, Any]:
+    def export_profile_data(self, uid: str, include_files: bool = False) -> dict[str, Any]:
         self._require_current_user(uid)
         with LOCK:
             saved_jobs = [self._normalize_saved_job(uid, row) for row in self._load_saved_jobs(uid)]
@@ -548,7 +548,7 @@ class LocalDataStore:
                 "activityLog": activity,
             }
 
-    def import_profile_data(self, uid: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def import_profile_data(self, uid: str, payload: dict[str, Any]) -> dict[str, Any]:
         self._require_current_user(uid)
         created = 0
         updated = 0
@@ -556,7 +556,7 @@ class LocalDataStore:
         history_added = 0
         attachments_added = 0
         attachments_hydrated = 0
-        warnings: List[str] = []
+        warnings: list[str] = []
         with LOCK:
             self._ensure_user_dirs(uid)
             saved_map = {str(row.get("jobKey") or ""): row for row in self._load_saved_jobs(uid)}
@@ -664,7 +664,7 @@ class LocalDataStore:
             "warnings": warnings,
         }
 
-    def get_admin_overview(self, _admin_pin: str | None = None) -> Dict[str, Any]:
+    def get_admin_overview(self, _admin_pin: str | None = None) -> dict[str, Any]:
         with LOCK:
             users = []
             for user_dir in sorted(self.paths.users.iterdir()) if self.paths.users.exists() else []:

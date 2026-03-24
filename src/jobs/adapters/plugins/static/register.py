@@ -13,33 +13,36 @@ To add a new static site plugin:
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import AdapterPluginContext, SimpleAdapterPlugin
 from src.jobs.models import RawJob
 
-from . import example_com
-from . import example_org
-from . import activision
-from . import amanotes
-from . import blizzard
-from . import cdprojektred
-from . import climax
-from . import embark
-from . import kojima
-from . import larian
-from . import littlechicken
-from . import hrmos
-from . import globalstep
-from . import jobvite
-from . import lionbridge
-from . import milestone
-from . import naconstudiomilan
-from . import remedy
-from . import riot
-from . import sheet_studios
-from . import supercell
+from . import (
+    activision,
+    amanotes,
+    blizzard,
+    cdprojektred,
+    climax,
+    embark,
+    example_com,
+    example_org,
+    globalstep,
+    hrmos,
+    jobvite,
+    kojima,
+    larian,
+    lionbridge,
+    littlechicken,
+    milestone,
+    naconstudiomilan,
+    remedy,
+    riot,
+    sheet_studios,
+    supercell,
+)
 
 
 def _pilot_can_handle(ctx: AdapterPluginContext) -> bool:
@@ -54,10 +57,10 @@ def _pilot_run(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    pages: List[str],
-    source_row: Dict[str, Any],
+    pages: list[str],
+    source_row: dict[str, Any],
     **kwargs: Any,
-) -> List[RawJob]:
+) -> list[RawJob]:
     """Pilot: no-op; real site plugins will parse pages and return RawJobs."""
     return []
 

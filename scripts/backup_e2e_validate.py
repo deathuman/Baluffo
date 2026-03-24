@@ -13,9 +13,9 @@ import json
 import shutil
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -29,7 +29,7 @@ def _normalize_iso_text(value: Any) -> str:
     if not text:
         return ""
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc).isoformat()
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(UTC).isoformat()
     except ValueError:
         return text
 
@@ -42,11 +42,11 @@ def _json_dumps_sorted(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False)
 
 
-def _job_fingerprint(row: Dict[str, Any]) -> str:
+def _job_fingerprint(row: dict[str, Any]) -> str:
     return str(row.get("jobKey") or "").strip()
 
 
-def _attachment_fingerprint(row: Dict[str, Any]) -> str:
+def _attachment_fingerprint(row: dict[str, Any]) -> str:
     job_key = str(row.get("jobKey") or "").strip()
     attachment_id = str(row.get("id") or "").strip()
     if job_key and attachment_id:
@@ -62,7 +62,7 @@ def _attachment_fingerprint(row: Dict[str, Any]) -> str:
     )
 
 
-def _activity_fingerprint(row: Dict[str, Any]) -> str:
+def _activity_fingerprint(row: dict[str, Any]) -> str:
     details = row.get("details") if isinstance(row.get("details"), dict) else {}
     return "|".join(
         [
@@ -76,7 +76,7 @@ def _activity_fingerprint(row: Dict[str, Any]) -> str:
     )
 
 
-def _normalize_job(row: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_job(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "jobKey": str(row.get("jobKey") or ""),
         "title": str(row.get("title") or ""),
@@ -102,7 +102,7 @@ def _normalize_job(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _normalize_attachment(row: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_attachment(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str(row.get("id") or ""),
         "jobKey": str(row.get("jobKey") or ""),
@@ -113,7 +113,7 @@ def _normalize_attachment(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _normalize_activity(row: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_activity(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": str(row.get("type") or ""),
         "jobKey": str(row.get("jobKey") or ""),
@@ -126,18 +126,18 @@ def _normalize_activity(row: Dict[str, Any]) -> Dict[str, Any]:
 
 @dataclass
 class Snapshot:
-    jobs: Dict[str, Dict[str, Any]]
-    attachments: Dict[str, Dict[str, Any]]
-    activity: Dict[str, Dict[str, Any]]
-    attachment_hashes: Dict[str, str]
+    jobs: dict[str, dict[str, Any]]
+    attachments: dict[str, dict[str, Any]]
+    activity: dict[str, dict[str, Any]]
+    attachment_hashes: dict[str, str]
 
 
 def _capture_snapshot(store: LocalDataStore, uid: str) -> Snapshot:
     jobs_rows = store.list_saved_jobs(uid)
     jobs = {_job_fingerprint(row): _normalize_job(row) for row in jobs_rows}
 
-    attachments: Dict[str, Dict[str, Any]] = {}
-    attachment_hashes: Dict[str, str] = {}
+    attachments: dict[str, dict[str, Any]] = {}
+    attachment_hashes: dict[str, str] = {}
     for job in jobs_rows:
         job_key = str(job.get("jobKey") or "")
         for row in store.list_attachments_for_job(uid, job_key):
@@ -162,18 +162,18 @@ def _capture_snapshot(store: LocalDataStore, uid: str) -> Snapshot:
 
 
 def _diff_maps(
-    before: Dict[str, Dict[str, Any]],
-    after: Dict[str, Dict[str, Any]],
+    before: dict[str, dict[str, Any]],
+    after: dict[str, dict[str, Any]],
     label: str,
-) -> List[Dict[str, Any]]:
-    mismatches: List[Dict[str, Any]] = []
+) -> list[dict[str, Any]]:
+    mismatches: list[dict[str, Any]] = []
     before_keys = set(before.keys())
     after_keys = set(after.keys())
     if label.startswith("attachments"):
         # Reconcile attachment id renames by metadata signature.
         before_only = sorted(before_keys - after_keys)
         after_only = sorted(after_keys - before_keys)
-        before_sig: Dict[str, str] = {}
+        before_sig: dict[str, str] = {}
         for key in before_only:
             row = before.get(key) or {}
             sig = "|".join(
@@ -247,8 +247,8 @@ def _diff_maps(
     return mismatches
 
 
-def _diff_attachment_hashes(before: Dict[str, str], after: Dict[str, str]) -> List[Dict[str, Any]]:
-    mismatches: List[Dict[str, Any]] = []
+def _diff_attachment_hashes(before: dict[str, str], after: dict[str, str]) -> list[dict[str, Any]]:
+    mismatches: list[dict[str, Any]] = []
     before_keys = set(before.keys())
     after_keys = set(after.keys())
     for key in sorted(before_keys - after_keys):
@@ -268,7 +268,7 @@ def _diff_attachment_hashes(before: Dict[str, str], after: Dict[str, str]) -> Li
     return mismatches
 
 
-def _seed_profile_data(store: LocalDataStore, uid: str) -> Tuple[List[str], List[str]]:
+def _seed_profile_data(store: LocalDataStore, uid: str) -> tuple[list[str], list[str]]:
     job_a = store.save_job_for_user(
         uid,
         {
@@ -346,7 +346,7 @@ def _wipe_profile(store: LocalDataStore, uid: str, profile_name: str) -> str:
     return str(recreated.get("uid") or "")
 
 
-def run_validation(data_dir: Path) -> Dict[str, Any]:
+def run_validation(data_dir: Path) -> dict[str, Any]:
     profile_name = "Backup Validation Profile"
     if data_dir.exists():
         shutil.rmtree(data_dir, ignore_errors=True)
@@ -359,7 +359,7 @@ def run_validation(data_dir: Path) -> Dict[str, Any]:
     if not uid:
         raise RuntimeError("Could not create isolated validation profile.")
 
-    scenarios: List[Dict[str, Any]] = []
+    scenarios: list[dict[str, Any]] = []
     overall_ok = True
 
     # Scenario A: JSON export/import (without files)

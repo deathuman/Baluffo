@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest import mock
 
 from scripts import build_frontend_runtime_config as frontend_runtime_config

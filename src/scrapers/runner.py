@@ -3,11 +3,11 @@
 
 from __future__ import annotations
 
-from collections import Counter
 import hashlib
 import json
 import os
 import sys
+from collections import Counter
 from pathlib import Path
 
 # Allow importing src when runner is executed as script (e.g. by static adapter subprocess).
@@ -15,20 +15,24 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+from typing import Any
+
 from src.scrapers import domain_profiles
-from src.scrapers.helpers import clean_text as _clean_text, safe_id as _safe_id, to_float as _to_float, to_int as _to_int
+from src.scrapers.helpers import clean_text as _clean_text
+from src.scrapers.helpers import safe_id as _safe_id
+from src.scrapers.helpers import to_float as _to_float
+from src.scrapers.helpers import to_int as _to_int
 from src.scrapers.providers.jobylon_v1 import extract_jobylon_v1_jobs
 from src.scrapers.settings import SCRAPY_PLAYWRIGHT_SETTINGS, SCRAPY_SETTINGS_DEFAULTS
 from src.scrapers.spiders.generic_careers import GenericCareersSpider
-from typing import Any, Dict, List, Tuple
 
 
-def _source_id(name: str, studio: str, pages: List[str]) -> str:
+def _source_id(name: str, studio: str, pages: list[str]) -> str:
     seed = "|".join([_clean_text(name), _clean_text(studio), *[_clean_text(p) for p in pages]])
     return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
 
 
-def _classify_result(*, ok: bool, fetched_count: int, kept_count: int, partial_errors: List[str]) -> str:
+def _classify_result(*, ok: bool, fetched_count: int, kept_count: int, partial_errors: list[str]) -> str:
     if not ok:
         return "parse_error"
     if kept_count > 0:
@@ -43,7 +47,7 @@ def _classify_result(*, ok: bool, fetched_count: int, kept_count: int, partial_e
     return "ok_no_jobs"
 
 
-def _stats_subset(stats: Dict[str, Any]) -> Dict[str, Any]:
+def _stats_subset(stats: dict[str, Any]) -> dict[str, Any]:
     return {
         "downloader/request_count": _to_int(stats.get("downloader/request_count")),
         "downloader/response_count": _to_int(stats.get("downloader/response_count")),
@@ -60,7 +64,7 @@ def _stats_subset(stats: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _json_error_envelope(error: str, *, source_name: str, studio: str) -> Dict[str, Any]:
+def _json_error_envelope(error: str, *, source_name: str, studio: str) -> dict[str, Any]:
     sid = _source_id(source_name, studio, [])
     return {
         "ok": False,
@@ -100,7 +104,7 @@ def _make_json_safe(value: Any) -> Any:
     return _clean_text(value)
 
 
-def _emit_envelope(envelope: Dict[str, Any]) -> None:
+def _emit_envelope(envelope: dict[str, Any]) -> None:
     safe_envelope = _make_json_safe(envelope)
     try:
         payload = json.dumps(safe_envelope, ensure_ascii=False)
@@ -121,7 +125,7 @@ def _emit_envelope(envelope: Dict[str, Any]) -> None:
         sys.stdout.flush()
 
 
-def _validate_input(payload: Any) -> Tuple[Dict[str, Any] | None, str]:
+def _validate_input(payload: Any) -> tuple[dict[str, Any] | None, str]:
     if not isinstance(payload, dict):
         return None, "Invalid schema: top-level JSON object required"
     source = payload.get("source")
@@ -183,7 +187,7 @@ def _validate_input(payload: Any) -> Tuple[Dict[str, Any] | None, str]:
     }, ""
 
 
-def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
+def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
     source = validated["source"]
     runtime = validated["runtime"]
     source_name = _clean_text(source.get("name")) or "scrapy_source"
@@ -191,11 +195,11 @@ def _run_scrapy(validated: Dict[str, Any]) -> Dict[str, Any]:
     pages = source.get("pages") or []
     source_id_value = _source_id(source_name, studio, list(pages))
     domain_profile = domain_profiles.domain_profile_for_url(_clean_text(pages[0]) if pages else "")
-    partial_errors: List[str] = []
-    jobs: List[Dict[str, Any]] = []
+    partial_errors: list[str] = []
+    jobs: list[dict[str, Any]] = []
     seen_links = set()
     reject_reasons: Counter[str] = Counter()
-    extraction_stats: Dict[str, int] = {
+    extraction_stats: dict[str, int] = {
         "candidate_links_found": 0,
         "detail_pages_visited": 0,
         "jobs_emitted": 0,

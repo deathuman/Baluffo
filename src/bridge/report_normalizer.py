@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import ast
 import json
-from typing import Any, Dict, List, Set
+from typing import Any
 
 
 def safe_int(value: Any, default: int, minimum: int, maximum: int) -> int:
@@ -22,8 +22,8 @@ def safe_schema_version(value: Any) -> int:
     return max(1, parsed)
 
 
-def coerce_fetch_report_detail_row(detail: Any) -> Dict[str, Any] | None:
-    candidate: Dict[str, Any] | None = None
+def coerce_fetch_report_detail_row(detail: Any) -> dict[str, Any] | None:
+    candidate: dict[str, Any] | None = None
     if isinstance(detail, dict):
         candidate = detail
     elif isinstance(detail, str):
@@ -53,13 +53,13 @@ def coerce_fetch_report_detail_row(detail: Any) -> Dict[str, Any] | None:
     }
 
 
-def _normalize_task_progress(payload: Any) -> Dict[str, Any]:
+def _normalize_task_progress(payload: Any) -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     mode = str(src.get("mode") or "").strip().lower()
     if mode not in {"determinate", "indeterminate"}:
         mode = "indeterminate"
     counts_raw = src.get("counts") if isinstance(src.get("counts"), dict) else {}
-    counts: Dict[str, Any] = {}
+    counts: dict[str, Any] = {}
     for key, value in counts_raw.items():
         clean_key = str(key or "").strip()
         if not clean_key:
@@ -86,7 +86,7 @@ def _normalize_task_progress(payload: Any) -> Dict[str, Any]:
     }
 
 
-def _derive_fetch_task_progress(src: Dict[str, Any], summary: Dict[str, Any]) -> Dict[str, Any]:
+def _derive_fetch_task_progress(src: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
     finished_at = str(src.get("finishedAt") or "").strip()
     successful = safe_int(summary.get("successfulSources"), 0, 0, 1_000_000)
     failed = safe_int(summary.get("failedSources"), 0, 0, 1_000_000)
@@ -130,7 +130,7 @@ def _derive_fetch_task_progress(src: Dict[str, Any], summary: Dict[str, Any]) ->
     }
 
 
-def _derive_discovery_task_progress(src: Dict[str, Any], summary: Dict[str, Any]) -> Dict[str, Any]:
+def _derive_discovery_task_progress(src: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
     finished_at = str(src.get("finishedAt") or "").strip()
     phase_key = str(summary.get("phaseKey") or summary.get("phase") or "").strip() or ("completed" if finished_at else "starting")
     phase_label = str(summary.get("phaseLabel") or "").strip() or ("Discovery completed" if finished_at else "Initializing scan")
@@ -175,20 +175,20 @@ def _derive_discovery_task_progress(src: Dict[str, Any], summary: Dict[str, Any]
     }
 
 
-def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
     runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
     sources = src.get("sources")
     if not isinstance(sources, list):
         sources = []
-    normalized_sources: List[Dict[str, Any]] = []
+    normalized_sources: list[dict[str, Any]] = []
     for row in sources:
         if not isinstance(row, dict):
             continue
         details_raw = row.get("details")
         details = details_raw if isinstance(details_raw, list) else []
-        normalized_details: List[Dict[str, Any]] = []
+        normalized_details: list[dict[str, Any]] = []
         for detail in details:
             parsed_detail = coerce_fetch_report_detail_row(detail)
             if parsed_detail:
@@ -206,7 +206,7 @@ def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
             "details": normalized_details,
         })
     slowest_sources_raw = runtime.get("slowestSources") if isinstance(runtime.get("slowestSources"), list) else []
-    slowest_sources: List[Dict[str, Any]] = []
+    slowest_sources: list[dict[str, Any]] = []
     for row in slowest_sources_raw[:10]:
         if not isinstance(row, dict):
             continue
@@ -306,7 +306,7 @@ def normalize_fetch_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
-def derive_discovery_queued_count(report: Dict[str, Any], summary: Dict[str, Any]) -> int:
+def derive_discovery_queued_count(report: dict[str, Any], summary: dict[str, Any]) -> int:
     queued = int(summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0)
     candidates = report.get("candidates")
     if not isinstance(candidates, list):
@@ -318,7 +318,7 @@ def derive_discovery_queued_count(report: Dict[str, Any], summary: Dict[str, Any
     return max(0, max(queued, derived))
 
 
-def normalize_discovery_report_contract(payload: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_discovery_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
     runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
@@ -386,15 +386,15 @@ def normalize_discovery_report_contract(payload: Dict[str, Any]) -> Dict[str, An
 
 
 def failed_source_names_from_report(
-    report: Dict[str, Any],
+    report: dict[str, Any],
     *,
-    allowed_names: Set[str] | None = None,
-) -> List[str]:
+    allowed_names: set[str] | None = None,
+) -> list[str]:
     """Extract source names with status 'error' from a normalized fetch report."""
     sources = report.get("sources")
     if not isinstance(sources, list):
         return []
-    names: List[str] = []
+    names: list[str] = []
     for row in sources:
         if not isinstance(row, dict):
             continue
@@ -405,8 +405,8 @@ def failed_source_names_from_report(
             continue
         if name:
             names.append(name)
-    seen: Set[str] = set()
-    out: List[str] = []
+    seen: set[str] = set()
+    out: list[str] = []
     for name in sorted(names, key=lambda item: item.lower()):
         key = name.lower()
         if key in seen:

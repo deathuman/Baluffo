@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 from src.jobs.adapters import community
 from src.jobs.common import config as common_config
-from src.jobs.common.registry_defaults import DEFAULT_STUDIO_SOURCE_REGISTRY, REDUNDANT_STATIC_IF_PROVIDER
 from src.jobs.common import social as common_social
 from src.jobs.common import sources as common_sources
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.common.registry import registry_entries as common_registry_entries
+from src.jobs.common.registry_defaults import (
+    DEFAULT_STUDIO_SOURCE_REGISTRY,
+    REDUNDANT_STATIC_IF_PROVIDER,
+)
 from src.jobs.models import SourceConfig
 
 DEFAULT_SOCIAL_CONFIG = common_social.DEFAULT_SOCIAL_CONFIG
@@ -27,11 +31,11 @@ SOURCE_APPROVAL_STATE_PATH = common_config.SOURCE_APPROVAL_STATE_PATH
 STUDIO_SOURCE_REGISTRY = common_sources.load_studio_source_registry(DEFAULT_STUDIO_SOURCE_REGISTRY)
 
 
-def load_registry_from_file(path: Path, fallback: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def load_registry_from_file(path: Path, fallback: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return common_sources.load_registry_from_file(path, fallback)
 
 
-def load_studio_source_registry() -> List[Dict[str, Any]]:
+def load_studio_source_registry() -> list[dict[str, Any]]:
     return common_sources.load_studio_source_registry(DEFAULT_STUDIO_SOURCE_REGISTRY)
 
 
@@ -43,8 +47,8 @@ def registry_entries(
     adapter: str,
     *,
     enabled_only: bool = True,
-    registry_rows: Optional[Sequence[SourceConfig]] = None,
-) -> List[Dict[str, Any]]:
+    registry_rows: Sequence[SourceConfig] | None = None,
+) -> list[dict[str, Any]]:
     if registry_rows is None:
         return common_registry_entries(
             adapter,
@@ -52,7 +56,7 @@ def registry_entries(
             studio_source_registry=STUDIO_SOURCE_REGISTRY,
             redundant_static_rules=REDUNDANT_STATIC_IF_PROVIDER,
         )
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for row in registry_rows:
         from src.jobs.text_utils import clean_text
 
@@ -72,7 +76,7 @@ def load_social_config(
     config_path: Path = DEFAULT_SOCIAL_CONFIG_PATH,
     enabled: bool = False,
     lookback_minutes: int = DEFAULT_SOCIAL_LOOKBACK_MINUTES,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return common_social.load_social_config(
         config_path=config_path,
         enabled=enabled,

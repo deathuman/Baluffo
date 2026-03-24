@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any
 
 from src.jobs.common.config import SOURCE_REGISTRY_ACTIVE_PATH
 
@@ -12,7 +13,7 @@ from src.jobs.common.config import SOURCE_REGISTRY_ACTIVE_PATH
 # and are imported here at runtime to avoid circularity during migration.
 
 
-def _looks_like_placeholder_registry_row(row: Dict[str, Any]) -> bool:
+def _looks_like_placeholder_registry_row(row: dict[str, Any]) -> bool:
     name = str(row.get("name") or "").strip().lower()
     studio = str(row.get("studio") or "").strip().lower()
     slug = str(row.get("slug") or "").strip().lower()
@@ -26,7 +27,7 @@ def _looks_like_placeholder_registry_row(row: Dict[str, Any]) -> bool:
     )
 
 
-def load_registry_from_file(path: Path, fallback: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def load_registry_from_file(path: Path, fallback: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     try:
         if not path.exists():
             return [dict(row) for row in fallback]
@@ -51,7 +52,7 @@ def read_approved_since_last_run(path: Path) -> int:
         return 0
 
 
-def load_studio_source_registry(default_registry: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def load_studio_source_registry(default_registry: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = load_registry_from_file(SOURCE_REGISTRY_ACTIVE_PATH, default_registry)
     filtered = [row for row in rows if isinstance(row, dict) and not _looks_like_placeholder_registry_row(row)]
     return filtered if filtered else [dict(row) for row in default_registry]

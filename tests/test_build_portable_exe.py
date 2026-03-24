@@ -2,7 +2,6 @@ from pathlib import Path
 from unittest import mock
 from zipfile import ZipFile
 
-from src.app_version import APP_VERSION
 from scripts import build_ship_bundle
 from scripts.build_portable_exe import (
     DEFAULT_BUNDLE_VERSION,
@@ -12,6 +11,7 @@ from scripts.build_portable_exe import (
     parse_args,
     resolve_icon_path,
 )
+from src.app_version import APP_VERSION
 from tests.helpers.temp_paths import workspace_tmpdir
 
 

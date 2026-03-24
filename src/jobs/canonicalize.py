@@ -3,31 +3,36 @@
 from __future__ import annotations
 
 import json
-import time
 import threading
+import time
 from collections import Counter
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 from src.jobs.adapters import community
-from src.jobs.interfaces import JobProcessor
 from src.jobs.common import config as common_config
+from src.jobs.common.datetime_utils import to_iso
 from src.jobs.common.heuristics import (
     classify_company_type,
     compute_focus_score,
     compute_quality_score,
     map_profession,
     normalize_company_value,
-    title_has_focus_role,
 )
-from src.jobs.game_detection import looks_like_game_job
-from src.jobs.common.datetime_utils import parse_datetime, posted_ts, to_iso
 from src.jobs.common.parsing import normalize_contract_type
 from src.jobs.common.url import is_supported_redirect_url
+from src.jobs.interfaces import JobProcessor
 from src.jobs.models import CanonicalJob, RawJob
-from src.jobs.transport import PooledRedirectResolver
 from src.jobs.normalizers import normalize_country, normalize_sector, normalize_work_type
-from src.jobs.text_utils import clean_text, norm_text, normalize_url, sanitize_location_text, sanitize_public_text
+from src.jobs.text_utils import (
+    clean_text,
+    norm_text,
+    normalize_url,
+    sanitize_location_text,
+    sanitize_public_text,
+)
+from src.jobs.transport import PooledRedirectResolver
 from src.shared.utils import env_flag
 
 UNKNOWN_COMPANY_LABEL = common_config.UNKNOWN_COMPANY_LABEL
@@ -44,7 +49,7 @@ REDIRECT_RESOLUTION_SKIP_SOURCES = {"gracklehq"}
 _LOCATION_AUDIT_LOCK = threading.Lock()
 _LOCATION_AUDIT_FIELD_COUNTS: Counter[str] = Counter()
 _LOCATION_AUDIT_REASON_COUNTS: Counter[str] = Counter()
-_LOCATION_AUDIT_EXAMPLES: List[Dict[str, Any]] = []
+_LOCATION_AUDIT_EXAMPLES: list[dict[str, Any]] = []
 
 
 def reset_location_quality_audit() -> None:
@@ -54,7 +59,7 @@ def reset_location_quality_audit() -> None:
         _LOCATION_AUDIT_EXAMPLES.clear()
 
 
-def snapshot_location_quality_audit(*, total_rows: int = 0) -> Dict[str, Any]:
+def snapshot_location_quality_audit(*, total_rows: int = 0) -> dict[str, Any]:
     with _LOCATION_AUDIT_LOCK:
         return {
             "totalRows": max(0, int(total_rows or 0)),
@@ -101,9 +106,9 @@ def canonicalize_job_with_reason(
     *,
     source: str,
     fetched_at: str,
-    resolve_redirect_url: Optional[Callable[[str], str]] = None,
+    resolve_redirect_url: Callable[[str], str] | None = None,
     resolved_job_link: Any = None,
-) -> Tuple[Optional[CanonicalJob], str]:
+) -> tuple[CanonicalJob | None, str]:
     if not isinstance(raw, dict):
         return None, "invalid_payload"
     title = sanitize_public_text(raw.get("title"))
@@ -154,7 +159,7 @@ def canonicalize_job_with_reason(
             job_link=normalized_link,
         )
 
-    def normalize_source_bundle(value: Any) -> List[Dict[str, Any]]:
+    def normalize_source_bundle(value: Any) -> list[dict[str, Any]]:
         entries = value
         if isinstance(entries, str):
             try:
@@ -163,7 +168,7 @@ def canonicalize_job_with_reason(
                 entries = []
         if not isinstance(entries, list):
             entries = []
-        normalized_entries: List[Dict[str, Any]] = []
+        normalized_entries: list[dict[str, Any]] = []
         seen = set()
         for item in entries:
             if not isinstance(item, dict):
@@ -250,9 +255,9 @@ def canonicalize_job(
     *,
     source: str,
     fetched_at: str,
-    resolve_redirect_url: Optional[Callable[[str], str]] = None,
+    resolve_redirect_url: Callable[[str], str] | None = None,
     resolved_job_link: Any = None,
-) -> Optional[CanonicalJob]:
+) -> CanonicalJob | None:
     normalized, _reason = canonicalize_job_with_reason(
         raw,
         source=source,
@@ -268,12 +273,12 @@ def canonicalize_google_sheets_rows(
     *,
     source: str,
     fetched_at: str,
-    redirect_resolver: Optional[PooledRedirectResolver] = None,
+    redirect_resolver: PooledRedirectResolver | None = None,
     redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
-) -> Tuple[List[CanonicalJob], Counter, Dict[str, int]]:
+) -> tuple[list[CanonicalJob], Counter, dict[str, int]]:
     redirect_concurrency = max(1, int(redirect_concurrency or DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY))
-    redirect_candidates: List[Tuple[int, str]] = []
-    resolved_links: Dict[int, str] = {}
+    redirect_candidates: list[tuple[int, str]] = []
+    resolved_links: dict[int, str] = {}
     for idx, raw in enumerate(raw_rows):
         normalized_link = normalize_url((raw or {}).get("jobLink"))
         if normalized_link and is_supported_redirect_url(normalized_link):
@@ -284,7 +289,7 @@ def canonicalize_google_sheets_rows(
     redirect_started = time.perf_counter()
     resolve_fn = getattr(redirect_resolver, "resolve", None)
     if redirect_candidates and callable(resolve_fn):
-        def _resolve(item: Tuple[int, str]) -> Tuple[int, str]:
+        def _resolve(item: tuple[int, str]) -> tuple[int, str]:
             row_idx, url = item
             return row_idx, resolve_fn(url)
 
@@ -302,7 +307,7 @@ def canonicalize_google_sheets_rows(
     resolver_stats_after = snapshot_stats() if callable(snapshot_stats) else {}
 
     canonical_started = time.perf_counter()
-    canonical_batch: List[CanonicalJob] = []
+    canonical_batch: list[CanonicalJob] = []
     drop_reasons: Counter[str] = Counter()
     for idx, raw in enumerate(raw_rows):
         normalized, drop_reason = canonicalize_job_with_reason(
@@ -331,11 +336,11 @@ def canonicalize_google_sheets_rows(
     }
 
 
-def canonical_job_to_legacy_dict(job: CanonicalJob) -> Dict[str, Any]:
+def canonical_job_to_legacy_dict(job: CanonicalJob) -> dict[str, Any]:
     return job.to_dict()
 
 
-def canonical_jobs_to_legacy_dicts(rows: Sequence[CanonicalJob]) -> List[Dict[str, Any]]:
+def canonical_jobs_to_legacy_dicts(rows: Sequence[CanonicalJob]) -> list[dict[str, Any]]:
     return [row.to_dict() for row in rows]
 
 
@@ -346,8 +351,8 @@ class CanonicalNormalizer(JobProcessor):
         self,
         source: str,
         fetched_at: str,
-        resolve_redirect_url: Optional[Callable[[str], str]] = None,
-        redirect_resolver: Optional[PooledRedirectResolver] = None,
+        resolve_redirect_url: Callable[[str], str] | None = None,
+        redirect_resolver: PooledRedirectResolver | None = None,
         redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
     ) -> None:
         self.source = source
@@ -355,10 +360,10 @@ class CanonicalNormalizer(JobProcessor):
         self.resolve_redirect_url = resolve_redirect_url
         self.redirect_resolver = redirect_resolver
         self.redirect_concurrency = redirect_concurrency
-        self.stats: Dict[str, Any] = {}
+        self.stats: dict[str, Any] = {}
         self.drop_reasons: Counter[str] = Counter()
 
-    def process(self, jobs: List[CanonicalJob], **options: Any) -> List[CanonicalJob]:
+    def process(self, jobs: list[CanonicalJob], **options: Any) -> list[CanonicalJob]:
         # Implementation accepts RawJob masquerading as CanonicalJob initially
         # during the adapter -> pipeline boundary transition.
         raw_rows = jobs

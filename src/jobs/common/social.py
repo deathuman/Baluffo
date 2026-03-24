@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from src.jobs.common.config import (
     DEFAULT_SOCIAL_CONFIG_PATH,
@@ -14,7 +14,7 @@ from src.jobs.common.config import (
 
 SOCIAL_SOURCE_NAMES = {"social_reddit", "social_x", "social_mastodon"}
 
-DEFAULT_SOCIAL_CONFIG: Dict[str, Any] = {
+DEFAULT_SOCIAL_CONFIG: dict[str, Any] = {
     "enabled": False,
     "minConfidence": DEFAULT_SOCIAL_MIN_CONFIDENCE,
     "rejectForHirePosts": True,
@@ -67,8 +67,8 @@ DEFAULT_SOCIAL_CONFIG: Dict[str, Any] = {
 }
 
 
-def _deep_merge_dicts(base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
-    merged: Dict[str, Any] = dict(base)
+def _deep_merge_dicts(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = dict(base)
     for key, value in (overrides or {}).items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
             merged[key] = _deep_merge_dicts(dict(merged[key]), value)
@@ -82,7 +82,7 @@ def load_social_config(
     config_path: Path | None = DEFAULT_SOCIAL_CONFIG_PATH,
     enabled: bool = False,
     lookback_minutes: int = DEFAULT_SOCIAL_LOOKBACK_MINUTES,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     resolved_path = Path(config_path) if config_path else DEFAULT_SOCIAL_CONFIG_PATH
     try:
         payload = json.loads(resolved_path.read_text(encoding="utf-8"))

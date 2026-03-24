@@ -9,12 +9,11 @@ import argparse
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.baluffo_config import resolve_path as _resolve_path
 
-
-LOG_LEVEL_ORDER: Dict[str, int] = {"debug": 10, "info": 20, "warn": 30, "error": 40}
+LOG_LEVEL_ORDER: dict[str, int] = {"debug": 10, "info": 20, "warn": 30, "error": 40}
 
 
 @dataclass
@@ -52,8 +51,8 @@ def resolve_runtime_config(
     root: Path,
     get_bridge_defaults: Any,
     get_storage_defaults: Any,
-    argv: Optional[List[str]] = None,
-    env: Optional[Dict[str, str]] = None,
+    argv: list[str] | None = None,
+    env: dict[str, str] | None = None,
 ) -> RuntimeConfig:
     bridge_defaults = get_bridge_defaults()
     storage_defaults = get_storage_defaults()

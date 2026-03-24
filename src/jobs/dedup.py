@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
-from src.jobs.common import config as common_config
-from src.jobs.common import social as common_social
-from src.jobs.common import url as common_url
 from src.jobs.canonicalize import (
     OUTPUT_FIELDS,
     clean_text,
@@ -18,6 +16,9 @@ from src.jobs.canonicalize import (
     posted_ts,
     to_iso,
 )
+from src.jobs.common import config as common_config
+from src.jobs.common import social as common_social
+from src.jobs.common import url as common_url
 from src.jobs.interfaces import JobProcessor
 from src.jobs.models import CanonicalJob
 
@@ -25,7 +26,7 @@ fingerprint_url = common_url.fingerprint_url
 SOCIAL_SOURCE_NAMES = common_social.SOCIAL_SOURCE_NAMES
 
 
-def dedup_secondary_key(job: CanonicalJob | Dict[str, Any]) -> str:
+def dedup_secondary_key(job: CanonicalJob | dict[str, Any]) -> str:
     payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
     return "|".join(
         [
@@ -37,7 +38,7 @@ def dedup_secondary_key(job: CanonicalJob | Dict[str, Any]) -> str:
     )
 
 
-def record_richness(job: CanonicalJob | Dict[str, Any]) -> int:
+def record_richness(job: CanonicalJob | dict[str, Any]) -> int:
     payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
     fields = [
         "title",
@@ -55,7 +56,7 @@ def record_richness(job: CanonicalJob | Dict[str, Any]) -> int:
     return sum(1 for field in fields if clean_text(payload.get(field)))
 
 
-def company_preference_score(job: CanonicalJob | Dict[str, Any]) -> int:
+def company_preference_score(job: CanonicalJob | dict[str, Any]) -> int:
     payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
     company = clean_text(payload.get("company"))
     if not company:
@@ -65,7 +66,7 @@ def company_preference_score(job: CanonicalJob | Dict[str, Any]) -> int:
     return 2
 
 
-def choose_base_record(left: CanonicalJob, right: CanonicalJob) -> Tuple[CanonicalJob, CanonicalJob]:
+def choose_base_record(left: CanonicalJob, right: CanonicalJob) -> tuple[CanonicalJob, CanonicalJob]:
     left_rich = record_richness(left)
     right_rich = record_richness(right)
     if right_rich > left_rich:
@@ -95,7 +96,7 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
     if posted_ts(other_dict.get("postedAt")) > posted_ts(merged.get("postedAt")):
         merged["postedAt"] = to_iso(other_dict.get("postedAt"))
 
-    bundle: List[Dict[str, Any]] = []
+    bundle: list[dict[str, Any]] = []
     seen = set()
     for row in [existing.to_dict(), candidate.to_dict(), merged]:
         entries = row.get("sourceBundle")
@@ -130,13 +131,13 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
     return CanonicalJob.from_mapping(merged)
 
 
-def _is_unknown_company(job: Dict[str, Any]) -> bool:
+def _is_unknown_company(job: dict[str, Any]) -> bool:
     company = clean_text(job.get("company"))
     return norm_text(company) in {norm_text(common_config.UNKNOWN_COMPANY_LABEL), "unknown"}
 
 
-def _gracklehq_redirect_urls(job: Dict[str, Any]) -> List[str]:
-    urls: List[str] = []
+def _gracklehq_redirect_urls(job: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
     bundle = job.get("sourceBundle")
     if not isinstance(bundle, list):
         return urls
@@ -149,8 +150,8 @@ def _gracklehq_redirect_urls(job: Dict[str, Any]) -> List[str]:
     return urls
 
 
-def _enrich_unknown_company_from_gracklehq_redirect(rows: List[CanonicalJob]) -> List[CanonicalJob]:
-    url_to_company: Dict[str, str] = {}
+def _enrich_unknown_company_from_gracklehq_redirect(rows: list[CanonicalJob]) -> list[CanonicalJob]:
+    url_to_company: dict[str, str] = {}
     for row in rows:
         payload = row.to_dict()
         if not _is_unknown_company(payload):
@@ -180,16 +181,16 @@ def _enrich_unknown_company_from_gracklehq_redirect(rows: List[CanonicalJob]) ->
     return enriched
 
 
-def deduplicate_jobs(rows: Sequence[CanonicalJob | Dict[str, Any]]) -> Tuple[List[CanonicalJob], Dict[str, Any]]:
-    merged_rows: List[CanonicalJob] = []
-    by_primary: Dict[str, int] = {}
-    by_secondary: Dict[str, int] = {}
-    by_social: Dict[str, int] = {}
+def deduplicate_jobs(rows: Sequence[CanonicalJob | dict[str, Any]]) -> tuple[list[CanonicalJob], dict[str, Any]]:
+    merged_rows: list[CanonicalJob] = []
+    by_primary: dict[str, int] = {}
+    by_secondary: dict[str, int] = {}
+    by_social: dict[str, int] = {}
     merges = 0
     merged_by_primary = 0
     merged_by_secondary = 0
     merged_by_social = 0
-    merge_samples: List[Dict[str, str]] = []
+    merge_samples: list[dict[str, str]] = []
 
     for row in rows:
         current = row if isinstance(row, CanonicalJob) else CanonicalJob.from_mapping(row)
@@ -200,7 +201,7 @@ def deduplicate_jobs(rows: Sequence[CanonicalJob | Dict[str, Any]]) -> Tuple[Lis
         if clean_text(payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(payload.get("sourceJobId")):
             social_key = f"{clean_text(payload.get('source'))}|{clean_text(payload.get('sourceJobId'))}"
 
-        target_idx: Optional[int] = None
+        target_idx: int | None = None
         merge_reason = ""
         if primary and primary in by_primary:
             target_idx = by_primary[primary]
@@ -299,9 +300,9 @@ class CanonicalDeduplicator(JobProcessor):
     """Structural deduplicator implementing the JobProcessor protocol."""
 
     def __init__(self) -> None:
-        self.stats: Dict[str, Any] = {}
+        self.stats: dict[str, Any] = {}
 
-    def process(self, jobs: List[CanonicalJob], **options: Any) -> List[CanonicalJob]:
+    def process(self, jobs: list[CanonicalJob], **options: Any) -> list[CanonicalJob]:
         merged, stats = deduplicate_jobs(jobs)
         self.stats = stats
         return merged

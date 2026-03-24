@@ -1,7 +1,8 @@
 from unittest import mock
 
-from src import admin_bridge
 import pytest
+
+from src import admin_bridge
 
 
 def test_sync_status_reports_disabled_when_explicitly_disabled(admin_bridge_ops_root):
@@ -96,7 +97,7 @@ def test_start_sync_task_creates_started_history_row(admin_bridge_ops_root):
         rows = admin_bridge.load_run_history()
         started = [row for row in rows if str(row.get("type") or "") == "sync" and str(row.get("status") or "") == "started"]
         assert len(started) >= 1
-        assert str(((started[-1].get("summary") or {}).get("action") or "")) == "pull"
+        assert str((started[-1].get("summary") or {}).get("action") or "") == "pull"
     finally:
         admin_bridge.threading.Thread = original_thread_cls
 

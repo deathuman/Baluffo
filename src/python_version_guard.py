@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 REQUIRED_MAJOR = 3
 REQUIRED_MINOR = 13

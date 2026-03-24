@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -80,11 +80,11 @@ def sync_latest(run_dir: Path):
         if LATEST.exists():
             shutil.rmtree(LATEST)
         shutil.copytree(run_dir, LATEST)
-        print(f">>> Latest run mirrored to: _out/latest/")
+        print(">>> Latest run mirrored to: _out/latest/")
     except Exception as e:
         print(f"!!! Latest sync failed: {e}")
 
-def update_manifest(status: str, summary: str, artifacts: Optional[Dict[str, Any]] = None, run_id: Optional[str] = None):
+def update_manifest(status: str, summary: str, artifacts: dict[str, Any] | None = None, run_id: str | None = None):
     """Updates the machine-readable manifest HUD. Validates shape with ManifestSchema before writing."""
     manifest = {
         "last_run_id": run_id or "",
@@ -98,7 +98,7 @@ def update_manifest(status: str, summary: str, artifacts: Optional[Dict[str, Any
     manifest_model = ManifestSchema.model_validate(manifest)
     MANIFEST_PATH.write_text(manifest_model.model_dump_json(indent=2), encoding="utf-8")
 
-def run_proc(command: List[str], name: str, allow_stream: bool = False) -> tuple[bool, str]:
+def run_proc(command: list[str], name: str, allow_stream: bool = False) -> tuple[bool, str]:
     _safe_print(f">>> [{name}] Running: {' '.join(command)}")
     full_output = []
     try:
@@ -122,7 +122,7 @@ def run_proc(command: List[str], name: str, allow_stream: bool = False) -> tuple
         # We'll read line by line but look for dots at the start of lines or specific markers.
         # Actually, let's try reading character by character from the raw stream if possible.
         
-        progress_chars = {'.', 'F', 'E', 's', 'x', 'X', '!', 'X'}
+        progress_chars = {'.', 'F', 'E', 's', 'x', 'X', '!'}
         
         while True:
             if process.stdout is None:
@@ -150,7 +150,7 @@ def run_proc(command: List[str], name: str, allow_stream: bool = False) -> tuple
         _safe_print(color_msg(f"X [{name}] Subprocess error: {e}", C_RED))
         return False, str(e)
 
-def build(args: argparse.Namespace, run_dir: Optional[Path] = None, is_verify: bool = False) -> tuple[bool, Optional[Path]]:
+def build(args: argparse.Namespace, run_dir: Path | None = None, is_verify: bool = False) -> tuple[bool, Path | None]:
     """Orchestrates the build process with skipping logic."""
     ensure_dirs()
     current_hash = get_src_hash()

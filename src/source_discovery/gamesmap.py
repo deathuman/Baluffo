@@ -10,17 +10,17 @@ Responsibilities:
 
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from src.source_registry import unique_sources
 
 from .config import CAREERS_URL_HINTS, DEFAULT_DISCOVERY_CONFIG
 from .scoring import unique_string_list
-from .web_search import infer_web_candidate, fetch_text
-from .static_candidates import build_static_candidate_from_page
+from .web_search import fetch_text, infer_web_candidate
 
 
 def _strip_html_tags(html: str) -> str:
@@ -30,12 +30,12 @@ def _strip_html_tags(html: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _gamesmap_config_value(config: Optional[Dict[str, Any]], key: str, default: Any) -> Any:
+def _gamesmap_config_value(config: dict[str, Any] | None, key: str, default: Any) -> Any:
     source = config if isinstance(config, dict) else {}
     return source.get(key, default)
 
 
-def _gamesmap_cache_path(config: Optional[Dict[str, Any]]) -> Optional[Path]:
+def _gamesmap_cache_path(config: dict[str, Any] | None) -> Path | None:
     source = config if isinstance(config, dict) else {}
     if isinstance(source.get("gamesmap"), dict):
         source = source.get("gamesmap") or {}
@@ -45,7 +45,7 @@ def _gamesmap_cache_path(config: Optional[Dict[str, Any]]) -> Optional[Path]:
     return Path(raw)
 
 
-def _gamesmap_cache_ttl_minutes(config: Optional[Dict[str, Any]]) -> int:
+def _gamesmap_cache_ttl_minutes(config: dict[str, Any] | None) -> int:
     source = config if isinstance(config, dict) else {}
     if isinstance(source.get("gamesmap"), dict):
         source = source.get("gamesmap") or {}
@@ -58,7 +58,7 @@ def _gamesmap_cache_ttl_minutes(config: Optional[Dict[str, Any]]) -> int:
         return 360
 
 
-def _gamesmap_cache_signature(cfg: Dict[str, Any]) -> Dict[str, Any]:
+def _gamesmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "baseUrl": str(cfg.get("baseUrl") or "").strip(),
         "indexUrls": [str(item).strip() for item in (cfg.get("indexUrls") or []) if str(item).strip()],
@@ -71,7 +71,7 @@ def _gamesmap_cache_signature(cfg: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _load_gamesmap_cache(config: Optional[Dict[str, Any]], cfg: Dict[str, Any], *, fetcher: Any) -> Optional[Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]]:
+def _load_gamesmap_cache(config: dict[str, Any] | None, cfg: dict[str, Any], *, fetcher: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
     cache_path = _gamesmap_cache_path(config)
     ttl_minutes = _gamesmap_cache_ttl_minutes(config)
     if ttl_minutes <= 0 or cache_path is None:
@@ -93,7 +93,7 @@ def _load_gamesmap_cache(config: Optional[Dict[str, Any]], cfg: Dict[str, Any], 
         updated_at = datetime.fromisoformat(updated_at_raw.replace("Z", "+00:00"))
     except ValueError:
         return None
-    if datetime.now(timezone.utc) - updated_at > timedelta(minutes=ttl_minutes):
+    if datetime.now(UTC) - updated_at > timedelta(minutes=ttl_minutes):
         return None
     if payload.get("configSignature") != _gamesmap_cache_signature(cfg):
         return None
@@ -106,18 +106,18 @@ def _load_gamesmap_cache(config: Optional[Dict[str, Any]], cfg: Dict[str, Any], 
 
 
 def _write_gamesmap_cache(
-    config: Optional[Dict[str, Any]],
-    cfg: Dict[str, Any],
+    config: dict[str, Any] | None,
+    cfg: dict[str, Any],
     *,
-    provider_candidates: List[Dict[str, Any]],
-    static_candidates: List[Dict[str, Any]],
-    failures: List[Dict[str, Any]],
+    provider_candidates: list[dict[str, Any]],
+    static_candidates: list[dict[str, Any]],
+    failures: list[dict[str, Any]],
 ) -> None:
     cache_path = _gamesmap_cache_path(config)
     if cache_path is None:
         return
     payload = {
-        "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "updatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "configSignature": _gamesmap_cache_signature(cfg),
         "providerCandidates": unique_sources(provider_candidates),
         "staticCandidates": unique_sources(static_candidates),
@@ -134,7 +134,7 @@ def normalize_gamesmap_category_token(value: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9+]+", " ", str(value or "").lower())).strip()
 
 
-def _extract_gamesmap_js_data_container(markup: str) -> Optional[List[Any]]:
+def _extract_gamesmap_js_data_container(markup: str) -> list[Any] | None:
     html = str(markup or "")
     token = "window.jsDataContainer"
     start = html.find(token)
@@ -158,9 +158,9 @@ def _extract_gamesmap_js_data_container(markup: str) -> Optional[List[Any]]:
     return None
 
 
-def parse_gamesmap_index_links(html: str, base_url: str) -> List[str]:
+def parse_gamesmap_index_links(html: str, base_url: str) -> list[str]:
     links = re.findall(r'(?is)href=["\']([^"\']+)["\']', str(html or ""))
-    out: List[str] = []
+    out: list[str] = []
     seen = set()
     for raw in links:
         absolute = urljoin(base_url, raw)
@@ -179,8 +179,8 @@ def parse_gamesmap_index_links(html: str, base_url: str) -> List[str]:
     return out
 
 
-def parse_gamesmap_index_entries(html: str, base_url: str, *, prefer_english: bool = True) -> List[Dict[str, str]]:
-    out: List[Dict[str, str]] = []
+def parse_gamesmap_index_entries(html: str, base_url: str, *, prefer_english: bool = True) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
     seen = set()
     payload = _extract_gamesmap_js_data_container(html)
     if isinstance(payload, list):
@@ -232,7 +232,7 @@ def parse_gamesmap_index_entries(html: str, base_url: str, *, prefer_english: bo
     return out
 
 
-def parse_gamesmap_detail_page(page_url: str, html: str) -> Optional[Dict[str, Any]]:
+def parse_gamesmap_detail_page(page_url: str, html: str) -> dict[str, Any] | None:
     markup = str(html or "")
     name_match = re.search(r"(?is)<h1[^>]*>(.*?)</h1>", markup)
     if not name_match:
@@ -243,7 +243,7 @@ def parse_gamesmap_detail_page(page_url: str, html: str) -> Optional[Dict[str, A
     if not name:
         return None
 
-    categories: List[str] = []
+    categories: list[str] = []
     for match in re.finditer(
         r'(?is)<[^>]+class=["\'][^"\']*(?:tag|badge|category|chip)[^"\']*["\'][^>]*>(.*?)</[^>]+>',
         markup,
@@ -353,10 +353,10 @@ def build_gamesmap_static_candidate(
     nl_priority: bool,
     website_only: bool,
     detail_url: str,
-    categories: List[str],
+    categories: list[str],
     location: str,
     manual_only: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     evidence_types = ["gamesmap_directory", "gamesmap_category_match"]
     evidence_score = 24
     if website_only:
@@ -397,9 +397,9 @@ def build_gamesmap_static_candidate(
 def discover_gamesmap_candidates(
     timeout_s: int,
     *,
-    config: Optional[Dict[str, Any]] = None,
+    config: dict[str, Any] | None = None,
     fetcher=fetch_text,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     cfg = dict(_gamesmap_config_value(config, "gamesmap", DEFAULT_DISCOVERY_CONFIG["gamesmap"]))
     if not bool(cfg.get("enabled")):
         return [], [], []
@@ -415,10 +415,10 @@ def discover_gamesmap_candidates(
     website_only_manual_only = bool(cfg.get("websiteOnlyManualOnly", False))
     max_detail_pages = max(0, int(cfg.get("maxDetailPages") or 0))
 
-    provider_candidates: List[Dict[str, Any]] = []
-    static_candidates: List[Dict[str, Any]] = []
-    failures: List[Dict[str, Any]] = []
-    detail_entries: List[Dict[str, str]] = []
+    provider_candidates: list[dict[str, Any]] = []
+    static_candidates: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    detail_entries: list[dict[str, str]] = []
     seen_details = set()
 
     for index_url in index_urls:

@@ -4,8 +4,9 @@ import json
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -16,15 +17,14 @@ from src.jobs.adapters import community, provider_api
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.text_utils import clean_text
 
-
-AuditRunner = Callable[..., List[Dict[str, Any]]]
+AuditRunner = Callable[..., list[dict[str, Any]]]
 
 REPORT_JSON_PATH = Path("data/adapter-audit-report.json")
 REPORT_MD_PATH = Path("data/adapter-audit-report.md")
 ASHBY_REFRESH_REPORT_PATH = Path("data/ashby-registry-refresh-report.json")
 
 
-AUDIT_CASES: List[Dict[str, Any]] = [
+AUDIT_CASES: list[dict[str, Any]] = [
     {"name": "gamejobs", "family": "community", "runner": community.run_gamejobs_source, "diagnostic": "gamejobs", "source_type": "built_in"},
     {"name": "workwithindies", "family": "community", "runner": community.run_workwithindies_source, "diagnostic": "workwithindies", "source_type": "built_in"},
     {"name": "gracklehq", "family": "community", "runner": community.run_gracklehq_source, "diagnostic": "gracklehq", "source_type": "built_in"},
@@ -46,13 +46,13 @@ AUDIT_CASES: List[Dict[str, Any]] = [
 ]
 
 
-def _registry_examples(adapter: str) -> List[str]:
+def _registry_examples(adapter: str) -> list[str]:
     rows = jobs_common.registry_entries(adapter, enabled_only=True)
     return [clean_text(row.get("name")) or clean_text(row.get("studio")) or adapter for row in rows[:3]]
 
 
-def _detail_examples(details: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
+def _detail_examples(details: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for detail in details[:3]:
         rows.append(
             {
@@ -66,7 +66,7 @@ def _detail_examples(details: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return rows
 
 
-def _bucket_for_result(*, jobs_count: int, error_text: str, details: List[Dict[str, Any]], partial_errors: List[str]) -> str:
+def _bucket_for_result(*, jobs_count: int, error_text: str, details: list[dict[str, Any]], partial_errors: list[str]) -> str:
     detail_classifications = {clean_text(row.get("classification")).lower() for row in details if clean_text(row.get("classification"))}
     detail_errors = " | ".join(clean_text(row.get("error")) for row in details if clean_text(row.get("error")))
     combined_error = " | ".join(partial_errors + ([error_text] if error_text else []) + ([detail_errors] if detail_errors else [])).lower()
@@ -87,7 +87,7 @@ def _bucket_for_result(*, jobs_count: int, error_text: str, details: List[Dict[s
     return "follow-up-needed"
 
 
-def _ashby_summary(details: List[Dict[str, Any]]) -> Dict[str, int]:
+def _ashby_summary(details: list[dict[str, Any]]) -> dict[str, int]:
     removed_count = 0
     try:
         payload = json.loads(ASHBY_REFRESH_REPORT_PATH.read_text(encoding="utf-8"))
@@ -103,7 +103,7 @@ def _ashby_summary(details: List[Dict[str, Any]]) -> Dict[str, int]:
     }
 
 
-def _run_case(case: Dict[str, Any]) -> Dict[str, Any]:
+def _run_case(case: dict[str, Any]) -> dict[str, Any]:
     SOURCE_DIAGNOSTICS.clear()
     started = time.perf_counter()
     jobs_count = 0
@@ -139,7 +139,7 @@ def _run_case(case: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def _build_markdown(report: Dict[str, Any]) -> str:
+def _build_markdown(report: dict[str, Any]) -> str:
     lines = [
         "# Adapter Audit Report",
         "",
@@ -189,9 +189,9 @@ def _build_markdown(report: Dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_report() -> Dict[str, Any]:
+def build_report() -> dict[str, Any]:
     items = [_run_case(case) for case in AUDIT_CASES]
-    buckets: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    buckets: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in items:
         buckets[row["bucket"]].append(row)
     for key in ("working", "mixed-success", "source-limited", "adapter-broken", "parser-stale", "follow-up-needed"):

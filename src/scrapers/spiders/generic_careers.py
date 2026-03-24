@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from html import unescape
-from typing import Any, Dict, List
+from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import scrapy
@@ -45,11 +45,11 @@ class GenericCareersSpider(scrapy.Spider):
     def __init__(
         self,
         *,
-        start_urls: List[str],
+        start_urls: list[str],
         studio_name: str,
         source_name_value: str,
-        profile: Dict[str, Any],
-        container: Dict[str, Any],
+        profile: dict[str, Any],
+        container: dict[str, Any],
         use_browser: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -124,8 +124,8 @@ class GenericCareersSpider(scrapy.Spider):
         job_dict["sourceJobId"] = job_dict.get("sourceJobId") or safe_id(job_link)
         self._append_job(job_dict)
 
-    def _flatten_jobposting_items(self, payload: Any) -> List[Dict[str, Any]]:
-        rows: List[Dict[str, Any]] = []
+    def _flatten_jobposting_items(self, payload: Any) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
         if isinstance(payload, dict):
             if clean_text(payload.get("@type")) == "JobPosting":
                 rows.append(payload)
@@ -140,7 +140,7 @@ class GenericCareersSpider(scrapy.Spider):
                     rows.append(item)
         return rows
 
-    def _jsonld_to_job(self, *, item: Dict[str, Any], page_url: str) -> Dict[str, Any] | None:
+    def _jsonld_to_job(self, *, item: dict[str, Any], page_url: str) -> dict[str, Any] | None:
         org = item.get("hiringOrganization")
         org = org if isinstance(org, dict) else {}
         loc = item.get("jobLocation")
@@ -176,7 +176,7 @@ class GenericCareersSpider(scrapy.Spider):
             posted_at=clean_text(item.get("datePosted")),
         )
 
-    def _extract_job_links(self, response: scrapy.http.Response) -> List[str]:
+    def _extract_job_links(self, response: scrapy.http.Response) -> list[str]:
         patterns = [
             'a[href*="/job"]::attr(href)',
             'a[href*="/jobs/"]::attr(href)',
@@ -204,7 +204,7 @@ class GenericCareersSpider(scrapy.Spider):
         max_detail_links = to_int(self.profile.get("max_detail_links"), 60)
         return sorted(links)[: max(1, max_detail_links)]
 
-    def _append_job(self, job: Dict[str, Any]) -> None:
+    def _append_job(self, job: dict[str, Any]) -> None:
         job_link = clean_text(job.get("jobLink"))
         title = clean_text(job.get("title"))
         company = clean_text(job.get("company"))

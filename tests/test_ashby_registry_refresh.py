@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 from src import ashby_registry_refresh as refresh
 

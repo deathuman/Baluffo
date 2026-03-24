@@ -3,12 +3,9 @@ from __future__ import annotations
 """Core scoring, queueing, and normalization primitives for discovery."""
 
 import os
-import re
 from collections import Counter
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urlparse
-
-from src.shared.utils import now_iso
 
 from .config import (
     ADAPTER_QUEUE_CAPS,
@@ -16,7 +13,6 @@ from .config import (
     DISCOVERY_STAGES,
     DOMAIN_QUEUE_CAP_DEFAULT,
     FOCUS_KEYWORDS,
-    LOW_EVIDENCE_PROBE_LIMIT,
     MIN_PROVIDER_EVIDENCE_TO_PROBE,
     MIN_PROVIDER_EVIDENCE_TO_QUEUE,
     MIN_STATIC_EVIDENCE_TO_PROBE,
@@ -25,13 +21,12 @@ from .config import (
     PATTERN_PROVIDER_QUEUE_THRESHOLD,
 )
 from .io_runtime import endpoint_url
-from .scoring import clean_token, careers_keyword_count, unique_string_list
-
+from .scoring import clean_token, unique_string_list
 
 STATIC_STRONG_EVIDENCE_TYPES = frozenset({"structured_job_links", "jobposting_jsonld"})
 
 
-def adapter_domain_fingerprint(candidate: Dict[str, Any]) -> str:
+def adapter_domain_fingerprint(candidate: dict[str, Any]) -> str:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     url = endpoint_url(candidate)
     if not adapter or not url:
@@ -58,7 +53,7 @@ def root_domain(host: str) -> str:
     return token
 
 
-def queue_family_key(candidate: Dict[str, Any]) -> str:
+def queue_family_key(candidate: dict[str, Any]) -> str:
     url = endpoint_url(candidate) or str(candidate.get("careersUrl") or "")
     try:
         host = (urlparse(url).netloc or "").lower()
@@ -70,13 +65,13 @@ def queue_family_key(candidate: Dict[str, Any]) -> str:
     return f"{adapter}:{domain_key}"
 
 
-def estimate_probe_priority(candidate: Dict[str, Any]) -> int:
+def estimate_probe_priority(candidate: dict[str, Any]) -> int:
     return int(candidate.get("evidenceScore") or 0) + (
         20 if str(candidate.get("discoveryStage") or "") == "curated_seed" else 0
     )
 
 
-def _evidence_threshold_for_probe(candidate: Dict[str, Any], thresholds: Optional[Dict[str, int]] = None) -> int:
+def _evidence_threshold_for_probe(candidate: dict[str, Any], thresholds: dict[str, int] | None = None) -> int:
     t = thresholds if isinstance(thresholds, dict) else DEFAULT_DISCOVERY_THRESHOLDS
     if str(candidate.get("discoveryStage") or "") == "provider_pattern":
         return int(t.get("patternProviderProbeThreshold", PATTERN_PROVIDER_PROBE_THRESHOLD))
@@ -87,7 +82,7 @@ def _evidence_threshold_for_probe(candidate: Dict[str, Any], thresholds: Optiona
     )
 
 
-def _evidence_threshold_for_queue(candidate: Dict[str, Any], thresholds: Optional[Dict[str, int]] = None) -> int:
+def _evidence_threshold_for_queue(candidate: dict[str, Any], thresholds: dict[str, int] | None = None) -> int:
     t = thresholds if isinstance(thresholds, dict) else DEFAULT_DISCOVERY_THRESHOLDS
     if str(candidate.get("discoveryStage") or "") == "provider_pattern":
         return int(t.get("patternProviderQueueThreshold", PATTERN_PROVIDER_QUEUE_THRESHOLD))
@@ -98,13 +93,13 @@ def _evidence_threshold_for_queue(candidate: Dict[str, Any], thresholds: Optiona
     )
 
 
-def should_queue_candidate(candidate: Dict[str, Any], jobs_found: int, thresholds: Optional[Dict[str, int]] = None) -> bool:
+def should_queue_candidate(candidate: dict[str, Any], jobs_found: int, thresholds: dict[str, int] | None = None) -> bool:
     return jobs_found > 0 or int(candidate.get("evidenceScore") or 0) >= _evidence_threshold_for_queue(
         candidate, thresholds
     )
 
 
-def _sort_candidate_key(row: Dict[str, Any]) -> Tuple[int, int, int, str]:
+def _sort_candidate_key(row: dict[str, Any]) -> tuple[int, int, int, str]:
     return (
         int(row.get("score") or 0),
         int(row.get("evidenceScore") or 0),
@@ -113,7 +108,7 @@ def _sort_candidate_key(row: Dict[str, Any]) -> Tuple[int, int, int, str]:
     )
 
 
-def _queue_balancing_order(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _queue_balancing_order(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     providers = [row for row in candidates if str(row.get("adapter") or "").strip().lower() != "static"]
     static_rows = [row for row in candidates if str(row.get("adapter") or "").strip().lower() == "static"]
     providers.sort(key=_sort_candidate_key, reverse=True)
@@ -121,15 +116,15 @@ def _queue_balancing_order(candidates: List[Dict[str, Any]]) -> List[Dict[str, A
     return [*providers, *static_rows]
 
 
-def is_google_sheet_candidate(candidate: Dict[str, Any]) -> bool:
+def is_google_sheet_candidate(candidate: dict[str, Any]) -> bool:
     return str(candidate.get("sourceDirectory") or "").strip().lower() == "game_studios_sheet"
 
 
 def classify_static_suppression(
-    candidate: Dict[str, Any],
+    candidate: dict[str, Any],
     *,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-    thresholds: Optional[Dict[str, int]] = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    thresholds: dict[str, int] | None = None,
 ) -> str:
     if str(candidate.get("adapter") or "").strip().lower() != "static":
         return ""
@@ -182,12 +177,12 @@ def sheet_directory_static_probe_cap(top_n: int) -> int:
 
 
 def apply_sheet_directory_static_probe_cap(
-    candidates: List[Dict[str, Any]],
+    candidates: list[dict[str, Any]],
     *,
     top_n: int,
     bypass_cap: bool = False,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if bool(bypass_cap):
         return list(candidates), []
     cap = sheet_directory_static_probe_cap(top_n)
@@ -195,8 +190,8 @@ def apply_sheet_directory_static_probe_cap(
         return list(candidates), []
 
     state_rows = source_state_rows if isinstance(source_state_rows, dict) else {}
-    sheet_static_rows: List[Dict[str, Any]] = []
-    other_rows: List[Dict[str, Any]] = []
+    sheet_static_rows: list[dict[str, Any]] = []
+    other_rows: list[dict[str, Any]] = []
     for row in candidates:
         if (
             str(row.get("adapter") or "").strip().lower() == "static"
@@ -208,7 +203,7 @@ def apply_sheet_directory_static_probe_cap(
     if len(sheet_static_rows) <= cap:
         return list(candidates), []
 
-    def _sheet_priority(row: Dict[str, Any]) -> Tuple[int, int, int, int]:
+    def _sheet_priority(row: dict[str, Any]) -> tuple[int, int, int, int]:
         state = state_rows.get(str(row.get("name") or "").strip())
         state = state if isinstance(state, dict) else {}
         prior_kept = int(state.get("lastKeptCount") or 0)
@@ -238,10 +233,10 @@ def provider_queue_target(top_n: int) -> int:
 
 
 def apply_queue_balancing(
-    candidates: List[Dict[str, Any]], top_n: int
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
-    queued: List[Dict[str, Any]] = []
-    all_rows: List[Dict[str, Any]] = []
+    candidates: list[dict[str, Any]], top_n: int
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    queued: list[dict[str, Any]] = []
+    all_rows: list[dict[str, Any]] = []
     deferred_counts: Counter[str] = Counter()
     adapter_counts: Counter[str] = Counter()
     family_counts: Counter[str] = Counter()
@@ -252,7 +247,7 @@ def apply_queue_balancing(
     provider_rows = [row for row in _queue_balancing_order(candidates) if str(row.get("adapter") or "").strip().lower() != "static"]
     static_rows = [row for row in _queue_balancing_order(candidates) if str(row.get("adapter") or "").strip().lower() == "static"]
 
-    def _process(rows: List[Dict[str, Any]], *, enforce_provider_reservation: bool) -> None:
+    def _process(rows: list[dict[str, Any]], *, enforce_provider_reservation: bool) -> None:
         for row in rows:
             adapter = str(row.get("adapter") or "unknown")
             family = queue_family_key(row)
@@ -311,9 +306,9 @@ def classify_probe_failure_stage(error: str) -> str:
     return "probe"
 
 
-def compute_candidate_score(candidate: Dict[str, Any], jobs_found: int) -> Tuple[int, List[str]]:
+def compute_candidate_score(candidate: dict[str, Any], jobs_found: int) -> tuple[int, list[str]]:
     score = 0
-    reasons: List[str] = []
+    reasons: list[str] = []
     label = f"{candidate.get('name', '')} {candidate.get('studio', '')}".lower()
     if any(token in label for token in FOCUS_KEYWORDS):
         score += 35
@@ -331,7 +326,7 @@ def compute_candidate_score(candidate: Dict[str, Any], jobs_found: int) -> Tuple
     return min(100, score), reasons
 
 
-def compute_confidence(candidate: Dict[str, Any], jobs_found: int) -> str:
+def compute_confidence(candidate: dict[str, Any], jobs_found: int) -> str:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     evidence = int(candidate.get("evidenceScore") or 0)
     if jobs_found >= 5:
@@ -344,13 +339,13 @@ def compute_confidence(candidate: Dict[str, Any], jobs_found: int) -> str:
 
 
 def normalize_candidate(
-    candidate: Dict[str, Any],
+    candidate: dict[str, Any],
     score: int,
-    reasons: List[str],
+    reasons: list[str],
     jobs_found: int,
     *,
     probed_at: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     row = dict(candidate)
     row["score"] = int(score)
     row["reasons"] = unique_string_list(reasons)
@@ -370,7 +365,7 @@ def normalize_candidate(
     return row
 
 
-def probe_concurrency_defaults() -> Dict[str, int]:
+def probe_concurrency_defaults() -> dict[str, int]:
     def _env_int(name: str, default: int) -> int:
         raw = str(os.getenv(name) or "").strip()
         try:
@@ -386,7 +381,7 @@ def probe_concurrency_defaults() -> Dict[str, int]:
     }
 
 
-def probe_bucket_for(candidate: Dict[str, Any]) -> str:
+def probe_bucket_for(candidate: dict[str, Any]) -> str:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     if adapter == "static":
         return "static"
@@ -395,6 +390,6 @@ def probe_bucket_for(candidate: Dict[str, Any]) -> str:
     return "provider"
 
 
-def init_stage_counter() -> Dict[str, int]:
+def init_stage_counter() -> dict[str, int]:
     return {stage: 0 for stage in DISCOVERY_STAGES}
 

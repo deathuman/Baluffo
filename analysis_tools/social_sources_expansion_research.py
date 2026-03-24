@@ -5,13 +5,11 @@ Researches and identifies additional high-quality subreddits, X queries, and Mas
 for expanding social sources coverage in game development job discovery.
 """
 
-import sys
 import json
-import time
-import subprocess
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+import sys
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 # Add current directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -36,7 +34,7 @@ class SocialSourcesExpansionResearcher:
             }
         }
     
-    def research_reddit_expansion(self) -> List[Dict[str, Any]]:
+    def research_reddit_expansion(self) -> list[dict[str, Any]]:
         """Research additional high-quality Reddit subreddits for game development jobs."""
         print("🔍 Researching Reddit subreddit expansion...")
         
@@ -150,7 +148,7 @@ class SocialSourcesExpansionResearcher:
         
         return new_subreddits
     
-    def research_x_expansion(self) -> List[Dict[str, Any]]:
+    def research_x_expansion(self) -> list[dict[str, Any]]:
         """Research additional effective X (Twitter) search queries."""
         print("🐦 Researching X (Twitter) query expansion...")
         
@@ -234,7 +232,7 @@ class SocialSourcesExpansionResearcher:
         
         return additional_queries
     
-    def research_mastodon_expansion(self) -> Dict[str, List[Dict[str, Any]]]:
+    def research_mastodon_expansion(self) -> dict[str, list[dict[str, Any]]]:
         """Research additional Mastodon instances and hashtags."""
         print("🐘 Researching Mastodon expansion...")
         
@@ -339,7 +337,7 @@ class SocialSourcesExpansionResearcher:
             "hashtags": additional_hashtags
         }
     
-    def analyze_current_performance(self) -> Dict[str, Any]:
+    def analyze_current_performance(self) -> dict[str, Any]:
         """Analyze current social sources performance to guide expansion decisions."""
         print("📊 Analyzing current social sources performance...")
         
@@ -374,7 +372,7 @@ class SocialSourcesExpansionResearcher:
         
         return analysis
     
-    def generate_expansion_config_updates(self) -> Dict[str, Any]:
+    def generate_expansion_config_updates(self) -> dict[str, Any]:
         """Generate configuration updates for social sources expansion."""
         print("⚙️ Generating expansion configuration updates...")
         

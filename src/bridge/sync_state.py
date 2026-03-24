@@ -16,11 +16,10 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from src.shared.utils import now_iso, now_utc
 from src.source_registry import load_json_object, save_json_atomic
-
 
 # Default paths (can be overridden via SyncState initialization)
 DEFAULT_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
@@ -33,10 +32,10 @@ SYNC_CONFIG_LOCK = threading.RLock()
 
 # Active sync task tracking
 ACTIVE_SYNC_RUNS: set[str] = set()
-ACTIVE_SYNC_THREADS: Dict[str, threading.Thread] = {}
+ACTIVE_SYNC_THREADS: dict[str, threading.Thread] = {}
 
 # Sync status dictionary
-SYNC_STATUS: Dict[str, Any] = {
+SYNC_STATUS: dict[str, Any] = {
     "lastPullAt": "",
     "lastPushAt": "",
     "lastError": "",
@@ -57,9 +56,9 @@ class SyncState:
     
     def __init__(
         self,
-        data_dir: Optional[Path] = None,
-        sync_config_path: Optional[Path] = None,
-        sync_runtime_path: Optional[Path] = None,
+        data_dir: Path | None = None,
+        sync_config_path: Path | None = None,
+        sync_runtime_path: Path | None = None,
     ):
         """Initialize SyncState with optional custom paths.
         
@@ -77,7 +76,7 @@ class SyncState:
         # Ensure data directory exists
         self.sync_config_path.parent.mkdir(parents=True, exist_ok=True)
     
-    def load_sync_runtime_state(self) -> Dict[str, Any]:
+    def load_sync_runtime_state(self) -> dict[str, Any]:
         """Load sync runtime state from file.
         
         Returns:
@@ -94,7 +93,7 @@ class SyncState:
             "lastDiscoverySyncFinishedAt": str(raw.get("lastDiscoverySyncFinishedAt") or ""),
         }
     
-    def save_sync_runtime_state(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def save_sync_runtime_state(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Save sync runtime state to file.
         
         Args:
@@ -169,7 +168,7 @@ class SyncState:
             
             self.save_sync_runtime_state(runtime_state)
     
-    def get_sync_status(self) -> Dict[str, Any]:
+    def get_sync_status(self) -> dict[str, Any]:
         """Get current sync status combined with runtime state.
         
         Returns:
@@ -199,7 +198,7 @@ class SyncState:
             ACTIVE_SYNC_RUNS.discard(str(run_id))
     
     @staticmethod
-    def get_active_sync_threads() -> Dict[str, threading.Thread]:
+    def get_active_sync_threads() -> dict[str, threading.Thread]:
         """Get copy of active sync threads dict."""
         with SYNC_STATE_LOCK:
             return dict(ACTIVE_SYNC_THREADS)
@@ -220,7 +219,7 @@ class SyncState:
 # Module-level convenience functions for backward compatibility
 # These work with the default SyncState instance
 
-_default_sync_state: Optional[SyncState] = None
+_default_sync_state: SyncState | None = None
 
 
 def get_default_sync_state() -> SyncState:
@@ -231,12 +230,12 @@ def get_default_sync_state() -> SyncState:
     return _default_sync_state
 
 
-def load_sync_runtime_state() -> Dict[str, Any]:
+def load_sync_runtime_state() -> dict[str, Any]:
     """Load sync runtime state using default paths (backward compatibility)."""
     return get_default_sync_state().load_sync_runtime_state()
 
 
-def save_sync_runtime_state(payload: Dict[str, Any]) -> Dict[str, Any]:
+def save_sync_runtime_state(payload: dict[str, Any]) -> dict[str, Any]:
     """Save sync runtime state using default paths (backward compatibility)."""
     return get_default_sync_state().save_sync_runtime_state(payload)
 

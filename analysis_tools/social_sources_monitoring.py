@@ -5,19 +5,17 @@ Comprehensive monitoring tools for tracking job discovery rates, API usage, and 
 for Reddit, X (Twitter), and Mastodon sources in production.
 """
 
-import sys
 import json
-import time
 import statistics
+import sys
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
-from datetime import datetime, timedelta
-import subprocess
+from typing import Any
 
 # Add current directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-def load_pipeline_report(report_path: Path) -> Dict[str, Any]:
+def load_pipeline_report(report_path: Path) -> dict[str, Any]:
     """Load the latest pipeline report."""
     try:
         with open(report_path) as f:
@@ -26,7 +24,7 @@ def load_pipeline_report(report_path: Path) -> Dict[str, Any]:
         print(f"❌ Error loading report {report_path}: {e}")
         return {}
 
-def analyze_social_sources_performance(report: Dict[str, Any]) -> Dict[str, Any]:
+def analyze_social_sources_performance(report: dict[str, Any]) -> dict[str, Any]:
     """Analyze performance metrics for social sources."""
     sources = report.get("sources", [])
     social_sources = [s for s in sources if s.get("name", "").startswith(("social_reddit", "social_x", "social_mastodon"))]
@@ -116,7 +114,7 @@ def analyze_social_sources_performance(report: Dict[str, Any]) -> Dict[str, Any]
     
     return performance_data
 
-def generate_performance_report(performance_data: Dict[str, Any]) -> str:
+def generate_performance_report(performance_data: dict[str, Any]) -> str:
     """Generate a formatted performance report."""
     report = []
     report.append("=" * 60)
@@ -215,7 +213,7 @@ def monitor_api_usage():
     print("- Current rate limits configured conservatively")
     print("")
 
-def monitor_error_patterns(error_data: Dict[str, Any]):
+def monitor_error_patterns(error_data: dict[str, Any]):
     """Analyze error patterns and suggest improvements."""
     print("🚨 Error Pattern Analysis...")
     
@@ -233,7 +231,7 @@ def monitor_error_patterns(error_data: Dict[str, Any]):
     
     print("")
 
-def generate_recommendations(performance_data: Dict[str, Any]) -> List[str]:
+def generate_recommendations(performance_data: dict[str, Any]) -> list[str]:
     """Generate optimization recommendations based on performance data."""
     recommendations = []
     

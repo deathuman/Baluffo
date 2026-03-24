@@ -8,12 +8,13 @@ When JSON-LD returns no jobs, falls back to extracting job links from the page
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urljoin, urlparse
 
+from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 from src.scrapers import domain_profiles
@@ -30,12 +31,12 @@ def run(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    pages: List[str],
-    source_row: Dict[str, Any],
-    parse_jobpostings_from_html: Callable[..., List[Dict[str, Any]]] | None = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    pages: list[str],
+    source_row: dict[str, Any],
+    parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     **kwargs: Any,
-) -> List[RawJob]:
+) -> list[RawJob]:
     if not pages or not callable(parse_jobpostings_from_html):
         return []
     page_url = clean_text(pages[0])

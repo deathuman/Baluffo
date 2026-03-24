@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import csv
 import re
+from collections.abc import Sequence
 from io import StringIO
-from typing import Any, Dict, List, Sequence
+from typing import Any
 from urllib.parse import quote
 
 from src.jobs.common import config as common_config
@@ -25,7 +26,7 @@ GOOGLE_SHEETS_SOURCES = [
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = 8
 
 
-def google_sheet_candidate_urls(sheet_id: str, gid: str) -> List[str]:
+def google_sheet_candidate_urls(sheet_id: str, gid: str) -> list[str]:
     csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     gviz_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
     pub_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv"
@@ -64,10 +65,10 @@ def find_company_column(headers: Sequence[str]) -> int:
     return -1
 
 
-def company_name_candidate_indexes(headers: Sequence[str], primary_idx: int) -> List[int]:
+def company_name_candidate_indexes(headers: Sequence[str], primary_idx: int) -> list[int]:
     normalized = [norm_text(header) for header in headers]
     seen = set()
-    candidates: List[int] = []
+    candidates: list[int] = []
 
     def push(index: int) -> None:
         if index < 0 or index >= len(headers) or index in seen:
@@ -91,10 +92,10 @@ def company_name_candidate_indexes(headers: Sequence[str], primary_idx: int) -> 
     return candidates
 
 
-def google_sheets_link_candidate_indexes(headers: Sequence[str], primary_idx: int) -> List[int]:
+def google_sheets_link_candidate_indexes(headers: Sequence[str], primary_idx: int) -> list[int]:
     normalized = [norm_text(header) for header in headers]
     seen = set()
-    candidates: List[int] = []
+    candidates: list[int] = []
 
     def push(index: int) -> None:
         if index < 0 or index >= len(headers) or index in seen:
@@ -168,7 +169,7 @@ def _company_from_smartrecruiters_url(url: str) -> str:
 
 
 def _resolve_company_name(row: Sequence[str], primary_idx: int, candidate_indexes: Sequence[int]) -> str:
-    values: List[str] = []
+    values: list[str] = []
     if 0 <= primary_idx < len(row):
         values.append(clean_text(row[primary_idx]))
     for idx in candidate_indexes:
@@ -184,7 +185,7 @@ def _resolve_company_name(row: Sequence[str], primary_idx: int, candidate_indexe
     return ""
 
 
-def parse_google_sheets_csv(csv_text: str) -> List[RawJob]:
+def parse_google_sheets_csv(csv_text: str) -> list[RawJob]:
     rows = list(csv.reader(StringIO(csv_text)))
     if len(rows) < 2:
         return []
@@ -242,7 +243,7 @@ def parse_google_sheets_csv(csv_text: str) -> List[RawJob]:
     if title_idx < 0 or company_idx < 0:
         return []
 
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     for idx in range(header_idx + 1, len(rows)):
         row = rows[idx]
         title = clean_text(row[title_idx] if title_idx < len(row) else "")

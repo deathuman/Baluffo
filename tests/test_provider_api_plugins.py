@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from src.jobs import common
-from src.jobs.adapters import provider_api, provider_parsers, _runtime
-
+from src.jobs.adapters import _runtime, provider_api, provider_parsers
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
@@ -19,14 +19,14 @@ def _fixture(name: str) -> str:
 
 class _FakeDeps:
     def __init__(self) -> None:
-        self._registry: Dict[str, List[Dict[str, Any]]] = {}
-        self._responses: Dict[str, str] = {}
-        self.SOURCE_DIAGNOSTICS: Dict[str, Dict[str, Any]] = {}
+        self._registry: dict[str, list[dict[str, Any]]] = {}
+        self._responses: dict[str, str] = {}
+        self.SOURCE_DIAGNOSTICS: dict[str, dict[str, Any]] = {}
 
-    def registry_entries(self, key: str) -> List[Dict[str, Any]]:
+    def registry_entries(self, key: str) -> list[dict[str, Any]]:
         return list(self._registry.get(key, []))
 
-    def set_registry_entries(self, key: str, rows: List[Dict[str, Any]]) -> None:
+    def set_registry_entries(self, key: str, rows: list[dict[str, Any]]) -> None:
         self._registry[key] = [dict(row) for row in rows]
 
     def set_response(self, url: str, payload: Any) -> None:
@@ -58,7 +58,7 @@ class _FakeDeps:
         }
 
     # Parsing helpers used by provider_api
-    def parse_teamtailor_listing_links(self, listing_html: str, *, base_url: str) -> List[str]:
+    def parse_teamtailor_listing_links(self, listing_html: str, *, base_url: str) -> list[str]:
         _ = listing_html
         return [f"{base_url.rstrip('/')}/jobs/1", f"{base_url.rstrip('/')}/jobs/2"]
 

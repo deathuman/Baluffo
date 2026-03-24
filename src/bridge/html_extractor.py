@@ -4,7 +4,7 @@ from __future__ import annotations
 import html as html_module
 import json
 import re
-from typing import Any, Callable, List, Tuple
+from collections.abc import Callable
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 from src.jobs.transport import normalize_url as normalize_job_url
@@ -12,8 +12,8 @@ from src.shared.regex import find_urls_in_text
 from src.source_registry import normalize_source_url
 
 
-def extract_job_like_links(html: str, base_url: str) -> List[str]:
-    links: List[str] = []
+def extract_job_like_links(html: str, base_url: str) -> list[str]:
+    links: list[str] = []
     seen = set()
     for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html):
         try:
@@ -56,8 +56,8 @@ def extract_job_like_links(html: str, base_url: str) -> List[str]:
     return links
 
 
-def extract_embedded_job_urls(html: str, base_url: str) -> List[str]:
-    links: List[str] = []
+def extract_embedded_job_urls(html: str, base_url: str) -> list[str]:
+    links: list[str] = []
     seen = set()
     for raw in find_urls_in_text(html):
         absolute = normalize_job_url(raw)
@@ -166,8 +166,8 @@ def parse_personio_search_count(text: str) -> int:
     return 0
 
 
-def extract_jobylon_embed_urls(html: str) -> List[str]:
-    out: List[str] = []
+def extract_jobylon_embed_urls(html: str) -> list[str]:
+    out: list[str] = []
     seen = set()
     if "cdn.jobylon.com/embedder.js" not in html.lower():
         return out
@@ -192,8 +192,8 @@ def extract_jobylon_embed_urls(html: str) -> List[str]:
     return out
 
 
-def extract_script_sources(html: str, base_url: str) -> List[str]:
-    out: List[str] = []
+def extract_script_sources(html: str, base_url: str) -> list[str]:
+    out: list[str] = []
     seen = set()
     for src in re.findall(r'(?is)<script[^>]+src=["\']([^"\']+)["\']', html):
         absolute = normalize_job_url(urljoin(base_url, str(src or "").strip()))
@@ -237,8 +237,8 @@ def build_intervieweb_iframe_url(script_url: str, page_url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}/app.php?{urlencode(params)}"
 
 
-def extract_intervieweb_job_links(html: str, base_url: str) -> List[str]:
-    links: List[str] = []
+def extract_intervieweb_job_links(html: str, base_url: str) -> list[str]:
+    links: list[str] = []
     seen = set()
     for href in re.findall(r'(?is)href=["\']([^"\']+)["\']', html):
         absolute = normalize_job_url(urljoin(base_url, str(href or "").strip()))
@@ -256,9 +256,9 @@ def extract_external_job_links_from_scripts(
     page_url: str,
     timeout_s: int,
     fetch_text: Callable[[str, int], str],
-) -> Tuple[List[str], List[str]]:
-    job_links: List[str] = []
-    errors: List[str] = []
+) -> tuple[list[str], list[str]]:
+    job_links: list[str] = []
+    errors: list[str] = []
     seen = set()
     script_sources = extract_script_sources(html, page_url)
     for script_url in script_sources:
@@ -294,7 +294,7 @@ def extract_external_job_links_from_scripts(
     return job_links, errors
 
 
-def extract_text_job_signals(html: str, page_url: str) -> List[str]:
+def extract_text_job_signals(html: str, page_url: str) -> list[str]:
     sanitized = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", html)
     sanitized = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", sanitized)
     text = re.sub(r"(?is)<[^>]+>", " ", sanitized)
@@ -317,9 +317,9 @@ def extract_text_job_signals(html: str, page_url: str) -> List[str]:
     return [f"signal:text_jobs:{page_norm}:{idx}" for idx in range(signal_count)]
 
 
-def extract_embedded_job_filter_signals(html: str, page_url: str) -> Tuple[List[str], List[str]]:
-    structured_links: List[str] = []
-    weak_signals: List[str] = []
+def extract_embedded_job_filter_signals(html: str, page_url: str) -> tuple[list[str], list[str]]:
+    structured_links: list[str] = []
+    weak_signals: list[str] = []
     seen_links = set()
     page_norm = normalize_source_url(page_url) or page_url
     matches = re.findall(r'(?is)<job-filter\b[^>]+:raw-data=["\'](.*?)["\']', html)

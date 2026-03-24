@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
-import json
+from typing import Any
 
 PROFILE_THRESHOLDS_MS = {
     "cold": {
@@ -34,7 +34,7 @@ PROFILE_THRESHOLDS_MS = {
 }
 
 
-def _parse_row_ms(row: Dict[str, Any], launch_ts_ms: int | None) -> int | None:
+def _parse_row_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int | None:
     fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
     payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
     for source in (fields, payload):
@@ -50,7 +50,7 @@ def _parse_row_ms(row: Dict[str, Any], launch_ts_ms: int | None) -> int | None:
         return None
 
 
-def _launch_ts_ms(rows: List[Dict[str, Any]]) -> int | None:
+def _launch_ts_ms(rows: list[dict[str, Any]]) -> int | None:
     for row in rows:
         if str(row.get("event") or "").strip() != "desktop_launch_start":
             continue
@@ -64,9 +64,9 @@ def _launch_ts_ms(rows: List[Dict[str, Any]]) -> int | None:
     return None
 
 
-def event_index(rows: List[Dict[str, Any]]) -> Dict[str, int]:
+def event_index(rows: list[dict[str, Any]]) -> dict[str, int]:
     launch_ts_ms = _launch_ts_ms(rows)
-    result: Dict[str, int] = {}
+    result: dict[str, int] = {}
     for row in rows:
         event = str(row.get("event") or "").strip()
         if not event or event in result:
@@ -79,7 +79,7 @@ def event_index(rows: List[Dict[str, Any]]) -> Dict[str, int]:
     return result
 
 
-def _pick_first(events: Dict[str, int], names: List[str]) -> tuple[str, int] | tuple[None, None]:
+def _pick_first(events: dict[str, int], names: list[str]) -> tuple[str, int] | tuple[None, None]:
     candidates = [(name, events[name]) for name in names if name in events]
     if not candidates:
         return None, None
@@ -87,7 +87,7 @@ def _pick_first(events: Dict[str, int], names: List[str]) -> tuple[str, int] | t
     return candidates[0]
 
 
-def _resolve_stage_event(events: Dict[str, int], event_ref: str | List[str] | tuple[str, ...] | None) -> tuple[str | None, int | None]:
+def _resolve_stage_event(events: dict[str, int], event_ref: str | list[str] | tuple[str, ...] | None) -> tuple[str | None, int | None]:
     if event_ref is None:
         return None, None
     if isinstance(event_ref, (list, tuple)):
@@ -98,7 +98,7 @@ def _resolve_stage_event(events: Dict[str, int], event_ref: str | List[str] | tu
     return (name, events.get(name)) if name in events else (name, None)
 
 
-def summarize_startup_metrics(rows: List[Dict[str, Any]], *, page: str = "jobs", profile_mode: str = "cold") -> Dict[str, Any]:
+def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs", profile_mode: str = "cold") -> dict[str, Any]:
     safe_page = str(page or "jobs").strip().lower() or "jobs"
     mode = "warm" if str(profile_mode or "").strip().lower() == "warm" else "cold"
     thresholds = PROFILE_THRESHOLDS_MS[mode]
@@ -134,8 +134,8 @@ def summarize_startup_metrics(rows: List[Dict[str, Any]], *, page: str = "jobs",
             ),
             ("total_launch_to_first_usable_ui", "Launch -> First Usable UI", "desktop_launch_start", ready_event),
         ]
-        stages: List[Dict[str, Any]] = []
-        missing_events: List[str] = []
+        stages: list[dict[str, Any]] = []
+        missing_events: list[str] = []
         for key, label, start_ref, end_ref in stage_defs:
             start_event, start_ms = _resolve_stage_event(events, start_ref)
             end_event, end_ms = _resolve_stage_event(events, end_ref)
@@ -234,8 +234,8 @@ def summarize_startup_metrics(rows: List[Dict[str, Any]], *, page: str = "jobs",
         ("total_launch_to_first_usable_ui", "Launch -> First Usable UI", "desktop_launch_start", first_usable_event or f"{safe_page}_first_interactive"),
     ]
 
-    stages: List[Dict[str, Any]] = []
-    missing_events: List[str] = []
+    stages: list[dict[str, Any]] = []
+    missing_events: list[str] = []
     for key, label, start_ref, end_ref in stage_defs:
         start_event, start_ms = _resolve_stage_event(events, start_ref)
         end_event, end_ms = _resolve_stage_event(events, end_ref)
@@ -301,7 +301,7 @@ def summarize_startup_metrics(rows: List[Dict[str, Any]], *, page: str = "jobs",
     }
 
 
-def render_startup_summary(summary: Dict[str, Any]) -> str:
+def render_startup_summary(summary: dict[str, Any]) -> str:
     lines = [
         f"Startup Profile ({summary.get('profileMode', 'cold')}, page={summary.get('page', 'jobs')})",
         f"Bottleneck: {summary.get('classification', 'unknown')}",
@@ -315,6 +315,6 @@ def render_startup_summary(summary: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def write_startup_summary(path: Path, summary: Dict[str, Any]) -> None:
+def write_startup_summary(path: Path, summary: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")

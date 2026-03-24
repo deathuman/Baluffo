@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, Optional
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
@@ -67,7 +67,7 @@ def resolve_supported_redirect_url(url: Any, *, timeout_s: int = DEFAULT_TIMEOUT
     normalized = normalize_url(url)
     if not is_supported_redirect_url(normalized):
         return normalized
-    last_error: Optional[Exception] = None
+    last_error: Exception | None = None
     for method in ("HEAD", "GET"):
         request = Request(normalized, headers=DEFAULT_REDIRECT_HEADERS, method=method)
         try:

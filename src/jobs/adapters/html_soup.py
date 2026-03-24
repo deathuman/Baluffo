@@ -51,10 +51,10 @@ class SoupNode:
         parts = re.split(r"[\r\n]+", self.get_text("\n", strip=True))
         return (part.strip() for part in parts if part and part.strip())
 
-    def select(self, query: str) -> list["SoupNode"]:
+    def select(self, query: str) -> list[SoupNode]:
         return [SoupNode(node) for node in self._selector.css(query)]
 
-    def find(self, name: Any = None, attrs: dict[str, Any] | None = None, **kwargs: Any) -> "SoupNode | None":
+    def find(self, name: Any = None, attrs: dict[str, Any] | None = None, **kwargs: Any) -> SoupNode | None:
         xpath = f".//{_build_name_xpath(name)}"
         predicates: list[str] = []
         for attr_name, attr_value in (attrs or {}).items():
@@ -70,7 +70,7 @@ class SoupNode:
         first = match[0] if match else None
         return SoupNode(first) if first is not None else None
 
-    def find_parent(self, name: Any = None) -> "SoupNode | None":
+    def find_parent(self, name: Any = None) -> SoupNode | None:
         tag_expr = _build_name_xpath(name)
         xpath = f"ancestor::{tag_expr}[1]" if tag_expr != "*" else "ancestor::*[1]"
         match = self._selector.xpath(xpath)

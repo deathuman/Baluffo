@@ -4,7 +4,10 @@ import io
 import threading
 from pathlib import Path
 
-from src.jobs.pipeline_stage_source_execution import SourceExecutionStageConfig, run_source_execution_stage
+from src.jobs.pipeline_stage_source_execution import (
+    SourceExecutionStageConfig,
+    run_source_execution_stage,
+)
 
 
 class _ThreadLocal:

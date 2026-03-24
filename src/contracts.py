@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, TypedDict
+from typing import Any, TypedDict
 
 SCHEMA_VERSION = "1.0"
 
@@ -22,5 +22,5 @@ class SourceSummary(TypedDict, total=False):
     rejectedCount: int
 
 
-JsonObject = Dict[str, Any]
-JsonArray = List[JsonObject]
+JsonObject = dict[str, Any]
+JsonArray = list[JsonObject]

@@ -1,8 +1,8 @@
+import asyncio
+import importlib
 import json
 import os
 import sys
-import asyncio
-import importlib
 from pathlib import Path
 from unittest import mock
 
@@ -11,10 +11,9 @@ from src import source_registry as sr
 from src.source_discovery import orchestrator as discovery_orchestrator
 from src.source_discovery import url_patches as discovery_url_patches
 from src.source_discovery.core import classify_probe_failure_stage
-from src.source_discovery.web_search import async_fetch_text_httpx
 from src.source_discovery.schemas import DiscoveryReportSummarySchema
+from src.source_discovery.web_search import async_fetch_text_httpx
 from tests.helpers.temp_paths import workspace_tmpdir
-
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 

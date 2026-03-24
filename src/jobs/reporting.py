@@ -3,21 +3,14 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Dict, List, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from src.jobs.adapters import community
-from src.scrapers.domain_profiles import domain_profile_for_url, pick_canonical_listing_url
 from src.jobs.common import config as common_config
-from src.jobs.common.contracts import (
-    normalize_fetch_report_payload,
-    normalize_runtime_payload,
-    normalize_source_report_row,
-)
-from src.jobs.common.numbers import _clamped_int
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text
-from src.contracts import SCHEMA_VERSION
-from src.jobs_fetcher_registry import SOURCE_REPORT_META
+from src.scrapers.domain_profiles import domain_profile_for_url, pick_canonical_listing_url
 
 TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
 DEFAULT_FETCH_STRATEGY = common_config.DEFAULT_FETCH_STRATEGY
@@ -42,9 +35,9 @@ def format_source_error(source_name: str, error: Any) -> str:
 
 
 def build_pipeline_summary(
-    dedup_stats: Dict[str, int],
+    dedup_stats: dict[str, int],
     deduped_rows: Sequence[CanonicalJob],
-    source_reports: Sequence[Dict[str, Any]],
+    source_reports: Sequence[dict[str, Any]],
     canonical_count: int,
     preserved_previous: bool,
     active_source_count: int,
@@ -54,18 +47,18 @@ def build_pipeline_summary(
     json_bytes: int,
     csv_bytes: int,
     light_json_bytes: int,
-    lifecycle_counts_map: Dict[str, int] | None = None,
-) -> Dict[str, Any]:
+    lifecycle_counts_map: dict[str, int] | None = None,
+) -> dict[str, Any]:
     deduped_payload = [row.to_dict() if isinstance(row, CanonicalJob) else dict(row) for row in deduped_rows]
     lifecycle = lifecycle_counts_map or {}
-    cache_rows: List[Dict[str, Any]] = []
+    cache_rows: list[dict[str, Any]] = []
     for row in source_reports:
         if not isinstance(row, dict):
             continue
         cache_rows.append(row)
         details = row.get("details") if isinstance(row.get("details"), list) else []
         cache_rows.extend([item for item in details if isinstance(item, dict)])
-    cache_decision_counts: Dict[str, int] = {}
+    cache_decision_counts: dict[str, int] = {}
     for row in cache_rows:
         decision = clean_text(row.get("cacheDecision"))
         if decision:
@@ -125,11 +118,11 @@ def build_pipeline_summary(
 
 
 def build_browser_fallback_queue(
-    source_reports: Sequence[Dict[str, Any]],
+    source_reports: Sequence[dict[str, Any]],
     *,
     generated_at: str,
-) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     seen = set()
     for report in source_reports:
         details = report.get("details") if isinstance(report, dict) else None

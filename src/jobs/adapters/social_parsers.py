@@ -4,15 +4,16 @@ from __future__ import annotations
 import hashlib
 import re
 from html import unescape
-from typing import Any, Dict, List, Tuple
+from typing import Any
 from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
-from src.jobs.models import RawJob
-
-from src.jobs.game_detection import looks_like_game_job
 from src.jobs.adapters.html_parsers import strip_html_text
-from src.jobs.text_utils import clean_text as _clean_text_impl, norm_text as _norm_text_impl, normalize_url
+from src.jobs.game_detection import looks_like_game_job
+from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text as _clean_text_impl
+from src.jobs.text_utils import norm_text as _norm_text_impl
+from src.jobs.text_utils import normalize_url
 from src.shared.regex import find_urls_in_text
 
 SOCIAL_HIRING_KEYWORDS = {
@@ -181,7 +182,7 @@ def _norm_text(value: Any) -> str:
     return _norm_text_impl(value)
 
 
-def social_extract_urls(text: str) -> List[str]:
+def social_extract_urls(text: str) -> list[str]:
     return [
         normalize_url(url)
         for url in find_urls_in_text(_clean_text(text))
@@ -189,7 +190,7 @@ def social_extract_urls(text: str) -> List[str]:
     ]
 
 
-def _increment_reason(counter: Dict[str, int] | None, reason: str) -> None:
+def _increment_reason(counter: dict[str, int] | None, reason: str) -> None:
     if counter is None or not reason:
         return
     counter[reason] = int(counter.get(reason) or 0) + 1
@@ -340,7 +341,7 @@ def social_should_keep_post(
     min_confidence: int,
     reject_for_hire_posts: bool,
     has_apply_url: bool,
-) -> Tuple[bool, int]:
+) -> tuple[bool, int]:
     keep, confidence, _reason = social_evaluate_post(
         title=title,
         text=text,
@@ -358,7 +359,7 @@ def social_evaluate_post(
     min_confidence: int,
     reject_for_hire_posts: bool,
     has_apply_url: bool,
-) -> Tuple[bool, int, str]:
+) -> tuple[bool, int, str]:
     normalized = f"{_norm_text(title)} {_norm_text(text)}"
     if reject_for_hire_posts and any(
         token in normalized for token in SOCIAL_FOR_HIRE_KEYWORDS
@@ -393,9 +394,9 @@ def parse_reddit_json_payload(
     subreddit: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
-    reject_reasons: Dict[str, int] | None = None,
-) -> Tuple[List[RawJob], int]:
-    rows: List[Dict[str, Any]] = []
+    reject_reasons: dict[str, int] | None = None,
+) -> tuple[list[RawJob], int]:
+    rows: list[dict[str, Any]] = []
     if isinstance(payload, dict):
         children = (
             ((payload.get("data") or {}).get("children"))
@@ -406,7 +407,7 @@ def parse_reddit_json_payload(
             for child in children:
                 if isinstance(child, dict) and isinstance(child.get("data"), dict):
                     rows.append(child["data"])
-    out: List[RawJob] = []
+    out: list[RawJob] = []
     low_conf_count = 0
     for item in rows:
         title = _clean_text(item.get("title"))
@@ -481,10 +482,10 @@ def parse_reddit_html_payload(
     subreddit: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
-    reject_reasons: Dict[str, int] | None = None,
-) -> Tuple[List[RawJob], int]:
+    reject_reasons: dict[str, int] | None = None,
+) -> tuple[list[RawJob], int]:
     """Parse Reddit HTML content for job posts when JSON and RSS fail."""
-    out: List[RawJob] = []
+    out: list[RawJob] = []
     low_conf_count = 0
 
     try:
@@ -570,14 +571,14 @@ def parse_reddit_rss_payload(
     subreddit: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
-    reject_reasons: Dict[str, int] | None = None,
-) -> Tuple[List[RawJob], int]:
+    reject_reasons: dict[str, int] | None = None,
+) -> tuple[list[RawJob], int]:
     try:
         root = ET.fromstring(_clean_text(rss_text).lstrip())
     except ET.ParseError:
         return [], 0
     items = root.findall(".//item")
-    out: List[RawJob] = []
+    out: list[RawJob] = []
     low_conf_count = 0
     for item in items:
         title = _clean_text(item.findtext("title"))
@@ -646,14 +647,14 @@ def parse_x_payload(
     query_label: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
-    reject_reasons: Dict[str, int] | None = None,
-) -> Tuple[List[RawJob], int]:
+    reject_reasons: dict[str, int] | None = None,
+) -> tuple[list[RawJob], int]:
     rows = (
         payload.get("data")
         if isinstance(payload, dict) and isinstance(payload.get("data"), list)
         else []
     )
-    out: List[RawJob] = []
+    out: list[RawJob] = []
     low_conf_count = 0
     for row in rows:
         if not isinstance(row, dict):
@@ -715,8 +716,8 @@ def parse_x_rss_payload(
     query_label: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
-    reject_reasons: Dict[str, int] | None = None,
-) -> Tuple[List[RawJob], int]:
+    reject_reasons: dict[str, int] | None = None,
+) -> tuple[list[RawJob], int]:
     raw_text = _clean_text(rss_text).lstrip()
     safe_text = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#\d+;)", "&amp;", raw_text)
     try:
@@ -724,7 +725,7 @@ def parse_x_rss_payload(
     except ET.ParseError:
         return [], 0
     items = root.findall(".//item")
-    out: List[RawJob] = []
+    out: list[RawJob] = []
     low_conf_count = 0
     for item in items:
         title = _clean_text(item.findtext("title"))
@@ -787,10 +788,10 @@ def parse_mastodon_payload(
     tag: str,
     min_confidence: int,
     reject_for_hire_posts: bool,
-    reject_reasons: Dict[str, int] | None = None,
-) -> Tuple[List[RawJob], int]:
+    reject_reasons: dict[str, int] | None = None,
+) -> tuple[list[RawJob], int]:
     rows = payload if isinstance(payload, list) else []
-    out: List[RawJob] = []
+    out: list[RawJob] = []
     low_conf_count = 0
     for row in rows:
         if not isinstance(row, dict):

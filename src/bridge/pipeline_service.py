@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 
 @dataclass
@@ -23,23 +24,23 @@ class PipelineService:
         self,
         *,
         pipeline_state_lock: threading.RLock,
-        pipeline_status: Dict[str, Any],
+        pipeline_status: dict[str, Any],
         runtime: PipelineRuntime,
         bridge_log: Callable[..., None],
         now_iso: Callable[[], str],
         parse_iso: Callable[[Any], Any],
-        append_run_history: Callable[[Dict[str, Any]], Dict[str, Any]],
-        upsert_run_history: Callable[..., Dict[str, Any]],
+        append_run_history: Callable[[dict[str, Any]], dict[str, Any]],
+        upsert_run_history: Callable[..., dict[str, Any]],
         task_running_from_state: Callable[[str], bool],
         sync_task_running: Callable[[], bool],
         current_fetch_output_count: Callable[[], int],
-        wait_for_report_completion: Callable[..., Dict[str, Any]],
-        wait_for_sync_completion: Callable[[str, float], Dict[str, Any]],
+        wait_for_report_completion: Callable[..., dict[str, Any]],
+        wait_for_sync_completion: Callable[[str, float], dict[str, Any]],
         discovery_report_path: Any,
         fetch_report_path: Any,
         trigger_discovery_task: Callable[..., Any],
-        start_fetcher_task: Callable[..., Dict[str, Any]],
-        start_sync_task: Callable[..., Dict[str, Any]],
+        start_fetcher_task: Callable[..., dict[str, Any]],
+        start_sync_task: Callable[..., dict[str, Any]],
         get_app_version: Callable[[], str],
     ) -> None:
         self._lock = pipeline_state_lock
@@ -63,7 +64,7 @@ class PipelineService:
         self._get_app_version = get_app_version
 
     @staticmethod
-    def _pipeline_progress(current_step: int, total_steps: int, label: str) -> Dict[str, Any]:
+    def _pipeline_progress(current_step: int, total_steps: int, label: str) -> dict[str, Any]:
         safe_total = max(1, int(total_steps or 1))
         safe_current = max(0, min(int(current_step or 0), safe_total))
         return {
@@ -131,7 +132,7 @@ class PipelineService:
                 )
             self._runtime.active_run_id = ""
 
-    def get_status_payload(self) -> Dict[str, Any]:
+    def get_status_payload(self) -> dict[str, Any]:
         with self._lock:
             payload = dict(self._status)
             progress = payload.get("progress")
@@ -189,7 +190,7 @@ class PipelineService:
                 error=str(exc),
             )
 
-    def start_task(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def start_task(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
             if bool(self._status.get("active")) and str(self._status.get("runId") or ""):
                 return {

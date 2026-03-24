@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional
 
 from .errors import NoPluginFoundError
 from .types import AdapterPlugin, AdapterPluginContext
@@ -21,7 +20,7 @@ class PluginSelection:
 
 class PluginRegistry:
     def __init__(self) -> None:
-        self._families: Dict[str, List[AdapterPlugin]] = {}
+        self._families: dict[str, list[AdapterPlugin]] = {}
 
     def register(self, plugin: AdapterPlugin) -> None:
         family = str(getattr(plugin, "family", "") or "").strip()
@@ -29,7 +28,7 @@ class PluginRegistry:
             raise ValueError("plugin.family is required")
         self._families.setdefault(family, []).append(plugin)
 
-    def list_plugins(self, family: str) -> List[AdapterPlugin]:
+    def list_plugins(self, family: str) -> list[AdapterPlugin]:
         return list(self._families.get(str(family or "").strip(), []))
 
     def select(self, ctx: AdapterPluginContext) -> tuple[AdapterPlugin, PluginSelection]:
@@ -40,7 +39,7 @@ class PluginRegistry:
 
         # Deterministic selection: priority then name.
         ordered = sorted(plugins, key=lambda p: (int(getattr(p, "priority", 100) or 100), str(getattr(p, "name", ""))))
-        selected: Optional[AdapterPlugin] = None
+        selected: AdapterPlugin | None = None
         for plugin in ordered:
             if plugin.can_handle(ctx):
                 selected = plugin

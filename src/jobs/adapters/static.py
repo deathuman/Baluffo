@@ -8,12 +8,12 @@ import re
 import sys
 import time
 from collections import Counter
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable, Dict, List, Optional, Tuple
-from urllib.parse import urljoin, urlparse
+from typing import Any
+from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
-from src.jobs.common import config as common_config
 from src.jobs.adapters.html_parsers import (
     maybe_fetch_kojima_job_listing_html,
     parse_jobpostings_from_html,
@@ -24,7 +24,6 @@ from src.jobs.adapters.plugins.errors import NoPluginFoundError
 from src.jobs.adapters.plugins.static import register_static_plugins
 from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.static_scrapy import run_scrapy_static_source
 from src.jobs.adapters.static_helpers import (
     add_detail_link,
     build_static_entry_report,
@@ -35,21 +34,22 @@ from src.jobs.adapters.static_helpers import (
     source_detail_concurrency_for,
     source_detail_limit_for,
 )
+from src.jobs.common import config as common_config
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.interfaces import SourceLoader
+from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
 from src.jobs.state import get_incremental_cache_decision
-from src.shared.regex import find_urls_in_text
-from src.jobs.transport import conditional_revalidate_url
-from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
+from src.jobs.transport import conditional_revalidate_url
 from src.scrapers.domain_profiles import domain_profile_for_url
+from src.shared.regex import find_urls_in_text
 from src.shared.utils import now_iso
 
 register_static_plugins()
 
 
-def static_source_shard(row: Dict[str, Any]) -> str:
+def static_source_shard(row: dict[str, Any]) -> str:
     label = clean_text(row.get("studio")) or clean_text(row.get("name"))
     first_alpha = ""
     for ch in label.lower():
@@ -71,19 +71,19 @@ def run_static_studio_pages_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    sources: Optional[List[Dict[str, Any]]] = None,
-    shard: Optional[str] = None,
+    sources: list[dict[str, Any]] | None = None,
+    shard: str | None = None,
     diagnostics_name: str = "static_studio_pages",
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
-    errors: List[str] = []
-    warnings: List[str] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    errors: list[str] = []
+    warnings: list[str] = []
     seen_links = set()
-    details: List[Dict[str, Any]] = []
+    details: list[dict[str, Any]] = []
     ignored_link_titles = {
         "apply",
         "apply now",
@@ -289,7 +289,7 @@ def run_static_studio_pages_source(
                         )
                         if html2:
                             html = html2
-                detail_links: List[Tuple[str, str]] = []
+                detail_links: list[tuple[str, str]] = []
                 detail_seen = set()
                 listing_htmls = [html]
                 try:
@@ -534,17 +534,17 @@ def run_static_studio_pages_source(
 
 def run_static_source_entry_source(
     *,
-    source_row: Dict[str, Any],
+    source_row: dict[str, Any],
     diagnostics_name: str,
     fetch_text: Callable[[str, int], str],
     timeout_s: int,
     retries: int,
     backoff_s: float,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -566,10 +566,10 @@ def run_static_studio_pages_a_i_source(
     retries: int,
     backoff_s: float,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -584,7 +584,7 @@ def run_static_studio_pages_a_i_source(
     )
 
 
-def static_source_name_for_registry_row(row: Dict[str, Any]) -> str:
+def static_source_name_for_registry_row(row: dict[str, Any]) -> str:
     """Return the pipeline source name for a static registry row (same as build_static_source_loaders)."""
     source_id = clean_text(row.get("id"))
     if not source_id:
@@ -594,8 +594,8 @@ def static_source_name_for_registry_row(row: Dict[str, Any]) -> str:
     return f"static_source::{source_id}"
 
 
-def build_static_source_loaders() -> List[Tuple[str, SourceLoader]]:
-    loaders: List[Tuple[str, SourceLoader]] = []
+def build_static_source_loaders() -> list[tuple[str, SourceLoader]]:
+    loaders: list[tuple[str, SourceLoader]] = []
     for row in registry_entries("static"):
         loader_name = static_source_name_for_registry_row(row)
 
@@ -605,13 +605,13 @@ def build_static_source_loaders() -> List[Tuple[str, SourceLoader]]:
             timeout_s: int,
             retries: int,
             backoff_s: float,
-            _row: Dict[str, Any] = row,
+            _row: dict[str, Any] = row,
             _loader_name: str = loader_name,
             static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
-            source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-            try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+            source_state_rows: dict[str, dict[str, Any]] | None = None,
+            try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
             force_refresh_all: bool = False,
-        ) -> List[RawJob]:
+        ) -> list[RawJob]:
             return run_static_source_entry_source(
                 source_row=_row,
                 diagnostics_name=_loader_name,
@@ -636,10 +636,10 @@ def run_static_studio_pages_j_r_source(
     retries: int,
     backoff_s: float,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -661,10 +661,10 @@ def run_static_studio_pages_s_z_source(
     retries: int,
     backoff_s: float,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,

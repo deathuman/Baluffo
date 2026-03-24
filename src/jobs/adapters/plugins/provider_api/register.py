@@ -1,22 +1,23 @@
 from __future__ import annotations
 
 import json
-from typing import Callable, Dict, List
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.adapters import provider_parsers as _provider_parsers
+from src.jobs.adapters.html_parsers import (
+    parse_jobpostings_from_html,
+    parse_teamtailor_listing_links,
+)
 from src.jobs.adapters.plugins import default_registry
-from src.jobs.adapters.plugins.types import AdapterPluginContext, SimpleAdapterPlugin
-from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, parse_teamtailor_listing_links
+from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
 from src.jobs.common.config import GREENHOUSE_JOBS_URL_TEMPLATE
-from src.jobs.state import get_incremental_cache_decision
-from src.jobs.transport import conditional_revalidate_url
 from src.jobs.models import RawJob
-from src.jobs.common.fetch import fetch_with_retries
-from src.jobs.registry import registry_entries
+from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
+from src.jobs.transport import conditional_revalidate_url
 
 _REGISTERED = False
 
@@ -39,12 +40,12 @@ def _run_greenhouse_boards(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, object]] | None = None,
+    source_state_rows: dict[str, dict[str, object]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
-    errors: List[str] = []
-    details: List[Dict[str, object]] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    errors: list[str] = []
+    details: list[dict[str, object]] = []
     deps = runtime_deps.facade()
     for board in deps.registry_entries("greenhouse"):
         slug = clean_text(board.get("slug"))
@@ -124,13 +125,13 @@ def _run_teamtailor_sources(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, object]] | None = None,
+    source_state_rows: dict[str, dict[str, object]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
-    errors: List[str] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    errors: list[str] = []
     seen_links = set()
-    details: List[Dict[str, object]] = []
+    details: list[dict[str, object]] = []
     deps = runtime_deps.facade()
     parse_listing_links = getattr(deps, "parse_teamtailor_listing_links", parse_teamtailor_listing_links)
     parse_jobpostings_from_html_impl = getattr(deps, "parse_jobpostings_from_html", parse_jobpostings_from_html)
@@ -259,13 +260,13 @@ def _run_json_feed_sources(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, object]] | None = None,
+    source_state_rows: dict[str, dict[str, object]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     deps = runtime_deps.facade()
-    jobs: List[RawJob] = []
-    errors: List[str] = []
-    details: List[Dict[str, object]] = []
+    jobs: list[RawJob] = []
+    errors: list[str] = []
+    details: list[dict[str, object]] = []
     for source in deps.registry_entries(registry_adapter):
         source_name = clean_text(source.get("name")) or f"{registry_adapter}_source"
         studio = clean_text(source.get("studio")) or source_name
@@ -443,13 +444,13 @@ def _run_html_board_sources(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, object]] | None = None,
+    source_state_rows: dict[str, dict[str, object]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     deps = runtime_deps.facade()
-    jobs: List[RawJob] = []
-    errors: List[str] = []
-    details: List[Dict[str, object]] = []
+    jobs: list[RawJob] = []
+    errors: list[str] = []
+    details: list[dict[str, object]] = []
     for source in deps.registry_entries(registry_adapter):
         source_name = clean_text(source.get("name")) or f"{registry_adapter}_source"
         studio = clean_text(source.get("studio")) or source_name
@@ -584,14 +585,14 @@ def _normalize_ashby_candidate_url(url: str) -> str:
     return text
 
 
-def _iter_ashby_candidate_urls(source: Dict[str, object]) -> List[str]:
+def _iter_ashby_candidate_urls(source: dict[str, object]) -> list[str]:
     candidates = [
         clean_text(source.get("board_url")),
         _normalize_ashby_candidate_url(clean_text(source.get("board_url"))),
         clean_text(source.get("careersUrl")),
         clean_text(source.get("sourceDirectoryEntryUrl")),
     ]
-    rows: List[str] = []
+    rows: list[str] = []
     seen: set[str] = set()
     for item in candidates:
         if not item or item in seen:

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from src.jobs.interfaces import SourceLoader
 from src.jobs.text_utils import clean_text, norm_text
@@ -31,8 +32,8 @@ def build_excluded_source_report(
     source_name: str,
     reason: str,
     *,
-    source_report_meta: Dict[str, Dict[str, Any]],
-) -> Dict[str, Any]:
+    source_report_meta: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
     return {
         "name": source_name,
         "status": "excluded",
@@ -49,10 +50,10 @@ def build_excluded_source_report(
 
 def select_pipeline_loaders(
     *,
-    source_loaders: Optional[List[Tuple[str, SourceLoader]]],
+    source_loaders: list[tuple[str, SourceLoader]] | None,
     social_enabled: bool,
-    social_config: Dict[str, Any],
-    default_source_loaders: Callable[..., List[Tuple[str, SourceLoader]]],
+    social_config: dict[str, Any],
+    default_source_loaders: Callable[..., list[tuple[str, SourceLoader]]],
 ) -> tuple[list[tuple[str, SourceLoader]], bool]:
     if source_loaders is not None:
         return list(source_loaders), False
@@ -66,12 +67,12 @@ def select_pipeline_loaders(
 
 
 def sort_selected_loaders(
-    selected_loaders: List[Tuple[str, SourceLoader]],
+    selected_loaders: list[tuple[str, SourceLoader]],
     *,
-    source_report_meta: Dict[str, Dict[str, Any]],
-    source_state_rows: Dict[str, Dict[str, Any]],
-) -> List[Tuple[str, SourceLoader]]:
-    def _source_priority(item: Tuple[str, SourceLoader]) -> Tuple[int, int]:
+    source_report_meta: dict[str, dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
+) -> list[tuple[str, SourceLoader]]:
+    def _source_priority(item: tuple[str, SourceLoader]) -> tuple[int, int]:
         source_name = clean_text(item[0])
         adapter = clean_text(source_report_meta.get(source_name, {}).get("adapter"))
         state = source_state_rows.get(source_name) if isinstance(source_state_rows.get(source_name), dict) else {}
@@ -84,14 +85,14 @@ def sort_selected_loaders(
 
 
 def apply_source_cadence_exclusions(
-    selected_loaders: List[Tuple[str, SourceLoader]],
+    selected_loaders: list[tuple[str, SourceLoader]],
     *,
     respect_source_cadence: bool,
-    source_state_rows: Dict[str, Dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
     hot_source_cadence_minutes: int,
     cold_source_cadence_minutes: int,
     should_skip_source_by_cadence: Callable[..., bool],
-    build_excluded_source_report: Callable[[str, str], Dict[str, Any]],
+    build_excluded_source_report: Callable[[str, str], dict[str, Any]],
 ) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]]]:
     if not respect_source_cadence:
         return selected_loaders, []
@@ -111,14 +112,14 @@ def apply_source_cadence_exclusions(
 
 
 def apply_incremental_cache_exclusions(
-    selected_loaders: List[Tuple[str, SourceLoader]],
+    selected_loaders: list[tuple[str, SourceLoader]],
     *,
     incremental_cache_enabled: bool,
     force_refresh_all: bool,
-    source_state_rows: Dict[str, Dict[str, Any]],
-    get_incremental_cache_decision: Callable[..., Dict[str, str]],
-    build_excluded_source_report: Callable[[str, str], Dict[str, Any]],
-    source_report_meta: Dict[str, Dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
+    get_incremental_cache_decision: Callable[..., dict[str, str]],
+    build_excluded_source_report: Callable[[str, str], dict[str, Any]],
+    source_report_meta: dict[str, dict[str, Any]],
 ) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]]]:
     if force_refresh_all or not incremental_cache_enabled:
         return selected_loaders, []
@@ -149,7 +150,7 @@ def apply_incremental_cache_exclusions(
 
 def build_pipeline_runtime_payload(
     *,
-    selected_loaders: List[Tuple[str, SourceLoader]],
+    selected_loaders: list[tuple[str, SourceLoader]],
     max_workers: int,
     max_per_domain: int,
     fetch_strategy: str,
@@ -169,15 +170,15 @@ def build_pipeline_runtime_payload(
     ignore_circuit_breaker: bool,
     social_enabled: bool,
     effective_social_config_path: str,
-    social_config: Dict[str, Any],
+    social_config: dict[str, Any],
     default_social_lookback_minutes: int,
     default_social_min_confidence: int,
     default_fetch_strategy: str,
     default_static_detail_heuristics_profile: str,
     default_scrapy_validation_strict: bool,
     default_canonical_strict_url: bool,
-    normalize_runtime_payload: Callable[..., Dict[str, Any]],
-) -> Dict[str, Any]:
+    normalize_runtime_payload: Callable[..., dict[str, Any]],
+) -> dict[str, Any]:
     return normalize_runtime_payload({
         "maxWorkers": max_workers,
         "maxPerDomain": max_per_domain,

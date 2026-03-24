@@ -3,12 +3,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
-import hashlib
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any
 from urllib.parse import urlparse, urlunsplit
 
 from src.baluffo_config import get_storage_defaults
@@ -29,7 +30,7 @@ def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def load_json_array(path: Path, default: List[Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
+def load_json_array(path: Path, default: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     fallback = default or []
     try:
         if not path.exists():
@@ -42,7 +43,7 @@ def load_json_array(path: Path, default: List[Dict[str, Any]] | None = None) -> 
         return [dict(row) for row in fallback]
 
 
-def load_json_object(path: Path, default: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
     fallback = dict(default or {})
     try:
         if not path.exists():
@@ -79,7 +80,7 @@ def save_json_atomic(path: Path, payload: Any) -> None:
             pass
 
 
-def source_identity(row: Dict[str, Any]) -> str:
+def source_identity(row: dict[str, Any]) -> str:
     adapter = str(row.get("adapter") or "").strip().lower()
     explicit_id = str(row.get("id") or "").strip()
     if explicit_id:
@@ -92,7 +93,7 @@ def source_identity(row: Dict[str, Any]) -> str:
     return f"{adapter}:unknown:{digest}"
 
 
-def ensure_source_id(row: Dict[str, Any]) -> Dict[str, Any]:
+def ensure_source_id(row: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(row)
     normalized["id"] = source_identity(normalized)
     return normalized
@@ -114,7 +115,7 @@ def normalize_source_url(raw_url: str) -> str:
     return urlunsplit((scheme, host, path, "", ""))
 
 
-def source_endpoint_url(row: Dict[str, Any]) -> str:
+def source_endpoint_url(row: dict[str, Any]) -> str:
     for key in ("api_url", "feed_url", "board_url", "listing_url"):
         value = str(row.get(key) or "").strip()
         if value:
@@ -128,12 +129,12 @@ def source_endpoint_url(row: Dict[str, Any]) -> str:
     return ""
 
 
-def source_url_fingerprint(row: Dict[str, Any]) -> str:
+def source_url_fingerprint(row: dict[str, Any]) -> str:
     return normalize_source_url(source_endpoint_url(row))
 
 
-def unique_sources(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
+def unique_sources(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     seen = set()
     for row in rows:
         if not isinstance(row, dict):

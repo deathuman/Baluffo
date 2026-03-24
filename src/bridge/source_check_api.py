@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import re
 import uuid
-from typing import Any, Callable, Dict, Tuple
+from collections.abc import Callable
+from typing import Any
 
 
 def normalize_manual_static_studio_fields(
-    row: Dict[str, Any],
+    row: dict[str, Any],
     *,
     normalize_source_url: Callable[[str], str],
     infer_studio_name_from_host: Callable[[str], str],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     normalized = dict(row)
     source_url = normalize_source_url(
         str(normalized.get("listing_url") or "")
@@ -36,12 +37,12 @@ def normalize_manual_static_studio_fields(
 def _build_static_success_result(
     *,
     run_id: str,
-    updated: Dict[str, Any],
+    updated: dict[str, Any],
     jobs_found: int,
     weak_signal: bool,
-    probe_meta: Dict[str, Any],
-    source_identity: Callable[[Dict[str, Any]], str],
-) -> Dict[str, Any]:
+    probe_meta: dict[str, Any],
+    source_identity: Callable[[dict[str, Any]], str],
+) -> dict[str, Any]:
     return {
         "started": True,
         "runId": run_id,
@@ -57,13 +58,13 @@ def _build_static_success_result(
 def _build_failure_result(
     *,
     run_id: str,
-    updated: Dict[str, Any],
+    updated: dict[str, Any],
     error: str,
-    failure_details: Dict[str, Any],
-    source_identity: Callable[[Dict[str, Any]], str],
+    failure_details: dict[str, Any],
+    source_identity: Callable[[dict[str, Any]], str],
     include_browser_used: bool = False,
-    probe_meta: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
+    probe_meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     result = {
         "started": True,
         "runId": run_id,
@@ -80,7 +81,7 @@ def _build_failure_result(
     return result
 
 
-def _reconstruct_probe_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
+def _reconstruct_probe_candidate(row: dict[str, Any]) -> dict[str, Any]:
     reconstructed = dict(row)
     adapter = str(reconstructed.get("adapter") or "").strip().lower()
     if adapter == "greenhouse" and not reconstructed.get("api_url") and reconstructed.get("slug"):
@@ -98,7 +99,7 @@ def _reconstruct_probe_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
     return reconstructed
 
 
-def _candidate_endpoint_url(row: Dict[str, Any]) -> str:
+def _candidate_endpoint_url(row: dict[str, Any]) -> str:
     return str(
         row.get("listing_url")
         or row.get("api_url")
@@ -112,18 +113,18 @@ def trigger_source_check(
     source_id: str,
     *,
     timeout_s: int = 12,
-    load_state: Callable[[], Dict[str, Any]],
-    source_identity: Callable[[Dict[str, Any]], str],
-    normalize_manual_static_studio_fields_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
-    check_static_source_fn: Callable[[Dict[str, Any], int], Tuple[bool, int, str, bool, Dict[str, Any]]],
+    load_state: Callable[[], dict[str, Any]],
+    source_identity: Callable[[dict[str, Any]], str],
+    normalize_manual_static_studio_fields_fn: Callable[[dict[str, Any]], dict[str, Any]],
+    check_static_source_fn: Callable[[dict[str, Any], int], tuple[bool, int, str, bool, dict[str, Any]]],
     now_iso: Callable[[], str],
-    compute_candidate_score: Callable[[Dict[str, Any], int], Tuple[int, list[str]]],
-    normalize_candidate: Callable[..., Dict[str, Any]],
-    probe_candidate: Callable[..., Tuple[bool, int, str]],
-    persist_state_and_auto_sync: Callable[..., Dict[str, Any]],
+    compute_candidate_score: Callable[[dict[str, Any], int], tuple[int, list[str]]],
+    normalize_candidate: Callable[..., dict[str, Any]],
+    probe_candidate: Callable[..., tuple[bool, int, str]],
+    persist_state_and_auto_sync: Callable[..., dict[str, Any]],
     normalize_source_url: Callable[[str], str],
-    build_check_failure_details: Callable[..., Dict[str, Any]],
-) -> Dict[str, Any]:
+    build_check_failure_details: Callable[..., dict[str, Any]],
+) -> dict[str, Any]:
     token = str(source_id or "").strip().lower()
     if not token:
         return {"started": False, "error": "Missing sourceId."}

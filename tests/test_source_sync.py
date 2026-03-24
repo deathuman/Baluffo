@@ -3,7 +3,6 @@ import json
 import ssl
 import threading
 from datetime import timedelta
-from pathlib import Path
 from urllib.error import HTTPError, URLError
 
 import pytest

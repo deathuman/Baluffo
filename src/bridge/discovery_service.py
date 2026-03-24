@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Set, Tuple
+from typing import Any
 
 from src.source_registry import source_identity
-
 
 BridgeLogFunc = Callable[[str, str], None]
 
@@ -37,12 +37,12 @@ class DiscoveryDeps:
     bridge_log: Callable[[str, str], None] | Callable[..., None]
     load_json_object: Callable[[Any, Any], Any]
     save_json_atomic: Callable[[Any, Any], None]
-    run_background_script: Callable[[str, List[str] | None], int]
-    append_run_history: Callable[[Dict[str, Any]], Dict[str, Any]]
-    normalize_discovery_report_contract: Callable[[Dict[str, Any]], Dict[str, Any]]
-    load_state: Callable[[], Dict[str, List[Dict[str, Any]]]]
-    persist_state_and_auto_sync: Callable[..., Dict[str, List[Dict[str, Any]]]]
-    load_sync_runtime_state: Callable[[], Dict[str, Any]]
+    run_background_script: Callable[[str, list[str] | None], int]
+    append_run_history: Callable[[dict[str, Any]], dict[str, Any]]
+    normalize_discovery_report_contract: Callable[[dict[str, Any]], dict[str, Any]]
+    load_state: Callable[[], dict[str, list[dict[str, Any]]]]
+    persist_state_and_auto_sync: Callable[..., dict[str, list[dict[str, Any]]]]
+    load_sync_runtime_state: Callable[[], dict[str, Any]]
     maybe_trigger_auto_sync_push: Callable[[str], bool]
     mark_discovery_sync_finished: Callable[[str], None]
 
@@ -64,7 +64,7 @@ class DiscoveryService:
                 return 1
 
     @staticmethod
-    def _normalize_discovery_settings(payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    def _normalize_discovery_settings(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         data = payload if isinstance(payload, dict) else {}
         raw = data.get("autoApproveHealthyPendingOnComplete", True)
         if isinstance(raw, bool):
@@ -73,25 +73,25 @@ class DiscoveryService:
             enabled = str(raw or "").strip().lower() not in {"", "0", "false", "no", "off"}
         return {"autoApproveHealthyPendingOnComplete": bool(enabled)}
 
-    def load_saved_discovery_settings(self) -> Dict[str, Any]:
+    def load_saved_discovery_settings(self) -> dict[str, Any]:
         raw = self._deps.load_json_object(self._paths.settings, {})
         if isinstance(raw, dict) and "autoApproveHealthyPendingOnComplete" in raw:
             return self._normalize_discovery_settings(raw)
         return {}
 
-    def get_saved_discovery_config_payload(self) -> Dict[str, Any]:
+    def get_saved_discovery_config_payload(self) -> dict[str, Any]:
         settings = self.load_saved_discovery_settings()
         if "autoApproveHealthyPendingOnComplete" in settings:
             return {"autoApproveHealthyPendingOnComplete": bool(settings.get("autoApproveHealthyPendingOnComplete"))}
         return self._normalize_discovery_settings({})
 
-    def get_discovery_config_payload(self) -> Dict[str, Any]:
+    def get_discovery_config_payload(self) -> dict[str, Any]:
         return {
             "ok": True,
             "savedConfig": self.get_saved_discovery_config_payload(),
         }
 
-    def update_saved_discovery_settings(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def update_saved_discovery_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized = self._normalize_discovery_settings(payload)
         self._deps.save_json_atomic(self._paths.settings, normalized)
         return normalized
@@ -106,7 +106,7 @@ class DiscoveryService:
         return token
 
     @classmethod
-    def _pending_row_is_auto_approvable(cls, row: Dict[str, Any]) -> bool:
+    def _pending_row_is_auto_approvable(cls, row: dict[str, Any]) -> bool:
         if not isinstance(row, dict):
             return False
         jobs_found = row.get("jobsFound")
@@ -137,20 +137,20 @@ class DiscoveryService:
         self._deps.save_json_atomic(self._paths.approval_state, approval)
 
     @staticmethod
-    def _queued_report_candidate_ids(report: Dict[str, Any]) -> Set[str]:
+    def _queued_report_candidate_ids(report: dict[str, Any]) -> set[str]:
         candidates = report.get("candidates") if isinstance(report.get("candidates"), list) else []
-        queued_ids: Set[str] = set()
+        queued_ids: set[str] = set()
         for row in candidates:
             if not isinstance(row, dict) or bool(row.get("deferred")):
                 continue
             queued_ids.add(source_identity(row))
         return queued_ids
 
-    def _auto_approve_healthy_pending_sources(self, *, queued_candidate_ids: Set[str] | None = None) -> int:
+    def _auto_approve_healthy_pending_sources(self, *, queued_candidate_ids: set[str] | None = None) -> int:
         state = self._deps.load_state()
         pending_rows = list(state.get("pending") or [])
-        moved: List[Dict[str, Any]] = []
-        remaining: List[Dict[str, Any]] = []
+        moved: list[dict[str, Any]] = []
+        remaining: list[dict[str, Any]] = []
         queued_ids = {str(item or "").strip().lower() for item in (queued_candidate_ids or set()) if str(item or "").strip()}
         for row in pending_rows:
             row_id = source_identity(row)
@@ -235,9 +235,9 @@ class DiscoveryService:
         self,
         *,
         route_name: str,
-        payload: Dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
         enable_auto_sync_watch: bool = True,
-    ) -> Tuple[int, Dict[str, Any]]:
+    ) -> tuple[int, dict[str, Any]]:
         data = payload if isinstance(payload, dict) else {}
         preset = str(data.get("preset") or "default").strip().lower()
         run_id = f"discovery_{uuid.uuid4().hex[:10]}"

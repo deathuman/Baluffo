@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-import json
+from typing import Any
 
 from src.bridge.api import BridgeApi
 from src.bridge.routes.post_routes import handle_post
@@ -25,7 +24,7 @@ class _FakeHandler:
     """Captures all sent responses for assertions."""
 
     def __init__(self) -> None:
-        self.sent: List[Dict[str, Any]] = []
+        self.sent: list[dict[str, Any]] = []
 
     def _send_json(self, payload: Any, status: int = 200) -> None:
         self.sent.append({"status": status, "payload": payload})
@@ -35,12 +34,12 @@ class _FakeDesktopLocalDataStore:
     """Mock for desktop local data operations."""
 
     def __init__(self) -> None:
-        self.users: Dict[str, Any] = {}
-        self.saved_jobs: Dict[str, List[Dict]] = {}
-        self.attachments: Dict[str, Any] = {}
-        self._current_user: Optional[Dict] = None
+        self.users: dict[str, Any] = {}
+        self.saved_jobs: dict[str, list[dict]] = {}
+        self.attachments: dict[str, Any] = {}
+        self._current_user: dict | None = None
 
-    def sign_in(self, name: str) -> Dict[str, Any]:
+    def sign_in(self, name: str) -> dict[str, Any]:
         if not name.strip():
             raise ValueError("Name required")
         uid = f"user_{hash(name) % 10000}"
@@ -87,7 +86,7 @@ class _FakeDesktopLocalDataStore:
         self.attachments[att_id] = {"uid": uid, "job_key": job_key, **file_meta}
         return att_id
 
-    def get_current_user(self) -> Optional[Dict]:
+    def get_current_user(self) -> dict | None:
         return self._current_user
 
 
@@ -106,17 +105,17 @@ def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
         ],
     }
 
-    def load_state() -> Dict[str, List[Dict[str, Any]]]:
+    def load_state() -> dict[str, list[dict[str, Any]]]:
         return state
 
     def persist_state_and_auto_sync(
-        new_state: Dict[str, Any], reason: str = None
-    ) -> Dict[str, Any]:
+        new_state: dict[str, Any], reason: str = None
+    ) -> dict[str, Any]:
         state.clear()
         state.update(new_state)
         return state
 
-    def summarize_state(state_data: Dict[str, List[Dict[str, Any]]]) -> Dict[str, int]:
+    def summarize_state(state_data: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
         return {
             "activeCount": len(state_data.get("active") or []),
             "pendingCount": len(state_data.get("pending") or []),

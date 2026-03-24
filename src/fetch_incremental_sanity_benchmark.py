@@ -9,8 +9,6 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
-
 
 DEFAULT_BENCHMARK_SOURCES = [
     "greenhouse_boards",
@@ -50,18 +48,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _select_loaders(source_names: List[str]):
+def _select_loaders(source_names: list[str]):
     from src.jobs import adapters as adapters_pkg
     from src.jobs.adapters import static as static_adapter
     from src.jobs.text_utils import clean_text
 
-    available: Dict[str, object] = {name: loader for name, loader in adapters_pkg.default_source_loaders(social_enabled=False)}
+    available: dict[str, object] = {name: loader for name, loader in adapters_pkg.default_source_loaders(social_enabled=False)}
     for name, loader in static_adapter.build_static_source_loaders():
         available.setdefault(name, loader)
     for name, loader in adapters_pkg.EXTRACTED_ADAPTERS.items():
         available.setdefault(name, loader)
-    selected: List[Tuple[str, object]] = []
-    missing: List[str] = []
+    selected: list[tuple[str, object]] = []
+    missing: list[str] = []
     for name in source_names:
         normalized_name = clean_text(name)
         loader = available.get(name)
@@ -74,9 +72,9 @@ def _select_loaders(source_names: List[str]):
     return selected, missing
 
 
-def _family_summary(report: Dict[str, object], source_names: List[str]) -> Dict[str, object]:
+def _family_summary(report: dict[str, object], source_names: list[str]) -> dict[str, object]:
     rows = [row for row in (report.get("sources") or []) if isinstance(row, dict) and str(row.get("name") or "") in source_names]
-    family: Dict[str, object] = {}
+    family: dict[str, object] = {}
     for row in rows:
         name = str(row.get("name") or "")
         family[name] = {

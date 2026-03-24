@@ -107,4 +107,4 @@ def test_build_report_includes_productive_expensive_sources() -> None:
     productive = ((report.get("fetch") or {}).get("productiveExpensiveSources") or [])
     assert len(productive) == 1
     assert str(productive[0].get("name") or "") == "static_source::cygames"
-    assert int(((report.get("totals") or {}).get("fetchWallClockDurationMs") or 0)) == 45000
+    assert int((report.get("totals") or {}).get("fetchWallClockDurationMs") or 0) == 45000

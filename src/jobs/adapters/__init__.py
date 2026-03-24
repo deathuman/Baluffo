@@ -8,24 +8,24 @@ from src.jobs.adapters import community, provider_api, social, static
 from src.jobs.common import config as common_config
 from src.jobs.common import social as common_social
 from src.jobs.common.http import default_fetch_text as common_default_fetch_text
-from src.jobs_fetcher_registry import DEFAULT_SOURCE_LOADER_NAMES
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import FetchContext, FetchResult, SourceDiagnostics
 from src.jobs.text_utils import clean_text
+from src.jobs_fetcher_registry import DEFAULT_SOURCE_LOADER_NAMES
 
 
 def default_source_loaders(
     *,
     social_enabled: bool = False,
-    social_config: Optional[Dict[str, Any]] = None,
-) -> List[Tuple[str, SourceLoader]]:
+    social_config: dict[str, Any] | None = None,
+) -> list[tuple[str, SourceLoader]]:
     social_cfg = social_config if isinstance(social_config, dict) else common_social.load_social_config(
         config_path=common_config.DEFAULT_SOCIAL_CONFIG_PATH,
         enabled=bool(social_enabled),
         lookback_minutes=common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES,
     )
 
-    google_sheet_loaders: Dict[str, SourceLoader] = {}
+    google_sheet_loaders: dict[str, SourceLoader] = {}
     for source in community.GOOGLE_SHEETS_SOURCES:
         source_name = clean_text(source.get("name"))
         sheet_id = clean_text(source.get("sheetId"))
@@ -55,7 +55,7 @@ def default_source_loaders(
 
         google_sheet_loaders[source_name] = _loader
 
-    available: Dict[str, SourceLoader] = {
+    available: dict[str, SourceLoader] = {
         **google_sheet_loaders,
         "remote_ok": community.run_remote_ok_source,
         "gamesindustry": community.run_gamesindustry_source,

@@ -4,15 +4,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import parse_qs, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.game_detection import looks_like_game_job
-from src.jobs.normalizers import COUNTRY_NAME_TO_CODE, normalize_country
-from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.jobs.models import RawJob
+from src.jobs.normalizers import COUNTRY_NAME_TO_CODE, normalize_country
+from src.jobs.text_utils import clean_text, norm_text
 
 
 def _looks_like_country_token(value: str) -> bool:
@@ -23,7 +23,7 @@ def _looks_like_country_token(value: str) -> bool:
     return len(token) == 2 and token.isalpha()
 
 
-def parse_greenhouse_location(location_name: Any) -> Tuple[str, str, str]:
+def parse_greenhouse_location(location_name: Any) -> tuple[str, str, str]:
     text = clean_text(location_name)
     if not text:
         return "", "Unknown", ""
@@ -46,7 +46,7 @@ def parse_greenhouse_location(location_name: Any) -> Tuple[str, str, str]:
     return first, last, ""
 
 
-def parse_generic_location_fields(location_value: Any) -> Tuple[str, str, str]:
+def parse_generic_location_fields(location_value: Any) -> tuple[str, str, str]:
     text = clean_text(location_value)
     if not text:
         return "", "Unknown", ""
@@ -68,12 +68,12 @@ def parse_generic_location_fields(location_value: Any) -> Tuple[str, str, str]:
 
 def parse_greenhouse_jobs_payload(
     payload: Any, board_slug: str, fallback_company: str = ""
-) -> List[RawJob]:
+) -> list[RawJob]:
     rows = payload.get("jobs") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return []
     company_fallback = clean_text(fallback_company) or board_slug.replace("-", " ").title()
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -106,10 +106,10 @@ def parse_greenhouse_jobs_payload(
 
 def parse_lever_jobs_payload(
     payload: Any, account: str, fallback_company: str = ""
-) -> List[RawJob]:
+) -> list[RawJob]:
     if not isinstance(payload, list):
         return []
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     company = clean_text(fallback_company) or account.replace("-", " ").title()
     for row in payload:
         if not isinstance(row, dict):
@@ -146,11 +146,11 @@ def parse_lever_jobs_payload(
 
 def parse_smartrecruiters_jobs_payload(
     payload: Any, company_id: str, fallback_company: str = ""
-) -> List[RawJob]:
+) -> list[RawJob]:
     rows = payload.get("content") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return []
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     company = clean_text(fallback_company) or company_id
     for row in rows:
         if not isinstance(row, dict):
@@ -192,7 +192,7 @@ def parse_smartrecruiters_jobs_payload(
 
 def parse_workable_jobs_payload(
     payload: Any, account: str, fallback_company: str = ""
-) -> List[RawJob]:
+) -> list[RawJob]:
     rows = payload.get("jobs") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return []
@@ -201,7 +201,7 @@ def parse_workable_jobs_payload(
         or clean_text(fallback_company)
         or account
     )
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -243,11 +243,11 @@ def parse_workable_jobs_payload(
 
 def parse_epic_games_jobs_payload(
     payload: Any, fallback_company: str = "Epic Games"
-) -> List[RawJob]:
+) -> list[RawJob]:
     rows = payload.get("hits") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return []
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     company = clean_text(fallback_company) or "Epic Games"
     for row in rows:
         if not isinstance(row, dict):
@@ -303,7 +303,7 @@ def parse_epic_games_jobs_payload(
 
 def parse_ashby_jobs_from_html(
     html_text: str, board_url: str, fallback_company: str = ""
-) -> List[RawJob]:
+) -> list[RawJob]:
     app_data_match = re.search(r"window\.__appData\s*=\s*(\{.*?\});", html_text, re.S)
     if app_data_match:
         try:
@@ -313,7 +313,7 @@ def parse_ashby_jobs_from_html(
             if isinstance(postings, list) and postings:
                 normalized_board_url = re.sub(r"/jobs/?$", "", clean_text(board_url)) or clean_text(board_url)
                 company = clean_text(fallback_company) or clean_text((app_data.get("organization") or {}).get("name")) or "Unknown"
-                jobs: List[RawJob] = []
+                jobs: list[RawJob] = []
                 for posting in postings:
                     if not isinstance(posting, dict):
                         continue
@@ -343,7 +343,7 @@ def parse_ashby_jobs_from_html(
         except (TypeError, ValueError, json.JSONDecodeError):
             pass
 
-    links: List[Tuple[str, str]] = []
+    links: list[tuple[str, str]] = []
     seen = set()
     board_parsed = urlparse(board_url)
     board_host = clean_text(board_parsed.netloc).lower()
@@ -363,7 +363,7 @@ def parse_ashby_jobs_from_html(
             continue
         seen.add(absolute)
         links.append((absolute, strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_html))))
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     for link, anchor_text in links:
         parsed = urlparse(link)
         query = parse_qs(parsed.query)
@@ -390,9 +390,9 @@ def parse_ashby_jobs_from_html(
     return jobs
 
 
-def parse_personio_feed_xml(xml_text: str, source_name: str = "") -> List[RawJob]:
-    jobs: List[RawJob] = []
-    root: Optional[ET.Element] = None
+def parse_personio_feed_xml(xml_text: str, source_name: str = "") -> list[RawJob]:
+    jobs: list[RawJob] = []
+    root: ET.Element | None = None
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError:
@@ -431,13 +431,13 @@ def parse_recruitee_jobs_payload(
     payload: Any,
     subdomain: str,
     fallback_company: str = "",
-) -> List[RawJob]:
+) -> list[RawJob]:
     rows = payload.get("offers") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return []
     company_payload = payload.get("company") if isinstance(payload.get("company"), dict) else {}
     company = clean_text(company_payload.get("name")) or clean_text(fallback_company) or subdomain.replace("-", " ").title()
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -492,12 +492,12 @@ def parse_pinpoint_jobs_payload(
     payload: Any,
     subdomain: str,
     fallback_company: str = "",
-) -> List[RawJob]:
+) -> list[RawJob]:
     rows = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return []
     company = clean_text(fallback_company) or subdomain.replace("-", " ").title()
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -544,8 +544,8 @@ def parse_breezy_jobs_html(
     html_text: str,
     board_url: str,
     fallback_company: str = "",
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
     company = clean_text(fallback_company) or urlparse(board_url).hostname or "Unknown"
     seen_links = set()
     pattern = re.compile(
@@ -587,8 +587,8 @@ def parse_jazzhr_jobs_html(
     html_text: str,
     board_url: str,
     fallback_company: str = "",
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
     company = clean_text(fallback_company) or urlparse(board_url).hostname or "Unknown"
     seen_links = set()
     pattern = re.compile(

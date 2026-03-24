@@ -1,7 +1,8 @@
 """Static source check: probe a static source row for job links and signals."""
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Set, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from src.source_registry import normalize_source_url
 
@@ -19,9 +20,9 @@ def _looks_like_not_found_page(html: str) -> bool:
     return False
 
 
-def _extract_static_module_signals(html: str, page_url: str) -> List[str]:
+def _extract_static_module_signals(html: str, page_url: str) -> list[str]:
     low = str(html or "").lower()
-    signals: List[str] = []
+    signals: list[str] = []
     if "job_openings_module" in low or '"slice_type":"job_openings_module"' in low:
         signals.append(f"signal:job_openings_module:{normalize_source_url(page_url) or page_url}")
     if "sumo-lever-integration" in low or "sumo_lever_filter" in low:
@@ -31,7 +32,7 @@ def _extract_static_module_signals(html: str, page_url: str) -> List[str]:
     return signals
 
 
-def _resolve_static_source_pages(row: Dict[str, Any]) -> List[str]:
+def _resolve_static_source_pages(row: dict[str, Any]) -> list[str]:
     pages_raw = row.get("pages") if isinstance(row.get("pages"), list) else []
     pages = [normalize_source_url(page) for page in pages_raw if normalize_source_url(page)]
     if pages:
@@ -43,10 +44,10 @@ def _resolve_static_source_pages(row: Dict[str, Any]) -> List[str]:
 def _expand_static_alt_pages(
     *,
     page_url: str,
-    pages_to_visit: List[str],
-    seen_pages: Set[str],
+    pages_to_visit: list[str],
+    seen_pages: set[str],
     max_pages_to_visit: int,
-    suggest_alternate_career_urls: Callable[[str], List[str]],
+    suggest_alternate_career_urls: Callable[[str], list[str]],
 ) -> None:
     low_page = str(page_url or "").lower()
     if not any(token in low_page for token in ("/career", "/careers", "/jobs", "/job", "/vacancies", "/vacancy")):
@@ -62,18 +63,18 @@ def _expand_static_alt_pages(
 
 
 def check_static_source(
-    row: Dict[str, Any],
+    row: dict[str, Any],
     timeout_s: int,
     *,
-    fetch_page_with_alternates: Callable[[str, int], Tuple[str, str, bool, bool, str]],
-    fetch_page: Callable[[str, int], Tuple[str, str, bool, bool]],
+    fetch_page_with_alternates: Callable[[str, int], tuple[str, str, bool, bool, str]],
+    fetch_page: Callable[[str, int], tuple[str, str, bool, bool]],
     fetch_text: Callable[[str, int], str],
     html_extractor: Any,
-    parse_jobpostings_from_html: Callable[..., List[Dict[str, Any]]],
+    parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]],
     normalize_job_url: Callable[[str], str],
-    source_identity: Callable[[Dict[str, Any]], str],
-    suggest_alternate_career_urls: Callable[[str], List[str]],
-) -> Tuple[bool, int, str, bool, Dict[str, Any]]:
+    source_identity: Callable[[dict[str, Any]], str],
+    suggest_alternate_career_urls: Callable[[str], list[str]],
+) -> tuple[bool, int, str, bool, dict[str, Any]]:
     """Probe a static source row; returns (ok, jobs_found, error, weak_signal, probe_meta)."""
     pages = _resolve_static_source_pages(row)
     if not pages:
@@ -84,13 +85,13 @@ def check_static_source(
 
     company = str(row.get("company") or row.get("studio") or row.get("name") or "Unknown")
     source_id = source_identity(row)
-    structured_links: Set[str] = set()
-    weak_links: Set[str] = set()
-    errors: List[str] = []
+    structured_links: set[str] = set()
+    weak_links: set[str] = set()
+    errors: list[str] = []
     browser_fallback_attempted = False
     browser_fallback_used = False
     pages_to_visit = list(pages)
-    seen_pages: Set[str] = set(pages_to_visit)
+    seen_pages: set[str] = set(pages_to_visit)
     max_pages_to_visit = 18
     idx = 0
     while idx < len(pages_to_visit):

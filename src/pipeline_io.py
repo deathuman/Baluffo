@@ -5,20 +5,21 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Callable, Sequence
 from io import StringIO
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Sequence
+from typing import Any
 
-RawJob = Dict[str, Any]
+RawJob = dict[str, Any]
 
 
 def read_existing_output(
     json_path: Path,
     fetched_at: str,
     *,
-    canonicalize_job: Callable[[Dict[str, Any], str, str], Dict[str, Any] | None],
+    canonicalize_job: Callable[[dict[str, Any], str, str], dict[str, Any] | None],
     clean_text: Callable[[Any], str],
-) -> List[RawJob]:
+) -> list[RawJob]:
     if not json_path.exists():
         return []
     try:
@@ -33,7 +34,7 @@ def read_existing_output(
     else:
         return []
 
-    restored: List[RawJob] = []
+    restored: list[RawJob] = []
     for row in rows:
         normalized = canonicalize_job(
             row,
@@ -57,7 +58,7 @@ def serialize_rows_for_csv(rows: Sequence[RawJob], fields: Sequence[str]) -> str
     writer = csv.DictWriter(buffer, fieldnames=list(fields))
     writer.writeheader()
     for row in rows:
-        payload: Dict[str, Any] = {}
+        payload: dict[str, Any] = {}
         for field in fields:
             value = row.get(field, "")
             if field == "sourceBundle" and isinstance(value, list):

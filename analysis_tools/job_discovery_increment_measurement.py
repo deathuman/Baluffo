@@ -5,18 +5,18 @@ Compares baseline vs social-enabled pipeline runs to quantify job discovery gain
 from Reddit, X (Twitter), and Mastodon integration.
 """
 
-import sys
 import json
-import time
 import subprocess
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+import sys
+import time
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 # Add current directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-def run_baseline_pipeline(output_dir: Path, timeout: int = 300) -> Dict[str, Any]:
+def run_baseline_pipeline(output_dir: Path, timeout: int = 300) -> dict[str, Any]:
     """Run pipeline without social sources for baseline measurement."""
     print("📊 Running BASELINE pipeline (without social sources)...")
     print("-" * 50)
@@ -92,7 +92,7 @@ def run_baseline_pipeline(output_dir: Path, timeout: int = 300) -> Dict[str, Any
             "error_count": 0
         }
 
-def run_social_pipeline(output_dir: Path, timeout: int = 300) -> Dict[str, Any]:
+def run_social_pipeline(output_dir: Path, timeout: int = 300) -> dict[str, Any]:
     """Run pipeline with social sources enabled for comparison."""
     print("🎯 Running SOCIAL SOURCES pipeline (with Reddit/X/Mastodon)...")
     print("-" * 50)
@@ -182,7 +182,7 @@ def run_social_pipeline(output_dir: Path, timeout: int = 300) -> Dict[str, Any]:
             "error_count": 0
         }
 
-def calculate_incremental_gains(baseline: Dict[str, Any], social: Dict[str, Any]) -> Dict[str, Any]:
+def calculate_incremental_gains(baseline: dict[str, Any], social: dict[str, Any]) -> dict[str, Any]:
     """Calculate incremental gains from social sources."""
     baseline_jobs = baseline.get("output_count", 0)
     social_jobs = social.get("output_count", 0)
@@ -257,7 +257,7 @@ def calculate_incremental_gains(baseline: Dict[str, Any], social: Dict[str, Any]
         }
     }
 
-def generate_increment_report(gains: Dict[str, Any]) -> str:
+def generate_increment_report(gains: dict[str, Any]) -> str:
     """Generate comprehensive increment report."""
     report = []
     report.append("=" * 70)

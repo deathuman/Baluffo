@@ -5,8 +5,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 import hashlib
 import json
@@ -15,22 +13,28 @@ import re
 import sys
 import threading
 import time
+from collections import Counter
+from collections.abc import Callable, Iterable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from io import StringIO
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree as ET
+
 try:
     import httpx
 except Exception:  # noqa: BLE001
     httpx = None
 
-from src.shared.regex import find_urls_in_text
-from src.shared.utils import env_flag as _shared_env_flag, now_iso as _shared_now_iso
+from src.baluffo_config import get_storage_defaults
+from src.contracts import SCHEMA_VERSION
+from src.jobs.adapters import html_parsers as _html_parsers
+from src.jobs.game_detection import GAME_KEYWORDS, looks_like_game_job
 from src.jobs.normalizers import (
     COUNTRY_NAME_TO_CODE,
     normalize_country,
@@ -43,10 +47,6 @@ from src.jobs.text_utils import (
     norm_text,
     normalize_url,
 )
-from src.jobs.adapters import html_parsers as _html_parsers
-from src.jobs.game_detection import GAME_KEYWORDS, looks_like_game_job
-from src.contracts import SCHEMA_VERSION
-from src.baluffo_config import get_storage_defaults
 from src.jobs_fetcher_registry import (
     DEFAULT_SOURCE_LOADER_NAMES,
     EXCLUDED_DEFAULT_SOURCES,
@@ -54,33 +54,41 @@ from src.jobs_fetcher_registry import (
 )
 from src.pipeline_io import (
     read_existing_output as read_existing_output_from_file,
+)
+from src.pipeline_io import (
     serialize_rows_for_csv,
     serialize_rows_for_json,
     write_atomic_if_changed,
     write_text_if_changed,
 )
+from src.shared.regex import find_urls_in_text
+from src.shared.utils import env_flag as _shared_env_flag
+from src.shared.utils import now_iso as _shared_now_iso
 
-RawJob = Dict[str, Any]
-SourceLoader = Callable[..., List[RawJob]]
-from src.jobs.common.registry_defaults import DEFAULT_STUDIO_SOURCE_REGISTRY, REDUNDANT_STATIC_IF_PROVIDER
-
-from src.jobs.common import config
-from src.jobs.common import fetch
-from src.jobs.common import heuristics
-from src.jobs.common import http
-from src.jobs.common import parsing
-from src.jobs.common import diagnostics
-from src.jobs.common import registry_defaults
-from src.jobs.common import social
-from src.jobs.common import sources
-from src.jobs.common import url
-
+RawJob = dict[str, Any]
+SourceLoader = Callable[..., list[RawJob]]
+from src.jobs.common import (
+    config,
+    diagnostics,
+    fetch,
+    heuristics,
+    http,
+    parsing,
+    registry_defaults,
+    social,
+    sources,
+    url,
+)
 from src.jobs.common import config as _common_config
 from src.jobs.common import diagnostics as _common_diagnostics
 from src.jobs.common import heuristics as _common_heuristics
 from src.jobs.common import registry_defaults as _common_registry_defaults
 from src.jobs.common import social as _common_social
 from src.jobs.common import sources as _common_sources
+from src.jobs.common.registry_defaults import (
+    DEFAULT_STUDIO_SOURCE_REGISTRY,
+    REDUNDANT_STATIC_IF_PROVIDER,
+)
 
 DEFAULT_TIMEOUT_S = _common_config.DEFAULT_TIMEOUT_S
 DEFAULT_RETRIES = _common_config.DEFAULT_RETRIES
@@ -184,7 +192,7 @@ __all__ = [*PREFERRED_IMPORT_SURFACES, *CURATED_COMPAT_EXPORTS]
 from src.jobs.common import registry as _common_registry
 
 
-def registry_entries(adapter: str, *, enabled_only: bool = True) -> List[Dict[str, Any]]:
+def registry_entries(adapter: str, *, enabled_only: bool = True) -> list[dict[str, Any]]:
     return _common_registry.registry_entries(
         adapter,
         enabled_only=enabled_only,
@@ -204,8 +212,8 @@ def env_flag(name: str, default: bool) -> bool:
     return _shared_env_flag(name, default)
 
 
-def _deep_merge_dicts(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
-    merged: Dict[str, Any] = {key: value for key, value in base.items()}
+def _deep_merge_dicts(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {key: value for key, value in base.items()}
     for key, value in overlay.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
             merged[key] = _deep_merge_dicts(dict(merged[key]), value)
@@ -219,8 +227,8 @@ def load_social_config(
     config_path: Path,
     enabled: bool = False,
     lookback_minutes: int = DEFAULT_SOCIAL_LOOKBACK_MINUTES,
-) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {}
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
     try:
         if config_path.exists():
             parsed = json.loads(config_path.read_text(encoding="utf-8"))
@@ -236,10 +244,8 @@ def load_social_config(
     return merged
 
 
-from src.jobs.common.datetime_utils import parse_datetime, posted_ts, to_iso
-
-
 from src.jobs.common import url as _common_url
+from src.jobs.common.datetime_utils import parse_datetime, posted_ts, to_iso
 
 canonical_url_fingerprint_seed = _common_url.canonical_url_fingerprint_seed
 fingerprint_url = _common_url.fingerprint_url
@@ -292,7 +298,7 @@ def normalize_company_value(value: Any) -> str:
     return _common_heuristics.normalize_company_value(value)
 
 
-def parse_remote_ok_payload(payload: Any) -> List[RawJob]:
+def parse_remote_ok_payload(payload: Any) -> list[RawJob]:
     return parsing.parse_remote_ok_payload(payload, looks_like_game_job=looks_like_game_job)
 
 
@@ -331,7 +337,7 @@ def resolve_fetch_text_impl(
     fetch_text: Callable[[str, int], str],
     fetch_strategy: str,
     adapter_http_concurrency: int,
-) -> Tuple[Callable[[str, int], str], str, Optional[AsyncHttpTextFetcher]]:
+) -> tuple[Callable[[str, int], str], str, AsyncHttpTextFetcher | None]:
     from src.jobs import transport as transport_pkg
 
     return transport_pkg.resolve_fetch_text_impl(
@@ -378,9 +384,9 @@ def canonicalize_job_with_reason(
     *,
     source: str,
     fetched_at: str,
-    resolve_redirect_url: Optional[Callable[[str], str]] = None,
+    resolve_redirect_url: Callable[[str], str] | None = None,
     resolved_job_link: Any = None,
-) -> Tuple[Optional[RawJob], str]:
+) -> tuple[RawJob | None, str]:
     from src.jobs import canonicalize as canonicalize_pkg
 
     normalized, reason = canonicalize_pkg.canonicalize_job_with_reason(
@@ -398,9 +404,9 @@ def canonicalize_job(
     *,
     source: str,
     fetched_at: str,
-    resolve_redirect_url: Optional[Callable[[str], str]] = None,
+    resolve_redirect_url: Callable[[str], str] | None = None,
     resolved_job_link: Any = None,
-) -> Optional[RawJob]:
+) -> RawJob | None:
     from src.jobs import canonicalize as canonicalize_pkg
 
     normalized = canonicalize_pkg.canonicalize_job(
@@ -462,7 +468,7 @@ def company_preference_score(job: RawJob) -> int:
     return 2
 
 
-def choose_base_record(left: RawJob, right: RawJob) -> Tuple[RawJob, RawJob]:
+def choose_base_record(left: RawJob, right: RawJob) -> tuple[RawJob, RawJob]:
     from src.jobs import dedup as dedup_pkg
 
     base, other = dedup_pkg.choose_base_record(
@@ -481,7 +487,7 @@ def merge_records(existing: RawJob, candidate: RawJob) -> RawJob:
     ).to_dict()
 
 
-def deduplicate_jobs(rows: Sequence[RawJob]) -> Tuple[List[RawJob], Dict[str, int]]:
+def deduplicate_jobs(rows: Sequence[RawJob]) -> tuple[list[RawJob], dict[str, int]]:
     from src.jobs import dedup as dedup_pkg
 
     merged_rows, stats = dedup_pkg.deduplicate_jobs([dedup_pkg.CanonicalJob.from_mapping(row) for row in rows])
@@ -491,8 +497,8 @@ def deduplicate_jobs(rows: Sequence[RawJob]) -> Tuple[List[RawJob], Dict[str, in
 def default_source_loaders(
     *,
     social_enabled: bool = False,
-    social_config: Optional[Dict[str, Any]] = None,
-) -> List[Tuple[str, SourceLoader]]:
+    social_config: dict[str, Any] | None = None,
+) -> list[tuple[str, SourceLoader]]:
     from src.jobs.adapters import default_source_loaders as package_default_source_loaders
 
     return package_default_source_loaders(
@@ -512,9 +518,9 @@ def format_source_error(source_name: str, error: Any) -> str:
 
 
 def build_pipeline_summary(
-    dedup_stats: Dict[str, int],
+    dedup_stats: dict[str, int],
     deduped_rows: Sequence[RawJob],
-    source_reports: Sequence[Dict[str, Any]],
+    source_reports: Sequence[dict[str, Any]],
     canonical_count: int,
     preserved_previous: bool,
     active_source_count: int,
@@ -524,8 +530,8 @@ def build_pipeline_summary(
     json_bytes: int,
     csv_bytes: int,
     light_json_bytes: int,
-    lifecycle_counts_map: Optional[Dict[str, int]] = None,
-) -> Dict[str, Any]:
+    lifecycle_counts_map: dict[str, int] | None = None,
+) -> dict[str, Any]:
     from src.jobs import reporting as reporting_pkg
 
     return reporting_pkg.build_pipeline_summary(
@@ -545,10 +551,10 @@ def build_pipeline_summary(
 
 
 def build_browser_fallback_queue(
-    source_reports: Sequence[Dict[str, Any]],
+    source_reports: Sequence[dict[str, Any]],
     *,
     generated_at: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     from src.jobs import reporting as reporting_pkg
 
     return reporting_pkg.build_browser_fallback_queue(source_reports, generated_at=generated_at)
@@ -566,7 +572,7 @@ def read_success_cache(cache_path: Path) -> set[str]:
     return state_pkg.read_success_cache(cache_path)
 
 
-def write_success_cache(cache_path: Path, source_reports: Sequence[Dict[str, Any]]) -> None:
+def write_success_cache(cache_path: Path, source_reports: Sequence[dict[str, Any]]) -> None:
     from src.jobs import state as state_pkg
 
     state_pkg.write_success_cache(cache_path, source_reports)
@@ -581,25 +587,25 @@ def source_rows_fingerprint(rows: Sequence[RawJob]) -> str:
 from src.jobs.common.numbers import _clamped_int
 
 
-def normalize_source_state_payload(payload: Dict[str, Any], *, updated_at: str = "") -> Dict[str, Any]:
+def normalize_source_state_payload(payload: dict[str, Any], *, updated_at: str = "") -> dict[str, Any]:
     from src.jobs import state as state_pkg
 
     return state_pkg.normalize_source_state_payload(payload, updated_at=updated_at)
 
 
-def read_source_state(state_path: Path) -> Dict[str, Dict[str, Any]]:
+def read_source_state(state_path: Path) -> dict[str, dict[str, Any]]:
     from src.jobs import state as state_pkg
 
     return state_pkg.read_source_state(state_path)
 
 
-def write_source_state(state_path: Path, rows: Dict[str, Dict[str, Any]]) -> None:
+def write_source_state(state_path: Path, rows: dict[str, dict[str, Any]]) -> None:
     from src.jobs import state as state_pkg
 
     state_pkg.write_source_state(state_path, rows)
 
 
-def _job_identity_key(job: Dict[str, Any]) -> str:
+def _job_identity_key(job: dict[str, Any]) -> str:
     dedup = clean_text(job.get("dedupKey"))
     if dedup:
         return dedup
@@ -612,25 +618,25 @@ def _job_identity_key(job: Dict[str, Any]) -> str:
     return ""
 
 
-def normalize_job_lifecycle_payload(payload: Dict[str, Any], *, updated_at: str = "") -> Dict[str, Any]:
+def normalize_job_lifecycle_payload(payload: dict[str, Any], *, updated_at: str = "") -> dict[str, Any]:
     from src.jobs import state as state_pkg
 
     return state_pkg.normalize_job_lifecycle_payload(payload, updated_at=updated_at)
 
 
-def read_job_lifecycle_state(state_path: Path) -> Dict[str, Dict[str, Any]]:
+def read_job_lifecycle_state(state_path: Path) -> dict[str, dict[str, Any]]:
     from src.jobs import state as state_pkg
 
     return state_pkg.read_job_lifecycle_state(state_path)
 
 
-def write_job_lifecycle_state(state_path: Path, rows: Dict[str, Dict[str, Any]]) -> None:
+def write_job_lifecycle_state(state_path: Path, rows: dict[str, dict[str, Any]]) -> None:
     from src.jobs import state as state_pkg
 
     state_pkg.write_job_lifecycle_state(state_path, rows)
 
 
-def lifecycle_counts(rows: Dict[str, Dict[str, Any]]) -> Dict[str, int]:
+def lifecycle_counts(rows: dict[str, dict[str, Any]]) -> dict[str, int]:
     from src.jobs import state as state_pkg
 
     return state_pkg.lifecycle_counts(rows)
@@ -638,14 +644,14 @@ def lifecycle_counts(rows: Dict[str, Dict[str, Any]]) -> Dict[str, int]:
 
 def apply_job_lifecycle_state(
     *,
-    deduped_rows: List[RawJob],
-    lifecycle_rows: Dict[str, Dict[str, Any]],
+    deduped_rows: list[RawJob],
+    lifecycle_rows: dict[str, dict[str, Any]],
     finished_at: str,
     allow_mark_missing: bool,
-    eligible_missing_sources: Optional[set[str]] = None,
+    eligible_missing_sources: set[str] | None = None,
     remove_to_archive_days: int = LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS,
     archive_retention_days: int = LIFECYCLE_ARCHIVE_RETENTION_DAYS,
-) -> Tuple[List[RawJob], Dict[str, Dict[str, Any]], Dict[str, int]]:
+) -> tuple[list[RawJob], dict[str, dict[str, Any]], dict[str, int]]:
     from src.jobs import state as state_pkg
 
     rows, next_rows, counts = state_pkg.apply_job_lifecycle_state(
@@ -660,7 +666,7 @@ def apply_job_lifecycle_state(
     return [row.to_dict() for row in rows], next_rows, counts
 
 
-def normalize_runtime_payload(runtime: Dict[str, Any], *, selected_source_count: int) -> Dict[str, Any]:
+def normalize_runtime_payload(runtime: dict[str, Any], *, selected_source_count: int) -> dict[str, Any]:
     src = runtime if isinstance(runtime, dict) else {}
     normalized = {
         "maxWorkers": _clamped_int(src.get("maxWorkers"), 1, 1),
@@ -727,7 +733,7 @@ from src.jobs.common.contracts import (
 )
 
 
-def should_skip_source_by_ttl(source_name: str, state_rows: Dict[str, Dict[str, Any]], ttl_minutes: int) -> bool:
+def should_skip_source_by_ttl(source_name: str, state_rows: dict[str, dict[str, Any]], ttl_minutes: int) -> bool:
     from src.jobs import state as state_pkg
 
     return state_pkg.should_skip_source_by_ttl(source_name, state_rows, ttl_minutes)
@@ -735,7 +741,7 @@ def should_skip_source_by_ttl(source_name: str, state_rows: Dict[str, Dict[str, 
 
 def should_skip_source_by_cadence(
     source_name: str,
-    state_rows: Dict[str, Dict[str, Any]],
+    state_rows: dict[str, dict[str, Any]],
     *,
     hot_minutes: int,
     cold_minutes: int,
@@ -750,20 +756,20 @@ def should_skip_source_by_cadence(
     )
 
 
-def circuit_breaker_until(source_name: str, state_rows: Dict[str, Dict[str, Any]], failure_threshold: int) -> Optional[datetime]:
+def circuit_breaker_until(source_name: str, state_rows: dict[str, dict[str, Any]], failure_threshold: int) -> datetime | None:
     from src.jobs import state as state_pkg
 
     return state_pkg.circuit_breaker_until(source_name, state_rows, failure_threshold)
 
 
 def apply_circuit_breaker_exclusions(
-    selected_loaders: List[Tuple[str, SourceLoader]],
+    selected_loaders: list[tuple[str, SourceLoader]],
     *,
-    source_state_rows: Dict[str, Dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
     circuit_breaker_failures: int,
     circuit_breaker_cooldown_minutes: int,
     ignore_circuit_breaker: bool,
-) -> Tuple[List[Tuple[str, SourceLoader]], List[Dict[str, Any]]]:
+) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]]]:
     from src.jobs import state as state_pkg
 
     return state_pkg.apply_circuit_breaker_exclusions(
@@ -775,7 +781,7 @@ def apply_circuit_breaker_exclusions(
     )
 
 
-def append_excluded_default_sources(source_reports: List[Dict[str, Any]]) -> None:
+def append_excluded_default_sources(source_reports: list[dict[str, Any]]) -> None:
     from src.jobs import state as state_pkg
 
     state_pkg.append_excluded_default_sources(source_reports)
@@ -783,13 +789,13 @@ def append_excluded_default_sources(source_reports: List[Dict[str, Any]]) -> Non
 
 def update_source_state_rows(
     *,
-    source_state_rows: Dict[str, Dict[str, Any]],
-    source_reports: List[Dict[str, Any]],
-    canonical_rows: List[RawJob],
+    source_state_rows: dict[str, dict[str, Any]],
+    source_reports: list[dict[str, Any]],
+    canonical_rows: list[RawJob],
     finished_at: str,
     circuit_breaker_failures: int,
     circuit_breaker_cooldown_minutes: int,
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     from src.jobs import state as state_pkg
 
     return state_pkg.update_source_state_rows(
@@ -810,7 +816,7 @@ def run_pipeline(
     backoff_s: float = DEFAULT_BACKOFF_S,
     preserve_previous_on_empty: bool = True,
     fetch_text: Callable[[str, int], str] = default_fetch_text,
-    source_loaders: Optional[List[Tuple[str, SourceLoader]]] = None,
+    source_loaders: list[tuple[str, SourceLoader]] | None = None,
     seed_from_existing_output: bool = False,
     source_ttl_minutes: int = 0,
     max_workers: int = 1,
@@ -825,13 +831,13 @@ def run_pipeline(
     circuit_breaker_cooldown_minutes: int = 180,
     ignore_circuit_breaker: bool = False,
     social_enabled: bool = False,
-    social_config_path: Optional[Path] = None,
+    social_config_path: Path | None = None,
     social_lookback_minutes: int = DEFAULT_SOCIAL_LOOKBACK_MINUTES,
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
     show_progress: bool = True,
-    selection_exclusions: Optional[List[Dict[str, Any]]] = None,
+    selection_exclusions: list[dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from src.jobs import pipeline as pipeline_pkg
 
     return pipeline_pkg.run_pipeline(

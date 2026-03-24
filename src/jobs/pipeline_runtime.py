@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 from src.jobs.models import CanonicalJob
@@ -15,13 +16,13 @@ from src.shared.utils import now_iso
 
 @dataclass
 class PipelineTaskRuntime:
-    task_rows: Dict[str, Dict[str, Any]]
+    task_rows: dict[str, dict[str, Any]]
     task_lock: threading.Lock
     last_task_write_monotonic: float
-    last_heartbeat_write: Dict[str, float]
+    last_heartbeat_write: dict[str, float]
     thread_local: threading.local
     domain_lock: threading.Lock
-    domain_gates: Dict[str, threading.BoundedSemaphore]
+    domain_gates: dict[str, threading.BoundedSemaphore]
     show_progress: bool = False
 
 
@@ -29,11 +30,11 @@ def build_fetch_task_progress_payload(
     *,
     phase_key: str,
     phase_label: str,
-    task_rows: Dict[str, Dict[str, Any]],
-    source_reports: List[Dict[str, Any]],
+    task_rows: dict[str, dict[str, Any]],
+    source_reports: list[dict[str, Any]],
     output_count: int = 0,
     finished: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     rows = [row for row in task_rows.values() if isinstance(row, dict)]
     total_tasks = len(rows)
     queued_tasks = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "queued")
@@ -80,7 +81,7 @@ def build_fetch_task_progress_payload(
     }
 
 
-def initialize_task_runtime(selected_loaders: List[Tuple[str, Any]], *, show_progress: bool = False) -> PipelineTaskRuntime:
+def initialize_task_runtime(selected_loaders: list[tuple[str, Any]], *, show_progress: bool = False) -> PipelineTaskRuntime:
     return PipelineTaskRuntime(
         task_rows={
             name: {
@@ -106,22 +107,22 @@ def initialize_task_runtime(selected_loaders: List[Tuple[str, Any]], *, show_pro
 
 def write_progress_report(
     *,
-    canonical_rows: List[CanonicalJob],
-    lifecycle_rows: Dict[str, Dict[str, Any]],
-    source_reports: List[Dict[str, Any]],
-    runtime_payload: Dict[str, Any],
+    canonical_rows: list[CanonicalJob],
+    lifecycle_rows: dict[str, dict[str, Any]],
+    source_reports: list[dict[str, Any]],
+    runtime_payload: dict[str, Any],
     started_at: str,
     paths: PipelinePaths,
     schema_version: int,
-    studio_source_registry: List[Dict[str, Any]],
-    load_registry_from_file: Callable[..., List[Dict[str, Any]]],
+    studio_source_registry: list[dict[str, Any]],
+    load_registry_from_file: Callable[..., list[dict[str, Any]]],
     read_approved_since_last_run: Callable[..., int],
-    lifecycle_counts: Callable[..., Dict[str, int]],
-    build_pipeline_summary: Callable[..., Dict[str, Any]],
-    normalize_fetch_report_payload: Callable[[Dict[str, Any]], Dict[str, Any]],
+    lifecycle_counts: Callable[..., dict[str, int]],
+    build_pipeline_summary: Callable[..., dict[str, Any]],
+    normalize_fetch_report_payload: Callable[[dict[str, Any]], dict[str, Any]],
     write_text_if_changed: Callable[[Any, str], Any],
     deduplicator_factory: Callable[[], Any],
-    task_rows: Dict[str, Dict[str, Any]],
+    task_rows: dict[str, dict[str, Any]],
     phase_key: str,
     phase_label: str,
     run_id: str = "",
@@ -179,7 +180,7 @@ def make_task_state_writer(
     started_at: str,
     report_path: str,
     task_state_path: Any,
-    normalize_task_state_payload: Callable[..., Dict[str, Any]],
+    normalize_task_state_payload: Callable[..., dict[str, Any]],
     write_text_if_changed: Callable[[Any, str], Any],
 ) -> Callable[..., None]:
     def write_task_state(finished_at: str = "", *, force: bool = False) -> None:

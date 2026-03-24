@@ -8,15 +8,17 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
-from src.shared.utils import coerce_bool as _coerce_bool, coerce_int as _coerce_int, coerce_str as _coerce_str
+from src.shared.utils import coerce_bool as _coerce_bool
+from src.shared.utils import coerce_int as _coerce_int
+from src.shared.utils import coerce_str as _coerce_str
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_CONFIG_PATH = ROOT / "baluffo.config.json"
 LOCAL_CONFIG_PATH = ROOT / "baluffo.config.local.json"
 
-CODE_FALLBACK_CONFIG: Dict[str, Any] = {
+CODE_FALLBACK_CONFIG: dict[str, Any] = {
     "bridge": {
         "host": "127.0.0.1",
         "port": 8877,
@@ -57,7 +59,7 @@ CODE_FALLBACK_CONFIG: Dict[str, Any] = {
 }
 
 
-def _read_json(path: Path) -> Dict[str, Any]:
+def _read_json(path: Path) -> dict[str, Any]:
     try:
         parsed = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -65,8 +67,8 @@ def _read_json(path: Path) -> Dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-    merged: Dict[str, Any] = dict(base)
+def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = dict(base)
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
             merged[key] = _merge_dicts(merged[key], value)
@@ -75,7 +77,7 @@ def _merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, An
     return merged
 
 
-def load_config() -> Dict[str, Any]:
+def load_config() -> dict[str, Any]:
     config = _merge_dicts(CODE_FALLBACK_CONFIG, _read_json(BASE_CONFIG_PATH))
     if LOCAL_CONFIG_PATH.exists():
         config = _merge_dicts(config, _read_json(LOCAL_CONFIG_PATH))
@@ -90,7 +92,7 @@ def resolve_path(value: Any, default: str) -> Path:
     return path.resolve()
 
 
-def get_bridge_defaults() -> Dict[str, Any]:
+def get_bridge_defaults() -> dict[str, Any]:
     cfg = dict(load_config().get("bridge") or {})
     return {
         "host": _coerce_str(cfg.get("host"), CODE_FALLBACK_CONFIG["bridge"]["host"]),
@@ -104,7 +106,7 @@ def get_bridge_defaults() -> Dict[str, Any]:
     }
 
 
-def get_storage_defaults() -> Dict[str, Any]:
+def get_storage_defaults() -> dict[str, Any]:
     cfg = dict(load_config().get("storage") or {})
     data_dir_raw = os.environ.get("BALUFFO_DATA_DIR") or cfg.get("data_dir")
     data_dir = resolve_path(data_dir_raw, CODE_FALLBACK_CONFIG["storage"]["data_dir"])
@@ -133,7 +135,7 @@ def get_storage_defaults() -> Dict[str, Any]:
     }
 
 
-def get_security_defaults() -> Dict[str, Any]:
+def get_security_defaults() -> dict[str, Any]:
     cfg = dict(load_config().get("security") or {})
     return {
         "github_app_enabled_default": _coerce_bool(
@@ -143,7 +145,7 @@ def get_security_defaults() -> Dict[str, Any]:
     }
 
 
-def get_sync_defaults() -> Dict[str, Any]:
+def get_sync_defaults() -> dict[str, Any]:
     cfg = dict(load_config().get("sync") or {})
     return {
         "packaged_config_path": resolve_path(
@@ -181,7 +183,7 @@ def get_sync_defaults() -> Dict[str, Any]:
     }
 
 
-def get_desktop_defaults() -> Dict[str, Any]:
+def get_desktop_defaults() -> dict[str, Any]:
     cfg = dict(load_config().get("desktop") or {})
     return {
         "site_port": _coerce_int(cfg.get("site_port"), CODE_FALLBACK_CONFIG["desktop"]["site_port"]),
@@ -237,7 +239,7 @@ class AdminBridgeConfig:
 def resolve_admin_bridge_config(
     args: argparse.Namespace,
     *,
-    env: Optional[Dict[str, str]] = None,
+    env: dict[str, str] | None = None,
 ) -> AdminBridgeConfig:
     """Resolve admin bridge config from CLI args, env vars, and config files.
 

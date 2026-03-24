@@ -7,7 +7,7 @@ import argparse
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from src.jobs.text_utils import clean_text, has_html_like_fragment, invalid_location_reason
 
@@ -30,9 +30,9 @@ def read_json(path: Path, fallback: Any) -> Any:
         return fallback
 
 
-def build_contamination_report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+def build_contamination_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     field_counts: Counter[str] = Counter()
-    examples: List[Dict[str, Any]] = []
+    examples: list[dict[str, Any]] = []
     contaminated_rows = 0
     total_rows = 0
     for row in rows:
@@ -66,17 +66,17 @@ def build_contamination_report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def build_location_quality_report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+def build_location_quality_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     field_counts: Counter[str] = Counter()
     reason_counts: Counter[str] = Counter()
-    examples: List[Dict[str, Any]] = []
+    examples: list[dict[str, Any]] = []
     invalid_count = 0
     total_rows = 0
     for row in rows:
         if not isinstance(row, dict):
             continue
         total_rows += 1
-        invalid_fields: Dict[str, Dict[str, str]] = {}
+        invalid_fields: dict[str, dict[str, str]] = {}
         for field in ("city", "country"):
             reason = invalid_location_reason(row.get(field), field_name=field)
             if not reason:
@@ -107,7 +107,7 @@ def build_location_quality_report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def build_public_text_quality_report(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+def build_public_text_quality_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     report = build_contamination_report(rows)
     report["locationQualityAudit"] = build_location_quality_report(rows)
     return report

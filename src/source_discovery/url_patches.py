@@ -5,8 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
-from urllib.parse import urlparse
+from typing import Any
 
 import httpx
 
@@ -21,8 +20,7 @@ from src.source_registry import (
     save_json_atomic,
 )
 
-
-GREENHOUSE_KNOWN_FIXES: Dict[str, str] = {
+GREENHOUSE_KNOWN_FIXES: dict[str, str] = {
     "niantic": "https://careers.nianticlabs.com/",
     "larian": "https://larian.com/careers",
     "supercell": "https://supercell.com/en/careors/",
@@ -47,7 +45,7 @@ PATCHABLE_ERROR_TOKENS: tuple[str, ...] = (
 )
 
 
-def _default_manifest(patches: Dict[str, str] | None = None) -> Dict[str, Any]:
+def _default_manifest(patches: dict[str, str] | None = None) -> dict[str, Any]:
     return {
         "_version": "1.1",
         "_updated": datetime.now().strftime("%Y-%m-%d"),
@@ -62,10 +60,10 @@ def _default_manifest(patches: Dict[str, str] | None = None) -> Dict[str, Any]:
     }
 
 
-def load_url_patch_manifest(path: Path | None = None) -> Dict[str, Any]:
+def load_url_patch_manifest(path: Path | None = None) -> dict[str, Any]:
     manifest = load_json_object(path or URL_PATCH_MANIFEST_PATH, _default_manifest())
     patches = manifest.get("patches") if isinstance(manifest.get("patches"), dict) else {}
-    normalized_patches: Dict[str, str] = {}
+    normalized_patches: dict[str, str] = {}
     for raw_source, raw_target in patches.items():
         source = normalize_source_url(str(raw_source or ""))
         target = normalize_source_url(str(raw_target or ""))
@@ -77,18 +75,18 @@ def load_url_patch_manifest(path: Path | None = None) -> Dict[str, Any]:
     return manifest
 
 
-def load_url_patches(path: Path | None = None) -> Dict[str, str]:
+def load_url_patches(path: Path | None = None) -> dict[str, str]:
     return dict(load_url_patch_manifest(path).get("patches") or {})
 
 
 def save_url_patch_manifest(
-    patches: Dict[str, str],
+    patches: dict[str, str],
     *,
     path: Path | None = None,
     added: int = 0,
     updated: int = 0,
     reprobed: int = 0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     manifest = _default_manifest(patches)
     manifest["_stats"].update(
         {
@@ -102,8 +100,8 @@ def save_url_patch_manifest(
     return manifest
 
 
-def merge_url_patches(existing_patches: Dict[str, str], new_patches: Dict[str, str]) -> Tuple[Dict[str, str], int, int]:
-    merged: Dict[str, str] = dict(existing_patches or {})
+def merge_url_patches(existing_patches: dict[str, str], new_patches: dict[str, str]) -> tuple[dict[str, str], int, int]:
+    merged: dict[str, str] = dict(existing_patches or {})
     added = 0
     updated = 0
     for raw_source, raw_target in dict(new_patches or {}).items():
@@ -121,7 +119,7 @@ def merge_url_patches(existing_patches: Dict[str, str], new_patches: Dict[str, s
     return merged, added, updated
 
 
-def apply_url_patches_to_candidate(candidate: Dict[str, Any], patches: Dict[str, str]) -> Tuple[Dict[str, Any], bool]:
+def apply_url_patches_to_candidate(candidate: dict[str, Any], patches: dict[str, str]) -> tuple[dict[str, Any], bool]:
     normalized_patches = dict(patches or {})
     if not normalized_patches:
         return dict(candidate), False
@@ -138,7 +136,7 @@ def apply_url_patches_to_candidate(candidate: Dict[str, Any], patches: Dict[str,
 
     pages = updated.get("pages")
     if isinstance(pages, list):
-        new_pages: List[str] = []
+        new_pages: list[str] = []
         for raw_page in pages:
             text = str(raw_page or "").strip()
             normalized = normalize_source_url(text)
@@ -180,7 +178,7 @@ def resolve_greenhouse_known(studio_name: str) -> str:
 
 def resolve_patch_target(
     *,
-    candidate: Dict[str, Any],
+    candidate: dict[str, Any],
     error_text: str,
     timeout_s: int,
 ) -> str:
@@ -214,7 +212,7 @@ def resolve_patch_target(
     return ""
 
 
-async def resolve_url(url: str, timeout: float = 10.0) -> Tuple[str, int, List[str]]:
+async def resolve_url(url: str, timeout: float = 10.0) -> tuple[str, int, list[str]]:
     try:
         async with httpx.AsyncClient(
             follow_redirects=True,
@@ -229,9 +227,9 @@ async def resolve_url(url: str, timeout: float = 10.0) -> Tuple[str, int, List[s
         return "", 0, []
 
 
-def extract_redirect_failures(report: Dict[str, Any]) -> List[Dict[str, str]]:
+def extract_redirect_failures(report: dict[str, Any]) -> list[dict[str, str]]:
     failures = report.get("failures", [])
-    redirects: List[Dict[str, str]] = []
+    redirects: list[dict[str, str]] = []
     for failure in failures if isinstance(failures, list) else []:
         error = str((failure or {}).get("error") or "")
         if not should_attempt_patch_recovery(error):
@@ -256,7 +254,7 @@ def summarize_url_patch_runtime(
     added: int,
     updated: int,
     reprobed: int,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     return {
         "loaded": int(max(0, loaded)),
         "added": int(max(0, added)),

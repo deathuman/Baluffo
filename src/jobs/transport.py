@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import threading
-import time
+from collections.abc import Callable
 from dataclasses import replace
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any
 
 from src.jobs.adapters import community
 from src.jobs.common import config as common_config
+from src.jobs.common import url as common_url
 from src.jobs.common.fetch import fetch_with_retries as common_fetch_with_retries
 from src.jobs.common.http import default_fetch_text as common_default_fetch_text
-from src.jobs.common import url as common_url
 from src.jobs.models import RequestConfig
-from src.jobs.text_utils import norm_text, normalize_url as normalize_url_impl
+from src.jobs.text_utils import norm_text
+from src.jobs.text_utils import normalize_url as normalize_url_impl
 
 DEFAULT_TIMEOUT_S = common_config.DEFAULT_TIMEOUT_S
 DEFAULT_RETRIES = common_config.DEFAULT_RETRIES
@@ -34,7 +35,7 @@ except Exception:  # noqa: BLE001
 def default_request_config(
     *,
     timeout_s: int = DEFAULT_TIMEOUT_S,
-    headers: Dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
     user_agent: str = "",
     proxy_url: str = "",
 ) -> RequestConfig:
@@ -55,7 +56,7 @@ def with_proxy(request: RequestConfig, proxy_url: str) -> RequestConfig:
     return replace(request, proxy_url=str(proxy_url or ""))
 
 
-def build_headers(request: RequestConfig) -> Dict[str, str]:
+def build_headers(request: RequestConfig) -> dict[str, str]:
     headers = dict(DEFAULT_HTTP_HEADERS)
     headers.update(request.headers)
     if request.user_agent:
@@ -85,7 +86,7 @@ def conditional_revalidate_url(
     *,
     etag: str = "",
     last_modified: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     clean_etag = str(etag or "").strip()
     clean_last_modified = str(last_modified or "").strip()
     if not clean_etag and not clean_last_modified:
@@ -127,8 +128,8 @@ class PooledRedirectResolver:
         max_connections: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
     ) -> None:
         self._timeout_s = max(1, int(timeout_s or DEFAULT_TIMEOUT_S))
-        self._cache: Dict[str, str] = {}
-        self._inflight: Dict[str, threading.Event] = {}
+        self._cache: dict[str, str] = {}
+        self._inflight: dict[str, threading.Event] = {}
         self._lock = threading.Lock()
         self._cache_hits = 0
         self._resolved_count = 0
@@ -150,7 +151,7 @@ class PooledRedirectResolver:
     def _resolve_with_client(self, normalized: str) -> str:
         if self._client is None:
             return resolve_supported_redirect_url(normalized, timeout_s=self._timeout_s)
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         for method in ("HEAD", "GET"):
             try:
                 response = self._client.request(method, normalized)
@@ -172,7 +173,7 @@ class PooledRedirectResolver:
         if not is_supported_redirect_url(normalized):
             return normalized
         owner = False
-        wait_event: Optional[threading.Event] = None
+        wait_event: threading.Event | None = None
         with self._lock:
             cached = self._cache.get(normalized)
             if cached is not None:
@@ -199,7 +200,7 @@ class PooledRedirectResolver:
                 done_event.set()
         return resolved
 
-    def snapshot_stats(self) -> Dict[str, int]:
+    def snapshot_stats(self) -> dict[str, int]:
         with self._lock:
             return {
                 "cacheHits": int(self._cache_hits),
@@ -335,10 +336,10 @@ def resolve_fetch_text_impl(
     fetch_text: Callable[[str, int], str] = default_fetch_text,
     fetch_strategy: str = DEFAULT_FETCH_STRATEGY,
     adapter_http_concurrency: int = DEFAULT_ADAPTER_HTTP_CONCURRENCY,
-) -> Tuple[Callable[[str, int], str], str, Any]:
+) -> tuple[Callable[[str, int], str], str, Any]:
     strategy = norm_text(fetch_strategy)
     chosen = "urllib"
-    async_fetcher: Optional[AsyncHttpTextFetcher] = None
+    async_fetcher: AsyncHttpTextFetcher | None = None
     if fetch_text is not default_fetch_text and fetch_text is not common_default_fetch_text:
         return fetch_text, "custom", async_fetcher
     if strategy in {"http", "auto"} and httpx is not None:

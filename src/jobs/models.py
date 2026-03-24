@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Sequence, TypedDict
+from typing import Any, TypedDict
 
-
-RawJob = Dict[str, Any]
+RawJob = dict[str, Any]
 RawJobLike = Mapping[str, Any]
 
 
@@ -22,7 +22,7 @@ class SourceConfig(TypedDict, total=False):
 @dataclass(frozen=True, slots=True)
 class RequestConfig:
     timeout_s: int
-    headers: Dict[str, str] = field(default_factory=dict)
+    headers: dict[str, str] = field(default_factory=dict)
     user_agent: str = ""
     proxy_url: str = ""
 
@@ -31,11 +31,11 @@ class RequestConfig:
 class SourceDiagnostics:
     adapter: str
     studio: str
-    details: List[Dict[str, Any]] = field(default_factory=list)
-    partial_errors: List[str] = field(default_factory=list)
+    details: list[dict[str, Any]] = field(default_factory=list)
+    partial_errors: list[str] = field(default_factory=list)
     low_confidence_dropped: int = 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["partialErrors"] = payload.pop("partial_errors")
         payload["lowConfidenceDropped"] = payload.pop("low_confidence_dropped")
@@ -53,10 +53,10 @@ class FetchContext:
 
 @dataclass(frozen=True, slots=True)
 class FetchResult:
-    jobs: List[RawJob] = field(default_factory=list)
-    diagnostics: Optional[SourceDiagnostics] = None
+    jobs: list[RawJob] = field(default_factory=list)
+    diagnostics: SourceDiagnostics | None = None
     duration_ms: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,12 +85,12 @@ class CanonicalJob:
     qualityScore: int = 0
     focusScore: int = 0
     sourceBundleCount: int = 0
-    sourceBundle: List[Dict[str, Any]] = field(default_factory=list)
+    sourceBundle: list[dict[str, Any]] = field(default_factory=list)
     adapter: str = ""
     studio: str = ""
 
     @classmethod
-    def from_mapping(cls, payload: RawJobLike) -> "CanonicalJob":
+    def from_mapping(cls, payload: RawJobLike) -> CanonicalJob:
         data = dict(payload)
         return cls(
             id=data.get("id", ""),
@@ -122,15 +122,15 @@ class CanonicalJob:
             studio=str(data.get("studio") or ""),
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def canonical_job_to_dict(job: CanonicalJob) -> Dict[str, Any]:
+def canonical_job_to_dict(job: CanonicalJob) -> dict[str, Any]:
     return job.to_dict()
 
 
-def canonical_jobs_to_dicts(rows: Sequence[CanonicalJob]) -> List[Dict[str, Any]]:
+def canonical_jobs_to_dicts(rows: Sequence[CanonicalJob]) -> list[dict[str, Any]]:
     return [row.to_dict() for row in rows]
 
 
@@ -140,5 +140,5 @@ def update_canonical_job(job: CanonicalJob, **changes: Any) -> CanonicalJob:
     return CanonicalJob.from_mapping(payload)
 
 
-def ensure_mutable_mapping(payload: RawJobLike | MutableMapping[str, Any]) -> Dict[str, Any]:
+def ensure_mutable_mapping(payload: RawJobLike | MutableMapping[str, Any]) -> dict[str, Any]:
     return dict(payload)

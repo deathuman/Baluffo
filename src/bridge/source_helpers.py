@@ -7,7 +7,7 @@ and related registry flows in admin_bridge.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 
@@ -43,8 +43,8 @@ def infer_studio_name_from_host(url: str) -> str:
 
 
 def find_existing_source_by_url(
-    state: Dict[str, List[Dict[str, Any]]], normalized_url: str
-) -> Dict[str, Any] | None:
+    state: dict[str, list[dict[str, Any]]], normalized_url: str
+) -> dict[str, Any] | None:
     """Return the first registry row (active/pending/rejected) whose URL fingerprint matches."""
     from src.source_registry import source_url_fingerprint
 
@@ -58,11 +58,11 @@ def find_existing_source_by_url(
 
 
 def find_existing_static_source_by_studio_domain(
-    state: Dict[str, List[Dict[str, Any]]],
+    state: dict[str, list[dict[str, Any]]],
     *,
     studio: str,
     normalized_url: str,
-) -> Tuple[str, int, Dict[str, Any]] | None:
+) -> tuple[str, int, dict[str, Any]] | None:
     """Return (bucket, index, row) if a static source with same studio and domain exists."""
     studio_key = str(studio or "").strip().lower()
     host_key = _normalized_host_token(normalized_url)

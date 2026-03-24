@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Tuple
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 # Constants used by evaluate_alerts and compute_ops_health (mirror admin_bridge defaults)
 STALE_FETCH_HOURS = 12
@@ -15,10 +16,10 @@ SOCIAL_LOW_CONFIDENCE_SPIKE_THRESHOLD = 120
 
 
 def load_alert_state(
-    load_json_object: Callable[[Any, Dict[str, Any]], Dict[str, Any]],
+    load_json_object: Callable[[Any, dict[str, Any]], dict[str, Any]],
     path: Any,
     schema_version: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     state = load_json_object(path, {})
     acked = state.get("acked")
     if not isinstance(acked, dict):
@@ -32,7 +33,7 @@ def load_alert_state(
 def save_alert_state(
     save_json_atomic: Callable[[Any, Any], None],
     path: Any,
-    state: Dict[str, Any],
+    state: dict[str, Any],
     schema_version: int,
     now_iso: Callable[[], str],
 ) -> None:
@@ -44,7 +45,7 @@ def save_alert_state(
     save_json_atomic(path, payload)
 
 
-def detect_task_interval_hours(task: Dict[str, Any]) -> float | None:
+def detect_task_interval_hours(task: dict[str, Any]) -> float | None:
     text = " ".join([
         str(task.get("label") or ""),
         str(task.get("command") or ""),
@@ -63,8 +64,8 @@ def detect_task_interval_hours(task: Dict[str, Any]) -> float | None:
 
 
 def parse_schedule_metadata(
-    read_tasks_config: Callable[[], Dict[str, Any]],
-) -> Dict[str, Any]:
+    read_tasks_config: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
     fallback = {
         "fetcher": {"intervalHours": None, "nextRunAt": "", "note": "unknown"},
         "discovery": {"intervalHours": None, "nextRunAt": "", "note": "unknown"},
@@ -77,7 +78,7 @@ def parse_schedule_metadata(
     if not isinstance(tasks, list):
         return fallback
 
-    by_type: Dict[str, Dict[str, Any]] = {
+    by_type: dict[str, dict[str, Any]] = {
         "fetcher": dict(fallback["fetcher"]),
         "discovery": dict(fallback["discovery"]),
     }
@@ -96,7 +97,7 @@ def parse_schedule_metadata(
     return by_type
 
 
-def median(values: List[float]) -> float:
+def median(values: list[float]) -> float:
     if not values:
         return 0.0
     ordered = sorted(values)
@@ -106,7 +107,7 @@ def median(values: List[float]) -> float:
     return float((ordered[mid - 1] + ordered[mid]) / 2.0)
 
 
-def summarize_fetch_report(report: Dict[str, Any]) -> Dict[str, Any]:
+def summarize_fetch_report(report: dict[str, Any]) -> dict[str, Any]:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     output = int(summary.get("outputCount") or summary.get("uniqueOutputCount") or 0)
     failed = int(summary.get("failedSources") or 0)
@@ -130,10 +131,10 @@ def summarize_fetch_report(report: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def summarize_discovery_report(
-    report: Dict[str, Any],
-    normalize_discovery_report_contract: Callable[[Dict[str, Any]], Dict[str, Any]],
+    report: dict[str, Any],
+    normalize_discovery_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
     parse_iso: Callable[[Any], datetime | None],
-) -> Tuple[Dict[str, Any], str]:
+) -> tuple[dict[str, Any], str]:
     normalized = normalize_discovery_report_contract(report)
     summary = normalized.get("summary") if isinstance(normalized.get("summary"), dict) else {}
     queued = int(summary.get("queuedCandidateCount") or 0)
@@ -179,16 +180,16 @@ def format_age(
 
 
 def collect_fetch_history_metrics(
-    history: List[Dict[str, Any]],
+    history: list[dict[str, Any]],
     parse_iso: Callable[[Any], datetime | None],
     now_utc: Callable[[], datetime],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     now = now_utc()
     seven_days_ago = now - timedelta(days=7)
     fetch_rows = [row for row in history if str(row.get("type")) == "fetch" and row.get("finishedAt")]
     fetch_7d = [
         row for row in fetch_rows
-        if (parse_iso(row.get("finishedAt")) or datetime.min.replace(tzinfo=timezone.utc)) >= seven_days_ago
+        if (parse_iso(row.get("finishedAt")) or datetime.min.replace(tzinfo=UTC)) >= seven_days_ago
     ]
     success_7d = [row for row in fetch_7d if str(row.get("status")) in {"ok", "warning"}]
     success_rate = (len(success_7d) / len(fetch_7d)) if fetch_7d else 0.0
@@ -205,10 +206,10 @@ def collect_fetch_history_metrics(
 
 
 def populate_schedule_next_run(
-    schedule: Dict[str, Any],
-    history: List[Dict[str, Any]],
+    schedule: dict[str, Any],
+    history: list[dict[str, Any]],
     parse_iso: Callable[[Any], datetime | None],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     for run_type, key in (("fetch", "fetcher"), ("discovery", "discovery")):
         interval_hours = schedule[key].get("intervalHours")
         if not interval_hours:
@@ -226,7 +227,7 @@ def populate_schedule_next_run(
     return schedule
 
 
-def derive_ops_severity(alerts: List[Dict[str, Any]]) -> str:
+def derive_ops_severity(alerts: list[dict[str, Any]]) -> str:
     if any(alert.get("severity") == "critical" for alert in alerts):
         return "critical"
     if alerts:
@@ -236,18 +237,18 @@ def derive_ops_severity(alerts: List[Dict[str, Any]]) -> str:
 
 def evaluate_alerts(
     *,
-    history: List[Dict[str, Any]],
-    latest_fetch_report: Dict[str, Any],
+    history: list[dict[str, Any]],
+    latest_fetch_report: dict[str, Any],
     pending_count: int,
-    load_alert_state_fn: Callable[[], Dict[str, Any]],
-    save_alert_state_fn: Callable[[Dict[str, Any]], None],
+    load_alert_state_fn: Callable[[], dict[str, Any]],
+    save_alert_state_fn: Callable[[dict[str, Any]], None],
     parse_iso: Callable[[Any], datetime | None],
     now_iso: Callable[[], str],
     now_utc: Callable[[], datetime],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     alert_state = load_alert_state_fn()
     acked = dict(alert_state.get("acked") or {})
-    active_conditions: List[Dict[str, Any]] = []
+    active_conditions: list[dict[str, Any]] = []
     now = now_utc()
     fetch_rows = [row for row in history if str(row.get("type")) == "fetch" and row.get("finishedAt")]
     latest_fetch = fetch_rows[-1] if fetch_rows else None
@@ -356,7 +357,7 @@ def evaluate_alerts(
     }
 
 
-def compute_ops_health(deps: Any) -> Dict[str, Any]:
+def compute_ops_health(deps: Any) -> dict[str, Any]:
     """Build ops health payload. deps must have: get_history, get_fetch_report, get_state,
     now_iso, desktop_mode, desktop_last_activity_at, load_alert_state_fn, save_alert_state_fn,
     parse_schedule_metadata_fn, normalize_fetch_report_contract, parse_iso, now_utc.

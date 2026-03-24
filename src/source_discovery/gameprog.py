@@ -10,17 +10,19 @@ Responsibilities:
 
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import urljoin, urlparse
+from typing import Any
+from urllib.parse import urlparse
 
 from src.source_registry import unique_sources
 
-from .config import DEFAULT_DISCOVERY_CONFIG
 from .scoring import unique_string_list
-from .web_search import infer_web_candidate, fetch_text, infer_provider_candidates_from_html, extract_links_from_html
-
+from .web_search import (
+    extract_links_from_html,
+    fetch_text,
+    infer_provider_candidates_from_html,
+)
 
 GAMEPROG_TEAMS_URL = "https://gameprog.it/teams.json"
 GAMEPROG_BASE_URL = "https://gameprog.it/"
@@ -107,7 +109,7 @@ def _strip_html_tags(html: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _gameprog_config_value(config: Optional[Dict[str, Any]], key: str, default: Any) -> Any:
+def _gameprog_config_value(config: dict[str, Any] | None, key: str, default: Any) -> Any:
     source = config if isinstance(config, dict) else {}
     gameprog_cfg = source.get("gameprog")
     if isinstance(gameprog_cfg, dict):
@@ -115,11 +117,11 @@ def _gameprog_config_value(config: Optional[Dict[str, Any]], key: str, default: 
     return default
 
 
-def _gameprog_enabled(config: Optional[Dict[str, Any]]) -> bool:
+def _gameprog_enabled(config: dict[str, Any] | None) -> bool:
     return bool(_gameprog_config_value(config, "enabled", True))
 
 
-def _gameprog_cache_path(config: Optional[Dict[str, Any]]) -> Optional[Path]:
+def _gameprog_cache_path(config: dict[str, Any] | None) -> Path | None:
     source = config if isinstance(config, dict) else {}
     if isinstance(source.get("gameprog"), dict):
         source = source.get("gameprog") or {}
@@ -129,7 +131,7 @@ def _gameprog_cache_path(config: Optional[Dict[str, Any]]) -> Optional[Path]:
     return Path(raw)
 
 
-def _gameprog_cache_ttl_minutes(config: Optional[Dict[str, Any]]) -> int:
+def _gameprog_cache_ttl_minutes(config: dict[str, Any] | None) -> int:
     source = config if isinstance(config, dict) else {}
     if isinstance(source.get("gameprog"), dict):
         source = source.get("gameprog") or {}
@@ -142,7 +144,7 @@ def _gameprog_cache_ttl_minutes(config: Optional[Dict[str, Any]]) -> int:
         return 360
 
 
-def _gameprog_cache_signature(cfg: Dict[str, Any]) -> Dict[str, Any]:
+def _gameprog_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "baseUrl": str(cfg.get("baseUrl") or "").strip(),
         "teamsUrl": str(cfg.get("teamsUrl") or "").strip(),
@@ -151,7 +153,7 @@ def _gameprog_cache_signature(cfg: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _load_gameprog_cache(config: Optional[Dict[str, Any]], cfg: Dict[str, Any], *, fetcher: Any) -> Optional[Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]]:
+def _load_gameprog_cache(config: dict[str, Any] | None, cfg: dict[str, Any], *, fetcher: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
     cache_path = _gameprog_cache_path(config)
     ttl_minutes = _gameprog_cache_ttl_minutes(config)
     if ttl_minutes <= 0 or cache_path is None:
@@ -172,7 +174,7 @@ def _load_gameprog_cache(config: Optional[Dict[str, Any]], cfg: Dict[str, Any], 
         updated_at = datetime.fromisoformat(updated_at_raw.replace("Z", "+00:00"))
     except ValueError:
         return None
-    if datetime.now(timezone.utc) - updated_at > timedelta(minutes=ttl_minutes):
+    if datetime.now(UTC) - updated_at > timedelta(minutes=ttl_minutes):
         return None
     if payload.get("configSignature") != _gameprog_cache_signature(cfg):
         return None
@@ -185,18 +187,18 @@ def _load_gameprog_cache(config: Optional[Dict[str, Any]], cfg: Dict[str, Any], 
 
 
 def _write_gameprog_cache(
-    config: Optional[Dict[str, Any]],
-    cfg: Dict[str, Any],
+    config: dict[str, Any] | None,
+    cfg: dict[str, Any],
     *,
-    provider_candidates: List[Dict[str, Any]],
-    static_candidates: List[Dict[str, Any]],
-    failures: List[Dict[str, Any]],
+    provider_candidates: list[dict[str, Any]],
+    static_candidates: list[dict[str, Any]],
+    failures: list[dict[str, Any]],
 ) -> None:
     cache_path = _gameprog_cache_path(config)
     if cache_path is None:
         return
     payload = {
-        "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "updatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "configSignature": _gameprog_cache_signature(cfg),
         "providerCandidates": unique_sources(provider_candidates),
         "staticCandidates": unique_sources(static_candidates),
@@ -209,14 +211,14 @@ def _write_gameprog_cache(
         return
 
 
-def parse_gameprog_teams_json(json_text: str) -> List[Dict[str, Any]]:
+def parse_gameprog_teams_json(json_text: str) -> list[dict[str, Any]]:
     try:
         data = json.loads(str(json_text or ""))
     except json.JSONDecodeError:
         return []
     if not isinstance(data, list):
         return []
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     seen = set()
     for entry in data:
         if not isinstance(entry, dict):
@@ -249,7 +251,7 @@ def build_gameprog_static_candidate(
     location: str,
     manual_only: bool = False,
     weak_signal: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     evidence_types = ["gameprog_directory"]
     evidence_score = 24
     if website_only:
@@ -291,9 +293,9 @@ def build_gameprog_static_candidate(
 def discover_gameprog_candidates(
     timeout_s: int,
     *,
-    config: Optional[Dict[str, Any]] = None,
+    config: dict[str, Any] | None = None,
     fetcher=None,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     from .reporting import emit_log
 
     fetcher = fetcher or fetch_text
@@ -308,9 +310,9 @@ def discover_gameprog_candidates(
     website_only_fallback = bool(cfg.get("websiteOnlyFallback", True))
     max_studios = max(0, int(cfg.get("maxStudios") or 0))
 
-    provider_candidates: List[Dict[str, Any]] = []
-    static_candidates: List[Dict[str, Any]] = []
-    failures: List[Dict[str, Any]] = []
+    provider_candidates: list[dict[str, Any]] = []
+    static_candidates: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
 
     teams_json = ""
     try:

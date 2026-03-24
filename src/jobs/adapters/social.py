@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import quote, urlparse
 from urllib.request import Request
-from urllib.request import urlopen
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import _runtime as runtime_deps
@@ -16,14 +16,13 @@ from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.social.register import ensure_registered as ensure_social_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.common import config as common_config
-from src.jobs.common.diagnostics import SOURCE_DIAGNOSTICS, set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 
 
-def _request_json_with_headers(url: str, *, timeout_s: int, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def _request_json_with_headers(url: str, *, timeout_s: int, headers: dict[str, str] | None = None) -> dict[str, Any]:
     deps = runtime_deps.facade()
     req = Request(url=url, headers=headers or {})
     with deps.urlopen(req, timeout=timeout_s) as resp:
@@ -38,10 +37,10 @@ def run_social_reddit_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    social_config: Dict[str, Any],
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    social_config: dict[str, Any],
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     deps = runtime_deps.facade()
     cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
@@ -55,9 +54,9 @@ def run_social_reddit_source(
         deps.set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
         return []
 
-    details: List[Dict[str, Any]] = []
-    errors: List[str] = []
-    rows: List[RawJob] = []
+    details: list[dict[str, Any]] = []
+    errors: list[str] = []
+    rows: list[RawJob] = []
 
     for sub in subs:
         entry = {
@@ -127,10 +126,10 @@ def run_social_x_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    social_config: Dict[str, Any],
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    social_config: dict[str, Any],
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     deps = runtime_deps.facade()
     cfg = social_config.get("x") if isinstance(social_config.get("x"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
@@ -157,9 +156,9 @@ def run_social_x_source(
     scraper_endpoint = clean_text(scraper_cfg.get("endpoint"))
     rss_instances = [clean_text(item).rstrip("/") for item in (rss_cfg.get("instances") or []) if clean_text(item)]
 
-    details: List[Dict[str, Any]] = []
-    errors: List[str] = []
-    jobs: List[RawJob] = []
+    details: list[dict[str, Any]] = []
+    errors: list[str] = []
+    jobs: list[RawJob] = []
     low_conf_total = 0
 
     for query in queries:
@@ -172,9 +171,9 @@ def run_social_x_source(
         )
         entry["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
         entry["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
-        parsed_rows: List[RawJob] = []
+        parsed_rows: list[RawJob] = []
         low_conf_query = 0
-        reject_reason_counts: Dict[str, int] = {}
+        reject_reason_counts: dict[str, int] = {}
         if entry["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
             entry["status"] = "excluded"
             entry["error"] = entry["cacheDecisionReason"]
@@ -195,7 +194,7 @@ def run_social_x_source(
                 text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
                 payload = json.loads(text)
             elif bool(rss_cfg.get("enabled", True)) and rss_instances:
-                rss_errors: List[str] = []
+                rss_errors: list[str] = []
                 rss_payload_text = ""
                 for instance in rss_instances:
                     rss_url = f"{instance}/search/rss?f=tweets&q={quote(query, safe='')}"
@@ -265,10 +264,10 @@ def run_social_mastodon_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    social_config: Dict[str, Any],
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    social_config: dict[str, Any],
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     deps = runtime_deps.facade()
     cfg = social_config.get("mastodon") if isinstance(social_config.get("mastodon"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
@@ -285,9 +284,9 @@ def run_social_mastodon_source(
     max_posts = max(1, int(cfg.get("maxPostsPerTag") or 40))
     min_conf = max(0, min(100, int(social_config.get("minConfidence") or common_config.DEFAULT_SOCIAL_MIN_CONFIDENCE)))
     reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
-    details: List[Dict[str, Any]] = []
-    errors: List[str] = []
-    jobs: List[RawJob] = []
+    details: list[dict[str, Any]] = []
+    errors: list[str] = []
+    jobs: list[RawJob] = []
     low_conf_total = 0
 
     for instance in instances:
@@ -301,7 +300,7 @@ def run_social_mastodon_source(
                 "keptCount": 0,
                 "error": "",
             }
-            reject_reason_counts: Dict[str, int] = {}
+            reject_reason_counts: dict[str, int] = {}
             cache_decision = get_incremental_cache_decision(
                 entry["name"],
                 source_state_rows or {},

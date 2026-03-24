@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
-
+from typing import Any
 
 HIGH_COST_LOW_YIELD_MS = 20_000
 LOW_YIELD_FETCHED_MIN = 20
@@ -26,7 +26,7 @@ SOFT_FAILURE_CLASSIFICATIONS = {
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def read_json(path: Path, fallback: Any) -> Any:
@@ -53,7 +53,7 @@ def ratio_pct(numerator: int, denominator: int) -> float:
     return round((float(numerator) / float(denominator)) * 100.0, 2)
 
 
-def summarize_discovery(report: Dict[str, Any]) -> Dict[str, Any]:
+def summarize_discovery(report: dict[str, Any]) -> dict[str, Any]:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
     failures = [row for row in (report.get("failures") or []) if isinstance(row, dict)]
@@ -88,7 +88,7 @@ def summarize_discovery(report: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def infer_detail_duration_ms(detail: Dict[str, Any]) -> int:
+def infer_detail_duration_ms(detail: dict[str, Any]) -> int:
     if safe_int(detail.get("durationMs")) > 0:
         return safe_int(detail.get("durationMs"))
     stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
@@ -103,8 +103,8 @@ def infer_detail_duration_ms(detail: Dict[str, Any]) -> int:
     return sum(max(0, safe_int(stats.get(key))) for key in timing_keys)
 
 
-def flatten_fetch_detail_rows(report: Dict[str, Any]) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
+def flatten_fetch_detail_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for source_row in report.get("sources") or []:
         if not isinstance(source_row, dict):
             continue
@@ -132,7 +132,7 @@ def flatten_fetch_detail_rows(report: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def summarize_fetch(report: Dict[str, Any], jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
+def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[str, Any]:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
     timing_summary = runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
@@ -183,13 +183,13 @@ def summarize_fetch(report: Dict[str, Any], jobs: List[Dict[str, Any]]) -> Dict[
     }
 
 
-def issue_key(row: Dict[str, Any]) -> Tuple[str, str]:
+def issue_key(row: dict[str, Any]) -> tuple[str, str]:
     return (safe_text(row.get("sourceName") or row.get("name")), safe_text(row.get("classification") or row.get("error") or row.get("category")))
 
 
-def unique_issue_rows(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def unique_issue_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     seen = set()
-    unique_rows: List[Dict[str, Any]] = []
+    unique_rows: list[dict[str, Any]] = []
     for row in rows:
         key = issue_key(row)
         if key in seen:
@@ -199,11 +199,11 @@ def unique_issue_rows(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return unique_rows
 
 
-def build_issues(discovery: Dict[str, Any], fetch: Dict[str, Any], raw_fetch_report: Dict[str, Any], raw_discovery_report: Dict[str, Any]) -> Dict[str, Any]:
-    hard_failures: List[Dict[str, Any]] = []
-    soft_failures: List[Dict[str, Any]] = []
-    high_cost_low_yield: List[Dict[str, Any]] = []
-    coverage_risks: List[Dict[str, Any]] = []
+def build_issues(discovery: dict[str, Any], fetch: dict[str, Any], raw_fetch_report: dict[str, Any], raw_discovery_report: dict[str, Any]) -> dict[str, Any]:
+    hard_failures: list[dict[str, Any]] = []
+    soft_failures: list[dict[str, Any]] = []
+    high_cost_low_yield: list[dict[str, Any]] = []
+    coverage_risks: list[dict[str, Any]] = []
 
     for row in raw_fetch_report.get("sources") or []:
         if not isinstance(row, dict):
@@ -299,8 +299,8 @@ def build_issues(discovery: Dict[str, Any], fetch: Dict[str, Any], raw_fetch_rep
     }
 
 
-def build_recommendations(report: Dict[str, Any]) -> List[str]:
-    recommendations: List[str] = []
+def build_recommendations(report: dict[str, Any]) -> list[str]:
+    recommendations: list[str] = []
     fetch = report.get("fetch") if isinstance(report.get("fetch"), dict) else {}
     discovery = report.get("discovery") if isinstance(report.get("discovery"), dict) else {}
     issues = report.get("issues") if isinstance(report.get("issues"), dict) else {}
@@ -316,7 +316,7 @@ def build_recommendations(report: Dict[str, Any]) -> List[str]:
     return recommendations[:5]
 
 
-def build_report(discovery_report: Dict[str, Any], fetch_report: Dict[str, Any], jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
+def build_report(discovery_report: dict[str, Any], fetch_report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[str, Any]:
     discovery = summarize_discovery(discovery_report)
     fetch = summarize_fetch(fetch_report, jobs)
     issues = build_issues(discovery, fetch, fetch_report, discovery_report)
@@ -346,7 +346,7 @@ def build_report(discovery_report: Dict[str, Any], fetch_report: Dict[str, Any],
     return report
 
 
-def render_markdown(report: Dict[str, Any]) -> str:
+def render_markdown(report: dict[str, Any]) -> str:
     discovery = report.get("discovery") if isinstance(report.get("discovery"), dict) else {}
     fetch = report.get("fetch") if isinstance(report.get("fetch"), dict) else {}
     issues = report.get("issues") if isinstance(report.get("issues"), dict) else {}

@@ -3,9 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List
-
-DEFAULT_SOURCE_LOADER_NAMES: List[str] = [
+DEFAULT_SOURCE_LOADER_NAMES: list[str] = [
     "google_sheets",
     "google_sheets_1er2oaxo",
     "google_sheets_1mvqhxat",
@@ -33,7 +31,7 @@ DEFAULT_SOURCE_LOADER_NAMES: List[str] = [
     "social_mastodon",
 ]
 
-SOURCE_REPORT_META: Dict[str, Dict[str, str]] = {
+SOURCE_REPORT_META: dict[str, dict[str, str]] = {
     "google_sheets": {"adapter": "csv", "studio": "community_sheet", "fetchStrategy": "http"},
     "google_sheets_1er2oaxo": {"adapter": "csv", "studio": "community_sheet", "fetchStrategy": "http"},
     "google_sheets_1mvqhxat": {"adapter": "csv", "studio": "community_sheet", "fetchStrategy": "http"},

@@ -7,7 +7,6 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 from src.source_discovery.url_patches import (
     extract_redirect_failures,
@@ -18,7 +17,6 @@ from src.source_discovery.url_patches import (
     save_url_patch_manifest,
 )
 from src.source_registry import URL_PATCH_MANIFEST_PATH, load_json_object, normalize_source_url
-
 
 DEFAULT_REPORT_PATH = Path("data/source-discovery-report.json")
 
@@ -40,7 +38,7 @@ async def _auto_resolve(redirects):
     return results
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Refresh URL patches from source-discovery-report.json.")
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT_PATH)
     parser.add_argument("--output", type=Path, default=URL_PATCH_MANIFEST_PATH)

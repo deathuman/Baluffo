@@ -5,14 +5,14 @@ This module provides registry auto-sync persistence and start logic.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 
-
-RegistryState = Dict[str, List[Dict[str, Any]]]
+RegistryState = dict[str, list[dict[str, Any]]]
 PersistStateFunc = Callable[[RegistryState], RegistryState]
-SyncGuardFunc = Callable[[], Dict[str, Any] | None]
+SyncGuardFunc = Callable[[], dict[str, Any] | None]
 SyncTaskRunningFunc = Callable[[], bool]
-StartSyncTaskFunc = Callable[..., Dict[str, Any]]
+StartSyncTaskFunc = Callable[..., dict[str, Any]]
 
 
 def maybe_trigger_auto_sync_push(

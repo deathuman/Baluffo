@@ -6,8 +6,9 @@ import re
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, strip_html_text
@@ -24,9 +25,9 @@ class StaticSourceRuntimeConfig:
     static_source_time_budget_s: int
     low_yield_detail_cap: int
     very_low_yield_detail_cap: int
-    listing_only_hosts: List[str]
-    default_path_tokens: List[str]
-    default_query_keys: List[str]
+    listing_only_hosts: list[str]
+    default_path_tokens: list[str]
+    default_query_keys: list[str]
 
 
 def build_static_source_runtime_config(static_detail_concurrency: int) -> StaticSourceRuntimeConfig:
@@ -53,7 +54,7 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
     )
 
 
-def build_static_entry_report(*, source: Dict[str, Any], source_name: str, pages: List[str], company: str) -> Dict[str, Any]:
+def build_static_entry_report(*, source: dict[str, Any], source_name: str, pages: list[str], company: str) -> dict[str, Any]:
     return {
         "adapter": "static",
         "studio": clean_text(source.get("studio")) or company or source_name,
@@ -86,7 +87,7 @@ def build_static_entry_report(*, source: Dict[str, Any], source_name: str, pages
 def source_detail_concurrency_for(
     source_key: str,
     *,
-    source_state_rows: Dict[str, Dict[str, Any]] | None,
+    source_state_rows: dict[str, dict[str, Any]] | None,
     static_detail_concurrency: int,
 ) -> int:
     entry = (source_state_rows or {}).get(source_key) if isinstance(source_state_rows, dict) else {}
@@ -102,7 +103,7 @@ def source_detail_concurrency_for(
 def source_detail_limit_for(
     source_key: str,
     *,
-    source_state_rows: Dict[str, Dict[str, Any]] | None,
+    source_state_rows: dict[str, dict[str, Any]] | None,
     discovered_links: int,
     listing_jobs_found: int,
     low_yield_detail_cap: int,
@@ -133,12 +134,12 @@ def choose_detail_traversal_mode(
     page_url: str,
     *,
     runtime_config: StaticSourceRuntimeConfig,
-    profile: Dict[str, Any] | None,
-    plugin_meta: Dict[str, Any] | None,
+    profile: dict[str, Any] | None,
+    plugin_meta: dict[str, Any] | None,
     listing_jobs_found: int,
     discovered_links: int,
     source_key: str,
-    source_state_rows: Dict[str, Dict[str, Any]] | None,
+    source_state_rows: dict[str, dict[str, Any]] | None,
 ) -> str:
     plugin_meta = plugin_meta if isinstance(plugin_meta, dict) else {}
     profile = profile if isinstance(profile, dict) else {}
@@ -173,10 +174,10 @@ def create_fetch_html_cached(
     retries: int,
     backoff_s: float,
 ) -> Callable[[str], tuple[str, bool]]:
-    fetch_cache: Dict[str, str] = {}
+    fetch_cache: dict[str, str] = {}
     fetch_cache_lock = threading.Lock()
 
-    def fetch_html_cached(url: str, *, remaining_budget_s: float | None = None) -> Tuple[str, bool]:
+    def fetch_html_cached(url: str, *, remaining_budget_s: float | None = None) -> tuple[str, bool]:
         normalized = normalize_url(url) or clean_text(url)
         if not normalized:
             return "", False
@@ -202,10 +203,10 @@ def create_fetch_html_cached(
 
 def is_probable_job_detail_url(
     candidate_url: str,
-    source_row: Dict[str, Any],
+    source_row: dict[str, Any],
     *,
-    default_path_tokens: List[str],
-    default_query_keys: List[str],
+    default_path_tokens: list[str],
+    default_query_keys: list[str],
 ) -> bool:
     parsed = urlparse(candidate_url)
     host = parsed.netloc.lower()
@@ -233,7 +234,7 @@ def is_probable_job_detail_url(
 
 
 def add_detail_link(
-    detail_links: List[Tuple[str, str]],
+    detail_links: list[tuple[str, str]],
     detail_seen: set[str],
     seen_links: set[str],
     link_rejections: Counter[str],
@@ -242,9 +243,9 @@ def add_detail_link(
     anchor_text: str,
     enforce_heuristics: bool,
     page_url: str,
-    source: Dict[str, Any],
-    default_path_tokens: List[str],
-    default_query_keys: List[str],
+    source: dict[str, Any],
+    default_path_tokens: list[str],
+    default_query_keys: list[str],
 ) -> None:
     absolute = normalize_url(urljoin(page_url, clean_text(candidate_url)))
     if not absolute:
@@ -271,13 +272,13 @@ def process_detail_link(
     detail_title: str,
     source_started: float,
     static_source_time_budget_s: int,
-    fetch_html_cached: Callable[..., Tuple[str, bool]],
+    fetch_html_cached: Callable[..., tuple[str, bool]],
     timeout_s: int,
     company: str,
     source_name: str,
-    source: Dict[str, Any],
+    source: dict[str, Any],
     ignored_link_titles: set[str],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     fetch_started = time.perf_counter()
     remaining_budget_s = float(static_source_time_budget_s) - float(time.perf_counter() - source_started)
     detail_html, cache_hit = fetch_html_cached(detail, remaining_budget_s=remaining_budget_s)
@@ -291,7 +292,7 @@ def process_detail_link(
     )
     parse_ms = int((time.perf_counter() - parse_started) * 1000)
 
-    rows: List[RawJob] = []
+    rows: list[RawJob] = []
     parse_empty = False
     if detail_jobs:
         for row in detail_jobs:

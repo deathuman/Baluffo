@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urljoin
 
-from src.jobs.adapters.html_parsers import extract_first_tag_text, html_fragment_lines, iter_anchor_fragments
+from src.jobs.adapters.html_parsers import (
+    extract_first_tag_text,
+    html_fragment_lines,
+    iter_anchor_fragments,
+)
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
@@ -22,10 +27,10 @@ def run(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    pages: List[str],
-    source_row: Dict[str, Any],
+    pages: list[str],
+    source_row: dict[str, Any],
     **kwargs: Any,
-) -> List[RawJob]:
+) -> list[RawJob]:
     _ = (retries, backoff_s, kwargs)
     if not pages:
         return []
@@ -69,8 +74,8 @@ def run(
     return jobs
 
 
-def _parse_listing_rows(*, html: str, page_url: str, company: str, source_id: str, source_name: str) -> List[RawJob]:
-    jobs: List[RawJob] = []
+def _parse_listing_rows(*, html: str, page_url: str, company: str, source_id: str, source_name: str) -> list[RawJob]:
+    jobs: list[RawJob] = []
     seen: set[str] = set()
 
     for anchor in iter_anchor_fragments(html or ""):

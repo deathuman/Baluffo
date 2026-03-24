@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
-
-DEFAULT_STUDIO_SOURCE_REGISTRY: List[Dict[str, Any]] = [
+DEFAULT_STUDIO_SOURCE_REGISTRY: list[dict[str, Any]] = [
     {
         "name": "Guerrilla Games",
         "studio": "Guerrilla Games",
@@ -176,7 +175,7 @@ DEFAULT_STUDIO_SOURCE_REGISTRY: List[Dict[str, Any]] = [
     },
 ]
 
-REDUNDANT_STATIC_IF_PROVIDER: List[Dict[str, Any]] = [
+REDUNDANT_STATIC_IF_PROVIDER: list[dict[str, Any]] = [
     {
         "hosts": ["cdprojektred.com", "www.cdprojektred.com"],
         "adapter": "smartrecruiters",

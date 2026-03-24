@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Dict
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-def default_fetch_text(url: str, timeout_s: int, *, headers: Dict[str, str]) -> str:
+def default_fetch_text(url: str, timeout_s: int, *, headers: dict[str, str]) -> str:
     request = Request(
         url,
         headers=headers,

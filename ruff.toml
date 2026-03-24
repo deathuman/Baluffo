@@ -21,6 +21,7 @@ select = [
 ]
 ignore = [
   "E501",
+  "E402",
 ]
 
 [lint.per-file-ignores]

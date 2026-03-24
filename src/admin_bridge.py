@@ -3,24 +3,15 @@
 
 from __future__ import annotations
 
-import argparse
-import html as html_module
-import io
 import json
 import os
-import re
 import subprocess
 import sys
-import uuid
 import threading
-import zipfile
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import parse_qs, urlencode, urljoin, urlparse
-from urllib.request import Request, urlopen
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,16 +21,42 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.jobs.parsers import parse_jobpostings_from_html
-from src.jobs.pipeline import default_source_loaders
-from src.jobs.registry import DEFAULT_STUDIO_SOURCE_REGISTRY
-from src.jobs.transport import normalize_url as normalize_job_url
 from src import source_discovery as discovery
 from src import source_registry as source_registry_module
 from src import source_sync as source_sync_module
 from src.app_version import get_app_version
 from src.baluffo_config import get_bridge_defaults, get_security_defaults, get_storage_defaults
+
+# Bridge module imports (sync state extracted from admin_bridge.py)
+from src.bridge import SYNC_STATE_LOCK, SyncService, SyncState, report_normalizer
+from src.bridge import config as bridge_config
+from src.bridge import html_extractor as _html_extractor
+from src.bridge import ops_api as _ops_api
+from src.bridge import registry_sync_flow as _registry_sync_flow
+from src.bridge import run_history_api as _run_history_api
+from src.bridge import source_check_api as _source_check_api
+from src.bridge import source_check_fetch as _source_check_fetch
+from src.bridge import source_check_http as _source_check_http
+from src.bridge import source_checker as _source_checker
+from src.bridge import sync_task_flow as _sync_task_flow
+from src.bridge import task_history as _task_history_module
+from src.bridge import task_launch_api as _task_launch_api
+from src.bridge.api import BridgeApi
+from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
+from src.bridge.pipeline_service import PipelineService
+from src.bridge.registry_service import RegistryPaths, RegistryService
+from src.bridge.server import make_handler, run_http_server
+from src.bridge.server import runtime_state as bridge_runtime_state
+from src.bridge.source_helpers import (
+    find_existing_source_by_url,
+    find_existing_static_source_by_studio_domain,
+    infer_studio_name_from_host,
+)
 from src.contracts import SCHEMA_VERSION
+from src.jobs.parsers import parse_jobpostings_from_html
+from src.jobs.pipeline import default_source_loaders
+from src.jobs.registry import DEFAULT_STUDIO_SOURCE_REGISTRY
+from src.jobs.transport import normalize_url as normalize_job_url
 from src.local_data_store import LocalDataPaths, LocalDataStore
 from src.source_registry import (
     ACTIVE_PATH,
@@ -54,43 +71,13 @@ from src.source_registry import (
     normalize_source_url,
     save_json_atomic,
     source_identity,
-    source_url_fingerprint,
     unique_sources,
 )
-# Bridge module imports (sync state extracted from admin_bridge.py)
-from src.bridge import SYNC_CONFIG_LOCK, SYNC_STATE_LOCK, SyncService, SyncState
-from src.bridge.sync_state import ACTIVE_SYNC_RUNS, ACTIVE_SYNC_THREADS, SYNC_STATUS
-from src.bridge.registry_service import RegistryPaths, RegistryService
-from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
-from src.bridge.pipeline_service import PipelineRuntime, PipelineService
-from src.bridge import html_extractor as _html_extractor
-from src.bridge import source_checker as _source_checker
-from src.bridge import task_history as _task_history_module
-from src.bridge.request_utils import read_json_from_request
-from src.bridge.server import make_handler, run_http_server
-from src.bridge.api import BridgeApi
-from src.bridge import config as bridge_config
-from src.bridge.server import runtime_state as bridge_runtime_state
-from src.bridge.source_helpers import (
-    find_existing_source_by_url,
-    find_existing_static_source_by_studio_domain,
-    infer_studio_name_from_host,
-)
-from src.bridge import report_normalizer
-from src.bridge import ops_api as _ops_api
-from src.bridge import registry_sync_flow as _registry_sync_flow
-from src.bridge import run_history_api as _run_history_api
-from src.bridge import source_check_api as _source_check_api
-from src.bridge import source_check_fetch as _source_check_fetch
-from src.bridge import source_check_http as _source_check_http
-from src.bridge import sync_task_flow as _sync_task_flow
-from src.bridge import task_launch_api as _task_launch_api
-from src.shared.regex import find_urls_in_text
 
 normalize_fetch_report_contract = report_normalizer.normalize_fetch_report_contract
 normalize_discovery_report_contract = report_normalizer.normalize_discovery_report_contract
 _safe_int = report_normalizer.safe_int
-from src.shared.utils import coerce_port as _coerce_port, now_iso, now_utc
+from src.shared.utils import now_iso, now_utc
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
 OPS_ALERT_STATE_PATH = ROOT / "data" / "admin-alert-state.json"
@@ -107,7 +94,7 @@ STARTUP_METRICS_PATH = ROOT / "data" / "desktop-startup-metrics.jsonl"
 MAX_HISTORY_ROWS = 240
 OPS_SCHEMA_VERSION = 1
 OPS_STATE_LOCK = threading.RLock()
-_TASK_HISTORY_MANAGER: Optional[Any] = None
+_TASK_HISTORY_MANAGER: Any | None = None
 
 
 def _get_task_history_manager() -> Any:
@@ -141,13 +128,13 @@ _PIPELINE_SERVICE_LOCK = threading.RLock()
 
 
 class _RunHistoryAdapter:
-    def append(self, row: Dict[str, Any]) -> Dict[str, Any]:
+    def append(self, row: dict[str, Any]) -> dict[str, Any]:
         return append_run_history(row)
 
-    def upsert(self, entry: Dict[str, Any], *, dedupe_fields: Tuple[str, ...]) -> Dict[str, Any]:
+    def upsert(self, entry: dict[str, Any], *, dedupe_fields: tuple[str, ...]) -> dict[str, Any]:
         return upsert_run_history(entry, dedupe_fields=dedupe_fields)
 
-    def load(self) -> List[Dict[str, Any]]:
+    def load(self) -> list[dict[str, Any]]:
         return load_run_history()
 
     def prune_started_rows_for_type(self, entry_type: str, finished_at: str) -> None:
@@ -348,9 +335,9 @@ def _normalize_log_format(value: Any, default: str = "human") -> str:
 
 
 def resolve_runtime_config(
-    argv: Optional[List[str]] = None,
+    argv: list[str] | None = None,
     *,
-    env: Optional[Dict[str, str]] = None,
+    env: dict[str, str] | None = None,
 ) -> RuntimeConfig:
     return bridge_config.resolve_runtime_config(
         root=ROOT,
@@ -372,7 +359,7 @@ def bridge_log(level: str, message: str, **fields: Any) -> None:
     if not _log_enabled(normalized_level):
         return
     payload = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "level": normalized_level,
         "message": str(message or ""),
         **{key: value for key, value in fields.items() if value is not None and value != ""},
@@ -491,15 +478,15 @@ def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
     )
 
 
-def load_saved_sync_settings() -> Dict[str, Any]:
+def load_saved_sync_settings() -> dict[str, Any]:
     return _get_sync_service().load_saved_sync_settings()
 
 
-def append_startup_metric(event: str, payload: Optional[Dict[str, Any]] = None) -> None:
+def append_startup_metric(event: str, payload: dict[str, Any] | None = None) -> None:
     bridge_runtime_state.append_startup_metric(event, payload, now_iso=now_iso)
 
 
-def read_startup_metrics(limit: int = 200) -> List[Dict[str, Any]]:
+def read_startup_metrics(limit: int = 200) -> list[dict[str, Any]]:
     return bridge_runtime_state.read_startup_metrics(limit)
 
 
@@ -513,59 +500,59 @@ def refresh_sync_config() -> source_sync_module.SyncConfig:
     return SYNC_CONFIG
 
 
-def get_saved_sync_config_payload() -> Dict[str, Any]:
+def get_saved_sync_config_payload() -> dict[str, Any]:
     return _get_sync_service().get_saved_sync_config_payload()
 
 
-def update_saved_sync_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+def update_saved_sync_settings(payload: dict[str, Any]) -> dict[str, Any]:
     return _get_sync_service().update_saved_sync_settings(payload)
 
 
-def load_saved_discovery_settings() -> Dict[str, Any]:
+def load_saved_discovery_settings() -> dict[str, Any]:
     return _get_discovery_service().load_saved_discovery_settings()
 
 
-def get_discovery_config_payload() -> Dict[str, Any]:
+def get_discovery_config_payload() -> dict[str, Any]:
     return _get_discovery_service().get_discovery_config_payload()
 
 
-def update_saved_discovery_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+def update_saved_discovery_settings(payload: dict[str, Any]) -> dict[str, Any]:
     return _get_discovery_service().update_saved_discovery_settings(payload)
 
 
-def load_sync_runtime_state() -> Dict[str, Any]:
+def load_sync_runtime_state() -> dict[str, Any]:
     return _get_sync_state().load_sync_runtime_state()
 
 
-def save_sync_runtime_state(payload: Dict[str, Any]) -> Dict[str, Any]:
+def save_sync_runtime_state(payload: dict[str, Any]) -> dict[str, Any]:
     return _get_sync_state().save_sync_runtime_state(payload)
 
 
-def test_sync_config() -> Dict[str, Any]:
+def test_sync_config() -> dict[str, Any]:
     return _get_sync_service().test_sync_config()
 
 
-def ensure_active_registry() -> List[Dict[str, Any]]:
+def ensure_active_registry() -> list[dict[str, Any]]:
     return _get_registry_service().ensure_active_registry()
 
 
-def normalize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+def normalize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
     return _get_registry_service().normalize_state(state)
 
 
-def load_state() -> Dict[str, List[Dict[str, Any]]]:
+def load_state() -> dict[str, list[dict[str, Any]]]:
     return _get_registry_service().load_state()
 
 
-def summarize_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, int]:
+def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
     return RegistryService.summarize_state(state)
 
 
-def persist_state(state: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+def persist_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
     return _get_registry_service().persist_state(state)
 
 
-def persist_state_and_auto_sync(state: Dict[str, List[Dict[str, Any]]], *, reason: str) -> Dict[str, List[Dict[str, Any]]]:
+def persist_state_and_auto_sync(state: dict[str, list[dict[str, Any]]], *, reason: str) -> dict[str, list[dict[str, Any]]]:
     return _registry_sync_flow.persist_state_and_auto_sync(
         state,
         reason=reason,
@@ -574,11 +561,11 @@ def persist_state_and_auto_sync(state: Dict[str, List[Dict[str, Any]]], *, reaso
     )
 
 
-def move_entries(pending: List[Dict[str, Any]], selected_ids: List[str]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def move_entries(pending: list[dict[str, Any]], selected_ids: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     return RegistryService.move_entries(pending, selected_ids)
 
 
-def build_manual_candidate(normalized_url: str) -> Dict[str, Any] | None:
+def build_manual_candidate(normalized_url: str) -> dict[str, Any] | None:
     if not normalized_url:
         return None
     studio = infer_studio_name_from_host(normalized_url)
@@ -611,7 +598,7 @@ def build_manual_candidate(normalized_url: str) -> Dict[str, Any] | None:
     return row
 
 
-def add_manual_source(raw_url: str) -> Dict[str, Any]:
+def add_manual_source(raw_url: str) -> dict[str, Any]:
     normalized_url = normalize_source_url(raw_url)
     if not normalized_url:
         return {"status": "invalid", "message": "Invalid URL. Use a full http(s) URL."}
@@ -673,7 +660,7 @@ def add_manual_source(raw_url: str) -> Dict[str, Any]:
     }
 
 
-def _fetch_html_with_fallback_bound(url: str, timeout_s: int) -> Tuple[str, str, bool, bool]:
+def _fetch_html_with_fallback_bound(url: str, timeout_s: int) -> tuple[str, str, bool, bool]:
     return _source_check_fetch.fetch_html_with_fallback(
         url,
         timeout_s,
@@ -687,7 +674,7 @@ def _fetch_html_with_fallback_bound(url: str, timeout_s: int) -> Tuple[str, str,
     )
 
 
-def _fetch_static_page_with_alternates_bound(page_url: str, timeout_s: int) -> Tuple[str, str, bool, bool, str]:
+def _fetch_static_page_with_alternates_bound(page_url: str, timeout_s: int) -> tuple[str, str, bool, bool, str]:
     return _source_check_fetch.fetch_static_page_with_alternates(
         page_url,
         timeout_s,
@@ -698,7 +685,7 @@ def _fetch_static_page_with_alternates_bound(page_url: str, timeout_s: int) -> T
     )
 
 
-def check_static_source(row: Dict[str, Any], timeout_s: int = 12) -> Tuple[bool, int, str, bool, Dict[str, Any]]:
+def check_static_source(row: dict[str, Any], timeout_s: int = 12) -> tuple[bool, int, str, bool, dict[str, Any]]:
     return _source_checker.check_static_source(
         row,
         timeout_s,
@@ -713,7 +700,7 @@ def check_static_source(row: Dict[str, Any], timeout_s: int = 12) -> Tuple[bool,
     )
 
 
-def normalize_manual_static_studio_fields(row: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_manual_static_studio_fields(row: dict[str, Any]) -> dict[str, Any]:
     return _source_check_api.normalize_manual_static_studio_fields(
         row,
         normalize_source_url=normalize_source_url,
@@ -721,7 +708,7 @@ def normalize_manual_static_studio_fields(row: Dict[str, Any]) -> Dict[str, Any]
     )
 
 
-def trigger_source_check(source_id: str, timeout_s: int = 12) -> Dict[str, Any]:
+def trigger_source_check(source_id: str, timeout_s: int = 12) -> dict[str, Any]:
     return _source_check_api.trigger_source_check(
         source_id,
         timeout_s=timeout_s,
@@ -741,9 +728,9 @@ def trigger_source_check(source_id: str, timeout_s: int = 12) -> Dict[str, Any]:
 
 def run_background_script(
     script_name: str,
-    args: List[str] | None = None,
+    args: list[str] | None = None,
     *,
-    extra_env: Dict[str, str] | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> int:
     return _get_task_launch_api().run_background_script(
         script_name,
@@ -758,13 +745,13 @@ def run_background_script(
     )
 
 
-def _failed_source_names_from_latest_report(*, allowed_names: set[str] | None = None) -> List[str]:
+def _failed_source_names_from_latest_report(*, allowed_names: set[str] | None = None) -> list[str]:
     return _get_ops_api().failed_source_names_from_latest_report(
         allowed_names=allowed_names
     )
 
 
-def build_fetcher_args_from_payload(payload: Dict[str, Any]) -> Tuple[List[str], str]:
+def build_fetcher_args_from_payload(payload: dict[str, Any]) -> tuple[list[str], str]:
     return _get_task_launch_api().build_fetcher_args_from_payload(payload)
 
 
@@ -796,19 +783,19 @@ def pid_is_running(pid: int) -> bool:
     return True
 
 
-def load_run_history() -> List[Dict[str, Any]]:
+def load_run_history() -> list[dict[str, Any]]:
     return _run_history_api.load_run_history(_get_task_history_manager())
 
 
-def save_run_history(rows: List[Dict[str, Any]]) -> None:
+def save_run_history(rows: list[dict[str, Any]]) -> None:
     _run_history_api.save_run_history(_get_task_history_manager(), rows)
 
 
-def append_run_history(row: Dict[str, Any]) -> Dict[str, Any]:
+def append_run_history(row: dict[str, Any]) -> dict[str, Any]:
     return _run_history_api.append_run_history(_get_task_history_manager(), row)
 
 
-def upsert_run_history(entry: Dict[str, Any], *, dedupe_fields: Tuple[str, ...]) -> Dict[str, Any]:
+def upsert_run_history(entry: dict[str, Any], *, dedupe_fields: tuple[str, ...]) -> dict[str, Any]:
     return _run_history_api.upsert_run_history(
         _get_task_history_manager(), entry, dedupe_fields=dedupe_fields
     )
@@ -842,7 +829,7 @@ def task_running_from_state(task_type: str) -> bool:
     )
 
 
-def report_is_stale_in_progress(task_type: str, path: Path, report: Dict[str, Any], *, max_age_minutes: int = 5, max_mtime_idle_minutes: float = 0.35) -> bool:
+def report_is_stale_in_progress(task_type: str, path: Path, report: dict[str, Any], *, max_age_minutes: int = 5, max_mtime_idle_minutes: float = 0.35) -> bool:
     return _run_history_api.report_is_stale_in_progress(
         task_type,
         path,
@@ -857,46 +844,46 @@ def report_is_stale_in_progress(task_type: str, path: Path, report: Dict[str, An
     )
 
 
-def _read_tasks_config() -> Dict[str, Any]:
+def _read_tasks_config() -> dict[str, Any]:
     try:
         return json.loads(TASKS_CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
 
 
-def load_alert_state() -> Dict[str, Any]:
+def load_alert_state() -> dict[str, Any]:
     return _get_ops_api().load_alert_state()
 
 
-def save_alert_state(state: Dict[str, Any]) -> None:
+def save_alert_state(state: dict[str, Any]) -> None:
     _get_ops_api().save_alert_state(state)
 
 
-def detect_task_interval_hours(task: Dict[str, Any]) -> float | None:
+def detect_task_interval_hours(task: dict[str, Any]) -> float | None:
     return _get_ops_api().detect_task_interval_hours(task)
 
 
-def parse_schedule_metadata() -> Dict[str, Any]:
+def parse_schedule_metadata() -> dict[str, Any]:
     return _get_ops_api().parse_schedule_metadata()
 
 
-def summarize_fetch_report(report: Dict[str, Any]) -> Dict[str, Any]:
+def summarize_fetch_report(report: dict[str, Any]) -> dict[str, Any]:
     return _get_ops_api().summarize_fetch_report(report)
 
 
-def summarize_discovery_report(report: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+def summarize_discovery_report(report: dict[str, Any]) -> tuple[dict[str, Any], str]:
     return _get_ops_api().summarize_discovery_report(report)
 
 
-def sync_history_from_reports() -> List[Dict[str, Any]]:
+def sync_history_from_reports() -> list[dict[str, Any]]:
     return _get_ops_api().sync_history_from_reports()
 
 
-def compute_ops_health() -> Dict[str, Any]:
+def compute_ops_health() -> dict[str, Any]:
     return _get_ops_api().compute_ops_health()
 
 
-def compute_fetcher_metrics(window_runs: int = 20) -> Dict[str, Any]:
+def compute_fetcher_metrics(window_runs: int = 20) -> dict[str, Any]:
     return _get_ops_api().compute_fetcher_metrics(window_runs=window_runs)
 
 
@@ -910,19 +897,19 @@ def _set_sync_status(*, action: str = "", result: str = "", error: str = "", pul
     )
 
 
-def get_sync_status_payload() -> Dict[str, Any]:
+def get_sync_status_payload() -> dict[str, Any]:
     return _get_sync_service().get_sync_status_payload()
 
 
-def _sync_guard() -> Optional[Dict[str, Any]]:
+def _sync_guard() -> dict[str, Any] | None:
     return _get_sync_service()._sync_guard()  # noqa: SLF001
 
 
-def sync_pull_sources() -> Dict[str, Any]:
+def sync_pull_sources() -> dict[str, Any]:
     return _get_sync_service().sync_pull_sources()
 
 
-def sync_push_sources() -> Dict[str, Any]:
+def sync_push_sources() -> dict[str, Any]:
     return _get_sync_service().sync_push_sources()
 
 
@@ -1004,16 +991,16 @@ def _run_sync_task_worker(run_id: str, action: str, started_at: str, *, reason: 
     )
 
 
-def start_sync_task(action: str, *, reason: str = "", automatic: bool = False) -> Dict[str, Any]:
+def start_sync_task(action: str, *, reason: str = "", automatic: bool = False) -> dict[str, Any]:
     return _get_sync_service().start_sync_task(action, reason=reason, automatic=bool(automatic))
 
 
 def trigger_discovery_task(
-    payload: Optional[Dict[str, Any]] = None,
+    payload: dict[str, Any] | None = None,
     *,
     route_name: str,
     enable_auto_sync_watch: bool = True,
-) -> Tuple[int, Dict[str, Any]]:
+) -> tuple[int, dict[str, Any]]:
     return _get_discovery_service().trigger_discovery_task(
         route_name=route_name,
         payload=payload if isinstance(payload, dict) else {},
@@ -1027,7 +1014,7 @@ def _current_fetch_output_count() -> int:
     return int(summary.get("outputCount") or 0)
 
 
-def get_jobs_pipeline_status_payload() -> Dict[str, Any]:
+def get_jobs_pipeline_status_payload() -> dict[str, Any]:
     return _get_pipeline_service().get_status_payload()
 
 
@@ -1038,10 +1025,10 @@ def _wait_for_report_completion(
     timeout_s: float,
     report_name: str,
     fail_on_stale: bool = False,
-) -> Dict[str, Any]:
-    deadline = datetime.now(timezone.utc) + timedelta(seconds=max(10.0, float(timeout_s)))
+) -> dict[str, Any]:
+    deadline = datetime.now(UTC) + timedelta(seconds=max(10.0, float(timeout_s)))
     started_dt = parse_iso(started_at)
-    while datetime.now(timezone.utc) < deadline:
+    while datetime.now(UTC) < deadline:
         report = load_json_object(report_path, {})
         report_started = parse_iso(report.get("startedAt"))
         report_finished = parse_iso(report.get("finishedAt"))
@@ -1058,9 +1045,9 @@ def _wait_for_report_completion(
     raise TimeoutError(f"{report_name} did not finish within timeout")
 
 
-def _wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> Dict[str, Any]:
-    deadline = datetime.now(timezone.utc) + timedelta(seconds=max(10.0, float(timeout_s)))
-    while datetime.now(timezone.utc) < deadline:
+def _wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> dict[str, Any]:
+    deadline = datetime.now(UTC) + timedelta(seconds=max(10.0, float(timeout_s)))
+    while datetime.now(UTC) < deadline:
         history = sync_history_from_reports()
         for row in reversed(history):
             if str(row.get("id") or "") != str(run_id or ""):
@@ -1074,7 +1061,7 @@ def _wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> Dict[str
     raise TimeoutError("sync task did not finish within timeout")
 
 
-def start_fetcher_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def start_fetcher_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     run_id = f"fetch_{uuid.uuid4().hex[:10]}"
     started_at = now_iso()
     fetcher_args, preset = build_fetcher_args_from_payload(payload if isinstance(payload, dict) else {})
@@ -1139,7 +1126,7 @@ def start_fetcher_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, An
     }
 
 
-def start_jobs_pipeline_task(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def start_jobs_pipeline_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     return _get_pipeline_service().start_task(payload)
 
 
@@ -1147,7 +1134,7 @@ def desktop_local_data_store() -> LocalDataStore:
     return bridge_runtime_state.get_desktop_local_data_store()
 
 
-def parse_args(argv: Optional[List[str]] = None) -> RuntimeConfig:
+def parse_args(argv: list[str] | None = None) -> RuntimeConfig:
     return resolve_runtime_config(argv)
 
 

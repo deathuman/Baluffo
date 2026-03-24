@@ -4,8 +4,8 @@ from unittest import mock
 
 import pytest
 
-from src.app_version import APP_VERSION
 from scripts.build_ship_bundle import STARTUP_PREVIEW_LIMIT, build_bundle
+from src.app_version import APP_VERSION
 from tests.helpers.temp_paths import workspace_tmpdir
 
 

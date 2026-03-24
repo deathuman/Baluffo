@@ -5,20 +5,26 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any, Dict, List
 from urllib.parse import urljoin
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters.community import google_sheets as _google_sheets
 from src.jobs.adapters.html_parsers import parse_gamesindustry_html, parse_wellfound_html
 from src.jobs.adapters.provider_parsers import parse_epic_games_jobs_payload
-from src.jobs.common.parsing import parse_remote_ok_payload as _parse_remote_ok_payload
-from src.jobs.models import RawJob
-from src.jobs.common.config import EPIC_CAREERS_API_URL, GAMES_INDUSTRY_URLS, REMOTE_OK_URLS, WELLFOUND_URLS
+from src.jobs.common.config import (
+    EPIC_CAREERS_API_URL,
+    GAMES_INDUSTRY_URLS,
+    REMOTE_OK_URLS,
+    WELLFOUND_URLS,
+)
 from src.jobs.common.diagnostics import set_source_diagnostics
-from src.jobs.game_detection import looks_like_game_job
-from src.jobs.text_utils import clean_text
 from src.jobs.common.fetch import fetch_with_retries
+from src.jobs.common.parsing import parse_remote_ok_payload as _parse_remote_ok_payload
+from src.jobs.game_detection import looks_like_game_job
+from src.jobs.models import RawJob
+from src.jobs.text_utils import clean_text
 
 google_sheet_candidate_urls = _google_sheets.google_sheet_candidate_urls
 GOOGLE_SHEETS_SOURCES = _google_sheets.GOOGLE_SHEETS_SOURCES
@@ -46,9 +52,9 @@ def run_google_sheets_source(
     sheet_id: str = DEFAULT_GOOGLE_SHEET_ID,
     gid: str = DEFAULT_GOOGLE_SHEET_GID,
     diagnostics_name: str = "",
-) -> List[RawJob]:
-    errors: List[str] = []
-    details: List[Dict[str, Any]] = []
+) -> list[RawJob]:
+    errors: list[str] = []
+    details: list[dict[str, Any]] = []
     for url in google_sheet_candidate_urls(sheet_id, gid):
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
@@ -91,8 +97,8 @@ def run_google_sheets_source(
     raise AdapterValidationError.from_errors(errors) if errors else AdapterValidationError("Google Sheets source failed")
 
 
-def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
-    errors: List[str] = []
+def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+    errors: list[str] = []
     for url in REMOTE_OK_URLS:
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
@@ -111,9 +117,9 @@ def run_gamesindustry_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
-    errors: List[str] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    errors: list[str] = []
     for url in GAMES_INDUSTRY_URLS:
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
@@ -131,8 +137,8 @@ def parse_gamejobs_html(
     html_text: str,
     *,
     base_url: str,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
     seen_links = set()
     pattern = re.compile(
         r'(?is)<a[^>]+href=["\'](?P<href>[^"\']+)["\'][^>]*>(?P<title>.*?)</a>\s*'
@@ -169,8 +175,8 @@ def parse_workwithindies_html(
     html_text: str,
     *,
     base_url: str,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
     seen_links = set()
     pattern = re.compile(
         r'(?is)<a[^>]+href=["\'](?P<href>[^"\']*/careers/[^"\']+)["\'][^>]*class=["\'][^"\']*job-card[^"\']*["\'][^>]*>(?P<body>.*?)</a>'
@@ -211,8 +217,8 @@ def parse_8bitplay_html(
     html_text: str,
     *,
     base_url: str,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
     seen_links = set()
     pattern = re.compile(
         r'(?is)<a[^>]+href=["\'](?P<href>[^"\']*/job/[^"\']+)["\'][^>]*class=["\'][^"\']*post__similar-job[^"\']*["\'][^>]*>(?P<body>.*?)</a>'
@@ -249,8 +255,8 @@ def parse_gracklehq_html(
     html_text: str,
     *,
     base_url: str,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
     seen_links = set()
     pattern = re.compile(
         r'(?is)<div[^>]*class=["\'][^"\']*joblisting[^"\']*["\'][^>]*>.*?<a[^>]+href=["\'](?P<href>/rd/[^"\']+)["\'][^>]*>(?P<title>.*?)</a>\s*<div>(?P<company_location>.*?)</div>'
@@ -318,8 +324,8 @@ def run_epic_games_careers_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
     seen_source_ids = set()
     skip = 0
     limit = 20
@@ -354,9 +360,9 @@ def run_gamejobs_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
-    errors: List[str] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    errors: list[str] = []
     seen_source_ids = set()
     gamejobs_urls = list(GAMEJOBS_URLS)
     gamejobs_urls.extend([f"{GAMEJOBS_SEARCH_URL}?page={page}" for page in range(2, GAMEJOBS_MAX_PAGES + 1)])
@@ -392,9 +398,9 @@ def run_workwithindies_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
-    errors: List[str] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    errors: list[str] = []
     for url in WORKWITHINDIES_URLS:
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
@@ -414,9 +420,9 @@ def run_8bitplay_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
-    errors: List[str] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    errors: list[str] = []
     seen_source_ids = set()
     eightbit_urls = list(EIGHTBITPLAY_URLS)
     eightbit_urls.extend([f"{EIGHTBITPLAY_URLS[0]}?job-board-paged={page}" for page in range(2, EIGHTBITPLAY_MAX_PAGES + 1)])
@@ -452,9 +458,9 @@ def run_gracklehq_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
-    errors: List[str] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    errors: list[str] = []
     seen_source_ids = set()
     seen_page_urls = set()
     next_url = GRACKLEHQ_URLS[0]
@@ -492,9 +498,9 @@ def run_gracklehq_source(
     return []
 
 
-def run_wellfound_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
-    jobs: List[RawJob] = []
-    errors: List[str] = []
+def run_wellfound_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    errors: list[str] = []
     for url in WELLFOUND_URLS:
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)

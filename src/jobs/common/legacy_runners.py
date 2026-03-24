@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from .config import DEFAULT_STATIC_DETAIL_CONCURRENCY
 
-RawJob = Dict[str, Any]
+RawJob = dict[str, Any]
 
 
 def _community_adapter():
@@ -31,7 +32,7 @@ def _static_adapter():
     return static
 
 
-def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     return _community_adapter().run_remote_ok_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -40,7 +41,7 @@ def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: in
     )
 
 
-def _request_json_with_headers(url: str, *, timeout_s: int, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+def _request_json_with_headers(url: str, *, timeout_s: int, headers: dict[str, str] | None = None) -> dict[str, Any]:
     return _social_adapter()._request_json_with_headers(url, timeout_s=timeout_s, headers=headers)
 
 
@@ -50,8 +51,8 @@ def run_social_reddit_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    social_config: Dict[str, Any],
-) -> List[RawJob]:
+    social_config: dict[str, Any],
+) -> list[RawJob]:
     return _social_adapter().run_social_reddit_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -67,8 +68,8 @@ def run_social_x_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    social_config: Dict[str, Any],
-) -> List[RawJob]:
+    social_config: dict[str, Any],
+) -> list[RawJob]:
     return _social_adapter().run_social_x_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -84,8 +85,8 @@ def run_social_mastodon_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    social_config: Dict[str, Any],
-) -> List[RawJob]:
+    social_config: dict[str, Any],
+) -> list[RawJob]:
     return _social_adapter().run_social_mastodon_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -95,7 +96,7 @@ def run_social_mastodon_source(
     )
 
 
-def run_gamesindustry_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_gamesindustry_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     return _community_adapter().run_gamesindustry_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -104,7 +105,7 @@ def run_gamesindustry_source(*, fetch_text: Callable[[str, int], str], timeout_s
     )
 
 
-def run_epic_games_careers_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_epic_games_careers_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     return _community_adapter().run_epic_games_careers_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -113,7 +114,7 @@ def run_epic_games_careers_source(*, fetch_text: Callable[[str, int], str], time
     )
 
 
-def run_wellfound_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_wellfound_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     return _community_adapter().run_wellfound_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -122,7 +123,7 @@ def run_wellfound_source(*, fetch_text: Callable[[str, int], str], timeout_s: in
     )
 
 
-def run_greenhouse_boards_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_greenhouse_boards_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     return _provider_api_adapter().run_greenhouse_boards_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -131,7 +132,7 @@ def run_greenhouse_boards_source(*, fetch_text: Callable[[str, int], str], timeo
     )
 
 
-def run_teamtailor_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_teamtailor_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     return _provider_api_adapter().run_teamtailor_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -146,7 +147,7 @@ def run_scrapy_static_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _static_adapter().run_scrapy_static_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -155,7 +156,7 @@ def run_scrapy_static_source(
     )
 
 
-def static_source_shard(row: Dict[str, Any]) -> str:
+def static_source_shard(row: dict[str, Any]) -> str:
     return _static_adapter().static_source_shard(row)
 
 
@@ -165,13 +166,13 @@ def run_static_studio_pages_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    sources: Optional[List[Dict[str, Any]]] = None,
-    shard: Optional[str] = None,
+    sources: list[dict[str, Any]] | None = None,
+    shard: str | None = None,
     diagnostics_name: str = "static_studio_pages",
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
-) -> List[RawJob]:
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+) -> list[RawJob]:
     return _static_adapter().run_static_studio_pages_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -188,16 +189,16 @@ def run_static_studio_pages_source(
 
 def run_static_source_entry_source(
     *,
-    source_row: Dict[str, Any],
+    source_row: dict[str, Any],
     diagnostics_name: str,
     fetch_text: Callable[[str, int], str],
     timeout_s: int,
     retries: int,
     backoff_s: float,
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
-) -> List[RawJob]:
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+) -> list[RawJob]:
     return _static_adapter().run_static_source_entry_source(
         source_row=source_row,
         diagnostics_name=diagnostics_name,
@@ -218,9 +219,9 @@ def run_static_studio_pages_a_i_source(
     retries: int,
     backoff_s: float,
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
-) -> List[RawJob]:
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+) -> list[RawJob]:
     return _static_adapter().run_static_studio_pages_a_i_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -232,7 +233,7 @@ def run_static_studio_pages_a_i_source(
     )
 
 
-def build_static_source_loaders() -> List[Tuple[str, Any]]:
+def build_static_source_loaders() -> list[tuple[str, Any]]:
     return _static_adapter().build_static_source_loaders()
 
 
@@ -243,9 +244,9 @@ def run_static_studio_pages_j_r_source(
     retries: int,
     backoff_s: float,
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
-) -> List[RawJob]:
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+) -> list[RawJob]:
     return _static_adapter().run_static_studio_pages_j_r_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -264,9 +265,9 @@ def run_static_studio_pages_s_z_source(
     retries: int,
     backoff_s: float,
     static_detail_concurrency: int = DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: Optional[Dict[str, Dict[str, Any]]] = None,
-    try_playwright: Optional[Callable[[str, int], Tuple[str, str]]] = None,
-) -> List[RawJob]:
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+) -> list[RawJob]:
     return _static_adapter().run_static_studio_pages_s_z_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -278,7 +279,7 @@ def run_static_studio_pages_s_z_source(
     )
 
 
-def run_lever_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_lever_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     return _provider_api_adapter().run_lever_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -287,7 +288,7 @@ def run_lever_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s
     )
 
 
-def run_smartrecruiters_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_smartrecruiters_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     return _provider_api_adapter().run_smartrecruiters_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -296,7 +297,7 @@ def run_smartrecruiters_sources_source(*, fetch_text: Callable[[str, int], str],
     )
 
 
-def run_workable_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_workable_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     return _provider_api_adapter().run_workable_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -305,7 +306,7 @@ def run_workable_sources_source(*, fetch_text: Callable[[str, int], str], timeou
     )
 
 
-def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     return _provider_api_adapter().run_ashby_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -314,7 +315,7 @@ def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s
     )
 
 
-def run_personio_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> List[RawJob]:
+def run_personio_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
     return _provider_api_adapter().run_personio_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,

@@ -8,9 +8,10 @@ from __future__ import annotations
 import json
 import re
 import time
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from html import unescape
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
@@ -19,7 +20,7 @@ from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 
 
-def extract_json_ld_blocks(html_text: str) -> List[str]:
+def extract_json_ld_blocks(html_text: str) -> list[str]:
     return re.findall(
         r'(?is)<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
         html_text,
@@ -31,7 +32,7 @@ def strip_html_text(fragment: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def html_fragment_lines(fragment: str) -> List[str]:
+def html_fragment_lines(fragment: str) -> list[str]:
     if not fragment:
         return []
     text = str(fragment)
@@ -47,14 +48,14 @@ def extract_first_tag_text(fragment: str, tags: Iterable[str]) -> str:
     return text_map[0] if text_map else ""
 
 
-def extract_tag_texts(fragment: str, tags: Iterable[str]) -> List[str]:
+def extract_tag_texts(fragment: str, tags: Iterable[str]) -> list[str]:
     if not fragment:
         return []
     names = [re.escape(str(tag).strip()) for tag in tags if str(tag).strip()]
     if not names:
         return []
     pattern = re.compile(rf"(?is)<(?:{'|'.join(names)})\b[^>]*>(.*?)</(?:{'|'.join(names)})>")
-    values: List[str] = []
+    values: list[str] = []
     for match in pattern.finditer(fragment):
         text = strip_html_text(match.group(1))
         if text:
@@ -62,13 +63,13 @@ def extract_tag_texts(fragment: str, tags: Iterable[str]) -> List[str]:
     return values
 
 
-def iter_anchor_fragments(html_text: str) -> Iterable[Dict[str, str]]:
+def iter_anchor_fragments(html_text: str) -> Iterable[dict[str, str]]:
     if not html_text:
         return []
     pattern = re.compile(
         r"(?is)<a\b(?P<before>[^>]*)href\s*=\s*(?P<quote>['\"])(?P<href>.*?)(?P=quote)(?P<after>[^>]*)>(?P<body>.*?)</a>"
     )
-    rows: List[Dict[str, str]] = []
+    rows: list[dict[str, str]] = []
     for match in pattern.finditer(html_text):
         attrs = f"{match.group('before')}{match.group('after')}"
         href = clean_text(unescape(match.group("href")))
@@ -109,14 +110,14 @@ def parse_gamesindustry_changed_date(value: Any) -> str:
         return ""
     for fmt in ("%m/%d/%y", "%m/%d/%Y"):
         try:
-            dt = datetime.strptime(text, fmt).replace(tzinfo=timezone.utc)
+            dt = datetime.strptime(text, fmt).replace(tzinfo=UTC)
             return dt.isoformat()
         except ValueError:
             continue
     return ""
 
 
-def iter_job_postings_from_jsonld(value: Any) -> Iterable[Dict[str, Any]]:
+def iter_job_postings_from_jsonld(value: Any) -> Iterable[dict[str, Any]]:
     if isinstance(value, list):
         for item in value:
             yield from iter_job_postings_from_jsonld(item)
@@ -129,7 +130,7 @@ def iter_job_postings_from_jsonld(value: Any) -> Iterable[Dict[str, Any]]:
         yield from iter_job_postings_from_jsonld(child)
 
 
-def parse_jobposting_locations(job_location: Any) -> Tuple[str, str]:
+def parse_jobposting_locations(job_location: Any) -> tuple[str, str]:
     location = job_location
     if isinstance(location, list) and location:
         location = location[0]
@@ -167,8 +168,8 @@ def parse_jobpostings_from_html(
     base_url: str,
     fallback_company: str = "",
     fallback_source_id_prefix: str = "",
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
     seen_links = set()
     counter = 0
 
@@ -280,7 +281,7 @@ def maybe_fetch_kojima_job_listing_html(
     return ""
 
 
-def parse_teamtailor_listing_links(html_text: str, base_url: str) -> List[str]:
+def parse_teamtailor_listing_links(html_text: str, base_url: str) -> list[str]:
     links = []
     seen = set()
     for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html_text):
@@ -299,8 +300,8 @@ def parse_teamtailor_listing_links(html_text: str, base_url: str) -> List[str]:
 
 def parse_gamesindustry_html(
     html_text: str, base_url: str = "https://jobs.gamesindustry.biz"
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
     seen_links = set()
 
     def push_job(row: RawJob) -> None:
@@ -442,8 +443,8 @@ def parse_gamesindustry_html(
 
 
 def parse_wellfound_candidate(
-    node: Dict[str, Any], base_url: str
-) -> Optional[RawJob]:
+    node: dict[str, Any], base_url: str
+) -> RawJob | None:
     title = clean_text(node.get("title") or node.get("jobTitle"))
     company = ""
     if isinstance(node.get("company"), dict):
@@ -503,8 +504,8 @@ def parse_wellfound_candidate(
 
 def parse_wellfound_html(
     html_text: str, base_url: str = "https://wellfound.com/jobs"
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
     match = re.search(
         r'(?is)<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',
         html_text,

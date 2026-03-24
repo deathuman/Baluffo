@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any
 
 from src.contracts import SCHEMA_VERSION
 from src.jobs.common import config as common_config
@@ -17,9 +18,9 @@ from src.jobs.dedup import dedup_secondary_key
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.jobs_fetcher_registry import EXCLUDED_DEFAULT_SOURCES, SOURCE_REPORT_META
 from src.pipeline_io import write_text_if_changed
 from src.shared.utils import now_iso
-from src.jobs_fetcher_registry import EXCLUDED_DEFAULT_SOURCES, SOURCE_REPORT_META
 
 LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = common_config.LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS
 LIFECYCLE_ARCHIVE_RETENTION_DAYS = common_config.LIFECYCLE_ARCHIVE_RETENTION_DAYS
@@ -31,7 +32,7 @@ DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES = common_config.DEFAULT_INCREMENTAL_DEAD
 fingerprint_url = common_url.fingerprint_url
 
 
-def source_rows_fingerprint(rows: Sequence[Dict[str, Any]]) -> str:
+def source_rows_fingerprint(rows: Sequence[dict[str, Any]]) -> str:
     keys = []
     for row in rows:
         link = normalize_url(row.get("jobLink"))
@@ -42,10 +43,10 @@ def source_rows_fingerprint(rows: Sequence[Dict[str, Any]]) -> str:
     return hashlib.sha1("\n".join(keys).encode("utf-8")).hexdigest()
 
 
-def normalize_source_state_payload(payload: Dict[str, Any], *, updated_at: str = "") -> Dict[str, Any]:
+def normalize_source_state_payload(payload: dict[str, Any], *, updated_at: str = "") -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     rows = src.get("sources")
-    out_rows: Dict[str, Dict[str, Any]] = {}
+    out_rows: dict[str, dict[str, Any]] = {}
     if isinstance(rows, dict):
         for raw_name, raw_entry in rows.items():
             name = clean_text(raw_name)
@@ -101,7 +102,7 @@ def normalize_source_state_payload(payload: Dict[str, Any], *, updated_at: str =
     }
 
 
-def read_source_state(state_path: Path) -> Dict[str, Dict[str, Any]]:
+def read_source_state(state_path: Path) -> dict[str, dict[str, Any]]:
     try:
         payload = json.loads(state_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -111,15 +112,15 @@ def read_source_state(state_path: Path) -> Dict[str, Dict[str, Any]]:
     return rows if isinstance(rows, dict) else {}
 
 
-def write_source_state(state_path: Path, rows: Dict[str, Dict[str, Any]]) -> None:
+def write_source_state(state_path: Path, rows: dict[str, dict[str, Any]]) -> None:
     payload = normalize_source_state_payload({"sources": rows}, updated_at=now_iso())
     write_text_if_changed(state_path, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
-def normalize_job_lifecycle_payload(payload: Dict[str, Any], *, updated_at: str = "") -> Dict[str, Any]:
+def normalize_job_lifecycle_payload(payload: dict[str, Any], *, updated_at: str = "") -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     raw_jobs = src.get("jobs")
-    out_jobs: Dict[str, Dict[str, Any]] = {}
+    out_jobs: dict[str, dict[str, Any]] = {}
     if isinstance(raw_jobs, dict):
         for raw_key, raw_entry in raw_jobs.items():
             key = clean_text(raw_key)
@@ -149,7 +150,7 @@ def normalize_job_lifecycle_payload(payload: Dict[str, Any], *, updated_at: str 
     }
 
 
-def read_job_lifecycle_state(state_path: Path) -> Dict[str, Dict[str, Any]]:
+def read_job_lifecycle_state(state_path: Path) -> dict[str, dict[str, Any]]:
     try:
         payload = json.loads(state_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -159,12 +160,12 @@ def read_job_lifecycle_state(state_path: Path) -> Dict[str, Dict[str, Any]]:
     return rows if isinstance(rows, dict) else {}
 
 
-def write_job_lifecycle_state(state_path: Path, rows: Dict[str, Dict[str, Any]]) -> None:
+def write_job_lifecycle_state(state_path: Path, rows: dict[str, dict[str, Any]]) -> None:
     payload = normalize_job_lifecycle_payload({"jobs": rows}, updated_at=now_iso())
     write_text_if_changed(state_path, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
-def lifecycle_counts(rows: Dict[str, Dict[str, Any]]) -> Dict[str, int]:
+def lifecycle_counts(rows: dict[str, dict[str, Any]]) -> dict[str, int]:
     counts = {"active": 0, "likelyRemoved": 0, "archived": 0, "totalTracked": len(rows)}
     for entry in rows.values():
         status = norm_text(entry.get("status"))
@@ -177,7 +178,7 @@ def lifecycle_counts(rows: Dict[str, Dict[str, Any]]) -> Dict[str, int]:
     return counts
 
 
-def _job_identity_key(job: Dict[str, Any]) -> str:
+def _job_identity_key(job: dict[str, Any]) -> str:
     dedup = clean_text(job.get("dedupKey"))
     if dedup:
         return dedup
@@ -192,17 +193,17 @@ def _job_identity_key(job: Dict[str, Any]) -> str:
 
 def apply_job_lifecycle_state(
     *,
-    deduped_rows: List[CanonicalJob],
-    lifecycle_rows: Dict[str, Dict[str, Any]],
+    deduped_rows: list[CanonicalJob],
+    lifecycle_rows: dict[str, dict[str, Any]],
     finished_at: str,
     allow_mark_missing: bool,
-    eligible_missing_sources: Optional[Set[str]] = None,
+    eligible_missing_sources: set[str] | None = None,
     remove_to_archive_days: int = LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS,
     archive_retention_days: int = LIFECYCLE_ARCHIVE_RETENTION_DAYS,
-) -> Tuple[List[CanonicalJob], Dict[str, Dict[str, Any]], Dict[str, int]]:
+) -> tuple[list[CanonicalJob], dict[str, dict[str, Any]], dict[str, int]]:
     payload_rows = [row.to_dict() for row in deduped_rows]
-    next_rows: Dict[str, Dict[str, Any]] = {clean_text(key): dict(value) for key, value in (lifecycle_rows or {}).items() if clean_text(key)}
-    seen_keys: Set[str] = set()
+    next_rows: dict[str, dict[str, Any]] = {clean_text(key): dict(value) for key, value in (lifecycle_rows or {}).items() if clean_text(key)}
+    seen_keys: set[str] = set()
 
     for row in payload_rows:
         key = _job_identity_key(row)
@@ -231,7 +232,7 @@ def apply_job_lifecycle_state(
     eligible_sources = {clean_text(source_name) for source_name in (eligible_missing_sources or set()) if clean_text(source_name)}
     should_mark_missing = mark_missing_for_all or bool(eligible_sources)
     if should_mark_missing:
-        now_dt = parse_datetime(finished_at) or datetime.now(timezone.utc)
+        now_dt = parse_datetime(finished_at) or datetime.now(UTC)
         for key, entry in list(next_rows.items()):
             if key in seen_keys:
                 continue
@@ -266,7 +267,7 @@ def apply_job_lifecycle_state(
     return [CanonicalJob.from_mapping(row) for row in payload_rows], next_rows, counts
 
 
-def should_skip_source_by_ttl(source_name: str, state_rows: Dict[str, Dict[str, Any]], ttl_minutes: int) -> bool:
+def should_skip_source_by_ttl(source_name: str, state_rows: dict[str, dict[str, Any]], ttl_minutes: int) -> bool:
     if ttl_minutes <= 0:
         return False
     entry = state_rows.get(source_name)
@@ -277,13 +278,13 @@ def should_skip_source_by_ttl(source_name: str, state_rows: Dict[str, Dict[str, 
     last_success = parse_datetime(entry.get("lastSuccessAt"))
     if not last_success:
         return False
-    age_seconds = max(0.0, (datetime.now(timezone.utc) - last_success).total_seconds())
+    age_seconds = max(0.0, (datetime.now(UTC) - last_success).total_seconds())
     return age_seconds < float(ttl_minutes * 60)
 
 
 def should_skip_source_by_cadence(
     source_name: str,
-    state_rows: Dict[str, Dict[str, Any]],
+    state_rows: dict[str, dict[str, Any]],
     *,
     hot_minutes: int,
     cold_minutes: int,
@@ -299,14 +300,14 @@ def should_skip_source_by_cadence(
     cadence_minutes = max(1, int(cold_minutes or 1))
     last_changed = parse_datetime(entry.get("lastChangedAt"))
     if last_changed:
-        age_since_change_seconds = max(0.0, (datetime.now(timezone.utc) - last_changed).total_seconds())
+        age_since_change_seconds = max(0.0, (datetime.now(UTC) - last_changed).total_seconds())
         if age_since_change_seconds <= 24 * 60 * 60:
             cadence_minutes = max(1, int(hot_minutes or 1))
-    age_seconds = max(0.0, (datetime.now(timezone.utc) - baseline).total_seconds())
+    age_seconds = max(0.0, (datetime.now(UTC) - baseline).total_seconds())
     return age_seconds < float(cadence_minutes * 60)
 
 
-def _adapter_for_cache(source_name: str, entry: Dict[str, Any], adapter: str = "") -> str:
+def _adapter_for_cache(source_name: str, entry: dict[str, Any], adapter: str = "") -> str:
     explicit = clean_text(adapter)
     if explicit:
         return explicit
@@ -316,7 +317,7 @@ def _adapter_for_cache(source_name: str, entry: Dict[str, Any], adapter: str = "
     return clean_text(entry.get("lastAdapter"))
 
 
-def _decision_window_minutes(entry: Dict[str, Any], *, adapter: str) -> int:
+def _decision_window_minutes(entry: dict[str, Any], *, adapter: str) -> int:
     last_kept = int(entry.get("lastKeptCount") or entry.get("lastJobsFound") or 0)
     last_status = norm_text(entry.get("lastStatus"))
     last_error = norm_text(entry.get("lastError"))
@@ -330,13 +331,13 @@ def _decision_window_minutes(entry: Dict[str, Any], *, adapter: str) -> int:
         return DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES
     changed_at = parse_datetime(entry.get("lastChangedAt"))
     if changed_at:
-        age_since_change_seconds = max(0.0, (datetime.now(timezone.utc) - changed_at).total_seconds())
+        age_since_change_seconds = max(0.0, (datetime.now(UTC) - changed_at).total_seconds())
         if age_since_change_seconds <= 24 * 60 * 60:
             return common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
     return DEFAULT_INCREMENTAL_PROVIDER_STABLE_MINUTES
 
 
-def _compute_next_eligible_check_at(entry: Dict[str, Any], *, adapter: str, checked_at: str) -> str:
+def _compute_next_eligible_check_at(entry: dict[str, Any], *, adapter: str, checked_at: str) -> str:
     checked_dt = parse_datetime(checked_at)
     if not checked_dt:
         return ""
@@ -346,11 +347,11 @@ def _compute_next_eligible_check_at(entry: Dict[str, Any], *, adapter: str, chec
 
 def get_incremental_cache_decision(
     source_name: str,
-    state_rows: Dict[str, Dict[str, Any]],
+    state_rows: dict[str, dict[str, Any]],
     *,
     adapter: str = "",
     force_refresh_all: bool = False,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     if force_refresh_all or not DEFAULT_INCREMENTAL_FETCH_ENABLED:
         return {"cacheDecision": "run_now", "cacheDecisionReason": "force_refresh_all"}
     entry = state_rows.get(source_name)
@@ -358,7 +359,7 @@ def get_incremental_cache_decision(
         return {"cacheDecision": "run_now", "cacheDecisionReason": "no_cache_state"}
     effective_adapter = _adapter_for_cache(source_name, entry, adapter=adapter)
     next_eligible = parse_datetime(entry.get("nextEligibleCheckAt"))
-    now_dt = datetime.now(timezone.utc)
+    now_dt = datetime.now(UTC)
     if next_eligible and next_eligible > now_dt:
         last_decision = clean_text(entry.get("cacheDecision")) or "skip_fresh"
         last_reason = clean_text(entry.get("cacheDecisionReason")) or "within_freshness_window"
@@ -402,7 +403,7 @@ def get_incremental_cache_decision(
     return {"cacheDecision": "run_now", "cacheDecisionReason": "provider_refresh_due"}
 
 
-def circuit_breaker_until(source_name: str, state_rows: Dict[str, Dict[str, Any]], failure_threshold: int) -> Optional[datetime]:
+def circuit_breaker_until(source_name: str, state_rows: dict[str, dict[str, Any]], failure_threshold: int) -> datetime | None:
     if failure_threshold <= 0:
         return None
     entry = state_rows.get(source_name)
@@ -416,7 +417,7 @@ def circuit_breaker_until(source_name: str, state_rows: Dict[str, Dict[str, Any]
     return None
 
 
-def _build_excluded_source_report(source_name: str, reason: str) -> Dict[str, Any]:
+def _build_excluded_source_report(source_name: str, reason: str) -> dict[str, Any]:
     return {
         "name": source_name,
         "status": "excluded",
@@ -432,18 +433,18 @@ def _build_excluded_source_report(source_name: str, reason: str) -> Dict[str, An
 
 
 def apply_circuit_breaker_exclusions(
-    selected_loaders: List[Tuple[str, SourceLoader]],
+    selected_loaders: list[tuple[str, SourceLoader]],
     *,
-    source_state_rows: Dict[str, Dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
     circuit_breaker_failures: int,
     circuit_breaker_cooldown_minutes: int,
     ignore_circuit_breaker: bool,
-) -> Tuple[List[Tuple[str, SourceLoader]], List[Dict[str, Any]]]:
+) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]]]:
     if ignore_circuit_breaker or circuit_breaker_failures <= 0 or circuit_breaker_cooldown_minutes <= 0:
         return list(selected_loaders), []
-    filtered: List[Tuple[str, SourceLoader]] = []
-    excluded_rows: List[Dict[str, Any]] = []
-    now_dt = datetime.now(timezone.utc)
+    filtered: list[tuple[str, SourceLoader]] = []
+    excluded_rows: list[dict[str, Any]] = []
+    now_dt = datetime.now(UTC)
     for name, loader in selected_loaders:
         blocked_until = circuit_breaker_until(name, source_state_rows, circuit_breaker_failures)
         if blocked_until and blocked_until > now_dt:
@@ -453,21 +454,21 @@ def apply_circuit_breaker_exclusions(
     return filtered, excluded_rows
 
 
-def append_excluded_default_sources(source_reports: List[Dict[str, Any]]) -> None:
+def append_excluded_default_sources(source_reports: list[dict[str, Any]]) -> None:
     for source_name, reason in EXCLUDED_DEFAULT_SOURCES.items():
         source_reports.append(_build_excluded_source_report(source_name, reason))
 
 
 def update_source_state_rows(
     *,
-    source_state_rows: Dict[str, Dict[str, Any]],
-    source_reports: List[Dict[str, Any]],
-    canonical_rows: List[Dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
+    source_reports: list[dict[str, Any]],
+    canonical_rows: list[dict[str, Any]],
     finished_at: str,
     circuit_breaker_failures: int,
     circuit_breaker_cooldown_minutes: int,
-) -> Dict[str, Dict[str, Any]]:
-    def _apply_report_to_entry(name: str, report: Dict[str, Any]) -> None:
+) -> dict[str, dict[str, Any]]:
+    def _apply_report_to_entry(name: str, report: dict[str, Any]) -> None:
         nonlocal source_state_rows
         entry = dict(source_state_rows.get(name) or {})
         entry["lastRunAt"] = finished_at
@@ -544,7 +545,7 @@ def update_source_state_rows(
             entry["lastError"] = clean_text(report.get("error"))
             if circuit_breaker_failures > 0 and failure_count >= circuit_breaker_failures and circuit_breaker_cooldown_minutes > 0:
                 entry["quarantinedUntilAt"] = (
-                    datetime.now(timezone.utc) + timedelta(minutes=circuit_breaker_cooldown_minutes)
+                    datetime.now(UTC) + timedelta(minutes=circuit_breaker_cooldown_minutes)
                 ).isoformat()
             entry["nextEligibleCheckAt"] = _compute_next_eligible_check_at(
                 entry,
@@ -577,7 +578,6 @@ def update_source_state_rows(
     return source_state_rows
 
 
-from src.jobs.common.contracts import normalize_task_state_payload  # noqa: E402
 
 
 def read_previously_successful_sources(report_path: Path) -> set[str]:
@@ -617,7 +617,7 @@ def read_success_cache(cache_path: Path) -> set[str]:
     return {clean_text(item) for item in rows if clean_text(item)}
 
 
-def write_success_cache(cache_path: Path, source_reports: Sequence[Dict[str, Any]]) -> None:
+def write_success_cache(cache_path: Path, source_reports: Sequence[dict[str, Any]]) -> None:
     successful = {
         clean_text(row.get("name"))
         for row in source_reports

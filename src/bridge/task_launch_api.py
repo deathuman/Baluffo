@@ -7,10 +7,10 @@ background tasks.
 from __future__ import annotations
 
 import os
-import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -35,8 +35,8 @@ class TaskLaunchDeps:
     load_json_object: Callable[[Path, Any], Any]
     save_json_atomic: Callable[[Path, Any], None]
     task_state_lock: Any
-    default_source_loaders: Callable[[], List[Tuple[str, Any]]]
-    failed_source_names_from_latest_report: Callable[[set[str] | None], List[str]]
+    default_source_loaders: Callable[[], list[tuple[str, Any]]]
+    failed_source_names_from_latest_report: Callable[[set[str] | None], list[str]]
     safe_int: Callable[[Any, int, int, int], int]
 
 
@@ -49,8 +49,8 @@ class TaskLaunchApi:
     def run_background_script(
         self,
         script_name: str,
-        args: List[str] | None = None,
-        extra_env: Dict[str, str] | None = None,
+        args: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
         *,
         is_frozen: bool,
         executable: str,
@@ -95,7 +95,7 @@ class TaskLaunchApi:
             child_env["BALUFFO_DISCOVERY_LOG_PATH"] = str(self._paths.discovery_log)
         elif task_type == "fetch":
             child_env["BALUFFO_FETCHER_LOG_PATH"] = str(self._paths.fetcher_log)
-        popen_kwargs: Dict[str, Any] = {
+        popen_kwargs: dict[str, Any] = {
             "cwd": str(self._runtime.root),
             "stdin": devnull,
             "stdout": devnull,
@@ -132,10 +132,10 @@ class TaskLaunchApi:
         self._deps.bridge_log("info", "task_process_spawned", task=task_type, script=script_name, pid=int(proc.pid))
         return int(proc.pid)
 
-    def build_fetcher_args_from_payload(self, payload: Dict[str, Any]) -> Tuple[List[str], str]:
+    def build_fetcher_args_from_payload(self, payload: dict[str, Any]) -> tuple[list[str], str]:
         data = payload if isinstance(payload, dict) else {}
         preset = str(data.get("preset") or "default").strip().lower()
-        args: List[str] = []
+        args: list[str] = []
 
         max_workers = self._deps.safe_int(data.get("maxWorkers"), 6, 1, 16)
         max_per_domain = self._deps.safe_int(data.get("maxPerDomain"), 2, 1, 6)

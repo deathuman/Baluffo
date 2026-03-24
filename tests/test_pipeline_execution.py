@@ -17,8 +17,6 @@ def test_pipeline_execution_module_loads() -> None:
     assert PipelineRuntime is not None
     assert PipelineService is not None
 
-import threading
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -333,9 +331,10 @@ class TestAdminPanelTaskDisplay:
 
     def test_ops_health_returns_service_info(self, tmp_path: Path) -> None:
         """Test ops health returns service info for Admin display."""
+        from datetime import datetime
+
         from src.bridge import ops_health
         from src.bridge.ops_api import OpsHealthDeps
-        from datetime import datetime, timedelta
 
         # Create minimal history for health computation
         history = [

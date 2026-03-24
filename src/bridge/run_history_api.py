@@ -1,32 +1,33 @@
 """Run-history and task-state API: thin wrappers and reconciliation helpers."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any
 
 from src.bridge.task_history import TaskHistoryManager
 
 
-def load_run_history(manager: TaskHistoryManager) -> List[Dict[str, Any]]:
+def load_run_history(manager: TaskHistoryManager) -> list[dict[str, Any]]:
     return manager.load_run_history()
 
 
-def save_run_history(manager: TaskHistoryManager, rows: List[Dict[str, Any]]) -> None:
+def save_run_history(manager: TaskHistoryManager, rows: list[dict[str, Any]]) -> None:
     manager.save_run_history(rows)
 
 
-def append_run_history(manager: TaskHistoryManager, row: Dict[str, Any]) -> Dict[str, Any]:
+def append_run_history(manager: TaskHistoryManager, row: dict[str, Any]) -> dict[str, Any]:
     return manager.append_run_history(row)
 
 
 def upsert_run_history(
     manager: TaskHistoryManager,
-    entry: Dict[str, Any],
+    entry: dict[str, Any],
     *,
-    dedupe_fields: Tuple[str, ...],
-) -> Dict[str, Any]:
+    dedupe_fields: tuple[str, ...],
+) -> dict[str, Any]:
     return manager.upsert_run_history(entry, dedupe_fields=dedupe_fields)
 
 
@@ -48,7 +49,7 @@ def clear_task_state(manager: TaskHistoryManager, task_type: str) -> None:
 
 def task_running_from_state(
     task_type: str,
-    load_json_object: Callable[[Any, Dict[str, Any]], Dict[str, Any]],
+    load_json_object: Callable[[Any, dict[str, Any]], dict[str, Any]],
     task_state_path: Any,
     pid_is_running: Callable[[int], bool],
 ) -> bool:
@@ -65,9 +66,9 @@ def task_running_from_state(
 def report_is_stale_in_progress(
     task_type: str,
     path: Path,
-    report: Dict[str, Any],
+    report: dict[str, Any],
     *,
-    load_json_object: Callable[[Any, Dict[str, Any]], Dict[str, Any]],
+    load_json_object: Callable[[Any, dict[str, Any]], dict[str, Any]],
     task_state_path: Any,
     parse_iso: Callable[[Any], datetime | None],
     now_utc: Callable[[], datetime],
@@ -90,7 +91,7 @@ def report_is_stale_in_progress(
     if isinstance(state, dict) and isinstance(state.get(task_type), dict):
         return age_minutes >= 0.5
     try:
-        mtime_dt = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        mtime_dt = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
         idle_minutes = (now_utc() - mtime_dt).total_seconds() / 60.0
         if idle_minutes >= float(max_mtime_idle_minutes):
             return True
@@ -102,20 +103,20 @@ def report_is_stale_in_progress(
 @dataclass
 class SyncHistoryDeps:
     ops_state_lock: Any
-    load_run_history: Callable[[], List[Dict[str, Any]]]
-    save_run_history: Callable[[List[Dict[str, Any]]], None]
+    load_run_history: Callable[[], list[dict[str, Any]]]
+    save_run_history: Callable[[list[dict[str, Any]]], None]
     save_json_atomic: Callable[[Path, Any], None]
     prune_started_rows_for_type: Callable[..., None]
     clear_task_state: Callable[[str], None]
     clear_task_state_locked: Callable[[str], None]
-    upsert_run_history: Callable[..., Dict[str, Any]]
+    upsert_run_history: Callable[..., dict[str, Any]]
     task_running_from_state: Callable[[str], bool]
     report_is_stale_in_progress: Callable[..., bool]
-    load_json_object: Callable[[Any, Dict[str, Any]], Dict[str, Any]]
-    normalize_fetch_report_contract: Callable[[Dict[str, Any]], Dict[str, Any]]
-    normalize_discovery_report_contract: Callable[[Dict[str, Any]], Dict[str, Any]]
-    summarize_fetch_report: Callable[[Dict[str, Any]], Dict[str, Any]]
-    summarize_discovery_report: Callable[[Dict[str, Any]], Tuple[Dict[str, Any], str]]
+    load_json_object: Callable[[Any, dict[str, Any]], dict[str, Any]]
+    normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]]
+    normalize_discovery_report_contract: Callable[[dict[str, Any]], dict[str, Any]]
+    summarize_fetch_report: Callable[[dict[str, Any]], dict[str, Any]]
+    summarize_discovery_report: Callable[[dict[str, Any]], tuple[dict[str, Any], str]]
     jobs_fetch_report_path: Path
     discovery_report_path: Path
     get_active_sync_runs: Callable[[], set[str]]
@@ -125,11 +126,11 @@ class SyncHistoryDeps:
 
 
 def mark_report_stale_finished(
-    report: Dict[str, Any],
+    report: dict[str, Any],
     *,
     now_iso: Callable[[], str],
     error_code: str = "stale_started_run_pruned",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     next_report = dict(report or {})
     next_report["finishedAt"] = str(next_report.get("finishedAt") or now_iso())
     summary = dict(next_report.get("summary") or {})
@@ -138,7 +139,7 @@ def mark_report_stale_finished(
     return next_report
 
 
-def _match_run_identity(row: Dict[str, Any], *, run_type: str, run_id: str, started_at: str) -> bool:
+def _match_run_identity(row: dict[str, Any], *, run_type: str, run_id: str, started_at: str) -> bool:
     if str(row.get("type") or "").strip().lower() != str(run_type or "").strip().lower():
         return False
     if run_id and str(row.get("runId") or "").strip() == run_id:
@@ -146,7 +147,7 @@ def _match_run_identity(row: Dict[str, Any], *, run_type: str, run_id: str, star
     return bool(started_at) and str(row.get("startedAt") or "").strip() == started_at
 
 
-def _row_score(row: Dict[str, Any]) -> tuple[int, int, int, int]:
+def _row_score(row: dict[str, Any]) -> tuple[int, int, int, int]:
     finished = 1 if str(row.get("finishedAt") or "").strip() else 0
     has_run_id = 1 if str(row.get("runId") or "").strip() else 0
     has_summary = 1 if isinstance(row.get("summary"), dict) and row.get("summary") else 0
@@ -154,7 +155,7 @@ def _row_score(row: Dict[str, Any]) -> tuple[int, int, int, int]:
     return (finished, has_run_id, has_summary, duration)
 
 
-def _merge_history_rows(preferred: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_history_rows(preferred: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     merged = {**dict(incoming), **dict(preferred)}
     if _row_score(incoming) > _row_score(preferred):
         merged = {**dict(preferred), **dict(incoming)}
@@ -168,7 +169,7 @@ def _merge_history_rows(preferred: Dict[str, Any], incoming: Dict[str, Any]) -> 
 
 
 def _find_history_match_index(
-    rows: List[Dict[str, Any]], *, run_type: str, run_id: str, started_at: str
+    rows: list[dict[str, Any]], *, run_type: str, run_id: str, started_at: str
 ) -> int:
     for idx, row in enumerate(rows):
         if _match_run_identity(row, run_type=run_type, run_id=run_id, started_at=started_at):
@@ -176,10 +177,10 @@ def _find_history_match_index(
     return -1
 
 
-def _collapse_duplicate_history_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    deduped: List[Dict[str, Any]] = []
-    row_keys: Dict[tuple[str, str], int] = {}
-    legacy_keys: Dict[tuple[str, str], int] = {}
+def _collapse_duplicate_history_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    row_keys: dict[tuple[str, str], int] = {}
+    legacy_keys: dict[tuple[str, str], int] = {}
 
     for row in rows:
         if not isinstance(row, dict):
@@ -192,7 +193,7 @@ def _collapse_duplicate_history_rows(rows: List[Dict[str, Any]]) -> List[Dict[st
             deduped.append(dict(row))
             continue
 
-        matching_indexes: List[int] = []
+        matching_indexes: list[int] = []
         if run_id:
             idx = row_keys.get((row_type, run_id))
             if idx is not None:
@@ -233,7 +234,7 @@ def _collapse_duplicate_history_rows(rows: List[Dict[str, Any]]) -> List[Dict[st
 def reconcile_sync_history_locked(deps: SyncHistoryDeps) -> None:
     history = deps.load_run_history()
     active_runs = deps.get_active_sync_runs()
-    next_rows: List[Dict[str, Any]] = []
+    next_rows: list[dict[str, Any]] = []
     changed = False
     for row in history:
         if str(row.get("type") or "").strip().lower() != "sync":
@@ -257,7 +258,7 @@ def reconcile_sync_history_locked(deps: SyncHistoryDeps) -> None:
 def reconcile_started_task_history_locked(run_type: str, deps: SyncHistoryDeps) -> None:
     history = _collapse_duplicate_history_rows(deps.load_run_history())
     now_dt = deps.now_utc()
-    next_rows: List[Dict[str, Any]] = []
+    next_rows: list[dict[str, Any]] = []
     changed = False
     for row in history:
         if str(row.get("type") or "").strip().lower() != str(run_type or "").strip().lower():
@@ -298,7 +299,7 @@ def reconcile_started_task_history_locked(run_type: str, deps: SyncHistoryDeps) 
         deps.save_run_history(next_rows)
 
 
-def sync_history_from_reports(deps: SyncHistoryDeps) -> List[Dict[str, Any]]:
+def sync_history_from_reports(deps: SyncHistoryDeps) -> list[dict[str, Any]]:
     with deps.ops_state_lock:
         initial_history = _collapse_duplicate_history_rows(deps.load_run_history())
         if initial_history != deps.load_run_history():

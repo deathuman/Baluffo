@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urljoin
 
-from src.jobs.adapters.html_parsers import html_fragment_lines, iter_anchor_fragments, iter_block_fragments
+from src.jobs.adapters.html_parsers import (
+    html_fragment_lines,
+    iter_anchor_fragments,
+    iter_block_fragments,
+)
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
@@ -21,10 +26,10 @@ def run(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    pages: List[str],
-    source_row: Dict[str, Any],
+    pages: list[str],
+    source_row: dict[str, Any],
     **kwargs: Any,
-) -> List[RawJob]:
+) -> list[RawJob]:
     _ = (retries, backoff_s, kwargs)
     if not pages:
         return []
@@ -42,7 +47,7 @@ def run(
             "error": str(exc),
         }
         return []
-    jobs: List[RawJob] = []
+    jobs: list[RawJob] = []
     seen: set[str] = set()
     for row_html in iter_block_fragments(html or "", "tr"):
         anchor = next((item for item in iter_anchor_fragments(row_html) if "/jobs/" in clean_text(item.get("href"))), None)

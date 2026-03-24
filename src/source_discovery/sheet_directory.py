@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import os
 from io import StringIO
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 from src.source_registry import unique_sources
@@ -18,14 +18,14 @@ from .scoring import unique_string_list
 from .web_search import infer_web_candidate
 
 
-def game_studios_sheet_candidate_urls(sheet_id: str, gid: str) -> List[str]:
+def game_studios_sheet_candidate_urls(sheet_id: str, gid: str) -> list[str]:
     csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     gviz_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
     pub_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv"
     return [csv_url, gviz_csv_url, pub_csv_url]
 
 
-def parse_game_studio_sheet_csv(csv_text: str) -> List[Dict[str, Any]]:
+def parse_game_studio_sheet_csv(csv_text: str) -> list[dict[str, Any]]:
     from .scoring import _norm_header, _parse_sheet_openings_flag
 
     rows = list(csv.reader(StringIO(str(csv_text or ""))))
@@ -61,7 +61,7 @@ def parse_game_studio_sheet_csv(csv_text: str) -> List[Dict[str, Any]]:
     if studio_idx < 0 or link_idx < 0:
         return []
 
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     seen = set()
     for row in rows[header_idx + 1 :]:
         studio = str(row[studio_idx]).strip() if studio_idx < len(row) else ""
@@ -84,19 +84,19 @@ def parse_game_studio_sheet_csv(csv_text: str) -> List[Dict[str, Any]]:
 def discover_game_studio_sheet_candidates(
     timeout_s: int,
     *,
-    sheet_id: Optional[str] = None,
-    gid: Optional[str] = None,
+    sheet_id: str | None = None,
+    gid: str | None = None,
     fetcher=None,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    from .web_search import fetch_text
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     from .reporting import emit_log
+    from .web_search import fetch_text
 
     fetcher = fetcher or fetch_text
     sheet_id = str(sheet_id or GAME_STUDIOS_SHEET_ID)
     gid = str(gid or GAME_STUDIOS_SHEET_GID)
-    provider_candidates: List[Dict[str, Any]] = []
-    static_candidates: List[Dict[str, Any]] = []
-    failures: List[Dict[str, Any]] = []
+    provider_candidates: list[dict[str, Any]] = []
+    static_candidates: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
 
     csv_text = ""
     last_error = ""
@@ -133,7 +133,7 @@ def discover_game_studio_sheet_candidates(
 
     total_raw = len(raw_entries)
 
-    def _entry_priority(row: Dict[str, Any]) -> int:
+    def _entry_priority(row: dict[str, Any]) -> int:
         return 0 if str(row.get("openingsFlag") or "") == "yes" else 1
 
     limit_raw = os.getenv("BALUFFO_SHEET_DIRECTORY_MAX_ROWS")

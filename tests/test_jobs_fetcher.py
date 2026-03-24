@@ -12,16 +12,15 @@ import pytest
 from src import jobs_fetcher as jf
 from src import jobs_fetcher_registry as jfr
 from src.exceptions import AdapterValidationError
-from src.jobs.contamination_audit import build_contamination_report, build_location_quality_report
 from src.jobs import common as jobs_common
+from src.jobs.adapters import _runtime as runtime_resolver
+from src.jobs.adapters.plugins import default_registry
+from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
+from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.static_helpers import source_detail_limit_for
+from src.jobs.contamination_audit import build_contamination_report, build_location_quality_report
 from src.scrapers import runner as scrapy_runner
 from tests.helpers.temp_paths import workspace_tmpdir
-from src.jobs.adapters import _runtime as runtime_resolver
-from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
-from src.jobs.adapters.static_helpers import source_detail_limit_for
-from src.jobs.adapters.plugins import default_registry
-from src.jobs.adapters.plugins.types import AdapterPluginContext
-
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
@@ -4244,7 +4243,10 @@ def test_riot_plugin_extracts_listing_rows_without_detail_fetch() -> None:
 
 
 def test_choose_detail_traversal_mode_prefers_listing_only_for_verified_hosts() -> None:
-        from src.jobs.adapters.static_helpers import build_static_source_runtime_config, choose_detail_traversal_mode
+        from src.jobs.adapters.static_helpers import (
+            build_static_source_runtime_config,
+            choose_detail_traversal_mode,
+        )
 
         runtime = build_static_source_runtime_config(4)
         mode = choose_detail_traversal_mode(

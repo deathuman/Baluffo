@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
     payload = {
         "outputDir": str(data_dir),
-        "reportPath": str(((report.get("outputs") or {}).get("report"))),
+        "reportPath": str((report.get("outputs") or {}).get("report")),
         "queuedCandidateCount": int(summary.get("queuedCandidateCount") or 0),
         "discoverableButDeferredCount": int(summary.get("discoverableButDeferredCount") or 0),
         "failedProbeCount": int(summary.get("failedProbeCount") or 0),

@@ -8,29 +8,29 @@ Modules:
     sync_service: Core sync business logic
 """
 
+from src.bridge.sync_service import (
+    BridgeLogFunc,
+    LoadStateFunc,
+    PersistStateFunc,
+    RunHistoryFuncs,
+    SourceSyncModule,
+    SummarizeStateFunc,
+    SyncService,
+)
 from src.bridge.sync_state import (
+    ACTIVE_SYNC_RUNS,
+    ACTIVE_SYNC_THREADS,
     SYNC_CONFIG,
     SYNC_CONFIG_LOCK,
     SYNC_STATE_LOCK,
-    ACTIVE_SYNC_RUNS,
-    ACTIVE_SYNC_THREADS,
     SYNC_STATUS,
     SyncState,
     get_default_sync_state,
     load_sync_runtime_state,
-    save_sync_runtime_state,
-    set_sync_status,
     now_iso,
     now_utc,
-)
-from src.bridge.sync_service import (
-    SyncService,
-    SourceSyncModule,
-    BridgeLogFunc,
-    LoadStateFunc,
-    PersistStateFunc,
-    SummarizeStateFunc,
-    RunHistoryFuncs,
+    save_sync_runtime_state,
+    set_sync_status,
 )
 
 __all__ = [

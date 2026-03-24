@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
-from typing import Any, Callable, Dict, List
 
-from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.html_parsers import strip_html_text
+from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
@@ -22,11 +23,11 @@ def run(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    pages: List[str],
-    source_row: Dict[str, Any],
-    parse_jobpostings_from_html: Callable[..., List[Dict[str, Any]]] | None = None,
+    pages: list[str],
+    source_row: dict[str, Any],
+    parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]] | None = None,
     **kwargs: Any,
-) -> List[RawJob]:
+) -> list[RawJob]:
     _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
@@ -141,8 +142,8 @@ def _build_intervieweb_iframe_url(html: str, page_url: str) -> str:
     return f"{parsed.scheme or 'https'}://{parsed.netloc}/app.php?{urlencode(params)}"
 
 
-def _parse_intervieweb_rows(*, html: str, base_url: str, company: str, source_id: str) -> List[RawJob]:
-    rows: List[RawJob] = []
+def _parse_intervieweb_rows(*, html: str, base_url: str, company: str, source_id: str) -> list[RawJob]:
+    rows: list[RawJob] = []
     seen = set()
     pattern = re.compile(
         r'(?is)<a[^>]+href=["\']([^"\']*IdAnnuncio=\d+[^"\']*)["\'][^>]*>(.*?)</a>(.*?)(?=<a[^>]+href=|$)'

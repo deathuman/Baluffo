@@ -12,7 +12,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -151,7 +151,7 @@ def run_probe(args: argparse.Namespace) -> int:
     exe_path = Path(args.exe_path).expanduser().resolve()
     if not exe_path.exists():
         raise RuntimeError(f"Packaged executable not found: {exe_path}")
-    run_dir = Path(args.artifacts_dir).expanduser().resolve() / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    run_dir = Path(args.artifacts_dir).expanduser().resolve() / datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     runtime_data_dir = run_dir / "runtime-data"
     local_app_data_root = run_dir / "local-user-data"
     run_dir.mkdir(parents=True, exist_ok=True)

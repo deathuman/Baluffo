@@ -4,9 +4,9 @@ import io
 import json
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, List
 import zipfile
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 
@@ -31,7 +31,7 @@ def _coerce_report_duration_ms(started_at: str, finished_at: str) -> int:
     return max(0, int((finished_dt - started_dt).total_seconds() * 1000))
 
 
-def _reconcile_discovery_report(api: Any, report: Dict[str, Any]) -> Dict[str, Any]:
+def _reconcile_discovery_report(api: Any, report: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(report, dict):
         return report
     started_at = str(report.get("startedAt") or "").strip()
@@ -80,7 +80,7 @@ def _reconcile_discovery_report(api: Any, report: Dict[str, Any]) -> Dict[str, A
     return reconciled
 
 
-def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]) -> bool:
+def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]) -> bool:
     """Handle GET routes for the admin bridge.
 
     Important: `api` must be the currently running admin bridge module (which may
@@ -219,7 +219,7 @@ def handle_get(handler: Any, *, api: Any, path: str, query: Dict[str, List[str]]
             include_files_raw = str((query.get("includeFiles") or ["0"])[0]).strip().lower()
             include_files = include_files_raw in {"1", "true", "yes", "on"}
             payload = api.desktop_local_data_store().export_profile_data(uid, include_files=include_files)
-            date_token = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            date_token = datetime.now(UTC).strftime("%Y-%m-%d")
             safe_uid = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(uid or "profile")).strip("_") or "profile"
             if include_files:
                 backup_json = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")

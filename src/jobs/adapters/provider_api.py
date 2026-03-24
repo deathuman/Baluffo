@@ -8,18 +8,19 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
-from src.jobs.common.fetch import fetch_with_retries
-from src.jobs.common.config import SOURCE_DIAGNOSTICS
-from src.jobs.parsers import parse_ashby_jobs_from_html, parse_personio_feed_xml
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.common.config import SOURCE_DIAGNOSTICS
+from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
+from src.jobs.parsers import parse_ashby_jobs_from_html, parse_personio_feed_xml
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
 
@@ -42,7 +43,7 @@ def _parse_state_timestamp(value: object) -> datetime | None:
     if not text:
         return None
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(UTC)
     except ValueError:
         return None
 
@@ -52,10 +53,10 @@ def _personio_rate_limit_cutoff() -> datetime:
         cooldown_minutes = max(1, int(clean_text(os.getenv("BALUFFO_PERSONIO_RATE_LIMIT_COOLDOWN_MINUTES")) or 180))
     except ValueError:
         cooldown_minutes = 180
-    return datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)
+    return datetime.now(UTC) - timedelta(minutes=cooldown_minutes)
 
 
-def _should_skip_rate_limited_personio_source(state_row: Dict[str, Any] | None, *, cutoff: datetime) -> bool:
+def _should_skip_rate_limited_personio_source(state_row: dict[str, Any] | None, *, cutoff: datetime) -> bool:
     if not isinstance(state_row, dict):
         return False
     last_error = clean_text(state_row.get("lastError")).lower()
@@ -67,7 +68,7 @@ def _should_skip_rate_limited_personio_source(state_row: Dict[str, Any] | None, 
     return last_failure_at >= cutoff
 
 
-def _ashby_result_from_markup(text: str, source: Dict[str, object], studio: str) -> tuple[List[RawJob], str, str]:
+def _ashby_result_from_markup(text: str, source: dict[str, object], studio: str) -> tuple[list[RawJob], str, str]:
     parsed = parse_ashby_jobs_from_html(text, clean_text(source.get("board_url")), fallback_company=studio)
     if parsed:
         return parsed, "ok_with_jobs", ""
@@ -88,14 +89,14 @@ def _normalize_ashby_board_url(url: str) -> str:
     return text
 
 
-def _iter_ashby_candidate_urls(source: Dict[str, object]) -> List[str]:
+def _iter_ashby_candidate_urls(source: dict[str, object]) -> list[str]:
     candidates = [
         clean_text(source.get("board_url")),
         _normalize_ashby_board_url(clean_text(source.get("board_url"))),
         clean_text(source.get("careersUrl")),
         clean_text(source.get("sourceDirectoryEntryUrl")),
     ]
-    rows: List[str] = []
+    rows: list[str] = []
     seen = set()
     for item in candidates:
         if not item or item in seen:
@@ -110,8 +111,8 @@ def set_source_diagnostics(
     *,
     adapter: str,
     studio: str,
-    details: List[Dict[str, object]] | None = None,
-    partial_errors: List[str] | None = None,
+    details: list[dict[str, object]] | None = None,
+    partial_errors: list[str] | None = None,
 ) -> None:
     SOURCE_DIAGNOSTICS[source_name] = {
         "adapter": clean_text(adapter) or "unknown",
@@ -127,9 +128,9 @@ def _dispatch_provider_api(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     ensure_provider_plugins()
     plugin, _selection = default_registry.select(
         AdapterPluginContext(family="provider_api", adapter_key=str(adapter_key or ""))
@@ -151,9 +152,9 @@ def run_greenhouse_boards_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _dispatch_provider_api(
         "greenhouse_boards",
         fetch_text=fetch_text,
@@ -171,9 +172,9 @@ def run_teamtailor_sources_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _dispatch_provider_api(
         "teamtailor_sources",
         fetch_text=fetch_text,
@@ -197,10 +198,10 @@ def _run_json_feed_sources(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
-    errors: List[str] = []
-    details: List[Dict[str, object]] = []
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    errors: list[str] = []
+    details: list[dict[str, object]] = []
     for source in registry_entries(registry_adapter):
         source_name = clean_text(source.get("name")) or f"{registry_adapter}_source"
         studio = clean_text(source.get("studio")) or source_name
@@ -255,9 +256,9 @@ def run_lever_sources_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _dispatch_provider_api(
         "lever_sources",
         fetch_text=fetch_text,
@@ -275,9 +276,9 @@ def run_smartrecruiters_sources_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _dispatch_provider_api(
         "smartrecruiters_sources",
         fetch_text=fetch_text,
@@ -295,9 +296,9 @@ def run_workable_sources_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _dispatch_provider_api(
         "workable_sources",
         fetch_text=fetch_text,
@@ -315,9 +316,9 @@ def run_recruitee_sources_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _dispatch_provider_api(
         "recruitee_sources",
         fetch_text=fetch_text,
@@ -335,9 +336,9 @@ def run_pinpoint_sources_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _dispatch_provider_api(
         "pinpoint_sources",
         fetch_text=fetch_text,
@@ -355,9 +356,9 @@ def run_ashby_sources_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _dispatch_provider_api(
         "ashby_sources",
         fetch_text=fetch_text,
@@ -375,9 +376,9 @@ def run_breezy_sources_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _dispatch_provider_api(
         "breezy_sources",
         fetch_text=fetch_text,
@@ -395,9 +396,9 @@ def run_jazzhr_sources_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
-) -> List[RawJob]:
+) -> list[RawJob]:
     return _dispatch_provider_api(
         "jazzhr_sources",
         fetch_text=fetch_text,
@@ -415,11 +416,11 @@ def run_personio_sources_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
-    source_state_rows: Dict[str, Dict[str, Any]] | None = None,
-) -> List[RawJob]:
-    jobs: List[RawJob] = []
-    errors: List[str] = []
-    details: List[Dict[str, object]] = []
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    errors: list[str] = []
+    details: list[dict[str, object]] = []
     cooldown_cutoff = _personio_rate_limit_cutoff()
     for source in registry_entries("personio"):
         source_name = clean_text(source.get("name")) or "personio_source"

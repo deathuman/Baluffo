@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from html import unescape
-from typing import Any, Dict, List, Tuple
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -29,16 +29,16 @@ def extract_jobylon_v1_jobs(
     studio: str,
     page_url: str,
     timeout_s: int,
-) -> Tuple[List[Dict[str, Any]], Dict[str, int], List[str], Counter[str]]:
+) -> tuple[list[dict[str, Any]], dict[str, int], list[str], Counter[str]]:
     """Fetch Jobylon career page and embed widget; return jobs, stats, errors, reject_reasons."""
-    jobs: List[Dict[str, Any]] = []
+    jobs: list[dict[str, Any]] = []
     stats = {
         "candidate_links_found": 0,
         "detail_pages_visited": 0,
         "jobs_emitted": 0,
         "jobs_rejected_validation": 0,
     }
-    errors: List[str] = []
+    errors: list[str] = []
     reject_reasons: Counter[str] = Counter()
     seen = set()
     try:

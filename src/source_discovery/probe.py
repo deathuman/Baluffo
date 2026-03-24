@@ -5,20 +5,21 @@ import asyncio
 import json
 import re
 import sys
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
 from .io_runtime import endpoint_url
 from .web_search import (
+    async_fetch_text_with_retry,
     extract_jobish_links,
     fetch_text,
     fetch_text_with_retry,
-    async_fetch_text_with_retry,
 )
 
 # Optional Playwright fallback: (url, timeout_s) -> (html, error). Used only for static adapter.
-TryPlaywrightFn = Callable[[str, int], Tuple[str, str]]
+TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 
 
 def _is_playwright_fallback_error(error: str) -> bool:
@@ -49,7 +50,7 @@ def _is_valid_identity_token(token: str) -> bool:
     )
 
 
-def validate_candidate_for_probe(candidate: Dict[str, Any]) -> Tuple[bool, str]:
+def validate_candidate_for_probe(candidate: dict[str, Any]) -> tuple[bool, str]:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     if adapter in {"lever", "workable"}:
         token = str(candidate.get("account") or "").strip()
@@ -91,9 +92,9 @@ def validate_candidate_for_probe(candidate: Dict[str, Any]) -> Tuple[bool, str]:
     return True, ""
 
 
-def fallback_probe_urls(candidate: Dict[str, Any]) -> List[str]:
+def fallback_probe_urls(candidate: dict[str, Any]) -> list[str]:
     adapter = str(candidate.get("adapter") or "").strip().lower()
-    urls: List[str] = []
+    urls: list[str] = []
     if adapter == "greenhouse":
         slug = str(candidate.get("slug") or "").strip()
         if slug:
@@ -172,12 +173,12 @@ def parse_probe_count(adapter: str, text: str) -> int:
 
 
 def probe_candidate(
-    candidate: Dict[str, Any],
+    candidate: dict[str, Any],
     timeout_s: int,
     *,
     fetcher=fetch_text,
-    try_playwright: Optional[TryPlaywrightFn] = None,
-) -> Tuple[bool, int, str]:
+    try_playwright: TryPlaywrightFn | None = None,
+) -> tuple[bool, int, str]:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     url = endpoint_url(candidate)
     if not adapter or not url:
@@ -217,13 +218,13 @@ def probe_candidate(
 
 
 async def async_probe_candidate(
-    candidate: Dict[str, Any],
+    candidate: dict[str, Any],
     timeout_s: int,
     *,
     fetcher,
-    try_playwright: Optional[TryPlaywrightFn] = None,
-    playwright_semaphore: Optional[asyncio.Semaphore] = None,
-) -> Tuple[bool, int, str]:
+    try_playwright: TryPlaywrightFn | None = None,
+    playwright_semaphore: asyncio.Semaphore | None = None,
+) -> tuple[bool, int, str]:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     url = endpoint_url(candidate)
     if not adapter or not url:

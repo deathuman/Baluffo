@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler
-from typing import Any, Dict
+from typing import Any
 
 
-def read_json_from_request(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
+def read_json_from_request(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
     """Read and parse JSON body from the request. Returns {} if no body or invalid JSON."""
     length = int(handler.headers.get("Content-Length") or 0)
     if length <= 0:

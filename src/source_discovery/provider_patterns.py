@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 from urllib.parse import urlparse
 
 from src.source_registry import unique_sources
@@ -9,10 +9,10 @@ from .config import SUPPORTED_PROVIDERS
 from .scoring import careers_keyword_count, clean_token, to_slug, unique_string_list
 
 
-def expand_aliases(seed: Dict[str, Any]) -> List[str]:
+def expand_aliases(seed: dict[str, Any]) -> list[str]:
     aliases = [str(seed.get("studio") or "")]
     aliases.extend(str(item) for item in (seed.get("aliases") or []) if item)
-    normalized: List[str] = []
+    normalized: list[str] = []
     seen = set()
     for raw in aliases:
         slug = to_slug(raw)
@@ -25,7 +25,7 @@ def expand_aliases(seed: Dict[str, Any]) -> List[str]:
     return normalized
 
 
-def likely_providers_for_seed(seed: Dict[str, Any]) -> List[str]:
+def likely_providers_for_seed(seed: dict[str, Any]) -> list[str]:
     explicit = [str(item).strip().lower() for item in (seed.get("likelyProviders") or []) if str(item).strip()]
     if explicit:
         return [item for item in explicit if item in SUPPORTED_PROVIDERS or item == "static"]
@@ -35,7 +35,7 @@ def likely_providers_for_seed(seed: Dict[str, Any]) -> List[str]:
     return [item for item in SUPPORTED_PROVIDERS if item in providers]
 
 
-def provider_reinforcement_score(seed: Dict[str, Any], provider: str) -> int:
+def provider_reinforcement_score(seed: dict[str, Any], provider: str) -> int:
     careers_url = str(seed.get("careersUrl") or "").strip().lower()
     if not careers_url:
         return 0
@@ -67,11 +67,11 @@ def provider_reinforcement_score(seed: Dict[str, Any], provider: str) -> int:
     return 0
 
 
-def _pattern_aliases_for_provider(seed: Dict[str, Any], provider: str) -> List[str]:
+def _pattern_aliases_for_provider(seed: dict[str, Any], provider: str) -> list[str]:
     aliases = expand_aliases(seed)
     scoped = aliases[:2] if provider in {"greenhouse", "lever", "workable", "teamtailor", "recruitee"} else aliases[:1]
     if provider in {"lever", "teamtailor", "recruitee", "pinpoint"}:
-        expanded: List[str] = []
+        expanded: list[str] = []
         seen = set()
         for alias in scoped:
             for variant in (alias, alias.replace("-", ""), alias.replace("_", "")):
@@ -84,8 +84,8 @@ def _pattern_aliases_for_provider(seed: Dict[str, Any], provider: str) -> List[s
     return scoped
 
 
-def build_pattern_candidates(studio_seeds: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
+def build_pattern_candidates(studio_seeds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for seed in studio_seeds:
         studio = str(seed.get("studio") or "").strip()
         if not studio:
@@ -97,7 +97,7 @@ def build_pattern_candidates(studio_seeds: List[Dict[str, Any]]) -> List[Dict[st
         for provider in likely_providers_for_seed(seed):
             reinforcement = provider_reinforcement_score(seed, provider)
             for alias in _pattern_aliases_for_provider(seed, provider):
-                base: Dict[str, Any] = {
+                base: dict[str, Any] = {
                     "studio": studio,
                     "nlPriority": nl_priority,
                     "discoveryMethod": "pattern",

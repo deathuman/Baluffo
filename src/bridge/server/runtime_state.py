@@ -11,13 +11,13 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from src.bridge.pipeline_service import PipelineRuntime
 
 PIPELINE_STATE_LOCK = threading.RLock()
 PIPELINE_RUNTIME = PipelineRuntime()
-PIPELINE_STATUS: Dict[str, Any] = {
+PIPELINE_STATUS: dict[str, Any] = {
     "active": False,
     "runId": "",
     "stage": "idle",
@@ -46,7 +46,7 @@ def configure_runtime_paths(*, startup_metrics_path: Path, desktop_local_data_st
     DESKTOP_SESSION_ACTIVITY_AT = str(now_iso() or "")
 
 
-def append_startup_metric(event: str, payload: Dict[str, Any] | None, *, now_iso: Any) -> None:
+def append_startup_metric(event: str, payload: dict[str, Any] | None, *, now_iso: Any) -> None:
     row = {
         "ts": str(now_iso() or ""),
         "event": str(event or "").strip() or "unknown",
@@ -61,13 +61,13 @@ def append_startup_metric(event: str, payload: Dict[str, Any] | None, *, now_iso
             return
 
 
-def read_startup_metrics(limit: int = 200) -> List[Dict[str, Any]]:
+def read_startup_metrics(limit: int = 200) -> list[dict[str, Any]]:
     max_rows = max(1, min(1000, int(limit or 200)))
     try:
         text = STARTUP_METRICS_PATH.read_text(encoding="utf-8")
     except OSError:
         return []
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for line in text.splitlines():
         line = str(line or "").strip()
         if not line:

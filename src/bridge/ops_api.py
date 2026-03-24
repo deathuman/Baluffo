@@ -6,9 +6,10 @@ startup metrics, and operational status endpoints.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any
 
 from src import fetcher_metrics as fetcher_metrics_module
 from src.bridge import ops_health as _ops_health
@@ -28,25 +29,25 @@ class OpsPaths:
 class OpsDeps:
     load_json_object: Callable[[Path, Any], Any]
     save_json_atomic: Callable[[Path, Any], None]
-    load_state: Callable[[], Dict[str, Any]]
+    load_state: Callable[[], dict[str, Any]]
     now_iso: Callable[[], str]
     now_utc: Callable[[], Any]
     parse_iso: Callable[[Any], Any]
-    read_tasks_config: Callable[[], Dict[str, Any]]
+    read_tasks_config: Callable[[], dict[str, Any]]
     ops_state_lock: Any
-    load_run_history: Callable[[], List[Dict[str, Any]]]
-    save_run_history: Callable[[List[Dict[str, Any]]], None]
+    load_run_history: Callable[[], list[dict[str, Any]]]
+    save_run_history: Callable[[list[dict[str, Any]]], None]
     prune_started_rows_for_type: Callable[..., None]
     clear_task_state: Callable[[str], None]
     clear_task_state_locked: Callable[[str], None]
-    upsert_run_history: Callable[..., Dict[str, Any]]
+    upsert_run_history: Callable[..., dict[str, Any]]
     task_running_from_state: Callable[[str], bool]
     report_is_stale_in_progress: Callable[..., bool]
     get_active_sync_runs: Callable[[], set[str]]
-    get_sync_status_payload: Callable[[], Dict[str, Any]]
-    get_jobs_pipeline_status_payload: Callable[[], Dict[str, Any]]
-    normalize_fetch_report_contract: Callable[[Dict[str, Any]], Dict[str, Any]]
-    normalize_discovery_report_contract: Callable[[Dict[str, Any]], Dict[str, Any]]
+    get_sync_status_payload: Callable[[], dict[str, Any]]
+    get_jobs_pipeline_status_payload: Callable[[], dict[str, Any]]
+    normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]]
+    normalize_discovery_report_contract: Callable[[dict[str, Any]], dict[str, Any]]
     desktop_mode: bool
     get_desktop_last_activity_at: Callable[[], str]
     ops_schema_version: int
@@ -54,15 +55,15 @@ class OpsDeps:
 
 @dataclass(frozen=True)
 class OpsHealthDeps:
-    get_history: Callable[[], List[Dict[str, Any]]]
-    get_fetch_report: Callable[[], Dict[str, Any]]
-    get_state: Callable[[], Dict[str, Any]]
+    get_history: Callable[[], list[dict[str, Any]]]
+    get_fetch_report: Callable[[], dict[str, Any]]
+    get_state: Callable[[], dict[str, Any]]
     now_iso: Callable[[], str]
     desktop_mode: bool
     desktop_last_activity_at: str
-    load_alert_state_fn: Callable[[], Dict[str, Any]]
-    save_alert_state_fn: Callable[[Dict[str, Any]], None]
-    parse_schedule_metadata_fn: Callable[[], Dict[str, Any]]
+    load_alert_state_fn: Callable[[], dict[str, Any]]
+    save_alert_state_fn: Callable[[dict[str, Any]], None]
+    parse_schedule_metadata_fn: Callable[[], dict[str, Any]]
     parse_iso: Callable[[Any], Any]
     now_utc: Callable[[], Any]
 
@@ -76,7 +77,7 @@ class OpsApi:
         self,
         *,
         allowed_names: set[str] | None = None,
-    ) -> List[str]:
+    ) -> list[str]:
         report = self._deps.normalize_fetch_report_contract(
             self._deps.load_json_object(self._paths.jobs_fetch_report, {})
         )
@@ -85,14 +86,14 @@ class OpsApi:
             allowed_names=allowed_names,
         )
 
-    def load_alert_state(self) -> Dict[str, Any]:
+    def load_alert_state(self) -> dict[str, Any]:
         return _ops_health.load_alert_state(
             self._deps.load_json_object,
             self._paths.ops_alert_state,
             self._deps.ops_schema_version,
         )
 
-    def save_alert_state(self, state: Dict[str, Any]) -> None:
+    def save_alert_state(self, state: dict[str, Any]) -> None:
         _ops_health.save_alert_state(
             self._deps.save_json_atomic,
             self._paths.ops_alert_state,
@@ -101,23 +102,23 @@ class OpsApi:
             self._deps.now_iso,
         )
 
-    def parse_schedule_metadata(self) -> Dict[str, Any]:
+    def parse_schedule_metadata(self) -> dict[str, Any]:
         return _ops_health.parse_schedule_metadata(self._deps.read_tasks_config)
 
-    def detect_task_interval_hours(self, task: Dict[str, Any]) -> float | None:
+    def detect_task_interval_hours(self, task: dict[str, Any]) -> float | None:
         return _ops_health.detect_task_interval_hours(task)
 
-    def summarize_fetch_report(self, report: Dict[str, Any]) -> Dict[str, Any]:
+    def summarize_fetch_report(self, report: dict[str, Any]) -> dict[str, Any]:
         return _ops_health.summarize_fetch_report(report)
 
-    def summarize_discovery_report(self, report: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+    def summarize_discovery_report(self, report: dict[str, Any]) -> tuple[dict[str, Any], str]:
         return _ops_health.summarize_discovery_report(
             report,
             self._deps.normalize_discovery_report_contract,
             self._deps.parse_iso,
         )
 
-    def sync_history_from_reports(self) -> List[Dict[str, Any]]:
+    def sync_history_from_reports(self) -> list[dict[str, Any]]:
         return _run_history_api.sync_history_from_reports(
             _run_history_api.SyncHistoryDeps(
                 ops_state_lock=self._deps.ops_state_lock,
@@ -161,11 +162,11 @@ class OpsApi:
             now_utc=self._deps.now_utc,
         )
 
-    def compute_ops_health(self) -> Dict[str, Any]:
+    def compute_ops_health(self) -> dict[str, Any]:
         return _ops_health.compute_ops_health(self.build_ops_health_deps())
 
     @staticmethod
-    def _coerce_task_progress(payload: Any) -> Dict[str, Any]:
+    def _coerce_task_progress(payload: Any) -> dict[str, Any]:
         src = payload if isinstance(payload, dict) else {}
         counts = src.get("counts") if isinstance(src.get("counts"), dict) else {}
         try:
@@ -182,7 +183,7 @@ class OpsApi:
         }
 
     @staticmethod
-    def _build_pipeline_task_progress(payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_pipeline_task_progress(payload: dict[str, Any]) -> dict[str, Any]:
         progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
         current_step = max(0, int(progress.get("currentStep") or 0))
         total_steps = max(1, int(progress.get("totalSteps") or 1))
@@ -202,13 +203,13 @@ class OpsApi:
             },
         }
 
-    def get_current_task_state_payload(self) -> Dict[str, Any]:
+    def get_current_task_state_payload(self) -> dict[str, Any]:
         raw_state = self._deps.load_json_object(self._paths.task_state, {})
         task_state = raw_state if isinstance(raw_state, dict) else {}
-        tasks: List[Dict[str, Any]] = []
+        tasks: list[dict[str, Any]] = []
 
         history = self.sync_history_from_reports()
-        history_by_type: Dict[str, List[Dict[str, Any]]] = {}
+        history_by_type: dict[str, list[dict[str, Any]]] = {}
         for row in history:
             if not isinstance(row, dict):
                 continue
@@ -217,7 +218,7 @@ class OpsApi:
                 continue
             history_by_type.setdefault(row_type, []).append(row)
 
-        def append_if_active(task_type: str, entry: Dict[str, Any]) -> None:
+        def append_if_active(task_type: str, entry: dict[str, Any]) -> None:
             if not isinstance(entry, dict):
                 return
             if not bool(entry.get("active")):
@@ -342,7 +343,7 @@ class OpsApi:
             )
 
         tasks.sort(key=lambda item: str(item.get("startedAt") or ""), reverse=True)
-        latest_by_type: Dict[str, Dict[str, Any]] = {}
+        latest_by_type: dict[str, dict[str, Any]] = {}
         for row in tasks:
             task_type = str(row.get("taskType") or row.get("type") or "").strip().lower()
             if not task_type or task_type in latest_by_type:
@@ -354,7 +355,7 @@ class OpsApi:
             "count": len(final_tasks),
         }
 
-    def compute_fetcher_metrics(self, *, window_runs: int = 20) -> Dict[str, Any]:
+    def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]:
         latest_fetch_report = self._deps.normalize_fetch_report_contract(
             self._deps.load_json_object(self._paths.jobs_fetch_report, {})
         )

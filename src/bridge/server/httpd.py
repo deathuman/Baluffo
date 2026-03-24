@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from http.server import ThreadingHTTPServer
-from typing import Any, Type
+from typing import Any
 
 
-def run_http_server(*, api: Any, host: str, port: int, handler_cls: Type) -> int:
+def run_http_server(*, api: Any, host: str, port: int, handler_cls: type) -> int:
     try:
         server = ThreadingHTTPServer((host, port), handler_cls)
     except OSError as exc:

@@ -7,7 +7,7 @@ preserving backwards-compatible re-exports.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from src.jobs.common import config as common_config
@@ -150,7 +150,7 @@ def compute_focus_score(job: RawJob) -> int:
 
     posted = parse_datetime(job.get("postedAt"))
     if posted:
-        age_days = max(0.0, (datetime.now(timezone.utc) - posted).total_seconds() / 86400.0)
+        age_days = max(0.0, (datetime.now(UTC) - posted).total_seconds() / 86400.0)
         if age_days <= 7:
             score += 12
         elif age_days <= 30:

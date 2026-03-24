@@ -10,10 +10,11 @@ import os
 import platform
 import ssl
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -72,9 +73,9 @@ class SyncOperationError(RuntimeError):
 
 
 _RUNTIME_STATE_LOCK = threading.RLock()
-_RUNTIME_STATE: Dict[str, Any] = {"code": "", "message": "", "until": "", "updatedAt": ""}
+_RUNTIME_STATE: dict[str, Any] = {"code": "", "message": "", "until": "", "updatedAt": ""}
 _RATE_LIMIT_LOCK = threading.RLock()
-_RATE_LIMIT_STATE: Dict[str, Any] = {"calls": [], "strike": 0, "until": None}
+_RATE_LIMIT_STATE: dict[str, Any] = {"calls": [], "strike": 0, "until": None}
 
 
 class _DPAPI_BLOB(ctypes.Structure):
@@ -139,7 +140,7 @@ class SyncConfig:
     branch: str
     path: str
     auth_mode: str
-    packaged_config: Optional[PackagedGitHubAppConfig]
+    packaged_config: PackagedGitHubAppConfig | None
     timeout_s: int = DEFAULT_TIMEOUT_S
     disabled_reason: str = ""
 
@@ -149,7 +150,7 @@ def _truthy(value: Any) -> bool:
     return text in {"1", "true", "yes", "on"}
 
 
-def _set_runtime_state(code: str = "", message: str = "", *, until: Optional[datetime] = None) -> None:
+def _set_runtime_state(code: str = "", message: str = "", *, until: datetime | None = None) -> None:
     with _RUNTIME_STATE_LOCK:
         _RUNTIME_STATE["code"] = str(code or "").strip().lower()
         _RUNTIME_STATE["message"] = str(message or "").strip()
@@ -166,7 +167,7 @@ def _clear_runtime_state(*codes: str) -> None:
         _RUNTIME_STATE.update({"code": "", "message": "", "until": "", "updatedAt": now_iso()})
 
 
-def _runtime_state_payload() -> Dict[str, str]:
+def _runtime_state_payload() -> dict[str, str]:
     with _RUNTIME_STATE_LOCK:
         code = str(_RUNTIME_STATE.get("code") or "").strip().lower()
         message = str(_RUNTIME_STATE.get("message") or "").strip()
@@ -298,7 +299,7 @@ def build_embedded_passphrase(*, hint: str, version: str = EMBEDDED_KEY_VERSION_
     return f"{d1[:24]}{d2[8:40]}"
 
 
-def _local_key_cache_fingerprint(normalized: Dict[str, str]) -> str:
+def _local_key_cache_fingerprint(normalized: dict[str, str]) -> str:
     material = "|".join([
         str(normalized.get("appId") or "").strip(),
         str(normalized.get("installationId") or "").strip(),
@@ -384,7 +385,7 @@ def _write_local_wrapped_key(config_path: Path, fingerprint: str, private_key_pe
     cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _allowlist_error(*, repo: str, branch: str, path: str, normalized: Dict[str, str], env_map: Dict[str, str]) -> str:
+def _allowlist_error(*, repo: str, branch: str, path: str, normalized: dict[str, str], env_map: dict[str, str]) -> str:
     allowed_repo = str(env_map.get(SYNC_ALLOWED_REPO_ENV) or normalized.get("allowedRepo") or "").strip()
     allowed_branch = str(env_map.get(SYNC_ALLOWED_BRANCH_ENV) or normalized.get("allowedBranch") or "").strip()
     allowed_prefix = str(env_map.get(SYNC_ALLOWED_PATH_PREFIX_ENV) or normalized.get("allowedPathPrefix") or "").strip()
@@ -397,7 +398,7 @@ def _allowlist_error(*, repo: str, branch: str, path: str, normalized: Dict[str,
     return ""
 
 
-def _normalize_packaged_payload(payload: Dict[str, Any]) -> Dict[str, str]:
+def _normalize_packaged_payload(payload: dict[str, Any]) -> dict[str, str]:
     data = payload if isinstance(payload, dict) else {}
     return {
         "appId": str(data.get("appId") or "").strip(),
@@ -417,7 +418,7 @@ def _normalize_packaged_payload(payload: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
-def load_packaged_sync_config(*, env: Optional[Dict[str, str]] = None) -> Optional[PackagedGitHubAppConfig]:
+def load_packaged_sync_config(*, env: dict[str, str] | None = None) -> PackagedGitHubAppConfig | None:
     env_map = env if isinstance(env, dict) else os.environ
     path_raw = str(env_map.get(PACKAGED_SYNC_CONFIG_ENV) or DEFAULT_PACKAGED_SYNC_CONFIG_PATH).strip()
     config_path = Path(path_raw).expanduser().resolve()
@@ -504,7 +505,7 @@ def load_packaged_sync_config(*, env: Optional[Dict[str, str]] = None) -> Option
     )
 
 
-def resolve_sync_config(*, settings: Optional[Dict[str, Any]] = None, env: Optional[Dict[str, str]] = None) -> SyncConfig:
+def resolve_sync_config(*, settings: dict[str, Any] | None = None, env: dict[str, str] | None = None) -> SyncConfig:
     settings_map = settings if isinstance(settings, dict) else {}
     env_map = env if isinstance(env, dict) else os.environ
     default_enabled = bool(
@@ -532,8 +533,8 @@ def resolve_sync_config(*, settings: Optional[Dict[str, Any]] = None, env: Optio
     )
 
 
-def config_status(config: SyncConfig) -> Dict[str, Any]:
-    missing: List[str] = []
+def config_status(config: SyncConfig) -> dict[str, Any]:
+    missing: list[str] = []
     message = str(config.disabled_reason or "")
     if not config.packaged_config:
         missing.append("packaged_github_app_config")
@@ -609,7 +610,7 @@ def _content_api_url(config: SyncConfig, *, with_ref: bool = False) -> str:
     return base
 
 
-def _github_json_headers(authorization: str) -> Dict[str, str]:
+def _github_json_headers(authorization: str) -> dict[str, str]:
     return {
         "Accept": "application/vnd.github+json",
         "Authorization": authorization,
@@ -636,12 +637,12 @@ def _request_raw_json(
     *,
     method: str,
     url: str,
-    headers: Dict[str, str],
+    headers: dict[str, str],
     timeout_s: int,
-    payload: Optional[Dict[str, Any]] = None,
-    opener: Optional[Callable[..., Any]] = None,
-) -> Tuple[int, Dict[str, Any], Dict[str, str]]:
-    body: Optional[bytes] = None
+    payload: dict[str, Any] | None = None,
+    opener: Callable[..., Any] | None = None,
+) -> tuple[int, dict[str, Any], dict[str, str]]:
+    body: bytes | None = None
     if payload is not None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(url=url, data=body, method=method.upper(), headers=headers)
@@ -687,7 +688,7 @@ def _request_raw_json(
         raise RuntimeError(f"Sync request failed: {exc}") from exc
 
 
-def _parse_iso(value: Any) -> Optional[datetime]:
+def _parse_iso(value: Any) -> datetime | None:
     text = str(value or "").strip()
     if not text:
         return None
@@ -698,11 +699,11 @@ def _parse_iso(value: Any) -> Optional[datetime]:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
-def _asn1_read_tlv(raw: bytes, offset: int) -> Tuple[int, bytes, int]:
+def _asn1_read_tlv(raw: bytes, offset: int) -> tuple[int, bytes, int]:
     if offset >= len(raw):
         raise ValueError("ASN.1 offset out of range")
     tag = raw[offset]
@@ -725,8 +726,8 @@ def _asn1_read_tlv(raw: bytes, offset: int) -> Tuple[int, bytes, int]:
     return tag, value, offset + length
 
 
-def _asn1_read_children(raw: bytes) -> List[Tuple[int, bytes]]:
-    children: List[Tuple[int, bytes]] = []
+def _asn1_read_children(raw: bytes) -> list[tuple[int, bytes]]:
+    children: list[tuple[int, bytes]] = []
     offset = 0
     while offset < len(raw):
         tag, value, offset = _asn1_read_tlv(raw, offset)
@@ -753,7 +754,7 @@ def _pem_to_der(private_key_pem: str) -> bytes:
     return base64.b64decode("".join(lines))
 
 
-def _parse_rsa_private_key_der(der: bytes) -> Tuple[int, int]:
+def _parse_rsa_private_key_der(der: bytes) -> tuple[int, int]:
     tag, value, end = _asn1_read_tlv(der, 0)
     if tag != 0x30 or end != len(der):
         raise ValueError("Invalid RSA private key sequence")
@@ -778,8 +779,8 @@ def _rsa_pkcs1_sign_sha256(message: bytes, private_key_pem: str) -> bytes:
     return signature.to_bytes(modulus_len, "big")
 
 
-def build_app_jwt(app_id: str, private_key_pem: str, *, issued_at: Optional[datetime] = None) -> str:
-    now = issued_at.astimezone(timezone.utc) if issued_at else now_utc()
+def build_app_jwt(app_id: str, private_key_pem: str, *, issued_at: datetime | None = None) -> str:
+    now = issued_at.astimezone(UTC) if issued_at else now_utc()
     iat = int(now.timestamp()) - 30
     exp = iat + JWT_TTL_SECONDS
     header = _base64url_encode(json.dumps({"alg": "RS256", "typ": "JWT"}, separators=(",", ":"), sort_keys=True).encode("utf-8"))
@@ -793,7 +794,7 @@ class GitHubAppAuth:
     def __init__(self, packaged_config: PackagedGitHubAppConfig):
         self.packaged_config = packaged_config
         self._token = ""
-        self._token_expires_at: Optional[datetime] = None
+        self._token_expires_at: datetime | None = None
         self._lock = threading.RLock()
 
     def _token_is_fresh(self) -> bool:
@@ -831,7 +832,7 @@ class GitHubAppAuth:
 
 
 _AUTH_MANAGER_LOCK = threading.RLock()
-_AUTH_MANAGER: Dict[str, GitHubAppAuth] = {}
+_AUTH_MANAGER: dict[str, GitHubAppAuth] = {}
 
 
 def _auth_manager_key(config: SyncConfig) -> str:
@@ -852,7 +853,7 @@ def _get_auth_manager(config: SyncConfig) -> GitHubAppAuth:
         return manager
 
 
-def _rate_limit_retry_after_seconds(headers: Dict[str, str], payload: Dict[str, Any]) -> int:
+def _rate_limit_retry_after_seconds(headers: dict[str, str], payload: dict[str, Any]) -> int:
     retry_after = str((headers or {}).get("retry-after") or "").strip()
     if retry_after.isdigit():
         return max(1, min(RATE_LIMIT_BACKOFF_MAX_S, int(retry_after)))
@@ -895,7 +896,7 @@ def _rate_limit_preflight() -> None:
         _RATE_LIMIT_STATE["calls"] = calls
 
 
-def _rate_limit_note_response(status: int, headers: Dict[str, str], payload: Dict[str, Any]) -> None:
+def _rate_limit_note_response(status: int, headers: dict[str, str], payload: dict[str, Any]) -> None:
     if int(status or 0) in {429, 403}:
         message = str((payload or {}).get("message") or "").lower()
         if int(status or 0) == 429 or "rate limit" in message:
@@ -927,10 +928,10 @@ def _request_json(
     url: str,
     config: SyncConfig,
     timeout_s: int,
-    payload: Optional[Dict[str, Any]] = None,
+    payload: dict[str, Any] | None = None,
     opener: Callable[..., Any] = urlopen,
     allow_retry_401: bool = True,
-) -> Tuple[int, Dict[str, Any], Dict[str, str]]:
+) -> tuple[int, dict[str, Any], dict[str, str]]:
     _rate_limit_preflight()
     manager = _get_auth_manager(config)
     token = manager.get_installation_token(opener=opener)
@@ -958,7 +959,7 @@ def _request_json(
     return status, body, headers
 
 
-def normalize_snapshot(payload: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     data = payload if isinstance(payload, dict) else {}
     return {
         "schemaVersion": int(data.get("schemaVersion") or SYNC_SCHEMA_VERSION),
@@ -970,7 +971,7 @@ def normalize_snapshot(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def merge_registry_state(local_state: Dict[str, Any], remote_snapshot: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+def merge_registry_state(local_state: dict[str, Any], remote_snapshot: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     remote = normalize_snapshot(remote_snapshot)
     return {
         "active": list(remote["active"]),
@@ -983,7 +984,7 @@ def read_remote_snapshot(
     config: SyncConfig,
     *,
     opener: Callable[..., Any] = urlopen,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     validate_sync_config(config)
     url = _content_api_url(config, with_ref=True)
     status, payload, _headers = _request_json(
@@ -1013,7 +1014,7 @@ def read_remote_snapshot(
     return {"exists": True, "sha": str(payload.get("sha") or ""), "snapshot": snapshot}
 
 
-def build_snapshot(local_state: Dict[str, Any], *, source_label: str = "admin_bridge") -> Dict[str, Any]:
+def build_snapshot(local_state: dict[str, Any], *, source_label: str = "admin_bridge") -> dict[str, Any]:
     return {
         "schemaVersion": SYNC_SCHEMA_VERSION,
         "generatedAt": now_iso(),
@@ -1024,7 +1025,7 @@ def build_snapshot(local_state: Dict[str, Any], *, source_label: str = "admin_br
     }
 
 
-def _merge_without_losing_active_pending(local_snapshot: Dict[str, Any], remote_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_without_losing_active_pending(local_snapshot: dict[str, Any], remote_snapshot: dict[str, Any]) -> dict[str, Any]:
     local = normalize_snapshot(local_snapshot)
     remote = normalize_snapshot(remote_snapshot)
     rejected_ids = {
@@ -1033,7 +1034,7 @@ def _merge_without_losing_active_pending(local_snapshot: Dict[str, Any], remote_
         if isinstance(row, dict)
     }
 
-    merged: Dict[str, Any] = {
+    merged: dict[str, Any] = {
         "schemaVersion": int(local.get("schemaVersion") or SYNC_SCHEMA_VERSION),
         "generatedAt": str(local.get("generatedAt") or now_iso()),
         "source": dict(local.get("source") or {}),
@@ -1061,15 +1062,15 @@ def _merge_without_losing_active_pending(local_snapshot: Dict[str, Any], remote_
 
 def write_remote_snapshot(
     config: SyncConfig,
-    snapshot: Dict[str, Any],
+    snapshot: dict[str, Any],
     *,
     sha: str = "",
     message: str = "Update Baluffo source sync snapshot",
     opener: Callable[..., Any] = urlopen,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     validate_sync_config(config)
     encoded = base64.b64encode(json.dumps(snapshot, ensure_ascii=False, indent=2).encode("utf-8")).decode("ascii")
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "message": str(message or "Update Baluffo source sync snapshot"),
         "content": encoded,
         "branch": config.branch,
@@ -1097,10 +1098,10 @@ def write_remote_snapshot(
 
 def pull_and_merge_sources(
     config: SyncConfig,
-    local_state: Dict[str, Any],
+    local_state: dict[str, Any],
     *,
     opener: Callable[..., Any] = urlopen,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     remote = read_remote_snapshot(config, opener=opener)
     if not remote.get("exists"):
         return {"changed": False, "remoteFound": False, "mergedState": local_state, "remoteSha": ""}
@@ -1126,10 +1127,10 @@ def pull_and_merge_sources(
 
 def push_sources_snapshot(
     config: SyncConfig,
-    local_state: Dict[str, Any],
+    local_state: dict[str, Any],
     *,
     opener: Callable[..., Any] = urlopen,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     remote = read_remote_snapshot(config, opener=opener)
     snapshot = build_snapshot(local_state)
     remote_snapshot = remote.get("snapshot") if isinstance(remote.get("snapshot"), dict) else {}

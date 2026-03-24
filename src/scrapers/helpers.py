@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Dict
+from typing import Any
 
 
 def clean_text(value: Any) -> str:
@@ -41,7 +41,7 @@ def build_job(
     work_type: str = "",
     contract_type: str = "",
     posted_at: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build a job dict in the envelope shape expected by static_scrapy adapter."""
     return {
         "sourceJobId": source_job_id,

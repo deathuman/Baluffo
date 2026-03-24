@@ -4,10 +4,10 @@ Social Sources Only Test
 Runs only the social sources to test Reddit implementation.
 """
 
-import sys
-import os
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 # Add current directory to Python path
@@ -72,7 +72,7 @@ def run_social_sources():
             with open(fetch_report_path) as f:
                 report = json.load(f)
             
-            print(f"Report summary:")
+            print("Report summary:")
             print(f"  Sources: {len(report.get('sources', []))}")
             print(f"  Total jobs: {report.get('summary', {}).get('outputCount', 0)}")
             

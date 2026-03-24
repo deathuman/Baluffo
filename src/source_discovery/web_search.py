@@ -11,7 +11,7 @@ Responsibilities:
 import asyncio
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
@@ -32,7 +32,7 @@ from .config import (
 from .scoring import careers_keyword_count, clean_token, studio_domain_match, unique_string_list
 
 
-def discovery_request_headers() -> Dict[str, str]:
+def discovery_request_headers() -> dict[str, str]:
     return {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -62,7 +62,7 @@ async def async_fetch_text_httpx(client: httpx.AsyncClient, url: str, timeout_s:
     return resp.text
 
 
-def _http_code_from_error(exc: Exception) -> Optional[int]:
+def _http_code_from_error(exc: Exception) -> int | None:
     if isinstance(exc, HTTPError):
         return int(exc.code)
     match = re.search(r"\bHTTP Error (\d{3})\b", str(exc))
@@ -81,7 +81,7 @@ def fetch_text_with_retry(url: str, timeout_s: int, *, adapter: str, fetcher=fet
     if adapter in {"workable", "personio", "ashby", "recruitee", "pinpoint"}:
         time.sleep(0.18)
     attempts = FETCH_MAX_RETRIES + 1
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for attempt in range(attempts):
         try:
             return fetcher(url, timeout_s)
@@ -105,7 +105,7 @@ async def async_fetch_text_with_retry(
     if adapter in {"workable", "personio", "ashby", "recruitee", "pinpoint"}:
         await asyncio.sleep(0.18)
     attempts = FETCH_MAX_RETRIES + 1
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for attempt in range(attempts):
         try:
             return await fetcher(url, timeout_s)
@@ -128,9 +128,9 @@ def is_blocked_generic_static_url(url: str) -> bool:
     return any(host == domain or host.endswith(f".{domain}") for domain in GENERIC_STATIC_BLOCKED_DOMAINS)
 
 
-def extract_jobish_links(html: str, base_url: str) -> List[str]:
+def extract_jobish_links(html: str, base_url: str) -> list[str]:
     matches = re.findall(r'(?is)href=["\']([^"\']+)["\']', str(html or ""))
-    out: List[str] = []
+    out: list[str] = []
     seen = set()
     for raw in matches:
         if not raw or raw.startswith("#") or raw.startswith("mailto:") or raw.startswith("javascript:"):
@@ -148,9 +148,9 @@ def extract_jobish_links(html: str, base_url: str) -> List[str]:
     return out
 
 
-def extract_links_from_html(html: str) -> List[str]:
+def extract_links_from_html(html: str) -> list[str]:
     links = re.findall(r'(?is)href=["\']([^"\']+)["\']', html)
-    out: List[str] = []
+    out: list[str] = []
     for raw in links:
         if not raw:
             continue
@@ -171,10 +171,10 @@ def _provider_candidate(
     url: str,
     nl_priority: bool,
     discovery_method: str,
-    evidence_types: List[str],
+    evidence_types: list[str],
     evidence_source: str,
     evidence_score: int,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     parsed = urlparse(url)
     host = (parsed.netloc or "").lower()
     path = parsed.path or ""
@@ -361,7 +361,7 @@ def infer_web_candidate(
     *,
     nl_priority: bool,
     discovery_method: str = "web_search",
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     try:
         parsed = urlparse(url)
     except ValueError:
@@ -425,10 +425,10 @@ def infer_provider_candidates_from_html(
     studio: str,
     nl_priority: bool,
     discovery_method: str = "web_search",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     from .io_runtime import collapse_competing_candidates
 
-    candidates: List[Dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     page_candidate = infer_web_candidate(page_url, studio, nl_priority=nl_priority, discovery_method=discovery_method)
     if page_candidate:
         page_candidate["evidenceSource"] = "page_url"
@@ -463,10 +463,10 @@ def infer_provider_candidates_from_html(
 
 
 def build_web_search_queries(
-    studio_seeds: List[Dict[str, Any]],
+    studio_seeds: list[dict[str, Any]],
     max_queries: int = 18,
-) -> List[Tuple[str, Dict[str, Any]]]:
-    queries: List[Tuple[str, Dict[str, Any]]] = []
+) -> list[tuple[str, dict[str, Any]]]:
+    queries: list[tuple[str, dict[str, Any]]] = []
     for seed in studio_seeds:
         studio = str(seed.get("studio") or "").strip()
         if not studio:
@@ -486,17 +486,18 @@ def build_web_search_queries(
 def discover_seed_careers_page_candidates(
     timeout_s: int,
     *,
-    studio_seeds: List[Dict[str, Any]],
+    studio_seeds: list[dict[str, Any]],
     fetcher=None,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     from src.source_registry import unique_sources
+
     from .io_runtime import collapse_competing_candidates
     from .static_candidates import build_static_candidate_from_page
 
     fetcher = fetcher or fetch_text
-    provider_candidates: List[Dict[str, Any]] = []
-    static_candidates: List[Dict[str, Any]] = []
-    failures: List[Dict[str, Any]] = []
+    provider_candidates: list[dict[str, Any]] = []
+    static_candidates: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
     for seed in studio_seeds:
         careers_url = str(seed.get("careersUrl") or "").strip()
         studio = str(seed.get("studio") or "").strip()
@@ -538,18 +539,19 @@ def discover_seed_careers_page_candidates(
 def discover_web_search_candidates(
     timeout_s: int,
     *,
-    studio_seeds: List[Dict[str, Any]],
+    studio_seeds: list[dict[str, Any]],
     fetcher=None,
     max_queries: int = 18,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     from src.source_registry import unique_sources
+
     from .io_runtime import collapse_competing_candidates
     from .static_candidates import build_static_candidate_from_page
 
     fetcher = fetcher or fetch_text
-    provider_candidates: List[Dict[str, Any]] = []
-    static_candidates: List[Dict[str, Any]] = []
-    failures: List[Dict[str, Any]] = []
+    provider_candidates: list[dict[str, Any]] = []
+    static_candidates: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
     for query, seed in build_web_search_queries(studio_seeds, max_queries=max_queries):
         url = DUCKDUCKGO_HTML_SEARCH.format(query=quote_plus(query))
         try:

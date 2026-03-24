@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from typing import Any, Dict
 
 def test_complete_reddit_implementation():
     """Test the current Reddit implementation defaults and error handling settings."""

@@ -5,7 +5,7 @@ See docs/DATA_CONTRACT.md §7 for the source discovery contract.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,7 +17,7 @@ class DiscoveryLossAccountingSchema(BaseModel):
 
     generated: int = 0
     dedupSkipped: int = 0
-    dedupSkippedReasons: Dict[str, int] = Field(default_factory=dict)
+    dedupSkippedReasons: dict[str, int] = Field(default_factory=dict)
     validationSkipped: int = 0
     lowEvidenceSkipped: int = 0
     probeFailed: int = 0
@@ -48,22 +48,22 @@ class DiscoveryReportSummarySchema(BaseModel):
     skippedDuplicateCount: int = 0
     skippedInvalidCount: int = 0
     skippedLowEvidenceProbeCount: int = 0
-    adapterCounts: Dict[str, int] = Field(default_factory=dict)
-    queuedByAdapter: Dict[str, int] = Field(default_factory=dict)
-    deferredByAdapter: Dict[str, int] = Field(default_factory=dict)
-    healthyButDeferredByAdapter: Dict[str, int] = Field(default_factory=dict)
-    suppressedStaticByReason: Dict[str, int] = Field(default_factory=dict)
-    suppressedStaticByStage: Dict[str, int] = Field(default_factory=dict)
+    adapterCounts: dict[str, int] = Field(default_factory=dict)
+    queuedByAdapter: dict[str, int] = Field(default_factory=dict)
+    deferredByAdapter: dict[str, int] = Field(default_factory=dict)
+    healthyButDeferredByAdapter: dict[str, int] = Field(default_factory=dict)
+    suppressedStaticByReason: dict[str, int] = Field(default_factory=dict)
+    suppressedStaticByStage: dict[str, int] = Field(default_factory=dict)
     queuedProviderCount: int = 0
     queuedStaticCount: int = 0
-    methodCounts: Dict[str, int] = Field(default_factory=dict)
-    generatedCountByStage: Dict[str, int] = Field(default_factory=dict)
-    survivedDedupeCountByStage: Dict[str, int] = Field(default_factory=dict)
-    probedCountByStage: Dict[str, int] = Field(default_factory=dict)
-    queuedCountByStage: Dict[str, int] = Field(default_factory=dict)
-    duplicateReasons: Dict[str, int] = Field(default_factory=dict)
-    deferredReasons: Dict[str, int] = Field(default_factory=dict)
-    thresholds: Dict[str, Any] = Field(default_factory=dict)
+    methodCounts: dict[str, int] = Field(default_factory=dict)
+    generatedCountByStage: dict[str, int] = Field(default_factory=dict)
+    survivedDedupeCountByStage: dict[str, int] = Field(default_factory=dict)
+    probedCountByStage: dict[str, int] = Field(default_factory=dict)
+    queuedCountByStage: dict[str, int] = Field(default_factory=dict)
+    duplicateReasons: dict[str, int] = Field(default_factory=dict)
+    deferredReasons: dict[str, int] = Field(default_factory=dict)
+    thresholds: dict[str, Any] = Field(default_factory=dict)
     lossAccounting: DiscoveryLossAccountingSchema = Field(
         default_factory=DiscoveryLossAccountingSchema
     )
@@ -90,10 +90,10 @@ class DiscoveryRuntimeSchema(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     totalDurationMs: int = 0
-    stageTimingsMs: Dict[str, int] = Field(default_factory=dict)
-    stageTop: List[Dict[str, Any]] = Field(default_factory=list)
-    adapterTimings: List[DiscoveryTimingRowSchema] = Field(default_factory=list)
-    slowestAdapters: List[DiscoveryTimingRowSchema] = Field(default_factory=list)
+    stageTimingsMs: dict[str, int] = Field(default_factory=dict)
+    stageTop: list[dict[str, Any]] = Field(default_factory=list)
+    adapterTimings: list[DiscoveryTimingRowSchema] = Field(default_factory=list)
+    slowestAdapters: list[DiscoveryTimingRowSchema] = Field(default_factory=list)
 
 
 class DiscoveryReportSchema(BaseModel):
@@ -109,7 +109,7 @@ class DiscoveryReportSchema(BaseModel):
         default_factory=DiscoveryReportSummarySchema
     )
     runtime: DiscoveryRuntimeSchema = Field(default_factory=DiscoveryRuntimeSchema)
-    candidates: List[Dict[str, Any]] = Field(default_factory=list)
-    failures: List[Dict[str, Any]] = Field(default_factory=list)
-    topFailures: List[Dict[str, Any]] = Field(default_factory=list)
-    outputs: Dict[str, str] = Field(default_factory=dict)
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
+    failures: list[dict[str, Any]] = Field(default_factory=list)
+    topFailures: list[dict[str, Any]] = Field(default_factory=list)
+    outputs: dict[str, str] = Field(default_factory=dict)

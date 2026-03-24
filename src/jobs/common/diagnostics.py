@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.text_utils import clean_text
@@ -13,8 +13,8 @@ def set_source_diagnostics(
     *,
     adapter: str,
     studio: str,
-    details: Optional[List[Dict[str, Any]]] = None,
-    partial_errors: Optional[List[str]] = None,
+    details: list[dict[str, Any]] | None = None,
+    partial_errors: list[str] | None = None,
 ) -> None:
     SOURCE_DIAGNOSTICS[source_name] = {
         "adapter": clean_text(adapter) or "unknown",

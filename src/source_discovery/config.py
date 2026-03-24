@@ -11,10 +11,9 @@ This module owns:
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from src.baluffo_config import get_storage_defaults
-
 
 ROOT = Path(__file__).resolve().parents[1]
 # For SEED_CATALOG_PATH we need repo root (parent of src)
@@ -131,7 +130,7 @@ LOW_EVIDENCE_PROBE_LIMIT = 12
 PATTERN_PROVIDER_PROBE_THRESHOLD = 30
 PATTERN_PROVIDER_QUEUE_THRESHOLD = 40
 DOMAIN_QUEUE_CAP_DEFAULT = 2
-ADAPTER_QUEUE_CAPS: Dict[str, int] = {
+ADAPTER_QUEUE_CAPS: dict[str, int] = {
     "greenhouse": 12,
     "lever": 10,
     "smartrecruiters": 8,
@@ -144,7 +143,7 @@ ADAPTER_QUEUE_CAPS: Dict[str, int] = {
     "static": 8,
 }
 
-DEFAULT_DISCOVERY_THRESHOLDS: Dict[str, int] = {
+DEFAULT_DISCOVERY_THRESHOLDS: dict[str, int] = {
     "minProviderEvidenceToProbe": MIN_PROVIDER_EVIDENCE_TO_PROBE,
     "minStaticEvidenceToProbe": MIN_STATIC_EVIDENCE_TO_PROBE,
     "minProviderEvidenceToQueue": MIN_PROVIDER_EVIDENCE_TO_QUEUE,
@@ -164,7 +163,7 @@ GAME_STUDIOS_SHEET_URL = (
     f"https://docs.google.com/spreadsheets/d/{GAME_STUDIOS_SHEET_ID}/edit?gid={GAME_STUDIOS_SHEET_GID}"
 )
 
-DEFAULT_STUDIO_SEEDS: List[Dict[str, Any]] = [
+DEFAULT_STUDIO_SEEDS: list[dict[str, Any]] = [
     {
         "studio": "Guerrilla Games",
         "aliases": ["guerrilla-games", "guerrillagames"],
@@ -202,7 +201,7 @@ DEFAULT_STUDIO_SEEDS: List[Dict[str, Any]] = [
     },
 ]
 
-DEFAULT_DISCOVERY_CONFIG: Dict[str, Any] = {
+DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     "gameprog": {
         "enabled": True,
         "teamsUrl": "https://gameprog.it/teams.json",
@@ -243,7 +242,7 @@ DEFAULT_DISCOVERY_CONFIG: Dict[str, Any] = {
     "thresholds": dict(DEFAULT_DISCOVERY_THRESHOLDS),
 }
 
-STATIC_DISCOVERY_CANDIDATES: List[Dict[str, Any]] = [
+STATIC_DISCOVERY_CANDIDATES: list[dict[str, Any]] = [
     {"name": "Sandbox VR (Lever)", "studio": "Sandbox VR", "adapter": "lever", "account": "sandboxvr", "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json", "nlPriority": False},
     {"name": "Voodoo (Lever)", "studio": "Voodoo", "adapter": "lever", "account": "voodoo", "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json", "nlPriority": False},
     {"name": "CD PROJEKT RED (SmartRecruiters)", "studio": "CD PROJEKT RED", "adapter": "smartrecruiters", "company_id": "CDPROJEKTRED", "api_url": "https://api.smartrecruiters.com/v1/companies/CDPROJEKTRED/postings", "nlPriority": False},
@@ -257,7 +256,7 @@ STATIC_DISCOVERY_CANDIDATES: List[Dict[str, Any]] = [
 ]
 
 
-def load_studio_seeds() -> List[Dict[str, Any]]:
+def load_studio_seeds() -> list[dict[str, Any]]:
     try:
         payload = json.loads(SEED_CATALOG_PATH.read_text(encoding="utf-8"))
         if isinstance(payload, list):
@@ -267,7 +266,7 @@ def load_studio_seeds() -> List[Dict[str, Any]]:
     return list(DEFAULT_STUDIO_SEEDS)
 
 
-def load_discovery_config(config_path: Path | str | None = None) -> Dict[str, Any]:
+def load_discovery_config(config_path: Path | str | None = None) -> dict[str, Any]:
     path = Path(config_path) if config_path is not None else Path(DISCOVERY_CONFIG_PATH)
     payload = dict(DEFAULT_DISCOVERY_CONFIG)
     try:
@@ -289,4 +288,4 @@ def load_discovery_config(config_path: Path | str | None = None) -> Dict[str, An
     return payload
 
 
-STUDIO_SEEDS: List[Dict[str, Any]] = load_studio_seeds()
+STUDIO_SEEDS: list[dict[str, Any]] = load_studio_seeds()

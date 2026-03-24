@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 PILLAR_NAMES = {
     "style_validation": "Style & Validation",
     "build_system": "Build System",
