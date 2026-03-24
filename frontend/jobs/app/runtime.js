@@ -34,7 +34,6 @@ import {
   writeAutoRefreshAppliedId,
   readQuickFilterPreferences,
   writeQuickFilterPreferences,
-  _writeAutoRefreshSignal,
   rememberJobsUrl
 } from "../state-sync/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
@@ -59,7 +58,6 @@ import {
   writeJobsCache,
   loadSeenJobKeys,
   markSeenJob,
-  _markSeenJobsBulk,
   isJobsCacheStale
 } from "./cache.js";
 import {
