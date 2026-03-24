@@ -409,3 +409,5 @@
 {"ts": "2026-03-24T22:38:58.874180+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 3}}
 {"ts": "2026-03-24T22:40:42.871940+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 2}}
 {"ts": "2026-03-24T22:40:42.872213+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 3}}
+{"ts": "2026-03-24T22:43:40.992630+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-03-24T22:43:40.992953+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 3}}
