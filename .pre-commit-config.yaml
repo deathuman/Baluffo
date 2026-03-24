@@ -1,45 +1,39 @@
-# See https://pre-commit.com for more information
+minimum_pre_commit_version: "4.0.0"
+
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+
+default_language_version:
+  python: python3.13
+
 repos:
-  # Python hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
+      - id: check-merge-conflict
       - id: check-yaml
-      - id: check-added-large-files
       - id: check-json
       - id: check-toml
-      - id: check-merge-conflict
-      - id: debug-statements
-
-  # Python formatting
-  - repo: https://github.com/psf/black
-    rev: 24.1.0
-    hooks:
-      - id: black
-        language_version: python3
-
-  # Python linting
-  - repo: https://github.com/astral-sh/ruff
-    rev: v0.1.14
-    hooks:
-      - id: ruff
-        args: [--fix]
-
-  # JavaScript/Node hooks
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
-    hooks:
-      - id: check-merge-conflict
-      - id: check-yaml
-        files: \.ya?ml$
+      - id: end-of-file-fixer
       - id: trailing-whitespace
-        files: \.js$
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: debug-statements
+      - id: detect-private-key
 
-  # npm package.json hooks
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.10
     hooks:
-      - id: check-json
-      - id: check-yaml
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: python -m mypy --config-file mypy.ini src
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

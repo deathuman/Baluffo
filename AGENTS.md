@@ -226,6 +226,8 @@ Use these standard commands for routine development and verification. All comman
 | **Build & Prep** | `npm run build` | Build the full Baluffo Ship bundle (orchestrated) |
 | | `npm run build:portable-exe` | Compile the Windows portable .exe (orchestrated) |
 | **Verification** | `npm run verify` | Full verification: Rebuild + Smoke Bundle + Smoke EXE |
+| **Pre-commit** | `pre-commit install` | Install pre-commit hooks (run once) |
+| | `pre-commit run --all-files` | Run all pre-commit checks locally |
 
 > [!TIP]
 > **Check the HUD FIRST**: Before starting any work, read `_out/LATEST_MANIFEST.json`. It provides a machine-readable snapshot of the current build health and checksum state, saving hundreds of exploration tokens.
