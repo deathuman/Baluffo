@@ -76,4 +76,3 @@ def resolve_discovery_thresholds(config: dict[str, Any] | None) -> dict[str, int
         except (TypeError, ValueError):
             out[key] = int(default)
     return out
-

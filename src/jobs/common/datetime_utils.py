@@ -46,4 +46,3 @@ def to_iso(value: Any) -> str:
 def posted_ts(value: Any) -> float:
     dt = parse_datetime(value)
     return dt.timestamp() if dt else 0.0
-

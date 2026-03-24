@@ -52,9 +52,15 @@ def test_sync_pull_updates_local_registry_counts(admin_bridge_ops_root):
 
 def test_sync_push_serializes_expected_snapshot_counts(admin_bridge_ops_root):
     admin_bridge.update_saved_sync_settings({"enabled": True})
-    admin_bridge.save_json_atomic(admin_bridge.ACTIVE_PATH, [{"adapter": "static", "listing_url": "https://a.com/jobs"}])
-    admin_bridge.save_json_atomic(admin_bridge.PENDING_PATH, [{"adapter": "teamtailor", "name": "Foo"}])
-    admin_bridge.save_json_atomic(admin_bridge.REJECTED_PATH, [{"adapter": "lever", "company": "Bar"}])
+    admin_bridge.save_json_atomic(
+        admin_bridge.ACTIVE_PATH, [{"adapter": "static", "listing_url": "https://a.com/jobs"}]
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.PENDING_PATH, [{"adapter": "teamtailor", "name": "Foo"}]
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.REJECTED_PATH, [{"adapter": "lever", "company": "Bar"}]
+    )
     original_push = admin_bridge.source_sync_module.push_sources_snapshot
     try:
         admin_bridge.source_sync_module.push_sources_snapshot = lambda _cfg, local_state: {
@@ -95,7 +101,11 @@ def test_start_sync_task_creates_started_history_row(admin_bridge_ops_root):
         assert str(result.get("task") or "") == "source_sync"
         assert str(result.get("action") or "") == "pull"
         rows = admin_bridge.load_run_history()
-        started = [row for row in rows if str(row.get("type") or "") == "sync" and str(row.get("status") or "") == "started"]
+        started = [
+            row
+            for row in rows
+            if str(row.get("type") or "") == "sync" and str(row.get("status") or "") == "started"
+        ]
         assert len(started) >= 1
         assert str((started[-1].get("summary") or {}).get("action") or "") == "pull"
     finally:
@@ -144,7 +154,11 @@ def test_sync_worker_writes_completed_row_with_summary(admin_bridge_ops_root):
         }
         admin_bridge._run_sync_task_worker("sync_test_1", "pull", started_at)  # noqa: SLF001
         rows = admin_bridge.load_run_history()
-        finished = [row for row in rows if str(row.get("type") or "") == "sync" and str(row.get("finishedAt") or "")]
+        finished = [
+            row
+            for row in rows
+            if str(row.get("type") or "") == "sync" and str(row.get("finishedAt") or "")
+        ]
         assert len(finished) >= 1
         last = finished[-1]
         assert str(last.get("status") or "") == "ok"
@@ -179,7 +193,11 @@ def test_sync_worker_failure_writes_error_row(admin_bridge_ops_root):
         admin_bridge.sync_push_sources = _boom
         admin_bridge._run_sync_task_worker("sync_test_err", "push", started_at)  # noqa: SLF001
         rows = admin_bridge.load_run_history()
-        finished = [row for row in rows if str(row.get("id") or "") == "sync_test_err" and str(row.get("finishedAt") or "")]
+        finished = [
+            row
+            for row in rows
+            if str(row.get("id") or "") == "sync_test_err" and str(row.get("finishedAt") or "")
+        ]
         assert len(finished) == 1
         assert str(finished[0].get("status") or "") == "error"
         assert "network down" in str((finished[0].get("summary") or {}).get("error") or "")

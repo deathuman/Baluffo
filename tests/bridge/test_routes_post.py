@@ -50,9 +50,7 @@ class _FakeDesktopLocalDataStore:
     def sign_out(self) -> None:
         self._current_user = None
 
-    def save_job_for_user(
-        self, uid: str, job: dict, options: dict
-    ) -> str:
+    def save_job_for_user(self, uid: str, job: dict, options: dict) -> str:
         if uid not in self.saved_jobs:
             self.saved_jobs[uid] = []
         job_key = f"job_{len(self.saved_jobs[uid])}"
@@ -61,27 +59,19 @@ class _FakeDesktopLocalDataStore:
 
     def remove_saved_job_for_user(self, uid: str, job_key: str) -> None:
         if uid in self.saved_jobs:
-            self.saved_jobs[uid] = [
-                j for j in self.saved_jobs[uid] if j.get("key") != job_key
-            ]
+            self.saved_jobs[uid] = [j for j in self.saved_jobs[uid] if j.get("key") != job_key]
 
-    def update_application_status(
-        self, uid: str, job_key: str, status: str, options: dict
-    ) -> None:
+    def update_application_status(self, uid: str, job_key: str, status: str, options: dict) -> None:
         for job in self.saved_jobs.get(uid, []):
             if job.get("key") == job_key:
                 job["status"] = status
 
-    def update_job_notes(
-        self, uid: str, job_key: str, notes: str
-    ) -> None:
+    def update_job_notes(self, uid: str, job_key: str, notes: str) -> None:
         for job in self.saved_jobs.get(uid, []):
             if job.get("key") == job_key:
                 job["notes"] = notes
 
-    def add_attachment_for_job(
-        self, uid: str, job_key: str, file_meta: dict
-    ) -> str:
+    def add_attachment_for_job(self, uid: str, job_key: str, file_meta: dict) -> str:
         att_id = f"att_{hash(file_meta.get('name', '')) % 10000}"
         self.attachments[att_id] = {"uid": uid, "job_key": job_key, **file_meta}
         return att_id
@@ -94,15 +84,9 @@ def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
     """Create a BridgeApi with all mocked dependencies."""
 
     state = {
-        "active": [
-            {"id": "src-1", "adapter": "static", "name": "Active Source"}
-        ],
-        "pending": [
-            {"id": "src-2", "adapter": "greenhouse", "name": "Pending Source"}
-        ],
-        "rejected": [
-            {"id": "src-3", "adapter": "static", "name": "Rejected Source"}
-        ],
+        "active": [{"id": "src-1", "adapter": "static", "name": "Active Source"}],
+        "pending": [{"id": "src-2", "adapter": "greenhouse", "name": "Pending Source"}],
+        "rejected": [{"id": "src-3", "adapter": "static", "name": "Rejected Source"}],
     }
 
     def load_state() -> dict[str, list[dict[str, Any]]]:
@@ -420,7 +404,9 @@ def test_run_discovery(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["started"] is True
 
 
-def test_run_discovery_response_write_failure_is_logged_and_returns_error_json(tmp_path: Path) -> None:
+def test_run_discovery_response_write_failure_is_logged_and_returns_error_json(
+    tmp_path: Path,
+) -> None:
     store = _FakeDesktopLocalDataStore()
     api = _make_api(tmp_path, store)
     log_calls: list[tuple[str, dict[str, Any]]] = []
@@ -452,7 +438,9 @@ def test_run_discovery_response_write_failure_is_logged_and_returns_error_json(t
     assert result is True
     assert handler.sent[-1]["status"] == 500
     assert handler.sent[-1]["payload"]["started"] is False
-    assert any(message == "discovery_launch_response_write_failed" for message, _fields in log_calls)
+    assert any(
+        message == "discovery_launch_response_write_failed" for message, _fields in log_calls
+    )
 
 
 def test_run_jobs_pipeline(tmp_path: Path) -> None:
@@ -555,10 +543,7 @@ def test_save_discovery_config_persists_and_returns_saved_payload(tmp_path: Path
     assert handler.sent[-1]["status"] == 200
     assert handler.sent[-1]["payload"]["ok"] is True
     assert (
-        handler.sent[-1]["payload"]["savedConfig"][
-            "autoApproveHealthyPendingOnComplete"
-        ]
-        is False
+        handler.sent[-1]["payload"]["savedConfig"]["autoApproveHealthyPendingOnComplete"] is False
     )
 
 

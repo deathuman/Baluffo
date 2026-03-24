@@ -95,7 +95,9 @@ DEFAULT_RETRIES = _common_config.DEFAULT_RETRIES
 DEFAULT_BACKOFF_S = _common_config.DEFAULT_BACKOFF_S
 DEFAULT_FETCH_STRATEGY = _common_config.DEFAULT_FETCH_STRATEGY
 DEFAULT_ADAPTER_HTTP_CONCURRENCY = _common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY
-DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = _common_config.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
+DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = (
+    _common_config.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
+)
 DEFAULT_HOT_SOURCE_CADENCE_MINUTES = _common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
 DEFAULT_COLD_SOURCE_CADENCE_MINUTES = _common_config.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
 UNKNOWN_COMPANY_LABEL = _common_config.UNKNOWN_COMPANY_LABEL
@@ -239,7 +241,9 @@ def load_social_config(
     merged = _deep_merge_dicts(DEFAULT_SOCIAL_CONFIG, payload)
     merged["enabled"] = bool(enabled)
     merged["lookbackMinutes"] = max(1, int(lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES))
-    merged["minConfidence"] = max(0, min(100, int(merged.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE)))
+    merged["minConfidence"] = max(
+        0, min(100, int(merged.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE))
+    )
     merged["rejectForHirePosts"] = bool(merged.get("rejectForHirePosts", True))
     return merged
 
@@ -275,7 +279,9 @@ def build_redirect_resolver(
 ) -> PooledRedirectResolver:
     from src.jobs import transport as transport_pkg
 
-    return transport_pkg.build_redirect_resolver(timeout_s=timeout_s, max_connections=max_connections)
+    return transport_pkg.build_redirect_resolver(
+        timeout_s=timeout_s, max_connections=max_connections
+    )
 
 
 def normalize_contract_type(contract_text: Any, title: Any = "") -> str:
@@ -490,7 +496,9 @@ def merge_records(existing: RawJob, candidate: RawJob) -> RawJob:
 def deduplicate_jobs(rows: Sequence[RawJob]) -> tuple[list[RawJob], dict[str, int]]:
     from src.jobs import dedup as dedup_pkg
 
-    merged_rows, stats = dedup_pkg.deduplicate_jobs([dedup_pkg.CanonicalJob.from_mapping(row) for row in rows])
+    merged_rows, stats = dedup_pkg.deduplicate_jobs(
+        [dedup_pkg.CanonicalJob.from_mapping(row) for row in rows]
+    )
     return [row.to_dict() for row in merged_rows], stats
 
 
@@ -587,7 +595,9 @@ def source_rows_fingerprint(rows: Sequence[RawJob]) -> str:
 from src.jobs.common.numbers import _clamped_int
 
 
-def normalize_source_state_payload(payload: dict[str, Any], *, updated_at: str = "") -> dict[str, Any]:
+def normalize_source_state_payload(
+    payload: dict[str, Any], *, updated_at: str = ""
+) -> dict[str, Any]:
     from src.jobs import state as state_pkg
 
     return state_pkg.normalize_source_state_payload(payload, updated_at=updated_at)
@@ -618,7 +628,9 @@ def _job_identity_key(job: dict[str, Any]) -> str:
     return ""
 
 
-def normalize_job_lifecycle_payload(payload: dict[str, Any], *, updated_at: str = "") -> dict[str, Any]:
+def normalize_job_lifecycle_payload(
+    payload: dict[str, Any], *, updated_at: str = ""
+) -> dict[str, Any]:
     from src.jobs import state as state_pkg
 
     return state_pkg.normalize_job_lifecycle_payload(payload, updated_at=updated_at)
@@ -666,17 +678,25 @@ def apply_job_lifecycle_state(
     return [row.to_dict() for row in rows], next_rows, counts
 
 
-def normalize_runtime_payload(runtime: dict[str, Any], *, selected_source_count: int) -> dict[str, Any]:
+def normalize_runtime_payload(
+    runtime: dict[str, Any], *, selected_source_count: int
+) -> dict[str, Any]:
     src = runtime if isinstance(runtime, dict) else {}
     normalized = {
         "maxWorkers": _clamped_int(src.get("maxWorkers"), 1, 1),
         "maxPerDomain": _clamped_int(src.get("maxPerDomain"), 1, 1),
         "fetchStrategy": clean_text(src.get("fetchStrategy")) or DEFAULT_FETCH_STRATEGY,
         "fetchClient": clean_text(src.get("fetchClient")) or "urllib",
-        "adapterHttpConcurrency": _clamped_int(src.get("adapterHttpConcurrency"), DEFAULT_ADAPTER_HTTP_CONCURRENCY, 1),
-        "staticDetailConcurrency": _clamped_int(src.get("staticDetailConcurrency"), DEFAULT_STATIC_DETAIL_CONCURRENCY, 1),
+        "adapterHttpConcurrency": _clamped_int(
+            src.get("adapterHttpConcurrency"), DEFAULT_ADAPTER_HTTP_CONCURRENCY, 1
+        ),
+        "staticDetailConcurrency": _clamped_int(
+            src.get("staticDetailConcurrency"), DEFAULT_STATIC_DETAIL_CONCURRENCY, 1
+        ),
         "googleSheetsRedirectConcurrency": _clamped_int(
-            src.get("googleSheetsRedirectConcurrency"), DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY, 1
+            src.get("googleSheetsRedirectConcurrency"),
+            DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+            1,
         ),
         "seedFromExistingOutput": bool(src.get("seedFromExistingOutput")),
         "sourceTtlMinutes": _clamped_int(src.get("sourceTtlMinutes"), 0, 0),
@@ -688,12 +708,18 @@ def normalize_runtime_payload(runtime: dict[str, Any], *, selected_source_count:
             src.get("coldSourceCadenceMinutes"), DEFAULT_COLD_SOURCE_CADENCE_MINUTES, 1
         ),
         "circuitBreakerFailures": _clamped_int(src.get("circuitBreakerFailures"), 0, 0),
-        "circuitBreakerCooldownMinutes": _clamped_int(src.get("circuitBreakerCooldownMinutes"), 0, 0),
+        "circuitBreakerCooldownMinutes": _clamped_int(
+            src.get("circuitBreakerCooldownMinutes"), 0, 0
+        ),
         "ignoreCircuitBreaker": bool(src.get("ignoreCircuitBreaker")),
         "socialEnabled": bool(src.get("socialEnabled")),
         "socialConfigPath": clean_text(src.get("socialConfigPath")),
-        "socialLookbackMinutes": _clamped_int(src.get("socialLookbackMinutes"), DEFAULT_SOCIAL_LOOKBACK_MINUTES, 1),
-        "socialMinConfidence": _clamped_int(src.get("socialMinConfidence"), DEFAULT_SOCIAL_MIN_CONFIDENCE, 0),
+        "socialLookbackMinutes": _clamped_int(
+            src.get("socialLookbackMinutes"), DEFAULT_SOCIAL_LOOKBACK_MINUTES, 1
+        ),
+        "socialMinConfidence": _clamped_int(
+            src.get("socialMinConfidence"), DEFAULT_SOCIAL_MIN_CONFIDENCE, 0
+        ),
         "staticDetailHeuristicsProfile": clean_text(src.get("staticDetailHeuristicsProfile"))
         or DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE,
         "scrapyValidationStrict": bool(
@@ -706,7 +732,9 @@ def normalize_runtime_payload(runtime: dict[str, Any], *, selected_source_count:
             if isinstance(src.get("canonicalStrictUrlValidation"), bool)
             else DEFAULT_CANONICAL_STRICT_URL
         ),
-        "selectedSourceCount": _clamped_int(src.get("selectedSourceCount"), selected_source_count, 0),
+        "selectedSourceCount": _clamped_int(
+            src.get("selectedSourceCount"), selected_source_count, 0
+        ),
     }
     slowest_sources = src.get("slowestSources")
     if isinstance(slowest_sources, list):
@@ -733,7 +761,9 @@ from src.jobs.common.contracts import (
 )
 
 
-def should_skip_source_by_ttl(source_name: str, state_rows: dict[str, dict[str, Any]], ttl_minutes: int) -> bool:
+def should_skip_source_by_ttl(
+    source_name: str, state_rows: dict[str, dict[str, Any]], ttl_minutes: int
+) -> bool:
     from src.jobs import state as state_pkg
 
     return state_pkg.should_skip_source_by_ttl(source_name, state_rows, ttl_minutes)
@@ -756,7 +786,9 @@ def should_skip_source_by_cadence(
     )
 
 
-def circuit_breaker_until(source_name: str, state_rows: dict[str, dict[str, Any]], failure_threshold: int) -> datetime | None:
+def circuit_breaker_until(
+    source_name: str, state_rows: dict[str, dict[str, Any]], failure_threshold: int
+) -> datetime | None:
     from src.jobs import state as state_pkg
 
     return state_pkg.circuit_breaker_until(source_name, state_rows, failure_threshold)
@@ -882,6 +914,6 @@ def main() -> int:
 
     return pipeline_pkg.main()
 
+
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -140,4 +140,3 @@ TARGET_PROFESSIONS = {"technical-artist", "environment-artist"}
 
 # Mutable diagnostics map used across fetch runs.
 SOURCE_DIAGNOSTICS: dict[str, dict[str, Any]] = {}
-

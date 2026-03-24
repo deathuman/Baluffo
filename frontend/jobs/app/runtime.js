@@ -1910,5 +1910,3 @@ function handleJobsStartupFailure(context, err, options = {}) {
 }
 
 export { bootJobsPage as boot };
-
-

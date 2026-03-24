@@ -69,7 +69,9 @@ def _run_greenhouse_boards(
             force_refresh_all=force_refresh_all,
         )
         entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-        entry_report["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        entry_report["cacheDecisionReason"] = (
+            clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        )
         if entry_report["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
             entry_report["status"] = "excluded"
             entry_report["error"] = entry_report["cacheDecisionReason"]
@@ -77,7 +79,11 @@ def _run_greenhouse_boards(
             details.append(entry_report)
             continue
         if entry_report["cacheDecision"] == "revalidate_only":
-            state_entry = (source_state_rows or {}).get(entry_report["name"]) if isinstance(source_state_rows, dict) else {}
+            state_entry = (
+                (source_state_rows or {}).get(entry_report["name"])
+                if isinstance(source_state_rows, dict)
+                else {}
+            )
             revalidate = conditional_revalidate_url(
                 url,
                 timeout_s,
@@ -99,7 +105,9 @@ def _run_greenhouse_boards(
         try:
             text = deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)
-            parsed = _provider_parsers.parse_greenhouse_jobs_payload(payload, slug, fallback_company=label)
+            parsed = _provider_parsers.parse_greenhouse_jobs_payload(
+                payload, slug, fallback_company=label
+            )
             for row in parsed:
                 row["adapter"] = "greenhouse"
                 row["studio"] = clean_text(board.get("studio")) or label
@@ -111,7 +119,13 @@ def _run_greenhouse_boards(
             entry_report["error"] = str(exc)
             errors.append(f"greenhouse:{slug}: {exc}")
         details.append(entry_report)
-    deps.set_source_diagnostics("greenhouse_boards", adapter="greenhouse", studio="multiple", details=details, partial_errors=errors)
+    deps.set_source_diagnostics(
+        "greenhouse_boards",
+        adapter="greenhouse",
+        studio="multiple",
+        details=details,
+        partial_errors=errors,
+    )
     if jobs:
         return jobs
     if errors:
@@ -133,8 +147,12 @@ def _run_teamtailor_sources(
     seen_links = set()
     details: list[dict[str, object]] = []
     deps = runtime_deps.facade()
-    parse_listing_links = getattr(deps, "parse_teamtailor_listing_links", parse_teamtailor_listing_links)
-    parse_jobpostings_from_html_impl = getattr(deps, "parse_jobpostings_from_html", parse_jobpostings_from_html)
+    parse_listing_links = getattr(
+        deps, "parse_teamtailor_listing_links", parse_teamtailor_listing_links
+    )
+    parse_jobpostings_from_html_impl = getattr(
+        deps, "parse_jobpostings_from_html", parse_jobpostings_from_html
+    )
     for source in deps.registry_entries("teamtailor"):
         source_name = clean_text(source.get("name")) or "teamtailor_source"
         listing_url = clean_text(source.get("listing_url"))
@@ -156,7 +174,9 @@ def _run_teamtailor_sources(
             force_refresh_all=force_refresh_all,
         )
         entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-        entry_report["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        entry_report["cacheDecisionReason"] = (
+            clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        )
         if not listing_url:
             entry_report["status"] = "error"
             entry_report["error"] = "missing listing_url"
@@ -169,7 +189,11 @@ def _run_teamtailor_sources(
             details.append(entry_report)
             continue
         if entry_report["cacheDecision"] == "revalidate_only":
-            state_entry = (source_state_rows or {}).get(source_name) if isinstance(source_state_rows, dict) else {}
+            state_entry = (
+                (source_state_rows or {}).get(source_name)
+                if isinstance(source_state_rows, dict)
+                else {}
+            )
             revalidate = conditional_revalidate_url(
                 listing_url,
                 timeout_s,
@@ -190,7 +214,9 @@ def _run_teamtailor_sources(
                 continue
 
         try:
-            listing_html = deps.fetch_with_retries(listing_url, fetch_text, timeout_s, retries, backoff_s)
+            listing_html = deps.fetch_with_retries(
+                listing_url, fetch_text, timeout_s, retries, backoff_s
+            )
             job_links = parse_listing_links(listing_html, base_url=base_url)
             entry_report["fetchedCount"] = len(job_links)
             kept_before = len(jobs)
@@ -199,7 +225,9 @@ def _run_teamtailor_sources(
                     continue
                 seen_links.add(job_link)
                 try:
-                    detail_html = deps.fetch_with_retries(job_link, fetch_text, timeout_s, retries, backoff_s)
+                    detail_html = deps.fetch_with_retries(
+                        job_link, fetch_text, timeout_s, retries, backoff_s
+                    )
                     parsed = parse_jobpostings_from_html_impl(
                         detail_html,
                         base_url=job_link,
@@ -209,7 +237,9 @@ def _run_teamtailor_sources(
                     if parsed:
                         for row in parsed:
                             row["adapter"] = "teamtailor"
-                            row["studio"] = clean_text(source.get("studio")) or fallback_company or source_name
+                            row["studio"] = (
+                                clean_text(source.get("studio")) or fallback_company or source_name
+                            )
                         jobs.extend(parsed)
                     else:
                         slug = urlparse(job_link).path.rstrip("/").split("/")[-1]
@@ -228,7 +258,9 @@ def _run_teamtailor_sources(
                                     "sector": "Game",
                                     "postedAt": "",
                                     "adapter": "teamtailor",
-                                    "studio": clean_text(source.get("studio")) or fallback_company or source_name,
+                                    "studio": clean_text(source.get("studio"))
+                                    or fallback_company
+                                    or source_name,
                                 }
                             )
                 except Exception as exc:  # noqa: BLE001
@@ -240,7 +272,13 @@ def _run_teamtailor_sources(
             errors.append(f"teamtailor:{source_name}:{listing_url}: {exc}")
         details.append(entry_report)
 
-    deps.set_source_diagnostics("teamtailor_sources", adapter="teamtailor", studio="multiple", details=details, partial_errors=errors)
+    deps.set_source_diagnostics(
+        "teamtailor_sources",
+        adapter="teamtailor",
+        studio="multiple",
+        details=details,
+        partial_errors=errors,
+    )
     if jobs:
         return jobs
     if errors:
@@ -287,7 +325,9 @@ def _run_json_feed_sources(
             force_refresh_all=force_refresh_all,
         )
         entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-        entry_report["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        entry_report["cacheDecisionReason"] = (
+            clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        )
         if not endpoint:
             entry_report["status"] = "error"
             entry_report["error"] = default_error
@@ -300,7 +340,11 @@ def _run_json_feed_sources(
             details.append(entry_report)
             continue
         if entry_report["cacheDecision"] == "revalidate_only":
-            state_entry = (source_state_rows or {}).get(source_name) if isinstance(source_state_rows, dict) else {}
+            state_entry = (
+                (source_state_rows or {}).get(source_name)
+                if isinstance(source_state_rows, dict)
+                else {}
+            )
             revalidate = conditional_revalidate_url(
                 endpoint,
                 timeout_s,
@@ -353,30 +397,44 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
     registry_adapter = adapter_name
     if adapter_name == "smartrecruiters":
         default_error = "missing company_id/api_url"
-        parse_payload = lambda source, payload, studio: _provider_parsers.parse_smartrecruiters_jobs_payload(
-            payload, clean_text(source.get("company_id")), fallback_company=studio
+        parse_payload = (
+            lambda source, payload, studio: _provider_parsers.parse_smartrecruiters_jobs_payload(
+                payload, clean_text(source.get("company_id")), fallback_company=studio
+            )
         )
         build_url = lambda source: clean_text(source.get("api_url")) or (
             f"https://api.smartrecruiters.com/v1/companies/{clean_text(source.get('company_id'))}/postings"
             if clean_text(source.get("company_id"))
             else ""
         )
-        payload_count = lambda payload, parsed: len(payload.get("content", [])) if isinstance(payload, dict) else len(parsed)
+        payload_count = (
+            lambda payload, parsed: len(payload.get("content", []))
+            if isinstance(payload, dict)
+            else len(parsed)
+        )
     elif adapter_name == "workable":
         default_error = "missing account/api_url"
-        parse_payload = lambda source, payload, studio: _provider_parsers.parse_workable_jobs_payload(
-            payload, clean_text(source.get("account")), fallback_company=studio
+        parse_payload = (
+            lambda source, payload, studio: _provider_parsers.parse_workable_jobs_payload(
+                payload, clean_text(source.get("account")), fallback_company=studio
+            )
         )
         build_url = lambda source: clean_text(source.get("api_url")) or (
             f"https://apply.workable.com/api/v1/widget/accounts/{clean_text(source.get('account'))}?details=true"
             if clean_text(source.get("account"))
             else ""
         )
-        payload_count = lambda payload, parsed: len(payload.get("jobs", [])) if isinstance(payload, dict) else len(parsed)
+        payload_count = (
+            lambda payload, parsed: len(payload.get("jobs", []))
+            if isinstance(payload, dict)
+            else len(parsed)
+        )
     elif adapter_name == "recruitee":
         default_error = "missing subdomain/api_url"
-        parse_payload = lambda source, payload, studio: _provider_parsers.parse_recruitee_jobs_payload(
-            payload, clean_text(source.get("subdomain")), fallback_company=studio
+        parse_payload = (
+            lambda source, payload, studio: _provider_parsers.parse_recruitee_jobs_payload(
+                payload, clean_text(source.get("subdomain")), fallback_company=studio
+            )
         )
         build_url = lambda source: clean_text(source.get("api_url")) or (
             f"https://{clean_text(source.get('subdomain'))}/api/offers/"
@@ -387,11 +445,17 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
                 else ""
             )
         )
-        payload_count = lambda payload, parsed: len(payload.get("offers", [])) if isinstance(payload, dict) else len(parsed)
+        payload_count = (
+            lambda payload, parsed: len(payload.get("offers", []))
+            if isinstance(payload, dict)
+            else len(parsed)
+        )
     elif adapter_name == "pinpoint":
         default_error = "missing subdomain/api_url"
-        parse_payload = lambda source, payload, studio: _provider_parsers.parse_pinpoint_jobs_payload(
-            payload, clean_text(source.get("subdomain")), fallback_company=studio
+        parse_payload = (
+            lambda source, payload, studio: _provider_parsers.parse_pinpoint_jobs_payload(
+                payload, clean_text(source.get("subdomain")), fallback_company=studio
+            )
         )
         build_url = lambda source: clean_text(source.get("api_url")) or (
             f"https://{clean_text(source.get('subdomain'))}/postings.json"
@@ -402,7 +466,11 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
                 else ""
             )
         )
-        payload_count = lambda payload, parsed: len(payload.get("data", [])) if isinstance(payload, dict) else len(parsed)
+        payload_count = (
+            lambda payload, parsed: len(payload.get("data", []))
+            if isinstance(payload, dict)
+            else len(parsed)
+        )
     else:
         # lever
         default_error = "missing account/api_url"
@@ -414,13 +482,16 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
             if clean_text(source.get("account"))
             else ""
         )
-        payload_count = lambda payload, parsed: len(payload) if isinstance(payload, list) else len(parsed)
+        payload_count = (
+            lambda payload, parsed: len(payload) if isinstance(payload, list) else len(parsed)
+        )
 
     return SimpleAdapterPlugin(
         name=f"{adapter_name}_sources",
         family="provider_api",
         priority=50,
-        can_handle_fn=lambda ctx: ctx.family == "provider_api" and ctx.adapter_key == f"{adapter_name}_sources",
+        can_handle_fn=lambda ctx: ctx.family == "provider_api"
+        and ctx.adapter_key == f"{adapter_name}_sources",
         run_fn=lambda **kwargs: _run_json_feed_sources(
             adapter_name=adapter_name,
             registry_adapter=registry_adapter,
@@ -471,7 +542,9 @@ def _run_html_board_sources(
             force_refresh_all=force_refresh_all,
         )
         entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-        entry_report["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        entry_report["cacheDecisionReason"] = (
+            clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        )
         if not board_url:
             entry_report["status"] = "error"
             entry_report["error"] = default_error
@@ -484,7 +557,11 @@ def _run_html_board_sources(
             details.append(entry_report)
             continue
         if entry_report["cacheDecision"] == "revalidate_only":
-            state_entry = (source_state_rows or {}).get(source_name) if isinstance(source_state_rows, dict) else {}
+            state_entry = (
+                (source_state_rows or {}).get(source_name)
+                if isinstance(source_state_rows, dict)
+                else {}
+            )
             revalidate = conditional_revalidate_url(
                 board_url,
                 timeout_s,
@@ -504,11 +581,15 @@ def _run_html_board_sources(
                 details.append(entry_report)
                 continue
         try:
-            candidate_urls = _iter_ashby_candidate_urls(source) if adapter_name == "ashby" else [board_url]
+            candidate_urls = (
+                _iter_ashby_candidate_urls(source) if adapter_name == "ashby" else [board_url]
+            )
             parsed = []
             last_text = ""
             for candidate_url in candidate_urls:
-                last_text = deps.fetch_with_retries(candidate_url, fetch_text, timeout_s, retries, backoff_s)
+                last_text = deps.fetch_with_retries(
+                    candidate_url, fetch_text, timeout_s, retries, backoff_s
+                )
                 parsed = parse_html(last_text, candidate_url, studio)
                 if parsed:
                     break
@@ -562,7 +643,8 @@ def _html_board_plugin(adapter_name: str) -> SimpleAdapterPlugin:
         name=f"{adapter_name}_sources",
         family="provider_api",
         priority=55,
-        can_handle_fn=lambda ctx: ctx.family == "provider_api" and ctx.adapter_key == f"{adapter_name}_sources",
+        can_handle_fn=lambda ctx: ctx.family == "provider_api"
+        and ctx.adapter_key == f"{adapter_name}_sources",
         run_fn=lambda **kwargs: _run_html_board_sources(
             adapter_name=adapter_name,
             registry_adapter=registry_adapter,
@@ -610,7 +692,8 @@ def ensure_registered() -> None:
             name="greenhouse_boards",
             family="provider_api",
             priority=10,
-            can_handle_fn=lambda ctx: ctx.family == "provider_api" and ctx.adapter_key == "greenhouse_boards",
+            can_handle_fn=lambda ctx: ctx.family == "provider_api"
+            and ctx.adapter_key == "greenhouse_boards",
             run_fn=_run_greenhouse_boards,
         )
     )
@@ -619,7 +702,8 @@ def ensure_registered() -> None:
             name="teamtailor_sources",
             family="provider_api",
             priority=20,
-            can_handle_fn=lambda ctx: ctx.family == "provider_api" and ctx.adapter_key == "teamtailor_sources",
+            can_handle_fn=lambda ctx: ctx.family == "provider_api"
+            and ctx.adapter_key == "teamtailor_sources",
             run_fn=_run_teamtailor_sources,
         )
     )
@@ -631,4 +715,3 @@ def ensure_registered() -> None:
     default_registry.register(_html_board_plugin("breezy"))
     default_registry.register(_html_board_plugin("jazzhr"))
     default_registry.register(_html_board_plugin("ashby"))
-

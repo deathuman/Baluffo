@@ -25,6 +25,7 @@ def test_trigger_source_check_static_fallback_uses_generic_scrape(admin_bridge_o
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     try:
+
         def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
             if url == "https://milestone.it/careers":
                 return listing_html
@@ -48,7 +49,9 @@ def test_trigger_source_check_static_fallback_returns_failure_when_no_jobs(admin
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     try:
-        admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: "<html><body>No jobs</body></html>"
+        admin_bridge.discovery.fetch_text_with_retry = (
+            lambda *_args, **_kwargs: "<html><body>No jobs</body></html>"
+        )
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]
         assert not result["ok"]
@@ -57,7 +60,9 @@ def test_trigger_source_check_static_fallback_returns_failure_when_no_jobs(admin
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
 
-def test_trigger_source_check_static_fallback_detects_embedded_job_openings_module(admin_bridge_ops_root):
+def test_trigger_source_check_static_fallback_detects_embedded_job_openings_module(
+    admin_bridge_ops_root,
+):
     added = admin_bridge.add_manual_source("https://www.avalanchestudios.com/careers")
     source_id = str(added.get("sourceId") or "")
     assert source_id
@@ -96,6 +101,7 @@ def test_trigger_source_check_static_fallback_classifies_rendered_404_page(admin
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
+
 def test_trigger_source_check_static_fallback_attempts_browser_on_403(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://careers.rebellion.com/")
     source_id = str(added.get("sourceId") or "")
@@ -104,11 +110,15 @@ def test_trigger_source_check_static_fallback_attempts_browser_on_403(admin_brid
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     original_browser_fetch = admin_bridge._source_check_http.try_fetch_with_playwright
     try:
+
         def fake_fetch(_url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
             raise RuntimeError("HTTP Error 403: Forbidden")
 
         admin_bridge.discovery.fetch_text_with_retry = fake_fetch
-        admin_bridge._source_check_http.try_fetch_with_playwright = lambda *_args, **_kwargs: ('<a href="/jobs/gameplay-programmer">Role</a>', "")
+        admin_bridge._source_check_http.try_fetch_with_playwright = lambda *_args, **_kwargs: (
+            '<a href="/jobs/gameplay-programmer">Role</a>',
+            "",
+        )
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]
         assert result["ok"]
@@ -120,7 +130,10 @@ def test_trigger_source_check_static_fallback_attempts_browser_on_403(admin_brid
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
         admin_bridge._source_check_http.try_fetch_with_playwright = original_browser_fetch
 
-def test_trigger_source_check_static_fallback_attempts_browser_on_challenge_page(admin_bridge_ops_root):
+
+def test_trigger_source_check_static_fallback_attempts_browser_on_challenge_page(
+    admin_bridge_ops_root,
+):
     added = admin_bridge.add_manual_source("https://jobs.zenimax.com/jobs")
     source_id = str(added.get("sourceId") or "")
     assert source_id
@@ -130,7 +143,7 @@ def test_trigger_source_check_static_fallback_attempts_browser_on_challenge_page
     try:
         admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: (
             '<html><head><script src="/cdn-cgi/challenge-platform/h/g/scripts/jsd/main.js"></script></head>'
-            '<body>Just a moment...</body></html>'
+            "<body>Just a moment...</body></html>"
         )
         admin_bridge._source_check_http.try_fetch_with_playwright = lambda *_args, **_kwargs: (
             '<a href="/requisitions/view/3472">Associate DevOps Programmer</a>'
@@ -147,6 +160,7 @@ def test_trigger_source_check_static_fallback_attempts_browser_on_challenge_page
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
         admin_bridge._source_check_http.try_fetch_with_playwright = original_browser_fetch
 
+
 def test_trigger_source_check_static_parses_embedded_job_filter_payload(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://jobs.zenimax.com/jobs")
     source_id = str(added.get("sourceId") or "")
@@ -154,9 +168,21 @@ def test_trigger_source_check_static_parses_embedded_job_filter_payload(admin_br
 
     payload = {
         "jobs": [
-            {"id": 3472, "title": "Associate DevOps Programmer", "link": "https://careers-zenimax.icims.com/jobs/3472/associate-devops-programmer/job"},
-            {"id": 3479, "title": "Development QA Manager", "link": "https://careers-zenimax.icims.com/jobs/3479/development-qa-manager/job"},
-            {"id": 3488, "title": "Senior Gameplay Programmer", "link": "https://careers-zenimax.icims.com/jobs/3488/senior-gameplay-programmer/job"},
+            {
+                "id": 3472,
+                "title": "Associate DevOps Programmer",
+                "link": "https://careers-zenimax.icims.com/jobs/3472/associate-devops-programmer/job",
+            },
+            {
+                "id": 3479,
+                "title": "Development QA Manager",
+                "link": "https://careers-zenimax.icims.com/jobs/3479/development-qa-manager/job",
+            },
+            {
+                "id": 3488,
+                "title": "Senior Gameplay Programmer",
+                "link": "https://careers-zenimax.icims.com/jobs/3488/senior-gameplay-programmer/job",
+            },
         ]
     }
     raw_data = html.escape(json.dumps(payload), quote=True)
@@ -169,7 +195,10 @@ def test_trigger_source_check_static_parses_embedded_job_filter_payload(admin_br
     original_browser_fetch = admin_bridge._source_check_http.try_fetch_with_playwright
     try:
         admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: listing_html
-        admin_bridge._source_check_http.try_fetch_with_playwright = lambda *_args, **_kwargs: ("", "unexpected browser fallback")
+        admin_bridge._source_check_http.try_fetch_with_playwright = lambda *_args, **_kwargs: (
+            "",
+            "unexpected browser fallback",
+        )
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]
         assert result["ok"]
@@ -181,7 +210,10 @@ def test_trigger_source_check_static_parses_embedded_job_filter_payload(admin_br
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
         admin_bridge._source_check_http.try_fetch_with_playwright = original_browser_fetch
 
-def test_trigger_source_check_static_fallback_reports_unavailable_browser_fallback(admin_bridge_ops_root):
+
+def test_trigger_source_check_static_fallback_reports_unavailable_browser_fallback(
+    admin_bridge_ops_root,
+):
     added = admin_bridge.add_manual_source("https://careers.rebellion.com/")
     source_id = str(added.get("sourceId") or "")
     assert source_id
@@ -189,8 +221,13 @@ def test_trigger_source_check_static_fallback_reports_unavailable_browser_fallba
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     original_browser_fetch = admin_bridge._source_check_http.try_fetch_with_playwright
     try:
-        admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("HTTP Error 403: Forbidden"))
-        admin_bridge._source_check_http.try_fetch_with_playwright = lambda *_args, **_kwargs: ("", "browser fallback unavailable (playwright is not installed)")
+        admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(RuntimeError("HTTP Error 403: Forbidden"))
+        admin_bridge._source_check_http.try_fetch_with_playwright = lambda *_args, **_kwargs: (
+            "",
+            "browser fallback unavailable (playwright is not installed)",
+        )
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]
         assert not result["ok"]
@@ -201,6 +238,7 @@ def test_trigger_source_check_static_fallback_reports_unavailable_browser_fallba
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
         admin_bridge._source_check_http.try_fetch_with_playwright = original_browser_fetch
 
+
 def test_trigger_source_check_static_fallback_returns_404_hints(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://www.king.com/careers")
     source_id = str(added.get("sourceId") or "")
@@ -208,7 +246,9 @@ def test_trigger_source_check_static_fallback_returns_404_hints(admin_bridge_ops
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     try:
-        admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("HTTP Error 404: Not Found"))
+        admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(RuntimeError("HTTP Error 404: Not Found"))
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]
         assert not result["ok"]
@@ -218,14 +258,18 @@ def test_trigger_source_check_static_fallback_returns_404_hints(admin_bridge_ops
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
+
 @pytest.mark.slow
-def test_trigger_source_check_static_fallback_retries_suggested_alternate_on_404(admin_bridge_ops_root):
+def test_trigger_source_check_static_fallback_retries_suggested_alternate_on_404(
+    admin_bridge_ops_root,
+):
     added = admin_bridge.add_manual_source("https://www.fatsharkgames.com/career")
     source_id = str(added.get("sourceId") or "")
     assert source_id
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     try:
+
         def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
             if url == "https://www.fatsharkgames.com/career":
                 raise RuntimeError("HTTP Error 404: Not Found")
@@ -242,7 +286,10 @@ def test_trigger_source_check_static_fallback_retries_suggested_alternate_on_404
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
-def test_trigger_source_check_static_fallback_uses_parent_redirect_candidates_on_404(admin_bridge_ops_root):
+
+def test_trigger_source_check_static_fallback_uses_parent_redirect_candidates_on_404(
+    admin_bridge_ops_root,
+):
     added = admin_bridge.add_manual_source("https://www.fatsharkgames.com/career")
     source_id = str(added.get("sourceId") or "")
     assert source_id
@@ -250,6 +297,7 @@ def test_trigger_source_check_static_fallback_uses_parent_redirect_candidates_on
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     original_redirect = admin_bridge._source_check_http.discover_redirect_career_candidates
     try:
+
         def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
             if url == "https://www.fatsharkgames.com/career":
                 raise RuntimeError("HTTP Error 404: Not Found")
@@ -258,7 +306,9 @@ def test_trigger_source_check_static_fallback_uses_parent_redirect_candidates_on
             raise RuntimeError(f"unexpected URL: {url}")
 
         admin_bridge.discovery.fetch_text_with_retry = fake_fetch
-        admin_bridge._source_check_http.discover_redirect_career_candidates = lambda *_args, **_kwargs: ["https://jobs.fatsharkgames.com"]
+        admin_bridge._source_check_http.discover_redirect_career_candidates = (
+            lambda *_args, **_kwargs: ["https://jobs.fatsharkgames.com"]
+        )
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]
         assert result["ok"]
@@ -267,6 +317,7 @@ def test_trigger_source_check_static_fallback_uses_parent_redirect_candidates_on
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
         admin_bridge._source_check_http.discover_redirect_career_candidates = original_redirect
 
+
 def test_trigger_source_check_static_fallback_returns_ssl_error_code(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://careers.11bitstudios.com/")
     source_id = str(added.get("sourceId") or "")
@@ -274,15 +325,16 @@ def test_trigger_source_check_static_fallback_returns_ssl_error_code(admin_bridg
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     try:
-        admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("SSL: CERTIFICATE_VERIFY_FAILED hostname mismatch")
-        )
+        admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(RuntimeError("SSL: CERTIFICATE_VERIFY_FAILED hostname mismatch"))
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]
         assert not result["ok"]
         assert str(result.get("errorCode") or "") == "ssl_error"
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
+
 
 def test_trigger_source_check_static_fallback_extracts_intervieweb_links(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://milestone.it/careers/")
@@ -299,6 +351,7 @@ def test_trigger_source_check_static_fallback_extracts_intervieweb_links(admin_b
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     try:
+
         def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
             if url == "https://milestone.it/careers":
                 return page_html
@@ -314,6 +367,7 @@ def test_trigger_source_check_static_fallback_extracts_intervieweb_links(admin_b
         assert bool(result.get("weakSignal"))
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
+
 
 def test_trigger_source_check_static_fallback_accepts_careers_role_links(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://www.naconstudiomilan.com/careers/")
@@ -339,7 +393,10 @@ def test_trigger_source_check_static_fallback_accepts_careers_role_links(admin_b
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
-def test_trigger_source_check_static_fallback_detects_textual_apply_role_signals(admin_bridge_ops_root):
+
+def test_trigger_source_check_static_fallback_detects_textual_apply_role_signals(
+    admin_bridge_ops_root,
+):
     added = admin_bridge.add_manual_source("https://www.4a-games.com.mt/careers")
     source_id = str(added.get("sourceId") or "")
     assert source_id
@@ -364,7 +421,10 @@ def test_trigger_source_check_static_fallback_detects_textual_apply_role_signals
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
-def test_trigger_source_check_static_fallback_detects_crytek_like_embedded_links(admin_bridge_ops_root):
+
+def test_trigger_source_check_static_fallback_detects_crytek_like_embedded_links(
+    admin_bridge_ops_root,
+):
     added = admin_bridge.add_manual_source("https://www.crytek.com/career")
     source_id = str(added.get("sourceId") or "")
     assert source_id
@@ -387,7 +447,10 @@ def test_trigger_source_check_static_fallback_detects_crytek_like_embedded_links
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
-def test_trigger_source_check_static_fallback_extracts_embedded_relative_career_links(admin_bridge_ops_root):
+
+def test_trigger_source_check_static_fallback_extracts_embedded_relative_career_links(
+    admin_bridge_ops_root,
+):
     added = admin_bridge.add_manual_source("https://www.4a-games.com.mt/careers")
     source_id = str(added.get("sourceId") or "")
     assert source_id
@@ -409,7 +472,10 @@ def test_trigger_source_check_static_fallback_extracts_embedded_relative_career_
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
-def test_trigger_source_check_static_fallback_detects_smartrecruiters_embedded_url(admin_bridge_ops_root):
+
+def test_trigger_source_check_static_fallback_detects_smartrecruiters_embedded_url(
+    admin_bridge_ops_root,
+):
     added = admin_bridge.add_manual_source("https://www.cdprojektred.com/en/jobs")
     source_id = str(added.get("sourceId") or "")
     assert source_id
@@ -431,6 +497,7 @@ def test_trigger_source_check_static_fallback_detects_smartrecruiters_embedded_u
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
+
 def test_trigger_source_check_static_fallback_counts_personio_search_json(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://yager.de/careers/")
     source_id = str(added.get("sourceId") or "")
@@ -444,6 +511,7 @@ def test_trigger_source_check_static_fallback_counts_personio_search_json(admin_
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     try:
+
         def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
             if url == "https://yager.de/careers":
                 return listing_html
@@ -461,6 +529,7 @@ def test_trigger_source_check_static_fallback_counts_personio_search_json(admin_
         assert int(result["jobsFound"]) >= 2
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
+
 
 def test_trigger_source_check_static_fallback_detects_jobylon_embed(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://www.remedygames.com/careers/")
@@ -481,6 +550,7 @@ def test_trigger_source_check_static_fallback_detects_jobylon_embed(admin_bridge
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     try:
+
         def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
             if url == "https://www.remedygames.com/careers":
                 return listing_html
@@ -496,6 +566,7 @@ def test_trigger_source_check_static_fallback_detects_jobylon_embed(admin_bridge
         assert int(result["jobsFound"]) >= 1
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
+
 
 def test_trigger_source_check_static_fallback_accepts_join_role_links(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://www.guerrilla-games.com/join")
@@ -518,6 +589,7 @@ def test_trigger_source_check_static_fallback_accepts_join_role_links(admin_brid
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
+
 def test_trigger_source_check_static_fallback_accepts_open_positions_links(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://www.rovio.com/careers/")
     source_id = str(added.get("sourceId") or "")
@@ -528,6 +600,7 @@ def test_trigger_source_check_static_fallback_accepts_open_positions_links(admin
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     try:
+
         def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
             if url == "https://www.rovio.com/careers":
                 return careers_html
@@ -543,6 +616,7 @@ def test_trigger_source_check_static_fallback_accepts_open_positions_links(admin
         assert int(result["jobsFound"]) >= 1
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
+
 
 def test_trigger_source_check_static_fallback_accepts_job_offers_links(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://techland.net/job-offers")
@@ -562,6 +636,7 @@ def test_trigger_source_check_static_fallback_accepts_job_offers_links(admin_bri
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
+
 def test_trigger_source_check_static_fallback_accepts_vacancy_links(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://www.playground-games.com/careers")
     source_id = str(added.get("sourceId") or "")
@@ -579,6 +654,7 @@ def test_trigger_source_check_static_fallback_accepts_vacancy_links(admin_bridge
         assert int(result["jobsFound"]) == 1
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
+
 
 def test_trigger_source_check_static_fallback_accepts_vacancies_slug_links(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://careers.sega.co.uk/vacancies")
@@ -601,6 +677,7 @@ def test_trigger_source_check_static_fallback_accepts_vacancies_slug_links(admin
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
 
+
 def test_trigger_source_check_static_fallback_counts_workable_widget_jobs(admin_bridge_ops_root):
     added = admin_bridge.add_manual_source("https://team17.com/careers")
     source_id = str(added.get("sourceId") or "")
@@ -611,10 +688,14 @@ def test_trigger_source_check_static_fallback_counts_workable_widget_jobs(admin_
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     try:
+
         def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
             if url == "https://team17.com/careers":
                 return listing_html
-            if url == "https://apply.workable.com/api/v1/widget/accounts/team-17-digital?details=true":
+            if (
+                url
+                == "https://apply.workable.com/api/v1/widget/accounts/team-17-digital?details=true"
+            ):
                 return workable_json
             return "<html></html>"
 
@@ -626,6 +707,7 @@ def test_trigger_source_check_static_fallback_counts_workable_widget_jobs(admin_
         assert int(result["jobsFound"]) >= 3
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch
+
 
 def test_trigger_source_check_static_normalizes_placeholder_studio_name(admin_bridge_ops_root):
     pending_row = {
@@ -649,7 +731,9 @@ def test_trigger_source_check_static_normalizes_placeholder_studio_name(admin_br
         assert result["started"]
         assert result["ok"]
         pending = admin_bridge.load_json_array(admin_bridge.PENDING_PATH, [])
-        updated = next((row for row in pending if admin_bridge.source_identity(row) == source_id), {})
+        updated = next(
+            (row for row in pending if admin_bridge.source_identity(row) == source_id), {}
+        )
         assert str(updated.get("studio") or "") == "Nacon Studio Milan"
     finally:
         admin_bridge.discovery.fetch_text_with_retry = original_fetch

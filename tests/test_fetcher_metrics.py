@@ -57,4 +57,3 @@ def test_sanitize_source_label_normalizes_static_source_listing_prefix() -> None
     raw = "static_source::static:listing_url:https://studio.example.com/careers/jobs?utm=x"
     clean = fm.sanitize_source_label(raw)
     assert clean.startswith("static:studio.example.com/careers/jobs")
-

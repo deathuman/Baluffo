@@ -26,9 +26,12 @@ def test_build_manifest_marks_test_lanes_not_run() -> None:
         _patch_orchestrator_paths(tmp_root)
         args = argparse.Namespace(force=True)
 
-        with mock.patch.object(orchestrator, "get_src_hash", return_value="abc123"), mock.patch.object(
-            orchestrator, "run_proc", return_value=(True, "ok")
-        ), mock.patch.object(orchestrator, "sync_latest"), mock.patch.object(orchestrator, "rotate_history"):
+        with (
+            mock.patch.object(orchestrator, "get_src_hash", return_value="abc123"),
+            mock.patch.object(orchestrator, "run_proc", return_value=(True, "ok")),
+            mock.patch.object(orchestrator, "sync_latest"),
+            mock.patch.object(orchestrator, "rotate_history"),
+        ):
             ok, run_dir = orchestrator.build(args)
 
         assert ok is True
@@ -51,10 +54,16 @@ def test_verify_manifest_marks_passed_test_lanes() -> None:
         exe_path.parent.mkdir(parents=True, exist_ok=True)
         exe_path.write_text("stub", encoding="utf-8")
 
-        with mock.patch.object(orchestrator, "build", return_value=(True, run_dir)), mock.patch.object(
-            orchestrator, "run_proc", side_effect=[(True, "py"), (True, "node"), (True, "smoke")]
-        ), mock.patch.object(orchestrator, "sync_latest"), mock.patch.object(orchestrator, "rotate_history"), mock.patch.object(
-            orchestrator, "get_src_hash", return_value="abc123"
+        with (
+            mock.patch.object(orchestrator, "build", return_value=(True, run_dir)),
+            mock.patch.object(
+                orchestrator,
+                "run_proc",
+                side_effect=[(True, "py"), (True, "node"), (True, "smoke")],
+            ),
+            mock.patch.object(orchestrator, "sync_latest"),
+            mock.patch.object(orchestrator, "rotate_history"),
+            mock.patch.object(orchestrator, "get_src_hash", return_value="abc123"),
         ):
             orchestrator.verify(args)
 
@@ -76,10 +85,16 @@ def test_verify_manifest_marks_failed_test_lanes() -> None:
         exe_path.parent.mkdir(parents=True, exist_ok=True)
         exe_path.write_text("stub", encoding="utf-8")
 
-        with mock.patch.object(orchestrator, "build", return_value=(True, run_dir)), mock.patch.object(
-            orchestrator, "run_proc", side_effect=[(False, "py"), (True, "node"), (True, "smoke")]
-        ), mock.patch.object(orchestrator, "sync_latest"), mock.patch.object(orchestrator, "rotate_history"), mock.patch.object(
-            orchestrator, "get_src_hash", return_value="abc123"
+        with (
+            mock.patch.object(orchestrator, "build", return_value=(True, run_dir)),
+            mock.patch.object(
+                orchestrator,
+                "run_proc",
+                side_effect=[(False, "py"), (True, "node"), (True, "smoke")],
+            ),
+            mock.patch.object(orchestrator, "sync_latest"),
+            mock.patch.object(orchestrator, "rotate_history"),
+            mock.patch.object(orchestrator, "get_src_hash", return_value="abc123"),
         ):
             orchestrator.verify(args)
 

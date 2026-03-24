@@ -11,9 +11,7 @@ from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 
-_NEXT_DATA_RE = re.compile(
-    r'(?is)<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>'
-)
+_NEXT_DATA_RE = re.compile(r'(?is)<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>')
 _HOSTS = {"careers.amanotes.com", "www.careers.amanotes.com"}
 
 
@@ -46,9 +44,7 @@ def run(
     except json.JSONDecodeError:
         return []
 
-    positions = (
-        ((payload.get("props") or {}).get("pageProps") or {}).get("positions") or []
-    )
+    positions = ((payload.get("props") or {}).get("pageProps") or {}).get("positions") or []
     if not isinstance(positions, list):
         return []
 

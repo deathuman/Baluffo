@@ -35,13 +35,15 @@ class _Recorder:
         self.calls = []
 
     def __call__(self, req, timeout=20):  # noqa: ANN001
-        self.calls.append({
-            "url": req.full_url,
-            "method": req.get_method(),
-            "headers": dict(req.header_items()),
-            "body": req.data.decode("utf-8") if isinstance(req.data, bytes) else "",
-            "timeout": timeout,
-        })
+        self.calls.append(
+            {
+                "url": req.full_url,
+                "method": req.get_method(),
+                "headers": dict(req.header_items()),
+                "body": req.data.decode("utf-8") if isinstance(req.data, bytes) else "",
+                "timeout": timeout,
+            }
+        )
         if not self.responses:
             raise AssertionError("No fake responses left")
         item = self.responses.pop(0)
@@ -67,7 +69,10 @@ def test_config_status_reports_disabled_when_locally_disabled(source_sync_test_r
     assert not status["ready"]
     assert status["state"] == "disabled"
 
-def test_config_status_uses_root_feature_gate_default_when_saved_override_missing(source_sync_test_root):
+
+def test_config_status_uses_root_feature_gate_default_when_saved_override_missing(
+    source_sync_test_root,
+):
     source_sync_test_root.write_packaged_config()
     original_security = dict(sync._SECURITY_DEFAULTS)  # noqa: SLF001
     original_sync = dict(sync._SYNC_DEFAULTS)  # noqa: SLF001
@@ -82,11 +87,16 @@ def test_config_status_uses_root_feature_gate_default_when_saved_override_missin
     assert not status["enabled"]
     assert status["state"] == "disabled"
 
+
 def test_encrypt_and_decrypt_private_key_round_trip():
     salt_b64 = sync._base64url_encode(b"unit-test-salt-123")  # noqa: SLF001
     private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
-    encrypted = sync.encrypt_private_key_pem(private_key, salt_b64=salt_b64, app_id="1", installation_id="2")
-    decrypted = sync.decrypt_private_key_pem(encrypted, salt_b64=salt_b64, app_id="1", installation_id="2")
+    encrypted = sync.encrypt_private_key_pem(
+        private_key, salt_b64=salt_b64, app_id="1", installation_id="2"
+    )
+    decrypted = sync.decrypt_private_key_pem(
+        encrypted, salt_b64=salt_b64, app_id="1", installation_id="2"
+    )
     assert decrypted == private_key
 
 
@@ -161,211 +171,218 @@ def test_config_status_ready_when_passphrase_is_provided(source_sync_test_root):
     assert status["ready"]
     assert status["state"] == "ready"
 
+
 def test_config_status_ready_for_embedded_derivation(source_sync_test_root):
-        salt_b64 = sync._base64url_encode(b"unit-test-salt-013")  # noqa: SLF001
-        hint = "embedded-hint-01"
-        version = "v1"
-        private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
-        passphrase = sync.build_embedded_passphrase(hint=hint, version=version)
-        encrypted = sync.encrypt_private_key_pem_with_passphrase(
-            private_key,
-            salt_b64=salt_b64,
-            app_id="123456",
-            installation_id="999999",
-            passphrase=passphrase,
-        )
-        source_sync_test_root.write_packaged_config(
-            {
-                "keyDerivation": "embedded",
-                "embeddedKeyHint": hint,
-                "embeddedKeyVersion": version,
-                "keySalt": salt_b64,
-                "privateKeyPemEnc": encrypted,
-                "privateKeyPem": "",
-            }
-        )
-        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-        status = sync.config_status(cfg)
-        assert status["ready"]
-        assert status["state"] == "ready"
+    salt_b64 = sync._base64url_encode(b"unit-test-salt-013")  # noqa: SLF001
+    hint = "embedded-hint-01"
+    version = "v1"
+    private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
+    passphrase = sync.build_embedded_passphrase(hint=hint, version=version)
+    encrypted = sync.encrypt_private_key_pem_with_passphrase(
+        private_key,
+        salt_b64=salt_b64,
+        app_id="123456",
+        installation_id="999999",
+        passphrase=passphrase,
+    )
+    source_sync_test_root.write_packaged_config(
+        {
+            "keyDerivation": "embedded",
+            "embeddedKeyHint": hint,
+            "embeddedKeyVersion": version,
+            "keySalt": salt_b64,
+            "privateKeyPemEnc": encrypted,
+            "privateKeyPem": "",
+        }
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    status = sync.config_status(cfg)
+    assert status["ready"]
+    assert status["state"] == "ready"
 
 
 def test_allowlist_mismatch_marks_misconfigured(source_sync_test_root):
-        source_sync_test_root.write_packaged_config(
-            {
-                "allowedRepo": "other/repo",
-                "allowedBranch": "main",
-                "allowedPathPrefix": "baluffo/source-sync.json",
-            }
-        )
-        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-        status = sync.config_status(cfg)
-        assert not status["ready"]
-        assert status["state"] == "misconfigured"
-        assert "allowlist" in status["missing"]
+    source_sync_test_root.write_packaged_config(
+        {
+            "allowedRepo": "other/repo",
+            "allowedBranch": "main",
+            "allowedPathPrefix": "baluffo/source-sync.json",
+        }
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    status = sync.config_status(cfg)
+    assert not status["ready"]
+    assert status["state"] == "misconfigured"
+    assert "allowlist" in status["missing"]
 
 
 def test_sync_disable_env_forces_disabled_state(source_sync_test_root):
-        source_sync_test_root.write_packaged_config()
-        env = dict(source_sync_test_root.env)
-        env[sync.SYNC_DISABLE_ENV] = "1"
-        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=env)
-        status = sync.config_status(cfg)
-        assert not status["ready"]
-        assert status["state"] == "disabled"
-        assert sync.SYNC_DISABLE_ENV in status["message"]
+    source_sync_test_root.write_packaged_config()
+    env = dict(source_sync_test_root.env)
+    env[sync.SYNC_DISABLE_ENV] = "1"
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=env)
+    status = sync.config_status(cfg)
+    assert not status["ready"]
+    assert status["state"] == "disabled"
+    assert sync.SYNC_DISABLE_ENV in status["message"]
 
 
 def test_build_app_jwt_has_rs256_shape(source_sync_test_root):
-        original_sign = sync._rsa_pkcs1_sign_sha256  # noqa: SLF001
-        try:
-            sync._rsa_pkcs1_sign_sha256 = lambda _msg, _pem: b"sig-bytes"  # type: ignore[assignment]
-            token = sync.build_app_jwt("123456", "pem", issued_at=sync.now_utc())
-        finally:
-            sync._rsa_pkcs1_sign_sha256 = original_sign  # type: ignore[assignment]
-        parts = token.split(".")
-        assert len(parts) == 3
-        header = json.loads(base64.urlsafe_b64decode(parts[0] + "==").decode("utf-8"))
-        payload = json.loads(base64.urlsafe_b64decode(parts[1] + "==").decode("utf-8"))
-        assert header["alg"] == "RS256"
-        assert payload["iss"] == "123456"
-        assert int(payload["exp"]) > int(payload["iat"])
+    original_sign = sync._rsa_pkcs1_sign_sha256  # noqa: SLF001
+    try:
+        sync._rsa_pkcs1_sign_sha256 = lambda _msg, _pem: b"sig-bytes"  # type: ignore[assignment]
+        token = sync.build_app_jwt("123456", "pem", issued_at=sync.now_utc())
+    finally:
+        sync._rsa_pkcs1_sign_sha256 = original_sign  # type: ignore[assignment]
+    parts = token.split(".")
+    assert len(parts) == 3
+    header = json.loads(base64.urlsafe_b64decode(parts[0] + "==").decode("utf-8"))
+    payload = json.loads(base64.urlsafe_b64decode(parts[1] + "==").decode("utf-8"))
+    assert header["alg"] == "RS256"
+    assert payload["iss"] == "123456"
+    assert int(payload["exp"]) > int(payload["iat"])
+
 
 def test_github_app_auth_reuses_cached_installation_token(source_sync_test_root):
-        packaged = sync.PackagedGitHubAppConfig(
-            app_id="123",
-            installation_id="456",
-            repo="owner/repo",
-            branch="main",
-            path="baluffo/source-sync.json",
-            private_key_pem="pem",
-            config_path=str(source_sync_test_root.config_path),
-        )
-        auth = sync.GitHubAppAuth(packaged)
-        calls = {"count": 0}
+    packaged = sync.PackagedGitHubAppConfig(
+        app_id="123",
+        installation_id="456",
+        repo="owner/repo",
+        branch="main",
+        path="baluffo/source-sync.json",
+        private_key_pem="pem",
+        config_path=str(source_sync_test_root.config_path),
+    )
+    auth = sync.GitHubAppAuth(packaged)
+    calls = {"count": 0}
 
-        def fake_refresh(*, opener=sync.urlopen):  # noqa: ARG001
-            calls["count"] += 1
-            auth._token = "inst_token"  # noqa: SLF001
-            auth._token_expires_at = sync.now_utc() + timedelta(hours=1)  # noqa: SLF001
-            return "inst_token"
+    def fake_refresh(*, opener=sync.urlopen):  # noqa: ARG001
+        calls["count"] += 1
+        auth._token = "inst_token"  # noqa: SLF001
+        auth._token_expires_at = sync.now_utc() + timedelta(hours=1)  # noqa: SLF001
+        return "inst_token"
 
-        original_refresh = auth._refresh_installation_token
-        try:
-            auth._refresh_installation_token = fake_refresh  # type: ignore[assignment]
-            assert auth.get_installation_token() == "inst_token"
-            assert auth.get_installation_token() == "inst_token"
-        finally:
-            auth._refresh_installation_token = original_refresh  # type: ignore[assignment]
-        assert calls["count"] == 1
+    original_refresh = auth._refresh_installation_token
+    try:
+        auth._refresh_installation_token = fake_refresh  # type: ignore[assignment]
+        assert auth.get_installation_token() == "inst_token"
+        assert auth.get_installation_token() == "inst_token"
+    finally:
+        auth._refresh_installation_token = original_refresh  # type: ignore[assignment]
+    assert calls["count"] == 1
 
 
 def test_github_app_auth_concurrent_access_refreshes_once(source_sync_test_root):
-        packaged = sync.PackagedGitHubAppConfig(
-            app_id="123",
-            installation_id="456",
-            repo="owner/repo",
-            branch="main",
-            path="baluffo/source-sync.json",
-            private_key_pem="pem",
-            config_path=str(source_sync_test_root.config_path),
-        )
-        auth = sync.GitHubAppAuth(packaged)
-        calls = {"count": 0}
-        gate = threading.Event()
+    packaged = sync.PackagedGitHubAppConfig(
+        app_id="123",
+        installation_id="456",
+        repo="owner/repo",
+        branch="main",
+        path="baluffo/source-sync.json",
+        private_key_pem="pem",
+        config_path=str(source_sync_test_root.config_path),
+    )
+    auth = sync.GitHubAppAuth(packaged)
+    calls = {"count": 0}
+    gate = threading.Event()
 
-        def fake_refresh(*, opener=sync.urlopen):  # noqa: ARG001
-            calls["count"] += 1
-            gate.set()
-            auth._token = "shared_token"  # noqa: SLF001
-            auth._token_expires_at = sync.now_utc() + timedelta(hours=1)  # noqa: SLF001
-            return "shared_token"
+    def fake_refresh(*, opener=sync.urlopen):  # noqa: ARG001
+        calls["count"] += 1
+        gate.set()
+        auth._token = "shared_token"  # noqa: SLF001
+        auth._token_expires_at = sync.now_utc() + timedelta(hours=1)  # noqa: SLF001
+        return "shared_token"
 
-        original_refresh = auth._refresh_installation_token
-        try:
-            auth._refresh_installation_token = fake_refresh  # type: ignore[assignment]
-            results = []
+    original_refresh = auth._refresh_installation_token
+    try:
+        auth._refresh_installation_token = fake_refresh  # type: ignore[assignment]
+        results = []
 
-            def worker():  # noqa: ANN202
-                gate.wait(0.2)
-                results.append(auth.get_installation_token())
-
-            threads = [threading.Thread(target=worker) for _ in range(4)]
-            for thread in threads:
-                thread.start()
-            # Prime the first refresh path.
+        def worker():  # noqa: ANN202
+            gate.wait(0.2)
             results.append(auth.get_installation_token())
-            for thread in threads:
-                thread.join()
-        finally:
-            auth._refresh_installation_token = original_refresh  # type: ignore[assignment]
-        assert calls["count"] == 1
-        assert all(item == "shared_token" for item in results)
+
+        threads = [threading.Thread(target=worker) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        # Prime the first refresh path.
+        results.append(auth.get_installation_token())
+        for thread in threads:
+            thread.join()
+    finally:
+        auth._refresh_installation_token = original_refresh  # type: ignore[assignment]
+    assert calls["count"] == 1
+    assert all(item == "shared_token" for item in results)
 
 
 def test_read_remote_snapshot_parses_contents_payload(source_sync_test_root):
-        source_sync_test_root.write_packaged_config()
-        snapshot = {
-            "schemaVersion": 1,
-            "generatedAt": "2026-03-09T10:00:00+00:00",
-            "source": {"name": "admin_bridge"},
-            "active": [{"adapter": "teamtailor", "company": "A", "id": "teamtailor:name:a"}],
-            "pending": [],
-            "rejected": [],
-        }
-        encoded = base64.b64encode(json.dumps(snapshot).encode("utf-8")).decode("ascii")
-        opener = _Recorder([
+    source_sync_test_root.write_packaged_config()
+    snapshot = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-03-09T10:00:00+00:00",
+        "source": {"name": "admin_bridge"},
+        "active": [{"adapter": "teamtailor", "company": "A", "id": "teamtailor:name:a"}],
+        "pending": [],
+        "rejected": [],
+    }
+    encoded = base64.b64encode(json.dumps(snapshot).encode("utf-8")).decode("ascii")
+    opener = _Recorder(
+        [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             _FakeResponse(200, {"sha": "abc123", "content": encoded}),
-        ])
-        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-        original_build_jwt = sync.build_app_jwt
-        try:
-            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
-            result = sync.read_remote_snapshot(cfg, opener=opener)
-        finally:
-            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-        assert result["exists"]
-        assert result["sha"] == "abc123"
-        assert len(result["snapshot"]["active"]) == 1
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.read_remote_snapshot(cfg, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["exists"]
+    assert result["sha"] == "abc123"
+    assert len(result["snapshot"]["active"]) == 1
 
 
 def test_pull_and_merge_sources_replaces_local_with_remote_latest(source_sync_test_root):
-        source_sync_test_root.write_packaged_config()
-        local = {
-            "active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
-            "pending": [],
-            "rejected": [],
-        }
-        remote_snapshot = {
-            "schemaVersion": 1,
-            "generatedAt": "2026-03-09T11:00:00+00:00",
-            "active": [{"adapter": "static", "listing_url": "https://b.com/jobs", "studio": "Remote"}],
-            "pending": [{"adapter": "teamtailor", "listing_url": "https://c.com/jobs"}],
-            "rejected": [],
-        }
-        encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
-        opener = _Recorder([
+    source_sync_test_root.write_packaged_config()
+    local = {
+        "active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
+        "pending": [],
+        "rejected": [],
+    }
+    remote_snapshot = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-03-09T11:00:00+00:00",
+        "active": [{"adapter": "static", "listing_url": "https://b.com/jobs", "studio": "Remote"}],
+        "pending": [{"adapter": "teamtailor", "listing_url": "https://c.com/jobs"}],
+        "rejected": [],
+    }
+    encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
+    opener = _Recorder(
+        [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             _FakeResponse(200, {"sha": "s1", "content": encoded}),
-        ])
-        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-        original_build_jwt = sync.build_app_jwt
-        try:
-            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
-            result = sync.pull_and_merge_sources(cfg, local, opener=opener)
-        finally:
-            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-        assert result["changed"]
-        merged = result["mergedState"]
-        assert len(merged["active"]) == 1
-        assert merged["active"][0].get("studio") == "Remote"
-        assert len(merged["pending"]) == 1
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.pull_and_merge_sources(cfg, local, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["changed"]
+    merged = result["mergedState"]
+    assert len(merged["active"]) == 1
+    assert merged["active"][0].get("studio") == "Remote"
+    assert len(merged["pending"]) == 1
 
 
 def test_push_sources_snapshot_serializes_expected_payload(source_sync_test_root):
-        source_sync_test_root.write_packaged_config()
-        opener = _Recorder([
+    source_sync_test_root.write_packaged_config()
+    opener = _Recorder(
+        [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
@@ -375,140 +392,165 @@ def test_push_sources_snapshot_serializes_expected_payload(source_sync_test_root
                 fp=None,
             ),
             _FakeResponse(201, {"content": {"sha": "newsha"}}),
-        ])
-        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-        local = {
-            "active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
-            "pending": [{"adapter": "teamtailor", "name": "Foo"}],
-            "rejected": [],
-        }
-        original_build_jwt = sync.build_app_jwt
-        try:
-            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
-            result = sync.push_sources_snapshot(cfg, local, opener=opener)
-        finally:
-            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-        assert result["pushed"]
-        assert result["remoteSha"] == "newsha"
-        put_call = opener.calls[2]
-        assert put_call["method"] == "PUT"
-        body = json.loads(put_call["body"])
-        decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
-        assert "active" in decoded
-        assert "pending" in decoded
-        assert "rejected" in decoded
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    local = {
+        "active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
+        "pending": [{"adapter": "teamtailor", "name": "Foo"}],
+        "rejected": [],
+    }
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["pushed"]
+    assert result["remoteSha"] == "newsha"
+    put_call = opener.calls[2]
+    assert put_call["method"] == "PUT"
+    body = json.loads(put_call["body"])
+    decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
+    assert "active" in decoded
+    assert "pending" in decoded
+    assert "rejected" in decoded
 
 
 def test_push_sources_snapshot_preserves_remote_active_and_pending(source_sync_test_root):
-        source_sync_test_root.write_packaged_config()
-        remote_snapshot = {
-            "schemaVersion": 1,
-            "generatedAt": "2026-03-09T10:00:00+00:00",
-            "active": [{"adapter": "static", "listing_url": "https://remote-active.example/jobs"}],
-            "pending": [{"adapter": "teamtailor", "name": "Remote Pending"}],
-            "rejected": [],
-        }
-        encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
-        opener = _Recorder([
+    source_sync_test_root.write_packaged_config()
+    remote_snapshot = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-03-09T10:00:00+00:00",
+        "active": [{"adapter": "static", "listing_url": "https://remote-active.example/jobs"}],
+        "pending": [{"adapter": "teamtailor", "name": "Remote Pending"}],
+        "rejected": [],
+    }
+    encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
+    opener = _Recorder(
+        [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             _FakeResponse(200, {"sha": "s1", "content": encoded}),
             _FakeResponse(201, {"content": {"sha": "newsha"}}),
-        ])
-        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-        local = {"active": [], "pending": [], "rejected": []}
-        original_build_jwt = sync.build_app_jwt
-        try:
-            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
-            result = sync.push_sources_snapshot(cfg, local, opener=opener)
-        finally:
-            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-        assert result["pushed"]
-        put_call = opener.calls[2]
-        body = json.loads(put_call["body"])
-        decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
-        assert len(decoded["active"]) == 1
-        assert len(decoded["pending"]) == 1
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    local = {"active": [], "pending": [], "rejected": []}
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["pushed"]
+    put_call = opener.calls[2]
+    body = json.loads(put_call["body"])
+    decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
+    assert len(decoded["active"]) == 1
+    assert len(decoded["pending"]) == 1
 
 
 def test_push_sources_snapshot_allows_local_rejected_to_remove_remote_source(source_sync_test_root):
-        source_sync_test_root.write_packaged_config()
-        remote_snapshot = {
-            "schemaVersion": 1,
-            "generatedAt": "2026-03-09T10:00:00+00:00",
-            "active": [{"adapter": "static", "listing_url": "https://remove-me.example/jobs"}],
-            "pending": [],
-            "rejected": [],
-        }
-        encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
-        opener = _Recorder([
+    source_sync_test_root.write_packaged_config()
+    remote_snapshot = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-03-09T10:00:00+00:00",
+        "active": [{"adapter": "static", "listing_url": "https://remove-me.example/jobs"}],
+        "pending": [],
+        "rejected": [],
+    }
+    encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
+    opener = _Recorder(
+        [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             _FakeResponse(200, {"sha": "s1", "content": encoded}),
             _FakeResponse(201, {"content": {"sha": "newsha"}}),
-        ])
-        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-        local = {
-            "active": [],
-            "pending": [],
-            "rejected": [{"adapter": "static", "listing_url": "https://remove-me.example/jobs"}],
-        }
-        original_build_jwt = sync.build_app_jwt
-        try:
-            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
-            result = sync.push_sources_snapshot(cfg, local, opener=opener)
-        finally:
-            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-        assert result["pushed"]
-        put_call = opener.calls[2]
-        body = json.loads(put_call["body"])
-        decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
-        assert len(decoded["active"]) == 0
-        assert len(decoded["rejected"]) == 1
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    local = {
+        "active": [],
+        "pending": [],
+        "rejected": [{"adapter": "static", "listing_url": "https://remove-me.example/jobs"}],
+    }
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["pushed"]
+    put_call = opener.calls[2]
+    body = json.loads(put_call["body"])
+    decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
+    assert len(decoded["active"]) == 0
+    assert len(decoded["rejected"]) == 1
 
 
 def test_401_triggers_installation_token_refresh(source_sync_test_root):
-        source_sync_test_root.write_packaged_config()
-        snapshot = {"schemaVersion": 1, "generatedAt": "2026-03-09T10:00:00+00:00", "source": {}, "active": [], "pending": [], "rejected": []}
-        encoded = base64.b64encode(json.dumps(snapshot).encode("utf-8")).decode("ascii")
-        opener = _Recorder([
+    source_sync_test_root.write_packaged_config()
+    snapshot = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-03-09T10:00:00+00:00",
+        "source": {},
+        "active": [],
+        "pending": [],
+        "rejected": [],
+    }
+    encoded = base64.b64encode(json.dumps(snapshot).encode("utf-8")).decode("ascii")
+    opener = _Recorder(
+        [
             _FakeResponse(201, {"token": "token_a", "expires_at": "2099-03-10T10:00:00Z"}),
-            HTTPError(url="https://api.github.com/test", code=401, msg="Unauthorized", hdrs={}, fp=None),
+            HTTPError(
+                url="https://api.github.com/test", code=401, msg="Unauthorized", hdrs={}, fp=None
+            ),
             _FakeResponse(201, {"token": "token_b", "expires_at": "2099-03-10T11:00:00Z"}),
             _FakeResponse(200, {"sha": "abc", "content": encoded}),
-        ])
-        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-        original_build_jwt = sync.build_app_jwt
-        try:
-            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
-            result = sync.read_remote_snapshot(cfg, opener=opener)
-        finally:
-            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-        assert result["exists"]
-        post_calls = [call for call in opener.calls if call["method"] == "POST"]
-        assert len(post_calls) == 2
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.read_remote_snapshot(cfg, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["exists"]
+    post_calls = [call for call in opener.calls if call["method"] == "POST"]
+    assert len(post_calls) == 2
 
 
 def test_rate_limited_error_sets_runtime_state(source_sync_test_root):
-        source_sync_test_root.write_packaged_config()
-        opener = _Recorder([
+    source_sync_test_root.write_packaged_config()
+    opener = _Recorder(
+        [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
-            HTTPError(url="https://api.github.com/test", code=429, msg="Too Many Requests", hdrs={}, fp=None),
-        ])
-        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-        original_build_jwt = sync.build_app_jwt
-        try:
-            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
-            with pytest.raises(sync.SyncOperationError) as ctx:
-                sync.read_remote_snapshot(cfg, opener=opener)
-        finally:
-            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-        assert ctx.value.code == sync.RUNTIME_STATE_RATE_LIMITED
-        status = sync.config_status(cfg)
-        assert status["state"] == sync.RUNTIME_STATE_RATE_LIMITED
+            HTTPError(
+                url="https://api.github.com/test",
+                code=429,
+                msg="Too Many Requests",
+                hdrs={},
+                fp=None,
+            ),
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        with pytest.raises(sync.SyncOperationError) as ctx:
+            sync.read_remote_snapshot(cfg, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert ctx.value.code == sync.RUNTIME_STATE_RATE_LIMITED
+    status = sync.config_status(cfg)
+    assert status["state"] == sync.RUNTIME_STATE_RATE_LIMITED
 
 
 def test_remote_conflict_error_sets_runtime_state(source_sync_test_root):
-        source_sync_test_root.write_packaged_config()
-        opener = _Recorder([
+    source_sync_test_root.write_packaged_config()
+    opener = _Recorder(
+        [
             _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
@@ -524,51 +566,55 @@ def test_remote_conflict_error_sets_runtime_state(source_sync_test_root):
                 hdrs={},
                 fp=None,
             ),
-        ])
-        cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-        original_build_jwt = sync.build_app_jwt
-        try:
-            sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
-            with pytest.raises(sync.SyncOperationError) as ctx:
-                sync.push_sources_snapshot(cfg, {"active": [], "pending": [], "rejected": []}, opener=opener)
-        finally:
-            sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-        assert ctx.value.code == sync.RUNTIME_STATE_REMOTE_CONFLICT
-        status = sync.config_status(cfg)
-        assert status["state"] == sync.RUNTIME_STATE_REMOTE_CONFLICT
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        with pytest.raises(sync.SyncOperationError) as ctx:
+            sync.push_sources_snapshot(
+                cfg, {"active": [], "pending": [], "rejected": []}, opener=opener
+            )
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert ctx.value.code == sync.RUNTIME_STATE_REMOTE_CONFLICT
+    status = sync.config_status(cfg)
+    assert status["state"] == sync.RUNTIME_STATE_REMOTE_CONFLICT
 
 
 def test_request_raw_json_uses_ssl_context_for_default_urlopen(monkeypatch):
-        seen = {}
+    seen = {}
 
-        def fake_urlopen(req, timeout=20, context=None):  # noqa: ANN001
-            seen["timeout"] = timeout
-            seen["context"] = context
-            return _FakeResponse(200, {"ok": True})
+    def fake_urlopen(req, timeout=20, context=None):  # noqa: ANN001
+        seen["timeout"] = timeout
+        seen["context"] = context
+        return _FakeResponse(200, {"ok": True})
 
-        monkeypatch.setattr(sync, "urlopen", fake_urlopen)
-        status, payload, _headers = sync._request_raw_json(  # noqa: SLF001
+    monkeypatch.setattr(sync, "urlopen", fake_urlopen)
+    status, payload, _headers = sync._request_raw_json(  # noqa: SLF001
+        method="GET",
+        url="https://api.github.com/test",
+        headers={"Accept": "application/json"},
+        timeout_s=12,
+    )
+    assert status == 200
+    assert payload["ok"] is True
+    assert seen["timeout"] == 12
+    assert isinstance(seen["context"], ssl.SSLContext)
+
+
+def test_request_raw_json_wraps_certificate_verify_failures():
+    def failing_opener(_req, timeout=20):  # noqa: ANN001,ARG001
+        raise URLError(ssl.SSLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"))
+
+    with pytest.raises(
+        RuntimeError, match="SSL certificate verification failed while connecting to GitHub"
+    ):
+        sync._request_raw_json(  # noqa: SLF001
             method="GET",
             url="https://api.github.com/test",
             headers={"Accept": "application/json"},
             timeout_s=12,
+            opener=failing_opener,
         )
-        assert status == 200
-        assert payload["ok"] is True
-        assert seen["timeout"] == 12
-        assert isinstance(seen["context"], ssl.SSLContext)
-
-
-def test_request_raw_json_wraps_certificate_verify_failures():
-        def failing_opener(_req, timeout=20):  # noqa: ANN001,ARG001
-            raise URLError(ssl.SSLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"))
-
-        with pytest.raises(RuntimeError, match="SSL certificate verification failed while connecting to GitHub"):
-            sync._request_raw_json(  # noqa: SLF001
-                method="GET",
-                url="https://api.github.com/test",
-                headers={"Accept": "application/json"},
-                timeout_s=12,
-                opener=failing_opener,
-            )
-

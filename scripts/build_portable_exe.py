@@ -64,7 +64,9 @@ def _mix_channel(a: int, b: int, t: float) -> int:
     return int(round((a * (1.0 - t)) + (b * t)))
 
 
-def _mix_rgb(left: tuple[int, int, int], right: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+def _mix_rgb(
+    left: tuple[int, int, int], right: tuple[int, int, int], t: float
+) -> tuple[int, int, int]:
     return (
         _mix_channel(left[0], right[0], t),
         _mix_channel(left[1], right[1], t),
@@ -95,7 +97,9 @@ def _point_in_ellipse(x: float, y: float, *, cx: float, cy: float, rx: float, ry
     return (((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2) <= 1.0
 
 
-def _point_in_rounded_box(x: float, y: float, *, left: float, top: float, right: float, bottom: float, radius: float) -> bool:
+def _point_in_rounded_box(
+    x: float, y: float, *, left: float, top: float, right: float, bottom: float, radius: float
+) -> bool:
     if left + radius <= x <= right - radius and top <= y <= bottom:
         return True
     if left <= x <= right and top + radius <= y <= bottom - radius:
@@ -144,7 +148,9 @@ def _point_in_stroke_segment(
     return _distance_to_segment(px, py, ax, ay, bx, by) <= (width * 0.5)
 
 
-def _point_in_stroke_circle(px: float, py: float, *, cx: float, cy: float, radius: float, width: float) -> bool:
+def _point_in_stroke_circle(
+    px: float, py: float, *, cx: float, cy: float, radius: float, width: float
+) -> bool:
     distance = math.hypot(px - cx, py - cy)
     half = width * 0.5
     return (radius - half) <= distance <= (radius + half)
@@ -208,7 +214,9 @@ def _render_icon_png(size: int = DEFAULT_ICON_SIZE) -> bytes:
 
             vignette = abs((px / size) - 0.5) + abs((py / size) - 0.5)
             for index in range(3):
-                color[index] = _mix_channel(color[index], shadow[index], max(0.0, (vignette - 0.42) * 0.30))
+                color[index] = _mix_channel(
+                    color[index], shadow[index], max(0.0, (vignette - 0.42) * 0.30)
+                )
 
             is_document = False
             if _point_in_rounded_box(
@@ -230,42 +238,60 @@ def _render_icon_png(size: int = DEFAULT_ICON_SIZE) -> bytes:
             ):
                 is_document = True
 
-            folded_edge = _point_in_stroke_segment(
-                px,
-                py,
-                doc_right - (size * 0.10),
-                doc_top + stroke,
-                doc_right - stroke,
-                doc_top + (size * 0.10),
-                stroke,
-            ) or _point_in_stroke_segment(
-                px,
-                py,
-                doc_right - (size * 0.10),
-                doc_top + stroke,
-                doc_right - (size * 0.10),
-                doc_top + (size * 0.10),
-                stroke,
-            ) or _point_in_stroke_segment(
-                px,
-                py,
-                doc_right - (size * 0.10),
-                doc_top + (size * 0.10),
-                doc_right - stroke,
-                doc_top + (size * 0.10),
-                stroke,
+            folded_edge = (
+                _point_in_stroke_segment(
+                    px,
+                    py,
+                    doc_right - (size * 0.10),
+                    doc_top + stroke,
+                    doc_right - stroke,
+                    doc_top + (size * 0.10),
+                    stroke,
+                )
+                or _point_in_stroke_segment(
+                    px,
+                    py,
+                    doc_right - (size * 0.10),
+                    doc_top + stroke,
+                    doc_right - (size * 0.10),
+                    doc_top + (size * 0.10),
+                    stroke,
+                )
+                or _point_in_stroke_segment(
+                    px,
+                    py,
+                    doc_right - (size * 0.10),
+                    doc_top + (size * 0.10),
+                    doc_right - stroke,
+                    doc_top + (size * 0.10),
+                    stroke,
+                )
             )
 
-            line_one = _point_in_stroke_segment(px, py, size * 0.36, size * 0.31, size * 0.54, size * 0.31, small_stroke)
-            line_two = _point_in_stroke_segment(px, py, size * 0.36, size * 0.40, size * 0.53, size * 0.40, small_stroke)
-            line_three = _point_in_stroke_segment(px, py, size * 0.36, size * 0.49, size * 0.49, size * 0.49, small_stroke)
+            line_one = _point_in_stroke_segment(
+                px, py, size * 0.36, size * 0.31, size * 0.54, size * 0.31, small_stroke
+            )
+            line_two = _point_in_stroke_segment(
+                px, py, size * 0.36, size * 0.40, size * 0.53, size * 0.40, small_stroke
+            )
+            line_three = _point_in_stroke_segment(
+                px, py, size * 0.36, size * 0.49, size * 0.49, size * 0.49, small_stroke
+            )
             bullet_one = math.hypot(px - (size * 0.33), py - (size * 0.40)) <= (small_stroke * 0.55)
             bullet_two = math.hypot(px - (size * 0.33), py - (size * 0.49)) <= (small_stroke * 0.55)
 
-            finger = _point_in_stroke_segment(px, py, size * 0.60, size * 0.67, size * 0.60, size * 0.50, stroke)
-            hand_left = _point_in_stroke_segment(px, py, size * 0.60, size * 0.64, size * 0.52, size * 0.57, stroke)
-            hand_right = _point_in_stroke_segment(px, py, size * 0.60, size * 0.62, size * 0.68, size * 0.57, stroke)
-            wrist = _point_in_stroke_segment(px, py, size * 0.55, size * 0.71, size * 0.66, size * 0.71, stroke)
+            finger = _point_in_stroke_segment(
+                px, py, size * 0.60, size * 0.67, size * 0.60, size * 0.50, stroke
+            )
+            hand_left = _point_in_stroke_segment(
+                px, py, size * 0.60, size * 0.64, size * 0.52, size * 0.57, stroke
+            )
+            hand_right = _point_in_stroke_segment(
+                px, py, size * 0.60, size * 0.62, size * 0.68, size * 0.57, stroke
+            )
+            wrist = _point_in_stroke_segment(
+                px, py, size * 0.55, size * 0.71, size * 0.66, size * 0.71, stroke
+            )
             tap_ring = _point_in_stroke_circle(
                 px,
                 py,
@@ -275,7 +301,20 @@ def _render_icon_png(size: int = DEFAULT_ICON_SIZE) -> bytes:
                 width=small_stroke,
             )
 
-            if is_document or folded_edge or line_one or line_two or line_three or bullet_one or bullet_two or finger or hand_left or hand_right or wrist or tap_ring:
+            if (
+                is_document
+                or folded_edge
+                or line_one
+                or line_two
+                or line_three
+                or bullet_one
+                or bullet_two
+                or finger
+                or hand_left
+                or hand_right
+                or wrist
+                or tap_ring
+            ):
                 color = [*outline]
 
             row.extend((color[0], color[1], color[2], 255))
@@ -320,6 +359,7 @@ def build_portable_layout(output_dir: Path, version: str) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     build_bundle(output_dir / "ship", version)
     return output_dir
+
 
 def run_pyinstaller(output_dir: Path, *, exe_name: str, icon_path: Path) -> Path:
     pyinstaller_dist = output_dir.parent / ".pyinstaller-dist"
@@ -402,4 +442,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

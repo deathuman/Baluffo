@@ -117,7 +117,9 @@ class CanonicalJob:
             qualityScore=int(data.get("qualityScore") or 0),
             focusScore=int(data.get("focusScore") or 0),
             sourceBundleCount=int(data.get("sourceBundleCount") or 0),
-            sourceBundle=[dict(item) for item in data.get("sourceBundle") or [] if isinstance(item, Mapping)],
+            sourceBundle=[
+                dict(item) for item in data.get("sourceBundle") or [] if isinstance(item, Mapping)
+            ],
             adapter=str(data.get("adapter") or ""),
             studio=str(data.get("studio") or ""),
         )

@@ -41,7 +41,9 @@ class TaskLaunchDeps:
 
 
 class TaskLaunchApi:
-    def __init__(self, *, runtime: TaskLaunchRuntime, paths: TaskLaunchPaths, deps: TaskLaunchDeps) -> None:
+    def __init__(
+        self, *, runtime: TaskLaunchRuntime, paths: TaskLaunchPaths, deps: TaskLaunchDeps
+    ) -> None:
         self._runtime = runtime
         self._paths = paths
         self._deps = deps
@@ -83,7 +85,9 @@ class TaskLaunchApi:
                 command = [executable, "-u", str(self._runtime.root / "src" / script_name)]
                 command.extend(args or [])
         script = Path(script_name).name.lower()
-        task_type = "discovery" if "discovery" in script else ("fetch" if "fetcher" in script else script)
+        task_type = (
+            "discovery" if "discovery" in script else ("fetch" if "fetcher" in script else script)
+        )
         child_env = os.environ.copy()
         child_env["BALUFFO_DATA_DIR"] = str(self._runtime.data_dir)
         child_env["PYTHONUNBUFFERED"] = "1"
@@ -107,7 +111,11 @@ class TaskLaunchApi:
         log_handle = None
         try:
             if task_type in {"discovery", "fetch"}:
-                log_path = self._paths.discovery_log if task_type == "discovery" else self._paths.fetcher_log
+                log_path = (
+                    self._paths.discovery_log
+                    if task_type == "discovery"
+                    else self._paths.fetcher_log
+                )
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 log_handle = open(log_path, "a", encoding="utf-8")
                 popen_kwargs["stdout"] = log_handle
@@ -129,7 +137,9 @@ class TaskLaunchApi:
                 "startedAt": self._deps.now_iso(),
             }
             self._deps.save_json_atomic(self._paths.task_state, state)
-        self._deps.bridge_log("info", "task_process_spawned", task=task_type, script=script_name, pid=int(proc.pid))
+        self._deps.bridge_log(
+            "info", "task_process_spawned", task=task_type, script=script_name, pid=int(proc.pid)
+        )
         return int(proc.pid)
 
     def build_fetcher_args_from_payload(self, payload: dict[str, Any]) -> tuple[list[str], str]:
@@ -142,12 +152,16 @@ class TaskLaunchApi:
         fetch_strategy = str(data.get("fetchStrategy") or "auto").strip().lower()
         if fetch_strategy not in {"auto", "http", "browser"}:
             fetch_strategy = "auto"
-        adapter_http_concurrency = self._deps.safe_int(data.get("adapterHttpConcurrency"), 24, 1, 128)
+        adapter_http_concurrency = self._deps.safe_int(
+            data.get("adapterHttpConcurrency"), 24, 1, 128
+        )
         source_ttl = self._deps.safe_int(data.get("sourceTtlMinutes"), 360, 0, 1440)
         hot_cadence = self._deps.safe_int(data.get("hotSourceCadenceMinutes"), 15, 1, 240)
         cold_cadence = self._deps.safe_int(data.get("coldSourceCadenceMinutes"), 60, 1, 1440)
         circuit_failures = self._deps.safe_int(data.get("circuitBreakerFailures"), 3, 0, 20)
-        circuit_cooldown = self._deps.safe_int(data.get("circuitBreakerCooldownMinutes"), 180, 0, 24 * 60)
+        circuit_cooldown = self._deps.safe_int(
+            data.get("circuitBreakerCooldownMinutes"), 180, 0, 24 * 60
+        )
 
         if preset == "incremental":
             args.extend(["--skip-successful-sources", "--source-ttl-minutes", str(source_ttl)])
@@ -180,11 +194,27 @@ class TaskLaunchApi:
             preset = "default"
 
         if preset != "uncapped":
-            args.extend(["--max-workers", str(max_workers), "--max-per-domain", str(max_per_domain)])
-            args.extend(["--fetch-strategy", fetch_strategy, "--adapter-http-concurrency", str(adapter_http_concurrency)])
+            args.extend(
+                ["--max-workers", str(max_workers), "--max-per-domain", str(max_per_domain)]
+            )
+            args.extend(
+                [
+                    "--fetch-strategy",
+                    fetch_strategy,
+                    "--adapter-http-concurrency",
+                    str(adapter_http_concurrency),
+                ]
+            )
             args.extend(["--circuit-breaker-failures", str(circuit_failures)])
             args.extend(["--circuit-breaker-cooldown-minutes", str(circuit_cooldown)])
-            args.extend(["--hot-source-cadence-minutes", str(hot_cadence), "--cold-source-cadence-minutes", str(cold_cadence)])
+            args.extend(
+                [
+                    "--hot-source-cadence-minutes",
+                    str(hot_cadence),
+                    "--cold-source-cadence-minutes",
+                    str(cold_cadence),
+                ]
+            )
 
         if bool(data.get("skipSuccessfulSources")) and "--skip-successful-sources" not in args:
             args.append("--skip-successful-sources")

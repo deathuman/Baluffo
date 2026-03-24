@@ -3,7 +3,14 @@ from pathlib import Path
 from src import release_repeatability as rr
 
 
-def _write_report(path: Path, *, output_count: int, failed_sources: int, wall_clock_ms: int, source_rows: list[dict]) -> None:
+def _write_report(
+    path: Path,
+    *,
+    output_count: int,
+    failed_sources: int,
+    wall_clock_ms: int,
+    source_rows: list[dict],
+) -> None:
     path.write_text(
         __import__("json").dumps(
             {
@@ -15,7 +22,10 @@ def _write_report(path: Path, *, output_count: int, failed_sources: int, wall_cl
                     "incrementalCacheEnabled": False,
                     "forceRefreshAll": True,
                     "socialEnabled": True,
-                    "timingSummary": {"wallClockDurationMs": wall_clock_ms, "totalDurationMs": wall_clock_ms * 3},
+                    "timingSummary": {
+                        "wallClockDurationMs": wall_clock_ms,
+                        "totalDurationMs": wall_clock_ms * 3,
+                    },
                 },
                 "sources": source_rows,
             },
@@ -34,8 +44,22 @@ def test_build_report_flags_volatile_source_and_release_floor_failure(tmp_path: 
         failed_sources=0,
         wall_clock_ms=100000,
         source_rows=[
-            {"name": "gracklehq", "adapter": "html", "status": "ok", "keptCount": 1200, "fetchedCount": 1200, "durationMs": 50000},
-            {"name": "social_mastodon", "adapter": "social", "status": "ok", "keptCount": 118, "fetchedCount": 118, "durationMs": 1500},
+            {
+                "name": "gracklehq",
+                "adapter": "html",
+                "status": "ok",
+                "keptCount": 1200,
+                "fetchedCount": 1200,
+                "durationMs": 50000,
+            },
+            {
+                "name": "social_mastodon",
+                "adapter": "social",
+                "status": "ok",
+                "keptCount": 118,
+                "fetchedCount": 118,
+                "durationMs": 1500,
+            },
         ],
     )
     _write_report(
@@ -44,8 +68,23 @@ def test_build_report_flags_volatile_source_and_release_floor_failure(tmp_path: 
         failed_sources=19,
         wall_clock_ms=650000,
         source_rows=[
-            {"name": "gracklehq", "adapter": "html", "status": "error", "keptCount": 0, "fetchedCount": 0, "durationMs": 52093, "error": "Network error for https://gracklehq.com/jobs"},
-            {"name": "social_mastodon", "adapter": "social", "status": "ok", "keptCount": 118, "fetchedCount": 118, "durationMs": 1400},
+            {
+                "name": "gracklehq",
+                "adapter": "html",
+                "status": "error",
+                "keptCount": 0,
+                "fetchedCount": 0,
+                "durationMs": 52093,
+                "error": "Network error for https://gracklehq.com/jobs",
+            },
+            {
+                "name": "social_mastodon",
+                "adapter": "social",
+                "status": "ok",
+                "keptCount": 118,
+                "fetchedCount": 118,
+                "durationMs": 1400,
+            },
         ],
     )
 
@@ -68,7 +107,14 @@ def test_render_markdown_includes_volatility_summary(tmp_path: Path) -> None:
         failed_sources=0,
         wall_clock_ms=98051,
         source_rows=[
-            {"name": "social_reddit", "adapter": "social", "status": "ok", "keptCount": 13, "fetchedCount": 13, "durationMs": 1500},
+            {
+                "name": "social_reddit",
+                "adapter": "social",
+                "status": "ok",
+                "keptCount": 13,
+                "fetchedCount": 13,
+                "durationMs": 1500,
+            },
         ],
     )
 

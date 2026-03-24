@@ -36,7 +36,10 @@ def run(
     page_url = clean_text(pages[0])
     if not page_url:
         return []
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "GlobalStep"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "GlobalStep"
+    )
     source_id = clean_text(source_row.get("id")) or "globalstep"
     try:
         html = fetch_text(page_url, timeout_s)
@@ -95,5 +98,8 @@ def run(
             "detailTraversalMode": "listing_only",
         }
         return []
-    source_row["_staticPluginMeta"] = {"detailFetchRequired": False, "detailTraversalMode": "listing_only"}
+    source_row["_staticPluginMeta"] = {
+        "detailFetchRequired": False,
+        "detailTraversalMode": "listing_only",
+    }
     return jobs

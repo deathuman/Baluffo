@@ -5,7 +5,7 @@
 
 /**
  * Creates a CSS attribute selector for a given UI token.
- * @param {string} token 
+ * @param {string} token
  * @returns {string}
  */
 export const ui = (token) => `[data-ui="${token}"]`;

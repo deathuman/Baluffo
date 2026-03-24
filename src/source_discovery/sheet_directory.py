@@ -20,7 +20,9 @@ from .web_search import infer_web_candidate
 
 def game_studios_sheet_candidate_urls(sheet_id: str, gid: str) -> list[str]:
     csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-    gviz_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+    gviz_csv_url = (
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+    )
     pub_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv"
     return [csv_url, gviz_csv_url, pub_csv_url]
 
@@ -56,7 +58,9 @@ def parse_game_studio_sheet_csv(csv_text: str) -> list[dict[str, Any]]:
             studio_idx = i
         if link_idx < 0 and (h == "link" or "link" in h or h == "url" or "website" in h):
             link_idx = i
-        if openings_idx < 0 and ("roles open" in h or "roles" == h or "openings" in h or h == "open"):
+        if openings_idx < 0 and (
+            "roles open" in h or "roles" == h or "openings" in h or h == "open"
+        ):
             openings_idx = i
     if studio_idx < 0 or link_idx < 0:
         return []
@@ -72,7 +76,11 @@ def parse_game_studio_sheet_csv(csv_text: str) -> list[dict[str, Any]]:
             continue
         if not (link.startswith("http://") or link.startswith("https://")):
             continue
-        openings_flag = _parse_sheet_openings_flag(row[openings_idx]) if 0 <= openings_idx < len(row) else "unknown"
+        openings_flag = (
+            _parse_sheet_openings_flag(row[openings_idx])
+            if 0 <= openings_idx < len(row)
+            else "unknown"
+        )
         key = f"{studio}|{link}".lower()
         if key in seen:
             continue
@@ -149,10 +157,14 @@ def discover_game_studio_sheet_candidates(
     entries = entries_unsliced[:max_rows] if max_rows is not None else entries_unsliced
 
     yes_count = sum(1 for row in entries if str(row.get("openingsFlag") or "") == "yes")
-    speculative_count = sum(1 for row in entries if str(row.get("openingsFlag") or "") == "speculative")
+    speculative_count = sum(
+        1 for row in entries if str(row.get("openingsFlag") or "") == "speculative"
+    )
     no_count = sum(1 for row in entries if str(row.get("openingsFlag") or "") == "no")
     unknown_count = sum(
-        1 for row in entries if str(row.get("openingsFlag") or "") not in ("yes", "speculative", "no")
+        1
+        for row in entries
+        if str(row.get("openingsFlag") or "") not in ("yes", "speculative", "no")
     )
     emit_log(
         "Game studios sheet directory rows parsed: "
@@ -212,7 +224,9 @@ def discover_game_studio_sheet_candidates(
             evidence_score = 16
             weak_signal = True
 
-        inferred = infer_web_candidate(careers_url, studio, nl_priority=False, discovery_method="sheet_directory")
+        inferred = infer_web_candidate(
+            careers_url, studio, nl_priority=False, discovery_method="sheet_directory"
+        )
         if inferred:
             inferred["discoveryStage"] = "sheet_directory"
             inferred["discoveryMethod"] = "sheet_directory"
@@ -254,5 +268,8 @@ def discover_game_studio_sheet_candidates(
         f"provider={len(provider_candidates)}, static={len(static_candidates)}, invalid_urls={invalid_url_count}."
     )
 
-    return collapse_competing_candidates(provider_candidates), unique_sources(static_candidates), failures
-
+    return (
+        collapse_competing_candidates(provider_candidates),
+        unique_sources(static_candidates),
+        failures,
+    )

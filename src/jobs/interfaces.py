@@ -11,7 +11,9 @@ from .models import CanonicalJob, FetchContext, FetchResult
 class SourceLoader(Protocol):
     """Protocol for fetching unstructured job data from external sources."""
 
-    def load(self, context: dict | FetchContext, previous_state: Mapping[str, Any] | None = None) -> FetchResult: ...
+    def load(
+        self, context: dict | FetchContext, previous_state: Mapping[str, Any] | None = None
+    ) -> FetchResult: ...
 
 
 class JobProcessor(Protocol):

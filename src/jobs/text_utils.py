@@ -1,4 +1,5 @@
 """Text and URL normalization utilities (extracted from common)."""
+
 from __future__ import annotations
 
 import re
@@ -11,7 +12,9 @@ HTML_TAG_RE = re.compile(r"(?is)<[^>]+>")
 HTML_LIKE_RE = re.compile(r"(?is)</?[a-z][^>]*>|<[^\s>]+|[^\s<]+>")
 SENTENCE_BREAK_RE = re.compile(r"[.!?。！？]")
 LOCATION_NOISE_PATTERNS = (
-    re.compile(r"(?i)\b(requirements?|responsibilit(?:y|ies)|qualifications?|experience|register|registration|apply|position|positions)\b"),
+    re.compile(
+        r"(?i)\b(requirements?|responsibilit(?:y|ies)|qualifications?|experience|register|registration|apply|position|positions)\b"
+    ),
     re.compile(r"(?i)\b(business level|job description|preferred|benefits?|contact us)\b"),
     re.compile(r"(キャリア登録|ポジション|ご案内|応募|職務経歴|ビジネスレベルの日本語能力)"),
 )

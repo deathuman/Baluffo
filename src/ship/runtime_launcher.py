@@ -29,6 +29,7 @@ from src.ship import update_manager
 BRIDGE_DEFAULTS = get_bridge_defaults()
 DESKTOP_DEFAULTS = get_desktop_defaults()
 
+
 @dataclass(frozen=True)
 class RuntimeLayout:
     root: Path
@@ -44,7 +45,8 @@ class QuietSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
 
 def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
     row = {
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int((time.time() % 1) * 1_000_000):06d}+00:00",
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+        + f".{int((time.time() % 1) * 1_000_000):06d}+00:00",
         "event": str(event or "").strip() or "unknown",
         "fields": {key: value for key, value in fields.items()},
     }
@@ -57,7 +59,9 @@ def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
         return
 
 
-def build_site_request_handler(directory: Path, *, data_dir: Path | None = None, startup_probe: bool = False):
+def build_site_request_handler(
+    directory: Path, *, data_dir: Path | None = None, startup_probe: bool = False
+):
     class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(directory), **kwargs)
@@ -98,7 +102,9 @@ def resolve_root(root: str | Path | None = None) -> Path:
     return Path(root).expanduser().resolve() if root else ROOT
 
 
-def resolve_runtime_layout(root: str | Path | None = None, *, data_dir: str | Path | None = None) -> RuntimeLayout:
+def resolve_runtime_layout(
+    root: str | Path | None = None, *, data_dir: str | Path | None = None
+) -> RuntimeLayout:
     bundle_root = resolve_root(root)
     paths = update_manager.ShipPaths.from_root(bundle_root)
     state = update_manager.ensure_state(paths)
@@ -177,7 +183,11 @@ def _patched_syspath(path: Path) -> Iterator[None]:
 
 @contextlib.contextmanager
 def _isolated_src_package() -> Iterator[None]:
-    saved = {name: module for name, module in sys.modules.items() if name == "src" or name.startswith("src.")}
+    saved = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "src" or name.startswith("src.")
+    }
     for name in list(saved):
         sys.modules.pop(name, None)
     try:
@@ -189,7 +199,9 @@ def _isolated_src_package() -> Iterator[None]:
         sys.modules.update(saved)
 
 
-def run_site_server(root: str | Path | None = None, *, port: int = int(DESKTOP_DEFAULTS["site_port"])) -> None:
+def run_site_server(
+    root: str | Path | None = None, *, port: int = int(DESKTOP_DEFAULTS["site_port"])
+) -> None:
     layout = resolve_runtime_layout(root)
     print(
         json.dumps(
@@ -206,8 +218,11 @@ def run_site_server(root: str | Path | None = None, *, port: int = int(DESKTOP_D
     )
     handler = build_site_request_handler(
         layout.active_root,
-        data_dir=Path(str(os.environ.get("BALUFFO_DATA_DIR") or "")).expanduser().resolve() if str(os.environ.get("BALUFFO_DATA_DIR") or "").strip() else None,
-        startup_probe=str(os.environ.get("BALUFFO_STARTUP_PROBE") or "").strip().lower() in {"1", "true", "yes", "on"},
+        data_dir=Path(str(os.environ.get("BALUFFO_DATA_DIR") or "")).expanduser().resolve()
+        if str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
+        else None,
+        startup_probe=str(os.environ.get("BALUFFO_STARTUP_PROBE") or "").strip().lower()
+        in {"1", "true", "yes", "on"},
     )
     server = ThreadingHTTPServer(("127.0.0.1", int(port)), handler)
     with server:
@@ -233,21 +248,26 @@ def run_bridge_server(
     else:
         os.environ.pop("BALUFFO_DESKTOP_MODE", None)
     argv = [
-            str(bridge_script),
-            "--host",
-            str(bind_host),
-            "--port",
-            str(port),
-            "--data-dir",
-            str(layout.data_dir),
-            "--desktop-mode" if desktop_mode else "",
-            "--log-format",
-            "human",
-            "--log-level",
-            "info",
-        ]
+        str(bridge_script),
+        "--host",
+        str(bind_host),
+        "--port",
+        str(port),
+        "--data-dir",
+        str(layout.data_dir),
+        "--desktop-mode" if desktop_mode else "",
+        "--log-format",
+        "human",
+        "--log-level",
+        "info",
+    ]
     argv = [item for item in argv if str(item).strip()]
-    with _pushd(layout.active_root), _patched_syspath(layout.active_root), _isolated_src_package(), _patched_argv(argv):
+    with (
+        _pushd(layout.active_root),
+        _patched_syspath(layout.active_root),
+        _isolated_src_package(),
+        _patched_argv(argv),
+    ):
         runpy.run_path(str(bridge_script), run_name="__main__")
 
 
@@ -259,7 +279,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     site_parser.add_argument("--root", default="")
     site_parser.add_argument("--port", type=int, default=int(DESKTOP_DEFAULTS["site_port"]))
 
-    bridge_parser = sub.add_parser("bridge", help="Run the admin bridge from the active app version.")
+    bridge_parser = sub.add_parser(
+        "bridge", help="Run the admin bridge from the active app version."
+    )
     bridge_parser.add_argument("--root", default="")
     bridge_parser.add_argument("--bind-host", default=str(BRIDGE_DEFAULTS["host"]))
     bridge_parser.add_argument("--port", type=int, default=int(BRIDGE_DEFAULTS["port"]))
@@ -276,12 +298,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "bridge":
             run_bridge_server(
-            args.root or None,
-            bind_host=str(args.bind_host),
-            port=int(args.port),
-            data_dir=args.data_dir or None,
-            desktop_mode=str(os.environ.get("BALUFFO_DESKTOP_MODE") or "").strip().lower() in {"1", "true", "yes", "on"},
-        )
+                args.root or None,
+                bind_host=str(args.bind_host),
+                port=int(args.port),
+                data_dir=args.data_dir or None,
+                desktop_mode=str(os.environ.get("BALUFFO_DESKTOP_MODE") or "").strip().lower()
+                in {"1", "true", "yes", "on"},
+            )
         return 0
     except KeyboardInterrupt:
         return 0
@@ -293,4 +316,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

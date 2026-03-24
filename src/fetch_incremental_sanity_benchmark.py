@@ -34,8 +34,14 @@ def _ensure_repo_on_path() -> Path:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run an isolated two-pass fetch incremental benchmark.")
-    parser.add_argument("--output-dir", default="_out/perf-sanity-fetch-incremental", help="Isolated output dir for benchmark artifacts.")
+    parser = argparse.ArgumentParser(
+        description="Run an isolated two-pass fetch incremental benchmark."
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="_out/perf-sanity-fetch-incremental",
+        help="Isolated output dir for benchmark artifacts.",
+    )
     parser.add_argument("--timeout", type=int, default=15)
     parser.add_argument("--retries", type=int, default=2)
     parser.add_argument("--backoff", type=float, default=1.2)
@@ -44,7 +50,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--adapter-http-concurrency", type=int, default=48)
     parser.add_argument("--static-detail-concurrency", type=int, default=10)
     parser.add_argument("--sources", nargs="*", default=DEFAULT_BENCHMARK_SOURCES)
-    parser.add_argument("--keep-existing-output", action="store_true", help="Reuse the output dir instead of removing it before pass one.")
+    parser.add_argument(
+        "--keep-existing-output",
+        action="store_true",
+        help="Reuse the output dir instead of removing it before pass one.",
+    )
     return parser.parse_args(argv)
 
 
@@ -53,7 +63,9 @@ def _select_loaders(source_names: list[str]):
     from src.jobs.adapters import static as static_adapter
     from src.jobs.text_utils import clean_text
 
-    available: dict[str, object] = {name: loader for name, loader in adapters_pkg.default_source_loaders(social_enabled=False)}
+    available: dict[str, object] = {
+        name: loader for name, loader in adapters_pkg.default_source_loaders(social_enabled=False)
+    }
     for name, loader in static_adapter.build_static_source_loaders():
         available.setdefault(name, loader)
     for name, loader in adapters_pkg.EXTRACTED_ADAPTERS.items():
@@ -64,7 +76,14 @@ def _select_loaders(source_names: list[str]):
         normalized_name = clean_text(name)
         loader = available.get(name)
         if loader is None and normalized_name:
-            loader = next((candidate_loader for candidate_name, candidate_loader in available.items() if clean_text(candidate_name) == normalized_name), None)
+            loader = next(
+                (
+                    candidate_loader
+                    for candidate_name, candidate_loader in available.items()
+                    if clean_text(candidate_name) == normalized_name
+                ),
+                None,
+            )
         if loader is None:
             missing.append(name)
             continue
@@ -73,7 +92,11 @@ def _select_loaders(source_names: list[str]):
 
 
 def _family_summary(report: dict[str, object], source_names: list[str]) -> dict[str, object]:
-    rows = [row for row in (report.get("sources") or []) if isinstance(row, dict) and str(row.get("name") or "") in source_names]
+    rows = [
+        row
+        for row in (report.get("sources") or [])
+        if isinstance(row, dict) and str(row.get("name") or "") in source_names
+    ]
     family: dict[str, object] = {}
     for row in rows:
         name = str(row.get("name") or "")
@@ -81,12 +104,22 @@ def _family_summary(report: dict[str, object], source_names: list[str]) -> dict[
             "status": row.get("status"),
             "durationMs": int(row.get("durationMs") or 0),
             "keptCount": int(row.get("keptCount") or 0),
-            "boardCount": int(row.get("boardCount") or 0) if row.get("boardCount") is not None else None,
+            "boardCount": int(row.get("boardCount") or 0)
+            if row.get("boardCount") is not None
+            else None,
             "boardCacheDecisionCounts": dict(row.get("boardCacheDecisionCounts") or {}),
-            "boardSkippedCount": int(row.get("boardSkippedCount") or 0) if row.get("boardSkippedCount") is not None else None,
-            "boardRevalidatedCount": int(row.get("boardRevalidatedCount") or 0) if row.get("boardRevalidatedCount") is not None else None,
-            "boardNotModifiedCount": int(row.get("boardNotModifiedCount") or 0) if row.get("boardNotModifiedCount") is not None else None,
-            "boardRefreshedCount": int(row.get("boardRefreshedCount") or 0) if row.get("boardRefreshedCount") is not None else None,
+            "boardSkippedCount": int(row.get("boardSkippedCount") or 0)
+            if row.get("boardSkippedCount") is not None
+            else None,
+            "boardRevalidatedCount": int(row.get("boardRevalidatedCount") or 0)
+            if row.get("boardRevalidatedCount") is not None
+            else None,
+            "boardNotModifiedCount": int(row.get("boardNotModifiedCount") or 0)
+            if row.get("boardNotModifiedCount") is not None
+            else None,
+            "boardRefreshedCount": int(row.get("boardRefreshedCount") or 0)
+            if row.get("boardRefreshedCount") is not None
+            else None,
             "error": str(row.get("error") or ""),
         }
     return family

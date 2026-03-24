@@ -1,4 +1,5 @@
 """Shared utilities used across Baluffo (no imports from jobs/bridge/admin_bridge)."""
+
 from __future__ import annotations
 
 import os

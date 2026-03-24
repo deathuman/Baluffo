@@ -39,7 +39,9 @@ class RegistryService:
         normalize_manual_static: NormalizeManualStaticFunc,
     ) -> None:
         self._paths = paths
-        self._default_active = [dict(row) for row in (default_active or []) if isinstance(row, dict)]
+        self._default_active = [
+            dict(row) for row in (default_active or []) if isinstance(row, dict)
+        ]
         self._normalize_manual_static = normalize_manual_static
 
     def ensure_active_registry(self) -> list[dict[str, Any]]:
@@ -50,7 +52,9 @@ class RegistryService:
         save_json_atomic(self._paths.active, active)
         return active
 
-    def normalize_state(self, state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+    def normalize_state(
+        self, state: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, list[dict[str, Any]]]:
         # Precedence is explicit: active > pending > rejected.
         seen = set()
         normalized: dict[str, list[dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
@@ -84,7 +88,9 @@ class RegistryService:
             "rejectedCount": len(state["rejected"]),
         }
 
-    def persist_state(self, state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+    def persist_state(
+        self, state: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, list[dict[str, Any]]]:
         normalized = self.normalize_state(state)
         save_json_atomic(self._paths.active, normalized["active"])
         save_json_atomic(self._paths.pending, normalized["pending"])
@@ -123,4 +129,3 @@ class RegistryService:
 
 
 __all__ = ["RegistryPaths", "RegistryService"]
-

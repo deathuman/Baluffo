@@ -67,7 +67,9 @@ def collapse_competing_candidates(candidates: Iterable[dict[str, Any]]) -> list[
     return unique_sources([*passthrough, *preferred.values()])
 
 
-def collapse_competing_candidates_by_identity(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+def collapse_competing_candidates_by_identity(
+    rows: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Merge candidates by source_identity (e.g. for sheet_directory provider list)."""
     seen: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -89,4 +91,3 @@ def load_existing_candidates() -> list[dict[str, Any]]:
 
 def write_discovery_outputs(report: dict[str, Any]) -> None:
     save_json_atomic(DISCOVERY_REPORT_PATH, report)
-

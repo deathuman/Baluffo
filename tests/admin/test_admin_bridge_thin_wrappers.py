@@ -1,7 +1,5 @@
 """Tests for thin wrapper functions and utility functions in admin_bridge."""
 
-
-
 from src import admin_bridge
 
 
@@ -129,7 +127,9 @@ class TestTaskState:
         admin_bridge.clear_task_state("test_task")
         admin_bridge.wait_for_sync_tasks(timeout_s=1.0)
 
-    def test_task_running_from_state_returns_false_for_unknown_task(self, admin_bridge_entrypoint_root):
+    def test_task_running_from_state_returns_false_for_unknown_task(
+        self, admin_bridge_entrypoint_root
+    ):
         result = admin_bridge.task_running_from_state("nonexistent_task_type_xyz")
         assert result is False
 

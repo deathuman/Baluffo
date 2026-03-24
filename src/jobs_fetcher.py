@@ -82,6 +82,8 @@ def run_pipeline(*args, **kwargs):
     finally:
         if previous is not None:
             _pipeline.build_redirect_resolver = previous  # type: ignore[assignment]
+
+
 parse_args = _pipeline.parse_args
 main = _pipeline.main
 default_source_loaders = _pipeline.default_source_loaders
@@ -223,6 +225,7 @@ def build_redirect_resolver(*args, **kwargs):
 
 def maybe_fetch_kojima_job_listing_html(*args, **kwargs):
     import src.jobs.adapters.html_parsers as _html_parsers
+
     _html_parsers.urlopen = urlopen
     return _html_parsers.maybe_fetch_kojima_job_listing_html(*args, **kwargs)
 
@@ -245,6 +248,7 @@ def canonicalize_google_sheets_rows(*args, **kwargs):
 def deduplicate_jobs(*args, **kwargs):
     rows, stats = _dedup.deduplicate_jobs(*args, **kwargs)
     return [_legacy_row(row) for row in rows], stats
+
 
 __all__ = [
     "AsyncHttpTextFetcher",
@@ -380,4 +384,3 @@ __all__ = [
 
 if __name__ == "__main__":
     raise SystemExit(_pipeline.main())
-

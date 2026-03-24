@@ -61,7 +61,9 @@ def _gamesmap_cache_ttl_minutes(config: dict[str, Any] | None) -> int:
 def _gamesmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "baseUrl": str(cfg.get("baseUrl") or "").strip(),
-        "indexUrls": [str(item).strip() for item in (cfg.get("indexUrls") or []) if str(item).strip()],
+        "indexUrls": [
+            str(item).strip() for item in (cfg.get("indexUrls") or []) if str(item).strip()
+        ],
         "preferEnglish": bool(cfg.get("preferEnglish", True)),
         "websiteOnlyFallback": bool(cfg.get("websiteOnlyFallback", True)),
         "websiteOnlyManualOnly": bool(cfg.get("websiteOnlyManualOnly", False)),
@@ -71,7 +73,9 @@ def _gamesmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _load_gamesmap_cache(config: dict[str, Any] | None, cfg: dict[str, Any], *, fetcher: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
+def _load_gamesmap_cache(
+    config: dict[str, Any] | None, cfg: dict[str, Any], *, fetcher: Any
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
     cache_path = _gamesmap_cache_path(config)
     ttl_minutes = _gamesmap_cache_ttl_minutes(config)
     if ttl_minutes <= 0 or cache_path is None:
@@ -100,7 +104,11 @@ def _load_gamesmap_cache(config: dict[str, Any] | None, cfg: dict[str, Any], *, 
     provider_rows = payload.get("providerCandidates")
     static_rows = payload.get("staticCandidates")
     failures = payload.get("failures")
-    if not isinstance(provider_rows, list) or not isinstance(static_rows, list) or not isinstance(failures, list):
+    if (
+        not isinstance(provider_rows, list)
+        or not isinstance(static_rows, list)
+        or not isinstance(failures, list)
+    ):
         return None
     return unique_sources(provider_rows), unique_sources(static_rows), failures
 
@@ -179,7 +187,9 @@ def parse_gamesmap_index_links(html: str, base_url: str) -> list[str]:
     return out
 
 
-def parse_gamesmap_index_entries(html: str, base_url: str, *, prefer_english: bool = True) -> list[dict[str, str]]:
+def parse_gamesmap_index_entries(
+    html: str, base_url: str, *, prefer_english: bool = True
+) -> list[dict[str, str]]:
     out: list[dict[str, str]] = []
     seen = set()
     payload = _extract_gamesmap_js_data_container(html)
@@ -202,13 +212,13 @@ def parse_gamesmap_index_entries(html: str, base_url: str, *, prefer_english: bo
                 studio = str(point.get("name") or "").strip()
                 if not slug or not studio:
                     continue
-                path = f"/en/detail/industry/{slug}" if prefer_english else f"/detail/industry/{slug}"
+                path = (
+                    f"/en/detail/industry/{slug}" if prefer_english else f"/detail/industry/{slug}"
+                )
                 detail_url = urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
                 province = point.get("province") if isinstance(point.get("province"), dict) else {}
                 location = str(
-                    (
-                        province.get("nameEn") if prefer_english else province.get("name")
-                    )
+                    (province.get("nameEn") if prefer_english else province.get("name"))
                     or province.get("nameEn")
                     or province.get("name")
                     or ""
@@ -252,7 +262,7 @@ def parse_gamesmap_detail_page(page_url: str, html: str) -> dict[str, Any] | Non
         if token:
             categories.append(token)
     for match in re.finditer(
-        r'(?is)(?:Category|Categories|Branche|Branchen)\s*</[^>]+>\s*<[^>]+>(.*?)</[^>]+>',
+        r"(?is)(?:Category|Categories|Branche|Branchen)\s*</[^>]+>\s*<[^>]+>(.*?)</[^>]+>",
         markup,
     ):
         chunk = _strip_html_tags(match.group(1))
@@ -263,7 +273,9 @@ def parse_gamesmap_detail_page(page_url: str, html: str) -> dict[str, Any] | Non
     categories = unique_string_list(categories)
 
     location = ""
-    for match in re.finditer(r"(?is)(?:Location|Standort|City)\s*</[^>]+>\s*<[^>]+>(.*?)</[^>]+>", markup):
+    for match in re.finditer(
+        r"(?is)(?:Location|Standort|City)\s*</[^>]+>\s*<[^>]+>(.*?)</[^>]+>", markup
+    ):
         token = _strip_html_tags(match.group(1))
         if token:
             location = token
@@ -304,7 +316,10 @@ def parse_gamesmap_detail_page(page_url: str, html: str) -> dict[str, Any] | Non
         context_start = max(0, match.start() - 140)
         context = _strip_html_tags(markup[context_start : match.end()])
         hint_blob = f"{label} {absolute} {context}".lower()
-        if any(token in hint_blob for token in CAREERS_URL_HINTS + ("job page", "job pages", "stellen", "karriere")):
+        if any(
+            token in hint_blob
+            for token in CAREERS_URL_HINTS + ("job page", "job pages", "stellen", "karriere")
+        ):
             if not careers_url:
                 careers_url = absolute
                 continue
@@ -327,7 +342,9 @@ def parse_gamesmap_detail_page(page_url: str, html: str) -> dict[str, Any] | Non
     }
 
 
-def gamesmap_matches_category(categories: Iterable[str], allowed: Iterable[str], blocked: Iterable[str]) -> bool:
+def gamesmap_matches_category(
+    categories: Iterable[str], allowed: Iterable[str], blocked: Iterable[str]
+) -> bool:
     normalized_categories = [
         normalize_gamesmap_category_token(item) for item in categories if str(item or "").strip()
     ]
@@ -336,14 +353,20 @@ def gamesmap_matches_category(categories: Iterable[str], allowed: Iterable[str],
     blocked_tokens = [
         normalize_gamesmap_category_token(item) for item in blocked if str(item or "").strip()
     ]
-    if any(any(token and token in category for token in blocked_tokens) for category in normalized_categories):
+    if any(
+        any(token and token in category for token in blocked_tokens)
+        for category in normalized_categories
+    ):
         return False
     allowed_tokens = [
         normalize_gamesmap_category_token(item) for item in allowed if str(item or "").strip()
     ]
     if not allowed_tokens:
         return True
-    return any(any(token and token in category for token in allowed_tokens) for category in normalized_categories)
+    return any(
+        any(token and token in category for token in allowed_tokens)
+        for category in normalized_categories
+    )
 
 
 def build_gamesmap_static_candidate(
@@ -434,7 +457,9 @@ def discover_gamesmap_candidates(
                 }
             )
             continue
-        for entry in parse_gamesmap_index_entries(index_html, base_url, prefer_english=prefer_english):
+        for entry in parse_gamesmap_index_entries(
+            index_html, base_url, prefer_english=prefer_english
+        ):
             detail_url = str(entry.get("detailUrl") or "").strip()
             if not detail_url:
                 continue
@@ -481,11 +506,18 @@ def discover_gamesmap_candidates(
         website_url = str(parsed.get("websiteUrl") or "").strip()
         nl_priority = False
         if careers_url:
-            inferred = infer_web_candidate(careers_url, studio, nl_priority=nl_priority, discovery_method="gamesmap")
+            inferred = infer_web_candidate(
+                careers_url, studio, nl_priority=nl_priority, discovery_method="gamesmap"
+            )
             if inferred:
                 inferred["evidenceSource"] = "gamesmap"
                 inferred["evidenceTypes"] = unique_string_list(
-                    [*(inferred.get("evidenceTypes") or []), "gamesmap_directory", "gamesmap_careers_url", "gamesmap_category_match"]
+                    [
+                        *(inferred.get("evidenceTypes") or []),
+                        "gamesmap_directory",
+                        "gamesmap_careers_url",
+                        "gamesmap_category_match",
+                    ]
                 )
                 inferred["evidenceScore"] = max(int(inferred.get("evidenceScore") or 0), 44)
                 inferred["careersUrl"] = careers_url
@@ -534,4 +566,3 @@ def discover_gamesmap_candidates(
         failures=failures,
     )
     return provider_candidates, static_candidates, failures
-

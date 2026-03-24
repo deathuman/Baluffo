@@ -175,7 +175,9 @@ def _get_registry_service() -> RegistryService:
         if _REGISTRY_SERVICE is None or _REGISTRY_SERVICE_PATHS != current_paths:
             _REGISTRY_SERVICE_PATHS = current_paths
             _REGISTRY_SERVICE = RegistryService(
-                paths=RegistryPaths(active=ACTIVE_PATH, pending=PENDING_PATH, rejected=REJECTED_PATH),
+                paths=RegistryPaths(
+                    active=ACTIVE_PATH, pending=PENDING_PATH, rejected=REJECTED_PATH
+                ),
                 default_active=[dict(row) for row in DEFAULT_STUDIO_SOURCE_REGISTRY],
                 normalize_manual_static=normalize_manual_static_studio_fields,
             )
@@ -184,7 +186,12 @@ def _get_registry_service() -> RegistryService:
 
 def _get_discovery_service() -> DiscoveryService:
     global _DISCOVERY_SERVICE, _DISCOVERY_SERVICE_PATHS
-    current_paths = (Path(DISCOVERY_REPORT_PATH), Path(DISCOVERY_CANDIDATES_PATH), Path(PENDING_PATH), Path(DISCOVERY_LOG_PATH))
+    current_paths = (
+        Path(DISCOVERY_REPORT_PATH),
+        Path(DISCOVERY_CANDIDATES_PATH),
+        Path(PENDING_PATH),
+        Path(DISCOVERY_LOG_PATH),
+    )
     with _DISCOVERY_SERVICE_LOCK:
         if _DISCOVERY_SERVICE is None or _DISCOVERY_SERVICE_PATHS != current_paths:
             _DISCOVERY_SERVICE_PATHS = current_paths
@@ -371,7 +378,9 @@ def bridge_log(level: str, message: str, **fields: Any) -> None:
         except OSError:
             pass
         return
-    field_text = " ".join(f"{key}={value}" for key, value in payload.items() if key not in {"ts", "level", "message"})
+    field_text = " ".join(
+        f"{key}={value}" for key, value in payload.items() if key not in {"ts", "level", "message"}
+    )
     line = f"[admin_bridge][{normalized_level.upper()}] {payload['message']}"
     if field_text:
         line = f"{line} {field_text}"
@@ -384,9 +393,20 @@ def bridge_log(level: str, message: str, **fields: Any) -> None:
 def configure_runtime_paths(config: RuntimeConfig) -> None:
     global RUNTIME_CONFIG
     global _TASK_HISTORY_MANAGER
-    global OPS_HISTORY_PATH, OPS_ALERT_STATE_PATH, JOBS_FETCH_REPORT_PATH, TASK_STATE_PATH, DISCOVERY_LOG_PATH, FETCHER_LOG_PATH
+    global \
+        OPS_HISTORY_PATH, \
+        OPS_ALERT_STATE_PATH, \
+        JOBS_FETCH_REPORT_PATH, \
+        TASK_STATE_PATH, \
+        DISCOVERY_LOG_PATH, \
+        FETCHER_LOG_PATH
     global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
-    global TASKS_CONFIG_PATH, SYNC_CONFIG_PATH, DISCOVERY_CONFIG_PATH, SYNC_RUNTIME_PATH, STARTUP_METRICS_PATH
+    global \
+        TASKS_CONFIG_PATH, \
+        SYNC_CONFIG_PATH, \
+        DISCOVERY_CONFIG_PATH, \
+        SYNC_RUNTIME_PATH, \
+        STARTUP_METRICS_PATH
     global _REGISTRY_SERVICE, _REGISTRY_SERVICE_PATHS
     global _DISCOVERY_SERVICE, _DISCOVERY_SERVICE_PATHS
 
@@ -553,7 +573,9 @@ def persist_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict
     return _get_registry_service().persist_state(state)
 
 
-def persist_state_and_auto_sync(state: dict[str, list[dict[str, Any]]], *, reason: str) -> dict[str, list[dict[str, Any]]]:
+def persist_state_and_auto_sync(
+    state: dict[str, list[dict[str, Any]]], *, reason: str
+) -> dict[str, list[dict[str, Any]]]:
     return _registry_sync_flow.persist_state_and_auto_sync(
         state,
         reason=reason,
@@ -562,7 +584,9 @@ def persist_state_and_auto_sync(state: dict[str, list[dict[str, Any]]], *, reaso
     )
 
 
-def move_entries(pending: list[dict[str, Any]], selected_ids: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def move_entries(
+    pending: list[dict[str, Any]], selected_ids: list[str]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     return RegistryService.move_entries(pending, selected_ids)
 
 
@@ -624,11 +648,15 @@ def add_manual_source(raw_url: str) -> dict[str, Any]:
     # Collapse manual static variants by studio+domain (e.g. /careers, /career, /de/karriere).
     if str(candidate.get("adapter") or "").strip().lower() == "static":
         studio = str(candidate.get("studio") or "").strip()
-        existing_match = find_existing_static_source_by_studio_domain(state, studio=studio, normalized_url=normalized_url)
+        existing_match = find_existing_static_source_by_studio_domain(
+            state, studio=studio, normalized_url=normalized_url
+        )
         if existing_match is not None:
             bucket, idx, existing = existing_match
             updated = dict(existing)
-            pages = list(updated.get("pages") or []) if isinstance(updated.get("pages"), list) else []
+            pages = (
+                list(updated.get("pages") or []) if isinstance(updated.get("pages"), list) else []
+            )
             normalized_pages = [normalize_source_url(str(page or "")) for page in pages]
             normalized_pages = [page for page in normalized_pages if page]
             if normalized_url not in normalized_pages:
@@ -649,7 +677,10 @@ def add_manual_source(raw_url: str) -> dict[str, Any]:
 
     state["pending"] = unique_sources([candidate, *state["pending"]])
     state = persist_state_and_auto_sync(state, reason="manual_source_added")
-    added = next((row for row in state["pending"] if source_identity(row) == source_identity(candidate)), candidate)
+    added = next(
+        (row for row in state["pending"] if source_identity(row) == source_identity(candidate)),
+        candidate,
+    )
     return {
         "status": "added",
         "sourceId": source_identity(added),
@@ -667,7 +698,8 @@ def _fetch_html_with_fallback_bound(url: str, timeout_s: int) -> tuple[str, str,
         timeout_s,
         fetch_text=lambda u, t: discovery.fetch_text_with_retry(u, t, adapter="static"),
         looks_like_challenge=_source_check_http.looks_like_browser_challenge_page,
-        has_extractable_job_data=lambda html, page_url: _source_check_fetch.html_has_extractable_job_data(
+        has_extractable_job_data=lambda html,
+        page_url: _source_check_fetch.html_has_extractable_job_data(
             html, page_url, html_extractor=_html_extractor
         ),
         try_playwright=_source_check_http.try_fetch_with_playwright,
@@ -675,7 +707,9 @@ def _fetch_html_with_fallback_bound(url: str, timeout_s: int) -> tuple[str, str,
     )
 
 
-def _fetch_static_page_with_alternates_bound(page_url: str, timeout_s: int) -> tuple[str, str, bool, bool, str]:
+def _fetch_static_page_with_alternates_bound(
+    page_url: str, timeout_s: int
+) -> tuple[str, str, bool, bool, str]:
     return _source_check_fetch.fetch_static_page_with_alternates(
         page_url,
         timeout_s,
@@ -686,13 +720,17 @@ def _fetch_static_page_with_alternates_bound(page_url: str, timeout_s: int) -> t
     )
 
 
-def check_static_source(row: dict[str, Any], timeout_s: int = 12) -> tuple[bool, int, str, bool, dict[str, Any]]:
+def check_static_source(
+    row: dict[str, Any], timeout_s: int = 12
+) -> tuple[bool, int, str, bool, dict[str, Any]]:
     return _source_checker.check_static_source(
         row,
         timeout_s,
         fetch_page_with_alternates=_fetch_static_page_with_alternates_bound,
         fetch_page=_fetch_html_with_fallback_bound,
-        fetch_text=lambda url, timeout: discovery.fetch_text_with_retry(url, timeout, adapter="static"),
+        fetch_text=lambda url, timeout: discovery.fetch_text_with_retry(
+            url, timeout, adapter="static"
+        ),
         html_extractor=_html_extractor,
         parse_jobpostings_from_html=parse_jobpostings_from_html,
         normalize_job_url=normalize_job_url,
@@ -747,9 +785,7 @@ def run_background_script(
 
 
 def _failed_source_names_from_latest_report(*, allowed_names: set[str] | None = None) -> list[str]:
-    return _get_ops_api().failed_source_names_from_latest_report(
-        allowed_names=allowed_names
-    )
+    return _get_ops_api().failed_source_names_from_latest_report(allowed_names=allowed_names)
 
 
 def build_fetcher_args_from_payload(payload: dict[str, Any]) -> tuple[list[str], str]:
@@ -830,7 +866,14 @@ def task_running_from_state(task_type: str) -> bool:
     )
 
 
-def report_is_stale_in_progress(task_type: str, path: Path, report: dict[str, Any], *, max_age_minutes: int = 5, max_mtime_idle_minutes: float = 0.35) -> bool:
+def report_is_stale_in_progress(
+    task_type: str,
+    path: Path,
+    report: dict[str, Any],
+    *,
+    max_age_minutes: int = 5,
+    max_mtime_idle_minutes: float = 0.35,
+) -> bool:
     return _run_history_api.report_is_stale_in_progress(
         task_type,
         path,
@@ -888,7 +931,14 @@ def compute_fetcher_metrics(window_runs: int = 20) -> dict[str, Any]:
     return _get_ops_api().compute_fetcher_metrics(window_runs=window_runs)
 
 
-def _set_sync_status(*, action: str = "", result: str = "", error: str = "", pulled: bool = False, pushed: bool = False) -> None:
+def _set_sync_status(
+    *,
+    action: str = "",
+    result: str = "",
+    error: str = "",
+    pulled: bool = False,
+    pushed: bool = False,
+) -> None:
     _get_sync_state().set_sync_status(
         action=action,
         result=result,
@@ -954,7 +1004,9 @@ def wait_for_sync_tasks(timeout_s: float = 5.0) -> None:
 
 def _mark_discovery_sync_finished(finished_at: str) -> None:
     with SYNC_STATE_LOCK:
-        _get_sync_state().save_sync_runtime_state({"lastDiscoverySyncFinishedAt": str(finished_at or "")})
+        _get_sync_state().save_sync_runtime_state(
+            {"lastDiscoverySyncFinishedAt": str(finished_at or "")}
+        )
 
 
 def _maybe_trigger_auto_sync_push(reason: str) -> bool:
@@ -970,7 +1022,9 @@ def _watch_discovery_run_for_auto_sync(run_id: str, pid: int, started_at: str) -
     _get_discovery_service().watch_discovery_run_for_auto_sync(run_id, pid, started_at)
 
 
-def _run_sync_task_worker(run_id: str, action: str, started_at: str, *, reason: str = "", automatic: bool = False) -> None:
+def _run_sync_task_worker(
+    run_id: str, action: str, started_at: str, *, reason: str = "", automatic: bool = False
+) -> None:
     _sync_task_flow.run_sync_task_worker(
         run_id=run_id,
         action=action,
@@ -987,7 +1041,9 @@ def _run_sync_task_worker(run_id: str, action: str, started_at: str, *, reason: 
         prune_started_rows_for_type=lambda entry_type, *, finished_at: prune_started_rows_for_type(
             entry_type, finished_at=finished_at
         ),
-        upsert_run_history=lambda entry: upsert_run_history(entry, dedupe_fields=("type", "finishedAt")),
+        upsert_run_history=lambda entry: upsert_run_history(
+            entry, dedupe_fields=("type", "finishedAt")
+        ),
         bridge_log=bridge_log,
     )
 
@@ -1065,19 +1121,25 @@ def _wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> dict[str
 def start_fetcher_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     run_id = f"fetch_{uuid.uuid4().hex[:10]}"
     started_at = now_iso()
-    fetcher_args, preset = build_fetcher_args_from_payload(payload if isinstance(payload, dict) else {})
+    fetcher_args, preset = build_fetcher_args_from_payload(
+        payload if isinstance(payload, dict) else {}
+    )
     FETCHER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    FETCHER_LOG_PATH.write_text(f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8")
-    append_run_history({
-        "id": run_id,
-        "runId": run_id,
-        "type": "fetch",
-        "status": "started",
-        "startedAt": started_at,
-        "finishedAt": "",
-        "durationMs": 0,
-        "summary": {},
-    })
+    FETCHER_LOG_PATH.write_text(
+        f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8"
+    )
+    append_run_history(
+        {
+            "id": run_id,
+            "runId": run_id,
+            "type": "fetch",
+            "status": "started",
+            "startedAt": started_at,
+            "finishedAt": "",
+            "durationMs": 0,
+            "summary": {},
+        }
+    )
     spawn_args = list(fetcher_args)
     if "--output-dir" not in spawn_args:
         spawn_args.extend(["--output-dir", str(RUNTIME_CONFIG.data_dir)])
@@ -1152,4 +1214,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

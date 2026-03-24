@@ -137,7 +137,9 @@ def run_static_studio_pages_source(
             force_refresh_all=force_refresh_all,
         )
         entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-        entry_report["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        entry_report["cacheDecisionReason"] = (
+            clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        )
         kept_before = len(jobs)
         link_rejections: Counter[str] = Counter()
         stats = entry_report["stats"]
@@ -147,7 +149,11 @@ def run_static_studio_pages_source(
             entry_report["exclusionReason"] = f"cache_{entry_report['cacheDecisionReason']}"
             details.append(entry_report)
             continue
-        state_entry = (source_state_rows or {}).get(source_name) if isinstance(source_state_rows, dict) else {}
+        state_entry = (
+            (source_state_rows or {}).get(source_name)
+            if isinstance(source_state_rows, dict)
+            else {}
+        )
         if entry_report["cacheDecision"] == "revalidate_only" and pages:
             revalidate = conditional_revalidate_url(
                 clean_text(pages[0]),
@@ -178,7 +184,9 @@ def run_static_studio_pages_source(
         plugin_identity = host or source_name
         if host == "jobs.jobvite.com" and pages:
             plugin_identity = clean_text(pages[0]) or plugin_identity
-        ctx = AdapterPluginContext(family="static", adapter_key="static", source_identity=plugin_identity)
+        ctx = AdapterPluginContext(
+            family="static", adapter_key="static", source_identity=plugin_identity
+        )
         try:
             plugin, _ = default_registry.select(ctx)
             plugin_jobs = plugin.run(
@@ -198,13 +206,17 @@ def run_static_studio_pages_source(
             plugin_meta = source.get("_staticPluginMeta") if isinstance(source, dict) else None
             if isinstance(plugin_meta, dict):
                 entry_report["classification"] = clean_text(plugin_meta.get("classification"))
-                entry_report["browserFallbackRecommended"] = bool(plugin_meta.get("browserFallbackRecommended"))
+                entry_report["browserFallbackRecommended"] = bool(
+                    plugin_meta.get("browserFallbackRecommended")
+                )
                 entry_report["extractorHint"] = clean_text(plugin_meta.get("extractorHint"))
                 if plugin_meta.get("emptyConfirmed"):
                     entry_report["emptyConfirmed"] = True
                 ats_links = plugin_meta.get("atsLinks")
                 if isinstance(ats_links, list):
-                    entry_report["atsLinks"] = [clean_text(v) for v in ats_links if clean_text(v)][:5]
+                    entry_report["atsLinks"] = [clean_text(v) for v in ats_links if clean_text(v)][
+                        :5
+                    ]
                 meta_error = clean_text(plugin_meta.get("error"))
                 if meta_error and not entry_report.get("error"):
                     entry_report["error"] = meta_error
@@ -213,7 +225,9 @@ def run_static_studio_pages_source(
             # or a non-fatal browser escalation classification.
             if not plugin_jobs:
                 classification = clean_text(entry_report.get("classification"))
-                empty_confirmed = bool(entry_report.get("emptyConfirmed")) or classification == "empty_confirmed"
+                empty_confirmed = (
+                    bool(entry_report.get("emptyConfirmed")) or classification == "empty_confirmed"
+                )
                 browser_recommended = bool(entry_report.get("browserFallbackRecommended"))
                 if not empty_confirmed:
                     entry_report["status"] = "error"
@@ -223,7 +237,9 @@ def run_static_studio_pages_source(
                         entry_report["classification"] = "fetch_ok_extract_zero"
                     if browser_recommended:
                         warn_page = clean_text(pages[0]) if pages else ""
-                        warnings.append(f"static:{source_name}:{warn_page}: {entry_report.get('error')}")
+                        warnings.append(
+                            f"static:{source_name}:{warn_page}: {entry_report.get('error')}"
+                        )
                     else:
                         errors.append(f"static:{source_name}: {entry_report.get('error')}")
                 else:
@@ -241,7 +257,9 @@ def run_static_studio_pages_source(
             if not page_url:
                 continue
             domain_profile = domain_profile_for_url(page_url)
-            source_budget_s = int(domain_profile.get("static_source_time_budget_s") or static_source_time_budget_s)
+            source_budget_s = int(
+                domain_profile.get("static_source_time_budget_s") or static_source_time_budget_s
+            )
             if (time.perf_counter() - source_started) > float(source_budget_s):
                 entry_report["status"] = "error"
                 entry_report["classification"] = "timeout"
@@ -251,16 +269,24 @@ def run_static_studio_pages_source(
                 break
             try:
                 listing_fetch_started = time.perf_counter()
-                remaining_budget_s = float(source_budget_s) - float(time.perf_counter() - source_started)
-                effective_timeout_s = max(3, min(int(timeout_s or 1), int(remaining_budget_s or timeout_s)))
+                remaining_budget_s = float(source_budget_s) - float(
+                    time.perf_counter() - source_started
+                )
+                effective_timeout_s = max(
+                    3, min(int(timeout_s or 1), int(remaining_budget_s or timeout_s))
+                )
                 html = ""
                 cache_hit = False
                 try:
-                    html, cache_hit = fetch_html_cached(page_url, remaining_budget_s=remaining_budget_s)
+                    html, cache_hit = fetch_html_cached(
+                        page_url, remaining_budget_s=remaining_budget_s
+                    )
                 except Exception as exc:  # noqa: BLE001
                     err_str = str(exc)
                     err_lower = err_str.lower()
-                    if try_playwright and ("403" in err_str or "timeout" in err_lower or "timed out" in err_lower):
+                    if try_playwright and (
+                        "403" in err_str or "timeout" in err_lower or "timed out" in err_lower
+                    ):
                         reason = "403" if "403" in err_str else "timeout"
                         html, _ = try_playwright(page_url, effective_timeout_s)
                         print(
@@ -270,7 +296,9 @@ def run_static_studio_pages_source(
                         )
                     if not html:
                         raise
-                stats["listing_fetch_ms"] += int((time.perf_counter() - listing_fetch_started) * 1000)
+                stats["listing_fetch_ms"] += int(
+                    (time.perf_counter() - listing_fetch_started) * 1000
+                )
                 if cache_hit:
                     stats["fetch_cache_hits"] += 1
                 if try_playwright and html and detect_js_shell(html):
@@ -304,7 +332,9 @@ def run_static_studio_pages_source(
                     if dynamic_listing_html and dynamic_listing_html not in listing_htmls:
                         listing_htmls.append(dynamic_listing_html)
                 except Exception as exc:  # noqa: BLE001
-                    errors.append(f"static:{source_name}:{page_url}: dynamic-listing-fetch failed: {exc}")
+                    errors.append(
+                        f"static:{source_name}:{page_url}: dynamic-listing-fetch failed: {exc}"
+                    )
 
                 extraction_started = time.perf_counter()
                 listing_jobs_found = 0
@@ -330,11 +360,15 @@ def run_static_studio_pages_source(
                         listing_html,
                     ):
                         row_html = row_match.group(1) or ""
-                        link_match = re.search(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', row_html)
+                        link_match = re.search(
+                            r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', row_html
+                        )
                         if not link_match:
                             continue
                         href = clean_text(link_match.group(1))
-                        anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", link_match.group(2) or ""))
+                        anchor_text = strip_html_text(
+                            re.sub(r"(?is)<[^>]+>", " ", link_match.group(2) or "")
+                        )
                         add_detail_link(
                             detail_links,
                             detail_seen,
@@ -349,7 +383,9 @@ def run_static_studio_pages_source(
                             default_query_keys=static_runtime.default_query_keys,
                         )
 
-                    for match in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', listing_html):
+                    for match in re.finditer(
+                        r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', listing_html
+                    ):
                         href = clean_text(match.group(1))
                         anchor_inner = match.group(2) or ""
                         anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner))
@@ -381,13 +417,24 @@ def run_static_studio_pages_source(
                             default_query_keys=static_runtime.default_query_keys,
                         )
                 stats["candidate_links_found"] += len(detail_links)
-                stats["candidate_extraction_ms"] += int((time.perf_counter() - extraction_started) * 1000)
-                listing_fingerprint = hashlib.sha1("\n".join(listing_htmls).encode("utf-8")).hexdigest()
-                previous_listing_fingerprint = clean_text((state_entry or {}).get("lastListingFingerprint"))
+                stats["candidate_extraction_ms"] += int(
+                    (time.perf_counter() - extraction_started) * 1000
+                )
+                listing_fingerprint = hashlib.sha1(
+                    "\n".join(listing_htmls).encode("utf-8")
+                ).hexdigest()
+                previous_listing_fingerprint = clean_text(
+                    (state_entry or {}).get("lastListingFingerprint")
+                )
                 entry_report["listingFingerprint"] = listing_fingerprint
                 entry_report["listingCheckedAt"] = now_iso()
-                entry_report["listingChanged"] = bool(listing_fingerprint != previous_listing_fingerprint)
-                if previous_listing_fingerprint and listing_fingerprint == previous_listing_fingerprint:
+                entry_report["listingChanged"] = bool(
+                    listing_fingerprint != previous_listing_fingerprint
+                )
+                if (
+                    previous_listing_fingerprint
+                    and listing_fingerprint == previous_listing_fingerprint
+                ):
                     entry_report["cacheDecision"] = "listing_only"
                     entry_report["cacheDecisionReason"] = "listing_fingerprint_unchanged"
                     entry_report["detailSkippedByListingFingerprint"] = True
@@ -422,15 +469,21 @@ def run_static_studio_pages_source(
                 )
                 profile_max_detail_links = max(0, int(domain_profile.get("max_detail_links") or 0))
                 if profile_max_detail_links > 0:
-                    detail_limit = min(detail_limit, profile_max_detail_links) if detail_limit else profile_max_detail_links
+                    detail_limit = (
+                        min(detail_limit, profile_max_detail_links)
+                        if detail_limit
+                        else profile_max_detail_links
+                    )
                 if detail_limit and detail_limit < len(detail_links):
                     detail_links = detail_links[:detail_limit]
                 detail_fetch_started = time.perf_counter()
-                with ThreadPoolExecutor(max_workers=source_detail_concurrency_for(
-                    source_key,
-                    source_state_rows=source_state_rows,
-                    static_detail_concurrency=static_detail_concurrency,
-                )) as executor:
+                with ThreadPoolExecutor(
+                    max_workers=source_detail_concurrency_for(
+                        source_key,
+                        source_state_rows=source_state_rows,
+                        static_detail_concurrency=static_detail_concurrency,
+                    )
+                ) as executor:
                     future_map = {
                         executor.submit(
                             process_detail_link,
@@ -472,7 +525,11 @@ def run_static_studio_pages_source(
                                 continue
                             seen_links.add(link)
                             jobs.append(row)
-                stats["detail_fetch_ms"] += max(0, int((time.perf_counter() - detail_fetch_started) * 1000) - int(stats["detail_fetch_ms"] or 0))
+                stats["detail_fetch_ms"] += max(
+                    0,
+                    int((time.perf_counter() - detail_fetch_started) * 1000)
+                    - int(stats["detail_fetch_ms"] or 0),
+                )
             except Exception as exc:  # noqa: BLE001
                 msg = str(exc)
                 if "HTTP 403" in msg:
@@ -492,13 +549,19 @@ def run_static_studio_pages_source(
         entry_report["keptCount"] = max(0, len(jobs) - kept_before)
         stats["jobs_emitted"] = int(entry_report["keptCount"])
         if int(stats["detail_pages_visited"] or 0) > 0:
-            stats["detail_yield_percent"] = int(round((entry_report["keptCount"] / stats["detail_pages_visited"]) * 100))
+            stats["detail_yield_percent"] = int(
+                round((entry_report["keptCount"] / stats["detail_pages_visited"]) * 100)
+            )
         entry_report["loss"] = {
             "staticNonJobUrlRejected": int(link_rejections.get("non_job_url", 0)),
             "staticDuplicateLinkRejected": int(link_rejections.get("duplicate_link", 0)),
             "staticDetailParseEmpty": int(link_rejections.get("detail_parse_empty", 0)),
         }
-        if entry_report["keptCount"] == 0 and pages and not clean_text(entry_report.get("classification")):
+        if (
+            entry_report["keptCount"] == 0
+            and pages
+            and not clean_text(entry_report.get("classification"))
+        ):
             entry_report["status"] = "error"
             entry_report["classification"] = "fetch_ok_extract_zero"
             entry_report["browserFallbackRecommended"] = True
@@ -590,7 +653,11 @@ def static_source_name_for_registry_row(row: dict[str, Any]) -> str:
     source_id = clean_text(row.get("id"))
     if not source_id:
         listing_url = clean_text(row.get("listing_url"))
-        digest_seed = listing_url or clean_text(row.get("name")) or json.dumps(row, sort_keys=True, ensure_ascii=False)
+        digest_seed = (
+            listing_url
+            or clean_text(row.get("name"))
+            or json.dumps(row, sort_keys=True, ensure_ascii=False)
+        )
         source_id = f"auto:{hashlib.sha1(digest_seed.encode('utf-8')).hexdigest()[:12]}"
     return f"static_source::{source_id}"
 
@@ -678,5 +745,3 @@ def run_static_studio_pages_s_z_source(
         try_playwright=try_playwright,
         force_refresh_all=force_refresh_all,
     )
-
-

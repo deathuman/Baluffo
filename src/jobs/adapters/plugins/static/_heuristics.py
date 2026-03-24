@@ -23,10 +23,12 @@ CLASSIFICATION_PARSE_ERROR = "parse_error"
 CLASSIFICATION_ERROR = "error"
 
 # Classifications that cause a source to be added to the browser fallback queue.
-CLASSIFICATIONS_FOR_BROWSER_QUEUE = frozenset({
-    CLASSIFICATION_BLOCKED_OR_CHALLENGE,
-    CLASSIFICATION_TIMEOUT,
-})
+CLASSIFICATIONS_FOR_BROWSER_QUEUE = frozenset(
+    {
+        CLASSIFICATION_BLOCKED_OR_CHALLENGE,
+        CLASSIFICATION_TIMEOUT,
+    }
+)
 
 
 def normalize_html(html: str) -> str:
@@ -48,7 +50,16 @@ def detect_js_shell(html: str) -> bool:
     lower = s.lower()
     if visible_text_len(s) < 180:
         # Very little visible text; if also looks like an SPA shell, flag it.
-        if any(tok in lower for tok in ("<div id=\"root\"", "<div id=\"app\"", "data-reactroot", "ng-version", "__next_data__")):
+        if any(
+            tok in lower
+            for tok in (
+                '<div id="root"',
+                '<div id="app"',
+                "data-reactroot",
+                "ng-version",
+                "__next_data__",
+            )
+        ):
             return True
         if any(tok in lower for tok in ("window.__", "webpackjsonp", "react", "next.js")):
             return True
@@ -119,4 +130,3 @@ def classify_fetch_exception(exc: Exception) -> tuple[str, bool]:
     if "Network error" in msg or "timed out" in msg or "Timeout" in msg:
         return CLASSIFICATION_TIMEOUT, True
     return CLASSIFICATION_ERROR, False
-

@@ -33,7 +33,10 @@ def run(
     page_url = clean_text(pages[0])
     if not page_url:
         return []
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Nacon Studio Milan"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Nacon Studio Milan"
+    )
     source_id = clean_text(source_row.get("id")) or "naconstudiomilan"
     try:
         html = fetch_text(page_url, timeout_s)

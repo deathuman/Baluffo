@@ -18,10 +18,14 @@ def _build_with_temp_packaged_config(
     packaging_dir = temp_root / "packaging"
     packaging_dir.mkdir(parents=True, exist_ok=True)
     config_path = packaging_dir / "github-app-sync-config.json"
-    template_path = Path(__file__).resolve().parents[1] / "packaging" / "github-app-sync-config.template.json"
-    with mock.patch("scripts.build_ship_bundle.PACKAGED_SYNC_CONFIG_PATH", config_path), mock.patch(
-        "scripts.build_ship_bundle.PACKAGED_SYNC_CONFIG_TEMPLATE_PATH", template_path
-    ), mock.patch.dict("os.environ", env or {}, clear=False):
+    template_path = (
+        Path(__file__).resolve().parents[1] / "packaging" / "github-app-sync-config.template.json"
+    )
+    with (
+        mock.patch("scripts.build_ship_bundle.PACKAGED_SYNC_CONFIG_PATH", config_path),
+        mock.patch("scripts.build_ship_bundle.PACKAGED_SYNC_CONFIG_TEMPLATE_PATH", template_path),
+        mock.patch.dict("os.environ", env or {}, clear=False),
+    ):
         return build_bundle(temp_root / "dist" / "baluffo-ship", "1.2.3")
 
 
@@ -83,7 +87,9 @@ def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
         bundled_release_guide = (output / "RELEASE_GUIDE.md").read_text(encoding="utf-8")
         assert "# Release Guide" in bundled_release_guide
 
-        seeded_report = json.loads((output / "data" / "jobs-fetch-report.json").read_text(encoding="utf-8"))
+        seeded_report = json.loads(
+            (output / "data" / "jobs-fetch-report.json").read_text(encoding="utf-8")
+        )
         # Verify structure exists, not specific empty values (bundle may have processed data)
         assert "summary" in seeded_report
         assert "sources" in seeded_report
@@ -119,7 +125,11 @@ def test_bundle_generates_capped_startup_preview() -> None:
             encoding="utf-8",
         )
         output = _build_with_temp_packaged_config(tmp)
-        startup_rows = json.loads((output / "app" / "versions" / "1.2.3" / "data" / "jobs-unified-startup.json").read_text(encoding="utf-8"))
+        startup_rows = json.loads(
+            (
+                output / "app" / "versions" / "1.2.3" / "data" / "jobs-unified-startup.json"
+            ).read_text(encoding="utf-8")
+        )
         assert isinstance(startup_rows, list)
         assert len(startup_rows) <= STARTUP_PREVIEW_LIMIT
         assert len(startup_rows) > 0
@@ -133,8 +143,12 @@ def test_bundle_generates_packaged_sync_config_from_build_env() -> None:
             "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----\n",
             encoding="utf-8",
         )
-        with mock.patch("scripts.build_ship_bundle._candidate_local_packaged_sync_config_paths", return_value=[]), mock.patch(
-            "scripts.build_ship_bundle._validate_private_key_pem"
+        with (
+            mock.patch(
+                "scripts.build_ship_bundle._candidate_local_packaged_sync_config_paths",
+                return_value=[],
+            ),
+            mock.patch("scripts.build_ship_bundle._validate_private_key_pem"),
         ):
             output = _build_with_temp_packaged_config(
                 tmp,
@@ -147,12 +161,7 @@ def test_bundle_generates_packaged_sync_config_from_build_env() -> None:
             )
         packaged_config = json.loads(
             (
-                output
-                / "app"
-                / "versions"
-                / "1.2.3"
-                / "packaging"
-                / "github-app-sync-config.json"
+                output / "app" / "versions" / "1.2.3" / "packaging" / "github-app-sync-config.json"
             ).read_text(encoding="utf-8")
         )
         assert packaged_config["appId"] == "123456"
@@ -172,7 +181,9 @@ def test_bundle_rejects_invalid_private_key_from_build_env() -> None:
             "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----\n",
             encoding="utf-8",
         )
-        with mock.patch("scripts.build_ship_bundle._candidate_local_packaged_sync_config_paths", return_value=[]):
+        with mock.patch(
+            "scripts.build_ship_bundle._candidate_local_packaged_sync_config_paths", return_value=[]
+        ):
             with pytest.raises(RuntimeError, match="Invalid packaged sync private key"):
                 _build_with_temp_packaged_config(
                     tmp,
@@ -211,12 +222,7 @@ def test_bundle_restores_packaged_sync_config_from_local_env_path() -> None:
             env={"BALUFFO_SYNC_BUILD_CONFIG_PATH": str(source_config_path)},
         )
         bundled_config_path = (
-            output
-            / "app"
-            / "versions"
-            / "1.2.3"
-            / "packaging"
-            / "github-app-sync-config.json"
+            output / "app" / "versions" / "1.2.3" / "packaging" / "github-app-sync-config.json"
         )
         bundled_config = json.loads(bundled_config_path.read_text(encoding="utf-8"))
         assert bundled_config["appId"] == source_payload["appId"]

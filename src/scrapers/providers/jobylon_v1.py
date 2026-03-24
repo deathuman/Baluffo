@@ -51,9 +51,13 @@ def extract_jobylon_v1_jobs(
         chunks = payload.split('<div id="jobylon-job-')
         for raw in chunks[1:]:
             job_id = clean_text(raw.split('"', 1)[0])
-            title_match = re.search(r'(?is)<div class="jobylon-job-title[^"]*">\s*(.*?)\s*</div>', raw)
+            title_match = re.search(
+                r'(?is)<div class="jobylon-job-title[^"]*">\s*(.*?)\s*</div>', raw
+            )
             href_match = re.search(r'(?is)<a class="jobylon-apply-btn"\s+href="([^"]+)"', raw)
-            loc_match = re.search(r'(?is)<li class="jobylon-location"><strong>[^<]*</strong>\s*([^<]+)</li>', raw)
+            loc_match = re.search(
+                r'(?is)<li class="jobylon-location"><strong>[^<]*</strong>\s*([^<]+)</li>', raw
+            )
             title = clean_text(unescape(title_match.group(1))) if title_match else ""
             job_link = clean_text(href_match.group(1)) if href_match else ""
             city = clean_text(unescape(loc_match.group(1))) if loc_match else ""

@@ -13,11 +13,8 @@ def test_run_validation_reports_desktop_file_store_scenarios() -> None:
     scenarios = report.get("scenarios") or []
     assert len(scenarios) == 3
     assert all(bool(row.get("ok")) for row in scenarios if isinstance(row, dict))
-    assert (
-        [str(row.get("name") or "") for row in scenarios]
-        == [
-            "scenario_a_json_no_files",
-            "scenario_b_with_files",
-            "scenario_c_duplicates_and_malformed",
-        ]
-    )
+    assert [str(row.get("name") or "") for row in scenarios] == [
+        "scenario_a_json_no_files",
+        "scenario_b_with_files",
+        "scenario_c_duplicates_and_malformed",
+    ]

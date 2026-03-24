@@ -6,8 +6,8 @@
 > - **Not authoritative** for current implementation, contracts, selectors, queue behavior, or source health
 > - Revalidate against current code and `docs/scraping-pipeline.md` before using operationally
 
-**Run date:** 2026-03-17  
-**Entry point:** `python src/jobs_fetcher.py --ignore-circuit-breaker`  
+**Run date:** 2026-03-17
+**Entry point:** `python src/jobs_fetcher.py --ignore-circuit-breaker`
 **Output dir:** `data/`
 
 ---

@@ -98,7 +98,10 @@ def _normalize_job(row: dict[str, Any]) -> dict[str, Any]:
         "notes": str(row.get("notes") or ""),
         "attachmentsCount": int(row.get("attachmentsCount") or 0),
         "savedAt": _normalize_iso_text(row.get("savedAt")),
-        "phaseTimestamps": {str(k): _normalize_iso_text(v) for k, v in dict(row.get("phaseTimestamps") or {}).items()},
+        "phaseTimestamps": {
+            str(k): _normalize_iso_text(v)
+            for k, v in dict(row.get("phaseTimestamps") or {}).items()
+        },
     }
 
 
@@ -144,7 +147,9 @@ def _capture_snapshot(store: LocalDataStore, uid: str) -> Snapshot:
             fp = _attachment_fingerprint(row)
             attachments[fp] = _normalize_attachment(row)
             try:
-                raw, _mime, _name = store.get_attachment_blob(uid, job_key, str(row.get("id") or ""))
+                raw, _mime, _name = store.get_attachment_blob(
+                    uid, job_key, str(row.get("id") or "")
+                )
                 attachment_hashes[fp] = _sha256_bytes(raw)
             except (FileNotFoundError, PermissionError, ValueError):
                 # JSON backups can restore metadata-only attachments without local file bytes.
@@ -366,13 +371,17 @@ def run_validation(data_dir: Path) -> dict[str, Any]:
     _seed_profile_data(store, uid)
     before_a = _capture_snapshot(store, uid)
     payload_a = store.export_profile_data(uid, include_files=False)
-    payload_a_has_blobs = any(bool(att.get("blobDataUrl")) for att in payload_a.get("attachments") or [])
+    payload_a_has_blobs = any(
+        bool(att.get("blobDataUrl")) for att in payload_a.get("attachments") or []
+    )
     uid = _wipe_profile(store, uid, profile_name)
     import_result_a = store.import_profile_data(uid, payload_a)
     after_a = _capture_snapshot(store, uid)
     mismatches_a = []
     mismatches_a.extend(_diff_maps(before_a.jobs, after_a.jobs, "jobs"))
-    mismatches_a.extend(_diff_maps(before_a.attachments, after_a.attachments, "attachments_metadata"))
+    mismatches_a.extend(
+        _diff_maps(before_a.attachments, after_a.attachments, "attachments_metadata")
+    )
     mismatches_a.extend(_diff_maps(before_a.activity, after_a.activity, "activity"))
     scenario_a_ok = not mismatches_a and not payload_a_has_blobs
     overall_ok = overall_ok and scenario_a_ok
@@ -394,15 +403,21 @@ def run_validation(data_dir: Path) -> dict[str, Any]:
     _seed_profile_data(store, uid)
     before_b = _capture_snapshot(store, uid)
     payload_b = store.export_profile_data(uid, include_files=True)
-    payload_b_has_blobs = all(bool(att.get("blobDataUrl")) for att in payload_b.get("attachments") or [])
+    payload_b_has_blobs = all(
+        bool(att.get("blobDataUrl")) for att in payload_b.get("attachments") or []
+    )
     uid = _wipe_profile(store, uid, profile_name)
     import_result_b = store.import_profile_data(uid, payload_b)
     after_b = _capture_snapshot(store, uid)
     mismatches_b = []
     mismatches_b.extend(_diff_maps(before_b.jobs, after_b.jobs, "jobs"))
-    mismatches_b.extend(_diff_maps(before_b.attachments, after_b.attachments, "attachments_metadata"))
+    mismatches_b.extend(
+        _diff_maps(before_b.attachments, after_b.attachments, "attachments_metadata")
+    )
     mismatches_b.extend(_diff_maps(before_b.activity, after_b.activity, "activity"))
-    mismatches_b.extend(_diff_attachment_hashes(before_b.attachment_hashes, after_b.attachment_hashes))
+    mismatches_b.extend(
+        _diff_attachment_hashes(before_b.attachment_hashes, after_b.attachment_hashes)
+    )
     scenario_b_ok = not mismatches_b and payload_b_has_blobs
     overall_ok = overall_ok and scenario_b_ok
     scenarios.append(
@@ -434,7 +449,9 @@ def run_validation(data_dir: Path) -> dict[str, Any]:
     after_c = _capture_snapshot(store, uid)
     mismatches_c = []
     mismatches_c.extend(_diff_maps(baseline_c.jobs, after_c.jobs, "jobs"))
-    mismatches_c.extend(_diff_maps(baseline_c.attachments, after_c.attachments, "attachments_metadata"))
+    mismatches_c.extend(
+        _diff_maps(baseline_c.attachments, after_c.attachments, "attachments_metadata")
+    )
     mismatches_c.extend(_diff_maps(baseline_c.activity, after_c.activity, "activity"))
     scenario_c_ok = not mismatches_c and len(import_result_c.get("warnings") or []) > 0
     overall_ok = overall_ok and scenario_c_ok
@@ -458,7 +475,9 @@ def run_validation(data_dir: Path) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate desktop file-store backup export/import end-to-end.")
+    parser = argparse.ArgumentParser(
+        description="Validate desktop file-store backup export/import end-to-end."
+    )
     parser.add_argument(
         "--data-dir",
         default="data/.backup-validation-tmp",
@@ -495,4 +514,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

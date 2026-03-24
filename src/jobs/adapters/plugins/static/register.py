@@ -11,6 +11,7 @@ To add a new static site plugin:
   2. Register it here with default_registry.register(SimpleAdapterPlugin(...)).
   3. See docs/architecture-ai-map.md § Static adapter / How to add a static plugin.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable

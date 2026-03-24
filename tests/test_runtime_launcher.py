@@ -100,7 +100,11 @@ def test_build_site_request_handler_traces_probe_requests() -> None:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            rl.wait_for_url(f"http://127.0.0.1:{server.server_address[1]}/jobs.html", timeout_s=2.0, interval_s=0.05)
+            rl.wait_for_url(
+                f"http://127.0.0.1:{server.server_address[1]}/jobs.html",
+                timeout_s=2.0,
+                interval_s=0.05,
+            )
         finally:
             server.shutdown()
             server.server_close()
@@ -108,7 +112,11 @@ def test_build_site_request_handler_traces_probe_requests() -> None:
 
         metrics_path = data_dir / "desktop-startup-metrics.jsonl"
         assert metrics_path.exists()
-        events = [json.loads(line)["event"] for line in metrics_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        events = [
+            json.loads(line)["event"]
+            for line in metrics_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         assert "desktop_site_request_start" in events
         assert "desktop_site_request_complete" in events
 
@@ -121,10 +129,13 @@ def test_run_site_server_reports_app_version() -> None:
         class _StopServer(Exception):
             pass
 
-        with mock.patch("builtins.print") as print_mock, mock.patch.object(
-            rl,
-            "ThreadingHTTPServer",
-            side_effect=_StopServer,
+        with (
+            mock.patch("builtins.print") as print_mock,
+            mock.patch.object(
+                rl,
+                "ThreadingHTTPServer",
+                side_effect=_StopServer,
+            ),
         ):
             with pytest.raises(_StopServer):
                 rl.run_site_server(root, port=8123)

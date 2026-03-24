@@ -33,7 +33,7 @@ from src.source_registry import load_json_object, save_json_atomic
 
 class SourceSyncModule(Protocol):
     """Protocol for the source_sync module interface."""
-    
+
     def config_status(self, config: Any) -> dict[str, Any]: ...
     def resolve_sync_config(
         self, settings: dict[str, Any] | None = None, env: dict[str, str] | None = None
@@ -42,53 +42,55 @@ class SourceSyncModule(Protocol):
     def pull_and_merge_sources(
         self, config: Any, local_state: dict[str, Any]
     ) -> dict[str, Any]: ...
-    def push_sources_snapshot(
-        self, config: Any, state: dict[str, Any]
-    ) -> dict[str, Any]: ...
+    def push_sources_snapshot(self, config: Any, state: dict[str, Any]) -> dict[str, Any]: ...
 
 
 class BridgeLogFunc(Protocol):
     """Protocol for the bridge_log function."""
-    
+
     def __call__(self, level: str, message: str, **fields: Any) -> None: ...
 
 
 class LoadStateFunc(Protocol):
     """Protocol for load_state function."""
-    
+
     def __call__(self) -> dict[str, list[dict[str, Any]]]: ...
 
 
 class PersistStateFunc(Protocol):
     """Protocol for persist_state function."""
-    
-    def __call__(self, state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]: ...
+
+    def __call__(
+        self, state: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, list[dict[str, Any]]]: ...
 
 
 class SummarizeStateFunc(Protocol):
     """Protocol for summarize_state function."""
-    
+
     def __call__(self, state: dict[str, list[dict[str, Any]]]) -> dict[str, int]: ...
 
 
 class RunHistoryFuncs(Protocol):
     """Protocol for run history functions."""
-    
+
     def append(self, row: dict[str, Any]) -> dict[str, Any]: ...
-    def upsert(self, entry: dict[str, Any], *, dedupe_fields: tuple[str, ...]) -> dict[str, Any]: ...
+    def upsert(
+        self, entry: dict[str, Any], *, dedupe_fields: tuple[str, ...]
+    ) -> dict[str, Any]: ...
     def load(self) -> list[dict[str, Any]]: ...
     def prune_started_rows_for_type(self, entry_type: str, finished_at: str) -> None: ...
 
 
 class SyncService:
     """Service for managing source synchronization with GitHub.
-    
+
     This class encapsulates all sync-related business logic, providing
     a clean interface for configuration, operations, and task management.
-    
+
     Dependencies are injected via constructor for testability and modularity.
     """
-    
+
     def __init__(
         self,
         data_dir: Path,
@@ -103,7 +105,7 @@ class SyncService:
         sync_state: SyncState | None = None,
     ):
         """Initialize SyncService with dependencies.
-        
+
         Args:
             data_dir: Base data directory for sync files
             source_sync: The source_sync module (or mock for testing)
@@ -125,24 +127,24 @@ class SyncService:
         self._run_history = run_history
         self._ops_state_lock = ops_state_lock
         self._get_security_defaults = get_security_defaults
-        
+
         # Initialize sync state
         self._sync_state = sync_state or SyncState(data_dir=data_dir)
-        
+
         # Path for sync config
         self._sync_config_path = data_dir / "source-sync-config.json"
-        
+
         # Initialize sync config
         self._sync_config = self._resolve_effective_sync_config()
-    
+
     # === Configuration Methods ===
-    
+
     def _normalize_sync_settings(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         """Normalize sync settings payload.
-        
+
         Args:
             payload: Raw settings payload
-            
+
         Returns:
             Normalized settings dict with 'enabled' key
         """
@@ -154,10 +156,10 @@ class SyncService:
         else:
             enabled = str(enabled_raw or "").strip().lower() not in {"", "0", "false", "no", "off"}
         return {"enabled": bool(enabled)}
-    
+
     def load_saved_sync_settings(self) -> dict[str, Any]:
         """Load saved sync settings from file.
-        
+
         Returns:
             Settings dict or empty dict if not configured
         """
@@ -165,22 +167,22 @@ class SyncService:
         if isinstance(raw, dict) and "enabled" in raw:
             return self._normalize_sync_settings(raw)
         return {}
-    
+
     def _resolve_effective_sync_config(self) -> Any:
         """Resolve the effective sync configuration.
-        
+
         Returns:
             SyncConfig from source_sync module
         """
         return self._source_sync.resolve_sync_config(
             settings=self.load_saved_sync_settings(), env=os.environ
         )
-    
+
     def refresh_sync_config(self) -> Any:
         """Refresh and return the current sync configuration.
-        
+
         Updates the internal _sync_config and returns it.
-        
+
         Returns:
             The current SyncConfig
         """
@@ -189,26 +191,31 @@ class SyncService:
             self._sync_config = self._resolve_effective_sync_config()
             # Update global for backward compatibility
             import src.bridge.sync_state as state_module
+
             state_module.SYNC_CONFIG = self._sync_config
             return self._sync_config
-    
+
     def get_saved_sync_config_payload(self) -> dict[str, Any]:
         """Get the saved sync config as a payload dict.
-        
+
         Returns:
             Dict with 'enabled' key
         """
         settings = self.load_saved_sync_settings()
         if "enabled" in settings:
             return {"enabled": bool(settings.get("enabled"))}
-        return {"enabled": bool(self._source_sync.config_status(self.refresh_sync_config()).get("enabled"))}
-    
+        return {
+            "enabled": bool(
+                self._source_sync.config_status(self.refresh_sync_config()).get("enabled")
+            )
+        }
+
     def update_saved_sync_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Update saved sync settings.
-        
+
         Args:
             payload: New settings to save
-            
+
         Returns:
             The normalized settings that were saved
         """
@@ -216,10 +223,10 @@ class SyncService:
         save_json_atomic(self._sync_config_path, normalized)
         self.refresh_sync_config()
         return normalized
-    
+
     def test_sync_config(self) -> dict[str, Any]:
         """Test the sync configuration.
-        
+
         Returns:
             Dict with test results
         """
@@ -234,12 +241,12 @@ class SyncService:
             "remoteSha": str(remote.get("sha") or ""),
             "message": "GitHub sync connection verified.",
         }
-    
+
     # === Status Methods ===
-    
+
     def _sync_guard(self) -> dict[str, Any] | None:
         """Check if sync is enabled and configured.
-        
+
         Returns:
             None if sync is ready, or error dict if not
         """
@@ -249,15 +256,15 @@ class SyncService:
         if not config_status.get("ready"):
             return {"ok": False, "error": "Sync is not configured", "config": config_status}
         return None
-    
+
     def get_sync_status_payload(self) -> dict[str, Any]:
         """Get comprehensive sync status payload.
-        
+
         Returns:
             Dict with config, savedConfig, and runtime state
         """
         from src.app_version import get_app_version
-        
+
         config_status = self._source_sync.config_status(self.refresh_sync_config())
         with SYNC_STATE_LOCK:
             runtime_state = {**self._sync_state.get_sync_status()}
@@ -288,33 +295,37 @@ class SyncService:
             pulled=bool(pulled),
             pushed=bool(pushed),
         )
-    
+
     # === Sync Operations ===
-    
+
     def sync_pull_sources(self) -> dict[str, Any]:
         """Pull sources from remote and merge with local.
-        
+
         Returns:
             Dict with pull results
         """
         guard = self._sync_guard()
         if guard:
             return guard
-        
+
         local_state = self._load_state()
         result = self._source_sync.pull_and_merge_sources(self._sync_config, local_state)
-        merged_state = result.get("mergedState") if isinstance(result.get("mergedState"), dict) else local_state
-        
+        merged_state = (
+            result.get("mergedState")
+            if isinstance(result.get("mergedState"), dict)
+            else local_state
+        )
+
         if bool(result.get("changed")):
             self._persist_state(merged_state)
-        
+
             self.set_sync_status(
                 action="pull",
                 result="ok",
                 pulled=True,
                 error="",
             )
-        
+
         summary = self._summarize_state(self._load_state())
         return {
             "ok": True,
@@ -324,28 +335,28 @@ class SyncService:
             "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
             "summary": summary,
         }
-    
+
     def sync_push_sources(self) -> dict[str, Any]:
         """Push local sources snapshot to remote.
-        
+
         Returns:
             Dict with push results
         """
         guard = self._sync_guard()
         if guard:
             return guard
-        
+
         state = self._load_state()
         result = self._source_sync.push_sources_snapshot(self._sync_config, state)
         snapshot = result.get("snapshot") if isinstance(result.get("snapshot"), dict) else {}
-        
+
         self.set_sync_status(
             action="push",
             result="ok",
             pushed=True,
             error="",
         )
-        
+
         return {
             "ok": True,
             "remoteSha": str(result.get("remoteSha") or ""),
@@ -356,10 +367,10 @@ class SyncService:
                 "rejected": len(snapshot.get("rejected") or []),
             },
         }
-    
+
     def startup_sync_pull(self) -> None:
         """Perform startup sync pull if configured.
-        
+
         This is called at bridge startup to sync from remote.
         """
         config_status = self._source_sync.config_status(self.refresh_sync_config())
@@ -367,7 +378,9 @@ class SyncService:
             return
         if not config_status.get("ready"):
             missing = ",".join(config_status.get("missing") or [])
-            self._bridge_log("warn", "sync_startup_skipped", reason="misconfigured", missing=missing)
+            self._bridge_log(
+                "warn", "sync_startup_skipped", reason="misconfigured", missing=missing
+            )
             return
         try:
             result = self.sync_pull_sources()
@@ -383,9 +396,9 @@ class SyncService:
         except Exception as exc:  # noqa: BLE001
             self.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
             self._bridge_log("warn", "sync_startup_pull_failed", error=str(exc))
-    
+
     # === Task Management ===
-    
+
     def _reconcile_sync_history(self) -> None:
         """Reconcile sync history.
 
@@ -394,10 +407,10 @@ class SyncService:
         sync task is actually running, even if stale 'started' rows exist.
         """
         return
-    
+
     def sync_task_running(self) -> bool:
         """Check if a sync task is currently running.
-        
+
         Returns:
             True if a sync task is running
         """
@@ -409,19 +422,19 @@ class SyncService:
             if self._sync_state.get_active_sync_runs():
                 return True
             return False
-    
+
     def wait_for_sync_tasks(self, timeout_s: float = 5.0) -> None:
         """Wait for all active sync tasks to complete.
-        
+
         Args:
             timeout_s: Maximum time to wait in seconds
         """
         deadline = datetime.now(UTC).timestamp() + max(0.0, float(timeout_s))
-        
+
         while True:
             with self._ops_state_lock:
                 items = list(self._sync_state.get_active_sync_threads().items())
-            
+
             pending = False
             for run_id, worker in items:
                 remaining = max(0.0, deadline - datetime.now(UTC).timestamp())
@@ -436,12 +449,18 @@ class SyncService:
                     continue
                 with self._ops_state_lock:
                     self._sync_state.remove_active_sync_thread(run_id)
-            
+
             if not pending or datetime.now(UTC).timestamp() >= deadline:
                 return
-    
+
     def _run_sync_task_worker(
-        self, run_id: str, action: str, started_at: str, *, reason: str = "", automatic: bool = False
+        self,
+        run_id: str,
+        action: str,
+        started_at: str,
+        *,
+        reason: str = "",
+        automatic: bool = False,
     ) -> None:
         _sync_task_flow.run_sync_task_worker(
             run_id=run_id,
@@ -456,30 +475,34 @@ class SyncService:
             set_sync_status=self._sync_state.set_sync_status,
             remove_active_sync_run=self._sync_state.remove_active_sync_run,
             remove_active_sync_thread=self._sync_state.remove_active_sync_thread,
-            prune_started_rows_for_type=lambda entry_type, *, finished_at: self._run_history.prune_started_rows_for_type(
+            prune_started_rows_for_type=lambda entry_type,
+            *,
+            finished_at: self._run_history.prune_started_rows_for_type(
                 entry_type, finished_at=finished_at
             ),
-            upsert_run_history=lambda entry: self._run_history.upsert(entry, dedupe_fields=("type", "finishedAt")),
+            upsert_run_history=lambda entry: self._run_history.upsert(
+                entry, dedupe_fields=("type", "finishedAt")
+            ),
             bridge_log=self._bridge_log,
         )
-    
+
     def start_sync_task(
         self, action: str, *, reason: str = "", automatic: bool = False
     ) -> dict[str, Any]:
         """Start an asynchronous sync task.
-        
+
         Args:
             action: Action to perform (pull/push)
             reason: Optional reason for the sync
             automatic: Whether this was automatically triggered
-            
+
         Returns:
             Dict with task start status
         """
         normalized_action = str(action or "").strip().lower()
         if normalized_action not in {"pull", "push"}:
             raise ValueError("Invalid sync action")
-        
+
         if self.sync_task_running():
             return {
                 "started": False,
@@ -487,27 +510,29 @@ class SyncService:
                 "action": normalized_action,
                 "error": "Sync task already running",
             }
-        
+
         run_id = f"sync_{uuid.uuid4().hex[:10]}"
         started_at = now_iso()
-        
-        self._run_history.append({
-            "id": run_id,
-            "type": "sync",
-            "status": "started",
-            "startedAt": started_at,
-            "finishedAt": "",
-            "durationMs": 0,
-            "summary": {
-                "action": normalized_action,
-                "reason": str(reason or ""),
-                "automatic": bool(automatic),
-            },
-        })
-        
+
+        self._run_history.append(
+            {
+                "id": run_id,
+                "type": "sync",
+                "status": "started",
+                "startedAt": started_at,
+                "finishedAt": "",
+                "durationMs": 0,
+                "summary": {
+                    "action": normalized_action,
+                    "reason": str(reason or ""),
+                    "automatic": bool(automatic),
+                },
+            }
+        )
+
         with self._ops_state_lock:
             self._sync_state.add_active_sync_run(run_id)
-        
+
         worker = threading.Thread(
             target=self._run_sync_task_worker,
             args=(run_id, normalized_action, started_at),
@@ -515,10 +540,10 @@ class SyncService:
             name=f"sync-task-{normalized_action}-{run_id}",
             daemon=True,
         )
-        
+
         with self._ops_state_lock:
             self._sync_state.set_active_sync_thread(run_id, worker)
-        
+
         worker.start()
         self._bridge_log(
             "info",
@@ -528,7 +553,7 @@ class SyncService:
             reason=reason,
             automatic=automatic,
         )
-        
+
         return {
             "started": True,
             "runId": run_id,
@@ -537,14 +562,14 @@ class SyncService:
             "automatic": bool(automatic),
             "reason": str(reason or ""),
         }
-    
+
     @staticmethod
     def _parse_iso(value: Any) -> datetime | None:
         """Parse ISO timestamp to datetime.
-        
+
         Args:
             value: ISO timestamp string
-            
+
         Returns:
             datetime or None if parsing fails
         """

@@ -1,4 +1,5 @@
 """Game/studio job detection (extracted from common)."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -28,7 +29,5 @@ GAME_KEYWORDS = {
 
 def looks_like_game_job(*values: Any) -> bool:
     """True if any value string contains a game-related keyword."""
-    text = " ".join(
-        str(v or "").strip().lower() for v in values if v is not None
-    )
+    text = " ".join(str(v or "").strip().lower() for v in values if v is not None)
     return bool(text) and any(keyword in text for keyword in GAME_KEYWORDS)

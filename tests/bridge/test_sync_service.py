@@ -20,7 +20,9 @@ class _FakeSourceSync:
     def config_status(self, config: Any) -> dict[str, Any]:
         return {"enabled": bool(self._enabled), "ready": bool(self._ready)}
 
-    def resolve_sync_config(self, settings: dict[str, Any] | None = None, env: dict[str, str] | None = None) -> Any:
+    def resolve_sync_config(
+        self, settings: dict[str, Any] | None = None, env: dict[str, str] | None = None
+    ) -> Any:
         # Return a simple token object; SyncService treats it as opaque.
         return {"settings": dict(settings or {}), "env": bool(env)}
 
@@ -30,7 +32,12 @@ class _FakeSourceSync:
 
     def pull_and_merge_sources(self, config: Any, local_state: dict[str, Any]) -> dict[str, Any]:
         self.pull_calls += 1
-        return {"changed": True, "remoteFound": True, "remoteSha": "abc", "mergedState": {"active": [], "pending": [], "rejected": []}}
+        return {
+            "changed": True,
+            "remoteFound": True,
+            "remoteSha": "abc",
+            "mergedState": {"active": [], "pending": [], "rejected": []},
+        }
 
     def push_sources_snapshot(self, config: Any, state: dict[str, Any]) -> dict[str, Any]:
         self.push_calls += 1
@@ -66,19 +73,33 @@ def test_sync_service_pull_delegates_and_persists() -> None:
         history = _RunHistory()
         ops_lock = threading.RLock()
 
-        persisted: dict[str, Any] = {"active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}], "pending": [], "rejected": []}
+        persisted: dict[str, Any] = {
+            "active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
+            "pending": [],
+            "rejected": [],
+        }
 
         def load_state() -> dict[str, list[dict[str, Any]]]:
-            return {"active": list(persisted["active"]), "pending": list(persisted["pending"]), "rejected": list(persisted["rejected"])}
+            return {
+                "active": list(persisted["active"]),
+                "pending": list(persisted["pending"]),
+                "rejected": list(persisted["rejected"]),
+            }
 
-        def persist_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+        def persist_state(
+            state: dict[str, list[dict[str, Any]]],
+        ) -> dict[str, list[dict[str, Any]]]:
             persisted["active"] = list(state.get("active") or [])
             persisted["pending"] = list(state.get("pending") or [])
             persisted["rejected"] = list(state.get("rejected") or [])
             return load_state()
 
         def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
-            return {"activeCount": len(state["active"]), "pendingCount": len(state["pending"]), "rejectedCount": len(state["rejected"])}
+            return {
+                "activeCount": len(state["active"]),
+                "pendingCount": len(state["pending"]),
+                "rejectedCount": len(state["rejected"]),
+            }
 
         def bridge_log(_level: str, _message: str, **_fields: Any) -> None:
             return
@@ -118,7 +139,9 @@ def test_sync_service_start_task_runs_and_finishes() -> None:
         def load_state() -> dict[str, list[dict[str, Any]]]:
             return {"active": [], "pending": [], "rejected": []}
 
-        def persist_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+        def persist_state(
+            state: dict[str, list[dict[str, Any]]],
+        ) -> dict[str, list[dict[str, Any]]]:
             return state
 
         def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
@@ -147,4 +170,3 @@ def test_sync_service_start_task_runs_and_finishes() -> None:
         assert bool(started.get("started")) is True
         svc.wait_for_sync_tasks(timeout_s=2.0)
         assert source_sync.pull_calls >= 1
-

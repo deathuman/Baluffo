@@ -1,4 +1,5 @@
 """Ops health, alerts, schedule, and report summarization for the bridge. Uses injected deps (paths, loaders)."""
+
 from __future__ import annotations
 
 import re
@@ -46,11 +47,13 @@ def save_alert_state(
 
 
 def detect_task_interval_hours(task: dict[str, Any]) -> float | None:
-    text = " ".join([
-        str(task.get("label") or ""),
-        str(task.get("command") or ""),
-        str(task.get("detail") or ""),
-    ]).lower()
+    text = " ".join(
+        [
+            str(task.get("label") or ""),
+            str(task.get("command") or ""),
+            str(task.get("detail") or ""),
+        ]
+    ).lower()
     match_hours = re.search(r"every\s+(\d+(?:\.\d+)?)\s*(h|hour|hours)\b", text)
     if match_hours:
         return max(0.1, float(match_hours.group(1)))
@@ -115,7 +118,9 @@ def summarize_fetch_report(report: dict[str, Any]) -> dict[str, Any]:
     duration_ms = 0
     sources = report.get("sources")
     if isinstance(sources, list):
-        duration_ms = sum(int(item.get("durationMs") or 0) for item in sources if isinstance(item, dict))
+        duration_ms = sum(
+            int(item.get("durationMs") or 0) for item in sources if isinstance(item, dict)
+        )
     status = "ok"
     if source_count > 0 and failed >= source_count:
         status = "error"
@@ -187,16 +192,25 @@ def collect_fetch_history_metrics(
 ) -> dict[str, Any]:
     now = now_utc()
     seven_days_ago = now - timedelta(days=7)
-    fetch_rows = [row for row in history if str(row.get("type")) == "fetch" and row.get("finishedAt")]
+    fetch_rows = [
+        row for row in history if str(row.get("type")) == "fetch" and row.get("finishedAt")
+    ]
     fetch_7d = [
-        row for row in fetch_rows
+        row
+        for row in fetch_rows
         if (parse_iso(row.get("finishedAt")) or datetime.min.replace(tzinfo=UTC)) >= seven_days_ago
     ]
     success_7d = [row for row in fetch_7d if str(row.get("status")) in {"ok", "warning"}]
     success_rate = (len(success_7d) / len(fetch_7d)) if fetch_7d else 0.0
-    avg_duration = int(sum(int(row.get("durationMs") or 0) for row in fetch_7d) / len(fetch_7d)) if fetch_7d else 0
+    avg_duration = (
+        int(sum(int(row.get("durationMs") or 0) for row in fetch_7d) / len(fetch_7d))
+        if fetch_7d
+        else 0
+    )
     latest_fetch = fetch_rows[-1] if fetch_rows else None
-    last_success = next((row for row in reversed(fetch_rows) if str(row.get("status")) in {"ok", "warning"}), None)
+    last_success = next(
+        (row for row in reversed(fetch_rows) if str(row.get("status")) in {"ok", "warning"}), None
+    )
     return {
         "fetchRows": fetch_rows,
         "successRate7d": success_rate,
@@ -217,12 +231,18 @@ def populate_schedule_next_run(
             schedule[key]["nextRunAt"] = ""
             continue
         last_type_row = next(
-            (row for row in reversed(history) if str(row.get("type")) == run_type and row.get("finishedAt")),
+            (
+                row
+                for row in reversed(history)
+                if str(row.get("type")) == run_type and row.get("finishedAt")
+            ),
             None,
         )
         last_finished = parse_iso(last_type_row.get("finishedAt")) if last_type_row else None
         if last_finished:
-            schedule[key]["nextRunAt"] = (last_finished + timedelta(hours=float(interval_hours))).isoformat()
+            schedule[key]["nextRunAt"] = (
+                last_finished + timedelta(hours=float(interval_hours))
+            ).isoformat()
         else:
             schedule[key]["nextRunAt"] = ""
     return schedule
@@ -251,7 +271,9 @@ def evaluate_alerts(
     acked = dict(alert_state.get("acked") or {})
     active_conditions: list[dict[str, Any]] = []
     now = now_utc()
-    fetch_rows = [row for row in history if str(row.get("type")) == "fetch" and row.get("finishedAt")]
+    fetch_rows = [
+        row for row in history if str(row.get("type")) == "fetch" and row.get("finishedAt")
+    ]
     latest_fetch = fetch_rows[-1] if fetch_rows else None
     last_success_fetch = next(
         (row for row in reversed(fetch_rows) if str(row.get("status")) in {"ok", "warning"}),
@@ -263,24 +285,28 @@ def evaluate_alerts(
         if finished:
             stale_hours = (now - finished).total_seconds() / 3600.0
     if stale_hours is None or stale_hours > STALE_FETCH_HOURS:
-        active_conditions.append({
-            "id": "stale_fetch",
-            "severity": "critical",
-            "message": f"No successful fetch in the last {STALE_FETCH_HOURS}h.",
-            "value": None if stale_hours is None else round(stale_hours, 2),
-            "triggeredAt": now_iso(),
-        })
+        active_conditions.append(
+            {
+                "id": "stale_fetch",
+                "severity": "critical",
+                "message": f"No successful fetch in the last {STALE_FETCH_HOURS}h.",
+                "value": None if stale_hours is None else round(stale_hours, 2),
+                "triggeredAt": now_iso(),
+            }
+        )
 
     fetch_summary = summarize_fetch_report(latest_fetch_report)
     failed_ratio = float(fetch_summary["failedRatio"])
     if failed_ratio > DEGRADED_FAILURE_RATIO:
-        active_conditions.append({
-            "id": "degraded_reliability",
-            "severity": "warning" if failed_ratio < 0.5 else "critical",
-            "message": f"Failed source ratio is {failed_ratio:.0%} (threshold {DEGRADED_FAILURE_RATIO:.0%}).",
-            "value": round(failed_ratio, 4),
-            "triggeredAt": now_iso(),
-        })
+        active_conditions.append(
+            {
+                "id": "degraded_reliability",
+                "severity": "warning" if failed_ratio < 0.5 else "critical",
+                "message": f"Failed source ratio is {failed_ratio:.0%} (threshold {DEGRADED_FAILURE_RATIO:.0%}).",
+                "value": round(failed_ratio, 4),
+                "triggeredAt": now_iso(),
+            }
+        )
 
     outputs = [
         int((row.get("summary") or {}).get("outputCount") or 0)
@@ -293,56 +319,70 @@ def evaluate_alerts(
         latest_output = float(outputs[-1])
         if baseline > 0 and latest_output < baseline * (1.0 - OUTPUT_DROP_RATIO):
             drop_ratio = 1.0 - (latest_output / baseline)
-            active_conditions.append({
-                "id": "output_drop",
-                "severity": "warning" if drop_ratio < 0.6 else "critical",
-                "message": f"Output dropped {drop_ratio:.0%} vs rolling median.",
-                "value": round(drop_ratio, 4),
-                "triggeredAt": now_iso(),
-            })
+            active_conditions.append(
+                {
+                    "id": "output_drop",
+                    "severity": "warning" if drop_ratio < 0.6 else "critical",
+                    "message": f"Output dropped {drop_ratio:.0%} vs rolling median.",
+                    "value": round(drop_ratio, 4),
+                    "triggeredAt": now_iso(),
+                }
+            )
 
-    source_rows = latest_fetch_report.get("sources") if isinstance(latest_fetch_report.get("sources"), list) else []
+    source_rows = (
+        latest_fetch_report.get("sources")
+        if isinstance(latest_fetch_report.get("sources"), list)
+        else []
+    )
     social_rows = [
-        row for row in source_rows
-        if isinstance(row, dict) and str(row.get("name") or "").strip().lower().startswith("social_")
+        row
+        for row in source_rows
+        if isinstance(row, dict)
+        and str(row.get("name") or "").strip().lower().startswith("social_")
     ]
     if social_rows:
         social_failures = [
-            row for row in social_rows
-            if str(row.get("status") or "").strip().lower() == "error"
+            row for row in social_rows if str(row.get("status") or "").strip().lower() == "error"
         ]
         if len(social_failures) >= SOCIAL_FAILURE_THRESHOLD:
-            active_conditions.append({
-                "id": "social_sources_failing",
-                "severity": "warning" if len(social_failures) < 3 else "critical",
-                "message": f"{len(social_failures)} social sources failed in the latest run.",
-                "value": int(len(social_failures)),
-                "triggeredAt": now_iso(),
-            })
+            active_conditions.append(
+                {
+                    "id": "social_sources_failing",
+                    "severity": "warning" if len(social_failures) < 3 else "critical",
+                    "message": f"{len(social_failures)} social sources failed in the latest run.",
+                    "value": int(len(social_failures)),
+                    "triggeredAt": now_iso(),
+                }
+            )
 
         zero_rows = [
-            row for row in social_rows
+            row
+            for row in social_rows
             if str(row.get("status") or "").strip().lower() in {"ok", "error"}
             and int(row.get("keptCount") or 0) == 0
         ]
         if len(zero_rows) >= SOCIAL_ZERO_MATCH_THRESHOLD:
-            active_conditions.append({
-                "id": "social_zero_matches",
-                "severity": "warning",
-                "message": f"{len(zero_rows)} social sources produced zero matches in the latest run.",
-                "value": int(len(zero_rows)),
-                "triggeredAt": now_iso(),
-            })
+            active_conditions.append(
+                {
+                    "id": "social_zero_matches",
+                    "severity": "warning",
+                    "message": f"{len(zero_rows)} social sources produced zero matches in the latest run.",
+                    "value": int(len(zero_rows)),
+                    "triggeredAt": now_iso(),
+                }
+            )
 
         low_conf_dropped = sum(int(row.get("lowConfidenceDropped") or 0) for row in social_rows)
         if low_conf_dropped >= SOCIAL_LOW_CONFIDENCE_SPIKE_THRESHOLD:
-            active_conditions.append({
-                "id": "social_low_confidence_spike",
-                "severity": "warning",
-                "message": "Social ingestion dropped an unusually high number of low-confidence posts.",
-                "value": int(low_conf_dropped),
-                "triggeredAt": now_iso(),
-            })
+            active_conditions.append(
+                {
+                    "id": "social_low_confidence_spike",
+                    "severity": "warning",
+                    "message": "Social ingestion dropped an unusually high number of low-confidence posts.",
+                    "value": int(low_conf_dropped),
+                    "triggeredAt": now_iso(),
+                }
+            )
 
     active_ids = {row["id"] for row in active_conditions}
     for key in list(acked.keys()):
@@ -407,7 +447,9 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             "lastRunResult": {
                 "type": str(latest_run.get("type") or ""),
                 "status": str(latest_run.get("status") or "unknown"),
-                "finishedAt": str(latest_run.get("finishedAt") or latest_run.get("startedAt") or ""),
+                "finishedAt": str(
+                    latest_run.get("finishedAt") or latest_run.get("startedAt") or ""
+                ),
             },
         },
         "schedule": schedule,

@@ -67,17 +67,31 @@ def resolve_runtime_config(
     args = parser.parse_args(argv)
     env_map = env if isinstance(env, dict) else os.environ
 
-    host = str(args.host or env_map.get("BALUFFO_BRIDGE_HOST") or bridge_defaults["host"]).strip() or str(bridge_defaults["host"])
-    port = _coerce_port(args.port if args.port is not None else env_map.get("BALUFFO_BRIDGE_PORT"), int(bridge_defaults["port"]))
-    data_dir_value = args.data_dir if args.data_dir is not None else (env_map.get("BALUFFO_DATA_DIR") or storage_defaults["data_dir"])
+    host = str(
+        args.host or env_map.get("BALUFFO_BRIDGE_HOST") or bridge_defaults["host"]
+    ).strip() or str(bridge_defaults["host"])
+    port = _coerce_port(
+        args.port if args.port is not None else env_map.get("BALUFFO_BRIDGE_PORT"),
+        int(bridge_defaults["port"]),
+    )
+    data_dir_value = (
+        args.data_dir
+        if args.data_dir is not None
+        else (env_map.get("BALUFFO_DATA_DIR") or storage_defaults["data_dir"])
+    )
     # Keep relative `BALUFFO_DATA_DIR` resolution consistent with `src/baluffo_config.py`.
     data_dir = _resolve_path(data_dir_value, str(storage_defaults["data_dir"]))
-    log_format = _normalize_log_format(args.log_format or env_map.get("BALUFFO_BRIDGE_LOG_FORMAT") or bridge_defaults["log_format"])
-    log_level = _normalize_log_level(args.log_level or env_map.get("BALUFFO_BRIDGE_LOG_LEVEL") or bridge_defaults["log_level"])
+    log_format = _normalize_log_format(
+        args.log_format or env_map.get("BALUFFO_BRIDGE_LOG_FORMAT") or bridge_defaults["log_format"]
+    )
+    log_level = _normalize_log_level(
+        args.log_level or env_map.get("BALUFFO_BRIDGE_LOG_LEVEL") or bridge_defaults["log_level"]
+    )
     quiet_requests = bool(
         args.quiet_requests
         if args.quiet_requests is not None
-        else str(env_map.get("BALUFFO_BRIDGE_QUIET_REQUESTS") or "").strip().lower() in {"1", "true", "yes", "on"}
+        else str(env_map.get("BALUFFO_BRIDGE_QUIET_REQUESTS") or "").strip().lower()
+        in {"1", "true", "yes", "on"}
         if str(env_map.get("BALUFFO_BRIDGE_QUIET_REQUESTS") or "").strip()
         else bridge_defaults["quiet_requests"]
     )
@@ -125,4 +139,3 @@ __all__ = [
     "resolve_runtime_config",
     "startup_banner",
 ]
-

@@ -100,7 +100,9 @@ def save_url_patch_manifest(
     return manifest
 
 
-def merge_url_patches(existing_patches: dict[str, str], new_patches: dict[str, str]) -> tuple[dict[str, str], int, int]:
+def merge_url_patches(
+    existing_patches: dict[str, str], new_patches: dict[str, str]
+) -> tuple[dict[str, str], int, int]:
     merged: dict[str, str] = dict(existing_patches or {})
     added = 0
     updated = 0
@@ -119,14 +121,23 @@ def merge_url_patches(existing_patches: dict[str, str], new_patches: dict[str, s
     return merged, added, updated
 
 
-def apply_url_patches_to_candidate(candidate: dict[str, Any], patches: dict[str, str]) -> tuple[dict[str, Any], bool]:
+def apply_url_patches_to_candidate(
+    candidate: dict[str, Any], patches: dict[str, str]
+) -> tuple[dict[str, Any], bool]:
     normalized_patches = dict(patches or {})
     if not normalized_patches:
         return dict(candidate), False
 
     updated = dict(candidate)
     changed = False
-    for key in ("api_url", "feed_url", "board_url", "listing_url", "careersUrl", "sourceDirectoryEntryUrl"):
+    for key in (
+        "api_url",
+        "feed_url",
+        "board_url",
+        "listing_url",
+        "careersUrl",
+        "sourceDirectoryEntryUrl",
+    ):
         raw_value = str(updated.get(key) or "").strip()
         normalized = normalize_source_url(raw_value)
         patched = normalized_patches.get(normalized)
@@ -186,16 +197,25 @@ def resolve_patch_target(
     if direct_redirect:
         return direct_redirect
 
-    original_url = normalize_source_url(extract_url_from_error(error_text) or str(candidate.get("careersUrl") or ""))
+    original_url = normalize_source_url(
+        extract_url_from_error(error_text) or str(candidate.get("careersUrl") or "")
+    )
     if not original_url:
         original_url = normalize_source_url(
-            str(candidate.get("listing_url") or candidate.get("board_url") or candidate.get("api_url") or "")
+            str(
+                candidate.get("listing_url")
+                or candidate.get("board_url")
+                or candidate.get("api_url")
+                or ""
+            )
         )
     if not original_url:
         return ""
 
     if "greenhouse" in original_url:
-        known = resolve_greenhouse_known(str(candidate.get("studio") or candidate.get("name") or ""))
+        known = resolve_greenhouse_known(
+            str(candidate.get("studio") or candidate.get("name") or "")
+        )
         if known:
             return known
 

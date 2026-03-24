@@ -5,6 +5,7 @@ or when HTML looks like a JS shell so JS-rendered listings can be parsed.
 When JSON-LD returns no jobs, falls back to extracting job links from the page
 (/careers/<uuid>) and building minimal job rows.
 """
+
 from __future__ import annotations
 
 import re
@@ -42,7 +43,10 @@ def run(
     page_url = clean_text(pages[0])
     if not page_url:
         return []
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Larian"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Larian"
+    )
     source_id = (source_row.get("id") or "").strip() or "larian"
     html = ""
     try:
@@ -72,9 +76,9 @@ def run(
         ):
             href = clean_text(match.group(1))
             anchor_inner = match.group(2) or ""
-            anchor_text = strip_html_text(
-                re.sub(r"(?is)<[^>]+>", " ", anchor_inner)
-            ).strip() or "Job"
+            anchor_text = (
+                strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner)).strip() or "Job"
+            )
             if not href:
                 continue
             absolute = urljoin(page_url, href)
@@ -85,18 +89,20 @@ def run(
             if absolute in seen_links:
                 continue
             seen_links.add(absolute)
-            rows.append({
-                "title": anchor_text[: 200],
-                "company": company,
-                "jobLink": absolute,
-                "sourceJobId": f"{source_id}:{absolute}",
-                "city": "",
-                "country": "",
-                "workType": "",
-                "contractType": "",
-                "sector": "Game",
-                "postedAt": "",
-            })
+            rows.append(
+                {
+                    "title": anchor_text[:200],
+                    "company": company,
+                    "jobLink": absolute,
+                    "sourceJobId": f"{source_id}:{absolute}",
+                    "city": "",
+                    "country": "",
+                    "workType": "",
+                    "contractType": "",
+                    "sector": "Game",
+                    "postedAt": "",
+                }
+            )
     for row in rows:
         if isinstance(row, dict):
             row["adapter"] = "static"

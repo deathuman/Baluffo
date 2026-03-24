@@ -56,7 +56,9 @@ def build_packaged_sync_payload(
         payload["allowedPathPrefix"] = normalized_allowed_prefix
 
     normalized_passphrase_env = str(portable_passphrase_env or "").strip()
-    normalized_derivation = str(key_derivation or source_sync.KEY_DERIVATION_MACHINE).strip().lower()
+    normalized_derivation = (
+        str(key_derivation or source_sync.KEY_DERIVATION_MACHINE).strip().lower()
+    )
     if plaintext:
         normalized_derivation = source_sync.KEY_DERIVATION_PLAINTEXT
     if normalized_derivation == source_sync.KEY_DERIVATION_PLAINTEXT and normalized_passphrase_env:
@@ -69,8 +71,13 @@ def build_packaged_sync_payload(
 
     salt_b64 = str(salt or "").strip() or source_sync._base64url_encode(secrets.token_bytes(18))  # noqa: SLF001
     if normalized_derivation == source_sync.KEY_DERIVATION_EMBEDDED:
-        hint = str(embedded_key_hint or "").strip() or source_sync._base64url_encode(secrets.token_bytes(9))  # noqa: SLF001
-        version = str(embedded_key_version or source_sync.EMBEDDED_KEY_VERSION_DEFAULT).strip() or source_sync.EMBEDDED_KEY_VERSION_DEFAULT
+        hint = str(embedded_key_hint or "").strip() or source_sync._base64url_encode(
+            secrets.token_bytes(9)
+        )  # noqa: SLF001
+        version = (
+            str(embedded_key_version or source_sync.EMBEDDED_KEY_VERSION_DEFAULT).strip()
+            or source_sync.EMBEDDED_KEY_VERSION_DEFAULT
+        )
         passphrase = source_sync.build_embedded_passphrase(hint=hint, version=version)
         payload["keyDerivation"] = source_sync.KEY_DERIVATION_EMBEDDED
         payload["embeddedKeyHint"] = hint
@@ -114,7 +121,9 @@ def build_packaged_sync_payload(
 
 def write_packaged_sync_config(output_path: Path, payload: dict) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     return output_path
 
 
@@ -125,9 +134,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repo", required=True, help="owner/repo")
     parser.add_argument("--branch", default="main")
     parser.add_argument("--path", default="baluffo/source-sync.json")
-    parser.add_argument("--allowed-repo", default="", help="Optional hard allowlist repo (owner/repo).")
+    parser.add_argument(
+        "--allowed-repo", default="", help="Optional hard allowlist repo (owner/repo)."
+    )
     parser.add_argument("--allowed-branch", default="", help="Optional hard allowlist branch.")
-    parser.add_argument("--allowed-path-prefix", default="", help="Optional hard allowlist path prefix.")
+    parser.add_argument(
+        "--allowed-path-prefix", default="", help="Optional hard allowlist path prefix."
+    )
     parser.add_argument("--private-key", required=True, help="Path to GitHub App private key PEM")
     parser.add_argument(
         "--output",
@@ -163,8 +176,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             f"(runtime also reads {source_sync.PACKAGED_SYNC_PASSPHRASE_ENV})."
         ),
     )
-    parser.add_argument("--embedded-key-hint", default="", help="Optional embedded derivation hint.")
-    parser.add_argument("--embedded-key-version", default=source_sync.EMBEDDED_KEY_VERSION_DEFAULT, help="Embedded derivation version token.")
+    parser.add_argument(
+        "--embedded-key-hint", default="", help="Optional embedded derivation hint."
+    )
+    parser.add_argument(
+        "--embedded-key-version",
+        default=source_sync.EMBEDDED_KEY_VERSION_DEFAULT,
+        help="Embedded derivation version token.",
+    )
     return parser.parse_args(argv)
 
 
@@ -196,4 +215,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

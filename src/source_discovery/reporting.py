@@ -62,8 +62,12 @@ def build_stage_summary(
         "probeMissCount": probe_miss_count_final,
         "foundEndpointCount": found_endpoint_count,
         "probedCandidateCount": probed,
-        "queuedCandidateCount": len([row for row in current_candidates if not bool(row.get("deferred"))]),
-        "discoverableButDeferredCount": len([row for row in current_candidates if bool(row.get("deferred"))]),
+        "queuedCandidateCount": len(
+            [row for row in current_candidates if not bool(row.get("deferred"))]
+        ),
+        "discoverableButDeferredCount": len(
+            [row for row in current_candidates if bool(row.get("deferred"))]
+        ),
         "suppressedStaticCount": int(suppressed_static_count),
         "skippedDuplicateCount": skipped_duplicate_count,
         "skippedInvalidCount": skipped_invalid,
@@ -74,7 +78,13 @@ def build_stage_summary(
         "healthyButDeferredByAdapter": dict(healthy_but_deferred_by_adapter or {}),
         "suppressedStaticByReason": dict(suppressed_static_by_reason or {}),
         "suppressedStaticByStage": dict(suppressed_static_by_stage or {}),
-        "queuedProviderCount": int(sum(value for key, value in dict(queued_by_adapter or {}).items() if str(key) != "static")),
+        "queuedProviderCount": int(
+            sum(
+                value
+                for key, value in dict(queued_by_adapter or {}).items()
+                if str(key) != "static"
+            )
+        ),
         "queuedStaticCount": int(dict(queued_by_adapter or {}).get("static") or 0),
         "methodCounts": dict(method_counter),
         "generatedCountByStage": dict(generated_count_by_stage),
@@ -93,7 +103,9 @@ def build_stage_summary(
             "probeFailed": int(failed_probe_count_final + probe_miss_count_final),
             "queueFiltered": int(queue_filtered_count),
             "deferredByCap": deferred_by_cap,
-            "queued": int(len([row for row in current_candidates if not bool(row.get("deferred"))])),
+            "queued": int(
+                len([row for row in current_candidates if not bool(row.get("deferred"))])
+            ),
         },
     }
 
@@ -103,8 +115,12 @@ def build_discovery_task_progress(
     summary: dict[str, Any],
     finished: bool,
 ) -> dict[str, Any]:
-    phase_key = str(summary.get("phaseKey") or summary.get("phase") or "").strip() or ("completed" if finished else "starting")
-    phase_label = str(summary.get("phaseLabel") or "").strip() or ("Discovery completed" if finished else "Initializing scan")
+    phase_key = str(summary.get("phaseKey") or summary.get("phase") or "").strip() or (
+        "completed" if finished else "starting"
+    )
+    phase_label = str(summary.get("phaseLabel") or "").strip() or (
+        "Discovery completed" if finished else "Initializing scan"
+    )
     found_count = int(summary.get("foundEndpointCount") or 0)
     probed_count = int(summary.get("probedCandidateCount") or summary.get("probedCount") or 0)
     queued_count = int(summary.get("queuedCandidateCount") or 0)
@@ -152,7 +168,9 @@ def emit_log(message: str) -> None:
 
 
 def _validate_evidence_types(values: list[str], *, context: str) -> list[str]:
-    cleaned = unique_string_list([str(item or "").strip() for item in (values or []) if str(item or "").strip()])
+    cleaned = unique_string_list(
+        [str(item or "").strip() for item in (values or []) if str(item or "").strip()]
+    )
     unknown = [item for item in cleaned if item not in EVIDENCE_TYPES_SET]
     if unknown:
         emit_log(f"Warning: dropping unknown evidenceTypes in {context}: {unknown}")
@@ -199,7 +217,9 @@ def merge_candidate_streams(
                 continue
             row = dict(raw)
             row["discoveryStage"] = str(row.get("discoveryStage") or stage)
-            row["discoveryMethod"] = str(row.get("discoveryMethod") or ("seed" if stage == "curated_seed" else "pattern"))
+            row["discoveryMethod"] = str(
+                row.get("discoveryMethod") or ("seed" if stage == "curated_seed" else "pattern")
+            )
             row["discoveredAt"] = str(row.get("discoveredAt") or now_iso())
             row["evidenceTypes"] = _validate_evidence_types(
                 list(row.get("evidenceTypes") or []),
@@ -208,4 +228,3 @@ def merge_candidate_streams(
             row["evidenceScore"] = int(row.get("evidenceScore") or 0)
             rows.append(row)
     return rows
-

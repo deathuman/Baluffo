@@ -14,8 +14,10 @@ from __future__ import annotations
 def test_pipeline_execution_module_loads() -> None:
     """Verify pipeline execution module loads correctly."""
     from src.bridge.pipeline_service import PipelineRuntime, PipelineService
+
     assert PipelineRuntime is not None
     assert PipelineService is not None
+
 
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +42,7 @@ class FakeLock:
 
 def make_parse_iso():
     """Create a parse_iso function that returns datetime objects."""
+
     def parse_iso(value):
         if not value:
             return None
@@ -49,6 +52,7 @@ def make_parse_iso():
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
         except (ValueError, AttributeError):
             return None
+
     return parse_iso
 
 
@@ -92,7 +96,10 @@ class TestPipelineServiceStages:
             fetch_report_path=tmp_path / "fetch-report.json",
             trigger_discovery_task=lambda **kw: (200, {"started": True}),
             start_fetcher_task=lambda x: {"started": True, "startedAt": "2026-03-22T12:00:00Z"},
-            start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+            start_sync_task=lambda action, reason, automatic: {
+                "started": True,
+                "runId": "sync-123",
+            },
             get_app_version=lambda: "1.0.0",
         )
 
@@ -173,7 +180,12 @@ class TestPipelineServiceStages:
             "active": True,
             "runId": "existing-pipeline-123",
             "stage": "fetch",
-            "progress": {"currentStep": 2, "totalSteps": 3, "percent": 66, "label": "Running fetch..."},
+            "progress": {
+                "currentStep": 2,
+                "totalSteps": 3,
+                "percent": 66,
+                "label": "Running fetch...",
+            },
             "startedAt": "2026-03-22T12:00:00Z",
             "finishedAt": "",
             "error": "",
@@ -227,7 +239,12 @@ class TestPipelineStatusEndpoint:
             "active": True,
             "runId": "test-pipeline-123",
             "stage": "fetch",
-            "progress": {"currentStep": 2, "totalSteps": 3, "percent": 66, "label": "Running fetch..."},
+            "progress": {
+                "currentStep": 2,
+                "totalSteps": 3,
+                "percent": 66,
+                "label": "Running fetch...",
+            },
             "startedAt": "2026-03-22T12:00:00Z",
             "finishedAt": "",
             "error": "",
@@ -266,7 +283,9 @@ class TestPipelineStatusEndpoint:
         handler = FakeHandler()
         api = FakeApi()
 
-        result = get_routes.handle_get(handler, api=api, path="/tasks/run-jobs-pipeline-status", query={})
+        result = get_routes.handle_get(
+            handler, api=api, path="/tasks/run-jobs-pipeline-status", query={}
+        )
 
         assert result is True
         assert handler.sent[-1]["status"] == 200
@@ -296,7 +315,12 @@ class TestPipelineStatusEndpoint:
                     "active": False,
                     "runId": "test-pipeline-123",
                     "stage": "completed",
-                    "progress": {"currentStep": 3, "totalSteps": 3, "percent": 100, "label": "Pipeline completed"},
+                    "progress": {
+                        "currentStep": 3,
+                        "totalSteps": 3,
+                        "percent": 100,
+                        "label": "Pipeline completed",
+                    },
                     "startedAt": "2026-03-22T12:00:00Z",
                     "finishedAt": "2026-03-22T12:05:00Z",
                     "error": "",
@@ -313,7 +337,9 @@ class TestPipelineStatusEndpoint:
 
         from src.bridge.routes import get_routes
 
-        result = get_routes.handle_get(handler, api=api, path="/tasks/run-jobs-pipeline-status", query={})
+        result = get_routes.handle_get(
+            handler, api=api, path="/tasks/run-jobs-pipeline-status", query={}
+        )
 
         assert result is True
         payload = handler.sent[-1]["payload"]
@@ -363,7 +389,10 @@ class TestAdminPanelTaskDisplay:
             desktop_last_activity_at="2026-03-22T12:10:00Z",
             load_alert_state_fn=lambda: {},
             save_alert_state_fn=lambda x: None,
-            parse_schedule_metadata_fn=lambda: {"fetcher": {"intervalHours": 6}, "discovery": {"intervalHours": 24}},
+            parse_schedule_metadata_fn=lambda: {
+                "fetcher": {"intervalHours": 6},
+                "discovery": {"intervalHours": 24},
+            },
             parse_iso=make_parse_iso(),
             now_utc=lambda: datetime(2026, 3, 22, 12, 10, 0),
         )
@@ -477,9 +506,15 @@ class TestPipelineMetricsTimestamps:
             wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
             discovery_report_path=tmp_path / "discovery-report.json",
             fetch_report_path=tmp_path / "fetch-report.json",
-            trigger_discovery_task=lambda **kw: (200, {"started": True, "startedAt": "2026-03-22T12:00:00Z"}),
+            trigger_discovery_task=lambda **kw: (
+                200,
+                {"started": True, "startedAt": "2026-03-22T12:00:00Z"},
+            ),
             start_fetcher_task=lambda x: {"started": True, "startedAt": "2026-03-22T12:00:00Z"},
-            start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+            start_sync_task=lambda action, reason, automatic: {
+                "started": True,
+                "runId": "sync-123",
+            },
             get_app_version=lambda: "1.0.0",
         )
 
@@ -630,7 +665,7 @@ class TestPipelineFrontendIntegration:
                         "currentStep": 3,
                         "totalSteps": 3,
                         "percent": 100,
-                        "label": "Pipeline completed"
+                        "label": "Pipeline completed",
                     },
                     "startedAt": "2026-03-22T12:00:00Z",
                     "finishedAt": "2026-03-22T12:05:00Z",
@@ -646,7 +681,9 @@ class TestPipelineFrontendIntegration:
         handler = FakeHandler()
         api = FakeApi()
 
-        result = get_routes.handle_get(handler, api=api, path="/tasks/run-jobs-pipeline-status", query={})
+        result = get_routes.handle_get(
+            handler, api=api, path="/tasks/run-jobs-pipeline-status", query={}
+        )
 
         assert result is True
         payload = handler.sent[-1]["payload"]

@@ -29,7 +29,9 @@ def _static_source_primary_host(row: dict[str, Any]) -> str:
         return ""
 
 
-def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> list[dict[str, Any]]:
+def _scrapy_static_registry_from_browser_queue(
+    *, enabled_only: bool = True
+) -> list[dict[str, Any]]:
     queue_path = SCRAPY_BROWSER_QUEUE_PATH
     common_module = sys.modules.get("src.jobs.common")
     if common_module is not None:
@@ -54,11 +56,15 @@ def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> 
         page = clean_text(row.get("page"))
         if not page:
             continue
-        source_id = clean_text(row.get("sourceId")) or f"scrapy_static:{hashlib.sha1(page.encode('utf-8')).hexdigest()[:12]}"
+        source_id = (
+            clean_text(row.get("sourceId"))
+            or f"scrapy_static:{hashlib.sha1(page.encode('utf-8')).hexdigest()[:12]}"
+        )
         by_source.setdefault(source_id, []).append(row)
 
     rows: list[dict[str, Any]] = []
     for source_id, group in by_source.items():
+
         def path_len(r: dict[str, Any]) -> int:
             return len(urlparse(clean_text(r.get("page")) or "").path)
 
@@ -66,7 +72,9 @@ def _scrapy_static_registry_from_browser_queue(*, enabled_only: bool = True) -> 
         page = clean_text(best.get("page")) or ""
         if not page:
             continue
-        name = clean_text(best.get("name")) or clean_text(best.get("studio")) or "scrapy_static_source"
+        name = (
+            clean_text(best.get("name")) or clean_text(best.get("studio")) or "scrapy_static_source"
+        )
         studio = clean_text(best.get("studio")) or name
         rows.append(
             {
@@ -130,7 +138,9 @@ def registry_entries(
 
     rules = redundant_static_rules if isinstance(redundant_static_rules, list) else []
     if adapter == "static" and rules:
-        provider_keys = _provider_keys_present_in_registry(studio_source_registry, rules, enabled_only=enabled_only)
+        provider_keys = _provider_keys_present_in_registry(
+            studio_source_registry, rules, enabled_only=enabled_only
+        )
         filtered: list[dict[str, Any]] = []
         for r in rows:
             host = _static_source_primary_host(r)
@@ -153,4 +163,3 @@ def registry_entries(
                 filtered.append(r)
         rows = filtered
     return rows
-

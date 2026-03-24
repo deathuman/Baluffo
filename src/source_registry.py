@@ -30,7 +30,9 @@ def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def load_json_array(path: Path, default: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+def load_json_array(
+    path: Path, default: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
     fallback = default or []
     try:
         if not path.exists():
@@ -85,11 +87,23 @@ def source_identity(row: dict[str, Any]) -> str:
     explicit_id = str(row.get("id") or "").strip()
     if explicit_id:
         return explicit_id.lower()
-    for key in ("id", "slug", "account", "company_id", "api_url", "feed_url", "board_url", "listing_url", "name"):
+    for key in (
+        "id",
+        "slug",
+        "account",
+        "company_id",
+        "api_url",
+        "feed_url",
+        "board_url",
+        "listing_url",
+        "name",
+    ):
         value = str(row.get(key) or "").strip().lower()
         if value:
             return f"{adapter}:{key}:{value}"
-    digest = hashlib.sha1(json.dumps(row, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    digest = hashlib.sha1(
+        json.dumps(row, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
     return f"{adapter}:unknown:{digest}"
 
 
@@ -145,4 +159,3 @@ def unique_sources(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         seen.add(key)
         out.append(ensure_source_id(row))
     return out
-

@@ -1,4 +1,5 @@
 """Reddit, X (Twitter), and Mastodon job post parsers for social adapters."""
+
 from __future__ import annotations
 
 import hashlib
@@ -184,9 +185,7 @@ def _norm_text(value: Any) -> str:
 
 def social_extract_urls(text: str) -> list[str]:
     return [
-        normalize_url(url)
-        for url in find_urls_in_text(_clean_text(text))
-        if normalize_url(url)
+        normalize_url(url) for url in find_urls_in_text(_clean_text(text)) if normalize_url(url)
     ]
 
 
@@ -236,7 +235,9 @@ def social_is_job_destination_url(url: str, *, context_text: str = "") -> bool:
         return True
     normalized_context = _norm_text(context_text)
     return bool(normalized_context) and (
-        "apply" in normalized_context or "careers" in normalized_context or "application" in normalized_context
+        "apply" in normalized_context
+        or "careers" in normalized_context
+        or "application" in normalized_context
     )
 
 
@@ -258,7 +259,10 @@ def social_has_social_repost_only(*values: Any) -> bool:
         urls.extend(social_extract_urls(_clean_text(value)))
     if not urls:
         return False
-    return not any(social_is_job_destination_url(url, context_text=" ".join(_clean_text(v) for v in values)) for url in urls)
+    return not any(
+        social_is_job_destination_url(url, context_text=" ".join(_clean_text(v) for v in values))
+        for url in urls
+    )
 
 
 def social_extract_apply_url(*texts: Any) -> str:
@@ -361,9 +365,7 @@ def social_evaluate_post(
     has_apply_url: bool,
 ) -> tuple[bool, int, str]:
     normalized = f"{_norm_text(title)} {_norm_text(text)}"
-    if reject_for_hire_posts and any(
-        token in normalized for token in SOCIAL_FOR_HIRE_KEYWORDS
-    ):
+    if reject_for_hire_posts and any(token in normalized for token in SOCIAL_FOR_HIRE_KEYWORDS):
         return False, 0, "for_hire"
     negative_reason = social_has_negative_hiring_signal(title, text)
     if negative_reason:
@@ -430,7 +432,11 @@ def parse_reddit_json_payload(
         )
         if not keep:
             low_conf_count += 1
-            if reject_reason in {"missing_apply_url", "missing_valid_apply_url", "social_repost_or_commentary"} and social_is_content_only_url(external_url):
+            if reject_reason in {
+                "missing_apply_url",
+                "missing_valid_apply_url",
+                "social_repost_or_commentary",
+            } and social_is_content_only_url(external_url):
                 reject_reason = "non_job_destination_url"
             _increment_reason(reject_reasons, reject_reason)
             continue
@@ -451,28 +457,32 @@ def parse_reddit_json_payload(
             _increment_reason(reject_reasons, reject_reason)
             continue
         post_source_id = f"reddit:{_clean_text(subreddit)}:{post_id or hashlib.sha1(job_link.encode('utf-8')).hexdigest()[:12]}"
-        out.append({
-            "sourceJobId": post_source_id,
-            "title": title,
-            "company": company,
-            "city": "Remote" if "remote" in _norm_text(f"{title} {body}") else "",
-            "country": "Remote" if "remote" in _norm_text(f"{title} {body}") else "Unknown",
-            "workType": "Remote" if "remote" in _norm_text(f"{title} {body}") else "",
-            "contractType": _clean_text(flair),
-            "jobLink": job_link,
-            "sector": "Game",
-            "postedAt": item.get("created_utc"),
-            "adapter": "social",
-            "studio": f"reddit/{_clean_text(subreddit)}",
-            "sourceBundle": [{
-                "source": "social_reddit",
+        out.append(
+            {
                 "sourceJobId": post_source_id,
-                "jobLink": permalink or job_link,
+                "title": title,
+                "company": company,
+                "city": "Remote" if "remote" in _norm_text(f"{title} {body}") else "",
+                "country": "Remote" if "remote" in _norm_text(f"{title} {body}") else "Unknown",
+                "workType": "Remote" if "remote" in _norm_text(f"{title} {body}") else "",
+                "contractType": _clean_text(flair),
+                "jobLink": job_link,
+                "sector": "Game",
                 "postedAt": item.get("created_utc"),
                 "adapter": "social",
-                "studio": _clean_text(subreddit),
-            }],
-        })
+                "studio": f"reddit/{_clean_text(subreddit)}",
+                "sourceBundle": [
+                    {
+                        "source": "social_reddit",
+                        "sourceJobId": post_source_id,
+                        "jobLink": permalink or job_link,
+                        "postedAt": item.get("created_utc"),
+                        "adapter": "social",
+                        "studio": _clean_text(subreddit),
+                    }
+                ],
+            }
+        )
     return out, low_conf_count
 
 
@@ -491,9 +501,13 @@ def parse_reddit_html_payload(
     try:
         block_pattern = re.compile(r"(?is)<(?:article|div)\b[^>]*>(.*?)</(?:article|div)>")
         anchor_pattern = re.compile(r"(?is)<a\b[^>]*href\s*=\s*(['\"])(.*?)\1[^>]*>(.*?)</a>")
-        title_pattern = re.compile(r"(?is)<(?:h1|h2|h3|h4|h5|h6)\b[^>]*>(.*?)</(?:h1|h2|h3|h4|h5|h6)>")
+        title_pattern = re.compile(
+            r"(?is)<(?:h1|h2|h3|h4|h5|h6)\b[^>]*>(.*?)</(?:h1|h2|h3|h4|h5|h6)>"
+        )
 
-        post_containers = [match.group(1) or "" for match in block_pattern.finditer(html_text or "")]
+        post_containers = [
+            match.group(1) or "" for match in block_pattern.finditer(html_text or "")
+        ]
         if not post_containers:
             post_containers = [html_text or ""]
 
@@ -527,13 +541,19 @@ def parse_reddit_html_payload(
             )
             if not keep:
                 low_conf_count += 1
-                if reject_reason in {"missing_apply_url", "missing_valid_apply_url", "social_repost_or_commentary"} and social_is_content_only_url(link):
+                if reject_reason in {
+                    "missing_apply_url",
+                    "missing_valid_apply_url",
+                    "social_repost_or_commentary",
+                } and social_is_content_only_url(link):
                     reject_reason = "non_job_destination_url"
                 _increment_reason(reject_reasons, reject_reason)
                 continue
 
             fallback_company = link
-            company = social_infer_company(title, strip_html_text(container), fallback=fallback_company)
+            company = social_infer_company(
+                title, strip_html_text(container), fallback=fallback_company
+            )
             reject_reason = social_should_reject_non_job_reddit_post(
                 title=title,
                 text=strip_html_text(container),
@@ -583,9 +603,7 @@ def parse_reddit_rss_payload(
     for item in items:
         title = _clean_text(item.findtext("title"))
         link = normalize_url(item.findtext("link"))
-        description = strip_html_text(
-            unescape(_clean_text(item.findtext("description")))
-        )
+        description = strip_html_text(unescape(_clean_text(item.findtext("description"))))
         apply_url = social_extract_apply_url(description, link)
         keep, confidence, reject_reason = social_evaluate_post(
             title=title,
@@ -596,7 +614,11 @@ def parse_reddit_rss_payload(
         )
         if not keep:
             low_conf_count += 1
-            if reject_reason in {"missing_apply_url", "missing_valid_apply_url", "social_repost_or_commentary"} and social_is_content_only_url(link):
+            if reject_reason in {
+                "missing_apply_url",
+                "missing_valid_apply_url",
+                "social_repost_or_commentary",
+            } and social_is_content_only_url(link):
                 reject_reason = "non_job_destination_url"
             _increment_reason(reject_reasons, reject_reason)
             continue
@@ -615,29 +637,37 @@ def parse_reddit_rss_payload(
             low_conf_count += 1
             _increment_reason(reject_reasons, reject_reason)
             continue
-        post_source_id = f"reddit:{_clean_text(subreddit)}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:12]}"
-        out.append({
-            "sourceJobId": post_source_id,
-            "title": title,
-            "company": company,
-            "city": "Remote" if "remote" in _norm_text(f"{title} {description}") else "",
-            "country": "Remote" if "remote" in _norm_text(f"{title} {description}") else "Unknown",
-            "workType": "Remote" if "remote" in _norm_text(f"{title} {description}") else "",
-            "contractType": "Unknown",
-            "jobLink": apply_url or link,
-            "sector": "Game",
-            "postedAt": _clean_text(item.findtext("pubDate")),
-            "adapter": "social",
-            "studio": f"reddit/{_clean_text(subreddit)}",
-            "sourceBundle": [{
-                "source": "social_reddit",
+        post_source_id = (
+            f"reddit:{_clean_text(subreddit)}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:12]}"
+        )
+        out.append(
+            {
                 "sourceJobId": post_source_id,
-                "jobLink": link,
+                "title": title,
+                "company": company,
+                "city": "Remote" if "remote" in _norm_text(f"{title} {description}") else "",
+                "country": "Remote"
+                if "remote" in _norm_text(f"{title} {description}")
+                else "Unknown",
+                "workType": "Remote" if "remote" in _norm_text(f"{title} {description}") else "",
+                "contractType": "Unknown",
+                "jobLink": apply_url or link,
+                "sector": "Game",
                 "postedAt": _clean_text(item.findtext("pubDate")),
                 "adapter": "social",
-                "studio": _clean_text(subreddit),
-            }],
-        })
+                "studio": f"reddit/{_clean_text(subreddit)}",
+                "sourceBundle": [
+                    {
+                        "source": "social_reddit",
+                        "sourceJobId": post_source_id,
+                        "jobLink": link,
+                        "postedAt": _clean_text(item.findtext("pubDate")),
+                        "adapter": "social",
+                        "studio": _clean_text(subreddit),
+                    }
+                ],
+            }
+        )
     return out, low_conf_count
 
 
@@ -664,9 +694,7 @@ def parse_x_payload(
         entities = row.get("entities") if isinstance(row.get("entities"), dict) else {}
         entity_urls = entities.get("urls") if isinstance(entities.get("urls"), list) else []
         expanded_urls = [
-            _clean_text(item.get("expanded_url"))
-            for item in entity_urls
-            if isinstance(item, dict)
+            _clean_text(item.get("expanded_url")) for item in entity_urls if isinstance(item, dict)
         ]
         apply_url = social_extract_apply_url(text, " ".join(expanded_urls))
         keep, confidence, reject_reason = social_evaluate_post(
@@ -680,33 +708,35 @@ def parse_x_payload(
             low_conf_count += 1
             _increment_reason(reject_reasons, reject_reason)
             continue
-        permalink = (
-            normalize_url(f"https://x.com/i/web/status/{post_id}") if post_id else ""
-        )
+        permalink = normalize_url(f"https://x.com/i/web/status/{post_id}") if post_id else ""
         company = social_infer_company(text, fallback="Unknown Studio")
         post_source_id = f"x:{post_id or hashlib.sha1(text.encode('utf-8')).hexdigest()[:12]}"
-        out.append({
-            "sourceJobId": post_source_id,
-            "title": _clean_text(text[:180]),
-            "company": company,
-            "city": "Remote" if "remote" in _norm_text(text) else "",
-            "country": "Remote" if "remote" in _norm_text(text) else "Unknown",
-            "workType": "Remote" if "remote" in _norm_text(text) else "",
-            "contractType": _clean_text(query_label),
-            "jobLink": apply_url or permalink,
-            "sector": "Game",
-            "postedAt": _clean_text(row.get("created_at")),
-            "adapter": "social",
-            "studio": "x",
-            "sourceBundle": [{
-                "source": "social_x",
+        out.append(
+            {
                 "sourceJobId": post_source_id,
-                "jobLink": permalink or apply_url,
+                "title": _clean_text(text[:180]),
+                "company": company,
+                "city": "Remote" if "remote" in _norm_text(text) else "",
+                "country": "Remote" if "remote" in _norm_text(text) else "Unknown",
+                "workType": "Remote" if "remote" in _norm_text(text) else "",
+                "contractType": _clean_text(query_label),
+                "jobLink": apply_url or permalink,
+                "sector": "Game",
                 "postedAt": _clean_text(row.get("created_at")),
                 "adapter": "social",
                 "studio": "x",
-            }],
-        })
+                "sourceBundle": [
+                    {
+                        "source": "social_x",
+                        "sourceJobId": post_source_id,
+                        "jobLink": permalink or apply_url,
+                        "postedAt": _clean_text(row.get("created_at")),
+                        "adapter": "social",
+                        "studio": "x",
+                    }
+                ],
+            }
+        )
     return out, low_conf_count
 
 
@@ -730,9 +760,7 @@ def parse_x_rss_payload(
     for item in items:
         title = _clean_text(item.findtext("title"))
         link = normalize_url(item.findtext("link"))
-        description = strip_html_text(
-            unescape(_clean_text(item.findtext("description")))
-        )
+        description = strip_html_text(unescape(_clean_text(item.findtext("description"))))
         banner_text = _norm_text(f"{title} {description}")
         if "not yet whitelisted" in banner_text or "rss reader" in banner_text:
             low_conf_count += 1
@@ -756,28 +784,32 @@ def parse_x_rss_payload(
         post_id = hashlib.sha1(link.encode("utf-8")).hexdigest()[:12]
         company = social_infer_company(title, description, fallback="Unknown Studio")
         source_job_id = f"x:{post_id}"
-        out.append({
-            "sourceJobId": source_job_id,
-            "title": _clean_text(title[:180]),
-            "company": company,
-            "city": "Remote" if "remote" in _norm_text(text) else "",
-            "country": "Remote" if "remote" in _norm_text(text) else "Unknown",
-            "workType": "Remote" if "remote" in _norm_text(text) else "",
-            "contractType": _clean_text(query_label),
-            "jobLink": apply_url or link,
-            "sector": "Game",
-            "postedAt": _clean_text(item.findtext("pubDate")),
-            "adapter": "social",
-            "studio": "x",
-            "sourceBundle": [{
-                "source": "social_x",
+        out.append(
+            {
                 "sourceJobId": source_job_id,
-                "jobLink": link,
+                "title": _clean_text(title[:180]),
+                "company": company,
+                "city": "Remote" if "remote" in _norm_text(text) else "",
+                "country": "Remote" if "remote" in _norm_text(text) else "Unknown",
+                "workType": "Remote" if "remote" in _norm_text(text) else "",
+                "contractType": _clean_text(query_label),
+                "jobLink": apply_url or link,
+                "sector": "Game",
                 "postedAt": _clean_text(item.findtext("pubDate")),
                 "adapter": "social",
                 "studio": "x",
-            }],
-        })
+                "sourceBundle": [
+                    {
+                        "source": "social_x",
+                        "sourceJobId": source_job_id,
+                        "jobLink": link,
+                        "postedAt": _clean_text(item.findtext("pubDate")),
+                        "adapter": "social",
+                        "studio": "x",
+                    }
+                ],
+            }
+        )
     return out, low_conf_count
 
 
@@ -817,26 +849,30 @@ def parse_mastodon_payload(
         account_name = _clean_text(account.get("display_name") or account.get("acct"))
         company = social_infer_company(text, fallback=account_name)
         post_source_id = f"mastodon:{_clean_text(urlparse(instance).netloc)}:{post_id or hashlib.sha1((post_url or text).encode('utf-8')).hexdigest()[:12]}"
-        out.append({
-            "sourceJobId": post_source_id,
-            "title": _clean_text(text[:180]),
-            "company": company,
-            "city": "Remote" if "remote" in _norm_text(text) else "",
-            "country": "Remote" if "remote" in _norm_text(text) else "Unknown",
-            "workType": "Remote" if "remote" in _norm_text(text) else "",
-            "contractType": _clean_text(tag),
-            "jobLink": apply_url or post_url,
-            "sector": "Game",
-            "postedAt": _clean_text(row.get("created_at")),
-            "adapter": "social",
-            "studio": f"mastodon/{_clean_text(urlparse(instance).netloc)}",
-            "sourceBundle": [{
-                "source": "social_mastodon",
+        out.append(
+            {
                 "sourceJobId": post_source_id,
-                "jobLink": post_url or apply_url,
+                "title": _clean_text(text[:180]),
+                "company": company,
+                "city": "Remote" if "remote" in _norm_text(text) else "",
+                "country": "Remote" if "remote" in _norm_text(text) else "Unknown",
+                "workType": "Remote" if "remote" in _norm_text(text) else "",
+                "contractType": _clean_text(tag),
+                "jobLink": apply_url or post_url,
+                "sector": "Game",
                 "postedAt": _clean_text(row.get("created_at")),
                 "adapter": "social",
-                "studio": _clean_text(urlparse(instance).netloc),
-            }],
-        })
+                "studio": f"mastodon/{_clean_text(urlparse(instance).netloc)}",
+                "sourceBundle": [
+                    {
+                        "source": "social_mastodon",
+                        "sourceJobId": post_source_id,
+                        "jobLink": post_url or apply_url,
+                        "postedAt": _clean_text(row.get("created_at")),
+                        "adapter": "social",
+                        "studio": _clean_text(urlparse(instance).netloc),
+                    }
+                ],
+            }
+        )
     return out, low_conf_count

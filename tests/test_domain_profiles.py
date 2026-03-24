@@ -20,8 +20,13 @@ def test_is_likely_listing_url_rejects_excluded_tokens() -> None:
     profile = {"exclude_listing_path_tokens": ["/our-offices", "/joining-supercell"]}
     assert is_likely_listing_url("https://supercell.com/en/careers/", profile) is True
     assert is_likely_listing_url("https://supercell.com/en/careers/our-offices/", profile) is False
-    assert is_likely_listing_url("https://supercell.com/en/careers/joining-supercell/", profile) is False
-    assert is_likely_listing_url("https://supercell.com/en/careers/living-helsinki/", profile) is True  # not in list
+    assert (
+        is_likely_listing_url("https://supercell.com/en/careers/joining-supercell/", profile)
+        is False
+    )
+    assert (
+        is_likely_listing_url("https://supercell.com/en/careers/living-helsinki/", profile) is True
+    )  # not in list
 
 
 def test_pick_canonical_listing_url_returns_shortest_listing_like() -> None:

@@ -89,19 +89,33 @@ class BridgeApi:
     _mark_desktop_session_activity: Callable[[str], None] = lambda _path: None  # type: ignore[assignment]
 
     desktop_local_data_store: DesktopLocalDataStoreFactory = lambda: None  # type: ignore[assignment]
-    append_startup_metric: Callable[[str, dict[str, Any] | None], None] = lambda _event, _payload=None: None  # type: ignore[assignment]
+    append_startup_metric: Callable[[str, dict[str, Any] | None], None] = (
+        lambda _event, _payload=None: None
+    )  # type: ignore[assignment]
     read_startup_metrics: Callable[[int], list[dict[str, Any]]] = lambda _limit=200: []  # type: ignore[assignment]
 
     load_state: LoadStateFunc = lambda: {"active": [], "pending": [], "rejected": []}  # type: ignore[assignment]
-    summarize_state: SummarizeStateFunc = lambda _state: {"activeCount": 0, "pendingCount": 0, "rejectedCount": 0}  # type: ignore[assignment]
+    summarize_state: SummarizeStateFunc = lambda _state: {
+        "activeCount": 0,
+        "pendingCount": 0,
+        "rejectedCount": 0,
+    }  # type: ignore[assignment]
     persist_state_and_auto_sync: Callable[..., dict[str, list[dict[str, Any]]]] = (  # type: ignore[assignment]
         lambda state, **_kw: state
     )
-    add_manual_source: Callable[[str], dict[str, Any]] = lambda _url: {"status": "invalid", "error": "not_implemented"}  # type: ignore[assignment]
-    trigger_source_check: Callable[..., dict[str, Any]] = lambda _source_id, **_kw: {"started": False, "error": "not_implemented"}  # type: ignore[assignment]
+    add_manual_source: Callable[[str], dict[str, Any]] = lambda _url: {
+        "status": "invalid",
+        "error": "not_implemented",
+    }  # type: ignore[assignment]
+    trigger_source_check: Callable[..., dict[str, Any]] = lambda _source_id, **_kw: {
+        "started": False,
+        "error": "not_implemented",
+    }  # type: ignore[assignment]
 
     # Registry helpers used by POST routes.
-    move_entries: Callable[[list[dict[str, Any]], list[str]], tuple[list[dict[str, Any]], list[dict[str, Any]]]] = (  # type: ignore[assignment]
+    move_entries: Callable[
+        [list[dict[str, Any]], list[str]], tuple[list[dict[str, Any]], list[dict[str, Any]]]
+    ] = (  # type: ignore[assignment]
         lambda pending, _ids: ([], list(pending))
     )
     unique_sources: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] = unique_sources_impl  # type: ignore[assignment]
@@ -113,10 +127,22 @@ class BridgeApi:
     save_json_atomic: SaveJsonAtomicFunc = lambda _path, _payload: None  # type: ignore[assignment]
 
     # Task / ops helpers used by routes.
-    trigger_discovery_task: TriggerDiscoveryTaskFunc = lambda **_kw: (500, {"started": False, "error": "not_implemented"})  # type: ignore[assignment]
-    start_fetcher_task: StartTaskFunc = lambda _payload=None: {"started": False, "error": "not_implemented"}  # type: ignore[assignment]
-    start_jobs_pipeline_task: StartTaskFunc = lambda _payload=None: {"started": False, "error": "not_implemented"}  # type: ignore[assignment]
-    start_sync_task: StartSyncTaskFunc = lambda *_a, **_kw: {"started": False, "error": "not_implemented"}  # type: ignore[assignment]
+    trigger_discovery_task: TriggerDiscoveryTaskFunc = lambda **_kw: (
+        500,
+        {"started": False, "error": "not_implemented"},
+    )  # type: ignore[assignment]
+    start_fetcher_task: StartTaskFunc = lambda _payload=None: {
+        "started": False,
+        "error": "not_implemented",
+    }  # type: ignore[assignment]
+    start_jobs_pipeline_task: StartTaskFunc = lambda _payload=None: {
+        "started": False,
+        "error": "not_implemented",
+    }  # type: ignore[assignment]
+    start_sync_task: StartSyncTaskFunc = lambda *_a, **_kw: {
+        "started": False,
+        "error": "not_implemented",
+    }  # type: ignore[assignment]
 
     compute_ops_health: Callable[[], dict[str, Any]] = lambda: {"ok": True}  # type: ignore[assignment]
     compute_fetcher_metrics: Callable[..., dict[str, Any]] = lambda **_kw: {"ok": True}  # type: ignore[assignment]
@@ -126,14 +152,28 @@ class BridgeApi:
     # Sync-specific helpers used by routes.
     get_sync_status_payload: Callable[[], dict[str, Any]] = lambda: {"ok": True}  # type: ignore[assignment]
     refresh_sync_config: Callable[[], Any] = lambda: None  # type: ignore[assignment]
-    test_sync_config: Callable[[], dict[str, Any]] = lambda: {"ok": False, "error": "not_implemented"}  # type: ignore[assignment]
-    sync_pull_sources: Callable[[], dict[str, Any]] = lambda: {"ok": False, "error": "not_implemented"}  # type: ignore[assignment]
-    sync_push_sources: Callable[[], dict[str, Any]] = lambda: {"ok": False, "error": "not_implemented"}  # type: ignore[assignment]
+    test_sync_config: Callable[[], dict[str, Any]] = lambda: {
+        "ok": False,
+        "error": "not_implemented",
+    }  # type: ignore[assignment]
+    sync_pull_sources: Callable[[], dict[str, Any]] = lambda: {
+        "ok": False,
+        "error": "not_implemented",
+    }  # type: ignore[assignment]
+    sync_push_sources: Callable[[], dict[str, Any]] = lambda: {
+        "ok": False,
+        "error": "not_implemented",
+    }  # type: ignore[assignment]
     update_saved_sync_settings: Callable[[dict[str, Any]], dict[str, Any]] = lambda _payload: {}  # type: ignore[assignment]
     sync_config_status: Callable[[], dict[str, Any]] = lambda: {"enabled": False, "ready": False}  # type: ignore[assignment]
     set_sync_status: Callable[..., None] = lambda **_kw: None  # type: ignore[assignment]
-    get_discovery_config_payload: Callable[[], dict[str, Any]] = lambda: {"ok": True, "savedConfig": {}}  # type: ignore[assignment]
-    update_saved_discovery_settings: Callable[[dict[str, Any]], dict[str, Any]] = lambda _payload: {}  # type: ignore[assignment]
+    get_discovery_config_payload: Callable[[], dict[str, Any]] = lambda: {
+        "ok": True,
+        "savedConfig": {},
+    }  # type: ignore[assignment]
+    update_saved_discovery_settings: Callable[[dict[str, Any]], dict[str, Any]] = (
+        lambda _payload: {}
+    )  # type: ignore[assignment]
     load_alert_state: Callable[[], dict[str, Any]] = lambda: {"acked": {}}  # type: ignore[assignment]
     save_alert_state: Callable[[dict[str, Any]], None] = lambda _payload: None  # type: ignore[assignment]
 
@@ -197,7 +237,9 @@ class BridgeApi:
             if self._field_is_default("get_discovery_config_payload"):
                 self.get_discovery_config_payload = self.discovery.get_discovery_config_payload  # type: ignore[assignment]
             if self._field_is_default("update_saved_discovery_settings"):
-                self.update_saved_discovery_settings = self.discovery.update_saved_discovery_settings  # type: ignore[assignment]
+                self.update_saved_discovery_settings = (
+                    self.discovery.update_saved_discovery_settings
+                )  # type: ignore[assignment]
 
     def mark_desktop_session_activity(self, path: str) -> None:
         # Keep routes compatible with the legacy module-global `DESKTOP_SESSION_ACTIVITY_AT`.
@@ -206,4 +248,3 @@ class BridgeApi:
             self.DESKTOP_SESSION_ACTIVITY_AT = str(self.now_iso() or "")
         except Exception:  # noqa: BLE001
             pass
-

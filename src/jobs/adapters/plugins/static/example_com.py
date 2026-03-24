@@ -3,6 +3,7 @@ Static plugin for example.com (and subdomains). Fetches first page and parses wi
 parse_jobpostings_from_html. Use as a template for adding new static site plugins:
 can_handle(ctx) by source_identity (host), run(..., pages, source_row, parse_jobpostings_from_html=...) returns RawJobs.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -34,7 +35,10 @@ def run(
     page_url = clean_text(pages[0])
     if not page_url:
         return []
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Unknown"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Unknown"
+    )
     source_id = (source_row.get("id") or "").strip() or "example_com"
     try:
         html = fetch_text(page_url, timeout_s)

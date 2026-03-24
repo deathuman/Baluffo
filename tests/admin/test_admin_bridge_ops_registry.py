@@ -52,7 +52,9 @@ def test_trigger_source_check_updates_pending_source_on_success(admin_bridge_ops
         assert result["ok"]
         assert result["jobsFound"] == 4
         pending = admin_bridge.load_json_array(admin_bridge.PENDING_PATH, [])
-        updated = next((row for row in pending if admin_bridge.source_identity(row) == source_id.lower()), {})
+        updated = next(
+            (row for row in pending if admin_bridge.source_identity(row) == source_id.lower()), {}
+        )
         assert int(updated.get("jobsFound") or 0) == 4
         assert str(updated.get("lastProbeError") or "") == ""
     finally:
@@ -95,7 +97,10 @@ def test_trigger_source_check_reconstructs_greenhouse_api_url_when_missing(admin
             calls["count"] += 1
             if calls["count"] == 1:
                 return False, 0, "missing adapter or URL"
-            assert str(candidate.get("api_url") or "") == "https://boards-api.greenhouse.io/v1/boards/larian-studios/jobs"
+            assert (
+                str(candidate.get("api_url") or "")
+                == "https://boards-api.greenhouse.io/v1/boards/larian-studios/jobs"
+            )
             return True, 9, ""
 
         admin_bridge.discovery.probe_candidate = fake_probe
@@ -145,9 +150,15 @@ def test_registry_delete_removes_selected_ids_from_all_buckets(admin_bridge_ops_
         admin_bridge.source_identity(rejected_row),
     }
     before = len(state["active"]) + len(state["pending"]) + len(state["rejected"])
-    state["active"] = [row for row in state["active"] if admin_bridge.source_identity(row) not in selected]
-    state["pending"] = [row for row in state["pending"] if admin_bridge.source_identity(row) not in selected]
-    state["rejected"] = [row for row in state["rejected"] if admin_bridge.source_identity(row) not in selected]
+    state["active"] = [
+        row for row in state["active"] if admin_bridge.source_identity(row) not in selected
+    ]
+    state["pending"] = [
+        row for row in state["pending"] if admin_bridge.source_identity(row) not in selected
+    ]
+    state["rejected"] = [
+        row for row in state["rejected"] if admin_bridge.source_identity(row) not in selected
+    ]
     state = admin_bridge.persist_state(state)
     after = len(state["active"]) + len(state["pending"]) + len(state["rejected"])
 

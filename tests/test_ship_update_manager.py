@@ -104,7 +104,10 @@ def test_apply_update_success_switches_current_version_and_keeps_data() -> None:
         result = um.apply_update(root, bundle, manifest_path, key)
         assert result["ok"]
         assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "1.1.0"
-        assert json.loads((root / "data" / "user-settings.json").read_text(encoding="utf-8"))["theme"] == "dark"
+        assert (
+            json.loads((root / "data" / "user-settings.json").read_text(encoding="utf-8"))["theme"]
+            == "dark"
+        )
 
 
 def test_apply_update_rejects_checksum_mismatch() -> None:

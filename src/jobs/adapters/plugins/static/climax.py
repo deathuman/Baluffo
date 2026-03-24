@@ -34,7 +34,10 @@ def run(
     if not pages:
         return []
     page_url = clean_text(pages[0])
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Climax Studios"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Climax Studios"
+    )
     source_id = clean_text(source_row.get("id")) or "climax"
     try:
         html = fetch_text(page_url, timeout_s)
@@ -53,7 +56,9 @@ def run(
         href = clean_text(anchor.get("href"))
         if "/join-our-team/jobs/" not in href:
             continue
-        title = clean_text(extract_first_tag_text(anchor.get("body", ""), ["h2", "h3"]) or anchor.get("text"))
+        title = clean_text(
+            extract_first_tag_text(anchor.get("body", ""), ["h2", "h3"]) or anchor.get("text")
+        )
         if not href or not title:
             continue
         link = clean_text(urljoin(page_url, href))
@@ -96,5 +101,8 @@ def run(
             "detailTraversalMode": "listing_only",
         }
         return []
-    source_row["_staticPluginMeta"] = {"detailFetchRequired": False, "detailTraversalMode": "listing_only"}
+    source_row["_staticPluginMeta"] = {
+        "detailFetchRequired": False,
+        "detailTraversalMode": "listing_only",
+    }
     return jobs

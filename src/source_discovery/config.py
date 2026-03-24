@@ -159,9 +159,7 @@ DISCOVERY_LOG_PATH = str(
 
 GAME_STUDIOS_SHEET_ID = "1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4"
 GAME_STUDIOS_SHEET_GID = "567781753"
-GAME_STUDIOS_SHEET_URL = (
-    f"https://docs.google.com/spreadsheets/d/{GAME_STUDIOS_SHEET_ID}/edit?gid={GAME_STUDIOS_SHEET_GID}"
-)
+GAME_STUDIOS_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{GAME_STUDIOS_SHEET_ID}/edit?gid={GAME_STUDIOS_SHEET_GID}"
 
 DEFAULT_STUDIO_SEEDS: list[dict[str, Any]] = [
     {
@@ -243,16 +241,85 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
 }
 
 STATIC_DISCOVERY_CANDIDATES: list[dict[str, Any]] = [
-    {"name": "Sandbox VR (Lever)", "studio": "Sandbox VR", "adapter": "lever", "account": "sandboxvr", "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json", "nlPriority": False},
-    {"name": "Voodoo (Lever)", "studio": "Voodoo", "adapter": "lever", "account": "voodoo", "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json", "nlPriority": False},
-    {"name": "CD PROJEKT RED (SmartRecruiters)", "studio": "CD PROJEKT RED", "adapter": "smartrecruiters", "company_id": "CDPROJEKTRED", "api_url": "https://api.smartrecruiters.com/v1/companies/CDPROJEKTRED/postings", "nlPriority": False},
-    {"name": "Gameloft (SmartRecruiters)", "studio": "Gameloft", "adapter": "smartrecruiters", "company_id": "Gameloft", "api_url": "https://api.smartrecruiters.com/v1/companies/Gameloft/postings", "nlPriority": False},
-    {"name": "Hutch (Workable)", "studio": "Hutch", "adapter": "workable", "account": "hutch", "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true", "nlPriority": False},
-    {"name": "Wargaming (Workable)", "studio": "Wargaming", "adapter": "workable", "account": "wargaming", "api_url": "https://apply.workable.com/api/v1/widget/accounts/wargaming?details=true", "nlPriority": False},
-    {"name": "CrazyGames (Recruitee)", "studio": "CrazyGames", "adapter": "recruitee", "subdomain": "jobs.crazygames.com", "api_url": "https://jobs.crazygames.com/api/offers/", "nlPriority": False},
-    {"name": "Gameplay Galaxy (Pinpoint)", "studio": "Gameplay Galaxy", "adapter": "pinpoint", "subdomain": "gameplaygalaxy", "api_url": "https://gameplaygalaxy.pinpointhq.com/postings.json", "nlPriority": False},
-    {"name": "Ubisoft (SmartRecruiters)", "studio": "Ubisoft", "adapter": "smartrecruiters", "company_id": "Ubisoft2", "api_url": "https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings", "nlPriority": False},
-    {"name": "Bandai Namco Entertainment America (Greenhouse)", "studio": "Bandai Namco Entertainment America Inc.", "adapter": "greenhouse", "slug": "bandainamco", "nlPriority": False},
+    {
+        "name": "Sandbox VR (Lever)",
+        "studio": "Sandbox VR",
+        "adapter": "lever",
+        "account": "sandboxvr",
+        "api_url": "https://api.lever.co/v0/postings/sandboxvr?mode=json",
+        "nlPriority": False,
+    },
+    {
+        "name": "Voodoo (Lever)",
+        "studio": "Voodoo",
+        "adapter": "lever",
+        "account": "voodoo",
+        "api_url": "https://api.lever.co/v0/postings/voodoo?mode=json",
+        "nlPriority": False,
+    },
+    {
+        "name": "CD PROJEKT RED (SmartRecruiters)",
+        "studio": "CD PROJEKT RED",
+        "adapter": "smartrecruiters",
+        "company_id": "CDPROJEKTRED",
+        "api_url": "https://api.smartrecruiters.com/v1/companies/CDPROJEKTRED/postings",
+        "nlPriority": False,
+    },
+    {
+        "name": "Gameloft (SmartRecruiters)",
+        "studio": "Gameloft",
+        "adapter": "smartrecruiters",
+        "company_id": "Gameloft",
+        "api_url": "https://api.smartrecruiters.com/v1/companies/Gameloft/postings",
+        "nlPriority": False,
+    },
+    {
+        "name": "Hutch (Workable)",
+        "studio": "Hutch",
+        "adapter": "workable",
+        "account": "hutch",
+        "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true",
+        "nlPriority": False,
+    },
+    {
+        "name": "Wargaming (Workable)",
+        "studio": "Wargaming",
+        "adapter": "workable",
+        "account": "wargaming",
+        "api_url": "https://apply.workable.com/api/v1/widget/accounts/wargaming?details=true",
+        "nlPriority": False,
+    },
+    {
+        "name": "CrazyGames (Recruitee)",
+        "studio": "CrazyGames",
+        "adapter": "recruitee",
+        "subdomain": "jobs.crazygames.com",
+        "api_url": "https://jobs.crazygames.com/api/offers/",
+        "nlPriority": False,
+    },
+    {
+        "name": "Gameplay Galaxy (Pinpoint)",
+        "studio": "Gameplay Galaxy",
+        "adapter": "pinpoint",
+        "subdomain": "gameplaygalaxy",
+        "api_url": "https://gameplaygalaxy.pinpointhq.com/postings.json",
+        "nlPriority": False,
+    },
+    {
+        "name": "Ubisoft (SmartRecruiters)",
+        "studio": "Ubisoft",
+        "adapter": "smartrecruiters",
+        "company_id": "Ubisoft2",
+        "api_url": "https://api.smartrecruiters.com/v1/companies/Ubisoft2/postings",
+        "nlPriority": False,
+    },
+    {
+        "name": "Bandai Namco Entertainment America (Greenhouse)",
+        "studio": "Bandai Namco Entertainment America Inc.",
+        "adapter": "greenhouse",
+        "slug": "bandainamco",
+        "nlPriority": False,
+    },
 ]
 
 

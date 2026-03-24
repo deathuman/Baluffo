@@ -48,7 +48,9 @@ DETACHED_BROWSER_GRACE_TIMEOUT_S = 35.0
 INSTANCE_LOCK_WAIT_S = 3.0
 SESSION_REUSE_WAIT_S = 12.0
 INSTANCE_CONFLICT_RETRY_S = 6.0
-ALREADY_RUNNING_ERROR = "Baluffo is already running. Close the existing desktop session before starting a new one."
+ALREADY_RUNNING_ERROR = (
+    "Baluffo is already running. Close the existing desktop session before starting a new one."
+)
 MB_OK = 0x00000000
 MB_ICONERROR = 0x00000010
 APP_PATH_REGISTRY_SUBKEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths"
@@ -181,7 +183,9 @@ def build_child_command(
     return child_command
 
 
-def start_child_process(command: Sequence[str], *, extra_env: dict[str, str] | None = None) -> subprocess.Popen[str]:
+def start_child_process(
+    command: Sequence[str], *, extra_env: dict[str, str] | None = None
+) -> subprocess.Popen[str]:
     popen_kwargs: dict[str, object] = {
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
@@ -192,7 +196,9 @@ def start_child_process(command: Sequence[str], *, extra_env: dict[str, str] | N
         env.update({key: str(value) for key, value in extra_env.items()})
         popen_kwargs["env"] = env
     if os.name == "nt":
-        popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) | int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) | int(
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        )
     return subprocess.Popen(list(command), **popen_kwargs)
 
 
@@ -244,7 +250,11 @@ def _patched_syspath(path: Path):
 
 @contextlib.contextmanager
 def _isolated_src_package():
-    saved = {name: module for name, module in sys.modules.items() if name == "src" or name.startswith("src.")}
+    saved = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "src" or name.startswith("src.")
+    }
     for name in list(saved):
         sys.modules.pop(name, None)
     try:
@@ -262,7 +272,11 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
     bridge_port_explicit = int(args.bridge_port) > 0
     site_port = int(args.site_port) if site_port_explicit else DEFAULT_SITE_PORT
     bridge_port = int(args.bridge_port) if bridge_port_explicit else DEFAULT_BRIDGE_PORT
-    data_dir = Path(args.data_dir).expanduser().resolve() if str(args.data_dir or "").strip() else ship_root / "data"
+    data_dir = (
+        Path(args.data_dir).expanduser().resolve()
+        if str(args.data_dir or "").strip()
+        else ship_root / "data"
+    )
     return DesktopRuntimeConfig(
         ship_root=ship_root,
         site_port=site_port,
@@ -271,7 +285,9 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
         data_dir=data_dir,
         open_path=str(args.open_path or DEFAULT_OPEN_PATH).lstrip("/") or DEFAULT_OPEN_PATH,
         title=str(args.title or DESKTOP_DEFAULTS["title"] or WINDOW_TITLE).strip() or WINDOW_TITLE,
-        startup_probe=bool(args.startup_probe or _truthy_env(os.environ.get("BALUFFO_STARTUP_PROBE"))),
+        startup_probe=bool(
+            args.startup_probe or _truthy_env(os.environ.get("BALUFFO_STARTUP_PROBE"))
+        ),
         site_port_explicit=site_port_explicit,
         bridge_port_explicit=bridge_port_explicit,
     )
@@ -330,7 +346,9 @@ def resolve_runtime_ports(config: DesktopRuntimeConfig) -> DesktopRuntimeConfig:
                 f"Baluffo desktop bridge port {bridge_port} is already in use. Close the other process or choose a different --bridge-port."
             )
         next_bridge_port = int(choose_free_port())
-        while next_bridge_port == site_port or not _port_is_available(str(resolved.bridge_host), next_bridge_port):
+        while next_bridge_port == site_port or not _port_is_available(
+            str(resolved.bridge_host), next_bridge_port
+        ):
             next_bridge_port = int(choose_free_port())
         bridge_port = next_bridge_port
 
@@ -393,7 +411,11 @@ def _normalize_path_text(value: object) -> str:
 
 
 def _current_exe_path() -> str:
-    return str(Path(sys.executable if getattr(sys, "frozen", False) else Path(__file__).resolve()).resolve())
+    return str(
+        Path(
+            sys.executable if getattr(sys, "frozen", False) else Path(__file__).resolve()
+        ).resolve()
+    )
 
 
 def resolve_registry_app_path(executable_name: str) -> str:
@@ -415,7 +437,11 @@ def resolve_chromium_browser_candidates() -> list[dict[str, str]]:
     candidates: list[dict[str, str]] = []
     seen: set[str] = set()
     for browser_name, executable_name in CHROMIUM_BROWSER_CANDIDATES:
-        for candidate in (shutil.which(browser_name), shutil.which(executable_name), resolve_registry_app_path(executable_name)):
+        for candidate in (
+            shutil.which(browser_name),
+            shutil.which(executable_name),
+            resolve_registry_app_path(executable_name),
+        ):
             path = str(candidate or "").strip()
             if not path:
                 continue
@@ -423,15 +449,19 @@ def resolve_chromium_browser_candidates() -> list[dict[str, str]]:
             if normalized in seen:
                 continue
             seen.add(normalized)
-            candidates.append({
-                "name": browser_name,
-                "path": str(Path(path).resolve()),
-            })
+            candidates.append(
+                {
+                    "name": browser_name,
+                    "path": str(Path(path).resolve()),
+                }
+            )
             break
     return candidates
 
 
-def chromium_app_mode_supported(candidate: dict[str, str], *, env: dict[str, str] | None = None) -> bool:
+def chromium_app_mode_supported(
+    candidate: dict[str, str], *, env: dict[str, str] | None = None
+) -> bool:
     env_map = env if env is not None else os.environ
     browser_name = str(candidate.get("name") or "").strip().lower()
     if browser_name != "msedge":
@@ -489,7 +519,9 @@ def _read_instance_lock_payload(path: Path) -> dict[str, object]:
     return payload
 
 
-def _make_lock_payload(*, launcher_token: str, state: str, session_root: Path, created_at: str | None = None) -> dict[str, object]:
+def _make_lock_payload(
+    *, launcher_token: str, state: str, session_root: Path, created_at: str | None = None
+) -> dict[str, object]:
     return {
         "pid": int(os.getpid()),
         "createdAt": str(created_at or datetime.now(UTC).isoformat()),
@@ -558,7 +590,9 @@ def _get_windows_process_start_ts(pid: int) -> float:
         ctypes.windll.kernel32.CloseHandle(handle)
 
 
-def _process_identity_matches(lock_payload: dict[str, object], *, expected_exe_path: str = "") -> bool:
+def _process_identity_matches(
+    lock_payload: dict[str, object], *, expected_exe_path: str = ""
+) -> bool:
     pid = int(lock_payload.get("pid") or 0)
     if pid <= 0 or not is_process_alive(pid):
         return False
@@ -575,7 +609,11 @@ def _process_identity_matches(lock_payload: dict[str, object], *, expected_exe_p
         return False
     lock_created_ts = _parse_metric_ts(lock_payload.get("createdAt"))
     process_created_ts = _get_windows_process_start_ts(pid)
-    if lock_created_ts > 0.0 and process_created_ts > 0.0 and abs(lock_created_ts - process_created_ts) > 180.0:
+    if (
+        lock_created_ts > 0.0
+        and process_created_ts > 0.0
+        and abs(lock_created_ts - process_created_ts) > 180.0
+    ):
         return False
     return True
 
@@ -609,10 +647,17 @@ def acquire_instance_lock(
         except OSError:
             time.sleep(0.2)
             continue
-        payload = _make_lock_payload(launcher_token=token, state="launching", session_root=session_root)
+        payload = _make_lock_payload(
+            launcher_token=token, state="launching", session_root=session_root
+        )
         with contextlib.suppress(OSError):
             _write_lock_payload_to_handle(handle, payload)
-        return InstanceLock(path=path, handle=handle, launcher_token=token, created_at=str(payload.get("createdAt") or ""))
+        return InstanceLock(
+            path=path,
+            handle=handle,
+            launcher_token=token,
+            created_at=str(payload.get("createdAt") or ""),
+        )
     return None
 
 
@@ -706,7 +751,9 @@ def wait_for_baluffo_bridge(
 ) -> None:
     deadline = time.monotonic() + max(1.0, float(timeout_s))
     while time.monotonic() < deadline:
-        if is_baluffo_bridge_healthy(bridge_port, timeout_s=1.5, require_desktop_mode=require_desktop_mode):
+        if is_baluffo_bridge_healthy(
+            bridge_port, timeout_s=1.5, require_desktop_mode=require_desktop_mode
+        ):
             return
         time.sleep(0.25)
     raise RuntimeError("Baluffo bridge did not report a healthy desktop session.")
@@ -838,7 +885,11 @@ def diagnose_instance_conflict(
                 expected_launcher_token=lock_token,
             )
             if session_ok:
-                return {"action": "active", "reason": "healthy_active_session", "session": raw_state}
+                return {
+                    "action": "active",
+                    "reason": "healthy_active_session",
+                    "session": raw_state,
+                }
             _append_startup_trace(
                 data_dir,
                 "desktop_session_invalid_reason",
@@ -877,10 +928,14 @@ def launch_chromium_app(url: str, browser_path: str, profile_dir: Path) -> subpr
     popen_kwargs: dict[str, object] = {"text": True}
     if os.name == "nt":
         popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-    return subprocess.Popen(build_browser_launch_command(browser_path, url, profile_dir), **popen_kwargs)
+    return subprocess.Popen(
+        build_browser_launch_command(browser_path, url, profile_dir), **popen_kwargs
+    )
 
 
-def wait_for_browser_process_ready(process: subprocess.Popen[str], *, timeout_s: float = CHROMIUM_PROCESS_READY_TIMEOUT_S) -> bool:
+def wait_for_browser_process_ready(
+    process: subprocess.Popen[str], *, timeout_s: float = CHROMIUM_PROCESS_READY_TIMEOUT_S
+) -> bool:
     deadline = time.monotonic() + max(0.2, float(timeout_s))
     while time.monotonic() < deadline:
         if process.poll() is not None:
@@ -889,13 +944,20 @@ def wait_for_browser_process_ready(process: subprocess.Popen[str], *, timeout_s:
     return process.poll() is None
 
 
-def launch_browser_for_url(url: str, *, preferred_browser_path: str = "", env: dict[str, str] | None = None) -> dict[str, object]:
+def launch_browser_for_url(
+    url: str, *, preferred_browser_path: str = "", env: dict[str, str] | None = None
+) -> dict[str, object]:
     profile_dir = resolve_browser_profile_dir(env)
     candidates = resolve_chromium_browser_candidates()
     if preferred_browser_path:
         preferred = str(preferred_browser_path).strip().lower()
-        candidates = sorted(candidates, key=lambda item: 0 if str(item.get("path") or "").lower() == preferred else 1)
-    app_mode_candidates = [candidate for candidate in candidates if chromium_app_mode_supported(candidate, env=env)]
+        candidates = sorted(
+            candidates,
+            key=lambda item: 0 if str(item.get("path") or "").lower() == preferred else 1,
+        )
+    app_mode_candidates = [
+        candidate for candidate in candidates if chromium_app_mode_supported(candidate, env=env)
+    ]
     for candidate in app_mode_candidates:
         browser_path = str(candidate.get("path") or "").strip()
         if not browser_path:
@@ -967,7 +1029,9 @@ def latest_browser_heartbeat_ts(data_dir: Path) -> float:
     return latest
 
 
-def wait_for_browser_heartbeat(data_dir: Path, *, timeout_s: float = HEARTBEAT_STARTUP_TIMEOUT_S) -> bool:
+def wait_for_browser_heartbeat(
+    data_dir: Path, *, timeout_s: float = HEARTBEAT_STARTUP_TIMEOUT_S
+) -> bool:
     deadline = time.monotonic() + max(1.0, float(timeout_s))
     while time.monotonic() < deadline:
         if latest_browser_heartbeat_ts(data_dir) > 0.0:
@@ -995,7 +1059,9 @@ def watch_browser_session(
                     return "bridge_activity_timeout"
                 time.sleep(1.0)
         while True:
-            last_heartbeat = max(latest_browser_heartbeat_ts(data_dir), bridge_last_activity_ts(bridge_port))
+            last_heartbeat = max(
+                latest_browser_heartbeat_ts(data_dir), bridge_last_activity_ts(bridge_port)
+            )
             if last_heartbeat <= 0.0:
                 return "heartbeat_missing"
             idle_for = time.time() - last_heartbeat
@@ -1067,13 +1133,17 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
     launcher_token = uuid.uuid4().hex
     instance_lock = acquire_instance_lock(
         launcher_token=launcher_token,
-        on_reclaim=lambda reason: _append_startup_trace(config.data_dir, "desktop_lock_reclaimed", reason=_truncate_reason(reason)),
+        on_reclaim=lambda reason: _append_startup_trace(
+            config.data_dir, "desktop_lock_reclaimed", reason=_truncate_reason(reason)
+        ),
     )
     if instance_lock is None:
         diagnosis = diagnose_instance_conflict(data_dir=config.data_dir)
         action = str(diagnosis.get("action") or "")
         if action == "active":
-            existing_session = diagnosis.get("session") if isinstance(diagnosis.get("session"), dict) else {}
+            existing_session = (
+                diagnosis.get("session") if isinstance(diagnosis.get("session"), dict) else {}
+            )
             _append_startup_trace(
                 config.data_dir,
                 "desktop_session_reused",
@@ -1084,10 +1154,14 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         if action == "reclaimed" or action == "retry":
             instance_lock = acquire_instance_lock(
                 launcher_token=launcher_token,
-                on_reclaim=lambda reason: _append_startup_trace(config.data_dir, "desktop_lock_reclaimed", reason=_truncate_reason(reason)),
+                on_reclaim=lambda reason: _append_startup_trace(
+                    config.data_dir, "desktop_lock_reclaimed", reason=_truncate_reason(reason)
+                ),
             )
         if instance_lock is None:
-            raise RuntimeError("Baluffo is already starting in another process. Please retry in a few seconds.")
+            raise RuntimeError(
+                "Baluffo is already starting in another process. Please retry in a few seconds."
+            )
 
     site_process: subprocess.Popen[str] | None = None
     bridge_process: subprocess.Popen[str] | None = None
@@ -1103,7 +1177,11 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
     try:
         existing_session = get_valid_session_state(expected_launcher_token=launcher_token)
         if existing_session:
-            _append_startup_trace(config.data_dir, "desktop_session_reused", bridgePort=int(existing_session.get("bridgePort") or 0))
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_session_reused",
+                bridgePort=int(existing_session.get("bridgePort") or 0),
+            )
             raise RuntimeError(ALREADY_RUNNING_ERROR)
         # Desktop runtime must always enable desktop-local-data endpoints in the bridge.
         # Child processes inherit this environment (even when using child-mode argv flags).
@@ -1111,9 +1189,15 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         if bool(config.startup_probe):
             child_env["BALUFFO_STARTUP_PROBE"] = "1"
         ensure_runtime_ports(config)
-        _append_startup_trace(config.data_dir, "desktop_ports_available", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_ports_available",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+        )
         site_process = start_child_process(
-            build_child_command("site", root=config.ship_root, port=config.site_port, desktop_runtime=True),
+            build_child_command(
+                "site", root=config.ship_root, port=config.site_port, desktop_runtime=True
+            ),
             extra_env=child_env,
         )
         _append_startup_trace(
@@ -1162,14 +1246,24 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             elapsedMs=int((time.perf_counter() - started_mono) * 1000),
             url=str(open_url),
         )
-        _append_startup_trace(config.data_dir, "desktop_window_create_started", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_window_create_started",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+        )
         launch_result = launch_browser_for_url(open_url)
         launch_mode = str(launch_result.get("mode") or "default-browser")
-        browser_process = launch_result.get("process") if isinstance(launch_result.get("process"), subprocess.Popen) else None
+        browser_process = (
+            launch_result.get("process")
+            if isinstance(launch_result.get("process"), subprocess.Popen)
+            else None
+        )
         shell_window_shown_elapsed_ms = int((time.perf_counter() - started_mono) * 1000)
         window_shown_at_mono = launch_result.get("windowShownAtMonotonic")
         if isinstance(window_shown_at_mono, (int, float)):
-            shell_window_shown_elapsed_ms = max(0, int((float(window_shown_at_mono) - started_mono) * 1000))
+            shell_window_shown_elapsed_ms = max(
+                0, int((float(window_shown_at_mono) - started_mono) * 1000)
+            )
         _append_startup_trace(
             config.data_dir,
             "desktop_browser_launch_selected",
@@ -1178,31 +1272,42 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             browser=str(launch_result.get("browserName") or ""),
             browserPath=str(launch_result.get("browserPath") or ""),
         )
-        save_session_state({
-            "appVersion": get_app_version(),
-            "launcherPid": os.getpid(),
-            "launcherToken": str(instance_lock.launcher_token or launcher_token),
-            "launcherStartedAt": str(instance_lock.created_at or datetime.now(UTC).isoformat()),
-            "sitePort": int(config.site_port),
-            "bridgePort": int(config.bridge_port),
-            "bridgeHost": str(config.bridge_host),
-            "url": str(open_url),
-            "launchMode": launch_mode,
-            "browserPath": str(launch_result.get("browserPath") or ""),
-            "exePath": _current_exe_path(),
-            "dataDir": str(config.data_dir),
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        save_session_state(
+            {
+                "appVersion": get_app_version(),
+                "launcherPid": os.getpid(),
+                "launcherToken": str(instance_lock.launcher_token or launcher_token),
+                "launcherStartedAt": str(instance_lock.created_at or datetime.now(UTC).isoformat()),
+                "sitePort": int(config.site_port),
+                "bridgePort": int(config.bridge_port),
+                "bridgeHost": str(config.bridge_host),
+                "url": str(open_url),
+                "launchMode": launch_mode,
+                "browserPath": str(launch_result.get("browserPath") or ""),
+                "exePath": _current_exe_path(),
+                "dataDir": str(config.data_dir),
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
         update_instance_lock_state(instance_lock, "running")
         session_state_written = True
-        _append_startup_trace(config.data_dir, "desktop_window_created", elapsedMs=int((time.perf_counter() - started_mono) * 1000))
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_window_created",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+        )
         _append_startup_trace(
             config.data_dir,
             "desktop_shell_window_shown",
             elapsedMs=shell_window_shown_elapsed_ms,
             mode=launch_mode,
         )
-        stop_reason = watch_browser_session(config.data_dir, started_mono, bridge_port=config.bridge_port, browser_process=browser_process)
+        stop_reason = watch_browser_session(
+            config.data_dir,
+            started_mono,
+            bridge_port=config.bridge_port,
+            browser_process=browser_process,
+        )
         if stop_reason == "process_exit" and browser_process is not None:
             _append_startup_trace(
                 config.data_dir,
@@ -1237,7 +1342,11 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             reason=stop_reason,
         )
         if config.startup_probe:
-            summary = summarize_startup_metrics(read_startup_metrics(config.data_dir), page=Path(config.open_path).stem or "jobs", profile_mode="cold")
+            summary = summarize_startup_metrics(
+                read_startup_metrics(config.data_dir),
+                page=Path(config.open_path).stem or "jobs",
+                profile_mode="cold",
+            )
             write_startup_summary(config.data_dir / "startup-probe-summary.json", summary)
     except Exception as exc:
         _append_startup_trace(
@@ -1247,7 +1356,9 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             error=str(exc),
             errorType=type(exc).__name__,
         )
-        _write_launch_diagnostics(config.data_dir, "desktop-launch-error.txt", traceback.format_exc())
+        _write_launch_diagnostics(
+            config.data_dir, "desktop-launch-error.txt", traceback.format_exc()
+        )
         raise
     finally:
         release_instance_lock(instance_lock)
@@ -1295,7 +1406,9 @@ def main(argv: list[str] | None = None) -> int:
         # Belt-and-suspenders: the parent process should pass `--desktop-runtime`,
         # but accept the environment flag as well so desktop-local-data endpoints
         # don't silently disable themselves in packaged builds.
-        desktop_mode = bool(args.desktop_runtime) or _truthy_env(os.environ.get("BALUFFO_DESKTOP_MODE"))
+        desktop_mode = bool(args.desktop_runtime) or _truthy_env(
+            os.environ.get("BALUFFO_DESKTOP_MODE")
+        )
         run_bridge_server(
             args.root or None,
             bind_host=str(args.bind_host),
@@ -1305,7 +1418,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if args.child_mode == "__child_script__":
-        runtime_root = Path(args.root).expanduser().resolve() if str(args.root or "").strip() else ROOT
+        runtime_root = (
+            Path(args.root).expanduser().resolve() if str(args.root or "").strip() else ROOT
+        )
         script_name = str(args.script or "").strip()
         if not script_name:
             raise RuntimeError("Missing --script for __child_script__ mode.")
@@ -1344,4 +1459,3 @@ __all__ = [
     "read_startup_metrics",
     "main",
 ]
-

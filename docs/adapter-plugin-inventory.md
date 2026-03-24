@@ -43,7 +43,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 
 ### Biggest / highest-churn candidates
 
-- **`src/jobs/adapters/static.py` (~550 LOC)**  
+- **`src/jobs/adapters/static.py` (~550 LOC)**
   Monolith that includes:
   - static studio page crawling (listing + detail heuristics)
   - detail-link heuristics / filtering
@@ -54,7 +54,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 
 ### Existing “family-like” clusters (good early plugin families)
 
-- **`src/jobs/adapters/provider_api.py` (~356 LOC)**  
+- **`src/jobs/adapters/provider_api.py` (~356 LOC)**
   Already segmented by provider, each with its own registry key and parsing strategy:
   - `greenhouse` (boards JSON)
   - `teamtailor` (listing HTML + detail parsing)
@@ -62,7 +62,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
   - `recruitee`, `pinpoint` (registry-driven JSON feeds)
   - `ashby`, `breezy`, `jazzhr`, `personio` (provider-specific HTML/XML board flows)
 
-- **`src/jobs/adapters/community/__init__.py`**  
+- **`src/jobs/adapters/community/__init__.py`**
   Community-board loaders now include:
   - `google_sheets`
   - `remote_ok`
@@ -73,7 +73,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
   - `gracklehq`
   - `epic_games_careers`
 
-- **`src/jobs/adapters/social.py` (~269 LOC)**  
+- **`src/jobs/adapters/social.py` (~269 LOC)**
   Already segmented by provider:
   - reddit
   - x
@@ -136,8 +136,8 @@ To add a new static plugin: (1) Add a module under `src/jobs/adapters/plugins/st
 Follow this sequence so new static sources rarely end up as silent extract-zero:
 
 1. **Add the source** to the active registry (`data/source-registry-active.json` or Admin → Sources) with `"adapter": "static"` and `pages` (listing URL(s)).
-2. **Run it alone**:  
-   `python src/jobs_fetcher.py --only-sources static_source::<source_id> --ignore-circuit-breaker`  
+2. **Run it alone**:
+   `python src/jobs_fetcher.py --only-sources static_source::<source_id> --ignore-circuit-breaker`
    Use the source's `id` or the loader name from the report (e.g. `static_source::static:listing_url:https://...`).
 3. **Check the report** in `data/jobs-fetch-report.json`: find the source in `sources` and note `status`, `keptCount`, `classification`, `browserFallbackRecommended`, `error`.
 4. **Act on the outcome**:
@@ -158,4 +158,3 @@ When a studio’s jobs are already covered by a provider adapter (e.g. SmartRecr
 - **New CSV/Google Sheet:** Add an entry to `GOOGLE_SHEETS_SOURCES` in `src/jobs/adapters/community/google_sheets.py` (or import from `src.jobs.adapters.community`) with `name`, `sheetId`, `gid`. Add the same `name` to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`.
 - **New community board / aggregator:** Add the parser and loader in `src/jobs/adapters/community/__init__.py`, export the parser through `src/jobs/parsers.py` and `src/jobs_fetcher.py`, then add the loader name to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`. Recent examples: `gamejobs`, `workwithindies`, `8bitplay`, `gracklehq`.
 - **Social (Reddit/X/Mastodon):** Enable via `--social-enabled` or runtime config. To add a new social provider, implement the loader in `src/jobs/adapters/social.py` and register it in `default_source_loaders` and `SOURCE_REPORT_META`.
-

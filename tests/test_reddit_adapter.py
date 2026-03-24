@@ -18,46 +18,51 @@ def test_reddit_adapter_loads_all_subreddits():
         "enabled": True,
         "reddit": {
             "enabled": True,
-            "subreddits": ["gamedev", "gameDevClassifieds", "gamedevjobs", "INAT", "gamejobs", "indiegaming"],
+            "subreddits": [
+                "gamedev",
+                "gameDevClassifieds",
+                "gamedevjobs",
+                "INAT",
+                "gamejobs",
+                "indiegaming",
+            ],
             "maxPostsPerSubreddit": 5,
             "rssFallback": True,
             "htmlFallback": False,
-        }
+        },
     }
-    
+
     # Mock the social config
     import src.jobs.adapters.plugins.social.register as register_module
+
     original_social_config = register_module._SOCIAL_CONFIG
     register_module._SOCIAL_CONFIG = social_config
-    
+
     try:
         # This should not raise an error and should process all subreddits
         jobs = _run_reddit(
-            fetch_text=lambda url, timeout: "{}",
-            timeout_s=10,
-            retries=2,
-            backoff_s=1.0
+            fetch_text=lambda url, timeout: "{}", timeout_s=10, retries=2, backoff_s=1.0
         )
-        
+
         # Verify diagnostics are set correctly
         assert "social_reddit" in SOURCE_DIAGNOSTICS
         details = SOURCE_DIAGNOSTICS["social_reddit"]["details"]
-        
+
         # Should have 6 entries (one for each subreddit)
         assert len(details) == 6
-        
+
         # Verify all subreddits are processed
         subreddit_names = [entry["studio"] for entry in details]
         expected_studios = [
             "reddit/gamedev",
-            "reddit/gameDevClassifieds", 
+            "reddit/gameDevClassifieds",
             "reddit/gamedevjobs",
             "reddit/INAT",
             "reddit/gamejobs",
-            "reddit/indiegaming"
+            "reddit/indiegaming",
         ]
         assert set(subreddit_names) == set(expected_studios)
-        
+
     finally:
         # Restore original config
         register_module._SOCIAL_CONFIG = original_social_config
@@ -66,11 +71,11 @@ def test_reddit_adapter_loads_all_subreddits():
 def test_reddit_adapter_configuration():
     """Default config should not poll broad Reddit discussion sources."""
     from src.jobs.registry import load_social_config
-    
+
     config = load_social_config(enabled=True)
     reddit_config = config.get("reddit") or {}
     subreddits = reddit_config.get("subreddits") or []
-    
+
     assert reddit_config.get("enabled") is False
     assert len(subreddits) == 0
     expected_subreddits = []
@@ -87,34 +92,30 @@ def test_reddit_adapter_error_handling():
             "maxPostsPerSubreddit": 1,
             "rssFallback": True,
             "htmlFallback": False,
-        }
+        },
     }
-    
+
     def failing_fetch(url: str, timeout: int) -> str:
         # Always fail with a network error
         raise Exception("Network error: Connection refused")
-    
+
     # Mock the social config
     import src.jobs.adapters.plugins.social.register as register_module
+
     original_social_config = register_module._SOCIAL_CONFIG
     register_module._SOCIAL_CONFIG = social_config
-    
+
     try:
         with pytest.raises(AdapterValidationError):
-            _run_reddit(
-                fetch_text=failing_fetch,
-                timeout_s=10,
-                retries=2,
-                backoff_s=1.0
-            )
-        
+            _run_reddit(fetch_text=failing_fetch, timeout_s=10, retries=2, backoff_s=1.0)
+
         # Verify diagnostics show errors
         assert "social_reddit" in SOURCE_DIAGNOSTICS
         details = SOURCE_DIAGNOSTICS["social_reddit"]["details"]
         assert len(details) == 1
         assert details[0]["status"] == "error"
         assert "Network error" in details[0]["error"]
-        
+
     finally:
         # Restore original config
         register_module._SOCIAL_CONFIG = original_social_config
@@ -124,7 +125,7 @@ def test_reddit_adapter_rate_limiting():
     """Test that Reddit adapter implements rate limiting."""
     import time
     from unittest.mock import patch
-    
+
     social_config = {
         "enabled": True,
         "reddit": {
@@ -134,42 +135,43 @@ def test_reddit_adapter_rate_limiting():
             "rssFallback": False,
             "htmlFallback": False,
             "rateLimitDelay": 0.01,  # Very short delay for testing
-        }
+        },
     }
-    
+
     # Track fetch calls
     fetch_calls = []
-    
+
     def mock_fetch(url: str, timeout: int) -> str:
         fetch_calls.append(time.time())
         return "{}"
-    
+
     # Mock the social config
     import src.jobs.adapters.plugins.social.register as register_module
+
     original_social_config = register_module._SOCIAL_CONFIG
     register_module._SOCIAL_CONFIG = social_config
-    
+
     try:
-        def mock_fetch_with_retries(url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float) -> str:
+
+        def mock_fetch_with_retries(
+            url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
+        ) -> str:
             fetch_calls.append(time.time())
             return "{}"
 
-        with patch('src.jobs.adapters.plugins.social.register.fetch_with_retries', mock_fetch_with_retries):
-            _run_reddit(
-                fetch_text=mock_fetch,
-                timeout_s=10,
-                retries=2,
-                backoff_s=1.0
-            )
-        
+        with patch(
+            "src.jobs.adapters.plugins.social.register.fetch_with_retries", mock_fetch_with_retries
+        ):
+            _run_reddit(fetch_text=mock_fetch, timeout_s=10, retries=2, backoff_s=1.0)
+
         # One JSON attempt per subreddit when RSS fallback is disabled.
         assert len(fetch_calls) == 2
-        
+
         # Verify there was a delay between calls
         if len(fetch_calls) > 1:
             delay = fetch_calls[1] - fetch_calls[0]
             assert delay >= 0.01  # Should respect rate limit delay
-            
+
     finally:
         # Restore original config
         register_module._SOCIAL_CONFIG = original_social_config
@@ -188,7 +190,7 @@ def test_reddit_adapter_reports_reject_reason_counts():
             "rssFallback": False,
             "htmlFallback": False,
             "rateLimitDelay": 0,
-        }
+        },
     }
     payload = {
         "data": {
@@ -222,11 +224,15 @@ def test_reddit_adapter_reports_reject_reason_counts():
     }
 
     import src.jobs.adapters.plugins.social.register as register_module
+
     original_social_config = register_module._SOCIAL_CONFIG
     register_module._SOCIAL_CONFIG = social_config
 
     try:
-        with patch("src.jobs.adapters.plugins.social.register.fetch_with_retries", return_value=json.dumps(payload)):
+        with patch(
+            "src.jobs.adapters.plugins.social.register.fetch_with_retries",
+            return_value=json.dumps(payload),
+        ):
             jobs = _run_reddit(
                 fetch_text=lambda url, timeout: json.dumps(payload),
                 timeout_s=10,

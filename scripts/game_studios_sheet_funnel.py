@@ -38,7 +38,9 @@ def _norm_url(url: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Game studios sheet funnel: sheet → registry → pipeline")
+    parser = argparse.ArgumentParser(
+        description="Game studios sheet funnel: sheet → registry → pipeline"
+    )
     parser.add_argument("--data-dir", type=Path, help="Data directory (default from config)")
     args = parser.parse_args()
     defaults = get_storage_defaults()
@@ -59,7 +61,12 @@ def main() -> int:
         if str(row.get("sourceDirectory") or "").strip() != "game_studios_sheet":
             continue
         url = _norm_url(
-            str(row.get("sourceDirectoryEntryUrl") or row.get("listing_url") or row.get("careersUrl") or "")
+            str(
+                row.get("sourceDirectoryEntryUrl")
+                or row.get("listing_url")
+                or row.get("careersUrl")
+                or ""
+            )
         )
         if url:
             sheet_urls.add(url)

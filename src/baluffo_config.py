@@ -97,11 +97,20 @@ def get_bridge_defaults() -> dict[str, Any]:
     return {
         "host": _coerce_str(cfg.get("host"), CODE_FALLBACK_CONFIG["bridge"]["host"]),
         "port": _coerce_int(cfg.get("port"), CODE_FALLBACK_CONFIG["bridge"]["port"]),
-        "log_format": _coerce_str(cfg.get("log_format"), CODE_FALLBACK_CONFIG["bridge"]["log_format"]).lower(),
-        "log_level": _coerce_str(cfg.get("log_level"), CODE_FALLBACK_CONFIG["bridge"]["log_level"]).lower(),
-        "quiet_requests": _coerce_bool(cfg.get("quiet_requests"), CODE_FALLBACK_CONFIG["bridge"]["quiet_requests"]),
+        "log_format": _coerce_str(
+            cfg.get("log_format"), CODE_FALLBACK_CONFIG["bridge"]["log_format"]
+        ).lower(),
+        "log_level": _coerce_str(
+            cfg.get("log_level"), CODE_FALLBACK_CONFIG["bridge"]["log_level"]
+        ).lower(),
+        "quiet_requests": _coerce_bool(
+            cfg.get("quiet_requests"), CODE_FALLBACK_CONFIG["bridge"]["quiet_requests"]
+        ),
         "max_history_rows": _coerce_int(
-            cfg.get("max_history_rows"), CODE_FALLBACK_CONFIG["bridge"]["max_history_rows"], minimum=0, maximum=1000
+            cfg.get("max_history_rows"),
+            CODE_FALLBACK_CONFIG["bridge"]["max_history_rows"],
+            minimum=0,
+            maximum=1000,
         ),
     }
 
@@ -157,8 +166,12 @@ def get_sync_defaults() -> dict[str, Any]:
             CODE_FALLBACK_CONFIG["sync"]["local_enabled_default"],
         ),
         "default_repo": str(cfg.get("default_repo") or "").strip(),
-        "default_branch": _coerce_str(cfg.get("default_branch"), CODE_FALLBACK_CONFIG["sync"]["default_branch"]),
-        "default_path": _coerce_str(cfg.get("default_path"), CODE_FALLBACK_CONFIG["sync"]["default_path"]),
+        "default_branch": _coerce_str(
+            cfg.get("default_branch"), CODE_FALLBACK_CONFIG["sync"]["default_branch"]
+        ),
+        "default_path": _coerce_str(
+            cfg.get("default_path"), CODE_FALLBACK_CONFIG["sync"]["default_path"]
+        ),
         "default_allowed_repo": str(cfg.get("default_allowed_repo") or "").strip(),
         "default_allowed_branch": _coerce_str(
             cfg.get("default_allowed_branch"),
@@ -186,10 +199,18 @@ def get_sync_defaults() -> dict[str, Any]:
 def get_desktop_defaults() -> dict[str, Any]:
     cfg = dict(load_config().get("desktop") or {})
     return {
-        "site_port": _coerce_int(cfg.get("site_port"), CODE_FALLBACK_CONFIG["desktop"]["site_port"]),
-        "bridge_port": _coerce_int(cfg.get("bridge_port"), CODE_FALLBACK_CONFIG["desktop"]["bridge_port"]),
-        "bridge_host": _coerce_str(cfg.get("bridge_host"), CODE_FALLBACK_CONFIG["desktop"]["bridge_host"]),
-        "open_path": _coerce_str(cfg.get("open_path"), CODE_FALLBACK_CONFIG["desktop"]["open_path"]).lstrip("/"),
+        "site_port": _coerce_int(
+            cfg.get("site_port"), CODE_FALLBACK_CONFIG["desktop"]["site_port"]
+        ),
+        "bridge_port": _coerce_int(
+            cfg.get("bridge_port"), CODE_FALLBACK_CONFIG["desktop"]["bridge_port"]
+        ),
+        "bridge_host": _coerce_str(
+            cfg.get("bridge_host"), CODE_FALLBACK_CONFIG["desktop"]["bridge_host"]
+        ),
+        "open_path": _coerce_str(
+            cfg.get("open_path"), CODE_FALLBACK_CONFIG["desktop"]["open_path"]
+        ).lstrip("/"),
         "title": _coerce_str(cfg.get("title"), CODE_FALLBACK_CONFIG["desktop"]["title"]),
     }
 
@@ -197,6 +218,7 @@ def get_desktop_defaults() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Structured config objects (salvaged from refactor, additive-only)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class BridgeConfig:
@@ -253,7 +275,9 @@ def resolve_admin_bridge_config(
     storage_defaults = get_storage_defaults()
 
     host = _coerce_str(
-        getattr(args, "host", None) or env_map.get("BALUFFO_BRIDGE_HOST") or bridge_defaults["host"],
+        getattr(args, "host", None)
+        or env_map.get("BALUFFO_BRIDGE_HOST")
+        or bridge_defaults["host"],
         bridge_defaults["host"],
     )
     port = _coerce_int(
@@ -261,11 +285,15 @@ def resolve_admin_bridge_config(
         bridge_defaults["port"],
     )
     log_format = _coerce_str(
-        getattr(args, "log_format", None) or env_map.get("BALUFFO_BRIDGE_LOG_FORMAT") or bridge_defaults["log_format"],
+        getattr(args, "log_format", None)
+        or env_map.get("BALUFFO_BRIDGE_LOG_FORMAT")
+        or bridge_defaults["log_format"],
         bridge_defaults["log_format"],
     ).lower()
     log_level = _coerce_str(
-        getattr(args, "log_level", None) or env_map.get("BALUFFO_BRIDGE_LOG_LEVEL") or bridge_defaults["log_level"],
+        getattr(args, "log_level", None)
+        or env_map.get("BALUFFO_BRIDGE_LOG_LEVEL")
+        or bridge_defaults["log_level"],
         bridge_defaults["log_level"],
     ).lower()
     quiet_requests_env = str(env_map.get("BALUFFO_BRIDGE_QUIET_REQUESTS") or "").strip().lower()
@@ -288,7 +316,9 @@ def resolve_admin_bridge_config(
     desktop_mode = bool(getattr(args, "desktop_mode", False)) or bool(desktop_mode_env)
 
     data_dir = resolve_path(
-        getattr(args, "data_dir", None) or env_map.get("BALUFFO_DATA_DIR") or storage_defaults["data_dir"],
+        getattr(args, "data_dir", None)
+        or env_map.get("BALUFFO_DATA_DIR")
+        or storage_defaults["data_dir"],
         str(storage_defaults["data_dir"]),
     )
 

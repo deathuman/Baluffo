@@ -87,7 +87,11 @@ def percentile(values: list[int], pct: float) -> int:
 
 
 def summarize_run_history(rows: list[dict[str, Any]], window: int) -> dict[str, Any]:
-    clean_rows = [row for row in rows if isinstance(row, dict) and str(row.get("type") or "").lower() == "fetch"]
+    clean_rows = [
+        row
+        for row in rows
+        if isinstance(row, dict) and str(row.get("type") or "").lower() == "fetch"
+    ]
     clean_rows.sort(
         key=lambda row: parse_iso(row.get("finishedAt") or row.get("startedAt")) or datetime.min,
         reverse=True,
@@ -114,7 +118,9 @@ def summarize_run_history(rows: list[dict[str, Any]], window: int) -> dict[str, 
     }
 
 
-def build_metrics(report: dict[str, Any], history: list[dict[str, Any]], window: int) -> dict[str, Any]:
+def build_metrics(
+    report: dict[str, Any], history: list[dict[str, Any]], window: int
+) -> dict[str, Any]:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     sources = report.get("sources") if isinstance(report.get("sources"), list) else []
     input_count = int(summary.get("inputCount") or 0)
@@ -123,8 +129,12 @@ def build_metrics(report: dict[str, Any], history: list[dict[str, Any]], window:
     duplicate_rate = round((merged / input_count), 4) if input_count > 0 else 0.0
     output_yield_rate = round((output_count / input_count), 4) if input_count > 0 else 0.0
     runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    timing_summary = runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
-    durations = [max(0, int(row.get("durationMs") or 0)) for row in sources if isinstance(row, dict)]
+    timing_summary = (
+        runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
+    )
+    durations = [
+        max(0, int(row.get("durationMs") or 0)) for row in sources if isinstance(row, dict)
+    ]
     return {
         "generatedAt": datetime.now(UTC).isoformat(),
         "latestRun": {
@@ -136,8 +146,12 @@ def build_metrics(report: dict[str, Any], history: list[dict[str, Any]], window:
             "mergedCount": merged,
             "duplicateRate": duplicate_rate,
             "outputYieldRate": output_yield_rate,
-            "medianSourceDurationMs": int(timing_summary.get("medianSourceDurationMs") or percentile(durations, 0.5)),
-            "p95SourceDurationMs": int(timing_summary.get("p95SourceDurationMs") or percentile(durations, 0.95)),
+            "medianSourceDurationMs": int(
+                timing_summary.get("medianSourceDurationMs") or percentile(durations, 0.5)
+            ),
+            "p95SourceDurationMs": int(
+                timing_summary.get("p95SourceDurationMs") or percentile(durations, 0.95)
+            ),
             "stageTotalsMs": dict(timing_summary.get("stageTotalsMs") or {}),
             "stageTop": list(timing_summary.get("stageTop") or []),
             "highCostLowYieldSources": list(timing_summary.get("highCostLowYieldSources") or []),
@@ -149,8 +163,12 @@ def build_metrics(report: dict[str, Any], history: list[dict[str, Any]], window:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Summarize fetcher performance metrics.")
-    parser.add_argument("--data-dir", default="data", help="Directory containing fetcher artifacts.")
-    parser.add_argument("--window-runs", type=int, default=20, help="Number of recent fetch runs to include.")
+    parser.add_argument(
+        "--data-dir", default="data", help="Directory containing fetcher artifacts."
+    )
+    parser.add_argument(
+        "--window-runs", type=int, default=20, help="Number of recent fetch runs to include."
+    )
     parser.add_argument("--output", default="", help="Optional output JSON file path.")
     return parser.parse_args()
 

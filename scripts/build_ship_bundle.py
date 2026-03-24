@@ -77,9 +77,7 @@ APP_RUNTIME_SCRIPT_DIRS = (
     "shared",
     "source_discovery",
 )
-APP_RUNTIME_ASSET_DIRS = (
-    "probes",
-)
+APP_RUNTIME_ASSET_DIRS = ("probes",)
 PACKAGING_FILES = (
     "README.md",
     "github-app-sync-config.template.json",
@@ -101,9 +99,7 @@ SYNC_DEFAULTS = get_sync_defaults()
 PACKAGED_SYNC_CONFIG_PATH = Path(SYNC_DEFAULTS["packaged_config_path"])
 PACKAGED_SYNC_CONFIG_TEMPLATE_PATH = ROOT / "packaging" / "github-app-sync-config.template.json"
 PACKAGED_SYNC_LOCAL_CONFIG_ENV = "BALUFFO_SYNC_BUILD_CONFIG_PATH"
-PACKAGED_SYNC_LOCAL_CANDIDATE_PATHS = (
-    ROOT / "packaging" / "github-app-sync-config.localkey.json",
-)
+PACKAGED_SYNC_LOCAL_CANDIDATE_PATHS = (ROOT / "packaging" / "github-app-sync-config.localkey.json",)
 PACKAGED_SYNC_BUILD_ENV = {
     "app_id": "BALUFFO_SYNC_BUILD_APP_ID",
     "installation_id": "BALUFFO_SYNC_BUILD_INSTALLATION_ID",
@@ -195,7 +191,9 @@ def _seed_runtime_data(data_dir: Path) -> None:
         "source-registry-rejected.json": [],
         "source-discovery-candidates.json": [],
         "source-discovery-report.json": {"summary": {}, "candidates": [], "failures": []},
-        "source-discovery-config.json": __import__("src.source_discovery", fromlist=["DEFAULT_DISCOVERY_CONFIG"]).DEFAULT_DISCOVERY_CONFIG,
+        "source-discovery-config.json": __import__(
+            "src.source_discovery", fromlist=["DEFAULT_DISCOVERY_CONFIG"]
+        ).DEFAULT_DISCOVERY_CONFIG,
         "source-approval-state.json": {"approvedSinceLastRun": 0},
         "jobs-fetch-report.json": {"summary": {}, "sources": [], "runtime": {}, "outputs": {}},
         "jobs-fetch-tasks.json": {"summary": {}, "tasks": [], "outputs": {}},
@@ -352,10 +350,18 @@ def _maybe_generate_packaged_sync_config() -> Path | None:
 
     branch = _env_value(PACKAGED_SYNC_BUILD_ENV["branch"]) or str(SYNC_DEFAULTS["default_branch"])
     remote_path = _env_value(PACKAGED_SYNC_BUILD_ENV["path"]) or str(SYNC_DEFAULTS["default_path"])
-    allowed_repo = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_repo"]) or str(SYNC_DEFAULTS["default_allowed_repo"] or repo)
-    allowed_branch = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_branch"]) or str(SYNC_DEFAULTS["default_allowed_branch"] or branch)
-    allowed_path_prefix = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_path_prefix"]) or str(SYNC_DEFAULTS["default_allowed_path_prefix"] or remote_path)
-    key_derivation = _env_value(PACKAGED_SYNC_BUILD_ENV["key_derivation"]) or str(SYNC_DEFAULTS["build_key_derivation_default"] or source_sync.KEY_DERIVATION_EMBEDDED)
+    allowed_repo = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_repo"]) or str(
+        SYNC_DEFAULTS["default_allowed_repo"] or repo
+    )
+    allowed_branch = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_branch"]) or str(
+        SYNC_DEFAULTS["default_allowed_branch"] or branch
+    )
+    allowed_path_prefix = _env_value(PACKAGED_SYNC_BUILD_ENV["allowed_path_prefix"]) or str(
+        SYNC_DEFAULTS["default_allowed_path_prefix"] or remote_path
+    )
+    key_derivation = _env_value(PACKAGED_SYNC_BUILD_ENV["key_derivation"]) or str(
+        SYNC_DEFAULTS["build_key_derivation_default"] or source_sync.KEY_DERIVATION_EMBEDDED
+    )
     payload = build_packaged_sync_payload(
         app_id=app_id,
         installation_id=installation_id,
@@ -370,7 +376,8 @@ def _maybe_generate_packaged_sync_config() -> Path | None:
         key_derivation=key_derivation,
         portable_passphrase_env=_env_value(PACKAGED_SYNC_BUILD_ENV["portable_passphrase_env"]),
         embedded_key_hint=_env_value(PACKAGED_SYNC_BUILD_ENV["embedded_key_hint"]),
-        embedded_key_version=_env_value(PACKAGED_SYNC_BUILD_ENV["embedded_key_version"]) or str(SYNC_DEFAULTS["build_embedded_key_version"]),
+        embedded_key_version=_env_value(PACKAGED_SYNC_BUILD_ENV["embedded_key_version"])
+        or str(SYNC_DEFAULTS["build_embedded_key_version"]),
     )
     return write_packaged_sync_config(PACKAGED_SYNC_CONFIG_PATH, payload)
 
@@ -448,9 +455,14 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     _copy_file(ROOT / "src" / "ship" / "run-all.ps1", output_dir / "run-all.ps1")
     _copy_file(ROOT / "src" / "ship" / "apply-update.ps1", output_dir / "apply-update.ps1")
     _copy_file(ROOT / "src" / "ship" / "recover-previous.ps1", output_dir / "recover-previous.ps1")
-    _copy_file(ROOT / "src" / "ship" / "create-support-bundle.ps1", output_dir / "create-support-bundle.ps1")
+    _copy_file(
+        ROOT / "src" / "ship" / "create-support-bundle.ps1",
+        output_dir / "create-support-bundle.ps1",
+    )
     _copy_file(ROOT / "docs" / "RELEASE.md", output_dir / "RELEASE_GUIDE.md")
-    _copy_file(ROOT / "docs" / "update-manifest.schema.json", output_dir / "UPDATE_MANIFEST_SCHEMA.json")
+    _copy_file(
+        ROOT / "docs" / "update-manifest.schema.json", output_dir / "UPDATE_MANIFEST_SCHEMA.json"
+    )
 
     data_dir = output_dir / "data"
     _seed_runtime_data(data_dir)
@@ -458,16 +470,27 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     (data_dir / "migration-reports").mkdir(parents=True, exist_ok=True)
 
     _write_text(app_dir / "current.txt", f"{version}\n")
-    _write_text(app_dir / "update-state.json", json.dumps(_state_payload(version), indent=2, ensure_ascii=False))
+    _write_text(
+        app_dir / "update-state.json",
+        json.dumps(_state_payload(version), indent=2, ensure_ascii=False),
+    )
 
     # Hashing current version folder enables local integrity checks and a baseline manifest.
     version_hashes = {}
     for path in sorted(p for p in version_dir.rglob("*") if p.is_file()):
         rel = str(path.relative_to(version_dir)).replace("\\", "/")
         version_hashes[rel] = _hash_file(path)
-    _write_text(app_dir / "version-hashes.json", json.dumps({"version": version, "files": version_hashes}, indent=2, ensure_ascii=False))
-    aggregate_digest = hashlib.sha256(json.dumps(version_hashes, sort_keys=True).encode("utf-8")).hexdigest()
-    _write_text(app_dir / "update-manifest.json", json.dumps(_manifest_payload(version, aggregate_digest), indent=2, ensure_ascii=False))
+    _write_text(
+        app_dir / "version-hashes.json",
+        json.dumps({"version": version, "files": version_hashes}, indent=2, ensure_ascii=False),
+    )
+    aggregate_digest = hashlib.sha256(
+        json.dumps(version_hashes, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    _write_text(
+        app_dir / "update-manifest.json",
+        json.dumps(_manifest_payload(version, aggregate_digest), indent=2, ensure_ascii=False),
+    )
     return output_dir
 
 
@@ -490,4 +513,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

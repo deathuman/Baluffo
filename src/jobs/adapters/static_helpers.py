@@ -31,8 +31,13 @@ class StaticSourceRuntimeConfig:
 
 
 def build_static_source_runtime_config(static_detail_concurrency: int) -> StaticSourceRuntimeConfig:
-    static_profile = norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE")) or common_config.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
-    detail_concurrency = max(1, int(static_detail_concurrency or common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY))
+    static_profile = (
+        norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE"))
+        or common_config.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
+    )
+    detail_concurrency = max(
+        1, int(static_detail_concurrency or common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY)
+    )
     default_path_tokens = ["/job/", "/jobs/", "/jobdetail/"]
     default_query_keys = ["job_id"]
     if static_profile == "broad":
@@ -41,12 +46,19 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
     return StaticSourceRuntimeConfig(
         static_profile=static_profile,
         static_detail_concurrency=detail_concurrency,
-        static_source_time_budget_s=max(5, int(os.getenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S") or 25)),
+        static_source_time_budget_s=max(
+            5, int(os.getenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S") or 25)
+        ),
         low_yield_detail_cap=max(4, int(os.getenv("BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP") or 12)),
-        very_low_yield_detail_cap=max(2, int(os.getenv("BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP") or 6)),
+        very_low_yield_detail_cap=max(
+            2, int(os.getenv("BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP") or 6)
+        ),
         listing_only_hosts=[
             clean_text(part).lower()
-            for part in (os.getenv("BALUFFO_STATIC_LISTING_ONLY_HOSTS") or "hrmos.co,www.riotgames.com,careers.activision.com").split(",")
+            for part in (
+                os.getenv("BALUFFO_STATIC_LISTING_ONLY_HOSTS")
+                or "hrmos.co,www.riotgames.com,careers.activision.com"
+            ).split(",")
             if clean_text(part)
         ],
         default_path_tokens=default_path_tokens,
@@ -54,7 +66,9 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
     )
 
 
-def build_static_entry_report(*, source: dict[str, Any], source_name: str, pages: list[str], company: str) -> dict[str, Any]:
+def build_static_entry_report(
+    *, source: dict[str, Any], source_name: str, pages: list[str], company: str
+) -> dict[str, Any]:
     return {
         "adapter": "static",
         "studio": clean_text(source.get("studio")) or company or source_name,
@@ -143,7 +157,9 @@ def choose_detail_traversal_mode(
 ) -> str:
     plugin_meta = plugin_meta if isinstance(plugin_meta, dict) else {}
     profile = profile if isinstance(profile, dict) else {}
-    explicit_mode = clean_text(plugin_meta.get("detailTraversalMode")) or clean_text(profile.get("detail_traversal_mode"))
+    explicit_mode = clean_text(plugin_meta.get("detailTraversalMode")) or clean_text(
+        profile.get("detail_traversal_mode")
+    )
     if explicit_mode in {"listing_only", "capped_detail", "full_detail"}:
         return explicit_mode
     detail_fetch_required = plugin_meta.get("detailFetchRequired")
@@ -193,7 +209,9 @@ def create_fetch_html_cached(
             effective_timeout_s = max(3, min(effective_timeout_s, int(remaining)))
             if remaining <= float(effective_timeout_s) * float(max(1, effective_retries + 1)):
                 effective_retries = 0
-        text = fetch_with_retries(fetch_url, fetch_text, effective_timeout_s, effective_retries, backoff_s)
+        text = fetch_with_retries(
+            fetch_url, fetch_text, effective_timeout_s, effective_retries, backoff_s
+        )
         with fetch_cache_lock:
             fetch_cache[normalized] = text
         return text, False
@@ -219,10 +237,18 @@ def is_probable_job_detail_url(
     source_path_tokens = source_row.get("detailPathTokens")
     source_query_keys = source_row.get("detailQueryKeys")
     if isinstance(source_path_tokens, list):
-        path_tokens.extend([f"/{norm_text(token).strip('/')}/" for token in source_path_tokens if clean_text(token)])
+        path_tokens.extend(
+            [
+                f"/{norm_text(token).strip('/')}/"
+                for token in source_path_tokens
+                if clean_text(token)
+            ]
+        )
     if isinstance(source_query_keys, list):
         query_keys.extend([norm_text(token) for token in source_query_keys if clean_text(token)])
-    if re.search(r"/careers/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:/|$)", path):
+    if re.search(
+        r"/careers/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:/|$)", path
+    ):
         return True
     if any(token and token in path for token in path_tokens) or bool(re.search(r"/en/j/\d+", path)):
         return True
@@ -280,7 +306,9 @@ def process_detail_link(
     ignored_link_titles: set[str],
 ) -> dict[str, Any]:
     fetch_started = time.perf_counter()
-    remaining_budget_s = float(static_source_time_budget_s) - float(time.perf_counter() - source_started)
+    remaining_budget_s = float(static_source_time_budget_s) - float(
+        time.perf_counter() - source_started
+    )
     detail_html, cache_hit = fetch_html_cached(detail, remaining_budget_s=remaining_budget_s)
     fetch_ms = int((time.perf_counter() - fetch_started) * 1000)
     parse_started = time.perf_counter()

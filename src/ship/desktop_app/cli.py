@@ -5,4 +5,3 @@ from src.ship.desktop_app import main as _main
 
 def main(argv: list[str] | None = None) -> int:
     return _main(argv)
-

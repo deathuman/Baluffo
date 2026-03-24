@@ -87,24 +87,35 @@ def _pick_first(events: dict[str, int], names: list[str]) -> tuple[str, int] | t
     return candidates[0]
 
 
-def _resolve_stage_event(events: dict[str, int], event_ref: str | list[str] | tuple[str, ...] | None) -> tuple[str | None, int | None]:
+def _resolve_stage_event(
+    events: dict[str, int], event_ref: str | list[str] | tuple[str, ...] | None
+) -> tuple[str | None, int | None]:
     if event_ref is None:
         return None, None
     if isinstance(event_ref, (list, tuple)):
-        return _pick_first(events, [str(name or "").strip() for name in event_ref if str(name or "").strip()])
+        return _pick_first(
+            events, [str(name or "").strip() for name in event_ref if str(name or "").strip()]
+        )
     name = str(event_ref or "").strip()
     if not name:
         return None, None
     return (name, events.get(name)) if name in events else (name, None)
 
 
-def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs", profile_mode: str = "cold") -> dict[str, Any]:
+def summarize_startup_metrics(
+    rows: list[dict[str, Any]], *, page: str = "jobs", profile_mode: str = "cold"
+) -> dict[str, Any]:
     safe_page = str(page or "jobs").strip().lower() or "jobs"
     mode = "warm" if str(profile_mode or "").strip().lower() == "warm" else "cold"
     thresholds = PROFILE_THRESHOLDS_MS[mode]
     events = event_index(rows)
 
-    if safe_page in {"desktop-probe", "desktop-probe-head", "desktop-probe-css", "desktop-probe-inline"}:
+    if safe_page in {
+        "desktop-probe",
+        "desktop-probe-head",
+        "desktop-probe-css",
+        "desktop-probe-inline",
+    }:
         parse_event = {
             "desktop-probe": "desktop_probe_html_parse_start",
             "desktop-probe-head": "desktop_probe_head_html_parse_start",
@@ -118,8 +129,18 @@ def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs",
             "desktop-probe-inline": "desktop_probe_inline_ready",
         }[safe_page]
         stage_defs = [
-            ("launch_to_site_ready", "Launch -> Site Ready", "desktop_launch_start", "desktop_site_ready"),
-            ("site_ready_to_window_created", "Site Ready -> Window Created", "desktop_site_ready", "desktop_window_created"),
+            (
+                "launch_to_site_ready",
+                "Launch -> Site Ready",
+                "desktop_launch_start",
+                "desktop_site_ready",
+            ),
+            (
+                "site_ready_to_window_created",
+                "Site Ready -> Window Created",
+                "desktop_site_ready",
+                "desktop_window_created",
+            ),
             (
                 "window_created_to_window_shown",
                 "Window Created -> Window Shown",
@@ -132,7 +153,12 @@ def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs",
                 ("desktop_window_shown", "desktop_shell_window_shown"),
                 ("desktop_page_loaded", parse_event),
             ),
-            ("total_launch_to_first_usable_ui", "Launch -> First Usable UI", "desktop_launch_start", ready_event),
+            (
+                "total_launch_to_first_usable_ui",
+                "Launch -> First Usable UI",
+                "desktop_launch_start",
+                ready_event,
+            ),
         ]
         stages: list[dict[str, Any]] = []
         missing_events: list[str] = []
@@ -150,7 +176,9 @@ def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs",
                     missing_events.extend([str(item) for item in end_ref])
                 else:
                     missing_events.append(str(end_event or ""))
-            duration_ms = None if start_ms is None or end_ms is None else max(0, int(end_ms) - int(start_ms))
+            duration_ms = (
+                None if start_ms is None or end_ms is None else max(0, int(end_ms) - int(start_ms))
+            )
             status = "missing"
             if duration_ms is not None:
                 status = "slow" if threshold_ms > 0 and duration_ms > threshold_ms else "passed"
@@ -167,7 +195,11 @@ def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs",
                     "status": status,
                 }
             )
-        ranked = [stage for stage in stages if stage["key"] != "total_launch_to_first_usable_ui" and stage["durationMs"] is not None]
+        ranked = [
+            stage
+            for stage in stages
+            if stage["key"] != "total_launch_to_first_usable_ui" and stage["durationMs"] is not None
+        ]
         ranked.sort(key=lambda item: int(item["durationMs"] or 0), reverse=True)
         if missing_events:
             classification = "metrics incomplete"
@@ -187,14 +219,22 @@ def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs",
             "firstUsableEvent": ready_event if ready_event in events else "",
             "firstUsableMs": events.get(ready_event),
             "classification": classification,
-            "status": "passed" if stage_statuses and all(status == "passed" for status in stage_statuses) else "failed",
+            "status": "passed"
+            if stage_statuses and all(status == "passed" for status in stage_statuses)
+            else "failed",
             "missingEvents": sorted({event for event in missing_events if event}),
         }
 
     auth_event, auth_ms = _pick_first(events, [f"{safe_page}_auth_ready"])
     render_event, render_ms = _pick_first(events, [f"{safe_page}_first_render"])
-    interactive_event, interactive_ms = _pick_first(events, [f"{safe_page}_first_interactive", f"{safe_page}_ready"])
-    first_usable_candidates = [(name, value) for name, value in ((render_event, render_ms), (interactive_event, interactive_ms)) if name and value is not None]
+    interactive_event, interactive_ms = _pick_first(
+        events, [f"{safe_page}_first_interactive", f"{safe_page}_ready"]
+    )
+    first_usable_candidates = [
+        (name, value)
+        for name, value in ((render_event, render_ms), (interactive_event, interactive_ms))
+        if name and value is not None
+    ]
     first_usable_event = None
     first_usable_ms = None
     if first_usable_candidates:
@@ -208,8 +248,18 @@ def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs",
         f"{safe_page}_html_parse_start",
     )
     stage_defs = [
-        ("launch_to_site_ready", "Launch -> Site Ready", "desktop_launch_start", "desktop_site_ready"),
-        ("site_ready_to_window_created", "Site Ready -> Window Created", "desktop_site_ready", "desktop_window_created"),
+        (
+            "launch_to_site_ready",
+            "Launch -> Site Ready",
+            "desktop_launch_start",
+            "desktop_site_ready",
+        ),
+        (
+            "site_ready_to_window_created",
+            "Site Ready -> Window Created",
+            "desktop_site_ready",
+            "desktop_window_created",
+        ),
         (
             "window_created_to_window_shown",
             "Window Created -> Window Shown",
@@ -228,10 +278,30 @@ def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs",
             page_loaded_ref,
             f"{safe_page}_local_data_init_ready",
         ),
-        ("local_data_ready_to_auth_ready", "Local Data Ready -> Auth Ready", f"{safe_page}_local_data_init_ready", f"{safe_page}_auth_ready"),
-        ("auth_ready_to_first_render", "Auth Ready -> First Render", f"{safe_page}_auth_ready", f"{safe_page}_first_render"),
-        ("first_render_to_first_interactive", "First Render -> First Interactive", f"{safe_page}_first_render", f"{safe_page}_first_interactive"),
-        ("total_launch_to_first_usable_ui", "Launch -> First Usable UI", "desktop_launch_start", first_usable_event or f"{safe_page}_first_interactive"),
+        (
+            "local_data_ready_to_auth_ready",
+            "Local Data Ready -> Auth Ready",
+            f"{safe_page}_local_data_init_ready",
+            f"{safe_page}_auth_ready",
+        ),
+        (
+            "auth_ready_to_first_render",
+            "Auth Ready -> First Render",
+            f"{safe_page}_auth_ready",
+            f"{safe_page}_first_render",
+        ),
+        (
+            "first_render_to_first_interactive",
+            "First Render -> First Interactive",
+            f"{safe_page}_first_render",
+            f"{safe_page}_first_interactive",
+        ),
+        (
+            "total_launch_to_first_usable_ui",
+            "Launch -> First Usable UI",
+            "desktop_launch_start",
+            first_usable_event or f"{safe_page}_first_interactive",
+        ),
     ]
 
     stages: list[dict[str, Any]] = []
@@ -250,7 +320,9 @@ def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs",
                 missing_events.extend([str(item) for item in end_ref])
             else:
                 missing_events.append(str(end_event or ""))
-        duration_ms = None if start_ms is None or end_ms is None else max(0, int(end_ms) - int(start_ms))
+        duration_ms = (
+            None if start_ms is None or end_ms is None else max(0, int(end_ms) - int(start_ms))
+        )
         status = "missing"
         if duration_ms is not None:
             status = "slow" if threshold_ms > 0 and duration_ms > threshold_ms else "passed"
@@ -268,7 +340,11 @@ def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs",
             }
         )
 
-    ranked = [stage for stage in stages if stage["key"] != "total_launch_to_first_usable_ui" and stage["durationMs"] is not None]
+    ranked = [
+        stage
+        for stage in stages
+        if stage["key"] != "total_launch_to_first_usable_ui" and stage["durationMs"] is not None
+    ]
     ranked.sort(key=lambda item: int(item["durationMs"] or 0), reverse=True)
     if missing_events:
         classification = "metrics incomplete"
@@ -287,7 +363,11 @@ def summarize_startup_metrics(rows: list[dict[str, Any]], *, page: str = "jobs",
         classification = classification_map.get(top, "startup bottleneck unclear")
 
     stage_statuses = [stage["status"] for stage in stages]
-    summary_status = "passed" if stage_statuses and all(status == "passed" for status in stage_statuses) else "failed"
+    summary_status = (
+        "passed"
+        if stage_statuses and all(status == "passed" for status in stage_statuses)
+        else "failed"
+    )
     return {
         "page": safe_page,
         "profileMode": mode,
@@ -310,8 +390,12 @@ def render_startup_summary(summary: dict[str, Any]) -> str:
         duration = stage.get("durationMs")
         duration_label = "missing" if duration is None else f"{int(duration)}ms"
         threshold = stage.get("thresholdMs")
-        threshold_label = f"{int(threshold)}ms" if isinstance(threshold, int) and threshold > 0 else "-"
-        lines.append(f"- {stage.get('label')}: {duration_label} [{stage.get('status')}] threshold={threshold_label}")
+        threshold_label = (
+            f"{int(threshold)}ms" if isinstance(threshold, int) and threshold > 0 else "-"
+        )
+        lines.append(
+            f"- {stage.get('label')}: {duration_label} [{stage.get('status')}] threshold={threshold_label}"
+        )
     return "\n".join(lines)
 
 

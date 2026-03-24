@@ -27,4 +27,3 @@ def run_http_server(*, api: Any, host: str, port: int, handler_cls: type) -> int
         server.server_close()
         api.bridge_log("info", "admin_bridge_stopped")
     return 0
-

@@ -33,7 +33,10 @@ def run(
     if not page_url:
         return []
 
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Remedy"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Remedy"
+    )
     source_id = (source_row.get("id") or "").strip() or "remedy"
     source_name = clean_text(source_row.get("name")) or "remedy"
 
@@ -97,12 +100,15 @@ def run(
                 "atsLinks": ats_links[:5],
             }
         else:
-            likely_js = _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            likely_js = (
+                _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            )
             source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE if likely_js else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
+                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
+                if likely_js
+                else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
                 "browserFallbackRecommended": True,
                 "extractorHint": "parse_empty_js_shell_suspected" if likely_js else "parse_empty",
                 "atsLinks": ats_links[:5],
             }
     return cleaned
-

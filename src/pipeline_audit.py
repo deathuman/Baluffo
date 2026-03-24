@@ -58,7 +58,9 @@ def summarize_discovery(report: dict[str, Any]) -> dict[str, Any]:
     runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
     failures = [row for row in (report.get("failures") or []) if isinstance(row, dict)]
     candidates = [row for row in (report.get("candidates") or []) if isinstance(row, dict)]
-    adapter_timings = [row for row in (runtime.get("adapterTimings") or []) if isinstance(row, dict)]
+    adapter_timings = [
+        row for row in (runtime.get("adapterTimings") or []) if isinstance(row, dict)
+    ]
     stage_top = [row for row in (runtime.get("stageTop") or []) if isinstance(row, dict)]
     top_failures = [row for row in (report.get("topFailures") or []) if isinstance(row, dict)]
     failed_sources = [
@@ -116,8 +118,12 @@ def flatten_fetch_detail_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
             rows.append(
                 {
                     "sourceName": safe_text(source_row.get("name")) or "unknown",
-                    "name": safe_text(detail.get("name")) or safe_text(detail.get("studio")) or "unknown",
-                    "adapter": safe_text(detail.get("adapter")) or safe_text(source_row.get("adapter")) or "custom",
+                    "name": safe_text(detail.get("name"))
+                    or safe_text(detail.get("studio"))
+                    or "unknown",
+                    "adapter": safe_text(detail.get("adapter"))
+                    or safe_text(source_row.get("adapter"))
+                    or "custom",
                     "studio": safe_text(detail.get("studio")),
                     "status": safe_text(detail.get("status")).lower(),
                     "classification": safe_text(detail.get("classification")).lower(),
@@ -135,7 +141,9 @@ def flatten_fetch_detail_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
 def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[str, Any]:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    timing_summary = runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
+    timing_summary = (
+        runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
+    )
     sources = [row for row in (report.get("sources") or []) if isinstance(row, dict)]
     detail_rows = flatten_fetch_detail_rows(report)
     failed_sources = [
@@ -157,7 +165,8 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
             "fetchedCount": safe_int(row.get("fetchedCount")),
         }
         for row in sources
-        if safe_int(row.get("durationMs")) >= HIGH_COST_LOW_YIELD_MS and safe_int(row.get("keptCount")) > 1
+        if safe_int(row.get("durationMs")) >= HIGH_COST_LOW_YIELD_MS
+        and safe_int(row.get("keptCount")) > 1
     ]
     productive_expensive.sort(key=lambda row: safe_int(row.get("durationMs")), reverse=True)
     return {
@@ -170,13 +179,31 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
         "successfulSources": safe_int(summary.get("successfulSources")),
         "failedSourcesCount": safe_int(summary.get("failedSources")),
         "outputCount": safe_int(summary.get("outputCount")),
-        "browserFallbackQueueCount": len(read_json(Path(report.get("outputs", {}).get("report", "")).parent / "jobs-browser-fallback-queue.json", [])),
-        "stageTop": [row for row in (timing_summary.get("stageTop") or []) if isinstance(row, dict)][:5],
-        "slowestAdapters": [row for row in (timing_summary.get("slowestAdapters") or []) if isinstance(row, dict)][:5],
-        "slowestSourceLoaders": [row for row in (runtime.get("slowestSources") or []) if isinstance(row, dict)][:10],
+        "browserFallbackQueueCount": len(
+            read_json(
+                Path(report.get("outputs", {}).get("report", "")).parent
+                / "jobs-browser-fallback-queue.json",
+                [],
+            )
+        ),
+        "stageTop": [
+            row for row in (timing_summary.get("stageTop") or []) if isinstance(row, dict)
+        ][:5],
+        "slowestAdapters": [
+            row for row in (timing_summary.get("slowestAdapters") or []) if isinstance(row, dict)
+        ][:5],
+        "slowestSourceLoaders": [
+            row for row in (runtime.get("slowestSources") or []) if isinstance(row, dict)
+        ][:10],
         "slowestSourceEntries": detail_rows[:10],
-        "highCostLowYieldSources": [row for row in (timing_summary.get("highCostLowYieldSources") or []) if isinstance(row, dict)][:10],
-        "detailHeavySources": [row for row in (timing_summary.get("detailHeavySources") or []) if isinstance(row, dict)][:10],
+        "highCostLowYieldSources": [
+            row
+            for row in (timing_summary.get("highCostLowYieldSources") or [])
+            if isinstance(row, dict)
+        ][:10],
+        "detailHeavySources": [
+            row for row in (timing_summary.get("detailHeavySources") or []) if isinstance(row, dict)
+        ][:10],
         "productiveExpensiveSources": productive_expensive[:10],
         "failedSources": failed_sources[:25],
         "detailRows": detail_rows,
@@ -184,7 +211,10 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
 
 
 def issue_key(row: dict[str, Any]) -> tuple[str, str]:
-    return (safe_text(row.get("sourceName") or row.get("name")), safe_text(row.get("classification") or row.get("error") or row.get("category")))
+    return (
+        safe_text(row.get("sourceName") or row.get("name")),
+        safe_text(row.get("classification") or row.get("error") or row.get("category")),
+    )
 
 
 def unique_issue_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -199,7 +229,12 @@ def unique_issue_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return unique_rows
 
 
-def build_issues(discovery: dict[str, Any], fetch: dict[str, Any], raw_fetch_report: dict[str, Any], raw_discovery_report: dict[str, Any]) -> dict[str, Any]:
+def build_issues(
+    discovery: dict[str, Any],
+    fetch: dict[str, Any],
+    raw_fetch_report: dict[str, Any],
+    raw_discovery_report: dict[str, Any],
+) -> dict[str, Any]:
     hard_failures: list[dict[str, Any]] = []
     soft_failures: list[dict[str, Any]] = []
     high_cost_low_yield: list[dict[str, Any]] = []
@@ -232,7 +267,11 @@ def build_issues(discovery: dict[str, Any], fetch: dict[str, Any], raw_fetch_rep
             soft_failures.append({**base, "category": classification})
         if duration_ms >= HIGH_COST_LOW_YIELD_MS and kept <= 1:
             high_cost_low_yield.append({**base, "category": "slow_low_yield"})
-        if fetched >= LOW_YIELD_FETCHED_MIN and fetched > 0 and (float(kept) / float(fetched)) <= LOW_YIELD_RATIO_MAX:
+        if (
+            fetched >= LOW_YIELD_FETCHED_MIN
+            and fetched > 0
+            and (float(kept) / float(fetched)) <= LOW_YIELD_RATIO_MAX
+        ):
             coverage_risks.append({**base, "category": "low_yield"})
 
     for row in fetch.get("detailRows") or []:
@@ -248,7 +287,11 @@ def build_issues(discovery: dict[str, Any], fetch: dict[str, Any], raw_fetch_rep
             soft_failures.append({**base, "category": classification})
         if duration_ms >= HIGH_COST_LOW_YIELD_MS and kept <= 1:
             high_cost_low_yield.append({**base, "category": "slow_low_yield"})
-        if fetched >= LOW_YIELD_FETCHED_MIN and fetched > 0 and (float(kept) / float(fetched)) <= LOW_YIELD_RATIO_MAX:
+        if (
+            fetched >= LOW_YIELD_FETCHED_MIN
+            and fetched > 0
+            and (float(kept) / float(fetched)) <= LOW_YIELD_RATIO_MAX
+        ):
             coverage_risks.append({**base, "category": "low_yield"})
 
     for row in raw_discovery_report.get("failures") or []:
@@ -304,19 +347,36 @@ def build_recommendations(report: dict[str, Any]) -> list[str]:
     fetch = report.get("fetch") if isinstance(report.get("fetch"), dict) else {}
     discovery = report.get("discovery") if isinstance(report.get("discovery"), dict) else {}
     issues = report.get("issues") if isinstance(report.get("issues"), dict) else {}
-    slow_adapter = ((fetch.get("slowestAdapters") or [{}])[0] if isinstance(fetch.get("slowestAdapters"), list) and fetch.get("slowestAdapters") else {})
+    slow_adapter = (
+        (fetch.get("slowestAdapters") or [{}])[0]
+        if isinstance(fetch.get("slowestAdapters"), list) and fetch.get("slowestAdapters")
+        else {}
+    )
     if safe_text(slow_adapter.get("adapter")):
-        recommendations.append(f"Investigate {safe_text(slow_adapter.get('adapter'))} first for fetch-time wins; it is the slowest adapter family in the baseline.")
-    if safe_int(discovery.get("discoverableButDeferredCount")) > 0 or safe_int(discovery.get("queueFilteredCount")) > 0:
-        recommendations.append("Review discovery deferred and queue-filtered candidates next; they are immediate coverage expansion opportunities.")
-    if (issues.get("high_cost_low_yield") or []):
-        recommendations.append("Prioritize the high-cost/low-yield sources for parser fixes, time-budget tightening, or source deactivation.")
-    if (issues.get("hard_failures") or []):
-        recommendations.append("Triage hard failures before adding new sources so the baseline reliability does not regress further.")
+        recommendations.append(
+            f"Investigate {safe_text(slow_adapter.get('adapter'))} first for fetch-time wins; it is the slowest adapter family in the baseline."
+        )
+    if (
+        safe_int(discovery.get("discoverableButDeferredCount")) > 0
+        or safe_int(discovery.get("queueFilteredCount")) > 0
+    ):
+        recommendations.append(
+            "Review discovery deferred and queue-filtered candidates next; they are immediate coverage expansion opportunities."
+        )
+    if issues.get("high_cost_low_yield") or []:
+        recommendations.append(
+            "Prioritize the high-cost/low-yield sources for parser fixes, time-budget tightening, or source deactivation."
+        )
+    if issues.get("hard_failures") or []:
+        recommendations.append(
+            "Triage hard failures before adding new sources so the baseline reliability does not regress further."
+        )
     return recommendations[:5]
 
 
-def build_report(discovery_report: dict[str, Any], fetch_report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[str, Any]:
+def build_report(
+    discovery_report: dict[str, Any], fetch_report: dict[str, Any], jobs: list[dict[str, Any]]
+) -> dict[str, Any]:
     discovery = summarize_discovery(discovery_report)
     fetch = summarize_fetch(fetch_report, jobs)
     issues = build_issues(discovery, fetch, fetch_report, discovery_report)
@@ -338,7 +398,10 @@ def build_report(discovery_report: dict[str, Any], fetch_report: dict[str, Any],
             "issueInventorySoftFailures": len(issues.get("soft_failures") or []),
             "issueInventoryHighCostLowYield": len(issues.get("high_cost_low_yield") or []),
             "issueInventoryCoverageRisks": len(issues.get("coverage_risks") or []),
-            "notProperlyActingSources": sum(len(issues.get(key) or []) for key in ("hard_failures", "soft_failures", "high_cost_low_yield")),
+            "notProperlyActingSources": sum(
+                len(issues.get(key) or [])
+                for key in ("hard_failures", "soft_failures", "high_cost_low_yield")
+            ),
         },
         "issues": issues,
     }
@@ -370,13 +433,21 @@ def render_markdown(report: dict[str, Any]) -> str:
         "## Slowest areas",
     ]
     for row in (discovery.get("stageTop") or [])[:5]:
-        lines.append(f"- Discovery stage `{safe_text(row.get('stage'))}`: {safe_int(row.get('durationMs'))} ms")
+        lines.append(
+            f"- Discovery stage `{safe_text(row.get('stage'))}`: {safe_int(row.get('durationMs'))} ms"
+        )
     for row in (fetch.get("slowestAdapters") or [])[:5]:
-        lines.append(f"- Fetch adapter `{safe_text(row.get('adapter'))}`: {safe_int(row.get('durationMs'))} ms across {safe_int(row.get('sourceCount'))} source(s)")
+        lines.append(
+            f"- Fetch adapter `{safe_text(row.get('adapter'))}`: {safe_int(row.get('durationMs'))} ms across {safe_int(row.get('sourceCount'))} source(s)"
+        )
     for row in (fetch.get("slowestSourceLoaders") or [])[:5]:
-        lines.append(f"- Loader `{safe_text(row.get('name'))}` ({safe_text(row.get('adapter'))}): {safe_int(row.get('durationMs'))} ms, kept {safe_int(row.get('keptCount'))}")
+        lines.append(
+            f"- Loader `{safe_text(row.get('name'))}` ({safe_text(row.get('adapter'))}): {safe_int(row.get('durationMs'))} ms, kept {safe_int(row.get('keptCount'))}"
+        )
     for row in (fetch.get("slowestSourceEntries") or [])[:5]:
-        lines.append(f"- Source entry `{safe_text(row.get('name'))}` via `{safe_text(row.get('sourceName'))}`: {safe_int(row.get('durationMs'))} ms, kept {safe_int(row.get('keptCount'))}/{safe_int(row.get('fetchedCount'))}")
+        lines.append(
+            f"- Source entry `{safe_text(row.get('name'))}` via `{safe_text(row.get('sourceName'))}`: {safe_int(row.get('durationMs'))} ms, kept {safe_int(row.get('keptCount'))}/{safe_int(row.get('fetchedCount'))}"
+        )
     if fetch.get("productiveExpensiveSources"):
         lines.append("")
         lines.append("## Productive but expensive sources")
@@ -419,9 +490,15 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a combined discovery + fetch audit report.")
-    parser.add_argument("--data-dir", default="data", help="Directory containing discovery/fetch artifacts.")
-    parser.add_argument("--output-json", default="", help="Optional output path for the JSON audit report.")
-    parser.add_argument("--output-md", default="", help="Optional output path for the Markdown audit report.")
+    parser.add_argument(
+        "--data-dir", default="data", help="Directory containing discovery/fetch artifacts."
+    )
+    parser.add_argument(
+        "--output-json", default="", help="Optional output path for the JSON audit report."
+    )
+    parser.add_argument(
+        "--output-md", default="", help="Optional output path for the Markdown audit report."
+    )
     return parser.parse_args()
 
 
@@ -438,8 +515,16 @@ def main() -> int:
     if not isinstance(jobs, list):
         jobs = []
     report = build_report(discovery_report, fetch_report, jobs)
-    json_output = Path(args.output_json).resolve() if safe_text(args.output_json) else data_dir / "pipeline-audit-report.json"
-    md_output = Path(args.output_md).resolve() if safe_text(args.output_md) else data_dir / "pipeline-audit-report.md"
+    json_output = (
+        Path(args.output_json).resolve()
+        if safe_text(args.output_json)
+        else data_dir / "pipeline-audit-report.json"
+    )
+    md_output = (
+        Path(args.output_md).resolve()
+        if safe_text(args.output_md)
+        else data_dir / "pipeline-audit-report.md"
+    )
     json_output.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     md_output.write_text(render_markdown(report), encoding="utf-8")
     print(str(json_output))

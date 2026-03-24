@@ -34,8 +34,8 @@ DEFAULT_SOCIAL_CONFIG: dict[str, Any] = {
         "queries": [
             "#gamedevjobs",
             "#gamejobs",
-            "\"game designer\" \"we're hiring\"",
-            "\"gamedev\" \"hiring\"",
+            '"game designer" "we\'re hiring"',
+            '"gamedev" "hiring"',
         ],
         "maxPostsPerQuery": 10,
         "timeoutSeconds": 8,
@@ -92,4 +92,3 @@ def load_social_config(
     merged["enabled"] = bool(enabled)
     merged["lookbackMinutes"] = max(1, int(lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES))
     return merged
-

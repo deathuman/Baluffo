@@ -48,7 +48,9 @@ class _FakeDeps:
             raise RuntimeError(f"missing fixture for url: {url}")
         return self._responses[url]
 
-    def set_source_diagnostics(self, name: str, *, adapter: str, studio: str, details: list, partial_errors: list) -> None:
+    def set_source_diagnostics(
+        self, name: str, *, adapter: str, studio: str, details: list, partial_errors: list
+    ) -> None:
         self.SOURCE_DIAGNOSTICS[name] = {
             "adapter": adapter,
             "studio": studio,
@@ -62,7 +64,9 @@ class _FakeDeps:
         _ = listing_html
         return [f"{base_url.rstrip('/')}/jobs/1", f"{base_url.rstrip('/')}/jobs/2"]
 
-    def parse_jobpostings_from_html(self, html: str, *, base_url: str, fallback_company: str, fallback_source_id_prefix: str):
+    def parse_jobpostings_from_html(
+        self, html: str, *, base_url: str, fallback_company: str, fallback_source_id_prefix: str
+    ):
         _ = html, fallback_source_id_prefix
         # Only return a parsed row for the first detail URL.
         if base_url.endswith("/jobs/1"):
@@ -86,7 +90,9 @@ class _FakeDeps:
         return []
 
 
-def _legacy_greenhouse(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: int, backoff_s: float):
+def _legacy_greenhouse(
+    fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: int, backoff_s: float
+):
     jobs: list = []
     errors: list[str] = []
     details: list[dict] = []
@@ -94,7 +100,9 @@ def _legacy_greenhouse(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: 
         slug = common.clean_text(board.get("slug"))
         if not slug:
             continue
-        label = common.clean_text(board.get("name")) or common.clean_text(board.get("studio")) or slug
+        label = (
+            common.clean_text(board.get("name")) or common.clean_text(board.get("studio")) or slug
+        )
         url = common.GREENHOUSE_JOBS_URL_TEMPLATE.format(slug=slug)
         entry_report = {
             "adapter": "greenhouse",
@@ -108,7 +116,9 @@ def _legacy_greenhouse(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: 
         try:
             text = fake.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)
-            parsed = provider_parsers.parse_greenhouse_jobs_payload(payload, slug, fallback_company=label)
+            parsed = provider_parsers.parse_greenhouse_jobs_payload(
+                payload, slug, fallback_company=label
+            )
             for row in parsed:
                 row["adapter"] = "greenhouse"
                 row["studio"] = common.clean_text(board.get("studio")) or label
@@ -120,7 +130,13 @@ def _legacy_greenhouse(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: 
             entry_report["error"] = str(exc)
             errors.append(f"greenhouse:{slug}: {exc}")
         details.append(entry_report)
-    fake.set_source_diagnostics("greenhouse_boards", adapter="greenhouse", studio="multiple", details=details, partial_errors=errors)
+    fake.set_source_diagnostics(
+        "greenhouse_boards",
+        adapter="greenhouse",
+        studio="multiple",
+        details=details,
+        partial_errors=errors,
+    )
     if jobs:
         return jobs
     if errors:
@@ -128,7 +144,9 @@ def _legacy_greenhouse(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: 
     return []
 
 
-def _legacy_teamtailor(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: int, backoff_s: float):
+def _legacy_teamtailor(
+    fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: int, backoff_s: float
+):
     jobs: list = []
     errors: list[str] = []
     seen_links = set()
@@ -153,7 +171,9 @@ def _legacy_teamtailor(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: 
             details.append(entry_report)
             continue
         try:
-            listing_html = fake.fetch_with_retries(listing_url, fetch_text, timeout_s, retries, backoff_s)
+            listing_html = fake.fetch_with_retries(
+                listing_url, fetch_text, timeout_s, retries, backoff_s
+            )
             job_links = fake.parse_teamtailor_listing_links(listing_html, base_url=base_url)
             entry_report["fetchedCount"] = len(job_links)
             kept_before = len(jobs)
@@ -162,7 +182,9 @@ def _legacy_teamtailor(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: 
                     continue
                 seen_links.add(job_link)
                 try:
-                    detail_html = fake.fetch_with_retries(job_link, fetch_text, timeout_s, retries, backoff_s)
+                    detail_html = fake.fetch_with_retries(
+                        job_link, fetch_text, timeout_s, retries, backoff_s
+                    )
                     parsed = fake.parse_jobpostings_from_html(
                         detail_html,
                         base_url=job_link,
@@ -172,7 +194,11 @@ def _legacy_teamtailor(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: 
                     if parsed:
                         for row in parsed:
                             row["adapter"] = "teamtailor"
-                            row["studio"] = common.clean_text(source.get("studio")) or fallback_company or source_name
+                            row["studio"] = (
+                                common.clean_text(source.get("studio"))
+                                or fallback_company
+                                or source_name
+                            )
                         jobs.extend(parsed)
                     else:
                         # fallback path produces a synthesized job
@@ -192,7 +218,9 @@ def _legacy_teamtailor(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: 
                                     "sector": "Game",
                                     "postedAt": "",
                                     "adapter": "teamtailor",
-                                    "studio": common.clean_text(source.get("studio")) or fallback_company or source_name,
+                                    "studio": common.clean_text(source.get("studio"))
+                                    or fallback_company
+                                    or source_name,
                                 }
                             )
                 except Exception as exc:  # noqa: BLE001
@@ -203,7 +231,13 @@ def _legacy_teamtailor(fake: _FakeDeps, *, fetch_text, timeout_s: int, retries: 
             entry_report["error"] = str(exc)
             errors.append(f"teamtailor:{source_name}:{listing_url}: {exc}")
         details.append(entry_report)
-    fake.set_source_diagnostics("teamtailor_sources", adapter="teamtailor", studio="multiple", details=details, partial_errors=errors)
+    fake.set_source_diagnostics(
+        "teamtailor_sources",
+        adapter="teamtailor",
+        studio="multiple",
+        details=details,
+        partial_errors=errors,
+    )
     if jobs:
         return jobs
     if errors:
@@ -228,12 +262,26 @@ def test_provider_api_greenhouse_dispatch_matches_legacy(fake_deps: _FakeDeps) -
     url = common.GREENHOUSE_JOBS_URL_TEMPLATE.format(slug="studio-a")
     fake_deps.set_response(
         url,
-        {"jobs": [{"id": 1, "text": "Engineer", "title": "Engineer", "location": {"name": "Remote"}, "absolute_url": "https://example/jobs/1"}]},
+        {
+            "jobs": [
+                {
+                    "id": 1,
+                    "text": "Engineer",
+                    "title": "Engineer",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://example/jobs/1",
+                }
+            ]
+        },
     )
 
     fetch_text = lambda _url, _timeout: ""  # should not be used
-    legacy = _legacy_greenhouse(fake_deps, fetch_text=fetch_text, timeout_s=5, retries=1, backoff_s=0.0)
-    dispatched = provider_api.run_greenhouse_boards_source(fetch_text=fetch_text, timeout_s=5, retries=1, backoff_s=0.0)
+    legacy = _legacy_greenhouse(
+        fake_deps, fetch_text=fetch_text, timeout_s=5, retries=1, backoff_s=0.0
+    )
+    dispatched = provider_api.run_greenhouse_boards_source(
+        fetch_text=fetch_text, timeout_s=5, retries=1, backoff_s=0.0
+    )
     assert dispatched == legacy
 
 
@@ -249,8 +297,12 @@ def test_provider_api_teamtailor_dispatch_matches_legacy(fake_deps: _FakeDeps) -
     fake_deps.set_response("https://tt/jobs/2", "<html>detail 2</html>")
 
     fetch_text = lambda _url, _timeout: ""  # should not be used
-    legacy = _legacy_teamtailor(fake_deps, fetch_text=fetch_text, timeout_s=5, retries=1, backoff_s=0.0)
-    dispatched = provider_api.run_teamtailor_sources_source(fetch_text=fetch_text, timeout_s=5, retries=1, backoff_s=0.0)
+    legacy = _legacy_teamtailor(
+        fake_deps, fetch_text=fetch_text, timeout_s=5, retries=1, backoff_s=0.0
+    )
+    dispatched = provider_api.run_teamtailor_sources_source(
+        fetch_text=fetch_text, timeout_s=5, retries=1, backoff_s=0.0
+    )
     assert dispatched == legacy
 
 
@@ -309,7 +361,9 @@ def test_provider_api_jazzhr_dispatch_extracts_registry_backed_jobs(fake_deps: _
     assert any(row["contractType"] == "Full Time" for row in rows)
 
 
-def test_provider_api_recruitee_dispatch_extracts_registry_backed_jobs(fake_deps: _FakeDeps) -> None:
+def test_provider_api_recruitee_dispatch_extracts_registry_backed_jobs(
+    fake_deps: _FakeDeps,
+) -> None:
     fake_deps.set_registry_entries(
         "recruitee",
         [
@@ -367,4 +421,3 @@ def test_provider_api_pinpoint_dispatch_extracts_registry_backed_jobs(fake_deps:
     assert all(row["adapter"] == "pinpoint" for row in rows)
     assert all(row["studio"] == "Gameplay Galaxy" for row in rows)
     assert any(row["workType"] == "Remote" for row in rows)
-

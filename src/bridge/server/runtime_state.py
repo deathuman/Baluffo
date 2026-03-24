@@ -34,11 +34,15 @@ PIPELINE_STATUS: dict[str, Any] = {
 
 DESKTOP_LOCAL_DATA_STORE: Any = None
 STARTUP_METRICS_LOCK = threading.RLock()
-STARTUP_METRICS_PATH = Path(__file__).resolve().parents[3] / "data" / "desktop-startup-metrics.jsonl"
+STARTUP_METRICS_PATH = (
+    Path(__file__).resolve().parents[3] / "data" / "desktop-startup-metrics.jsonl"
+)
 DESKTOP_SESSION_ACTIVITY_AT = ""
 
 
-def configure_runtime_paths(*, startup_metrics_path: Path, desktop_local_data_store: Any, now_iso: Any) -> None:
+def configure_runtime_paths(
+    *, startup_metrics_path: Path, desktop_local_data_store: Any, now_iso: Any
+) -> None:
     global STARTUP_METRICS_PATH, DESKTOP_LOCAL_DATA_STORE, DESKTOP_SESSION_ACTIVITY_AT
 
     STARTUP_METRICS_PATH = Path(startup_metrics_path)
@@ -112,4 +116,3 @@ __all__ = [
     "mark_desktop_session_activity",
     "read_startup_metrics",
 ]
-

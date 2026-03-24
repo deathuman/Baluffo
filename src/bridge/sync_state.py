@@ -49,11 +49,11 @@ SYNC_CONFIG: Any = None
 
 class SyncState:
     """Encapsulates sync state management with configurable paths.
-    
+
     This class provides a clean interface for managing sync state,
     including runtime state persistence and status tracking.
     """
-    
+
     def __init__(
         self,
         data_dir: Path | None = None,
@@ -61,7 +61,7 @@ class SyncState:
         sync_runtime_path: Path | None = None,
     ):
         """Initialize SyncState with optional custom paths.
-        
+
         Args:
             data_dir: Base data directory (used if specific paths not provided)
             sync_config_path: Path to sync config file
@@ -69,16 +69,16 @@ class SyncState:
         """
         if data_dir is None:
             data_dir = DEFAULT_DATA_DIR
-        
+
         self.sync_config_path = sync_config_path or data_dir / "source-sync-config.json"
         self.sync_runtime_path = sync_runtime_path or data_dir / "source-sync-runtime.json"
-        
+
         # Ensure data directory exists
         self.sync_config_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     def load_sync_runtime_state(self) -> dict[str, Any]:
         """Load sync runtime state from file.
-        
+
         Returns:
             Dict with runtime state fields (lastPullAt, lastPushAt, etc.)
         """
@@ -92,13 +92,13 @@ class SyncState:
             "lastResult": str(raw.get("lastResult") or ""),
             "lastDiscoverySyncFinishedAt": str(raw.get("lastDiscoverySyncFinishedAt") or ""),
         }
-    
+
     def save_sync_runtime_state(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Save sync runtime state to file.
-        
+
         Args:
             payload: Dict with state fields to persist
-            
+
         Returns:
             The normalized state that was saved
         """
@@ -106,7 +106,7 @@ class SyncState:
         # Only update fields that are valid for runtime state
         valid_keys = {
             "lastPullAt",
-            "lastPushAt", 
+            "lastPushAt",
             "lastError",
             "lastAction",
             "lastResult",
@@ -115,7 +115,7 @@ class SyncState:
         normalized.update({key: value for key, value in payload.items() if key in valid_keys})
         save_json_atomic(self.sync_runtime_path, normalized)
         return normalized
-    
+
     def set_sync_status(
         self,
         *,
@@ -126,9 +126,9 @@ class SyncState:
         pushed: bool = False,
     ) -> None:
         """Update sync status with new values.
-        
+
         Updates both the global SYNC_STATUS and persists to runtime state file.
-        
+
         Args:
             action: The action being performed (pull/push)
             result: Result of the action (ok/error)
@@ -137,78 +137,78 @@ class SyncState:
             pushed: Whether a push was performed
         """
         global SYNC_STATUS
-        
+
         with SYNC_STATE_LOCK:
             runtime_state = self.load_sync_runtime_state()
-            
+
             if action:
                 SYNC_STATUS["lastAction"] = str(action)
                 runtime_state["lastAction"] = str(action)
-            
+
             if result:
                 SYNC_STATUS["lastResult"] = str(result)
                 runtime_state["lastResult"] = str(result)
-            
+
             if error:
                 SYNC_STATUS["lastError"] = str(error)
                 runtime_state["lastError"] = str(error)
             elif action:
                 SYNC_STATUS["lastError"] = ""
                 runtime_state["lastError"] = ""
-            
+
             stamp = now_iso()
-            
+
             if pulled:
                 SYNC_STATUS["lastPullAt"] = stamp
                 runtime_state["lastPullAt"] = stamp
-            
+
             if pushed:
                 SYNC_STATUS["lastPushAt"] = stamp
                 runtime_state["lastPushAt"] = stamp
-            
+
             self.save_sync_runtime_state(runtime_state)
-    
+
     def get_sync_status(self) -> dict[str, Any]:
         """Get current sync status combined with runtime state.
-        
+
         Returns:
             Dict with sync status fields
         """
         with SYNC_STATE_LOCK:
             runtime_state = {**dict(SYNC_STATUS), **self.load_sync_runtime_state()}
         return runtime_state
-    
+
     # Static methods for backward compatibility with global state access
     @staticmethod
     def get_active_sync_runs() -> set[str]:
         """Get copy of active sync runs set."""
         with SYNC_STATE_LOCK:
             return set(ACTIVE_SYNC_RUNS)
-    
+
     @staticmethod
     def add_active_sync_run(run_id: str) -> None:
         """Add a run ID to active sync runs."""
         with SYNC_STATE_LOCK:
             ACTIVE_SYNC_RUNS.add(str(run_id))
-    
+
     @staticmethod
     def remove_active_sync_run(run_id: str) -> None:
         """Remove a run ID from active sync runs."""
         with SYNC_STATE_LOCK:
             ACTIVE_SYNC_RUNS.discard(str(run_id))
-    
+
     @staticmethod
     def get_active_sync_threads() -> dict[str, threading.Thread]:
         """Get copy of active sync threads dict."""
         with SYNC_STATE_LOCK:
             return dict(ACTIVE_SYNC_THREADS)
-    
+
     @staticmethod
     def set_active_sync_thread(run_id: str, thread: threading.Thread) -> None:
         """Add a thread to active sync threads."""
         with SYNC_STATE_LOCK:
             ACTIVE_SYNC_THREADS[str(run_id)] = thread
-    
+
     @staticmethod
     def remove_active_sync_thread(run_id: str) -> None:
         """Remove a thread from active sync threads."""

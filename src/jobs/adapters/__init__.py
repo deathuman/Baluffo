@@ -19,10 +19,14 @@ def default_source_loaders(
     social_enabled: bool = False,
     social_config: dict[str, Any] | None = None,
 ) -> list[tuple[str, SourceLoader]]:
-    social_cfg = social_config if isinstance(social_config, dict) else common_social.load_social_config(
-        config_path=common_config.DEFAULT_SOCIAL_CONFIG_PATH,
-        enabled=bool(social_enabled),
-        lookback_minutes=common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES,
+    social_cfg = (
+        social_config
+        if isinstance(social_config, dict)
+        else common_social.load_social_config(
+            config_path=common_config.DEFAULT_SOCIAL_CONFIG_PATH,
+            enabled=bool(social_enabled),
+            lookback_minutes=common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES,
+        )
     )
 
     google_sheet_loaders: dict[str, SourceLoader] = {}
@@ -76,22 +80,38 @@ def default_source_loaders(
         "jazzhr_sources": provider_api.run_jazzhr_sources_source,
         "personio_sources": provider_api.run_personio_sources_source,
         "scrapy_static_sources": static.run_scrapy_static_source,
-        "social_reddit": lambda **kwargs: social.run_social_reddit_source(**kwargs, social_config=social_cfg),
+        "social_reddit": lambda **kwargs: social.run_social_reddit_source(
+            **kwargs, social_config=social_cfg
+        ),
         "social_x": lambda **kwargs: social.run_social_x_source(**kwargs, social_config=social_cfg),
-        "social_mastodon": lambda **kwargs: social.run_social_mastodon_source(**kwargs, social_config=social_cfg),
+        "social_mastodon": lambda **kwargs: social.run_social_mastodon_source(
+            **kwargs, social_config=social_cfg
+        ),
         "static_studio_pages_a_i": static.run_static_studio_pages_a_i_source,
         "static_studio_pages_j_r": static.run_static_studio_pages_j_r_source,
         "static_studio_pages_s_z": static.run_static_studio_pages_s_z_source,
         "static_studio_pages": static.run_static_studio_pages_source,
     }
-    base_loaders = [(name, available[name]) for name in DEFAULT_SOURCE_LOADER_NAMES if name in available]
+    base_loaders = [
+        (name, available[name]) for name in DEFAULT_SOURCE_LOADER_NAMES if name in available
+    ]
     base_loaders = [
         (name, loader)
         for name, loader in base_loaders
-        if name not in {"static_studio_pages", "static_studio_pages_a_i", "static_studio_pages_j_r", "static_studio_pages_s_z"}
+        if name
+        not in {
+            "static_studio_pages",
+            "static_studio_pages_a_i",
+            "static_studio_pages_j_r",
+            "static_studio_pages_s_z",
+        }
     ]
     if not bool(social_cfg.get("enabled")):
-        base_loaders = [(name, loader) for name, loader in base_loaders if name not in common_social.SOCIAL_SOURCE_NAMES]
+        base_loaders = [
+            (name, loader)
+            for name, loader in base_loaders
+            if name not in common_social.SOCIAL_SOURCE_NAMES
+        ]
     return base_loaders + static.build_static_source_loaders()
 
 
@@ -140,10 +160,12 @@ def run_loader(name: str, loader: SourceLoader, ctx: FetchContext) -> FetchResul
         diagnostics = SourceDiagnostics(
             adapter=str(diagnostics_payload.get("adapter") or "unknown"),
             studio=str(diagnostics_payload.get("studio") or "multiple"),
-            details=[dict(item) for item in diagnostics_payload.get("details") or [] if isinstance(item, dict)],
+            details=[
+                dict(item)
+                for item in diagnostics_payload.get("details") or []
+                if isinstance(item, dict)
+            ],
             partial_errors=[str(item) for item in diagnostics_payload.get("partialErrors") or []],
             low_confidence_dropped=int(diagnostics_payload.get("lowConfidenceDropped") or 0),
         )
     return FetchResult(jobs=jobs, diagnostics=diagnostics)
-
-

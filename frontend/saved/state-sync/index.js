@@ -36,4 +36,3 @@ export function readSavedLastJobsUrl(storageKey, fallback = "jobs.html") {
   if (!url.startsWith("/") && !url.startsWith("jobs.html")) return fallback;
   return url;
 }
-

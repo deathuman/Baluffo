@@ -19,4 +19,3 @@ def default_fetch_text(url: str, timeout_s: int, *, headers: dict[str, str]) -> 
         raise RuntimeError(f"HTTP {exc.code} for {url}") from exc
     except URLError as exc:
         raise RuntimeError(f"Network error for {url}: {exc.reason}") from exc
-

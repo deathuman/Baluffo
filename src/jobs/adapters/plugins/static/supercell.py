@@ -37,7 +37,10 @@ def run(
     if not page_url:
         return []
 
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Supercell"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Supercell"
+    )
     source_id = (source_row.get("id") or "").strip() or "supercell"
 
     html = ""
@@ -87,9 +90,9 @@ def run(
         ):
             href = clean_text(match.group(1))
             anchor_inner = match.group(2) or ""
-            anchor_text = strip_html_text(
-                re.sub(r"(?is)<[^>]+>", " ", anchor_inner)
-            ).strip() or "Job"
+            anchor_text = (
+                strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner)).strip() or "Job"
+            )
             if not href:
                 continue
             absolute = urljoin(page_url, href)
@@ -100,18 +103,20 @@ def run(
             if absolute in seen_links:
                 continue
             seen_links.add(absolute)
-            rows.append({
-                "title": anchor_text[:200],
-                "company": company,
-                "jobLink": absolute,
-                "sourceJobId": f"{source_id}:{absolute}",
-                "city": "",
-                "country": "",
-                "workType": "",
-                "contractType": "",
-                "sector": "Game",
-                "postedAt": "",
-            })
+            rows.append(
+                {
+                    "title": anchor_text[:200],
+                    "company": company,
+                    "jobLink": absolute,
+                    "sourceJobId": f"{source_id}:{absolute}",
+                    "city": "",
+                    "country": "",
+                    "workType": "",
+                    "contractType": "",
+                    "sector": "Game",
+                    "postedAt": "",
+                }
+            )
     for row in rows:
         if isinstance(row, dict):
             row["adapter"] = "static"
@@ -130,12 +135,15 @@ def run(
         else:
             # If the HTML path yields nothing, escalate to browser fallback for this site.
             # This avoids repeated extract-zero failures on JS-rendered listings.
-            likely_js = _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            likely_js = (
+                _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            )
             source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE if likely_js else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
+                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
+                if likely_js
+                else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
                 "browserFallbackRecommended": True,
                 "extractorHint": "parse_empty_js_shell_suspected" if likely_js else "parse_empty",
                 "atsLinks": ats_links[:5],
             }
     return cleaned
-

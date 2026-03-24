@@ -18,7 +18,9 @@ from src.jobs.text_utils import clean_text, norm_text
 
 def classify_company_type(company: Any, title: Any = "") -> str:
     text = f"{norm_text(company)} {norm_text(title)}"
-    if re.search(r"\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b", text):
+    if re.search(
+        r"\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b", text
+    ):
         return "Game"
     return "Tech"
 
@@ -159,4 +161,3 @@ def compute_focus_score(job: RawJob) -> int:
             score += 3
 
     return max(0, min(100, score))
-

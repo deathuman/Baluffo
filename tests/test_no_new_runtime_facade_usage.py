@@ -23,5 +23,6 @@ def test_no_new_runtime_facade_usage_outside_runtime_module() -> None:
         if "_runtime.facade(" in text:
             offenders.append(str(path.relative_to(repo_root)))
 
-    assert not offenders, "Found new `_runtime.facade()` usage outside allowed module:\n- " + "\n- ".join(offenders)
-
+    assert not offenders, (
+        "Found new `_runtime.facade()` usage outside allowed module:\n- " + "\n- ".join(offenders)
+    )

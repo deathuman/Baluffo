@@ -20,15 +20,25 @@ DEFAULT_GOOGLE_SHEET_ID = "1ZOJpVS3CcnrkwhpRgkP7tzf3wc4OWQj-uoWFfv4oHZE"
 DEFAULT_GOOGLE_SHEET_GID = "1560329579"
 GOOGLE_SHEETS_SOURCES = [
     {"name": "google_sheets", "sheetId": DEFAULT_GOOGLE_SHEET_ID, "gid": DEFAULT_GOOGLE_SHEET_GID},
-    {"name": "google_sheets_1er2oaxo", "sheetId": "1eR2oAXOuflr8CZeGoz3JTrsgNj3KuefbdXJOmNtjEVM", "gid": "0"},
-    {"name": "google_sheets_1mvqhxat", "sheetId": "1MvqHXAtXP_6ogtfrLM0g_RzGdJQyx5Q8mhPX4lZECkI", "gid": "0"},
+    {
+        "name": "google_sheets_1er2oaxo",
+        "sheetId": "1eR2oAXOuflr8CZeGoz3JTrsgNj3KuefbdXJOmNtjEVM",
+        "gid": "0",
+    },
+    {
+        "name": "google_sheets_1mvqhxat",
+        "sheetId": "1MvqHXAtXP_6ogtfrLM0g_RzGdJQyx5Q8mhPX4lZECkI",
+        "gid": "0",
+    },
 ]
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = 8
 
 
 def google_sheet_candidate_urls(sheet_id: str, gid: str) -> list[str]:
     csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-    gviz_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+    gviz_csv_url = (
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+    )
     pub_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv"
     return [
         csv_url,
@@ -39,7 +49,9 @@ def google_sheet_candidate_urls(sheet_id: str, gid: str) -> list[str]:
     ]
 
 
-def find_column_index(headers: Sequence[str], exact_names: Sequence[str], contains_names: Sequence[str]) -> int:
+def find_column_index(
+    headers: Sequence[str], exact_names: Sequence[str], contains_names: Sequence[str]
+) -> int:
     normalized = [norm_text(header) for header in headers]
     for name in exact_names:
         needle = norm_text(name)
@@ -54,13 +66,23 @@ def find_column_index(headers: Sequence[str], exact_names: Sequence[str], contai
 def find_company_column(headers: Sequence[str]) -> int:
     normalized = [norm_text(header) for header in headers]
     for idx, header in enumerate(normalized):
-        if header in {"company", "company name", "studio", "employer", "organization", "organisation"}:
+        if header in {
+            "company",
+            "company name",
+            "studio",
+            "employer",
+            "organization",
+            "organisation",
+        }:
             return idx
     for idx, header in enumerate(normalized):
         if (
-            ("company" in header or "studio" in header or "employer" in header or "organization" in header or "organisation" in header)
-            and not any(part in header for part in ("type", "category", "sector", "industry"))
-        ):
+            "company" in header
+            or "studio" in header
+            or "employer" in header
+            or "organization" in header
+            or "organisation" in header
+        ) and not any(part in header for part in ("type", "category", "sector", "industry")):
             return idx
     return -1
 
@@ -105,10 +127,21 @@ def google_sheets_link_candidate_indexes(headers: Sequence[str], primary_idx: in
 
     push(primary_idx)
     for idx, header in enumerate(normalized):
-        if header in {"job link", "url", "apply", "link", "source/contact", "source / contact", "source", "contact"}:
+        if header in {
+            "job link",
+            "url",
+            "apply",
+            "link",
+            "source/contact",
+            "source / contact",
+            "source",
+            "contact",
+        }:
             push(idx)
             continue
-        if any(token in header for token in ("job link", "apply", "source/contact", "source / contact")):
+        if any(
+            token in header for token in ("job link", "apply", "source/contact", "source / contact")
+        ):
             push(idx)
             continue
         if header == "url":
@@ -168,7 +201,9 @@ def _company_from_smartrecruiters_url(url: str) -> str:
     return ""
 
 
-def _resolve_company_name(row: Sequence[str], primary_idx: int, candidate_indexes: Sequence[int]) -> str:
+def _resolve_company_name(
+    row: Sequence[str], primary_idx: int, candidate_indexes: Sequence[int]
+) -> str:
     values: list[str] = []
     if 0 <= primary_idx < len(row):
         values.append(clean_text(row[primary_idx]))
@@ -205,7 +240,12 @@ def parse_google_sheets_csv(csv_text: str) -> list[RawJob]:
             for header in normalized
             for token in ("company", "studio", "employer", "organization", "organisation")
         )
-        has_location = "city" in normalized or "country" in normalized or "postal code" in normalized or "location" in normalized
+        has_location = (
+            "city" in normalized
+            or "country" in normalized
+            or "postal code" in normalized
+            or "location" in normalized
+        )
         if has_title and has_company and has_location:
             header_idx = idx
             break
@@ -215,7 +255,9 @@ def parse_google_sheets_csv(csv_text: str) -> list[RawJob]:
     headers = [clean_text(header) for header in rows[header_idx]]
     company_idx = find_company_column(headers)
     company_candidates = company_name_candidate_indexes(headers, company_idx)
-    title_idx = find_column_index(headers, ["title", "role", "job", "position"], ["title", "role", "job", "position"])
+    title_idx = find_column_index(
+        headers, ["title", "role", "job", "position"], ["title", "role", "job", "position"]
+    )
     city_idx = find_column_index(headers, ["city"], ["city"])
     country_idx = find_column_index(headers, ["country"], ["country"])
     location_idx = find_column_index(
@@ -228,7 +270,9 @@ def parse_google_sheets_csv(csv_text: str) -> list[RawJob]:
         ["employment type", "contract type", "employment", "contract", "job type"],
         ["employment", "contract", "job type"],
     )
-    link_idx = find_column_index(headers, ["job link", "url", "apply", "link"], ["job link", "url", "apply", "link"])
+    link_idx = find_column_index(
+        headers, ["job link", "url", "apply", "link"], ["job link", "url", "apply", "link"]
+    )
     link_candidates = google_sheets_link_candidate_indexes(headers, link_idx)
     sector_idx = find_column_index(
         headers,
@@ -263,9 +307,15 @@ def parse_google_sheets_csv(csv_text: str) -> list[RawJob]:
                 "title": title,
                 "company": company,
                 "city": clean_text(row[city_idx] if 0 <= city_idx < len(row) else ""),
-                "country": clean_text(row[country_idx] if 0 <= country_idx < len(row) else default_country),
-                "workType": clean_text(row[location_idx] if 0 <= location_idx < len(row) else "On-site"),
-                "contractType": clean_text(row[contract_idx] if 0 <= contract_idx < len(row) else ""),
+                "country": clean_text(
+                    row[country_idx] if 0 <= country_idx < len(row) else default_country
+                ),
+                "workType": clean_text(
+                    row[location_idx] if 0 <= location_idx < len(row) else "On-site"
+                ),
+                "contractType": clean_text(
+                    row[contract_idx] if 0 <= contract_idx < len(row) else ""
+                ),
                 "jobLink": job_link,
                 "sector": clean_text(row[sector_idx] if 0 <= sector_idx < len(row) else ""),
             }

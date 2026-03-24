@@ -326,30 +326,44 @@ def test_run_discovery_uncapped_reports_runtime_cap_bypass_flags() -> None:
         for path in (sd.ACTIVE_PATH, sd.PENDING_PATH, sd.REJECTED_PATH):
             path.write_text("[]", encoding="utf-8")
         try:
-            with mock.patch.object(
-                discovery_orchestrator,
-                "discover_game_studio_sheet_candidates",
-                return_value=([], list(dynamic_candidates), []),
-            ), mock.patch.object(
-                discovery_orchestrator, "stage_curated_seed_candidates", return_value=[]
-            ), mock.patch.object(
-                discovery_orchestrator.sd, "build_pattern_candidates", return_value=[]
-            ), mock.patch.object(
-                discovery_orchestrator.sd, "discover_seed_careers_page_candidates", return_value=([], [], [])
-            ), mock.patch.object(
-                discovery_orchestrator, "discover_web_search_candidates", return_value=([], [])
-            ), mock.patch.object(
-                discovery_orchestrator, "discover_gamesmap_candidates", return_value=([], [], [])
-            ), mock.patch.object(
-                discovery_orchestrator, "discover_gameprog_candidates", return_value=([], [], [])
-            ), mock.patch.object(
-                discovery_orchestrator, "async_probe_candidate", side_effect=fake_probe
-            ), mock.patch.object(
-                discovery_orchestrator, "load_url_patches", return_value={}
-            ), mock.patch.object(
-                discovery_orchestrator, "save_url_patch_manifest", return_value=None
-            ), mock.patch.object(
-                discovery_orchestrator, "read_source_state", return_value={}
+            with (
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "discover_game_studio_sheet_candidates",
+                    return_value=([], list(dynamic_candidates), []),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator, "stage_curated_seed_candidates", return_value=[]
+                ),
+                mock.patch.object(
+                    discovery_orchestrator.sd, "build_pattern_candidates", return_value=[]
+                ),
+                mock.patch.object(
+                    discovery_orchestrator.sd,
+                    "discover_seed_careers_page_candidates",
+                    return_value=([], [], []),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator, "discover_web_search_candidates", return_value=([], [])
+                ),
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "discover_gamesmap_candidates",
+                    return_value=([], [], []),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "discover_gameprog_candidates",
+                    return_value=([], [], []),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator, "async_probe_candidate", side_effect=fake_probe
+                ),
+                mock.patch.object(discovery_orchestrator, "load_url_patches", return_value={}),
+                mock.patch.object(
+                    discovery_orchestrator, "save_url_patch_manifest", return_value=None
+                ),
+                mock.patch.object(discovery_orchestrator, "read_source_state", return_value={}),
             ):
                 report = discovery_orchestrator.run_discovery(
                     timeout_s=1,
@@ -402,7 +416,9 @@ def test_classify_static_suppression_suppresses_weak_repeat_low_yield_static_can
     assert reason == "manual_only_repeat_low_yield"
 
 
-def test_classify_static_suppression_preserves_strong_or_previously_productive_static_candidate() -> None:
+def test_classify_static_suppression_preserves_strong_or_previously_productive_static_candidate() -> (
+    None
+):
     strong_reason = sd.classify_static_suppression(
         {
             "name": "Strong Static (Manual Website)",
@@ -532,10 +548,21 @@ def test_source_registry_paths_honor_baluffo_data_dir_override() -> None:
         assert source_registry.DATA_DIR == Path(override_root)
         assert source_registry.ACTIVE_PATH == Path(override_root) / "source-registry-active.json"
         assert source_registry.PENDING_PATH == Path(override_root) / "source-registry-pending.json"
-        assert source_registry.REJECTED_PATH == Path(override_root) / "source-registry-rejected.json"
-        assert source_registry.DISCOVERY_REPORT_PATH == Path(override_root) / "source-discovery-report.json"
-        assert source_registry.DISCOVERY_CANDIDATES_PATH == Path(override_root) / "source-discovery-candidates.json"
-        assert source_registry.URL_PATCH_MANIFEST_PATH == Path(override_root) / "url-patch-manifest.json"
+        assert (
+            source_registry.REJECTED_PATH == Path(override_root) / "source-registry-rejected.json"
+        )
+        assert (
+            source_registry.DISCOVERY_REPORT_PATH
+            == Path(override_root) / "source-discovery-report.json"
+        )
+        assert (
+            source_registry.DISCOVERY_CANDIDATES_PATH
+            == Path(override_root) / "source-discovery-candidates.json"
+        )
+        assert (
+            source_registry.URL_PATCH_MANIFEST_PATH
+            == Path(override_root) / "url-patch-manifest.json"
+        )
     finally:
         if previous is None:
             os.environ.pop("BALUFFO_DATA_DIR", None)
@@ -587,7 +614,9 @@ def test_probe_candidate_maps_jobs_found_for_greenhouse_and_teamtailor() -> None
         "slug": "example",
         "api_url": "https://boards-api.greenhouse.io/v1/boards/example/jobs?content=true",
     }
-    ok, count, error = sd.probe_candidate(greenhouse, timeout_s=5, fetcher=lambda *_: json.dumps({"jobs": [{}, {}]}))
+    ok, count, error = sd.probe_candidate(
+        greenhouse, timeout_s=5, fetcher=lambda *_: json.dumps({"jobs": [{}, {}]})
+    )
     assert ok
     assert count == 2
     assert error == ""
@@ -664,7 +693,9 @@ def test_async_probe_candidate_mirrors_sync_probe_count() -> None:
         assert "boards-api.greenhouse.io" in url
         return json.dumps({"jobs": [{}, {}, {}]})
 
-    ok, count, error = asyncio.run(sd.async_probe_candidate(greenhouse, timeout_s=5, fetcher=fake_async_fetch))
+    ok, count, error = asyncio.run(
+        sd.async_probe_candidate(greenhouse, timeout_s=5, fetcher=fake_async_fetch)
+    )
     assert ok
     assert count == 3
     assert error == ""
@@ -758,6 +789,7 @@ def test_discover_seed_careers_page_candidates_infers_provider_without_web_searc
     assert str(providers[0].get("adapter") or "") == "greenhouse"
     assert str(providers[0].get("discoveryMethod") or "") == "seed_careers_page"
 
+
 def test_discover_seed_careers_page_candidates_prefers_personio_provider_over_static() -> None:
     previous = list(sd.STUDIO_SEEDS)
     sd.STUDIO_SEEDS = [
@@ -780,6 +812,7 @@ def test_discover_seed_careers_page_candidates_prefers_personio_provider_over_st
     assert len(providers) == 1
     assert len(static_rows) == 0
     assert str(providers[0].get("adapter") or "") == "personio"
+
 
 def test_discover_seed_careers_page_candidates_builds_static_candidate_without_web_search() -> None:
     previous = list(sd.STUDIO_SEEDS)
@@ -808,6 +841,7 @@ def test_discover_seed_careers_page_candidates_builds_static_candidate_without_w
     assert str(static_rows[0].get("adapter") or "") == "static"
     assert str(static_rows[0].get("discoveryMethod") or "") == "seed_careers_page"
 
+
 def test_build_static_candidate_from_page_records_evidence() -> None:
     html = """
     <a href="/jobs/rendering-engineer">Rendering Engineer</a>
@@ -824,6 +858,7 @@ def test_build_static_candidate_from_page_records_evidence() -> None:
     assert str(row.get("adapter") or "") == "static"
     assert int(row.get("evidenceScore") or 0) >= sd.MIN_STATIC_EVIDENCE_TO_QUEUE
     assert "jobposting_jsonld" in (row.get("evidenceTypes") or [])
+
 
 def test_build_static_candidate_from_page_blocks_linkedin_like_domains() -> None:
     row = sd.build_static_candidate_from_page(
@@ -847,6 +882,7 @@ def test_parse_gamesmap_detail_page_extracts_careers_and_provenance() -> None:
     assert str(row.get("websiteUrl") or "") == "https://www.example-studio.com"
     assert "Developer and Publisher" in (row.get("categories") or [])
 
+
 def test_parse_gamesmap_detail_page_supports_website_only_entries() -> None:
     row = sd.parse_gamesmap_detail_page(
         "https://www.gamesmap.de/en/detail/industry/example-publisher",
@@ -857,7 +893,10 @@ def test_parse_gamesmap_detail_page_supports_website_only_entries() -> None:
     assert str(row.get("websiteUrl") or "") == "https://www.example-publisher.com"
     assert "Publisher" in (row.get("categories") or [])
 
-def test_parse_gamesmap_detail_page_ignores_directory_and_social_links_for_website_fallback() -> None:
+
+def test_parse_gamesmap_detail_page_ignores_directory_and_social_links_for_website_fallback() -> (
+    None
+):
     html = """
     <html><body>
       <h1>Example Studio</h1>
@@ -876,6 +915,7 @@ def test_parse_gamesmap_detail_page_ignores_directory_and_social_links_for_websi
     assert str(row.get("websiteUrl") or "") == "https://example-studio.com/"
     assert str(row.get("careersUrl") or "") == ""
 
+
 def test_parse_gamesmap_index_entries_extracts_industry_rows_from_js_payload() -> None:
     rows = sd.parse_gamesmap_index_entries(
         _fixture_text("gamesmap_index.html"),
@@ -883,9 +923,13 @@ def test_parse_gamesmap_index_entries_extracts_industry_rows_from_js_payload() -
         prefer_english=True,
     )
     assert len(rows) == 3
-    assert str(rows[0].get("detailUrl") or "") == "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh"
+    assert (
+        str(rows[0].get("detailUrl") or "")
+        == "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh"
+    )
     assert str(rows[0].get("studio") or "") == "Example Studio GmbH"
     assert str(rows[0].get("location") or "") == "Hamburg"
+
 
 def test_gamesmap_category_filter_rejects_blocked_entries() -> None:
     row = sd.parse_gamesmap_detail_page(
@@ -905,6 +949,7 @@ def test_gamesmap_category_filter_rejects_blocked_entries() -> None:
         config["gamesmap"]["blockedCategoryTokens"],
     )
 
+
 def test_discover_gamesmap_candidates_emits_provider_and_static_rows() -> None:
     config = {
         "gamesmap": {
@@ -920,9 +965,15 @@ def test_discover_gamesmap_candidates_emits_provider_and_static_rows() -> None:
 
     payloads = {
         "https://www.gamesmap.de/en": _fixture_text("gamesmap_index.html"),
-        "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text("gamesmap_detail_careers.html"),
-        "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text("gamesmap_detail_blocked.html"),
-        "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text("gamesmap_detail_website_only.html"),
+        "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text(
+            "gamesmap_detail_careers.html"
+        ),
+        "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text(
+            "gamesmap_detail_blocked.html"
+        ),
+        "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text(
+            "gamesmap_detail_website_only.html"
+        ),
     }
 
     def fake_fetch(url: str, _: int) -> str:
@@ -930,7 +981,9 @@ def test_discover_gamesmap_candidates_emits_provider_and_static_rows() -> None:
             raise RuntimeError(f"unexpected URL: {url}")
         return payloads[url]
 
-    provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(5, config=config, fetcher=fake_fetch)
+    provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(
+        5, config=config, fetcher=fake_fetch
+    )
     assert len(failures) == 0
     assert len(provider_rows) == 1
     assert str(provider_rows[0].get("adapter") or "") == "greenhouse"
@@ -939,8 +992,12 @@ def test_discover_gamesmap_candidates_emits_provider_and_static_rows() -> None:
     assert len(static_rows) == 1
     assert str(static_rows[0].get("adapter") or "") == "static"
     assert bool(static_rows[0].get("weakSignal"))
-    assert str(static_rows[0].get("sourceDirectoryEntryUrl") or "") == "https://www.gamesmap.de/en/detail/industry/example-publisher"
+    assert (
+        str(static_rows[0].get("sourceDirectoryEntryUrl") or "")
+        == "https://www.gamesmap.de/en/detail/industry/example-publisher"
+    )
     assert not (bool(static_rows[0].get("manualOnly")))
+
 
 def test_discover_gamesmap_candidates_marks_manual_website_only_rows() -> None:
     config = {
@@ -957,9 +1014,15 @@ def test_discover_gamesmap_candidates_marks_manual_website_only_rows() -> None:
     }
     payloads = {
         "https://www.gamesmap.de/en": _fixture_text("gamesmap_index.html"),
-        "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text("gamesmap_detail_careers.html"),
-        "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text("gamesmap_detail_blocked.html"),
-        "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text("gamesmap_detail_website_only.html"),
+        "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text(
+            "gamesmap_detail_careers.html"
+        ),
+        "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text(
+            "gamesmap_detail_blocked.html"
+        ),
+        "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text(
+            "gamesmap_detail_website_only.html"
+        ),
     }
 
     def fake_fetch(url: str, _: int) -> str:
@@ -967,12 +1030,15 @@ def test_discover_gamesmap_candidates_marks_manual_website_only_rows() -> None:
             raise RuntimeError(f"unexpected URL: {url}")
         return payloads[url]
 
-    _provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(5, config=config, fetcher=fake_fetch)
+    _provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(
+        5, config=config, fetcher=fake_fetch
+    )
     assert len(failures) == 0
     assert len(static_rows) == 1
     assert bool(static_rows[0].get("weakSignal"))
     assert bool(static_rows[0].get("manualOnly"))
     assert "gamesmap_manual_website_only" in (static_rows[0].get("evidenceTypes") or [])
+
 
 def test_discover_gamesmap_candidates_dedupes_repeated_directory_entries() -> None:
     html = """
@@ -996,7 +1062,9 @@ def test_discover_gamesmap_candidates_dedupes_repeated_directory_entries() -> No
             return html
         return _fixture_text("gamesmap_detail_careers.html")
 
-    provider_rows, static_rows, _failures = sd.discover_gamesmap_candidates(5, config=config, fetcher=fake_fetch)
+    provider_rows, static_rows, _failures = sd.discover_gamesmap_candidates(
+        5, config=config, fetcher=fake_fetch
+    )
     assert len(provider_rows) == 1
     assert len(static_rows) == 0
 
@@ -1019,9 +1087,15 @@ def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
         }
         payloads = {
             "https://www.gamesmap.de/en": _fixture_text("gamesmap_index.html"),
-            "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text("gamesmap_detail_careers.html"),
-            "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text("gamesmap_detail_blocked.html"),
-            "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text("gamesmap_detail_website_only.html"),
+            "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text(
+                "gamesmap_detail_careers.html"
+            ),
+            "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text(
+                "gamesmap_detail_blocked.html"
+            ),
+            "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text(
+                "gamesmap_detail_website_only.html"
+            ),
         }
         calls: list[str] = []
 
@@ -1031,15 +1105,20 @@ def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
                 raise RuntimeError(f"unexpected URL: {url}")
             return payloads[url]
 
-        provider_rows_1, static_rows_1, failures_1 = sd.discover_gamesmap_candidates(5, config=config, fetcher=fake_fetch)
+        provider_rows_1, static_rows_1, failures_1 = sd.discover_gamesmap_candidates(
+            5, config=config, fetcher=fake_fetch
+        )
         assert len(calls) > 0
         first_call_count = len(calls)
 
-        provider_rows_2, static_rows_2, failures_2 = sd.discover_gamesmap_candidates(5, config=config, fetcher=fake_fetch)
+        provider_rows_2, static_rows_2, failures_2 = sd.discover_gamesmap_candidates(
+            5, config=config, fetcher=fake_fetch
+        )
         assert len(calls) == first_call_count
         assert provider_rows_1 == provider_rows_2
         assert static_rows_1 == static_rows_2
         assert failures_1 == failures_2
+
 
 def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
     with workspace_tmpdir("source-discovery") as root:
@@ -1079,10 +1158,18 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
             }
             payloads = {
                 "https://www.gamesmap.de/en": _fixture_text("gamesmap_index.html"),
-                "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text("gamesmap_detail_careers.html"),
-                "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text("gamesmap_detail_blocked.html"),
-                "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text("gamesmap_detail_website_only.html"),
-                "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true": json.dumps({"jobs": [{}, {}]}),
+                "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text(
+                    "gamesmap_detail_careers.html"
+                ),
+                "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text(
+                    "gamesmap_detail_blocked.html"
+                ),
+                "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text(
+                    "gamesmap_detail_website_only.html"
+                ),
+                "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true": json.dumps(
+                    {"jobs": [{}, {}]}
+                ),
             }
 
             def fake_fetch(url: str, _: int) -> str:
@@ -1099,7 +1186,10 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
                 fetcher=fake_fetch,
             )
             assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
-            assert int((report["summary"].get("generatedCountByStage") or {}).get("web_provider") or 0) == 1
+            assert (
+                int((report["summary"].get("generatedCountByStage") or {}).get("web_provider") or 0)
+                == 1
+            )
             queued = json.loads(sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8"))
             assert len(queued) == 1
             assert str(queued[0].get("discoveryMethod") or "") == "gamesmap"
@@ -1115,6 +1205,7 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
+
 
 def test_run_discovery_dynamic_tracks_stage_metrics_and_queue_contract() -> None:
     with workspace_tmpdir("source-discovery") as root:
@@ -1200,6 +1291,7 @@ def test_run_discovery_dynamic_tracks_stage_metrics_and_queue_contract() -> None
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
 
+
 def test_run_discovery_emits_phase_logs_for_candidate_generation() -> None:
     with workspace_tmpdir("source-discovery") as root:
         prev_paths = (
@@ -1228,7 +1320,10 @@ def test_run_discovery_emits_phase_logs_for_candidate_generation() -> None:
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                    discovery_config={
+                        "gamesmap": {"enabled": False},
+                        "gameprog": {"enabled": False},
+                    },
                     fetcher=lambda *_: "",
                 )
 
@@ -1250,6 +1345,7 @@ def test_run_discovery_emits_phase_logs_for_candidate_generation() -> None:
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
 
+
 def test_run_discovery_skips_duplicate_endpoint_fingerprints() -> None:
     with workspace_tmpdir("source-discovery") as root:
         prev_paths = (
@@ -1270,10 +1366,29 @@ def test_run_discovery_skips_duplicate_endpoint_fingerprints() -> None:
             sd.DISCOVERY_REPORT_PATH = root / "report.json"
             sd.STUDIO_SEEDS = []
             sd.STATIC_DISCOVERY_CANDIDATES = [
-                {"name": "Demo Lever A", "studio": "Demo", "adapter": "lever", "account": "demo", "api_url": "https://api.lever.co/v0/postings/demo?mode=json"},
-                {"name": "Demo Lever A Duplicate", "studio": "Demo", "adapter": "lever", "account": "demo2", "api_url": "https://api.lever.co/v0/postings/demo?mode=json", "discoveryMethod": "pattern"},
+                {
+                    "name": "Demo Lever A",
+                    "studio": "Demo",
+                    "adapter": "lever",
+                    "account": "demo",
+                    "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
+                },
+                {
+                    "name": "Demo Lever A Duplicate",
+                    "studio": "Demo",
+                    "adapter": "lever",
+                    "account": "demo2",
+                    "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
+                    "discoveryMethod": "pattern",
+                },
             ]
-            report = sd.run_discovery(timeout_s=5, top_n=0, mode="dynamic", include_web_search=False, fetcher=lambda *_: json.dumps([{"id": 1}]))
+            report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=False,
+                fetcher=lambda *_: json.dumps([{"id": 1}]),
+            )
             assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
             assert int(report["summary"].get("skippedDuplicateCount") or 0) == 1
             assert "duplicateReasons" in report["summary"]
@@ -1288,6 +1403,7 @@ def test_run_discovery_skips_duplicate_endpoint_fingerprints() -> None:
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
+
 
 def test_run_discovery_balances_queue_with_deferrals() -> None:
     with workspace_tmpdir("source-discovery") as root:
@@ -1312,15 +1428,37 @@ def test_run_discovery_balances_queue_with_deferrals() -> None:
             sd.STUDIO_SEEDS = []
             sd.ADAPTER_QUEUE_CAPS["lever"] = 1
             sd.STATIC_DISCOVERY_CANDIDATES = [
-                {"name": "Demo Lever A", "studio": "Demo A", "adapter": "lever", "account": "demoa", "api_url": "https://api.lever.co/v0/postings/demoa?mode=json"},
-                {"name": "Demo Lever B", "studio": "Demo B", "adapter": "lever", "account": "demob", "api_url": "https://api.lever.co/v0/postings/demob?mode=json"},
+                {
+                    "name": "Demo Lever A",
+                    "studio": "Demo A",
+                    "adapter": "lever",
+                    "account": "demoa",
+                    "api_url": "https://api.lever.co/v0/postings/demoa?mode=json",
+                },
+                {
+                    "name": "Demo Lever B",
+                    "studio": "Demo B",
+                    "adapter": "lever",
+                    "account": "demob",
+                    "api_url": "https://api.lever.co/v0/postings/demob?mode=json",
+                },
             ]
 
-            report = sd.run_discovery(timeout_s=5, top_n=0, mode="dynamic", include_web_search=False, fetcher=lambda *_: json.dumps([{"id": 1}, {"id": 2}]))
+            report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=False,
+                fetcher=lambda *_: json.dumps([{"id": 1}, {"id": 2}]),
+            )
             assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
             assert int(report["summary"].get("discoverableButDeferredCount") or 0) == 1
-            assert int((report["summary"].get("lossAccounting") or {}).get("deferredByCap") or 0) == 1
-            deferred = [row for row in (report.get("candidates") or []) if bool(row.get("deferred"))]
+            assert (
+                int((report["summary"].get("lossAccounting") or {}).get("deferredByCap") or 0) == 1
+            )
+            deferred = [
+                row for row in (report.get("candidates") or []) if bool(row.get("deferred"))
+            ]
             assert len(deferred) == 1
             assert str(deferred[0].get("deferReason") or "") == "adapter_cap"
             assert str(deferred[0].get("dropStage") or "") == "deferred_by_cap"
@@ -1338,6 +1476,7 @@ def test_run_discovery_balances_queue_with_deferrals() -> None:
             sd.STUDIO_SEEDS = prev_seeds
             sd.ADAPTER_QUEUE_CAPS.clear()
             sd.ADAPTER_QUEUE_CAPS.update(prev_caps)
+
 
 def test_run_discovery_pattern_candidates_below_reinforced_threshold_are_skipped() -> None:
     with workspace_tmpdir("source-discovery") as root:
@@ -1377,10 +1516,17 @@ def test_run_discovery_pattern_candidates_below_reinforced_threshold_are_skipped
             )
             assert int(report["summary"].get("probedCandidateCount") or 0) == 0
             assert int(report["summary"].get("queuedCandidateCount") or 0) == 0
-            assert int((report["summary"].get("lossAccounting") or {}).get("lowEvidenceSkipped") or 0) == 1
+            assert (
+                int((report["summary"].get("lossAccounting") or {}).get("lowEvidenceSkipped") or 0)
+                == 1
+            )
             stages = [str(row.get("stage") or "") for row in (report.get("failures") or [])]
             assert "probe_skipped" in stages
-            dropped = [row for row in (report.get("failures") or []) if str(row.get("dropStage") or "") == "low_evidence_skipped"]
+            dropped = [
+                row
+                for row in (report.get("failures") or [])
+                if str(row.get("dropStage") or "") == "low_evidence_skipped"
+            ]
             assert dropped
         finally:
             (
@@ -1393,6 +1539,7 @@ def test_run_discovery_pattern_candidates_below_reinforced_threshold_are_skipped
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
+
 
 def test_run_discovery_tracks_probe_miss_separately_from_failures() -> None:
     with workspace_tmpdir("source-discovery") as root:
@@ -1415,7 +1562,13 @@ def test_run_discovery_tracks_probe_miss_separately_from_failures() -> None:
             sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
             sd.STUDIO_SEEDS = []
             sd.STATIC_DISCOVERY_CANDIDATES = [
-                {"name": "Demo Lever", "studio": "Demo", "adapter": "lever", "account": "demo", "api_url": "https://api.lever.co/v0/postings/demo?mode=json"}
+                {
+                    "name": "Demo Lever",
+                    "studio": "Demo",
+                    "adapter": "lever",
+                    "account": "demo",
+                    "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
+                }
             ]
             report = sd.run_discovery(
                 timeout_s=5,
@@ -1423,7 +1576,9 @@ def test_run_discovery_tracks_probe_miss_separately_from_failures() -> None:
                 mode="dynamic",
                 include_web_search=False,
                 discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
-                fetcher=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("HTTP Error 404: Not Found")),
+                fetcher=lambda *_a, **_k: (_ for _ in ()).throw(
+                    RuntimeError("HTTP Error 404: Not Found")
+                ),
             )
             assert int(report["summary"].get("probedCandidateCount") or 0) == 1
             assert int(report["summary"].get("failedProbeCount") or 0) == 0
@@ -1440,6 +1595,7 @@ def test_run_discovery_tracks_probe_miss_separately_from_failures() -> None:
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
+
 
 def test_run_discovery_uses_seed_careers_pages_without_web_search() -> None:
     with workspace_tmpdir("source-discovery") as root:
@@ -1486,9 +1642,21 @@ def test_run_discovery_uses_seed_careers_pages_without_web_search() -> None:
                 fetcher=fake_fetch,
             )
             assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
-            assert int((report["summary"].get("queuedCountByStage") or {}).get("web_provider") or 0) == 1
-            assert int((report["summary"].get("generatedCountByStage") or {}).get("web_provider") or 0) == 1
-            assert int((report["summary"].get("generatedCountByStage") or {}).get("generic_static") or 0) == 0
+            assert (
+                int((report["summary"].get("queuedCountByStage") or {}).get("web_provider") or 0)
+                == 1
+            )
+            assert (
+                int((report["summary"].get("generatedCountByStage") or {}).get("web_provider") or 0)
+                == 1
+            )
+            assert (
+                int(
+                    (report["summary"].get("generatedCountByStage") or {}).get("generic_static")
+                    or 0
+                )
+                == 0
+            )
             queued = json.loads(sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8"))
             assert len(queued) == 1
             assert str(queued[0].get("discoveryMethod") or "") == "seed_careers_page"
@@ -1503,6 +1671,7 @@ def test_run_discovery_uses_seed_careers_pages_without_web_search() -> None:
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
+
 
 def test_discovery_report_snapshot_contract() -> None:
     with workspace_tmpdir("source-discovery") as root:
@@ -1525,8 +1694,20 @@ def test_discovery_report_snapshot_contract() -> None:
             sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
             sd.STUDIO_SEEDS = []
             sd.STATIC_DISCOVERY_CANDIDATES = [
-                {"name": "Demo Lever", "studio": "Demo", "adapter": "lever", "account": "demo", "api_url": "https://api.lever.co/v0/postings/demo?mode=json"},
-                {"name": "Demo Greenhouse", "studio": "Demo", "adapter": "greenhouse", "slug": "demo", "api_url": "https://boards-api.greenhouse.io/v1/boards/demo/jobs?content=true"},
+                {
+                    "name": "Demo Lever",
+                    "studio": "Demo",
+                    "adapter": "lever",
+                    "account": "demo",
+                    "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
+                },
+                {
+                    "name": "Demo Greenhouse",
+                    "studio": "Demo",
+                    "adapter": "greenhouse",
+                    "slug": "demo",
+                    "api_url": "https://boards-api.greenhouse.io/v1/boards/demo/jobs?content=true",
+                },
             ]
 
             def fake_fetch(url: str, _: int) -> str:
@@ -1552,7 +1733,9 @@ def test_discovery_report_snapshot_contract() -> None:
                     "foundEndpointCount": int(report["summary"].get("foundEndpointCount") or 0),
                     "probedCandidateCount": int(report["summary"].get("probedCandidateCount") or 0),
                     "queuedCandidateCount": int(report["summary"].get("queuedCandidateCount") or 0),
-                    "discoverableButDeferredCount": int(report["summary"].get("discoverableButDeferredCount") or 0),
+                    "discoverableButDeferredCount": int(
+                        report["summary"].get("discoverableButDeferredCount") or 0
+                    ),
                     "failedProbeCount": int(report["summary"].get("failedProbeCount") or 0),
                 },
                 "counts": {
@@ -1575,6 +1758,7 @@ def test_discovery_report_snapshot_contract() -> None:
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
+
 
 def test_run_discovery_writes_phase_progress_before_probe() -> None:
     with workspace_tmpdir("source-discovery") as root:
@@ -1606,13 +1790,18 @@ def test_run_discovery_writes_phase_progress_before_probe() -> None:
             sd.STUDIO_SEEDS = []
             sd.STATIC_DISCOVERY_CANDIDATES = []
 
-            with mock.patch.object(discovery_orchestrator, "save_json_atomic", side_effect=capture_save):
+            with mock.patch.object(
+                discovery_orchestrator, "save_json_atomic", side_effect=capture_save
+            ):
                 report = sd.run_discovery(
                     timeout_s=5,
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                    discovery_config={
+                        "gamesmap": {"enabled": False},
+                        "gameprog": {"enabled": False},
+                    },
                     fetcher=lambda *_: json.dumps([{"id": 1}]),
                 )
 
@@ -1624,7 +1813,9 @@ def test_run_discovery_writes_phase_progress_before_probe() -> None:
             assert "Scanning game studios sheet directory" in phase_labels
             assert "Generating provider-pattern candidates" in phase_labels
             assert "Scanning known careers pages" in phase_labels
-            assert "Discovery completed" == str((report.get("taskProgress") or {}).get("phaseLabel") or "")
+            assert "Discovery completed" == str(
+                (report.get("taskProgress") or {}).get("phaseLabel") or ""
+            )
         finally:
             (
                 sd.ACTIVE_PATH,
@@ -1636,6 +1827,7 @@ def test_run_discovery_writes_phase_progress_before_probe() -> None:
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
+
 
 def test_parse_args_supports_manual_gamesmap_mode() -> None:
     prev_argv = list(sys.argv)
@@ -1688,7 +1880,9 @@ def test_discover_game_studio_sheet_candidates_reports_parse_failure_when_csv_em
     """When CSV is non-empty but no rows are parsed, discovery returns a directory_parse failure."""
     csv_with_wrong_header = "Column A,Column B,Column C\nx,y,z\n"
     payloads = {
-        sd.game_studios_sheet_candidate_urls(sd.GAME_STUDIOS_SHEET_ID, sd.GAME_STUDIOS_SHEET_GID)[0]: csv_with_wrong_header,
+        sd.game_studios_sheet_candidate_urls(sd.GAME_STUDIOS_SHEET_ID, sd.GAME_STUDIOS_SHEET_GID)[
+            0
+        ]: csv_with_wrong_header,
     }
 
     def fake_fetch(url: str, _: int) -> str:
@@ -1730,7 +1924,9 @@ def test_run_discovery_sheet_directory_candidates_flow_into_queue() -> None:
             sd.GAME_STUDIOS_SHEET_ID = "sheet_test"
             sd.GAME_STUDIOS_SHEET_GID = "1"
 
-            sheet_url = sd.game_studios_sheet_candidate_urls(sd.GAME_STUDIOS_SHEET_ID, sd.GAME_STUDIOS_SHEET_GID)[0]
+            sheet_url = sd.game_studios_sheet_candidate_urls(
+                sd.GAME_STUDIOS_SHEET_ID, sd.GAME_STUDIOS_SHEET_GID
+            )[0]
             csv_text = """x,x,x,x
 x,Studio,Hiring Location,Roles open,Link
 x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
@@ -1738,7 +1934,9 @@ x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
 
             payloads = {
                 sheet_url: csv_text,
-                "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true": json.dumps({"jobs": [{}, {}]}),
+                "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true": json.dumps(
+                    {"jobs": [{}, {}]}
+                ),
             }
 
             def fake_fetch(url: str, _: int) -> str:
@@ -1755,7 +1953,13 @@ x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
                 fetcher=fake_fetch,
             )
             assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
-            assert int((report["summary"].get("generatedCountByStage") or {}).get("sheet_directory") or 0) >= 1
+            assert (
+                int(
+                    (report["summary"].get("generatedCountByStage") or {}).get("sheet_directory")
+                    or 0
+                )
+                >= 1
+            )
             queued = json.loads(sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8"))
             assert len(queued) == 1
             assert str(queued[0].get("discoveryMethod") or "") == "sheet_directory"
@@ -1765,7 +1969,10 @@ x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
             assert int(runtime.get("totalDurationMs") or 0) >= 0
             assert "stageTimingsMs" in runtime
             assert "adapterTimings" in runtime
-            assert any(str(row.get("adapter") or "") == "greenhouse" for row in (runtime.get("adapterTimings") or []))
+            assert any(
+                str(row.get("adapter") or "") == "greenhouse"
+                for row in (runtime.get("adapterTimings") or [])
+            )
         finally:
             (
                 sd.ACTIVE_PATH,
@@ -1893,10 +2100,16 @@ def test_run_discovery_suppresses_blocked_static_domains_before_probe() -> None:
                 discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
                 fetcher=lambda *args, **kwargs: calls.append((args, kwargs)) or "",
             )
-            assert not any(args and args[0] == "https://www.linkedin.com/company/example/jobs/" for args, _kwargs in calls)
+            assert not any(
+                args and args[0] == "https://www.linkedin.com/company/example/jobs/"
+                for args, _kwargs in calls
+            )
             assert report["summary"]["suppressedStaticCount"] == 1
             assert report["summary"]["failedProbeCount"] == 0
-            assert any(str(row.get("dropReason") or "") == "blocked_domain" for row in (report.get("failures") or []))
+            assert any(
+                str(row.get("dropReason") or "") == "blocked_domain"
+                for row in (report.get("failures") or [])
+            )
         finally:
             (
                 sd.ACTIVE_PATH,
@@ -1944,7 +2157,9 @@ def test_run_discovery_refreshes_url_patches_and_reprobes_candidate() -> None:
 
             def fake_fetch(url: str, _timeout: int) -> str:
                 if url == "https://old.example/jobs":
-                    raise RuntimeError("Client error '404 Not Found' for url 'https://old.example/jobs'")
+                    raise RuntimeError(
+                        "Client error '404 Not Found' for url 'https://old.example/jobs'"
+                    )
                 if url == "https://new.example/jobs":
                     return '<a href="https://new.example/jobs/role-1">Role</a>'
                 raise RuntimeError(f"unexpected URL: {url}")
@@ -1959,7 +2174,10 @@ def test_run_discovery_refreshes_url_patches_and_reprobes_candidate() -> None:
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                    discovery_config={
+                        "gamesmap": {"enabled": False},
+                        "gameprog": {"enabled": False},
+                    },
                     fetcher=fake_fetch,
                 )
 
@@ -2026,6 +2244,7 @@ def test_load_discovery_config_uses_configured_path() -> None:
             sd.DISCOVERY_CONFIG_PATH = previous_path
         assert bool((cfg.get("gamesmap") or {}).get("enabled"))
         assert int((cfg.get("gamesmap") or {}).get("maxDetailPages") or 0) == 25
+
 
 def test_resolve_discovery_thresholds_overrides_defaults() -> None:
     thresholds = sd.resolve_discovery_thresholds(
@@ -2101,7 +2320,9 @@ def test_discover_gameprog_candidates_emits_provider_and_static() -> None:
             raise RuntimeError(f"unexpected URL: {url}")
         return payloads[url]
 
-    provider_rows, static_rows, failures = sd.discover_gameprog_candidates(5, config=config, fetcher=fake_fetch)
+    provider_rows, static_rows, failures = sd.discover_gameprog_candidates(
+        5, config=config, fetcher=fake_fetch
+    )
     assert len(failures) == 0
     assert len(provider_rows) >= 1
     assert str(provider_rows[0].get("adapter") or "") == "greenhouse"
@@ -2135,8 +2356,9 @@ def test_discover_gameprog_candidates_handles_fetch_failure() -> None:
             raise RuntimeError("fetch failed")
         return payloads[url]
 
-    provider_rows, static_rows, failures = sd.discover_gameprog_candidates(5, config=config, fetcher=fake_fetch)
+    provider_rows, static_rows, failures = sd.discover_gameprog_candidates(
+        5, config=config, fetcher=fake_fetch
+    )
     assert len(failures) >= 1
     assert len(static_rows) >= 1
     assert bool(static_rows[0].get("manualOnly"))
-

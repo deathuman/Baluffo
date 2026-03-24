@@ -71,7 +71,9 @@ def estimate_probe_priority(candidate: dict[str, Any]) -> int:
     )
 
 
-def _evidence_threshold_for_probe(candidate: dict[str, Any], thresholds: dict[str, int] | None = None) -> int:
+def _evidence_threshold_for_probe(
+    candidate: dict[str, Any], thresholds: dict[str, int] | None = None
+) -> int:
     t = thresholds if isinstance(thresholds, dict) else DEFAULT_DISCOVERY_THRESHOLDS
     if str(candidate.get("discoveryStage") or "") == "provider_pattern":
         return int(t.get("patternProviderProbeThreshold", PATTERN_PROVIDER_PROBE_THRESHOLD))
@@ -82,7 +84,9 @@ def _evidence_threshold_for_probe(candidate: dict[str, Any], thresholds: dict[st
     )
 
 
-def _evidence_threshold_for_queue(candidate: dict[str, Any], thresholds: dict[str, int] | None = None) -> int:
+def _evidence_threshold_for_queue(
+    candidate: dict[str, Any], thresholds: dict[str, int] | None = None
+) -> int:
     t = thresholds if isinstance(thresholds, dict) else DEFAULT_DISCOVERY_THRESHOLDS
     if str(candidate.get("discoveryStage") or "") == "provider_pattern":
         return int(t.get("patternProviderQueueThreshold", PATTERN_PROVIDER_QUEUE_THRESHOLD))
@@ -93,10 +97,12 @@ def _evidence_threshold_for_queue(candidate: dict[str, Any], thresholds: dict[st
     )
 
 
-def should_queue_candidate(candidate: dict[str, Any], jobs_found: int, thresholds: dict[str, int] | None = None) -> bool:
-    return jobs_found > 0 or int(candidate.get("evidenceScore") or 0) >= _evidence_threshold_for_queue(
-        candidate, thresholds
-    )
+def should_queue_candidate(
+    candidate: dict[str, Any], jobs_found: int, thresholds: dict[str, int] | None = None
+) -> bool:
+    return jobs_found > 0 or int(
+        candidate.get("evidenceScore") or 0
+    ) >= _evidence_threshold_for_queue(candidate, thresholds)
 
 
 def _sort_candidate_key(row: dict[str, Any]) -> tuple[int, int, int, str]:
@@ -109,8 +115,12 @@ def _sort_candidate_key(row: dict[str, Any]) -> tuple[int, int, int, str]:
 
 
 def _queue_balancing_order(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    providers = [row for row in candidates if str(row.get("adapter") or "").strip().lower() != "static"]
-    static_rows = [row for row in candidates if str(row.get("adapter") or "").strip().lower() == "static"]
+    providers = [
+        row for row in candidates if str(row.get("adapter") or "").strip().lower() != "static"
+    ]
+    static_rows = [
+        row for row in candidates if str(row.get("adapter") or "").strip().lower() == "static"
+    ]
     providers.sort(key=_sort_candidate_key, reverse=True)
     static_rows.sort(key=_sort_candidate_key, reverse=True)
     return [*providers, *static_rows]
@@ -244,8 +254,16 @@ def apply_queue_balancing(
     deferred_by_adapter: Counter[str] = Counter()
     healthy_but_deferred_by_adapter: Counter[str] = Counter()
     provider_target = provider_queue_target(top_n)
-    provider_rows = [row for row in _queue_balancing_order(candidates) if str(row.get("adapter") or "").strip().lower() != "static"]
-    static_rows = [row for row in _queue_balancing_order(candidates) if str(row.get("adapter") or "").strip().lower() == "static"]
+    provider_rows = [
+        row
+        for row in _queue_balancing_order(candidates)
+        if str(row.get("adapter") or "").strip().lower() != "static"
+    ]
+    static_rows = [
+        row
+        for row in _queue_balancing_order(candidates)
+        if str(row.get("adapter") or "").strip().lower() == "static"
+    ]
 
     def _process(rows: list[dict[str, Any]], *, enforce_provider_reservation: bool) -> None:
         for row in rows:
@@ -255,9 +273,15 @@ def apply_queue_balancing(
             bypass_adapter_cap = is_google_sheet_candidate(row)
             if top_n > 0 and len(queued) >= top_n:
                 defer_reason = "top_n_cap"
-            elif enforce_provider_reservation and provider_target > 0 and len(queued) < provider_target:
+            elif (
+                enforce_provider_reservation
+                and provider_target > 0
+                and len(queued) < provider_target
+            ):
                 defer_reason = "provider_reservation"
-            elif not bypass_adapter_cap and adapter_counts[adapter] >= ADAPTER_QUEUE_CAPS.get(adapter, 3):
+            elif not bypass_adapter_cap and adapter_counts[adapter] >= ADAPTER_QUEUE_CAPS.get(
+                adapter, 3
+            ):
                 defer_reason = "adapter_cap"
             elif family and family_counts[family] >= DOMAIN_QUEUE_CAP_DEFAULT:
                 defer_reason = "domain_cap"
@@ -279,13 +303,17 @@ def apply_queue_balancing(
 
     _process(provider_rows, enforce_provider_reservation=False)
     _process(static_rows, enforce_provider_reservation=True)
-    return queued, all_rows, {
-        "deferredReasons": dict(deferred_counts),
-        "queuedByAdapter": dict(queued_by_adapter),
-        "deferredByAdapter": dict(deferred_by_adapter),
-        "healthyButDeferredByAdapter": dict(healthy_but_deferred_by_adapter),
-        "providerTarget": int(provider_target),
-    }
+    return (
+        queued,
+        all_rows,
+        {
+            "deferredReasons": dict(deferred_counts),
+            "queuedByAdapter": dict(queued_by_adapter),
+            "deferredByAdapter": dict(deferred_by_adapter),
+            "healthyButDeferredByAdapter": dict(healthy_but_deferred_by_adapter),
+            "providerTarget": int(provider_target),
+        },
+    )
 
 
 def classify_probe_failure_stage(error: str) -> str:
@@ -333,7 +361,17 @@ def compute_confidence(candidate: dict[str, Any], jobs_found: int) -> str:
         return "high"
     if jobs_found >= 1:
         return "medium"
-    if adapter in {"lever", "greenhouse", "smartrecruiters", "workable", "teamtailor", "ashby", "recruitee", "pinpoint", "personio"}:
+    if adapter in {
+        "lever",
+        "greenhouse",
+        "smartrecruiters",
+        "workable",
+        "teamtailor",
+        "ashby",
+        "recruitee",
+        "pinpoint",
+        "personio",
+    }:
         return "low" if evidence < 40 else "medium"
     return "low"
 
@@ -358,7 +396,9 @@ def normalize_candidate(
     row["discoveryStage"] = str(row.get("discoveryStage") or "provider_pattern")
     row["evidenceScore"] = int(row.get("evidenceScore") or 0)
     row["evidenceTypes"] = unique_string_list(row.get("evidenceTypes") or [])
-    row["evidenceSource"] = str(row.get("evidenceSource") or row.get("discoveryMethod") or "unknown")
+    row["evidenceSource"] = str(
+        row.get("evidenceSource") or row.get("discoveryMethod") or "unknown"
+    )
     row["careersUrl"] = str(row.get("careersUrl") or endpoint_url(row) or "")
     row["weakSignal"] = bool(row.get("weakSignal"))
     row["deferred"] = bool(row.get("deferred"))
@@ -392,4 +432,3 @@ def probe_bucket_for(candidate: dict[str, Any]) -> str:
 
 def init_stage_counter() -> dict[str, int]:
     return {stage: 0 for stage in DISCOVERY_STAGES}
-

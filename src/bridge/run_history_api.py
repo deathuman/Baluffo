@@ -1,4 +1,5 @@
 """Run-history and task-state API: thin wrappers and reconciliation helpers."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -139,7 +140,9 @@ def mark_report_stale_finished(
     return next_report
 
 
-def _match_run_identity(row: dict[str, Any], *, run_type: str, run_id: str, started_at: str) -> bool:
+def _match_run_identity(
+    row: dict[str, Any], *, run_type: str, run_id: str, started_at: str
+) -> bool:
     if str(row.get("type") or "").strip().lower() != str(run_type or "").strip().lower():
         return False
     if run_id and str(row.get("runId") or "").strip() == run_id:

@@ -35,6 +35,7 @@ class GenericCareersSpider(scrapy.Spider):
                 if wait_selector:
                     try:
                         from scrapy_playwright.page import PageMethod
+
                         req.meta["playwright_page_methods"] = [
                             PageMethod("wait_for_selector", wait_selector, timeout=wait_timeout),
                         ]
@@ -119,7 +120,9 @@ class GenericCareersSpider(scrapy.Spider):
         if not domain_profiles.is_probable_job_detail_url(job_link, self.profile):
             self._container["reject_reasons"]["non_job_url"] += 1
             return
-        job_dict = item_to_job_dict(loaded, source_name=self.source_name_value, studio=self.studio_name)
+        job_dict = item_to_job_dict(
+            loaded, source_name=self.source_name_value, studio=self.studio_name
+        )
         job_dict["jobLink"] = job_link
         job_dict["sourceJobId"] = job_dict.get("sourceJobId") or safe_id(job_link)
         self._append_job(job_dict)

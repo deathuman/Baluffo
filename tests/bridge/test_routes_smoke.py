@@ -42,7 +42,11 @@ def _make_api(tmp_path: Path) -> BridgeApi:
     store = _FakeDesktopLocalDataStore()
 
     def load_state() -> dict[str, list[dict[str, Any]]]:
-        return {"active": [{"adapter": "static", "listing_url": "https://example.com/jobs"}], "pending": [], "rejected": []}
+        return {
+            "active": [{"adapter": "static", "listing_url": "https://example.com/jobs"}],
+            "pending": [],
+            "rejected": [],
+        }
 
     def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
         return {
@@ -134,7 +138,10 @@ def test_post_routes_smoke_desktop_sign_in(tmp_path: Path) -> None:
     api = _make_api(tmp_path)
     handler = _FakeHandler()
 
-    assert handle_post(handler, api=api, path="/desktop-local-data/sign-in", payload={"name": "Alice"}) is True
+    assert (
+        handle_post(handler, api=api, path="/desktop-local-data/sign-in", payload={"name": "Alice"})
+        is True
+    )
     assert handler.sent[-1]["status"] == 200
     payload = handler.sent[-1]["payload"]
     assert payload["ok"] is True
@@ -146,13 +153,22 @@ def test_post_routes_run_discovery_passes_payload_by_keyword(tmp_path: Path) -> 
     handler = _FakeHandler()
     calls: list[dict[str, Any]] = []
 
-    def _trigger_discovery_task(*, route_name: str, payload: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+    def _trigger_discovery_task(
+        *, route_name: str, payload: dict[str, Any] | None = None
+    ) -> tuple[int, dict[str, Any]]:
         calls.append({"route_name": route_name, "payload": payload})
-        return 200, {"started": True, "route": route_name, "preset": str((payload or {}).get("preset") or "")}
+        return 200, {
+            "started": True,
+            "route": route_name,
+            "preset": str((payload or {}).get("preset") or ""),
+        }
 
     api.trigger_discovery_task = _trigger_discovery_task  # type: ignore[assignment]
 
-    assert handle_post(handler, api=api, path="/tasks/run-discovery", payload={"preset": "uncapped"}) is True
+    assert (
+        handle_post(handler, api=api, path="/tasks/run-discovery", payload={"preset": "uncapped"})
+        is True
+    )
     assert calls == [{"route_name": "/tasks/run-discovery", "payload": {"preset": "uncapped"}}]
     assert handler.sent[-1]["status"] == 200
     assert handler.sent[-1]["payload"]["started"] is True
@@ -163,7 +179,10 @@ def test_bridge_api_defaults_expose_real_registry_identity_helpers(tmp_path: Pat
     row = {"adapter": "static", "listing_url": "https://example.com/jobs?ref=1"}
     assert api.source_identity(row)
     assert api.source_url_fingerprint(row) == "https://example.com/jobs"
-    assert api.normalize_source_url("HTTPS://Example.com/jobs/?ref=1#frag") == "https://example.com/jobs"
+    assert (
+        api.normalize_source_url("HTTPS://Example.com/jobs/?ref=1#frag")
+        == "https://example.com/jobs"
+    )
     assert len(api.unique_sources([row, dict(row)])) == 1
 
 
@@ -190,7 +209,6 @@ def test_bridge_api_registry_service_wires_identity_helpers(tmp_path: Path) -> N
     row = {"adapter": "static", "listing_url": "https://example.com/jobs/"}
     assert api.source_identity(row) == registry.source_identity(row)
     assert api.source_url_fingerprint(row) == registry.source_url_fingerprint(row)
-    assert api.normalize_source_url("https://example.com/jobs/?ref=1") == registry.normalize_source_url(
+    assert api.normalize_source_url(
         "https://example.com/jobs/?ref=1"
-    )
-
+    ) == registry.normalize_source_url("https://example.com/jobs/?ref=1")

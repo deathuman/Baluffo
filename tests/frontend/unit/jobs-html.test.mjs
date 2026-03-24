@@ -16,4 +16,3 @@ test("jobs html pipeline button includes tooltip about long-running pipeline", (
     /title="Runs discovery, fetch, and sync pipeline\. Can take more than 5 minutes\."/
   );
 });
-

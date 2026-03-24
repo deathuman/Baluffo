@@ -1,4 +1,5 @@
 """Job link extraction from HTML (embedded URLs, script sources, jobylon, intervieweb, etc.)."""
+
 from __future__ import annotations
 
 import html as html_module
@@ -64,7 +65,10 @@ def extract_embedded_job_urls(html: str, base_url: str) -> list[str]:
         if not absolute or absolute in seen:
             continue
         low = absolute.lower()
-        if any(token in low for token in ("jobs.lever.co/", "boards.greenhouse.io/", "jobs.ashbyhq.com/")):
+        if any(
+            token in low
+            for token in ("jobs.lever.co/", "boards.greenhouse.io/", "jobs.ashbyhq.com/")
+        ):
             seen.add(absolute)
             links.append(absolute)
             continue
@@ -109,7 +113,9 @@ def extract_embedded_job_urls(html: str, base_url: str) -> list[str]:
             is_job_path = tail != "/careers" and "/careers-category/" not in tail
         if not is_job_path and "/career/" in path:
             is_job_path = path.rstrip("/") != "/career"
-        if not is_job_path and any(token in path for token in ("/vacancy/", "/open-positions/", "/join/")):
+        if not is_job_path and any(
+            token in path for token in ("/vacancy/", "/open-positions/", "/join/")
+        ):
             is_job_path = True
         if not is_job_path and ("/vacancies/" in path or path.rstrip("/") == "/vacancies"):
             is_job_path = True
@@ -287,7 +293,9 @@ def extract_external_job_links_from_scripts(
             if not absolute or absolute in seen:
                 continue
             low_abs = absolute.lower()
-            if not any(token in low_abs for token in ("job", "career", "vacanc", "recruit", "annunci")):
+            if not any(
+                token in low_abs for token in ("job", "career", "vacanc", "recruit", "annunci")
+            ):
                 continue
             seen.add(absolute)
             job_links.append(absolute)
@@ -306,8 +314,16 @@ def extract_text_job_signals(html: str, page_url: str) -> list[str]:
     on_careers_page = "/career" in path or "/careers" in path
     apply_count = len(re.findall(r"\bapply(?:\s+now)?\b", text))
     role_keywords = (
-        "programmer", "engineer", "designer", "artist", "animator",
-        "producer", "director", "qa", "tester", "technical",
+        "programmer",
+        "engineer",
+        "designer",
+        "artist",
+        "animator",
+        "producer",
+        "director",
+        "qa",
+        "tester",
+        "technical",
     )
     role_count = sum(len(re.findall(rf"\b{re.escape(token)}\b", text)) for token in role_keywords)
     if not on_careers_page or apply_count < 4 or role_count < 4:

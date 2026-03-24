@@ -141,7 +141,9 @@ def is_probable_job_detail_url(url: str, profile: dict[str, Any]) -> bool:
     query = _clean_text(parsed.query).lower()
     if not path:
         return False
-    exclude_path_tokens = [str(token).lower() for token in (profile.get("exclude_path_tokens") or [])]
+    exclude_path_tokens = [
+        str(token).lower() for token in (profile.get("exclude_path_tokens") or [])
+    ]
     for token in exclude_path_tokens:
         if token and token in path:
             return False
@@ -153,10 +155,14 @@ def is_probable_job_detail_url(url: str, profile: dict[str, Any]) -> bool:
     for key in include_query_keys:
         if key and f"{key}=" in query:
             return True
-    include_path_tokens = [str(token).lower() for token in (profile.get("include_path_tokens") or [])]
+    include_path_tokens = [
+        str(token).lower() for token in (profile.get("include_path_tokens") or [])
+    ]
     for token in include_path_tokens:
-        if token and token in path and (
-            re.search(r"/[0-9]+", path) or re.search(r"/[0-9a-f]{8}-[0-9a-f-]{27,36}", path)
+        if (
+            token
+            and token in path
+            and (re.search(r"/[0-9]+", path) or re.search(r"/[0-9a-f]{8}-[0-9a-f-]{27,36}", path))
         ):
             return True
     if "/careers/" in path and re.search(r"/[0-9a-f]{8}-[0-9a-f-]{27,36}$", path):
@@ -187,12 +193,16 @@ def pick_canonical_listing_url(pages: list[str]) -> str | None:
     if not first:
         return None
     profile = domain_profile_for_url(first)
-    listing_like = [p for p in pages if _clean_text(p) and is_likely_listing_url(_clean_text(p), profile)]
+    listing_like = [
+        p for p in pages if _clean_text(p) and is_likely_listing_url(_clean_text(p), profile)
+    ]
     if not listing_like:
         chosen = first
     else:
+
         def path_len(u: str) -> int:
             return len(_clean_text(urlparse(u).path))
+
         chosen = min(listing_like, key=path_len)
     # If profile says the real listing is at a different path (e.g. Activision /search-results), use it.
     canonical_path = _clean_text(profile.get("canonical_listing_path"))
@@ -200,5 +210,7 @@ def pick_canonical_listing_url(pages: list[str]) -> str | None:
         parsed = urlparse(chosen)
         path = _clean_text(parsed.path)
         if not path or path == "/":
-            chosen = urlunparse((parsed.scheme or "https", parsed.netloc, canonical_path, "", "", ""))
+            chosen = urlunparse(
+                (parsed.scheme or "https", parsed.netloc, canonical_path, "", "", "")
+            )
     return chosen

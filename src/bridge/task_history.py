@@ -1,4 +1,5 @@
 """Run history and task state persistence for bridge operations."""
+
 from __future__ import annotations
 
 import threading
@@ -80,13 +81,13 @@ class TaskHistoryManager:
                     break
             if match_idx >= 0:
                 merged = {**history[match_idx], **entry}
-                merged.setdefault("id", history[match_idx].get("id") or f"run_{uuid.uuid4().hex[:12]}")
+                merged.setdefault(
+                    "id", history[match_idx].get("id") or f"run_{uuid.uuid4().hex[:12]}"
+                )
                 history[match_idx] = merged
                 self.save_run_history(history)
                 return merged
-            history.append(
-                {**entry, "id": str(entry.get("id") or f"run_{uuid.uuid4().hex[:12]}")}
-            )
+            history.append({**entry, "id": str(entry.get("id") or f"run_{uuid.uuid4().hex[:12]}")})
             self.save_run_history(history)
             return history[-1]
 

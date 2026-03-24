@@ -39,7 +39,9 @@ async def _auto_resolve(redirects):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Refresh URL patches from source-discovery-report.json.")
+    parser = argparse.ArgumentParser(
+        description="Refresh URL patches from source-discovery-report.json."
+    )
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT_PATH)
     parser.add_argument("--output", type=Path, default=URL_PATCH_MANIFEST_PATH)
     parser.add_argument("--dry-run", action="store_true")

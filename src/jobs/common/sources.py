@@ -54,6 +54,9 @@ def read_approved_since_last_run(path: Path) -> int:
 
 def load_studio_source_registry(default_registry: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = load_registry_from_file(SOURCE_REGISTRY_ACTIVE_PATH, default_registry)
-    filtered = [row for row in rows if isinstance(row, dict) and not _looks_like_placeholder_registry_row(row)]
+    filtered = [
+        row
+        for row in rows
+        if isinstance(row, dict) and not _looks_like_placeholder_registry_row(row)
+    ]
     return filtered if filtered else [dict(row) for row in default_registry]
-

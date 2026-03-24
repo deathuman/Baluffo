@@ -121,7 +121,12 @@ def canonicalize_job_with_reason(
     normalized_link_source = raw.get("jobLink") if resolved_job_link is None else resolved_job_link
     normalized_link = normalize_url(normalized_link_source)
     skip_redirect_resolution = norm_text(source) in REDIRECT_RESOLUTION_SKIP_SOURCES
-    if resolved_job_link is None and normalized_link and callable(resolve_redirect_url) and not skip_redirect_resolution:
+    if (
+        resolved_job_link is None
+        and normalized_link
+        and callable(resolve_redirect_url)
+        and not skip_redirect_resolution
+    ):
         try:
             resolved_link = normalize_url(resolve_redirect_url(normalized_link))
         except Exception:  # noqa: BLE001
@@ -131,7 +136,11 @@ def canonicalize_job_with_reason(
     raw_link = clean_text(raw.get("jobLink"))
     if not normalized_link:
         return None, "missing_job_link"
-    if env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL) and raw_link and not normalized_link:
+    if (
+        env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL)
+        and raw_link
+        and not normalized_link
+    ):
         return None, "invalid_url"
 
     adapter = clean_text(raw.get("adapter"))
@@ -276,7 +285,9 @@ def canonicalize_google_sheets_rows(
     redirect_resolver: PooledRedirectResolver | None = None,
     redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
 ) -> tuple[list[CanonicalJob], Counter, dict[str, int]]:
-    redirect_concurrency = max(1, int(redirect_concurrency or DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY))
+    redirect_concurrency = max(
+        1, int(redirect_concurrency or DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY)
+    )
     redirect_candidates: list[tuple[int, str]] = []
     resolved_links: dict[int, str] = {}
     for idx, raw in enumerate(raw_rows):
@@ -289,6 +300,7 @@ def canonicalize_google_sheets_rows(
     redirect_started = time.perf_counter()
     resolve_fn = getattr(redirect_resolver, "resolve", None)
     if redirect_candidates and callable(resolve_fn):
+
         def _resolve(item: tuple[int, str]) -> tuple[int, str]:
             row_idx, url = item
             return row_idx, resolve_fn(url)
@@ -298,8 +310,12 @@ def canonicalize_google_sheets_rows(
                 row_idx, resolved = _resolve(item)
                 resolved_links[row_idx] = resolved
         else:
-            with ThreadPoolExecutor(max_workers=min(redirect_concurrency, len(redirect_candidates))) as executor:
-                future_map = {executor.submit(_resolve, item): item[0] for item in redirect_candidates}
+            with ThreadPoolExecutor(
+                max_workers=min(redirect_concurrency, len(redirect_candidates))
+            ) as executor:
+                future_map = {
+                    executor.submit(_resolve, item): item[0] for item in redirect_candidates
+                }
                 for future in as_completed(future_map):
                     row_idx, resolved = future.result()
                     resolved_links[row_idx] = resolved
@@ -325,15 +341,24 @@ def canonicalize_google_sheets_rows(
     redirect_resolved = sum(
         1
         for idx, original in redirect_candidates
-        if normalize_url(resolved_links.get(idx)) and normalize_url(resolved_links.get(idx)) != normalize_url(original)
+        if normalize_url(resolved_links.get(idx))
+        and normalize_url(resolved_links.get(idx)) != normalize_url(original)
     )
-    return canonical_batch, drop_reasons, {
-        "redirect_candidates": len(redirect_candidates),
-        "redirect_resolved": int(redirect_resolved),
-        "redirect_cache_hits": max(0, int(resolver_stats_after.get("cacheHits", 0)) - int(resolver_stats_before.get("cacheHits", 0))),
-        "redirect_resolve_ms": int(redirect_resolve_ms),
-        "canonicalize_ms": int(canonicalize_ms),
-    }
+    return (
+        canonical_batch,
+        drop_reasons,
+        {
+            "redirect_candidates": len(redirect_candidates),
+            "redirect_resolved": int(redirect_resolved),
+            "redirect_cache_hits": max(
+                0,
+                int(resolver_stats_after.get("cacheHits", 0))
+                - int(resolver_stats_before.get("cacheHits", 0)),
+            ),
+            "redirect_resolve_ms": int(redirect_resolve_ms),
+            "canonicalize_ms": int(canonicalize_ms),
+        },
+    )
 
 
 def canonical_job_to_legacy_dict(job: CanonicalJob) -> dict[str, Any]:
@@ -390,7 +415,6 @@ class CanonicalNormalizer(JobProcessor):
                 canonical_batch.append(normalized)
             elif drop_reason:
                 self.drop_reasons[drop_reason] += 1
-        
+
         self.stats["canonicalize_ms"] = int((time.perf_counter() - canonical_started) * 1000)
         return canonical_batch
-

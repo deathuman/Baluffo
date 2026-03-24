@@ -75,8 +75,12 @@ def make_handler(*, api: Any):
                 self.send_header("Content-Length", str(len(body)))
                 if filename:
                     safe_filename = str(filename).replace('"', "")
-                    safe_disposition = "attachment" if str(disposition).lower() == "attachment" else "inline"
-                    self.send_header("Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"')
+                    safe_disposition = (
+                        "attachment" if str(disposition).lower() == "attachment" else "inline"
+                    )
+                    self.send_header(
+                        "Content-Disposition", f'{safe_disposition}; filename="{safe_filename}"'
+                    )
                 self.end_headers()
                 self.wfile.write(body)
             except Exception as exc:  # noqa: BLE001
@@ -96,7 +100,9 @@ def make_handler(*, api: Any):
 
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
             runtime_config = getattr(api, "runtime_config", None)
-            if runtime_config is not None and bool(getattr(runtime_config, "quiet_requests", False)):
+            if runtime_config is not None and bool(
+                getattr(runtime_config, "quiet_requests", False)
+            ):
                 return
             try:
                 message = format % args
@@ -120,7 +126,9 @@ def make_handler(*, api: Any):
                 query = self._route_query()
                 api.mark_desktop_session_activity(path)
                 try:
-                    api.bridge_log("info", "http_get_route", rawPath=getattr(self, "path", ""), routePath=path)
+                    api.bridge_log(
+                        "info", "http_get_route", rawPath=getattr(self, "path", ""), routePath=path
+                    )
                 except Exception:
                     pass
 
@@ -157,7 +165,13 @@ def make_handler(*, api: Any):
             except BaseException as exc:  # noqa: BLE001
                 # Logging must never prevent the error response from being sent.
                 try:
-                    api.bridge_log("error", "http_post_handler_failed", path=path, error=str(exc), detail=traceback.format_exc())
+                    api.bridge_log(
+                        "error",
+                        "http_post_handler_failed",
+                        path=path,
+                        error=str(exc),
+                        detail=traceback.format_exc(),
+                    )
                 except Exception:  # noqa: BLE001
                     pass
                 self._send_json(
@@ -170,4 +184,3 @@ def make_handler(*, api: Any):
                 )
 
     return Handler
-

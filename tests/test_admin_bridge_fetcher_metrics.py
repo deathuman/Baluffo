@@ -5,6 +5,7 @@ from src.app_version import APP_VERSION
 def test_compute_fetcher_metrics_uses_history_window() -> None:
     original_get_ops_api = admin_bridge._get_ops_api
     try:
+
         class _FakeOpsApi:
             @staticmethod
             def compute_fetcher_metrics(*, window_runs: int = 20):

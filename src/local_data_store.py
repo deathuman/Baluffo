@@ -59,7 +59,9 @@ def _hash_fnv1a(value: str) -> str:
     current = 2166136261
     for char in str(value):
         current ^= ord(char)
-        current += (current << 1) + (current << 4) + (current << 7) + (current << 8) + (current << 24)
+        current += (
+            (current << 1) + (current << 4) + (current << 7) + (current << 8) + (current << 24)
+        )
     return format(current & 0xFFFFFFFF, "08x")
 
 
@@ -154,7 +156,12 @@ class LocalDataPaths:
     @staticmethod
     def from_data_dir(data_dir: Path) -> LocalDataPaths:
         root = data_dir / "local-user-data"
-        return LocalDataPaths(root=root, profiles=root / "profiles.json", session=root / "session.json", users=root / "users")
+        return LocalDataPaths(
+            root=root,
+            profiles=root / "profiles.json",
+            session=root / "session.json",
+            users=root / "users",
+        )
 
     def user_dir(self, uid: str) -> Path:
         return self.users / str(uid or "").strip()
@@ -199,7 +206,11 @@ class LocalDataStore:
     def _make_user(self, profile: dict[str, Any] | None) -> dict[str, Any] | None:
         if not profile:
             return None
-        return {"uid": str(profile.get("id") or ""), "displayName": str(profile.get("name") or ""), "email": str(profile.get("email") or "")}
+        return {
+            "uid": str(profile.get("id") or ""),
+            "displayName": str(profile.get("name") or ""),
+            "email": str(profile.get("email") or ""),
+        }
 
     def _profile_for_uid(self, uid: str) -> dict[str, Any] | None:
         for profile in self._load_profiles():
@@ -253,10 +264,21 @@ class LocalDataStore:
             if not trimmed:
                 raise ValueError("Sign-in cancelled.")
             profiles = self._load_profiles()
-            profile = next((row for row in profiles if str(row.get("name") or "").strip().lower() == trimmed.lower()), None)
+            profile = next(
+                (
+                    row
+                    for row in profiles
+                    if str(row.get("name") or "").strip().lower() == trimmed.lower()
+                ),
+                None,
+            )
             if profile is None:
                 slug = re.sub(r"[^a-z0-9]+", "_", trimmed.lower()).strip("_")
-                profile = {"id": f"local_{slug or _hash_fnv1a(trimmed)}", "name": trimmed, "email": ""}
+                profile = {
+                    "id": f"local_{slug or _hash_fnv1a(trimmed)}",
+                    "name": trimmed,
+                    "email": "",
+                }
                 profiles.append(profile)
                 self._save_profiles(profiles)
             self._save_session(str(profile.get("id") or ""))
@@ -271,7 +293,9 @@ class LocalDataStore:
             uid = str(self._load_session().get("currentProfileId") or "")
             return self._make_user(self._profile_for_uid(uid))
 
-    def _normalize_saved_job(self, uid: str, row: dict[str, Any], fallback: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _normalize_saved_job(
+        self, uid: str, row: dict[str, Any], fallback: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         source = dict(row or {})
         base = dict(fallback or {})
         job_key = generate_job_key(
@@ -287,40 +311,68 @@ class LocalDataStore:
         phase_timestamps.update(dict(source.get("phaseTimestamps") or {}))
         if not phase_timestamps.get("bookmark"):
             phase_timestamps["bookmark"] = saved_at
-        is_custom = bool(source.get("isCustom") if source.get("isCustom") is not None else base.get("isCustom"))
+        is_custom = bool(
+            source.get("isCustom") if source.get("isCustom") is not None else base.get("isCustom")
+        )
         return {
             "profileId": uid,
             "jobKey": job_key,
             "title": str(source.get("title") or base.get("title") or "").strip(),
             "company": str(source.get("company") or base.get("company") or "").strip(),
-            "sector": normalize_sector_value(source.get("sector") or base.get("sector"), source.get("companyType") or base.get("companyType") or ""),
-            "companyType": str(source.get("companyType") or base.get("companyType") or "Tech").strip() or "Tech",
+            "sector": normalize_sector_value(
+                source.get("sector") or base.get("sector"),
+                source.get("companyType") or base.get("companyType") or "",
+            ),
+            "companyType": str(
+                source.get("companyType") or base.get("companyType") or "Tech"
+            ).strip()
+            or "Tech",
             "city": str(source.get("city") or base.get("city") or "").strip(),
             "country": str(source.get("country") or base.get("country") or "").strip(),
-            "workType": str(source.get("workType") or base.get("workType") or "Onsite").strip() or "Onsite",
-            "contractType": str(source.get("contractType") or base.get("contractType") or "Unknown").strip() or "Unknown",
+            "workType": str(source.get("workType") or base.get("workType") or "Onsite").strip()
+            or "Onsite",
+            "contractType": str(
+                source.get("contractType") or base.get("contractType") or "Unknown"
+            ).strip()
+            or "Unknown",
             "jobLink": sanitize_job_url(str(source.get("jobLink") or base.get("jobLink") or "")),
             "profession": str(source.get("profession") or base.get("profession") or "").strip(),
             "isCustom": is_custom,
-            "customSourceLabel": str(source.get("customSourceLabel") or base.get("customSourceLabel") or "Personal").strip() if is_custom else "",
+            "customSourceLabel": str(
+                source.get("customSourceLabel") or base.get("customSourceLabel") or "Personal"
+            ).strip()
+            if is_custom
+            else "",
             "reminderAt": _normalize_iso(source.get("reminderAt") or base.get("reminderAt"), ""),
             "contactedAt": _normalize_iso(source.get("contactedAt") or base.get("contactedAt"), ""),
             "updatedBy": str(source.get("updatedBy") or base.get("updatedBy") or "").strip(),
-            "applicationStatus": normalize_application_status(source.get("applicationStatus") or base.get("applicationStatus")),
+            "applicationStatus": normalize_application_status(
+                source.get("applicationStatus") or base.get("applicationStatus")
+            ),
             "phaseTimestamps": phase_timestamps,
-            "notes": str(source.get("notes") if source.get("notes") is not None else base.get("notes") or ""),
-            "attachmentsCount": max(0, int(source.get("attachmentsCount") or base.get("attachmentsCount") or 0)),
+            "notes": str(
+                source.get("notes") if source.get("notes") is not None else base.get("notes") or ""
+            ),
+            "attachmentsCount": max(
+                0, int(source.get("attachmentsCount") or base.get("attachmentsCount") or 0)
+            ),
             "savedAt": saved_at,
-            "updatedAt": _normalize_iso(source.get("updatedAt") or base.get("updatedAt"), now_iso()),
+            "updatedAt": _normalize_iso(
+                source.get("updatedAt") or base.get("updatedAt"), now_iso()
+            ),
         }
 
-    def _merge_saved_job(self, uid: str, existing: dict[str, Any], imported: dict[str, Any]) -> dict[str, Any]:
+    def _merge_saved_job(
+        self, uid: str, existing: dict[str, Any], imported: dict[str, Any]
+    ) -> dict[str, Any]:
         current = self._normalize_saved_job(uid, existing)
         incoming = self._normalize_saved_job(uid, imported, current)
         merged = {**current, **incoming}
         merged["profileId"] = uid
         merged["jobKey"] = current["jobKey"]
-        merged["savedAt"] = _normalize_iso(current.get("savedAt") or incoming.get("savedAt"), now_iso())
+        merged["savedAt"] = _normalize_iso(
+            current.get("savedAt") or incoming.get("savedAt"), now_iso()
+        )
         merged["updatedAt"] = now_iso()
         phase_timestamps = dict(current.get("phaseTimestamps") or {})
         phase_timestamps.update(dict(incoming.get("phaseTimestamps") or {}))
@@ -329,7 +381,9 @@ class LocalDataStore:
         merged["phaseTimestamps"] = phase_timestamps
         return merged
 
-    def _add_activity(self, uid: str, event_type: str, job: dict[str, Any], details: dict[str, Any] | None = None) -> None:
+    def _add_activity(
+        self, uid: str, event_type: str, job: dict[str, Any], details: dict[str, Any] | None = None
+    ) -> None:
         rows = self._load_activity(uid)
         rows.append(
             {
@@ -346,11 +400,17 @@ class LocalDataStore:
         self._save_activity(uid, rows)
 
     def _attachment_count(self, uid: str, job_key: str) -> int:
-        return sum(1 for row in self._load_attachments(uid) if str(row.get("jobKey") or "") == str(job_key or ""))
+        return sum(
+            1
+            for row in self._load_attachments(uid)
+            if str(row.get("jobKey") or "") == str(job_key or "")
+        )
 
     def _touch_attachment_count(self, uid: str, job_key: str) -> None:
         rows = self._load_saved_jobs(uid)
-        target = next((row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None)
+        target = next(
+            (row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None
+        )
         if target:
             target["attachmentsCount"] = self._attachment_count(uid, job_key)
             target["updatedAt"] = now_iso()
@@ -364,7 +424,9 @@ class LocalDataStore:
     def get_saved_job_keys(self, uid: str) -> list[str]:
         return [str(row.get("jobKey") or "") for row in self.list_saved_jobs(uid)]
 
-    def save_job_for_user(self, uid: str, job: dict[str, Any], options: dict[str, Any] | None = None) -> str:
+    def save_job_for_user(
+        self, uid: str, job: dict[str, Any], options: dict[str, Any] | None = None
+    ) -> str:
         self._require_current_user(uid)
         with LOCK:
             self._ensure_user_dirs(uid)
@@ -376,37 +438,78 @@ class LocalDataStore:
             if not existing and isinstance(job.get("phaseTimestamps"), dict):
                 phase_timestamps.update(job.get("phaseTimestamps") or {})
             if not phase_timestamps.get("bookmark"):
-                phase_timestamps["bookmark"] = str((existing or {}).get("savedAt") or job.get("savedAt") or current_iso)
+                phase_timestamps["bookmark"] = str(
+                    (existing or {}).get("savedAt") or job.get("savedAt") or current_iso
+                )
             payload = {
                 "profileId": uid,
                 "jobKey": job_key,
                 "title": str(job.get("title") or (existing or {}).get("title") or ""),
                 "company": str(job.get("company") or (existing or {}).get("company") or ""),
-                "sector": normalize_sector_value(job.get("sector") or (existing or {}).get("sector"), job.get("companyType") or (existing or {}).get("companyType") or ""),
-                "companyType": str(job.get("companyType") or (existing or {}).get("companyType") or "Tech"),
+                "sector": normalize_sector_value(
+                    job.get("sector") or (existing or {}).get("sector"),
+                    job.get("companyType") or (existing or {}).get("companyType") or "",
+                ),
+                "companyType": str(
+                    job.get("companyType") or (existing or {}).get("companyType") or "Tech"
+                ),
                 "city": str(job.get("city") or (existing or {}).get("city") or ""),
                 "country": str(job.get("country") or (existing or {}).get("country") or ""),
-                "workType": str(job.get("workType") or (existing or {}).get("workType") or "Onsite"),
-                "contractType": str(job.get("contractType") or (existing or {}).get("contractType") or "Unknown"),
-                "jobLink": sanitize_job_url(str(job.get("jobLink") or (existing or {}).get("jobLink") or "")),
-                "profession": str(job.get("profession") or (existing or {}).get("profession") or ""),
+                "workType": str(
+                    job.get("workType") or (existing or {}).get("workType") or "Onsite"
+                ),
+                "contractType": str(
+                    job.get("contractType") or (existing or {}).get("contractType") or "Unknown"
+                ),
+                "jobLink": sanitize_job_url(
+                    str(job.get("jobLink") or (existing or {}).get("jobLink") or "")
+                ),
+                "profession": str(
+                    job.get("profession") or (existing or {}).get("profession") or ""
+                ),
                 "isCustom": bool((existing or {}).get("isCustom")) or bool(job.get("isCustom")),
-                "customSourceLabel": str(job.get("customSourceLabel") or (existing or {}).get("customSourceLabel") or "Personal") if (bool((existing or {}).get("isCustom")) or bool(job.get("isCustom"))) else "",
-                "reminderAt": str(job.get("reminderAt") or (existing or {}).get("reminderAt") or "").strip(),
-                "contactedAt": str(job.get("contactedAt") or (existing or {}).get("contactedAt") or "").strip(),
-                "updatedBy": str(job.get("updatedBy") or (existing or {}).get("updatedBy") or "").strip(),
-                "applicationStatus": normalize_application_status(job.get("applicationStatus") or (existing or {}).get("applicationStatus")),
+                "customSourceLabel": str(
+                    job.get("customSourceLabel")
+                    or (existing or {}).get("customSourceLabel")
+                    or "Personal"
+                )
+                if (bool((existing or {}).get("isCustom")) or bool(job.get("isCustom")))
+                else "",
+                "reminderAt": str(
+                    job.get("reminderAt") or (existing or {}).get("reminderAt") or ""
+                ).strip(),
+                "contactedAt": str(
+                    job.get("contactedAt") or (existing or {}).get("contactedAt") or ""
+                ).strip(),
+                "updatedBy": str(
+                    job.get("updatedBy") or (existing or {}).get("updatedBy") or ""
+                ).strip(),
+                "applicationStatus": normalize_application_status(
+                    job.get("applicationStatus") or (existing or {}).get("applicationStatus")
+                ),
                 "phaseTimestamps": phase_timestamps,
-                "notes": str((existing or {}).get("notes") if existing and job.get("notes") is None else job.get("notes") or ""),
+                "notes": str(
+                    (existing or {}).get("notes")
+                    if existing and job.get("notes") is None
+                    else job.get("notes") or ""
+                ),
                 "attachmentsCount": self._attachment_count(uid, job_key),
-                "savedAt": str((existing or {}).get("savedAt") or job.get("savedAt") or current_iso),
+                "savedAt": str(
+                    (existing or {}).get("savedAt") or job.get("savedAt") or current_iso
+                ),
                 "updatedAt": current_iso,
             }
             next_rows = [row for row in rows if str(row.get("jobKey") or "") != job_key] + [payload]
             self._save_saved_jobs(uid, next_rows)
             event_type = str((options or {}).get("eventType") or "").strip()
             if not event_type:
-                event_type = "custom_job_updated" if payload["isCustom"] and existing else "custom_job_created" if payload["isCustom"] else "job_saved"
+                event_type = (
+                    "custom_job_updated"
+                    if payload["isCustom"] and existing
+                    else "custom_job_created"
+                    if payload["isCustom"]
+                    else "job_saved"
+                )
             self._add_activity(uid, event_type, payload, {"isCustom": bool(payload["isCustom"])})
             return job_key
 
@@ -414,26 +517,45 @@ class LocalDataStore:
         self._require_current_user(uid)
         with LOCK:
             rows = self._load_saved_jobs(uid)
-            removed = next((row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None)
-            self._save_saved_jobs(uid, [row for row in rows if str(row.get("jobKey") or "") != str(job_key or "")])
+            removed = next(
+                (row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None
+            )
+            self._save_saved_jobs(
+                uid, [row for row in rows if str(row.get("jobKey") or "") != str(job_key or "")]
+            )
             if removed:
-                event_type = "custom_job_removed" if bool(removed.get("isCustom")) else "job_removed"
-                self._add_activity(uid, event_type, removed, {"fromStatus": str(removed.get("applicationStatus") or "bookmark")})
+                event_type = (
+                    "custom_job_removed" if bool(removed.get("isCustom")) else "job_removed"
+                )
+                self._add_activity(
+                    uid,
+                    event_type,
+                    removed,
+                    {"fromStatus": str(removed.get("applicationStatus") or "bookmark")},
+                )
 
-    def update_application_status(self, uid: str, job_key: str, status: str, options: dict[str, Any] | None = None) -> None:
+    def update_application_status(
+        self, uid: str, job_key: str, status: str, options: dict[str, Any] | None = None
+    ) -> None:
         self._require_current_user(uid)
         options = options or {}
         with LOCK:
             rows = self._load_saved_jobs(uid)
-            target = next((row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None)
+            target = next(
+                (row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None
+            )
             if not target:
                 raise ValueError("Saved job not found.")
             previous_status = normalize_application_status(target.get("applicationStatus"))
             next_status = normalize_application_status(status)
             if previous_status == next_status:
                 return
-            if not bool(options.get("override")) and not can_transition_phase(previous_status, next_status):
-                raise ValueError("Invalid phase transition. Use override for backward or skipped transitions.")
+            if not bool(options.get("override")) and not can_transition_phase(
+                previous_status, next_status
+            ):
+                raise ValueError(
+                    "Invalid phase transition. Use override for backward or skipped transitions."
+                )
             phase_timestamps = dict(target.get("phaseTimestamps") or {})
             cleanup_phase = str(options.get("cleanupPhase") or "").strip()
             if cleanup_phase:
@@ -443,13 +565,24 @@ class LocalDataStore:
             target["phaseTimestamps"] = phase_timestamps
             target["updatedAt"] = now_iso()
             self._save_saved_jobs(uid, rows)
-            self._add_activity(uid, "phase_changed", target, {"previousStatus": previous_status, "nextStatus": next_status, "overrideUsed": bool(options.get("override"))})
+            self._add_activity(
+                uid,
+                "phase_changed",
+                target,
+                {
+                    "previousStatus": previous_status,
+                    "nextStatus": next_status,
+                    "overrideUsed": bool(options.get("override")),
+                },
+            )
 
     def update_job_notes(self, uid: str, job_key: str, notes: str) -> None:
         self._require_current_user(uid)
         with LOCK:
             rows = self._load_saved_jobs(uid)
-            target = next((row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None)
+            target = next(
+                (row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None
+            )
             if not target:
                 raise ValueError("Saved job not found.")
             target["notes"] = str(notes or "")
@@ -458,14 +591,22 @@ class LocalDataStore:
     def list_attachments_for_job(self, uid: str, job_key: str) -> list[dict[str, Any]]:
         self._require_current_user(uid)
         with LOCK:
-            return [row for row in self._load_attachments(uid) if str(row.get("jobKey") or "") == str(job_key or "")]
+            return [
+                row
+                for row in self._load_attachments(uid)
+                if str(row.get("jobKey") or "") == str(job_key or "")
+            ]
 
-    def add_attachment_for_job(self, uid: str, job_key: str, file_meta: dict[str, Any], blob_data_url: str) -> str:
+    def add_attachment_for_job(
+        self, uid: str, job_key: str, file_meta: dict[str, Any], blob_data_url: str
+    ) -> str:
         self._require_current_user(uid)
         with LOCK:
             self._ensure_user_dirs(uid)
             mime, raw_bytes = _data_url_to_bytes(blob_data_url)
-            attachment_id = f"att_{_hash_fnv1a(str(file_meta.get('name') or 'file') + uuid.uuid4().hex)}"
+            attachment_id = (
+                f"att_{_hash_fnv1a(str(file_meta.get('name') or 'file') + uuid.uuid4().hex)}"
+            )
             file_name = str(file_meta.get("name") or "file")
             safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", file_name).strip("._") or "file"
             file_path = self.paths.attachment_dir(uid) / f"{attachment_id}-{safe_name}"
@@ -485,32 +626,66 @@ class LocalDataStore:
             )
             self._save_attachments(uid, rows)
             self._touch_attachment_count(uid, job_key)
-            self._add_activity(uid, "attachment_added", {"jobKey": job_key}, {"fileName": file_name, "size": int(file_meta.get("size") or len(raw_bytes))})
+            self._add_activity(
+                uid,
+                "attachment_added",
+                {"jobKey": job_key},
+                {"fileName": file_name, "size": int(file_meta.get("size") or len(raw_bytes))},
+            )
             return attachment_id
 
-    def get_attachment_blob(self, uid: str, job_key: str, attachment_id: str) -> tuple[bytes, str, str]:
+    def get_attachment_blob(
+        self, uid: str, job_key: str, attachment_id: str
+    ) -> tuple[bytes, str, str]:
         self._require_current_user(uid)
         with LOCK:
-            target = next((row for row in self._load_attachments(uid) if str(row.get("id") or "") == str(attachment_id or "") and str(row.get("jobKey") or "") == str(job_key or "")), None)
+            target = next(
+                (
+                    row
+                    for row in self._load_attachments(uid)
+                    if str(row.get("id") or "") == str(attachment_id or "")
+                    and str(row.get("jobKey") or "") == str(job_key or "")
+                ),
+                None,
+            )
             if not target:
                 raise ValueError("Attachment not found.")
             file_path = self.paths.attachment_dir(uid) / str(target.get("path") or "")
             if not file_path.exists() or not file_path.is_file():
                 raise FileNotFoundError("Attachment data not found.")
-            return file_path.read_bytes(), str(target.get("type") or "application/octet-stream"), str(target.get("name") or "attachment")
+            return (
+                file_path.read_bytes(),
+                str(target.get("type") or "application/octet-stream"),
+                str(target.get("name") or "attachment"),
+            )
 
     def delete_attachment_for_job(self, uid: str, job_key: str, attachment_id: str) -> None:
         self._require_current_user(uid)
         with LOCK:
             rows = self._load_attachments(uid)
-            target = next((row for row in rows if str(row.get("id") or "") == str(attachment_id or "") and str(row.get("jobKey") or "") == str(job_key or "")), None)
+            target = next(
+                (
+                    row
+                    for row in rows
+                    if str(row.get("id") or "") == str(attachment_id or "")
+                    and str(row.get("jobKey") or "") == str(job_key or "")
+                ),
+                None,
+            )
             if not target:
                 raise ValueError("Attachment not found.")
-            self._save_attachments(uid, [row for row in rows if str(row.get("id") or "") != str(attachment_id or "")])
+            self._save_attachments(
+                uid, [row for row in rows if str(row.get("id") or "") != str(attachment_id or "")]
+            )
             with contextlib.suppress(OSError):
                 (self.paths.attachment_dir(uid) / str(target.get("path") or "")).unlink()
             self._touch_attachment_count(uid, job_key)
-            self._add_activity(uid, "attachment_deleted", {"jobKey": job_key}, {"attachmentId": str(attachment_id or "")})
+            self._add_activity(
+                uid,
+                "attachment_deleted",
+                {"jobKey": job_key},
+                {"attachmentId": str(attachment_id or "")},
+            )
 
     def list_activity_for_user(self, uid: str, limit: int = 300) -> list[dict[str, Any]]:
         self._require_current_user(uid)
@@ -528,7 +703,10 @@ class LocalDataStore:
                 if include_files:
                     file_path = self.paths.attachment_dir(uid) / str(row.get("path") or "")
                     if file_path.exists():
-                        item["blobDataUrl"] = _bytes_to_data_url(str(row.get("type") or "application/octet-stream"), file_path.read_bytes())
+                        item["blobDataUrl"] = _bytes_to_data_url(
+                            str(row.get("type") or "application/octet-stream"),
+                            file_path.read_bytes(),
+                        )
                 attachments.append(item)
             activity = self._load_activity(uid)
             return {
@@ -571,13 +749,17 @@ class LocalDataStore:
                     skipped_invalid += 1
                     warnings.append("Skipped malformed saved job (missing title/company).")
                     continue
-                normalized = self._normalize_saved_job(uid, row, saved_map.get(str(row.get("jobKey") or "")))
+                normalized = self._normalize_saved_job(
+                    uid, row, saved_map.get(str(row.get("jobKey") or ""))
+                )
                 if not normalized.get("jobKey"):
                     skipped_invalid += 1
                     warnings.append("Skipped malformed saved job (missing jobKey).")
                     continue
                 if normalized["jobKey"] in saved_map:
-                    saved_map[normalized["jobKey"]] = self._merge_saved_job(uid, saved_map[normalized["jobKey"]], normalized)
+                    saved_map[normalized["jobKey"]] = self._merge_saved_job(
+                        uid, saved_map[normalized["jobKey"]], normalized
+                    )
                     updated += 1
                 else:
                     saved_map[normalized["jobKey"]] = normalized
@@ -586,13 +768,27 @@ class LocalDataStore:
 
             activity_rows = self._load_activity(uid)
             seen_activity = {
-                "|".join([str(row.get("type") or ""), str(row.get("jobKey") or ""), str(row.get("createdAt") or ""), json.dumps(row.get("details") or {}, sort_keys=True, ensure_ascii=False)])
+                "|".join(
+                    [
+                        str(row.get("type") or ""),
+                        str(row.get("jobKey") or ""),
+                        str(row.get("createdAt") or ""),
+                        json.dumps(row.get("details") or {}, sort_keys=True, ensure_ascii=False),
+                    ]
+                )
                 for row in activity_rows
             }
             for row in payload.get("activityLog") or []:
                 if not isinstance(row, dict):
                     continue
-                signature = "|".join([str(row.get("type") or ""), str(row.get("jobKey") or ""), str(row.get("createdAt") or ""), json.dumps(row.get("details") or {}, sort_keys=True, ensure_ascii=False)])
+                signature = "|".join(
+                    [
+                        str(row.get("type") or ""),
+                        str(row.get("jobKey") or ""),
+                        str(row.get("createdAt") or ""),
+                        json.dumps(row.get("details") or {}, sort_keys=True, ensure_ascii=False),
+                    ]
+                )
                 if signature in seen_activity:
                     continue
                 seen_activity.add(signature)
@@ -613,7 +809,14 @@ class LocalDataStore:
 
             attachment_rows = self._load_attachments(uid)
             seen_attachments = {
-                "|".join([str(row.get("jobKey") or ""), str(row.get("name") or "").lower(), str(int(row.get("size") or 0)), str(row.get("type") or "").lower()])
+                "|".join(
+                    [
+                        str(row.get("jobKey") or ""),
+                        str(row.get("name") or "").lower(),
+                        str(int(row.get("size") or 0)),
+                        str(row.get("type") or "").lower(),
+                    ]
+                )
                 for row in attachment_rows
             }
             for row in payload.get("attachments") or []:
@@ -623,12 +826,22 @@ class LocalDataStore:
                 if not job_key:
                     warnings.append("Skipped attachment without jobKey.")
                     continue
-                signature = "|".join([job_key, str(row.get("name") or "").lower(), str(int(row.get("size") or 0)), str(row.get("type") or "").lower()])
+                signature = "|".join(
+                    [
+                        job_key,
+                        str(row.get("name") or "").lower(),
+                        str(int(row.get("size") or 0)),
+                        str(row.get("type") or "").lower(),
+                    ]
+                )
                 if signature in seen_attachments:
                     continue
                 seen_attachments.add(signature)
                 attachment_id = str(row.get("id") or f"att_{uuid.uuid4().hex[:10]}")
-                safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", str(row.get("name") or "file")).strip("._") or "file"
+                safe_name = (
+                    re.sub(r"[^A-Za-z0-9._-]+", "_", str(row.get("name") or "file")).strip("._")
+                    or "file"
+                )
                 file_name = ""
                 blob_data_url = str(row.get("blobDataUrl") or "").strip()
                 if blob_data_url:
@@ -674,7 +887,9 @@ class LocalDataStore:
                 profile = self._profile_for_uid(uid) or {"name": uid, "email": ""}
                 saved_jobs = self._load_saved_jobs(uid)
                 attachments = self._load_attachments(uid)
-                notes_bytes = sum(len(str(row.get("notes") or "").encode("utf-8")) for row in saved_jobs)
+                notes_bytes = sum(
+                    len(str(row.get("notes") or "").encode("utf-8")) for row in saved_jobs
+                )
                 attachments_bytes = 0
                 for row in attachments:
                     file_path = self.paths.attachment_dir(uid) / str(row.get("path") or "")
@@ -710,9 +925,10 @@ class LocalDataStore:
         if not target_uid:
             raise ValueError("Missing account id.")
         with LOCK:
-            self._save_profiles([row for row in self._load_profiles() if str(row.get("id") or "") != target_uid])
+            self._save_profiles(
+                [row for row in self._load_profiles() if str(row.get("id") or "") != target_uid]
+            )
             shutil.rmtree(self.paths.user_dir(target_uid), ignore_errors=True)
             current = self.get_current_user()
             if current and str(current.get("uid") or "") == target_uid:
                 self._save_session("")
-

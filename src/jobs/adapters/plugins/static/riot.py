@@ -53,7 +53,10 @@ def run(
     jobs = _parse_listing_rows(
         html=html,
         page_url=page_url,
-        company=clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Riot Games",
+        company=clean_text(
+            source_row.get("company") or source_row.get("studio") or source_row.get("name")
+        )
+        or "Riot Games",
         source_id=clean_text(source_row.get("id")) or "riot",
         source_name=clean_text(source_row.get("name")) or "Riot Games",
     )
@@ -74,7 +77,9 @@ def run(
     return jobs
 
 
-def _parse_listing_rows(*, html: str, page_url: str, company: str, source_id: str, source_name: str) -> list[RawJob]:
+def _parse_listing_rows(
+    *, html: str, page_url: str, company: str, source_id: str, source_name: str
+) -> list[RawJob]:
     jobs: list[RawJob] = []
     seen: set[str] = set()
 
@@ -88,7 +93,9 @@ def _parse_listing_rows(*, html: str, page_url: str, company: str, source_id: st
         if not absolute or absolute in seen:
             continue
         lines = html_fragment_lines(anchor.get("body", ""))
-        title = clean_text(extract_first_tag_text(anchor.get("body", ""), ["h1", "h2", "h3", "h4", "h5", "h6"]))
+        title = clean_text(
+            extract_first_tag_text(anchor.get("body", ""), ["h1", "h2", "h3", "h4", "h5", "h6"])
+        )
         if not title:
             title = clean_text(lines[0] if lines else anchor.get("text"))
         if not title:
@@ -98,9 +105,23 @@ def _parse_listing_rows(*, html: str, page_url: str, company: str, source_id: st
         craft = ""
         for line in lines[1:]:
             lowered = line.lower()
-            if not craft and any(token in lowered for token in ("art", "engineering", "design", "publishing", "security", "data")):
+            if not craft and any(
+                token in lowered
+                for token in ("art", "engineering", "design", "publishing", "security", "data")
+            ):
                 craft = line
-            if not location and any(token in lowered for token in ("remote", "los angeles", "dublin", "seoul", "shanghai", "singapore", "berlin")):
+            if not location and any(
+                token in lowered
+                for token in (
+                    "remote",
+                    "los angeles",
+                    "dublin",
+                    "seoul",
+                    "shanghai",
+                    "singapore",
+                    "berlin",
+                )
+            ):
                 location = line
         jobs.append(
             {

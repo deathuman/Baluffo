@@ -39,7 +39,9 @@ def summarize_run(path: Path) -> dict[str, Any]:
     if not isinstance(report, dict):
         report = {}
     runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    timing_summary = runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
+    timing_summary = (
+        runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
+    )
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     sources = [row for row in (report.get("sources") or []) if isinstance(row, dict)]
     failed_sources = [
@@ -188,7 +190,9 @@ def build_report(report_paths: Iterable[Path], release_floor: int) -> dict[str, 
     }
 
 
-def build_recommendations(runs: list[dict[str, Any]], volatility: list[dict[str, Any]], release_floor: int) -> list[str]:
+def build_recommendations(
+    runs: list[dict[str, Any]], volatility: list[dict[str, Any]], release_floor: int
+) -> list[str]:
     items: list[str] = []
     gate = build_gate(runs, release_floor)
     if not gate.get("passesReleaseFloor"):
@@ -196,15 +200,21 @@ def build_recommendations(runs: list[dict[str, Any]], volatility: list[dict[str,
             f"Do not use a single high-water run as the release gate; the minimum repeated output ({safe_int(gate.get('minOutputCount'))}) is below the release floor ({release_floor})."
         )
     if not gate.get("passesNoTopLevelFailures"):
-        items.append("Treat top-level source failures as a repeatability blocker until the maximum repeated run failure count returns to zero.")
+        items.append(
+            "Treat top-level source failures as a repeatability blocker until the maximum repeated run failure count returns to zero."
+        )
     if volatility:
         top = volatility[0]
         items.append(
             f"Stabilize `{safe_text(top.get('name'))}` first; it has the largest kept-job swing ({safe_int(top.get('keptCountSwing'))}) across repeated full-refresh runs."
         )
     if any("gracklehq" == safe_text(row.get("name")) for row in volatility):
-        items.append("Add a preflight or monitored-volatility rule for `gracklehq` so one transient network miss does not dominate release acceptance.")
-    items.append("Use the repeatability report together with the single-run audit: one shows correctness of a run, the other shows whether the baseline is stable enough to release.")
+        items.append(
+            "Add a preflight or monitored-volatility rule for `gracklehq` so one transient network miss does not dominate release acceptance."
+        )
+    items.append(
+        "Use the repeatability report together with the single-run audit: one shows correctness of a run, the other shows whether the baseline is stable enough to release."
+    )
     return items[:5]
 
 
@@ -256,11 +266,26 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build a release repeatability report from multiple jobs-fetch reports.")
-    parser.add_argument("--reports", nargs="+", required=True, help="One or more jobs-fetch-report.json paths.")
-    parser.add_argument("--release-floor", type=int, default=34131, help="Release floor for repeated full-refresh runs.")
-    parser.add_argument("--output-json", default="", help="Optional output path for the JSON repeatability report.")
-    parser.add_argument("--output-md", default="", help="Optional output path for the Markdown repeatability report.")
+    parser = argparse.ArgumentParser(
+        description="Build a release repeatability report from multiple jobs-fetch reports."
+    )
+    parser.add_argument(
+        "--reports", nargs="+", required=True, help="One or more jobs-fetch-report.json paths."
+    )
+    parser.add_argument(
+        "--release-floor",
+        type=int,
+        default=34131,
+        help="Release floor for repeated full-refresh runs.",
+    )
+    parser.add_argument(
+        "--output-json", default="", help="Optional output path for the JSON repeatability report."
+    )
+    parser.add_argument(
+        "--output-md",
+        default="",
+        help="Optional output path for the Markdown repeatability report.",
+    )
     return parser.parse_args()
 
 
@@ -269,8 +294,16 @@ def main() -> int:
     report_paths = [Path(item).resolve() for item in args.reports]
     report = build_report(report_paths, args.release_floor)
     default_root = report_paths[0].parent if report_paths else Path("data").resolve()
-    json_output = Path(args.output_json).resolve() if safe_text(args.output_json) else default_root / "release-repeatability-report.json"
-    md_output = Path(args.output_md).resolve() if safe_text(args.output_md) else default_root / "release-repeatability-report.md"
+    json_output = (
+        Path(args.output_json).resolve()
+        if safe_text(args.output_json)
+        else default_root / "release-repeatability-report.json"
+    )
+    md_output = (
+        Path(args.output_md).resolve()
+        if safe_text(args.output_md)
+        else default_root / "release-repeatability-report.md"
+    )
     json_output.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     md_output.write_text(render_markdown(report), encoding="utf-8")
     print(str(json_output))

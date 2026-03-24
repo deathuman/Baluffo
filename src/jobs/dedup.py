@@ -66,7 +66,9 @@ def company_preference_score(job: CanonicalJob | dict[str, Any]) -> int:
     return 2
 
 
-def choose_base_record(left: CanonicalJob, right: CanonicalJob) -> tuple[CanonicalJob, CanonicalJob]:
+def choose_base_record(
+    left: CanonicalJob, right: CanonicalJob
+) -> tuple[CanonicalJob, CanonicalJob]:
     left_rich = record_richness(left)
     right_rich = record_richness(right)
     if right_rich > left_rich:
@@ -181,7 +183,9 @@ def _enrich_unknown_company_from_gracklehq_redirect(rows: list[CanonicalJob]) ->
     return enriched
 
 
-def deduplicate_jobs(rows: Sequence[CanonicalJob | dict[str, Any]]) -> tuple[list[CanonicalJob], dict[str, Any]]:
+def deduplicate_jobs(
+    rows: Sequence[CanonicalJob | dict[str, Any]],
+) -> tuple[list[CanonicalJob], dict[str, Any]]:
     merged_rows: list[CanonicalJob] = []
     by_primary: dict[str, int] = {}
     by_secondary: dict[str, int] = {}
@@ -198,8 +202,12 @@ def deduplicate_jobs(rows: Sequence[CanonicalJob | dict[str, Any]]) -> tuple[lis
         primary = fingerprint_url(payload.get("jobLink"))
         secondary = dedup_secondary_key(current)
         social_key = ""
-        if clean_text(payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(payload.get("sourceJobId")):
-            social_key = f"{clean_text(payload.get('source'))}|{clean_text(payload.get('sourceJobId'))}"
+        if clean_text(payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(
+            payload.get("sourceJobId")
+        ):
+            social_key = (
+                f"{clean_text(payload.get('source'))}|{clean_text(payload.get('sourceJobId'))}"
+            )
 
         target_idx: int | None = None
         merge_reason = ""
@@ -218,11 +226,15 @@ def deduplicate_jobs(rows: Sequence[CanonicalJob | dict[str, Any]]) -> tuple[lis
             if primary:
                 item["dedupKey"] = f"url:{primary}"
             elif secondary:
-                item["dedupKey"] = f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
+                item["dedupKey"] = (
+                    f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
+                )
             elif social_key:
                 item["dedupKey"] = f"social:{hashlib.sha1(social_key.encode('utf-8')).hexdigest()}"
             else:
-                item["dedupKey"] = f"secondary:{hashlib.sha1('|'.join([norm_text(item.get('company')), norm_text(item.get('title'))]).encode('utf-8')).hexdigest()}"
+                item["dedupKey"] = (
+                    f"secondary:{hashlib.sha1('|'.join([norm_text(item.get('company')), norm_text(item.get('title'))]).encode('utf-8')).hexdigest()}"
+                )
             item["qualityScore"] = compute_quality_score(item)
             item["focusScore"] = compute_focus_score(item)
             merged_rows.append(CanonicalJob.from_mapping(item))
@@ -258,14 +270,20 @@ def deduplicate_jobs(rows: Sequence[CanonicalJob | dict[str, Any]]) -> tuple[lis
         primary = fingerprint_url(merged_payload.get("jobLink"))
         secondary = dedup_secondary_key(merged)
         merged_social_key = ""
-        if clean_text(merged_payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(merged_payload.get("sourceJobId")):
+        if clean_text(merged_payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(
+            merged_payload.get("sourceJobId")
+        ):
             merged_social_key = f"{clean_text(merged_payload.get('source'))}|{clean_text(merged_payload.get('sourceJobId'))}"
         if primary:
             merged_payload["dedupKey"] = f"url:{primary}"
         elif secondary:
-            merged_payload["dedupKey"] = f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
+            merged_payload["dedupKey"] = (
+                f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
+            )
         elif merged_social_key:
-            merged_payload["dedupKey"] = f"social:{hashlib.sha1(merged_social_key.encode('utf-8')).hexdigest()}"
+            merged_payload["dedupKey"] = (
+                f"social:{hashlib.sha1(merged_social_key.encode('utf-8')).hexdigest()}"
+            )
         merged_rows[target_idx] = CanonicalJob.from_mapping(merged_payload)
         if primary:
             by_primary[primary] = target_idx
@@ -283,7 +301,10 @@ def deduplicate_jobs(rows: Sequence[CanonicalJob | dict[str, Any]]) -> tuple[lis
         reverse=True,
     )
     merged_rows = _enrich_unknown_company_from_gracklehq_redirect(merged_rows)
-    merged_rows = [CanonicalJob.from_mapping({**row.to_dict(), "id": idx}) for idx, row in enumerate(merged_rows, start=1)]
+    merged_rows = [
+        CanonicalJob.from_mapping({**row.to_dict(), "id": idx})
+        for idx, row in enumerate(merged_rows, start=1)
+    ]
     return merged_rows, {
         "inputCount": len(rows),
         "mergedCount": merges,
@@ -306,4 +327,3 @@ class CanonicalDeduplicator(JobProcessor):
         merged, stats = deduplicate_jobs(jobs)
         self.stats = stats
         return merged
-

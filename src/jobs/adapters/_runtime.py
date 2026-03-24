@@ -24,4 +24,3 @@ def facade():
     if spec_name == "src.jobs_fetcher":
         return main_mod
     return common
-

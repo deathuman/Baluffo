@@ -3,6 +3,7 @@
 Uses injected deps (fetch_text, playwright, html_extractor, etc.) so admin_bridge
 or other callers wire discovery and bridge modules once. Used by check_static_source.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -72,7 +73,9 @@ def fetch_static_page_with_alternates(
         if redirect_candidate not in alt_candidates:
             alt_candidates.append(redirect_candidate)
     for alt_url in alt_candidates[:6]:
-        alt_html, alt_error, alt_attempted, alt_used = fetch_html_with_fallback_fn(alt_url, timeout_s)
+        alt_html, alt_error, alt_attempted, alt_used = fetch_html_with_fallback_fn(
+            alt_url, timeout_s
+        )
         attempted = attempted or alt_attempted
         used = used or alt_used
         if alt_error:

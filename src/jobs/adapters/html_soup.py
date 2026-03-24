@@ -54,7 +54,9 @@ class SoupNode:
     def select(self, query: str) -> list[SoupNode]:
         return [SoupNode(node) for node in self._selector.css(query)]
 
-    def find(self, name: Any = None, attrs: dict[str, Any] | None = None, **kwargs: Any) -> SoupNode | None:
+    def find(
+        self, name: Any = None, attrs: dict[str, Any] | None = None, **kwargs: Any
+    ) -> SoupNode | None:
         xpath = f".//{_build_name_xpath(name)}"
         predicates: list[str] = []
         for attr_name, attr_value in (attrs or {}).items():

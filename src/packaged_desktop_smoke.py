@@ -44,8 +44,16 @@ STARTUP_REQUIRED_EVENTS = (
     "desktop_shell_window_shown",
 )
 EMBEDDED_PAGE_PROBES = (
-    {"name": "Embedded Jobs Ready", "openPath": "jobs.html", "requiredEvents": ("jobs_first_render", "jobs_first_interactive")},
-    {"name": "Embedded Saved Ready", "openPath": "saved.html", "requiredEvents": ("saved_auth_ready",)},
+    {
+        "name": "Embedded Jobs Ready",
+        "openPath": "jobs.html",
+        "requiredEvents": ("jobs_first_render", "jobs_first_interactive"),
+    },
+    {
+        "name": "Embedded Saved Ready",
+        "openPath": "saved.html",
+        "requiredEvents": ("saved_auth_ready",),
+    },
     {"name": "Embedded Admin Ready", "openPath": "admin.html", "requiredEvents": ("admin_ready",)},
 )
 
@@ -104,7 +112,9 @@ def fetch_text(url: str, timeout_s: float = 2.5) -> str:
 
 
 def fetch_startup_metrics(bridge_base_url: str, limit: int = 1000) -> list[dict[str, Any]]:
-    metrics_payload = fetch_json(f"{bridge_base_url}/desktop-local-data/startup-metrics?limit={int(limit)}")
+    metrics_payload = fetch_json(
+        f"{bridge_base_url}/desktop-local-data/startup-metrics?limit={int(limit)}"
+    )
     rows = metrics_payload.get("rows") if isinstance(metrics_payload.get("rows"), list) else []
     return [row for row in rows if isinstance(row, dict)]
 
@@ -249,7 +259,9 @@ def build_packaged_smoke_env(
     return env
 
 
-def ensure_portable_exe(exe_path: Path, rebuild: bool = False, rebuild_output_dir: Path | None = None) -> Path:
+def ensure_portable_exe(
+    exe_path: Path, rebuild: bool = False, rebuild_output_dir: Path | None = None
+) -> Path:
     exe = Path(exe_path).expanduser().resolve()
     if rebuild or not exe.exists():
         built_exe = run_portable_build(rebuild_output_dir)
@@ -329,11 +341,15 @@ def wait_for_packaged_runtime(
 ) -> dict[str, Any]:
     deadline = time.monotonic() + max(1.0, float(timeout_s))
     last_error = ""
-    normalized = tuple(str(event or "").strip() for event in required_events if str(event or "").strip())
+    normalized = tuple(
+        str(event or "").strip() for event in required_events if str(event or "").strip()
+    )
     while time.monotonic() < deadline:
         exit_code = process.poll()
         if exit_code is not None:
-            raise RuntimeError(f"Packaged desktop executable exited before smoke runtime became ready (exit {exit_code}).")
+            raise RuntimeError(
+                f"Packaged desktop executable exited before smoke runtime became ready (exit {exit_code})."
+            )
         try:
             health = fetch_json(f"{bridge_base_url}/ops/health")
             session = fetch_json(f"{bridge_base_url}/desktop-local-data/session")
@@ -356,7 +372,13 @@ def wait_for_packaged_runtime(
                     "session": session,
                     "startupMetrics": metrics_rows,
                 }
-        except (TimeoutError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, ValueError) as exc:
+        except (
+            TimeoutError,
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as exc:
             last_error = str(exc)
         time.sleep(0.35)
     raise TimeoutError(
@@ -372,13 +394,17 @@ def capture_runtime_snapshot(bridge_base_url: str, artifacts_dir: Path) -> dict[
         "startupMetricsSnapshot": artifacts_dir / "startup-metrics.json",
     }
     write_json(snapshots["opsHealthSnapshot"], fetch_json(f"{bridge_base_url}/ops/health"))
-    write_json(snapshots["sessionSnapshot"], fetch_json(f"{bridge_base_url}/desktop-local-data/session"))
+    write_json(
+        snapshots["sessionSnapshot"], fetch_json(f"{bridge_base_url}/desktop-local-data/session")
+    )
     metrics_payload = fetch_json(f"{bridge_base_url}/desktop-local-data/startup-metrics?limit=1000")
     write_json(snapshots["startupMetricsSnapshot"], metrics_payload)
     return {key: str(path) for key, path in snapshots.items()}
 
 
-def wait_for_runtime_events(bridge_base_url: str, required_events: list[str] | tuple[str, ...], timeout_s: float) -> list[dict[str, Any]]:
+def wait_for_runtime_events(
+    bridge_base_url: str, required_events: list[str] | tuple[str, ...], timeout_s: float
+) -> list[dict[str, Any]]:
     deadline = time.monotonic() + max(1.0, float(timeout_s))
     normalized = [str(event or "").strip() for event in required_events if str(event or "").strip()]
     last_events: set[str] = set()
@@ -432,7 +458,9 @@ def run_embedded_runtime_probe(
             bridge_base_url=bridge_base_url,
             timeout_s=runtime_timeout_s,
             open_path=str(probe.get("openPath") or "jobs.html"),
-            required_events=startup_profile_required_events(Path(str(probe.get("openPath") or "jobs.html")).stem or "jobs")
+            required_events=startup_profile_required_events(
+                Path(str(probe.get("openPath") or "jobs.html")).stem or "jobs"
+            )
             if startup_probe
             else STARTUP_REQUIRED_EVENTS,
         )
@@ -550,7 +578,11 @@ def run_packaged_node_smoke(
     diagnostics["runnerStderr"] = str(completed.stderr or "")
     report_payload = read_packaged_node_smoke_payload(report_path)
     scenarios = parse_packaged_node_smoke_report(report_path)
-    report_errors = [str(item) for item in report_payload.get("errors", []) if str(item or "").strip()] if isinstance(report_payload.get("errors"), list) else []
+    report_errors = (
+        [str(item) for item in report_payload.get("errors", []) if str(item or "").strip()]
+        if isinstance(report_payload.get("errors"), list)
+        else []
+    )
     failure_category = ""
     runner_error = str(completed.stderr or completed.stdout or "")
     if report_errors:
@@ -568,7 +600,9 @@ def run_packaged_node_smoke(
     }
 
 
-def build_failure_payload(step: str, error: Exception | str, *, category: str = "") -> dict[str, Any]:
+def build_failure_payload(
+    step: str, error: Exception | str, *, category: str = ""
+) -> dict[str, Any]:
     payload = {
         "step": str(step or "unknown"),
         "message": str(error),
@@ -578,7 +612,9 @@ def build_failure_payload(step: str, error: Exception | str, *, category: str = 
     return payload
 
 
-def run_warmup_launch(exe_path: Path, *, open_path: str, runtime_timeout_s: float, startup_probe: bool) -> None:
+def run_warmup_launch(
+    exe_path: Path, *, open_path: str, runtime_timeout_s: float, startup_probe: bool
+) -> None:
     warmup_root = DEFAULT_ARTIFACT_ROOT / "warmup"
     warmup_root.mkdir(parents=True, exist_ok=True)
     process = None
@@ -616,7 +652,9 @@ def run_warmup_launch(exe_path: Path, *, open_path: str, runtime_timeout_s: floa
 def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     started_at = utc_now_iso()
     run_token = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    artifacts_dir = Path(args.artifacts_dir or (DEFAULT_ARTIFACT_ROOT / run_token)).expanduser().resolve()
+    artifacts_dir = (
+        Path(args.artifacts_dir or (DEFAULT_ARTIFACT_ROOT / run_token)).expanduser().resolve()
+    )
     runtime_data_dir = artifacts_dir / "runtime-data"
     embedded_artifacts_dir = artifacts_dir / "embedded-runtime-probes"
     stdout_path = artifacts_dir / "desktop-exe.stdout.log"
@@ -637,8 +675,14 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     runtime_data_dir.mkdir(parents=True, exist_ok=True)
     embedded_artifacts_dir.mkdir(parents=True, exist_ok=True)
     requested_exe_path = Path(args.exe_path or DEFAULT_EXE_PATH).expanduser().resolve()
-    rebuild_output_dir = artifacts_dir / "portable-build" if bool(args.rebuild) and requested_exe_path == DEFAULT_EXE_PATH.resolve() else None
-    exe_path = ensure_portable_exe(requested_exe_path, rebuild=bool(args.rebuild), rebuild_output_dir=rebuild_output_dir)
+    rebuild_output_dir = (
+        artifacts_dir / "portable-build"
+        if bool(args.rebuild) and requested_exe_path == DEFAULT_EXE_PATH.resolve()
+        else None
+    )
+    exe_path = ensure_portable_exe(
+        requested_exe_path, rebuild=bool(args.rebuild), rebuild_output_dir=rebuild_output_dir
+    )
 
     report: dict[str, Any] = {
         "ok": False,
@@ -668,7 +712,9 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     stdout_handle = None
     stderr_handle = None
     try:
-        report["environment"] = collect_packaged_smoke_env_diagnostics(artifacts_dir=artifacts_dir, exe_path=exe_path)
+        report["environment"] = collect_packaged_smoke_env_diagnostics(
+            artifacts_dir=artifacts_dir, exe_path=exe_path
+        )
         if profile_mode == "warm":
             run_warmup_launch(
                 exe_path,
@@ -694,7 +740,9 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 else:
                     print("✘", end="", flush=True)
             report["scenarios"].extend(embedded_scenarios)
-            first_failed_embedded = next((row for row in embedded_scenarios if str(row.get("status")) != "passed"), None)
+            first_failed_embedded = next(
+                (row for row in embedded_scenarios if str(row.get("status")) != "passed"), None
+            )
             if first_failed_embedded:
                 raise RuntimeError(
                     f"{first_failed_embedded.get('name', 'Embedded probe')} failed: {first_failed_embedded.get('error', '')}".strip()
@@ -715,22 +763,35 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             bridge_base_url=bridge_base_url,
             timeout_s=float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S),
             open_path=open_path,
-            required_events=startup_profile_required_events(startup_page) if startup_probe else STARTUP_REQUIRED_EVENTS,
+            required_events=startup_profile_required_events(startup_page)
+            if startup_probe
+            else STARTUP_REQUIRED_EVENTS,
         )
         report["bridgeReady"] = True
         report["startupMetrics"] = runtime_state.get("startupMetrics") or []
         if startup_probe:
-            startup_profile = summarize_startup_metrics(report["startupMetrics"], page=startup_page, profile_mode=profile_mode)
+            startup_profile = summarize_startup_metrics(
+                report["startupMetrics"], page=startup_page, profile_mode=profile_mode
+            )
             report["startupProfile"] = startup_profile
-            report["artifacts"]["startupProfileSummary"] = str(artifacts_dir / "startup-profile-summary.json")
+            report["artifacts"]["startupProfileSummary"] = str(
+                artifacts_dir / "startup-profile-summary.json"
+            )
             write_startup_summary(artifacts_dir / "startup-profile-summary.json", startup_profile)
             report["scenarios"].append(
                 {
                     "name": "Startup Profile",
                     "slug": "startup-profile",
-                    "status": "passed" if str(startup_profile.get("status")) == "passed" else "failed",
+                    "status": "passed"
+                    if str(startup_profile.get("status")) == "passed"
+                    else "failed",
                     "durationMs": int(startup_profile.get("firstUsableMs") or 0),
-                    "error": "" if str(startup_profile.get("status")) == "passed" else str(startup_profile.get("classification") or "startup profile threshold exceeded"),
+                    "error": ""
+                    if str(startup_profile.get("status")) == "passed"
+                    else str(
+                        startup_profile.get("classification")
+                        or "startup profile threshold exceeded"
+                    ),
                     "startupProfile": startup_profile,
                 }
             )
@@ -760,24 +821,28 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
         if isinstance(smoke_runner_result.get("environment"), dict):
             report["environment"] = dict(smoke_runner_result["environment"])
         if int(smoke_runner_result.get("exitCode", 1)) != 0:
-            failed = next((row for row in report["scenarios"] if str(row.get("status")) != "passed"), None)
+            failed = next(
+                (row for row in report["scenarios"] if str(row.get("status")) != "passed"), None
+            )
             report["failure"] = build_failure_payload(
                 "playwright",
                 failed.get("error")
                 if isinstance(failed, dict) and failed.get("error")
-                else str(smoke_runner_result.get("runnerError") or "Packaged desktop smoke failed."),
+                else str(
+                    smoke_runner_result.get("runnerError") or "Packaged desktop smoke failed."
+                ),
                 category=str(smoke_runner_result.get("failureCategory") or ""),
             )
         else:
             report["ok"] = all(str(row.get("status")) == "passed" for row in report["scenarios"])
-        
+
         # Output dots for Node smoke scenarios
         for row in smoke_runner_result.get("scenarios", []):
             if str(row.get("status")) == "passed":
                 print(".", end="", flush=True)
             else:
                 print("✘", end="", flush=True)
-                
+
         report["artifacts"].update(capture_runtime_snapshot(bridge_base_url, artifacts_dir))
     except Exception as exc:  # noqa: BLE001
         if startup_probe:
@@ -791,23 +856,42 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 partial_metrics = read_startup_metrics_file(runtime_data_dir, limit=1000)
             if partial_metrics:
                 report["startupMetrics"] = partial_metrics
-                startup_profile = summarize_startup_metrics(partial_metrics, page="jobs", profile_mode=profile_mode)
+                startup_profile = summarize_startup_metrics(
+                    partial_metrics, page="jobs", profile_mode=profile_mode
+                )
                 report["startupProfile"] = startup_profile
-                report["artifacts"]["startupProfileSummary"] = str(artifacts_dir / "startup-profile-summary.json")
-                write_startup_summary(artifacts_dir / "startup-profile-summary.json", startup_profile)
-                if not any(str(row.get("slug")) == "startup-profile" for row in report["scenarios"] if isinstance(row, dict)):
+                report["artifacts"]["startupProfileSummary"] = str(
+                    artifacts_dir / "startup-profile-summary.json"
+                )
+                write_startup_summary(
+                    artifacts_dir / "startup-profile-summary.json", startup_profile
+                )
+                if not any(
+                    str(row.get("slug")) == "startup-profile"
+                    for row in report["scenarios"]
+                    if isinstance(row, dict)
+                ):
                     report["scenarios"].append(
                         {
                             "name": "Startup Profile",
                             "slug": "startup-profile",
-                            "status": "passed" if str(startup_profile.get("status")) == "passed" else "failed",
+                            "status": "passed"
+                            if str(startup_profile.get("status")) == "passed"
+                            else "failed",
                             "durationMs": int(startup_profile.get("firstUsableMs") or 0),
-                            "error": "" if str(startup_profile.get("status")) == "passed" else str(startup_profile.get("classification") or "startup profile threshold exceeded"),
+                            "error": ""
+                            if str(startup_profile.get("status")) == "passed"
+                            else str(
+                                startup_profile.get("classification")
+                                or "startup profile threshold exceeded"
+                            ),
                             "startupProfile": startup_profile,
                         }
                     )
         if not report["failure"]:
-            report["failure"] = build_failure_payload("runner", exc, category=classify_subprocess_error(exc))
+            report["failure"] = build_failure_payload(
+                "runner", exc, category=classify_subprocess_error(exc)
+            )
     finally:
         terminate_process_tree(process)
         if stdout_handle is not None:
@@ -821,7 +905,9 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run packaged desktop smoke validation against Baluffo.exe.")
+    parser = argparse.ArgumentParser(
+        description="Run packaged desktop smoke validation against Baluffo.exe."
+    )
     parser.add_argument("--exe-path", default=str(DEFAULT_EXE_PATH))
     parser.add_argument("--report-path", default=str(DEFAULT_REPORT_PATH))
     parser.add_argument("--artifacts-dir", default="")
@@ -853,4 +939,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

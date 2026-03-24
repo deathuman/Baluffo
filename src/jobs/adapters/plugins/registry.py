@@ -38,7 +38,10 @@ class PluginRegistry:
             raise NoPluginFoundError(family=family, context=ctx)
 
         # Deterministic selection: priority then name.
-        ordered = sorted(plugins, key=lambda p: (int(getattr(p, "priority", 100) or 100), str(getattr(p, "name", ""))))
+        ordered = sorted(
+            plugins,
+            key=lambda p: (int(getattr(p, "priority", 100) or 100), str(getattr(p, "name", ""))),
+        )
         selected: AdapterPlugin | None = None
         for plugin in ordered:
             if plugin.can_handle(ctx):
@@ -65,4 +68,3 @@ class PluginRegistry:
 
 
 default_registry = PluginRegistry()
-

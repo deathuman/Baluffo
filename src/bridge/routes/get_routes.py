@@ -19,11 +19,15 @@ def _coerce_report_duration_ms(started_at: str, finished_at: str) -> int:
     started_dt = None
     finished_dt = None
     try:
-        started_dt = datetime.fromisoformat(str(started_at).replace("Z", "+00:00")) if started_at else None
+        started_dt = (
+            datetime.fromisoformat(str(started_at).replace("Z", "+00:00")) if started_at else None
+        )
     except ValueError:
         started_dt = None
     try:
-        finished_dt = datetime.fromisoformat(str(finished_at).replace("Z", "+00:00")) if finished_at else None
+        finished_dt = (
+            datetime.fromisoformat(str(finished_at).replace("Z", "+00:00")) if finished_at else None
+        )
     except ValueError:
         finished_dt = None
     if not started_dt or not finished_dt:
@@ -50,7 +54,10 @@ def _reconcile_discovery_report(api: Any, report: dict[str, Any]) -> dict[str, A
     reconciled_finished_at = str(getattr(api, "now_iso", lambda: "")() or "").strip()
     if not reconciled_finished_at:
         reconciled_finished_at = started_at
-    runtime["totalDurationMs"] = int(runtime.get("totalDurationMs") or _coerce_report_duration_ms(started_at, reconciled_finished_at))
+    runtime["totalDurationMs"] = int(
+        runtime.get("totalDurationMs")
+        or _coerce_report_duration_ms(started_at, reconciled_finished_at)
+    )
     summary["phase"] = str(summary.get("phase") or "completed")
     summary["phaseLabel"] = str(summary.get("phaseLabel") or "Discovery completed")
     reconciled = {
@@ -95,7 +102,11 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
             if callable(sync_history_fn):
                 sync_history_fn()
             load_fn = getattr(api, "load_json_object", None)
-            raw = load_fn(getattr(api, "DISCOVERY_REPORT_PATH", None), {}) if callable(load_fn) else {}
+            raw = (
+                load_fn(getattr(api, "DISCOVERY_REPORT_PATH", None), {})
+                if callable(load_fn)
+                else {}
+            )
 
             normalizer_fn = getattr(api, "normalize_discovery_report_contract", None)
             report = normalizer_fn(raw) if callable(normalizer_fn) else raw
@@ -106,7 +117,9 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
                     "info",
                     "discovery_report_route_sending",
                     reportType=type(report).__name__,
-                    summaryType=type((report or {}).get("summary", None)).__name__ if isinstance(report, dict) else "",
+                    summaryType=type((report or {}).get("summary", None)).__name__
+                    if isinstance(report, dict)
+                    else "",
                 )
             except Exception:  # noqa: BLE001
                 pass
@@ -182,7 +195,9 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
     if path == "/desktop-local-data/saved-job-keys":
         try:
             uid = (query.get("uid") or [""])[0]
-            handler._send_json({"ok": True, "keys": api.desktop_local_data_store().get_saved_job_keys(uid)})  # noqa: SLF001
+            handler._send_json(
+                {"ok": True, "keys": api.desktop_local_data_store().get_saved_job_keys(uid)}
+            )  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True
@@ -191,7 +206,12 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
         try:
             uid = (query.get("uid") or [""])[0]
             job_key = (query.get("jobKey") or [""])[0]
-            handler._send_json({"ok": True, "rows": api.desktop_local_data_store().list_attachments_for_job(uid, job_key)})  # noqa: SLF001
+            handler._send_json(
+                {
+                    "ok": True,
+                    "rows": api.desktop_local_data_store().list_attachments_for_job(uid, job_key),
+                }
+            )  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True
@@ -202,7 +222,9 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
             job_key = (query.get("jobKey") or [""])[0]
             attachment_id = (query.get("attachmentId") or [""])[0]
             download_flag = str((query.get("download") or [""])[0]).strip().lower()
-            body, content_type, filename = api.desktop_local_data_store().get_attachment_blob(uid, job_key, attachment_id)
+            body, content_type, filename = api.desktop_local_data_store().get_attachment_blob(
+                uid, job_key, attachment_id
+            )
             handler._send_bytes(  # noqa: SLF001
                 body,
                 content_type=content_type,
@@ -218,9 +240,13 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
             uid = (query.get("uid") or [""])[0]
             include_files_raw = str((query.get("includeFiles") or ["0"])[0]).strip().lower()
             include_files = include_files_raw in {"1", "true", "yes", "on"}
-            payload = api.desktop_local_data_store().export_profile_data(uid, include_files=include_files)
+            payload = api.desktop_local_data_store().export_profile_data(
+                uid, include_files=include_files
+            )
             date_token = datetime.now(UTC).strftime("%Y-%m-%d")
-            safe_uid = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(uid or "profile")).strip("_") or "profile"
+            safe_uid = (
+                re.sub(r"[^a-zA-Z0-9_-]+", "_", str(uid or "profile")).strip("_") or "profile"
+            )
             if include_files:
                 backup_json = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
                 buffer = io.BytesIO()
@@ -228,11 +254,21 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
                     zf.writestr("backup.json", backup_json)
                 body = buffer.getvalue()
                 filename = f"baluffo-backup-{safe_uid}-{date_token}.zip"
-                handler._send_bytes(body, content_type="application/zip", filename=filename, disposition="attachment")  # noqa: SLF001
+                handler._send_bytes(
+                    body,
+                    content_type="application/zip",
+                    filename=filename,
+                    disposition="attachment",
+                )  # noqa: SLF001
             else:
                 body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
                 filename = f"baluffo-backup-{safe_uid}-{date_token}.json"
-                handler._send_bytes(body, content_type="application/json; charset=utf-8", filename=filename, disposition="attachment")  # noqa: SLF001
+                handler._send_bytes(
+                    body,
+                    content_type="application/json; charset=utf-8",
+                    filename=filename,
+                    disposition="attachment",
+                )  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True
@@ -241,7 +277,12 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
         try:
             uid = (query.get("uid") or [""])[0]
             limit = int((query.get("limit") or ["300"])[0])
-            handler._send_json({"ok": True, "rows": api.desktop_local_data_store().list_activity_for_user(uid, limit)})  # noqa: SLF001
+            handler._send_json(
+                {
+                    "ok": True,
+                    "rows": api.desktop_local_data_store().list_activity_for_user(uid, limit),
+                }
+            )  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True
@@ -285,7 +326,9 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
             text = ""
         chunk = text[offset:]
         next_offset = len(text)
-        handler._send_json({"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False})  # noqa: SLF001
+        handler._send_json(
+            {"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False}
+        )  # noqa: SLF001
         return True
 
     if path == "/fetcher/log":
@@ -300,7 +343,9 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
             text = ""
         chunk = text[offset:]
         next_offset = len(text)
-        handler._send_json({"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False})  # noqa: SLF001
+        handler._send_json(
+            {"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False}
+        )  # noqa: SLF001
         return True
 
     if path == "/registry/summary":
@@ -343,7 +388,11 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
         sync_history_fn = getattr(api, "sync_history_from_reports", None)
         if callable(sync_history_fn):
             sync_history_fn()
-        handler._send_json(api.normalize_fetch_report_contract(api.load_json_object(api.JOBS_FETCH_REPORT_PATH, {})))  # noqa: SLF001
+        handler._send_json(
+            api.normalize_fetch_report_contract(
+                api.load_json_object(api.JOBS_FETCH_REPORT_PATH, {})
+            )
+        )  # noqa: SLF001
         return True
 
     if path == "/sync/status":
@@ -355,4 +404,3 @@ def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]
         return True
 
     return False
-

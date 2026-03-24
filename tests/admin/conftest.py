@@ -15,7 +15,9 @@ def admin_bridge_entrypoint_root(make_test_root, monkeypatch) -> Path:
     monkeypatch.setattr(admin_bridge, "OPS_HISTORY_PATH", root / "admin-run-history.json")
     monkeypatch.setattr(admin_bridge, "OPS_ALERT_STATE_PATH", root / "admin-alert-state.json")
     monkeypatch.setattr(admin_bridge, "JOBS_FETCH_REPORT_PATH", root / "jobs-fetch-report.json")
-    monkeypatch.setattr(admin_bridge, "DISCOVERY_REPORT_PATH", root / "source-discovery-report.json")
+    monkeypatch.setattr(
+        admin_bridge, "DISCOVERY_REPORT_PATH", root / "source-discovery-report.json"
+    )
     monkeypatch.setattr(admin_bridge, "ACTIVE_PATH", root / "source-registry-active.json")
     monkeypatch.setattr(admin_bridge, "PENDING_PATH", root / "source-registry-pending.json")
     monkeypatch.setattr(admin_bridge, "REJECTED_PATH", root / "source-registry-rejected.json")
@@ -45,7 +47,9 @@ def admin_bridge_entrypoint_root(make_test_root, monkeypatch) -> Path:
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv(admin_bridge.source_sync_module.PACKAGED_SYNC_CONFIG_ENV, str(packaged_sync_config))
+    monkeypatch.setenv(
+        admin_bridge.source_sync_module.PACKAGED_SYNC_CONFIG_ENV, str(packaged_sync_config)
+    )
     admin_bridge.refresh_sync_config()
 
     monkeypatch.setattr(admin_bridge, "_maybe_trigger_auto_sync_push", lambda _reason: False)

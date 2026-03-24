@@ -4,6 +4,7 @@ Fetch fallbacks (Playwright), error normalization, alternate career URL discover
 and browser-challenge detection. Used by admin_bridge when building callables
 for bridge/source_checker.check_static_source.
 """
+
 from __future__ import annotations
 
 import re
@@ -48,7 +49,11 @@ def normalize_error_code(error_text: str) -> str:
         return "forbidden"
     if "certificate verify failed" in text or "hostname mismatch" in text or "[ssl:" in text:
         return "ssl_error"
-    if "getaddrinfo failed" in text or "name or service not known" in text or "nodename nor servname provided" in text:
+    if (
+        "getaddrinfo failed" in text
+        or "name or service not known" in text
+        or "nodename nor servname provided" in text
+    ):
         return "dns_error"
     if "timed out" in text:
         return "timeout"
@@ -124,7 +129,10 @@ def discover_redirect_career_candidates(source_url: str, timeout_s: int) -> list
             low = final_url.lower()
             parsed_final = urlparse(final_url)
             path = (parsed_final.path or "").lower()
-            if any(token in low for token in ("jobs.", "careers.", "/jobs", "/career", "/careers", "/vacancies")) or path in {"/jobs", "/career", "/careers", "/vacancies"}:
+            if any(
+                token in low
+                for token in ("jobs.", "careers.", "/jobs", "/career", "/careers", "/vacancies")
+            ) or path in {"/jobs", "/career", "/careers", "/vacancies"}:
                 seen.add(final_url)
                 out.append(final_url)
         for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', str(body or "")):

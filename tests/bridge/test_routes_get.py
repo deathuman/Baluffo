@@ -31,12 +31,8 @@ class _FakeHandler:
     def _send_json(self, payload: Any, status: int = 200) -> None:
         self.sent.append({"status": status, "payload": payload})
 
-    def _send_bytes(
-        self, body: bytes, content_type: str, status: int = 200
-    ) -> None:
-        self.bytes_sent.append(
-            {"status": status, "body": body, "content_type": content_type}
-        )
+    def _send_bytes(self, body: bytes, content_type: str, status: int = 200) -> None:
+        self.bytes_sent.append({"status": status, "body": body, "content_type": content_type})
 
 
 class _FakeDesktopLocalDataStore:
@@ -59,9 +55,7 @@ class _FakeDesktopLocalDataStore:
     def sign_out(self) -> None:
         self._current_user = None
 
-    def save_job_for_user(
-        self, uid: str, job: dict, options: dict
-    ) -> str:
+    def save_job_for_user(self, uid: str, job: dict, options: dict) -> str:
         if uid not in self.saved_jobs:
             self.saved_jobs[uid] = []
         job_key = f"job_{len(self.saved_jobs[uid])}"
@@ -70,27 +64,19 @@ class _FakeDesktopLocalDataStore:
 
     def remove_saved_job_for_user(self, uid: str, job_key: str) -> None:
         if uid in self.saved_jobs:
-            self.saved_jobs[uid] = [
-                j for j in self.saved_jobs[uid] if j.get("key") != job_key
-            ]
+            self.saved_jobs[uid] = [j for j in self.saved_jobs[uid] if j.get("key") != job_key]
 
-    def update_application_status(
-        self, uid: str, job_key: str, status: str, options: dict
-    ) -> None:
+    def update_application_status(self, uid: str, job_key: str, status: str, options: dict) -> None:
         for job in self.saved_jobs.get(uid, []):
             if job.get("key") == job_key:
                 job["status"] = status
 
-    def update_job_notes(
-        self, uid: str, job_key: str, notes: str
-    ) -> None:
+    def update_job_notes(self, uid: str, job_key: str, notes: str) -> None:
         for job in self.saved_jobs.get(uid, []):
             if job.get("key") == job_key:
                 job["notes"] = notes
 
-    def add_attachment_for_job(
-        self, uid: str, job_key: str, file_meta: dict
-    ) -> str:
+    def add_attachment_for_job(self, uid: str, job_key: str, file_meta: dict) -> str:
         att_id = f"att_{hash(file_meta.get('name', '')) % 10000}"
         self.attachments[att_id] = {"uid": uid, "job_key": job_key, **file_meta}
         return att_id
@@ -110,15 +96,9 @@ def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
 
     def load_state() -> dict[str, list[dict[str, Any]]]:
         return {
-            "active": [
-                {"id": "src-1", "adapter": "static", "name": "Active Source"}
-            ],
-            "pending": [
-                {"id": "src-2", "adapter": "greenhouse", "name": "Pending Source"}
-            ],
-            "rejected": [
-                {"id": "src-3", "adapter": "static", "name": "Rejected Source"}
-            ],
+            "active": [{"id": "src-1", "adapter": "static", "name": "Active Source"}],
+            "pending": [{"id": "src-2", "adapter": "greenhouse", "name": "Pending Source"}],
+            "rejected": [{"id": "src-3", "adapter": "static", "name": "Rejected Source"}],
         }
 
     def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
@@ -128,9 +108,7 @@ def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
             "rejectedCount": len(state.get("rejected") or []),
         }
 
-    def persist_state_and_auto_sync(
-        state: dict[str, Any], reason: str = None
-    ) -> dict[str, Any]:
+    def persist_state_and_auto_sync(state: dict[str, Any], reason: str = None) -> dict[str, Any]:
         return state
 
     def source_identity(row: dict) -> str:
@@ -242,7 +220,11 @@ def test_discovery_report_reconciles_stale_in_progress_run(tmp_path: Path) -> No
     api.report_is_stale_in_progress = lambda *_args, **_kwargs: True
     api.now_iso = lambda: "2026-03-08T10:05:00.000Z"
     api.save_json_atomic = lambda _path, payload: saved_reports.append(payload)
-    api.prune_started_rows_for_type = lambda run_type, *, finished_at="", keep_started_at="": pruned.append((run_type, finished_at or keep_started_at))
+    api.prune_started_rows_for_type = (
+        lambda run_type, *, finished_at="", keep_started_at="": pruned.append(
+            (run_type, finished_at or keep_started_at)
+        )
+    )
     api.clear_task_state = lambda task_type: cleared.append(task_type)
     api.bridge_log = lambda _level, message, **_fields: bridge_logs.append(message)
 
@@ -267,9 +249,7 @@ def test_session_with_user(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/desktop-local-data/session", query={}
-    )
+    result = handle_get(handler, api=api, path="/desktop-local-data/session", query={})
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
@@ -283,9 +263,7 @@ def test_session_no_user(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/desktop-local-data/session", query={}
-    )
+    result = handle_get(handler, api=api, path="/desktop-local-data/session", query={})
 
     assert result is True
     assert handler.sent[-1]["payload"]["user"] is None
@@ -313,9 +291,7 @@ def test_registry_active(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/registry/active", query={}
-    )
+    result = handle_get(handler, api=api, path="/registry/active", query={})
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
@@ -329,9 +305,7 @@ def test_registry_pending(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/registry/pending", query={}
-    )
+    result = handle_get(handler, api=api, path="/registry/pending", query={})
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
@@ -344,9 +318,7 @@ def test_registry_rejected(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/registry/rejected", query={}
-    )
+    result = handle_get(handler, api=api, path="/registry/rejected", query={})
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
@@ -359,9 +331,7 @@ def test_registry_summary(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/registry/summary", query={}
-    )
+    result = handle_get(handler, api=api, path="/registry/summary", query={})
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
@@ -376,9 +346,7 @@ def test_discovery_log_with_content(tmp_path: Path) -> None:
     api.DISCOVERY_LOG_PATH.write_text("log line 1\nlog line 2\n")
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/discovery/log", query={}
-    )
+    result = handle_get(handler, api=api, path="/discovery/log", query={})
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
@@ -391,9 +359,7 @@ def test_discovery_log_empty(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/discovery/log", query={}
-    )
+    result = handle_get(handler, api=api, path="/discovery/log", query={})
 
     assert result is True
     assert handler.sent[-1]["payload"]["text"] == ""
@@ -407,9 +373,7 @@ def test_discovery_log_with_offset(tmp_path: Path) -> None:
     api.DISCOVERY_LOG_PATH.write_text("line1\nline2\nline3\n")
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/discovery/log", query={"offset": ["5"]}
-    )
+    result = handle_get(handler, api=api, path="/discovery/log", query={"offset": ["5"]})
 
     assert result is True
     assert handler.sent[-1]["payload"]["offset"] == 5
@@ -423,9 +387,7 @@ def test_discovery_log_invalid_offset(tmp_path: Path) -> None:
     api.DISCOVERY_LOG_PATH.write_text("content")
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/discovery/log", query={"offset": ["abc"]}
-    )
+    result = handle_get(handler, api=api, path="/discovery/log", query={"offset": ["abc"]})
 
     assert result is True
     assert handler.sent[-1]["payload"]["offset"] == 0
@@ -436,19 +398,12 @@ def test_discovery_config_returns_saved_payload(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/discovery/config", query={}
-    )
+    result = handle_get(handler, api=api, path="/discovery/config", query={})
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
     assert handler.sent[-1]["payload"]["ok"] is True
-    assert (
-        handler.sent[-1]["payload"]["savedConfig"][
-            "autoApproveHealthyPendingOnComplete"
-        ]
-        is True
-    )
+    assert handler.sent[-1]["payload"]["savedConfig"]["autoApproveHealthyPendingOnComplete"] is True
 
 
 def test_fetcher_log_with_content(tmp_path: Path) -> None:
@@ -459,9 +414,7 @@ def test_fetcher_log_with_content(tmp_path: Path) -> None:
     api.FETCHER_LOG_PATH.write_text("fetcher log content")
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/fetcher/log", query={}
-    )
+    result = handle_get(handler, api=api, path="/fetcher/log", query={})
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
@@ -498,9 +451,7 @@ def test_ops_history_custom_limit(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/ops/history", query={"limit": ["50"]}
-    )
+    result = handle_get(handler, api=api, path="/ops/history", query={"limit": ["50"]})
 
     assert result is True
 
@@ -511,9 +462,7 @@ def test_ops_history_invalid_limit(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/ops/history", query={"limit": ["invalid"]}
-    )
+    result = handle_get(handler, api=api, path="/ops/history", query={"limit": ["invalid"]})
 
     assert result is True
 
@@ -522,7 +471,10 @@ def test_ops_task_state(tmp_path: Path) -> None:
     """Test /ops/task-state endpoint."""
     store = _FakeDesktopLocalDataStore()
     api = _make_api(tmp_path, store)
-    api.get_current_task_state_payload = lambda: {"tasks": [{"taskType": "fetch", "runId": "fetch_1", "active": True}], "count": 1}
+    api.get_current_task_state_payload = lambda: {
+        "tasks": [{"taskType": "fetch", "runId": "fetch_1", "active": True}],
+        "count": 1,
+    }
 
     handler = _FakeHandler()
     result = handle_get(handler, api=api, path="/ops/task-state", query={})
@@ -538,9 +490,7 @@ def test_ops_fetcher_metrics_default(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/ops/fetcher-metrics", query={}
-    )
+    result = handle_get(handler, api=api, path="/ops/fetcher-metrics", query={})
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
@@ -568,9 +518,7 @@ def test_ops_fetch_report(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/ops/fetch-report", query={}
-    )
+    result = handle_get(handler, api=api, path="/ops/fetch-report", query={})
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
@@ -594,9 +542,7 @@ def test_pipeline_status(tmp_path: Path) -> None:
     api = _make_api(tmp_path, store)
 
     handler = _FakeHandler()
-    result = handle_get(
-        handler, api=api, path="/tasks/run-jobs-pipeline-status", query={}
-    )
+    result = handle_get(handler, api=api, path="/tasks/run-jobs-pipeline-status", query={})
 
     assert result is True
 

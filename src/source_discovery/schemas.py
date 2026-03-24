@@ -3,6 +3,7 @@ Pydantic schemas for source discovery report and summary.
 Used at discovery output boundary to validate shape before writing report/candidates.
 See docs/DATA_CONTRACT.md §7 for the source discovery contract.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -105,9 +106,7 @@ class DiscoveryReportSchema(BaseModel):
     mode: str = ""
     startedAt: str = ""
     finishedAt: str = ""
-    summary: DiscoveryReportSummarySchema = Field(
-        default_factory=DiscoveryReportSummarySchema
-    )
+    summary: DiscoveryReportSummarySchema = Field(default_factory=DiscoveryReportSummarySchema)
     runtime: DiscoveryRuntimeSchema = Field(default_factory=DiscoveryRuntimeSchema)
     candidates: list[dict[str, Any]] = Field(default_factory=list)
     failures: list[dict[str, Any]] = Field(default_factory=list)

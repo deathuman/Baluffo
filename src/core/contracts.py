@@ -4,6 +4,7 @@ Used at pipeline output and bridge boundaries to catch shape errors early.
 See docs/DATA_CONTRACT.md for field definitions.
 Pydantic schemas live in src/core/schemas.py.
 """
+
 from __future__ import annotations
 
 from typing import Any

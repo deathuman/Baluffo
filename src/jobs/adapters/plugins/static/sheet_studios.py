@@ -12,21 +12,36 @@ from src.jobs.text_utils import clean_text
 
 # Hosts (netloc, lower) for which this plugin handles static extraction.
 # Ensures proper classification and browser fallback when extract fails.
-_SHEET_STUDIO_HOSTS = frozenset({
-    "coolgames.com", "www.coolgames.com",
-    "gismart.com", "www.gismart.com",
-    "chubbypixel.com", "www.chubbypixel.com",
-    "bonfirestudios.com", "www.bonfirestudios.com",
-    "napsteam.com", "www.napsteam.com",
-    "area35east.com", "www.area35east.com",
-    "aspyr.com", "www.aspyr.com",
-    "24bitgames.com", "www.24bitgames.com",
-    "bandainamcostudios.my", "www.bandainamcostudios.my",
-    "blacksnow.tv", "www.blacksnow.tv",
-    "4jstudios.com", "www.4jstudios.com",
-    "10chambers.com", "www.10chambers.com",
-    "careers.10chambers.com", "www.careers.10chambers.com",
-})
+_SHEET_STUDIO_HOSTS = frozenset(
+    {
+        "coolgames.com",
+        "www.coolgames.com",
+        "gismart.com",
+        "www.gismart.com",
+        "chubbypixel.com",
+        "www.chubbypixel.com",
+        "bonfirestudios.com",
+        "www.bonfirestudios.com",
+        "napsteam.com",
+        "www.napsteam.com",
+        "area35east.com",
+        "www.area35east.com",
+        "aspyr.com",
+        "www.aspyr.com",
+        "24bitgames.com",
+        "www.24bitgames.com",
+        "bandainamcostudios.my",
+        "www.bandainamcostudios.my",
+        "blacksnow.tv",
+        "www.blacksnow.tv",
+        "4jstudios.com",
+        "www.4jstudios.com",
+        "10chambers.com",
+        "www.10chambers.com",
+        "careers.10chambers.com",
+        "www.careers.10chambers.com",
+    }
+)
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
@@ -52,7 +67,10 @@ def run(
     if not page_url:
         return []
 
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Unknown"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Unknown"
+    )
     source_id = (source_row.get("id") or "").strip() or "sheet_studio"
 
     try:
@@ -99,9 +117,13 @@ def run(
                 "atsLinks": ats_links[:5],
             }
         else:
-            likely_js = _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            likely_js = (
+                _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            )
             source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE if likely_js else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
+                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
+                if likely_js
+                else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
                 "browserFallbackRecommended": True,
                 "extractorHint": "parse_empty_js_shell_suspected" if likely_js else "parse_empty",
                 "atsLinks": ats_links[:5],

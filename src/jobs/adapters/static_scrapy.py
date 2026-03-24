@@ -34,7 +34,9 @@ def _clean_errors(values: Any) -> list[str]:
     return cleaned
 
 
-def _base_detail(source_row: dict[str, Any], *, status: str = "error", error: str = "") -> dict[str, Any]:
+def _base_detail(
+    source_row: dict[str, Any], *, status: str = "error", error: str = ""
+) -> dict[str, Any]:
     source_name = clean_text(source_row.get("name")) or "unknown"
     studio_name = clean_text(source_row.get("studio")) or source_name
     pages = source_row.get("pages") if isinstance(source_row.get("pages"), list) else []
@@ -69,9 +71,15 @@ def _coerce_int(value: Any) -> int:
 def _normalize_job(raw: Any, source_row: dict[str, Any]) -> RawJob | None:
     if not isinstance(raw, dict):
         return None
-    strict_validation = env_flag("BALUFFO_SCRAPY_VALIDATION_STRICT", common_config.DEFAULT_SCRAPY_VALIDATION_STRICT)
-    source_name = clean_text(raw.get("source")) or (clean_text(source_row.get("name")) or "scrapy_static")
-    studio_name = clean_text(raw.get("studio")) or (clean_text(source_row.get("studio")) or clean_text(source_row.get("name")) or "unknown")
+    strict_validation = env_flag(
+        "BALUFFO_SCRAPY_VALIDATION_STRICT", common_config.DEFAULT_SCRAPY_VALIDATION_STRICT
+    )
+    source_name = clean_text(raw.get("source")) or (
+        clean_text(source_row.get("name")) or "scrapy_static"
+    )
+    studio_name = clean_text(raw.get("studio")) or (
+        clean_text(source_row.get("studio")) or clean_text(source_row.get("name")) or "unknown"
+    )
     title = clean_text(raw.get("title"))
     company = clean_text(raw.get("company"))
     job_link = normalize_url(raw.get("jobLink"))
@@ -186,7 +194,10 @@ def run_scrapy_static_source(
 
         source_detail = _base_detail(source)
         try:
-            timeout_window = min(90 if timeout_bucket else 300, max(1, int(config["runtime"]["timeout_s"])) * max(1, len(pages)) * 4)
+            timeout_window = min(
+                90 if timeout_bucket else 300,
+                max(1, int(config["runtime"]["timeout_s"])) * max(1, len(pages)) * 4,
+            )
             result = subprocess.run(
                 [sys.executable, str(runner_path)],
                 input=json.dumps(config).encode("utf-8"),
@@ -231,15 +242,25 @@ def run_scrapy_static_source(
                 if isinstance(detail_0, dict):
                     source_detail.update(
                         {
-                            "status": "ok" if clean_text(detail_0.get("status")).lower() == "ok" else "error",
+                            "status": "ok"
+                            if clean_text(detail_0.get("status")).lower() == "ok"
+                            else "error",
                             "fetchedCount": _coerce_int(detail_0.get("fetchedCount")),
                             "keptCount": _coerce_int(detail_0.get("keptCount")),
                             "error": clean_text(detail_0.get("error")),
-                            "classification": clean_text(detail_0.get("classification")) or source_detail.get("classification"),
-                            "browserFallbackRecommended": bool(detail_0.get("browserFallbackRecommended")),
-                            "top_reject_reasons": detail_0.get("top_reject_reasons") if isinstance(detail_0.get("top_reject_reasons"), list) else [],
-                            "sourceId": clean_text(detail_0.get("sourceId")) or source_detail.get("sourceId"),
-                            "pages": detail_0.get("pages") if isinstance(detail_0.get("pages"), list) else source_detail.get("pages"),
+                            "classification": clean_text(detail_0.get("classification"))
+                            or source_detail.get("classification"),
+                            "browserFallbackRecommended": bool(
+                                detail_0.get("browserFallbackRecommended")
+                            ),
+                            "top_reject_reasons": detail_0.get("top_reject_reasons")
+                            if isinstance(detail_0.get("top_reject_reasons"), list)
+                            else [],
+                            "sourceId": clean_text(detail_0.get("sourceId"))
+                            or source_detail.get("sourceId"),
+                            "pages": detail_0.get("pages")
+                            if isinstance(detail_0.get("pages"), list)
+                            else source_detail.get("pages"),
                         }
                     )
 
@@ -258,15 +279,22 @@ def run_scrapy_static_source(
                         results_list.append(normalized)
                     else:
                         parent_invalid_payload += 1
-                        errors_list.append(f"{source_name}: dropped invalid job payload from runner")
-                source_detail_loss = source_detail.get("loss") if isinstance(source_detail.get("loss"), dict) else {}
+                        errors_list.append(
+                            f"{source_name}: dropped invalid job payload from runner"
+                        )
+                source_detail_loss = (
+                    source_detail.get("loss") if isinstance(source_detail.get("loss"), dict) else {}
+                )
                 source_detail_loss["scrapyParentInvalidPayload"] = int(parent_invalid_payload)
                 source_detail["loss"] = source_detail_loss
                 source_detail["keptCount"] = max(int(source_detail.get("keptCount") or 0), kept)
                 source_detail["status"] = "ok"
                 if not clean_text(source_detail.get("classification")):
                     source_detail["classification"] = "ok_with_jobs" if kept > 0 else "ok_no_jobs"
-                if source_detail.get("classification") == "ok_no_jobs" and int(source_detail.get("fetchedCount") or 0) > 0:
+                if (
+                    source_detail.get("classification") == "ok_no_jobs"
+                    and int(source_detail.get("fetchedCount") or 0) > 0
+                ):
                     source_detail["classification"] = "parser_stale"
                 if source_detail.get("classification") == "fetch_ok_extract_zero":
                     source_detail["classification"] = "parser_stale"
@@ -284,8 +312,12 @@ def run_scrapy_static_source(
             if isinstance(stats, dict):
                 source_detail["stats"] = {
                     "downloader/request_count": _coerce_int(stats.get("downloader/request_count")),
-                    "downloader/response_count": _coerce_int(stats.get("downloader/response_count")),
-                    "downloader/response_status_count/200": _coerce_int(stats.get("downloader/response_status_count/200")),
+                    "downloader/response_count": _coerce_int(
+                        stats.get("downloader/response_count")
+                    ),
+                    "downloader/response_status_count/200": _coerce_int(
+                        stats.get("downloader/response_status_count/200")
+                    ),
                     "retry/count": _coerce_int(stats.get("retry/count")),
                     "item_scraped_count": _coerce_int(stats.get("item_scraped_count")),
                     "candidate_links_found": _coerce_int(stats.get("candidate_links_found")),
@@ -294,11 +326,17 @@ def run_scrapy_static_source(
                     "jobs_rejected_validation": _coerce_int(stats.get("jobs_rejected_validation")),
                     "finish_reason": clean_text(stats.get("finish_reason")),
                 }
-                source_detail_loss = source_detail.get("loss") if isinstance(source_detail.get("loss"), dict) else {}
-                source_detail_loss["scrapyRunnerRejectedValidation"] = _coerce_int(stats.get("jobs_rejected_validation"))
+                source_detail_loss = (
+                    source_detail.get("loss") if isinstance(source_detail.get("loss"), dict) else {}
+                )
+                source_detail_loss["scrapyRunnerRejectedValidation"] = _coerce_int(
+                    stats.get("jobs_rejected_validation")
+                )
                 source_detail["loss"] = source_detail_loss
                 if int(source_detail.get("fetchedCount") or 0) <= 0:
-                    source_detail["fetchedCount"] = int(source_detail["stats"]["downloader/response_count"])
+                    source_detail["fetchedCount"] = int(
+                        source_detail["stats"]["downloader/response_count"]
+                    )
 
             details.append(source_detail)
         except subprocess.TimeoutExpired:

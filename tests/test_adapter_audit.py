@@ -7,7 +7,12 @@ def test_bucket_for_result_marks_mixed_success_when_jobs_and_partial_errors_exis
         error_text="",
         details=[
             {"classification": "ok_with_jobs", "keptCount": 27, "fetchedCount": 27},
-            {"classification": "parser_stale", "keptCount": 0, "fetchedCount": 0, "error": "no jobs extracted"},
+            {
+                "classification": "parser_stale",
+                "keptCount": 0,
+                "fetchedCount": 0,
+                "error": "no jobs extracted",
+            },
         ],
         partial_errors=["ashby:k-ID: no jobs extracted from ashby page"],
     )

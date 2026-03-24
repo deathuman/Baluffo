@@ -45,7 +45,9 @@ def test_pipeline_output_contract_preserves_camelcase_schema() -> None:
     }
 
     for key in expected_keys:
-        assert key in row, f"Contract violation: missing camelCase key '{key}' in pipeline output row."
+        assert key in row, (
+            f"Contract violation: missing camelCase key '{key}' in pipeline output row."
+        )
 
 
 @mock.patch("sys.argv", ["jobs_fetcher.py", "--only-sources", "missing-dummy-source", "--quiet"])
@@ -60,4 +62,3 @@ def test_pipeline_executes_end_to_end_without_silent_failure() -> None:
     }
     with mock.patch("src.jobs.pipeline.run_pipeline", return_value=fake_report):
         assert jobs_fetcher.main() == 0
-

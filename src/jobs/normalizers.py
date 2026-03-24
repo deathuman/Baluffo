@@ -1,4 +1,5 @@
 """Normalizers for country, work type, and sector (extracted from common)."""
+
 from __future__ import annotations
 
 import re

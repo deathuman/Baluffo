@@ -125,7 +125,9 @@ def is_blocked_generic_static_url(url: str) -> bool:
     except ValueError:
         return False
     host = host.lstrip(".")
-    return any(host == domain or host.endswith(f".{domain}") for domain in GENERIC_STATIC_BLOCKED_DOMAINS)
+    return any(
+        host == domain or host.endswith(f".{domain}") for domain in GENERIC_STATIC_BLOCKED_DOMAINS
+    )
 
 
 def extract_jobish_links(html: str, base_url: str) -> list[str]:
@@ -133,12 +135,19 @@ def extract_jobish_links(html: str, base_url: str) -> list[str]:
     out: list[str] = []
     seen = set()
     for raw in matches:
-        if not raw or raw.startswith("#") or raw.startswith("mailto:") or raw.startswith("javascript:"):
+        if (
+            not raw
+            or raw.startswith("#")
+            or raw.startswith("mailto:")
+            or raw.startswith("javascript:")
+        ):
             continue
         absolute = urljoin(base_url, raw) if base_url else raw
         parsed = urlparse(absolute)
         text = f"{parsed.path} {absolute}".lower()
-        if not any(token in text for token in CAREERS_URL_HINTS + ("job", "position", "opening", "vacancy")):
+        if not any(
+            token in text for token in CAREERS_URL_HINTS + ("job", "position", "opening", "vacancy")
+        ):
             continue
         normalized = absolute.split("#", 1)[0]
         if normalized in seen:
@@ -369,51 +378,117 @@ def infer_web_candidate(
     host = (parsed.netloc or "").lower()
     path = parsed.path or ""
     evidence_types = ["web_provider_url"]
-    evidence_score = 28 + (12 if studio_domain_match(studio, url) else 0) + (4 if careers_keyword_count(url) else 0)
-    if "boards.greenhouse.io" in host or "jobs.greenhouse.io" in host or "boards-api.greenhouse.io" in host:
+    evidence_score = (
+        28
+        + (12 if studio_domain_match(studio, url) else 0)
+        + (4 if careers_keyword_count(url) else 0)
+    )
+    if (
+        "boards.greenhouse.io" in host
+        or "jobs.greenhouse.io" in host
+        or "boards-api.greenhouse.io" in host
+    ):
         return _provider_candidate(
-            studio=studio, adapter="greenhouse", url=url, nl_priority=nl_priority,
-            discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
+            studio=studio,
+            adapter="greenhouse",
+            url=url,
+            nl_priority=nl_priority,
+            discovery_method=discovery_method,
+            evidence_types=evidence_types,
+            evidence_source="url",
+            evidence_score=evidence_score,
         )
     if "jobs.ashbyhq.com" in host:
         return _provider_candidate(
-            studio=studio, adapter="ashby", url=url, nl_priority=nl_priority,
-            discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
+            studio=studio,
+            adapter="ashby",
+            url=url,
+            nl_priority=nl_priority,
+            discovery_method=discovery_method,
+            evidence_types=evidence_types,
+            evidence_source="url",
+            evidence_score=evidence_score,
         )
     if ".recruitee.com" in host:
         return _provider_candidate(
-            studio=studio, adapter="recruitee", url=url, nl_priority=nl_priority,
-            discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
+            studio=studio,
+            adapter="recruitee",
+            url=url,
+            nl_priority=nl_priority,
+            discovery_method=discovery_method,
+            evidence_types=evidence_types,
+            evidence_source="url",
+            evidence_score=evidence_score,
         )
     if ".pinpointhq.com" in host:
         return _provider_candidate(
-            studio=studio, adapter="pinpoint", url=url, nl_priority=nl_priority,
-            discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
+            studio=studio,
+            adapter="pinpoint",
+            url=url,
+            nl_priority=nl_priority,
+            discovery_method=discovery_method,
+            evidence_types=evidence_types,
+            evidence_source="url",
+            evidence_score=evidence_score,
         )
     if "apply.workable.com" in host:
         return _provider_candidate(
-            studio=studio, adapter="workable", url=url, nl_priority=nl_priority,
-            discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
+            studio=studio,
+            adapter="workable",
+            url=url,
+            nl_priority=nl_priority,
+            discovery_method=discovery_method,
+            evidence_types=evidence_types,
+            evidence_source="url",
+            evidence_score=evidence_score,
         )
     if ".teamtailor.com" in host:
         return _provider_candidate(
-            studio=studio, adapter="teamtailor", url=url, nl_priority=nl_priority,
-            discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
+            studio=studio,
+            adapter="teamtailor",
+            url=url,
+            nl_priority=nl_priority,
+            discovery_method=discovery_method,
+            evidence_types=evidence_types,
+            evidence_source="url",
+            evidence_score=evidence_score,
         )
     if ".jobs.personio.de" in host:
         return _provider_candidate(
-            studio=studio, adapter="personio", url=url, nl_priority=nl_priority,
-            discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
+            studio=studio,
+            adapter="personio",
+            url=url,
+            nl_priority=nl_priority,
+            discovery_method=discovery_method,
+            evidence_types=evidence_types,
+            evidence_source="url",
+            evidence_score=evidence_score,
         )
-    if ("api.lever.co" in host and "/v0/postings/" in path) or ("lever.co" in host and host != "api.lever.co"):
+    if ("api.lever.co" in host and "/v0/postings/" in path) or (
+        "lever.co" in host and host != "api.lever.co"
+    ):
         return _provider_candidate(
-            studio=studio, adapter="lever", url=url, nl_priority=nl_priority,
-            discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
+            studio=studio,
+            adapter="lever",
+            url=url,
+            nl_priority=nl_priority,
+            discovery_method=discovery_method,
+            evidence_types=evidence_types,
+            evidence_source="url",
+            evidence_score=evidence_score,
         )
-    if ("api.smartrecruiters.com" in host and "/companies/" in path) or "jobs.smartrecruiters.com" in host:
+    if (
+        "api.smartrecruiters.com" in host and "/companies/" in path
+    ) or "jobs.smartrecruiters.com" in host:
         return _provider_candidate(
-            studio=studio, adapter="smartrecruiters", url=url, nl_priority=nl_priority,
-            discovery_method=discovery_method, evidence_types=evidence_types, evidence_source="url", evidence_score=evidence_score,
+            studio=studio,
+            adapter="smartrecruiters",
+            url=url,
+            nl_priority=nl_priority,
+            discovery_method=discovery_method,
+            evidence_types=evidence_types,
+            evidence_source="url",
+            evidence_score=evidence_score,
         )
     return None
 
@@ -429,7 +504,9 @@ def infer_provider_candidates_from_html(
     from .io_runtime import collapse_competing_candidates
 
     candidates: list[dict[str, Any]] = []
-    page_candidate = infer_web_candidate(page_url, studio, nl_priority=nl_priority, discovery_method=discovery_method)
+    page_candidate = infer_web_candidate(
+        page_url, studio, nl_priority=nl_priority, discovery_method=discovery_method
+    )
     if page_candidate:
         page_candidate["evidenceSource"] = "page_url"
         page_candidate["evidenceTypes"] = unique_string_list(
@@ -449,7 +526,9 @@ def infer_provider_candidates_from_html(
         if not url or url in seen:
             continue
         seen.add(url)
-        inferred = infer_web_candidate(url, studio, nl_priority=nl_priority, discovery_method=discovery_method)
+        inferred = infer_web_candidate(
+            url, studio, nl_priority=nl_priority, discovery_method=discovery_method
+        )
         if not inferred:
             continue
         inferred["evidenceSource"] = "html_embed"
@@ -507,12 +586,14 @@ def discover_seed_careers_page_candidates(
         try:
             page_html = fetcher(careers_url, timeout_s)
         except Exception as exc:  # noqa: BLE001
-            failures.append({
-                "name": careers_url,
-                "adapter": "seed_careers_page",
-                "error": str(exc),
-                "stage": "page_fetch",
-            })
+            failures.append(
+                {
+                    "name": careers_url,
+                    "adapter": "seed_careers_page",
+                    "error": str(exc),
+                    "stage": "page_fetch",
+                }
+            )
             continue
         page_provider_candidates = infer_provider_candidates_from_html(
             careers_url,
@@ -533,7 +614,11 @@ def discover_seed_careers_page_candidates(
         )
         if static_candidate:
             static_candidates.append(static_candidate)
-    return collapse_competing_candidates(provider_candidates), unique_sources(static_candidates), failures
+    return (
+        collapse_competing_candidates(provider_candidates),
+        unique_sources(static_candidates),
+        failures,
+    )
 
 
 def discover_web_search_candidates(
@@ -557,13 +642,17 @@ def discover_web_search_candidates(
         try:
             html = fetcher(url, timeout_s)
         except Exception as exc:  # noqa: BLE001
-            failures.append({"name": query, "adapter": "web_search", "error": str(exc), "stage": "search"})
+            failures.append(
+                {"name": query, "adapter": "web_search", "error": str(exc), "stage": "search"}
+            )
             continue
         links = extract_links_from_html(html)[:MAX_SEARCH_LINKS_PER_QUERY]
         studio = str(seed.get("studio") or "")
         nl_priority = bool(seed.get("nlPriority"))
         for link in links:
-            inferred = infer_web_candidate(link, studio, nl_priority=nl_priority, discovery_method="web_search")
+            inferred = infer_web_candidate(
+                link, studio, nl_priority=nl_priority, discovery_method="web_search"
+            )
             if inferred:
                 provider_candidates.append(inferred)
                 continue
@@ -572,16 +661,35 @@ def discover_web_search_candidates(
             try:
                 page_html = fetcher(link, timeout_s)
             except Exception as exc:  # noqa: BLE001
-                failures.append({"name": link, "adapter": "web_search", "error": str(exc), "stage": "page_fetch"})
+                failures.append(
+                    {
+                        "name": link,
+                        "adapter": "web_search",
+                        "error": str(exc),
+                        "stage": "page_fetch",
+                    }
+                )
                 continue
             provider_candidates.extend(
                 infer_provider_candidates_from_html(
-                    link, page_html, studio=studio, nl_priority=nl_priority, discovery_method="web_search"
+                    link,
+                    page_html,
+                    studio=studio,
+                    nl_priority=nl_priority,
+                    discovery_method="web_search",
                 )
             )
             static_candidate = build_static_candidate_from_page(
-                link, page_html, studio=studio, nl_priority=nl_priority, discovery_method="web_search"
+                link,
+                page_html,
+                studio=studio,
+                nl_priority=nl_priority,
+                discovery_method="web_search",
             )
             if static_candidate:
                 static_candidates.append(static_candidate)
-    return collapse_competing_candidates(provider_candidates), unique_sources(static_candidates), failures
+    return (
+        collapse_competing_candidates(provider_candidates),
+        unique_sources(static_candidates),
+        failures,
+    )

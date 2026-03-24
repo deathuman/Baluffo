@@ -21,23 +21,94 @@ from src.source_registry import ACTIVE_PATH, ensure_source_id, load_json_array, 
 ASHBY_REFRESH_REPORT_PATH = Path("data/ashby-registry-refresh-report.json")
 
 CURATED_ASHBY_ROWS: list[dict[str, Any]] = [
-    {"name": "Bigger Games (Ashby)", "studio": "Bigger Games", "board_url": "https://jobs.ashbyhq.com/biggergames", "careersUrl": "https://jobs.ashbyhq.com/biggergames"},
-    {"name": "Battle Creek Games (Ashby)", "studio": "Battle Creek Games", "board_url": "https://jobs.ashbyhq.com/battle-creek-games", "careersUrl": "https://jobs.ashbyhq.com/battle-creek-games"},
-    {"name": "Day[9]'s Game Studio (Ashby)", "studio": "Day[9]'s Game Studio", "board_url": "https://jobs.ashbyhq.com/day9", "careersUrl": "https://jobs.ashbyhq.com/day9"},
-    {"name": "Endgame (Ashby)", "studio": "Endgame", "board_url": "https://jobs.ashbyhq.com/Endgame", "careersUrl": "https://jobs.ashbyhq.com/Endgame"},
-    {"name": "FS Studio (Ashby)", "studio": "FS Studio", "board_url": "https://jobs.ashbyhq.com/fs-studio", "careersUrl": "https://jobs.ashbyhq.com/fs-studio"},
-    {"name": "Improbable (Ashby)", "studio": "Improbable", "board_url": "https://jobs.ashbyhq.com/improbable", "careersUrl": "https://jobs.ashbyhq.com/improbable"},
-    {"name": "Joyteractive (Ashby)", "studio": "Joyteractive", "board_url": "https://jobs.ashbyhq.com/Joyteractive", "careersUrl": "https://jobs.ashbyhq.com/Joyteractive"},
-    {"name": "TapBlaze (Ashby)", "studio": "TapBlaze", "board_url": "https://jobs.ashbyhq.com/tapblaze", "careersUrl": "https://jobs.ashbyhq.com/tapblaze"},
-    {"name": "Voldex Games (Ashby)", "studio": "Voldex Games", "board_url": "https://jobs.ashbyhq.com/voldex", "careersUrl": "https://jobs.ashbyhq.com/voldex"},
+    {
+        "name": "Bigger Games (Ashby)",
+        "studio": "Bigger Games",
+        "board_url": "https://jobs.ashbyhq.com/biggergames",
+        "careersUrl": "https://jobs.ashbyhq.com/biggergames",
+    },
+    {
+        "name": "Battle Creek Games (Ashby)",
+        "studio": "Battle Creek Games",
+        "board_url": "https://jobs.ashbyhq.com/battle-creek-games",
+        "careersUrl": "https://jobs.ashbyhq.com/battle-creek-games",
+    },
+    {
+        "name": "Day[9]'s Game Studio (Ashby)",
+        "studio": "Day[9]'s Game Studio",
+        "board_url": "https://jobs.ashbyhq.com/day9",
+        "careersUrl": "https://jobs.ashbyhq.com/day9",
+    },
+    {
+        "name": "Endgame (Ashby)",
+        "studio": "Endgame",
+        "board_url": "https://jobs.ashbyhq.com/Endgame",
+        "careersUrl": "https://jobs.ashbyhq.com/Endgame",
+    },
+    {
+        "name": "FS Studio (Ashby)",
+        "studio": "FS Studio",
+        "board_url": "https://jobs.ashbyhq.com/fs-studio",
+        "careersUrl": "https://jobs.ashbyhq.com/fs-studio",
+    },
+    {
+        "name": "Improbable (Ashby)",
+        "studio": "Improbable",
+        "board_url": "https://jobs.ashbyhq.com/improbable",
+        "careersUrl": "https://jobs.ashbyhq.com/improbable",
+    },
+    {
+        "name": "Joyteractive (Ashby)",
+        "studio": "Joyteractive",
+        "board_url": "https://jobs.ashbyhq.com/Joyteractive",
+        "careersUrl": "https://jobs.ashbyhq.com/Joyteractive",
+    },
+    {
+        "name": "TapBlaze (Ashby)",
+        "studio": "TapBlaze",
+        "board_url": "https://jobs.ashbyhq.com/tapblaze",
+        "careersUrl": "https://jobs.ashbyhq.com/tapblaze",
+    },
+    {
+        "name": "Voldex Games (Ashby)",
+        "studio": "Voldex Games",
+        "board_url": "https://jobs.ashbyhq.com/voldex",
+        "careersUrl": "https://jobs.ashbyhq.com/voldex",
+    },
 ]
 
 DISCOVERY_ASHBY_ROWS: list[dict[str, Any]] = [
-    {"name": "GameChanger (Ashby)", "studio": "GameChanger", "board_url": "https://jobs.ashbyhq.com/gamechanger", "careersUrl": "https://jobs.ashbyhq.com/gamechanger", "relevanceHint": "sports-tech"},
-    {"name": "Level (Ashby)", "studio": "Level", "board_url": "https://jobs.ashbyhq.com/level", "careersUrl": "https://jobs.ashbyhq.com/level"},
-    {"name": "Unblocked (Ashby)", "studio": "Unblocked", "board_url": "https://jobs.ashbyhq.com/Unblocked", "careersUrl": "https://jobs.ashbyhq.com/Unblocked"},
-    {"name": "Sim (Ashby)", "studio": "Sim", "board_url": "https://jobs.ashbyhq.com/sim", "careersUrl": "https://jobs.ashbyhq.com/sim"},
-    {"name": "The Utopia Venture Platform (Ashby)", "studio": "The Utopia Venture Platform", "board_url": "https://jobs.ashbyhq.com/the-studio", "careersUrl": "https://jobs.ashbyhq.com/the-studio"},
+    {
+        "name": "GameChanger (Ashby)",
+        "studio": "GameChanger",
+        "board_url": "https://jobs.ashbyhq.com/gamechanger",
+        "careersUrl": "https://jobs.ashbyhq.com/gamechanger",
+        "relevanceHint": "sports-tech",
+    },
+    {
+        "name": "Level (Ashby)",
+        "studio": "Level",
+        "board_url": "https://jobs.ashbyhq.com/level",
+        "careersUrl": "https://jobs.ashbyhq.com/level",
+    },
+    {
+        "name": "Unblocked (Ashby)",
+        "studio": "Unblocked",
+        "board_url": "https://jobs.ashbyhq.com/Unblocked",
+        "careersUrl": "https://jobs.ashbyhq.com/Unblocked",
+    },
+    {
+        "name": "Sim (Ashby)",
+        "studio": "Sim",
+        "board_url": "https://jobs.ashbyhq.com/sim",
+        "careersUrl": "https://jobs.ashbyhq.com/sim",
+    },
+    {
+        "name": "The Utopia Venture Platform (Ashby)",
+        "studio": "The Utopia Venture Platform",
+        "board_url": "https://jobs.ashbyhq.com/the-studio",
+        "careersUrl": "https://jobs.ashbyhq.com/the-studio",
+    },
 ]
 
 GAME_RELEVANCE_TOKENS = (
@@ -70,21 +141,49 @@ def _default_fetch_text(url: str, timeout_s: int) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
-def _probe_ashby_board(row: dict[str, Any], *, fetch_text=_default_fetch_text, timeout_s: int = 15) -> dict[str, Any]:
-    board_url = _normalize_board_url(clean_text(row.get("board_url")) or clean_text(row.get("careersUrl")))
+def _probe_ashby_board(
+    row: dict[str, Any], *, fetch_text=_default_fetch_text, timeout_s: int = 15
+) -> dict[str, Any]:
+    board_url = _normalize_board_url(
+        clean_text(row.get("board_url")) or clean_text(row.get("careersUrl"))
+    )
     if not board_url:
-        return {"status": "invalid", "board_url": "", "postingsCount": 0, "organizationName": "", "error": "missing board_url"}
+        return {
+            "status": "invalid",
+            "board_url": "",
+            "postingsCount": 0,
+            "organizationName": "",
+            "error": "missing board_url",
+        }
     try:
         html = fetch_text(board_url, timeout_s)
     except (HTTPError, URLError, TimeoutError, OSError) as exc:
-        return {"status": "error", "board_url": board_url, "postingsCount": 0, "organizationName": "", "error": str(exc)}
+        return {
+            "status": "error",
+            "board_url": board_url,
+            "postingsCount": 0,
+            "organizationName": "",
+            "error": str(exc),
+        }
     match = re.search(r"window\.__appData\s*=\s*(\{.*?\});", html, re.S)
     if not match:
-        return {"status": "dead", "board_url": board_url, "postingsCount": 0, "organizationName": "", "error": "missing embedded app data"}
+        return {
+            "status": "dead",
+            "board_url": board_url,
+            "postingsCount": 0,
+            "organizationName": "",
+            "error": "missing embedded app data",
+        }
     try:
         payload = json.loads(match.group(1))
     except json.JSONDecodeError as exc:
-        return {"status": "error", "board_url": board_url, "postingsCount": 0, "organizationName": "", "error": str(exc)}
+        return {
+            "status": "error",
+            "board_url": board_url,
+            "postingsCount": 0,
+            "organizationName": "",
+            "error": str(exc),
+        }
     organization = payload.get("organization") if isinstance(payload, dict) else {}
     job_board = payload.get("jobBoard") if isinstance(payload, dict) else {}
     postings = job_board.get("jobPostings") if isinstance(job_board, dict) else []
@@ -119,10 +218,18 @@ def _is_relevant_ashby_candidate(row: dict[str, Any], validation: dict[str, Any]
 def _ashby_row_from_validation(row: dict[str, Any], validation: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(row)
     normalized["adapter"] = "ashby"
-    normalized["name"] = clean_text(normalized.get("name")) or f"{clean_text(normalized.get('studio'))} (Ashby)"
-    normalized["studio"] = clean_text(normalized.get("studio")) or clean_text(validation.get("organizationName")) or normalized["name"].replace(" (Ashby)", "")
+    normalized["name"] = (
+        clean_text(normalized.get("name")) or f"{clean_text(normalized.get('studio'))} (Ashby)"
+    )
+    normalized["studio"] = (
+        clean_text(normalized.get("studio"))
+        or clean_text(validation.get("organizationName"))
+        or normalized["name"].replace(" (Ashby)", "")
+    )
     normalized["board_url"] = clean_text(validation.get("board_url"))
-    normalized["careersUrl"] = clean_text(normalized.get("careersUrl")) or clean_text(validation.get("board_url"))
+    normalized["careersUrl"] = clean_text(normalized.get("careersUrl")) or clean_text(
+        validation.get("board_url")
+    )
     normalized["remoteFriendly"] = bool(normalized.get("remoteFriendly", True))
     normalized["nlPriority"] = bool(normalized.get("nlPriority", False))
     normalized["enabledByDefault"] = bool(normalized.get("enabledByDefault", True))
@@ -149,13 +256,21 @@ def refresh_active_ashby_registry(
     timeout_s: int = 15,
 ) -> dict[str, Any]:
     active_rows = load_json_array(active_path, [])
-    non_ashby_rows = [dict(row) for row in active_rows if clean_text(row.get("adapter")).lower() != "ashby"]
-    existing_ashby_rows = [dict(row) for row in active_rows if clean_text(row.get("adapter")).lower() == "ashby"]
+    non_ashby_rows = [
+        dict(row) for row in active_rows if clean_text(row.get("adapter")).lower() != "ashby"
+    ]
+    existing_ashby_rows = [
+        dict(row) for row in active_rows if clean_text(row.get("adapter")).lower() == "ashby"
+    ]
 
     candidates_by_key: dict[str, dict[str, Any]] = {}
     curated_names = {clean_text(row.get("name")) for row in curated_rows}
     for row in [*existing_ashby_rows, *list(curated_rows), *list(discovery_rows)]:
-        key = _normalize_board_url(clean_text(row.get("board_url")) or clean_text(row.get("careersUrl")) or clean_text(row.get("name")))
+        key = _normalize_board_url(
+            clean_text(row.get("board_url"))
+            or clean_text(row.get("careersUrl"))
+            or clean_text(row.get("name"))
+        )
         if not key:
             continue
         if key not in candidates_by_key:
@@ -169,14 +284,23 @@ def refresh_active_ashby_registry(
     removed_rows: list[dict[str, Any]] = []
     rejected_candidates: list[dict[str, Any]] = []
     added_count = 0
-    normalized_existing_keys = {_normalize_board_url(clean_text(row.get("board_url")) or clean_text(row.get("careersUrl"))) for row in existing_ashby_rows}
+    normalized_existing_keys = {
+        _normalize_board_url(clean_text(row.get("board_url")) or clean_text(row.get("careersUrl")))
+        for row in existing_ashby_rows
+    }
 
-    for key, row in sorted(candidates_by_key.items(), key=lambda item: clean_text(item[1].get("name")).lower()):
+    for key, row in sorted(
+        candidates_by_key.items(), key=lambda item: clean_text(item[1].get("name")).lower()
+    ):
         validation = _probe_ashby_board(row, fetch_text=fetch_text, timeout_s=timeout_s)
         if clean_text(validation.get("status")) == "ok_with_jobs":
             is_existing = key in normalized_existing_keys
             is_curated = clean_text(row.get("name")) in curated_names
-            if not is_existing and not is_curated and not _is_relevant_ashby_candidate(row, validation):
+            if (
+                not is_existing
+                and not is_curated
+                and not _is_relevant_ashby_candidate(row, validation)
+            ):
                 rejected_candidates.append(
                     {
                         "name": clean_text(row.get("name")) or clean_text(row.get("studio")) or key,

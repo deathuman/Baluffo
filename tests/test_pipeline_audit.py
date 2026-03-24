@@ -18,8 +18,20 @@ def test_build_report_classifies_failures_and_slow_entries() -> None:
             "adapterTimings": [{"adapter": "greenhouse", "durationMs": 9000, "queuedCount": 2}],
         },
         "failures": [
-            {"name": "Bad Studio", "adapter": "static", "stage": "probe_miss", "dropStage": "probe_failed", "error": "timeout"},
-            {"name": "Deferred Studio", "adapter": "greenhouse", "stage": "queue_filtered", "dropStage": "queue_filtered", "error": "low score"},
+            {
+                "name": "Bad Studio",
+                "adapter": "static",
+                "stage": "probe_miss",
+                "dropStage": "probe_failed",
+                "error": "timeout",
+            },
+            {
+                "name": "Deferred Studio",
+                "adapter": "greenhouse",
+                "stage": "queue_filtered",
+                "dropStage": "queue_filtered",
+                "error": "low score",
+            },
         ],
         "topFailures": [{"key": "static:bad.example", "count": 1}],
     }
@@ -28,12 +40,16 @@ def test_build_report_classifies_failures_and_slow_entries() -> None:
         "finishedAt": "2026-03-19T20:04:00+00:00",
         "summary": {"successfulSources": 1, "failedSources": 1, "outputCount": 12},
         "runtime": {
-            "slowestSources": [{"name": "static_sources", "adapter": "static", "durationMs": 31000, "keptCount": 0}],
+            "slowestSources": [
+                {"name": "static_sources", "adapter": "static", "durationMs": 31000, "keptCount": 0}
+            ],
             "timingSummary": {
                 "totalDurationMs": 180000,
                 "stageTop": [{"stage": "detailFetch", "durationMs": 120000}],
                 "slowestAdapters": [{"adapter": "static", "durationMs": 150000, "sourceCount": 4}],
-                "highCostLowYieldSources": [{"name": "stormind", "adapter": "static", "durationMs": 25000, "keptCount": 0}],
+                "highCostLowYieldSources": [
+                    {"name": "stormind", "adapter": "static", "durationMs": 25000, "keptCount": 0}
+                ],
             },
         },
         "sources": [
@@ -57,7 +73,14 @@ def test_build_report_classifies_failures_and_slow_entries() -> None:
                     }
                 ],
             },
-            {"name": "greenhouse_boards", "adapter": "greenhouse", "status": "ok", "durationMs": 3000, "fetchedCount": 12, "keptCount": 12},
+            {
+                "name": "greenhouse_boards",
+                "adapter": "greenhouse",
+                "status": "ok",
+                "durationMs": 3000,
+                "fetchedCount": 12,
+                "keptCount": 12,
+            },
         ],
         "outputs": {"report": "data/jobs-fetch-report.json"},
     }
@@ -66,20 +89,51 @@ def test_build_report_classifies_failures_and_slow_entries() -> None:
     report = audit.build_report(discovery_report, fetch_report, jobs)
 
     assert int((report.get("totals") or {}).get("totalJobs") or 0) == 2
-    assert str((((report.get("fetch") or {}).get("slowestAdapters") or [])[0].get("adapter")) or "") == "static"
-    assert any(str(row.get("category") or "") == "fetch_source_error" for row in (report.get("issues") or {}).get("hard_failures", []))
-    assert any(str(row.get("category") or "") == "fetch_ok_extract_zero" for row in (report.get("issues") or {}).get("soft_failures", []))
-    assert any(str(row.get("category") or "") == "slow_low_yield" for row in (report.get("issues") or {}).get("high_cost_low_yield", []))
-    assert any(str(row.get("category") or "") == "queue_filtered" for row in (report.get("issues") or {}).get("coverage_risks", []))
+    assert (
+        str((((report.get("fetch") or {}).get("slowestAdapters") or [])[0].get("adapter")) or "")
+        == "static"
+    )
+    assert any(
+        str(row.get("category") or "") == "fetch_source_error"
+        for row in (report.get("issues") or {}).get("hard_failures", [])
+    )
+    assert any(
+        str(row.get("category") or "") == "fetch_ok_extract_zero"
+        for row in (report.get("issues") or {}).get("soft_failures", [])
+    )
+    assert any(
+        str(row.get("category") or "") == "slow_low_yield"
+        for row in (report.get("issues") or {}).get("high_cost_low_yield", [])
+    )
+    assert any(
+        str(row.get("category") or "") == "queue_filtered"
+        for row in (report.get("issues") or {}).get("coverage_risks", [])
+    )
 
 
 def test_render_markdown_includes_key_sections() -> None:
     report = {
         "generatedAt": "2026-03-19T20:00:00+00:00",
-        "discovery": {"totalDurationMs": 1000, "stageTop": [], "queueFilteredCount": 0, "discoverableButDeferredCount": 0},
-        "fetch": {"totalDurationMs": 2000, "slowestAdapters": [], "slowestSourceLoaders": [], "slowestSourceEntries": [], "productiveExpensiveSources": []},
+        "discovery": {
+            "totalDurationMs": 1000,
+            "stageTop": [],
+            "queueFilteredCount": 0,
+            "discoverableButDeferredCount": 0,
+        },
+        "fetch": {
+            "totalDurationMs": 2000,
+            "slowestAdapters": [],
+            "slowestSourceLoaders": [],
+            "slowestSourceEntries": [],
+            "productiveExpensiveSources": [],
+        },
         "totals": {"totalJobs": 3},
-        "issues": {"hard_failures": [], "soft_failures": [], "high_cost_low_yield": [], "coverage_risks": []},
+        "issues": {
+            "hard_failures": [],
+            "soft_failures": [],
+            "high_cost_low_yield": [],
+            "coverage_risks": [],
+        },
         "recommendations": ["Do the next thing."],
     }
     text = audit.render_markdown(report)
@@ -94,17 +148,31 @@ def test_build_report_includes_productive_expensive_sources() -> None:
         "summary": {"successfulSources": 1, "failedSources": 0, "outputCount": 50},
         "runtime": {
             "slowestSources": [],
-            "timingSummary": {"totalDurationMs": 100000, "wallClockDurationMs": 45000, "stageTop": [], "slowestAdapters": [], "highCostLowYieldSources": [], "detailHeavySources": []},
+            "timingSummary": {
+                "totalDurationMs": 100000,
+                "wallClockDurationMs": 45000,
+                "stageTop": [],
+                "slowestAdapters": [],
+                "highCostLowYieldSources": [],
+                "detailHeavySources": [],
+            },
         },
         "sources": [
-            {"name": "static_source::cygames", "adapter": "static", "status": "ok", "durationMs": 50000, "fetchedCount": 100, "keptCount": 80},
+            {
+                "name": "static_source::cygames",
+                "adapter": "static",
+                "status": "ok",
+                "durationMs": 50000,
+                "fetchedCount": 100,
+                "keptCount": 80,
+            },
         ],
         "outputs": {"report": "data/jobs-fetch-report.json"},
     }
 
     report = audit.build_report(discovery_report, fetch_report, [{"id": "1"}])
 
-    productive = ((report.get("fetch") or {}).get("productiveExpensiveSources") or [])
+    productive = (report.get("fetch") or {}).get("productiveExpensiveSources") or []
     assert len(productive) == 1
     assert str(productive[0].get("name") or "") == "static_source::cygames"
     assert int((report.get("totals") or {}).get("fetchWallClockDurationMs") or 0) == 45000

@@ -1,4 +1,5 @@
 """Greenhouse, Lever, SmartRecruiters, Workable, Epic Games, Ashby, Personio, Breezy, JazzHR, Recruitee, and Pinpoint job payload parsers."""
+
 from __future__ import annotations
 
 import hashlib
@@ -89,18 +90,20 @@ def parse_greenhouse_jobs_payload(
             else clean_text(location_obj)
         )
         city, country, work_type = parse_greenhouse_location(location_name)
-        jobs.append({
-            "sourceJobId": f"greenhouse:{board_slug}:{clean_text(row.get('id') or row.get('internal_job_id'))}",
-            "title": title,
-            "company": company,
-            "city": city,
-            "country": country,
-            "workType": work_type,
-            "contractType": "",
-            "jobLink": job_link,
-            "sector": "Game",
-            "postedAt": row.get("first_published") or row.get("updated_at"),
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"greenhouse:{board_slug}:{clean_text(row.get('id') or row.get('internal_job_id'))}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country,
+                "workType": work_type,
+                "contractType": "",
+                "jobLink": job_link,
+                "sector": "Game",
+                "postedAt": row.get("first_published") or row.get("updated_at"),
+            }
+        )
     return jobs
 
 
@@ -122,25 +125,29 @@ def parse_lever_jobs_payload(
         location_text = clean_text(categories.get("location") or row.get("location"))
         city, country, work_type = parse_generic_location_fields(location_text)
         commitment = clean_text(categories.get("commitment") or row.get("commitment"))
-        tags_text = " ".join([
-            clean_text(categories.get("team")),
-            clean_text(categories.get("department")),
-            clean_text(row.get("descriptionPlain")),
-        ])
+        tags_text = " ".join(
+            [
+                clean_text(categories.get("team")),
+                clean_text(categories.get("department")),
+                clean_text(row.get("descriptionPlain")),
+            ]
+        )
         if not looks_like_game_job(title, company, tags_text):
             continue
-        jobs.append({
-            "sourceJobId": f"lever:{account}:{clean_text(row.get('id') or row.get('requisitionCode'))}",
-            "title": title,
-            "company": company,
-            "city": city,
-            "country": country,
-            "workType": work_type or location_text,
-            "contractType": commitment,
-            "jobLink": link,
-            "sector": "Game",
-            "postedAt": row.get("createdAt") or row.get("updatedAt"),
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"lever:{account}:{clean_text(row.get('id') or row.get('requisitionCode'))}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country,
+                "workType": work_type or location_text,
+                "contractType": commitment,
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": row.get("createdAt") or row.get("updatedAt"),
+            }
+        )
     return jobs
 
 
@@ -168,25 +175,29 @@ def parse_smartrecruiters_jobs_payload(
             clean_text(location_obj.get("country")) or clean_text(location_obj.get("countryCode"))
         )
         work_type = clean_text(location_obj.get("remote")) or clean_text(location_obj.get("region"))
-        tags = " ".join([
-            clean_text(row.get("department")),
-            clean_text(row.get("function")),
-            clean_text(row.get("typeOfEmployment")),
-        ])
+        tags = " ".join(
+            [
+                clean_text(row.get("department")),
+                clean_text(row.get("function")),
+                clean_text(row.get("typeOfEmployment")),
+            ]
+        )
         if not looks_like_game_job(title, company, tags):
             continue
-        jobs.append({
-            "sourceJobId": f"smartrecruiters:{company_id}:{posting_id or hashlib.sha1(title.encode('utf-8')).hexdigest()[:10]}",
-            "title": title,
-            "company": company,
-            "city": city,
-            "country": country or "Unknown",
-            "workType": work_type,
-            "contractType": clean_text(row.get("typeOfEmployment")),
-            "jobLink": link or f"https://jobs.smartrecruiters.com/{company_id}/{posting_id}",
-            "sector": "Game",
-            "postedAt": row.get("releasedDate") or row.get("createdOn"),
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"smartrecruiters:{company_id}:{posting_id or hashlib.sha1(title.encode('utf-8')).hexdigest()[:10]}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country or "Unknown",
+                "workType": work_type,
+                "contractType": clean_text(row.get("typeOfEmployment")),
+                "jobLink": link or f"https://jobs.smartrecruiters.com/{company_id}/{posting_id}",
+                "sector": "Game",
+                "postedAt": row.get("releasedDate") or row.get("createdOn"),
+            }
+        )
     return jobs
 
 
@@ -210,34 +221,40 @@ def parse_workable_jobs_payload(
         if link and not link.startswith("http"):
             link = urljoin(f"https://apply.workable.com/{account}/", link)
         location = row.get("location") if isinstance(row.get("location"), dict) else {}
-        location_text = " ".join([
-            clean_text(location.get("city")),
-            clean_text(location.get("country")),
-            "Remote" if bool(location.get("telecommuting")) else "",
-        ]).strip()
+        location_text = " ".join(
+            [
+                clean_text(location.get("city")),
+                clean_text(location.get("country")),
+                "Remote" if bool(location.get("telecommuting")) else "",
+            ]
+        ).strip()
         city, country, work_type = parse_generic_location_fields(location_text)
         if bool(location.get("telecommuting")):
             city, country, work_type = "Remote", "Remote", "Remote"
-        tags = " ".join([
-            clean_text(row.get("department")),
-            clean_text(row.get("description")),
-        ])
+        tags = " ".join(
+            [
+                clean_text(row.get("department")),
+                clean_text(row.get("description")),
+            ]
+        )
         if not title or not link:
             continue
         if not looks_like_game_job(title, company, tags):
             continue
-        jobs.append({
-            "sourceJobId": f"workable:{account}:{clean_text(row.get('shortcode') or row.get('id'))}",
-            "title": title,
-            "company": company,
-            "city": city,
-            "country": country,
-            "workType": work_type or location_text,
-            "contractType": clean_text(row.get("employment_type")),
-            "jobLink": link,
-            "sector": "Game",
-            "postedAt": row.get("published") or row.get("created_at"),
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"workable:{account}:{clean_text(row.get('shortcode') or row.get('id'))}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country,
+                "workType": work_type or location_text,
+                "contractType": clean_text(row.get("employment_type")),
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": row.get("published") or row.get("created_at"),
+            }
+        )
     return jobs
 
 
@@ -273,31 +290,39 @@ def parse_epic_games_jobs_payload(
             location_text = clean_text(row.get("location"))
         if not location_text:
             location_text = ", ".join(
-                [part for part in [clean_text(row.get("city")), clean_text(row.get("country"))] if part]
+                [
+                    part
+                    for part in [clean_text(row.get("city")), clean_text(row.get("country"))]
+                    if part
+                ]
             )
         city, country, work_type = parse_generic_location_fields(location_text)
         if bool(row.get("remote")):
             city, country, work_type = "Remote", "Remote", "Remote"
-        tags = " ".join([
-            clean_text(row.get("department")),
-            clean_text(row.get("product")),
-            clean_text(row.get("type")),
-            clean_text(row.get("filterText")),
-        ])
+        tags = " ".join(
+            [
+                clean_text(row.get("department")),
+                clean_text(row.get("product")),
+                clean_text(row.get("type")),
+                clean_text(row.get("filterText")),
+            ]
+        )
         if not looks_like_game_job(title, company_name, tags):
             continue
-        jobs.append({
-            "sourceJobId": f"epic:{posting_id or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-            "title": title,
-            "company": company_name,
-            "city": city,
-            "country": country,
-            "workType": work_type or location_text,
-            "contractType": clean_text(row.get("type")),
-            "jobLink": link,
-            "sector": "Game",
-            "postedAt": row.get("first_published") or row.get("updated_at"),
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"epic:{posting_id or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
+                "title": title,
+                "company": company_name,
+                "city": city,
+                "country": country,
+                "workType": work_type or location_text,
+                "contractType": clean_text(row.get("type")),
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": row.get("first_published") or row.get("updated_at"),
+            }
+        )
     return jobs
 
 
@@ -311,8 +336,14 @@ def parse_ashby_jobs_from_html(
             job_board = app_data.get("jobBoard") if isinstance(app_data, dict) else {}
             postings = job_board.get("jobPostings") if isinstance(job_board, dict) else []
             if isinstance(postings, list) and postings:
-                normalized_board_url = re.sub(r"/jobs/?$", "", clean_text(board_url)) or clean_text(board_url)
-                company = clean_text(fallback_company) or clean_text((app_data.get("organization") or {}).get("name")) or "Unknown"
+                normalized_board_url = re.sub(r"/jobs/?$", "", clean_text(board_url)) or clean_text(
+                    board_url
+                )
+                company = (
+                    clean_text(fallback_company)
+                    or clean_text((app_data.get("organization") or {}).get("name"))
+                    or "Unknown"
+                )
                 jobs: list[RawJob] = []
                 for posting in postings:
                     if not isinstance(posting, dict):
@@ -322,22 +353,30 @@ def parse_ashby_jobs_from_html(
                     if not posting_id or not title:
                         continue
                     location_parts = [clean_text(posting.get("locationName"))]
-                    location_parts.extend(clean_text(item.get("locationName")) for item in (posting.get("secondaryLocations") or []) if isinstance(item, dict))
+                    location_parts.extend(
+                        clean_text(item.get("locationName"))
+                        for item in (posting.get("secondaryLocations") or [])
+                        if isinstance(item, dict)
+                    )
                     location = "; ".join(part for part in location_parts if part)
                     contract_type = clean_text(posting.get("employmentType"))
                     contract_type = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", contract_type)
-                    jobs.append({
-                        "sourceJobId": f"ashby:{posting_id}",
-                        "title": title,
-                        "company": company,
-                        "city": location,
-                        "country": "Unknown",
-                        "workType": clean_text(posting.get("workplaceType")),
-                        "contractType": contract_type,
-                        "jobLink": f"{normalized_board_url.rstrip('/')}/{posting_id}",
-                        "sector": "Game",
-                        "postedAt": clean_text(posting.get("publishedDate") or posting.get("updatedAt")),
-                    })
+                    jobs.append(
+                        {
+                            "sourceJobId": f"ashby:{posting_id}",
+                            "title": title,
+                            "company": company,
+                            "city": location,
+                            "country": "Unknown",
+                            "workType": clean_text(posting.get("workplaceType")),
+                            "contractType": contract_type,
+                            "jobLink": f"{normalized_board_url.rstrip('/')}/{posting_id}",
+                            "sector": "Game",
+                            "postedAt": clean_text(
+                                posting.get("publishedDate") or posting.get("updatedAt")
+                            ),
+                        }
+                    )
                 if jobs:
                     return jobs
         except (TypeError, ValueError, json.JSONDecodeError):
@@ -356,7 +395,9 @@ def parse_ashby_jobs_from_html(
         query = parse_qs(parsed.query)
         ashby_jid = clean_text((query.get("ashby_jid") or [""])[0])
         same_host = clean_text(parsed.netloc).lower() == board_host
-        uuid_like = bool(re.search(r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", path))
+        uuid_like = bool(
+            re.search(r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", path)
+        )
         if "/job/" not in path and not ashby_jid and not (same_host and uuid_like):
             continue
         if absolute in seen:
@@ -375,18 +416,20 @@ def parse_ashby_jobs_from_html(
         if not title:
             continue
         company = clean_text(fallback_company) or "Unknown"
-        jobs.append({
-            "sourceJobId": f"ashby:{ashby_jid or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-            "title": title,
-            "company": company,
-            "city": "",
-            "country": "Unknown",
-            "workType": "",
-            "contractType": "",
-            "jobLink": link,
-            "sector": "Game",
-            "postedAt": "",
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"ashby:{ashby_jid or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
+                "title": title,
+                "company": company,
+                "city": "",
+                "country": "Unknown",
+                "workType": "",
+                "contractType": "",
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": "",
+            }
+        )
     return jobs
 
 
@@ -412,18 +455,20 @@ def parse_personio_feed_xml(xml_text: str, source_name: str = "") -> list[RawJob
         tags = " ".join([department, office])
         if not looks_like_game_job(title, company, tags):
             continue
-        jobs.append({
-            "sourceJobId": f"personio:{source_name}:{posting_id or hashlib.sha1((title + office).encode('utf-8')).hexdigest()[:10]}",
-            "title": title,
-            "company": company,
-            "city": city,
-            "country": country,
-            "workType": work_type or office,
-            "contractType": clean_text(posting.findtext("employmentType")),
-            "jobLink": job_link,
-            "sector": "Game",
-            "postedAt": clean_text(posting.findtext("createdAt") or posting.findtext("date")),
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"personio:{source_name}:{posting_id or hashlib.sha1((title + office).encode('utf-8')).hexdigest()[:10]}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country,
+                "workType": work_type or office,
+                "contractType": clean_text(posting.findtext("employmentType")),
+                "jobLink": job_link,
+                "sector": "Game",
+                "postedAt": clean_text(posting.findtext("createdAt") or posting.findtext("date")),
+            }
+        )
     return jobs
 
 
@@ -436,7 +481,11 @@ def parse_recruitee_jobs_payload(
     if not isinstance(rows, list):
         return []
     company_payload = payload.get("company") if isinstance(payload.get("company"), dict) else {}
-    company = clean_text(company_payload.get("name")) or clean_text(fallback_company) or subdomain.replace("-", " ").title()
+    company = (
+        clean_text(company_payload.get("name"))
+        or clean_text(fallback_company)
+        or subdomain.replace("-", " ").title()
+    )
     jobs: list[RawJob] = []
     for row in rows:
         if not isinstance(row, dict):
@@ -461,7 +510,11 @@ def parse_recruitee_jobs_payload(
             city, country, work_type = "Remote", "Remote", "Remote"
         tags = " ".join(
             [
-                clean_text((row.get("department") or {}).get("name") if isinstance(row.get("department"), dict) else row.get("department")),
+                clean_text(
+                    (row.get("department") or {}).get("name")
+                    if isinstance(row.get("department"), dict)
+                    else row.get("department")
+                ),
                 clean_text(row.get("employment_type") or row.get("employment_type_text")),
                 clean_text(row.get("description")),
                 clean_text(row.get("requirements")),
@@ -479,10 +532,14 @@ def parse_recruitee_jobs_payload(
                 "city": city,
                 "country": country,
                 "workType": work_type or location_text,
-                "contractType": clean_text(row.get("employment_type_text") or row.get("employment_type")),
+                "contractType": clean_text(
+                    row.get("employment_type_text") or row.get("employment_type")
+                ),
                 "jobLink": link,
                 "sector": "Game",
-                "postedAt": row.get("published_at") or row.get("created_at") or row.get("updated_at"),
+                "postedAt": row.get("published_at")
+                or row.get("created_at")
+                or row.get("updated_at"),
             }
         )
     return jobs
@@ -508,11 +565,15 @@ def parse_pinpoint_jobs_payload(
         location_obj = row.get("location") if isinstance(row.get("location"), dict) else {}
         location_text = clean_text(location_obj.get("name"))
         city, country, work_type = parse_generic_location_fields(location_text)
-        workplace_type_text = clean_text(row.get("workplace_type_text") or row.get("workplace_type"))
+        workplace_type_text = clean_text(
+            row.get("workplace_type_text") or row.get("workplace_type")
+        )
         if "remote" in workplace_type_text.lower():
             city, country, work_type = "Remote", "Remote", "Remote"
         job_obj = row.get("job") if isinstance(row.get("job"), dict) else {}
-        department = job_obj.get("department") if isinstance(job_obj.get("department"), dict) else {}
+        department = (
+            job_obj.get("department") if isinstance(job_obj.get("department"), dict) else {}
+        )
         tags = " ".join(
             [
                 clean_text(department.get("name")),
@@ -531,7 +592,9 @@ def parse_pinpoint_jobs_payload(
                 "city": city,
                 "country": country,
                 "workType": work_type or workplace_type_text or location_text,
-                "contractType": clean_text(row.get("employment_type_text") or row.get("employment_type")),
+                "contractType": clean_text(
+                    row.get("employment_type_text") or row.get("employment_type")
+                ),
                 "jobLink": link,
                 "sector": "Game",
                 "postedAt": row.get("deadline_at") or "",
@@ -561,25 +624,27 @@ def parse_breezy_jobs_html(
         title = re.sub(r"\s+", " ", title)
         if not title:
             continue
-        context_window = html_text[match.end(): match.end() + 400]
+        context_window = html_text[match.end() : match.end() + 400]
         context_text = clean_text(re.sub(r"%[A-Z0-9_]+%", " ", strip_html_text(context_window)))
         city = ""
         country = "Unknown"
         work_type = ""
         if "WORLDWIDE" in context_window.upper() or "remote" in context_text.lower():
             city, country, work_type = "Remote", "Remote", "Remote"
-        jobs.append({
-            "sourceJobId": f"breezy:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-            "title": title,
-            "company": company,
-            "city": city,
-            "country": country,
-            "workType": work_type,
-            "contractType": "",
-            "jobLink": link,
-            "sector": "Game",
-            "postedAt": "",
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"breezy:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country,
+                "workType": work_type,
+                "contractType": "",
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": "",
+            }
+        )
     return jobs
 
 
@@ -603,7 +668,7 @@ def parse_jazzhr_jobs_html(
         title = title.replace("View All Jobs", "").strip()
         if not title:
             continue
-        context_window = html_text[match.end(): match.end() + 500]
+        context_window = html_text[match.end() : match.end() + 500]
         context_text = clean_text(strip_html_text(context_window))
         lines = [clean_text(line) for line in context_text.splitlines() if clean_text(line)]
         location_value = lines[0] if lines else ""
@@ -616,16 +681,18 @@ def parse_jazzhr_jobs_html(
             flags=re.IGNORECASE,
         )
         contract_type = clean_text(contract_match.group(1)) if contract_match else ""
-        jobs.append({
-            "sourceJobId": f"jazzhr:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-            "title": title,
-            "company": company,
-            "city": city,
-            "country": country,
-            "workType": work_type,
-            "contractType": contract_type,
-            "jobLink": link,
-            "sector": "Game",
-            "postedAt": "",
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"jazzhr:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country,
+                "workType": work_type,
+                "contractType": contract_type,
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": "",
+            }
+        )
     return jobs

@@ -38,7 +38,10 @@ def run(
     if not page_url:
         return []
 
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Blizzard Entertainment"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Blizzard Entertainment"
+    )
     source_id = (source_row.get("id") or "").strip() or "blizzard"
 
     try:
@@ -105,9 +108,13 @@ def run(
                 "atsLinks": ats_links[:5],
             }
         else:
-            likely_js = _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            likely_js = (
+                _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            )
             source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE if likely_js else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
+                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
+                if likely_js
+                else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
                 "browserFallbackRecommended": True,
                 "extractorHint": "parse_empty_js_shell_suspected" if likely_js else "parse_empty",
                 "atsLinks": ats_links[:5],
@@ -157,7 +164,9 @@ def _extract_blizzard_search_results_links(html: str, page_url: str) -> list[str
 def _parse_blizzard_search_results(*, html: str, company: str, source_id: str) -> list[RawJob]:
     rows: list[RawJob] = []
     seen = set()
-    pattern = re.compile(r'(?is)<a[^>]+href=["\']([^"\']+/global/en/job/([^/"\']+)/[^"\']+)["\'][^>]*>(.*?)</a>')
+    pattern = re.compile(
+        r'(?is)<a[^>]+href=["\']([^"\']+/global/en/job/([^/"\']+)/[^"\']+)["\'][^>]*>(.*?)</a>'
+    )
     for match in pattern.finditer(html):
         absolute = normalize_url(clean_text(match.group(1)))
         job_id = clean_text(match.group(2))
@@ -166,14 +175,20 @@ def _parse_blizzard_search_results(*, html: str, company: str, source_id: str) -
             continue
         seen.add(absolute)
         context = html[max(0, match.start() - 200) : min(len(html), match.end() + 1600)]
-        location_match = re.search(r"Location.*?([A-Z][A-Za-z .'-]+,\s*[A-Z][A-Za-z .'-]+(?:,\s*[A-Z][A-Za-z .'-]+)*)", strip_html_text(context), flags=re.I)
-        posted_match = re.search(r"Posted Date\s*([A-Za-z]+\s+\d{1,2}\s+\d{4})", strip_html_text(context), flags=re.I)
+        location_match = re.search(
+            r"Location.*?([A-Z][A-Za-z .'-]+,\s*[A-Z][A-Za-z .'-]+(?:,\s*[A-Z][A-Za-z .'-]+)*)",
+            strip_html_text(context),
+            flags=re.I,
+        )
+        posted_match = re.search(
+            r"Posted Date\s*([A-Za-z]+\s+\d{1,2}\s+\d{4})", strip_html_text(context), flags=re.I
+        )
         location = clean_text(location_match.group(1)) if location_match else ""
         city = clean_text(location.split(",", 1)[0]) if "," in location else location
         country = "United States of America" if "United States" in location else ""
         rows.append(
             {
-                "sourceJobId": f"static:{source_id}:{job_id or len(rows)+1}",
+                "sourceJobId": f"static:{source_id}:{job_id or len(rows) + 1}",
                 "title": title,
                 "company": company,
                 "city": city,

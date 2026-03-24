@@ -32,7 +32,9 @@ def _static_adapter():
     return static
 
 
-def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_remote_ok_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     return _community_adapter().run_remote_ok_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -41,7 +43,9 @@ def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: in
     )
 
 
-def _request_json_with_headers(url: str, *, timeout_s: int, headers: dict[str, str] | None = None) -> dict[str, Any]:
+def _request_json_with_headers(
+    url: str, *, timeout_s: int, headers: dict[str, str] | None = None
+) -> dict[str, Any]:
     return _social_adapter()._request_json_with_headers(url, timeout_s=timeout_s, headers=headers)
 
 
@@ -96,7 +100,9 @@ def run_social_mastodon_source(
     )
 
 
-def run_gamesindustry_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_gamesindustry_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     return _community_adapter().run_gamesindustry_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -105,7 +111,9 @@ def run_gamesindustry_source(*, fetch_text: Callable[[str, int], str], timeout_s
     )
 
 
-def run_epic_games_careers_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_epic_games_careers_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     return _community_adapter().run_epic_games_careers_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -114,7 +122,9 @@ def run_epic_games_careers_source(*, fetch_text: Callable[[str, int], str], time
     )
 
 
-def run_wellfound_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_wellfound_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     return _community_adapter().run_wellfound_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -123,7 +133,9 @@ def run_wellfound_source(*, fetch_text: Callable[[str, int], str], timeout_s: in
     )
 
 
-def run_greenhouse_boards_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_greenhouse_boards_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     return _provider_api_adapter().run_greenhouse_boards_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -132,7 +144,9 @@ def run_greenhouse_boards_source(*, fetch_text: Callable[[str, int], str], timeo
     )
 
 
-def run_teamtailor_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_teamtailor_sources_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     return _provider_api_adapter().run_teamtailor_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -279,7 +293,9 @@ def run_static_studio_pages_s_z_source(
     )
 
 
-def run_lever_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_lever_sources_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     return _provider_api_adapter().run_lever_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -288,7 +304,9 @@ def run_lever_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s
     )
 
 
-def run_smartrecruiters_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_smartrecruiters_sources_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     return _provider_api_adapter().run_smartrecruiters_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -297,7 +315,9 @@ def run_smartrecruiters_sources_source(*, fetch_text: Callable[[str, int], str],
     )
 
 
-def run_workable_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_workable_sources_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     return _provider_api_adapter().run_workable_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -306,7 +326,9 @@ def run_workable_sources_source(*, fetch_text: Callable[[str, int], str], timeou
     )
 
 
-def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_ashby_sources_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     return _provider_api_adapter().run_ashby_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -315,7 +337,9 @@ def run_ashby_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s
     )
 
 
-def run_personio_sources_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_personio_sources_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     return _provider_api_adapter().run_personio_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -350,4 +374,3 @@ __all__ = [
     "run_workable_sources_source",
     "static_source_shard",
 ]
-

@@ -1,4 +1,5 @@
 """Static plugin for littlechicken.nl careers."""
+
 from __future__ import annotations
 
 import re
@@ -32,7 +33,10 @@ def run(
     _ = kwargs
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Little Chicken"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Little Chicken"
+    )
     source_id = (source_row.get("id") or "").strip() or "littlechicken"
     source_name = clean_text(source_row.get("name")) or "littlechicken"
 
@@ -121,10 +125,13 @@ def run(
             link = normalize_url(row.get("jobLink")) or normalize_url(detail_url)
             if not link:
                 continue
-            existing = next((item for item in rows if normalize_url(item.get("jobLink")) == link), None)
+            existing = next(
+                (item for item in rows if normalize_url(item.get("jobLink")) == link), None
+            )
             if existing is None:
                 existing = {
-                    "sourceJobId": clean_text(row.get("sourceJobId")) or f"static:{source_id}:{link}",
+                    "sourceJobId": clean_text(row.get("sourceJobId"))
+                    or f"static:{source_id}:{link}",
                     "title": clean_text(row.get("title")),
                     "company": clean_text(row.get("company")) or company,
                     "city": clean_text(row.get("city")),
@@ -138,13 +145,28 @@ def run(
                 rows.append(existing)
                 seen_links.add(link)
                 continue
-            if clean_text(existing.get("title")).lower() in {"read more", "job"} and clean_text(row.get("title")):
+            if clean_text(existing.get("title")).lower() in {"read more", "job"} and clean_text(
+                row.get("title")
+            ):
                 existing["title"] = row.get("title")
-            for field in ("sourceJobId", "title", "company", "city", "country", "workType", "contractType", "postedAt"):
+            for field in (
+                "sourceJobId",
+                "title",
+                "company",
+                "city",
+                "country",
+                "workType",
+                "contractType",
+                "postedAt",
+            ):
                 if not clean_text(existing.get(field)) and clean_text(row.get(field)):
                     existing[field] = row.get(field)
 
-    cleaned = [r for r in rows if isinstance(r, dict) and clean_text(r.get("title")) and normalize_url(r.get("jobLink"))]
+    cleaned = [
+        r
+        for r in rows
+        if isinstance(r, dict) and clean_text(r.get("title")) and normalize_url(r.get("jobLink"))
+    ]
     for row in cleaned:
         row["adapter"] = "static"
         row["studio"] = company

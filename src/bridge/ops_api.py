@@ -177,7 +177,9 @@ class OpsApi:
             "active": bool(src.get("active")),
             "phaseKey": str(src.get("phaseKey") or "").strip(),
             "phaseLabel": str(src.get("phaseLabel") or "").strip(),
-            "mode": "determinate" if str(src.get("mode") or "").strip().lower() == "determinate" else "indeterminate",
+            "mode": "determinate"
+            if str(src.get("mode") or "").strip().lower() == "determinate"
+            else "indeterminate",
             "ratio": max(0.0, min(1.0, ratio)),
             "counts": dict(counts),
         }
@@ -188,11 +190,15 @@ class OpsApi:
         current_step = max(0, int(progress.get("currentStep") or 0))
         total_steps = max(1, int(progress.get("totalSteps") or 1))
         percent = max(0, min(100, int(progress.get("percent") or 0)))
-        ratio = max(0.0, min(1.0, percent / 100.0 if total_steps <= 0 else current_step / total_steps))
+        ratio = max(
+            0.0, min(1.0, percent / 100.0 if total_steps <= 0 else current_step / total_steps)
+        )
         return {
             "active": bool(payload.get("active")),
             "phaseKey": str(payload.get("stage") or "").strip() or "pipeline",
-            "phaseLabel": str(progress.get("label") or payload.get("stage") or "Running pipeline").strip(),
+            "phaseLabel": str(
+                progress.get("label") or payload.get("stage") or "Running pipeline"
+            ).strip(),
             "mode": "determinate",
             "ratio": ratio,
             "counts": {
@@ -229,13 +235,10 @@ class OpsApi:
         fetch_report = self._deps.normalize_fetch_report_contract(
             self._deps.load_json_object(self._paths.jobs_fetch_report, {})
         )
-        fetch_active = (
-            self._deps.task_running_from_state("fetch")
-            or (
-                isinstance(fetch_report, dict)
-                and str(fetch_report.get("startedAt") or "").strip()
-                and not str(fetch_report.get("finishedAt") or "").strip()
-            )
+        fetch_active = self._deps.task_running_from_state("fetch") or (
+            isinstance(fetch_report, dict)
+            and str(fetch_report.get("startedAt") or "").strip()
+            and not str(fetch_report.get("finishedAt") or "").strip()
         )
         append_if_active(
             "fetch",
@@ -244,35 +247,42 @@ class OpsApi:
                 "type": "fetch",
                 "runId": str(fetch_report.get("runId") or fetch_state.get("runId") or "").strip(),
                 "active": bool(fetch_active),
-                "startedAt": str(fetch_report.get("startedAt") or fetch_state.get("startedAt") or "").strip(),
+                "startedAt": str(
+                    fetch_report.get("startedAt") or fetch_state.get("startedAt") or ""
+                ).strip(),
                 "finishedAt": str(fetch_report.get("finishedAt") or "").strip(),
-                "status": "running" if fetch_active else str(fetch_report.get("status") or "").strip().lower(),
+                "status": "running"
+                if fetch_active
+                else str(fetch_report.get("status") or "").strip().lower(),
                 "taskProgress": self._coerce_task_progress(fetch_report.get("taskProgress")),
                 "summary": dict(fetch_report.get("summary") or {}),
                 "outputs": dict(fetch_report.get("outputs") or {}),
             },
         )
 
-        discovery_state = task_state.get("discovery") if isinstance(task_state.get("discovery"), dict) else {}
+        discovery_state = (
+            task_state.get("discovery") if isinstance(task_state.get("discovery"), dict) else {}
+        )
         discovery_report = self._deps.normalize_discovery_report_contract(
             self._deps.load_json_object(self._paths.discovery_report, {})
         )
-        discovery_active = (
-            self._deps.task_running_from_state("discovery")
-            or (
-                isinstance(discovery_report, dict)
-                and str(discovery_report.get("startedAt") or "").strip()
-                and not str(discovery_report.get("finishedAt") or "").strip()
-            )
+        discovery_active = self._deps.task_running_from_state("discovery") or (
+            isinstance(discovery_report, dict)
+            and str(discovery_report.get("startedAt") or "").strip()
+            and not str(discovery_report.get("finishedAt") or "").strip()
         )
         append_if_active(
             "discovery",
             {
                 "taskType": "discovery",
                 "type": "discovery",
-                "runId": str(discovery_report.get("runId") or discovery_state.get("runId") or "").strip(),
+                "runId": str(
+                    discovery_report.get("runId") or discovery_state.get("runId") or ""
+                ).strip(),
                 "active": bool(discovery_active),
-                "startedAt": str(discovery_report.get("startedAt") or discovery_state.get("startedAt") or "").strip(),
+                "startedAt": str(
+                    discovery_report.get("startedAt") or discovery_state.get("startedAt") or ""
+                ).strip(),
                 "finishedAt": str(discovery_report.get("finishedAt") or "").strip(),
                 "status": "running" if discovery_active else "",
                 "taskProgress": self._coerce_task_progress(discovery_report.get("taskProgress")),
@@ -292,8 +302,12 @@ class OpsApi:
                 "active": pipeline_active,
                 "startedAt": str((pipeline_status or {}).get("startedAt") or "").strip(),
                 "finishedAt": str((pipeline_status or {}).get("finishedAt") or "").strip(),
-                "status": "running" if pipeline_active else str((pipeline_status or {}).get("stage") or "").strip().lower(),
-                "taskProgress": self._build_pipeline_task_progress(pipeline_status if isinstance(pipeline_status, dict) else {}),
+                "status": "running"
+                if pipeline_active
+                else str((pipeline_status or {}).get("stage") or "").strip().lower(),
+                "taskProgress": self._build_pipeline_task_progress(
+                    pipeline_status if isinstance(pipeline_status, dict) else {}
+                ),
                 "summary": {
                     "stage": str((pipeline_status or {}).get("stage") or "").strip(),
                     "updatesFound": bool((pipeline_status or {}).get("updatesFound")),
@@ -308,7 +322,8 @@ class OpsApi:
         for run_id in active_sync_runs:
             match = next(
                 (
-                    row for row in reversed(history_by_type.get("sync", []))
+                    row
+                    for row in reversed(history_by_type.get("sync", []))
                     if str(row.get("id") or row.get("runId") or "").strip() == str(run_id)
                     and not str(row.get("finishedAt") or "").strip()
                 ),
@@ -334,7 +349,9 @@ class OpsApi:
                         "mode": "indeterminate",
                         "ratio": 0.0,
                         "counts": {
-                            "lastAction": str((sync_status.get("runtime") or {}).get("lastAction") or action or "").strip(),
+                            "lastAction": str(
+                                (sync_status.get("runtime") or {}).get("lastAction") or action or ""
+                            ).strip(),
                         },
                     },
                     "summary": summary,

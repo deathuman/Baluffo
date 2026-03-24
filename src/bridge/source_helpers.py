@@ -4,6 +4,7 @@ Pure helpers for inferring studio names from hosts, normalizing host tokens,
 and finding existing sources by URL or by studio+domain. Used by add_manual_source
 and related registry flows in admin_bridge.
 """
+
 from __future__ import annotations
 
 import re
@@ -16,7 +17,18 @@ def _normalized_host_token(raw_url: str) -> str:
     if ":" in host:
         host = host.split(":", 1)[0]
     labels = [part for part in host.split(".") if part]
-    while labels and labels[0] in {"www", "w", "ww", "www2", "jobs", "job", "careers", "career", "apply", "join"}:
+    while labels and labels[0] in {
+        "www",
+        "w",
+        "ww",
+        "www2",
+        "jobs",
+        "job",
+        "careers",
+        "career",
+        "apply",
+        "join",
+    }:
         labels.pop(0)
     return ".".join(labels)
 
@@ -27,13 +39,32 @@ def infer_studio_name_from_host(url: str) -> str:
     if ":" in host:
         host = host.split(":", 1)[0]
     labels = [part for part in host.split(".") if part]
-    while labels and labels[0] in {"www", "w", "ww", "www2", "jobs", "job", "careers", "career", "apply", "join"}:
+    while labels and labels[0] in {
+        "www",
+        "w",
+        "ww",
+        "www2",
+        "jobs",
+        "job",
+        "careers",
+        "career",
+        "apply",
+        "join",
+    }:
         labels.pop(0)
     token = labels[0] if labels else ""
     if token in {"www", "w", "ww", "www2"} and len(labels) > 1:
         token = labels[1]
     split_token = token
-    for marker in ("interactive", "entertainment", "software", "studios", "studio", "games", "game"):
+    for marker in (
+        "interactive",
+        "entertainment",
+        "software",
+        "studios",
+        "studio",
+        "games",
+        "game",
+    ):
         split_token = re.sub(rf"(?<!\s){marker}(?!\s)", f" {marker} ", split_token)
     token = split_token
     cleaned = re.sub(r"[^a-z0-9]+", " ", token).strip()
@@ -83,7 +114,11 @@ def find_existing_static_source_by_studio_domain(
                 or row.get("api_url")
                 or row.get("feed_url")
                 or row.get("board_url")
-                or (row.get("pages")[0] if isinstance(row.get("pages"), list) and row.get("pages") else "")
+                or (
+                    row.get("pages")[0]
+                    if isinstance(row.get("pages"), list) and row.get("pages")
+                    else ""
+                )
                 or ""
             )
             if _normalized_host_token(endpoint) == host_key:

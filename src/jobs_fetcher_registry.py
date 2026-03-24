@@ -33,8 +33,16 @@ DEFAULT_SOURCE_LOADER_NAMES: list[str] = [
 
 SOURCE_REPORT_META: dict[str, dict[str, str]] = {
     "google_sheets": {"adapter": "csv", "studio": "community_sheet", "fetchStrategy": "http"},
-    "google_sheets_1er2oaxo": {"adapter": "csv", "studio": "community_sheet", "fetchStrategy": "http"},
-    "google_sheets_1mvqhxat": {"adapter": "csv", "studio": "community_sheet", "fetchStrategy": "http"},
+    "google_sheets_1er2oaxo": {
+        "adapter": "csv",
+        "studio": "community_sheet",
+        "fetchStrategy": "http",
+    },
+    "google_sheets_1mvqhxat": {
+        "adapter": "csv",
+        "studio": "community_sheet",
+        "fetchStrategy": "http",
+    },
     "remote_ok": {"adapter": "api", "studio": "remote_ok", "fetchStrategy": "http"},
     "gamesindustry": {"adapter": "html", "studio": "gamesindustry", "fetchStrategy": "http"},
     "gamejobs": {"adapter": "html", "studio": "gamejobs", "fetchStrategy": "http"},
@@ -45,7 +53,11 @@ SOURCE_REPORT_META: dict[str, dict[str, str]] = {
     "greenhouse_boards": {"adapter": "greenhouse", "studio": "multiple", "fetchStrategy": "http"},
     "teamtailor_sources": {"adapter": "teamtailor", "studio": "multiple", "fetchStrategy": "http"},
     "lever_sources": {"adapter": "lever", "studio": "multiple", "fetchStrategy": "http"},
-    "smartrecruiters_sources": {"adapter": "smartrecruiters", "studio": "multiple", "fetchStrategy": "http"},
+    "smartrecruiters_sources": {
+        "adapter": "smartrecruiters",
+        "studio": "multiple",
+        "fetchStrategy": "http",
+    },
     "workable_sources": {"adapter": "workable", "studio": "multiple", "fetchStrategy": "http"},
     "recruitee_sources": {"adapter": "recruitee", "studio": "multiple", "fetchStrategy": "http"},
     "pinpoint_sources": {"adapter": "pinpoint", "studio": "multiple", "fetchStrategy": "http"},
@@ -53,7 +65,11 @@ SOURCE_REPORT_META: dict[str, dict[str, str]] = {
     "breezy_sources": {"adapter": "breezy", "studio": "multiple", "fetchStrategy": "http"},
     "jazzhr_sources": {"adapter": "jazzhr", "studio": "multiple", "fetchStrategy": "http"},
     "personio_sources": {"adapter": "personio", "studio": "multiple", "fetchStrategy": "http"},
-    "scrapy_static_sources": {"adapter": "scrapy_static", "studio": "multiple", "fetchStrategy": "http"},
+    "scrapy_static_sources": {
+        "adapter": "scrapy_static",
+        "studio": "multiple",
+        "fetchStrategy": "http",
+    },
     "social_reddit": {"adapter": "social", "studio": "reddit", "fetchStrategy": "http"},
     "social_x": {"adapter": "social", "studio": "x", "fetchStrategy": "http"},
     "social_mastodon": {"adapter": "social", "studio": "mastodon", "fetchStrategy": "http"},

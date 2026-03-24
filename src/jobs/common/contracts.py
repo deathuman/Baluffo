@@ -9,10 +9,14 @@ from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text, norm_text
 
 
-def normalize_runtime_payload(runtime: dict[str, Any], *, selected_source_count: int) -> dict[str, Any]:
+def normalize_runtime_payload(
+    runtime: dict[str, Any], *, selected_source_count: int
+) -> dict[str, Any]:
     src = runtime if isinstance(runtime, dict) else {}
     payload = {
-        "selectedSourceCount": _clamped_int(src.get("selectedSourceCount"), selected_source_count, 0),
+        "selectedSourceCount": _clamped_int(
+            src.get("selectedSourceCount"), selected_source_count, 0
+        ),
         "sourceTtlMinutes": _clamped_int(src.get("sourceTtlMinutes"), 0, 0),
         "maxWorkers": _clamped_int(src.get("maxWorkers"), 1, 1),
         "maxPerDomain": _clamped_int(src.get("maxPerDomain"), 1, 1),
@@ -20,14 +24,18 @@ def normalize_runtime_payload(runtime: dict[str, Any], *, selected_source_count:
         "fetchClient": clean_text(src.get("fetchClient")) or "urllib",
         "adapterHttpConcurrency": _clamped_int(src.get("adapterHttpConcurrency"), 0, 1),
         "staticDetailConcurrency": _clamped_int(src.get("staticDetailConcurrency"), 0, 1),
-        "googleSheetsRedirectConcurrency": _clamped_int(src.get("googleSheetsRedirectConcurrency"), 0, 1),
+        "googleSheetsRedirectConcurrency": _clamped_int(
+            src.get("googleSheetsRedirectConcurrency"), 0, 1
+        ),
         "incrementalCacheEnabled": bool(src.get("incrementalCacheEnabled")),
         "forceRefreshAll": bool(src.get("forceRefreshAll")),
         "respectSourceCadence": bool(src.get("respectSourceCadence")),
         "hotSourceCadenceMinutes": _clamped_int(src.get("hotSourceCadenceMinutes"), 0, 1),
         "coldSourceCadenceMinutes": _clamped_int(src.get("coldSourceCadenceMinutes"), 0, 1),
         "circuitBreakerFailures": _clamped_int(src.get("circuitBreakerFailures"), 0, 0),
-        "circuitBreakerCooldownMinutes": _clamped_int(src.get("circuitBreakerCooldownMinutes"), 0, 0),
+        "circuitBreakerCooldownMinutes": _clamped_int(
+            src.get("circuitBreakerCooldownMinutes"), 0, 0
+        ),
         "ignoreCircuitBreaker": bool(src.get("ignoreCircuitBreaker")),
         "socialEnabled": bool(src.get("socialEnabled")),
         "socialLookbackMinutes": _clamped_int(src.get("socialLookbackMinutes"), 0, 1),
@@ -36,7 +44,9 @@ def normalize_runtime_payload(runtime: dict[str, Any], *, selected_source_count:
         "scrapyValidationStrict": bool(src.get("scrapyValidationStrict")),
         "canonicalStrictUrl": bool(src.get("canonicalStrictUrl")),
     }
-    slowest_sources_raw = src.get("slowestSources") if isinstance(src.get("slowestSources"), list) else []
+    slowest_sources_raw = (
+        src.get("slowestSources") if isinstance(src.get("slowestSources"), list) else []
+    )
     if slowest_sources_raw:
         payload["slowestSources"] = [
             {
@@ -50,29 +60,62 @@ def normalize_runtime_payload(runtime: dict[str, Any], *, selected_source_count:
             for row in slowest_sources_raw[:10]
             if isinstance(row, dict)
         ]
-    timing_summary_raw = src.get("timingSummary") if isinstance(src.get("timingSummary"), dict) else {}
+    timing_summary_raw = (
+        src.get("timingSummary") if isinstance(src.get("timingSummary"), dict) else {}
+    )
     if timing_summary_raw:
-        stage_totals_raw = timing_summary_raw.get("stageTotalsMs") if isinstance(timing_summary_raw.get("stageTotalsMs"), dict) else {}
-        stage_top_raw = timing_summary_raw.get("stageTop") if isinstance(timing_summary_raw.get("stageTop"), list) else []
-        adapter_timings_raw = timing_summary_raw.get("adapterTimings") if isinstance(timing_summary_raw.get("adapterTimings"), list) else []
-        slowest_adapters_raw = timing_summary_raw.get("slowestAdapters") if isinstance(timing_summary_raw.get("slowestAdapters"), list) else []
-        costly_raw = timing_summary_raw.get("highCostLowYieldSources") if isinstance(timing_summary_raw.get("highCostLowYieldSources"), list) else []
+        stage_totals_raw = (
+            timing_summary_raw.get("stageTotalsMs")
+            if isinstance(timing_summary_raw.get("stageTotalsMs"), dict)
+            else {}
+        )
+        stage_top_raw = (
+            timing_summary_raw.get("stageTop")
+            if isinstance(timing_summary_raw.get("stageTop"), list)
+            else []
+        )
+        adapter_timings_raw = (
+            timing_summary_raw.get("adapterTimings")
+            if isinstance(timing_summary_raw.get("adapterTimings"), list)
+            else []
+        )
+        slowest_adapters_raw = (
+            timing_summary_raw.get("slowestAdapters")
+            if isinstance(timing_summary_raw.get("slowestAdapters"), list)
+            else []
+        )
+        costly_raw = (
+            timing_summary_raw.get("highCostLowYieldSources")
+            if isinstance(timing_summary_raw.get("highCostLowYieldSources"), list)
+            else []
+        )
         payload["timingSummary"] = {
             "totalDurationMs": _clamped_int(timing_summary_raw.get("totalDurationMs"), 0, 0),
-            "wallClockDurationMs": _clamped_int(timing_summary_raw.get("wallClockDurationMs"), 0, 0),
-            "medianSourceDurationMs": _clamped_int(timing_summary_raw.get("medianSourceDurationMs"), 0, 0),
-            "p95SourceDurationMs": _clamped_int(timing_summary_raw.get("p95SourceDurationMs"), 0, 0),
+            "wallClockDurationMs": _clamped_int(
+                timing_summary_raw.get("wallClockDurationMs"), 0, 0
+            ),
+            "medianSourceDurationMs": _clamped_int(
+                timing_summary_raw.get("medianSourceDurationMs"), 0, 0
+            ),
+            "p95SourceDurationMs": _clamped_int(
+                timing_summary_raw.get("p95SourceDurationMs"), 0, 0
+            ),
             "stageTotalsMs": {
                 "fetchAndParse": _clamped_int(stage_totals_raw.get("fetchAndParse"), 0, 0),
                 "listingFetch": _clamped_int(stage_totals_raw.get("listingFetch"), 0, 0),
                 "parseCsv": _clamped_int(stage_totals_raw.get("parseCsv"), 0, 0),
-                "candidateExtraction": _clamped_int(stage_totals_raw.get("candidateExtraction"), 0, 0),
+                "candidateExtraction": _clamped_int(
+                    stage_totals_raw.get("candidateExtraction"), 0, 0
+                ),
                 "detailFetch": _clamped_int(stage_totals_raw.get("detailFetch"), 0, 0),
                 "redirectResolve": _clamped_int(stage_totals_raw.get("redirectResolve"), 0, 0),
                 "canonicalization": _clamped_int(stage_totals_raw.get("canonicalization"), 0, 0),
             },
             "stageTop": [
-                {"stage": clean_text(row.get("stage")), "durationMs": _clamped_int(row.get("durationMs"), 0, 0)}
+                {
+                    "stage": clean_text(row.get("stage")),
+                    "durationMs": _clamped_int(row.get("durationMs"), 0, 0),
+                }
                 for row in stage_top_raw[:5]
                 if isinstance(row, dict) and clean_text(row.get("stage"))
             ],
@@ -122,7 +165,11 @@ def normalize_runtime_payload(runtime: dict[str, Any], *, selected_source_count:
                     "detailFetchMs": _clamped_int(row.get("detailFetchMs"), 0, 0),
                     "keptCount": _clamped_int(row.get("keptCount"), 0, 0),
                 }
-                for row in (timing_summary_raw.get("detailHeavySources") if isinstance(timing_summary_raw.get("detailHeavySources"), list) else [])[:10]
+                for row in (
+                    timing_summary_raw.get("detailHeavySources")
+                    if isinstance(timing_summary_raw.get("detailHeavySources"), list)
+                    else []
+                )[:10]
                 if isinstance(row, dict)
             ],
         }
@@ -134,7 +181,11 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
 
     def _normalize_loss(loss: Any) -> dict[str, Any]:
         payload = loss if isinstance(loss, dict) else {}
-        drop_reasons = payload.get("canonicalDropReasons") if isinstance(payload.get("canonicalDropReasons"), dict) else {}
+        drop_reasons = (
+            payload.get("canonicalDropReasons")
+            if isinstance(payload.get("canonicalDropReasons"), dict)
+            else {}
+        )
         return {
             "rawFetched": _clamped_int(payload.get("rawFetched"), 0, 0),
             "canonicalDropped": _clamped_int(payload.get("canonicalDropped"), 0, 0),
@@ -148,10 +199,16 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
                 "invalid_url": _clamped_int(drop_reasons.get("invalid_url"), 0, 0),
                 "invalid_payload": _clamped_int(drop_reasons.get("invalid_payload"), 0, 0),
             },
-            "scrapyRunnerRejectedValidation": _clamped_int(payload.get("scrapyRunnerRejectedValidation"), 0, 0),
-            "scrapyParentInvalidPayload": _clamped_int(payload.get("scrapyParentInvalidPayload"), 0, 0),
+            "scrapyRunnerRejectedValidation": _clamped_int(
+                payload.get("scrapyRunnerRejectedValidation"), 0, 0
+            ),
+            "scrapyParentInvalidPayload": _clamped_int(
+                payload.get("scrapyParentInvalidPayload"), 0, 0
+            ),
             "staticNonJobUrlRejected": _clamped_int(payload.get("staticNonJobUrlRejected"), 0, 0),
-            "staticDuplicateLinkRejected": _clamped_int(payload.get("staticDuplicateLinkRejected"), 0, 0),
+            "staticDuplicateLinkRejected": _clamped_int(
+                payload.get("staticDuplicateLinkRejected"), 0, 0
+            ),
             "staticDetailParseEmpty": _clamped_int(payload.get("staticDetailParseEmpty"), 0, 0),
         }
 
@@ -191,11 +248,17 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     if "listingChanged" in src:
         normalized["listingChanged"] = bool(src.get("listingChanged"))
     if "detailSkippedByListingFingerprint" in src:
-        normalized["detailSkippedByListingFingerprint"] = bool(src.get("detailSkippedByListingFingerprint"))
+        normalized["detailSkippedByListingFingerprint"] = bool(
+            src.get("detailSkippedByListingFingerprint")
+        )
     board_count = _clamped_int(src.get("boardCount"), 0, 0)
     if board_count > 0:
         normalized["boardCount"] = board_count
-    board_decision_counts = src.get("boardCacheDecisionCounts") if isinstance(src.get("boardCacheDecisionCounts"), dict) else {}
+    board_decision_counts = (
+        src.get("boardCacheDecisionCounts")
+        if isinstance(src.get("boardCacheDecisionCounts"), dict)
+        else {}
+    )
     if board_decision_counts:
         normalized["boardCacheDecisionCounts"] = {
             clean_text(key): _clamped_int(value, 0, 0)
@@ -217,7 +280,11 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     subsource_count = _clamped_int(src.get("subsourceCount"), 0, 0)
     if subsource_count > 0:
         normalized["subsourceCount"] = subsource_count
-    subsource_decision_counts = src.get("subsourceCacheDecisionCounts") if isinstance(src.get("subsourceCacheDecisionCounts"), dict) else {}
+    subsource_decision_counts = (
+        src.get("subsourceCacheDecisionCounts")
+        if isinstance(src.get("subsourceCacheDecisionCounts"), dict)
+        else {}
+    )
     if subsource_decision_counts:
         normalized["subsourceCacheDecisionCounts"] = {
             clean_text(key): _clamped_int(value, 0, 0)
@@ -236,7 +303,9 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     subsource_refreshed = _clamped_int(src.get("subsourceRefreshedCount"), 0, 0)
     if subsource_refreshed > 0:
         normalized["subsourceRefreshedCount"] = subsource_refreshed
-    raw_stage_timings = src.get("stageTimingsMs") if isinstance(src.get("stageTimingsMs"), dict) else {}
+    raw_stage_timings = (
+        src.get("stageTimingsMs") if isinstance(src.get("stageTimingsMs"), dict) else {}
+    )
     clean_stage_timings = {
         "fetchAndParse": _clamped_int(raw_stage_timings.get("fetchAndParse"), 0, 0),
         "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
@@ -293,37 +362,55 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
                 if "listingChanged" in item:
                     clean_item["listingChanged"] = bool(item.get("listingChanged"))
                 if "detailSkippedByListingFingerprint" in item:
-                    clean_item["detailSkippedByListingFingerprint"] = bool(item.get("detailSkippedByListingFingerprint"))
+                    clean_item["detailSkippedByListingFingerprint"] = bool(
+                        item.get("detailSkippedByListingFingerprint")
+                    )
                 top_reject_reasons = item.get("top_reject_reasons")
                 if isinstance(top_reject_reasons, list):
-                    clean_item["top_reject_reasons"] = [clean_text(reason) for reason in top_reject_reasons if clean_text(reason)][
-                        :5
-                    ]
+                    clean_item["top_reject_reasons"] = [
+                        clean_text(reason) for reason in top_reject_reasons if clean_text(reason)
+                    ][:5]
                 stats = item.get("stats")
                 if isinstance(stats, dict):
                     clean_item["stats"] = {
-                        "downloader/request_count": _clamped_int(stats.get("downloader/request_count"), 0, 0),
-                        "downloader/response_count": _clamped_int(stats.get("downloader/response_count"), 0, 0),
+                        "downloader/request_count": _clamped_int(
+                            stats.get("downloader/request_count"), 0, 0
+                        ),
+                        "downloader/response_count": _clamped_int(
+                            stats.get("downloader/response_count"), 0, 0
+                        ),
                         "downloader/response_status_count/200": _clamped_int(
                             stats.get("downloader/response_status_count/200"), 0, 0
                         ),
                         "retry/count": _clamped_int(stats.get("retry/count"), 0, 0),
                         "item_scraped_count": _clamped_int(stats.get("item_scraped_count"), 0, 0),
-                        "candidate_links_found": _clamped_int(stats.get("candidate_links_found"), 0, 0),
-                        "detail_pages_visited": _clamped_int(stats.get("detail_pages_visited"), 0, 0),
+                        "candidate_links_found": _clamped_int(
+                            stats.get("candidate_links_found"), 0, 0
+                        ),
+                        "detail_pages_visited": _clamped_int(
+                            stats.get("detail_pages_visited"), 0, 0
+                        ),
                         "jobs_emitted": _clamped_int(stats.get("jobs_emitted"), 0, 0),
                         "fetch_cache_hits": _clamped_int(stats.get("fetch_cache_hits"), 0, 0),
-                        "detail_yield_percent": _clamped_int(stats.get("detail_yield_percent"), 0, 0),
+                        "detail_yield_percent": _clamped_int(
+                            stats.get("detail_yield_percent"), 0, 0
+                        ),
                         "redirect_candidates": _clamped_int(stats.get("redirect_candidates"), 0, 0),
                         "redirect_resolved": _clamped_int(stats.get("redirect_resolved"), 0, 0),
                         "redirect_cache_hits": _clamped_int(stats.get("redirect_cache_hits"), 0, 0),
                         "parse_csv_ms": _clamped_int(stats.get("parse_csv_ms"), 0, 0),
                         "listing_fetch_ms": _clamped_int(stats.get("listing_fetch_ms"), 0, 0),
-                        "candidate_extraction_ms": _clamped_int(stats.get("candidate_extraction_ms"), 0, 0),
+                        "candidate_extraction_ms": _clamped_int(
+                            stats.get("candidate_extraction_ms"), 0, 0
+                        ),
                         "detail_fetch_ms": _clamped_int(stats.get("detail_fetch_ms"), 0, 0),
-                        "detail_skipped_by_listing_fingerprint": _clamped_int(stats.get("detail_skipped_by_listing_fingerprint"), 0, 0),
+                        "detail_skipped_by_listing_fingerprint": _clamped_int(
+                            stats.get("detail_skipped_by_listing_fingerprint"), 0, 0
+                        ),
                         "redirect_resolve_ms": _clamped_int(stats.get("redirect_resolve_ms"), 0, 0),
-                        "jobs_rejected_validation": _clamped_int(stats.get("jobs_rejected_validation"), 0, 0),
+                        "jobs_rejected_validation": _clamped_int(
+                            stats.get("jobs_rejected_validation"), 0, 0
+                        ),
                         "finish_reason": clean_text(stats.get("finish_reason")),
                     }
                 if isinstance(item.get("loss"), dict):
@@ -422,7 +509,10 @@ def normalize_task_state_payload(
         },
         "taskProgress": normalize_task_progress_payload(src.get("taskProgress")),
         "tasks": normalized_rows,
-        "outputs": {"report": clean_text((src.get("outputs") or {}).get("report")) or clean_text(report_path)},
+        "outputs": {
+            "report": clean_text((src.get("outputs") or {}).get("report"))
+            or clean_text(report_path)
+        },
     }
 
 
@@ -434,8 +524,12 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     source_rows_raw = src.get("sources")
     source_rows = source_rows_raw if isinstance(source_rows_raw, list) else []
     runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
-    contamination_audit = src.get("contaminationAudit") if isinstance(src.get("contaminationAudit"), dict) else {}
-    location_quality_audit = src.get("locationQualityAudit") if isinstance(src.get("locationQualityAudit"), dict) else {}
+    contamination_audit = (
+        src.get("contaminationAudit") if isinstance(src.get("contaminationAudit"), dict) else {}
+    )
+    location_quality_audit = (
+        src.get("locationQualityAudit") if isinstance(src.get("locationQualityAudit"), dict) else {}
+    )
     return {
         "schemaVersion": SCHEMA_VERSION,
         "runId": clean_text(src.get("runId")),
@@ -449,7 +543,11 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "contaminatedRows": _clamped_int(contamination_audit.get("contaminatedRows"), 0, 0),
             "fieldCounts": {
                 clean_text(key): _clamped_int(value, 0, 0)
-                for key, value in (contamination_audit.get("fieldCounts") if isinstance(contamination_audit.get("fieldCounts"), dict) else {}).items()
+                for key, value in (
+                    contamination_audit.get("fieldCounts")
+                    if isinstance(contamination_audit.get("fieldCounts"), dict)
+                    else {}
+                ).items()
                 if clean_text(key)
             },
             "examples": [
@@ -460,25 +558,41 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
                     "jobLink": clean_text(item.get("jobLink")),
                     "fields": {
                         clean_text(key): clean_text(value)
-                        for key, value in (item.get("fields") if isinstance(item.get("fields"), dict) else {}).items()
+                        for key, value in (
+                            item.get("fields") if isinstance(item.get("fields"), dict) else {}
+                        ).items()
                         if clean_text(key)
                     },
                 }
-                for item in (contamination_audit.get("examples") if isinstance(contamination_audit.get("examples"), list) else [])[:20]
+                for item in (
+                    contamination_audit.get("examples")
+                    if isinstance(contamination_audit.get("examples"), list)
+                    else []
+                )[:20]
                 if isinstance(item, dict)
             ],
         },
         "locationQualityAudit": {
             "totalRows": _clamped_int(location_quality_audit.get("totalRows"), 0, 0),
-            "invalidLocationFieldCount": _clamped_int(location_quality_audit.get("invalidLocationFieldCount"), 0, 0),
+            "invalidLocationFieldCount": _clamped_int(
+                location_quality_audit.get("invalidLocationFieldCount"), 0, 0
+            ),
             "fieldCounts": {
                 clean_text(key): _clamped_int(value, 0, 0)
-                for key, value in (location_quality_audit.get("fieldCounts") if isinstance(location_quality_audit.get("fieldCounts"), dict) else {}).items()
+                for key, value in (
+                    location_quality_audit.get("fieldCounts")
+                    if isinstance(location_quality_audit.get("fieldCounts"), dict)
+                    else {}
+                ).items()
                 if clean_text(key)
             },
             "reasonCounts": {
                 clean_text(key): _clamped_int(value, 0, 0)
-                for key, value in (location_quality_audit.get("reasonCounts") if isinstance(location_quality_audit.get("reasonCounts"), dict) else {}).items()
+                for key, value in (
+                    location_quality_audit.get("reasonCounts")
+                    if isinstance(location_quality_audit.get("reasonCounts"), dict)
+                    else {}
+                ).items()
                 if clean_text(key)
             },
             "examples": [
@@ -491,11 +605,17 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
                     "reason": clean_text(item.get("reason")),
                     "value": clean_text(item.get("value")),
                 }
-                for item in (location_quality_audit.get("examples") if isinstance(location_quality_audit.get("examples"), list) else [])[:20]
+                for item in (
+                    location_quality_audit.get("examples")
+                    if isinstance(location_quality_audit.get("examples"), list)
+                    else []
+                )[:20]
                 if isinstance(item, dict)
             ],
         },
-        "sources": [normalize_source_report_row(row) for row in source_rows if isinstance(row, dict)],
+        "sources": [
+            normalize_source_report_row(row) for row in source_rows if isinstance(row, dict)
+        ],
         "outputs": {
             "json": clean_text(outputs.get("json")),
             "csv": clean_text(outputs.get("csv")),
@@ -513,4 +633,3 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 # Placeholders to be filled by follow-up patch once we transplant implementations.
-

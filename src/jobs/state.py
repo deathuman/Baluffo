@@ -25,8 +25,12 @@ from src.shared.utils import now_iso
 LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = common_config.LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS
 LIFECYCLE_ARCHIVE_RETENTION_DAYS = common_config.LIFECYCLE_ARCHIVE_RETENTION_DAYS
 DEFAULT_INCREMENTAL_FETCH_ENABLED = common_config.DEFAULT_INCREMENTAL_FETCH_ENABLED
-DEFAULT_INCREMENTAL_PROVIDER_STABLE_MINUTES = common_config.DEFAULT_INCREMENTAL_PROVIDER_STABLE_MINUTES
-DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES = common_config.DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES
+DEFAULT_INCREMENTAL_PROVIDER_STABLE_MINUTES = (
+    common_config.DEFAULT_INCREMENTAL_PROVIDER_STABLE_MINUTES
+)
+DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES = (
+    common_config.DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES
+)
 DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES = common_config.DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES
 DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES = common_config.DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES
 fingerprint_url = common_url.fingerprint_url
@@ -43,7 +47,9 @@ def source_rows_fingerprint(rows: Sequence[dict[str, Any]]) -> str:
     return hashlib.sha1("\n".join(keys).encode("utf-8")).hexdigest()
 
 
-def normalize_source_state_payload(payload: dict[str, Any], *, updated_at: str = "") -> dict[str, Any]:
+def normalize_source_state_payload(
+    payload: dict[str, Any], *, updated_at: str = ""
+) -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     rows = src.get("sources")
     out_rows: dict[str, dict[str, Any]] = {}
@@ -60,10 +66,16 @@ def normalize_source_state_payload(payload: dict[str, Any], *, updated_at: str =
                 "lastFetchedCount": _clamped_int(raw_entry.get("lastFetchedCount"), 0, 0),
                 "lastKeptCount": _clamped_int(raw_entry.get("lastKeptCount"), 0, 0),
                 "lastJobsFound": _clamped_int(raw_entry.get("lastJobsFound"), 0, 0),
-                "lastCandidateLinksFound": _clamped_int(raw_entry.get("lastCandidateLinksFound"), 0, 0),
-                "lastDetailPagesVisited": _clamped_int(raw_entry.get("lastDetailPagesVisited"), 0, 0),
+                "lastCandidateLinksFound": _clamped_int(
+                    raw_entry.get("lastCandidateLinksFound"), 0, 0
+                ),
+                "lastDetailPagesVisited": _clamped_int(
+                    raw_entry.get("lastDetailPagesVisited"), 0, 0
+                ),
                 "lastDetailYieldPct": _clamped_int(raw_entry.get("lastDetailYieldPct"), 0, 0),
-                "lastRedirectCandidates": _clamped_int(raw_entry.get("lastRedirectCandidates"), 0, 0),
+                "lastRedirectCandidates": _clamped_int(
+                    raw_entry.get("lastRedirectCandidates"), 0, 0
+                ),
                 "lastRedirectResolved": _clamped_int(raw_entry.get("lastRedirectResolved"), 0, 0),
                 "lastRedirectCacheHits": _clamped_int(raw_entry.get("lastRedirectCacheHits"), 0, 0),
                 "lastAdapter": clean_text(raw_entry.get("lastAdapter")),
@@ -83,18 +95,26 @@ def normalize_source_state_payload(payload: dict[str, Any], *, updated_at: str =
                 "lastFailureAt": clean_text(raw_entry.get("lastFailureAt")),
                 "lastError": clean_text(raw_entry.get("lastError")),
             }
-            raw_stage_timings = raw_entry.get("lastStageTimingsMs") if isinstance(raw_entry.get("lastStageTimingsMs"), dict) else {}
+            raw_stage_timings = (
+                raw_entry.get("lastStageTimingsMs")
+                if isinstance(raw_entry.get("lastStageTimingsMs"), dict)
+                else {}
+            )
             clean_stage_timings = {
                 "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
                 "parseCsv": _clamped_int(raw_stage_timings.get("parseCsv"), 0, 0),
-                "candidateExtraction": _clamped_int(raw_stage_timings.get("candidateExtraction"), 0, 0),
+                "candidateExtraction": _clamped_int(
+                    raw_stage_timings.get("candidateExtraction"), 0, 0
+                ),
                 "detailFetch": _clamped_int(raw_stage_timings.get("detailFetch"), 0, 0),
                 "redirectResolve": _clamped_int(raw_stage_timings.get("redirectResolve"), 0, 0),
                 "canonicalization": _clamped_int(raw_stage_timings.get("canonicalization"), 0, 0),
             }
             if any(clean_stage_timings.values()):
                 entry["lastStageTimingsMs"] = clean_stage_timings
-            out_rows[name] = {key: value for key, value in entry.items() if value != "" and value is not None}
+            out_rows[name] = {
+                key: value for key, value in entry.items() if value != "" and value is not None
+            }
     return {
         "schemaVersion": SCHEMA_VERSION,
         "updatedAt": clean_text(src.get("updatedAt")) or clean_text(updated_at) or now_iso(),
@@ -117,7 +137,9 @@ def write_source_state(state_path: Path, rows: dict[str, dict[str, Any]]) -> Non
     write_text_if_changed(state_path, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
-def normalize_job_lifecycle_payload(payload: dict[str, Any], *, updated_at: str = "") -> dict[str, Any]:
+def normalize_job_lifecycle_payload(
+    payload: dict[str, Any], *, updated_at: str = ""
+) -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     raw_jobs = src.get("jobs")
     out_jobs: dict[str, dict[str, Any]] = {}
@@ -142,7 +164,9 @@ def normalize_job_lifecycle_payload(payload: dict[str, Any], *, updated_at: str 
                 "sourceJobId": clean_text(raw_entry.get("sourceJobId")),
                 "postedAt": to_iso(raw_entry.get("postedAt")),
             }
-            out_jobs[key] = {field: value for field, value in entry.items() if value not in {"", None}}
+            out_jobs[key] = {
+                field: value for field, value in entry.items() if value not in {"", None}
+            }
     return {
         "schemaVersion": SCHEMA_VERSION,
         "updatedAt": clean_text(src.get("updatedAt")) or clean_text(updated_at) or now_iso(),
@@ -202,7 +226,11 @@ def apply_job_lifecycle_state(
     archive_retention_days: int = LIFECYCLE_ARCHIVE_RETENTION_DAYS,
 ) -> tuple[list[CanonicalJob], dict[str, dict[str, Any]], dict[str, int]]:
     payload_rows = [row.to_dict() for row in deduped_rows]
-    next_rows: dict[str, dict[str, Any]] = {clean_text(key): dict(value) for key, value in (lifecycle_rows or {}).items() if clean_text(key)}
+    next_rows: dict[str, dict[str, Any]] = {
+        clean_text(key): dict(value)
+        for key, value in (lifecycle_rows or {}).items()
+        if clean_text(key)
+    }
     seen_keys: set[str] = set()
 
     for row in payload_rows:
@@ -229,7 +257,11 @@ def apply_job_lifecycle_state(
         }
 
     mark_missing_for_all = bool(allow_mark_missing)
-    eligible_sources = {clean_text(source_name) for source_name in (eligible_missing_sources or set()) if clean_text(source_name)}
+    eligible_sources = {
+        clean_text(source_name)
+        for source_name in (eligible_missing_sources or set())
+        if clean_text(source_name)
+    }
     should_mark_missing = mark_missing_for_all or bool(eligible_sources)
     if should_mark_missing:
         now_dt = parse_datetime(finished_at) or datetime.now(UTC)
@@ -247,7 +279,11 @@ def apply_job_lifecycle_state(
                 entry["removedAt"] = finished_at
             elif status == "likely_removed":
                 removed_dt = parse_datetime(removed_at)
-                age_days = int((now_dt - removed_dt).total_seconds() // (24 * 60 * 60)) if removed_dt else 0
+                age_days = (
+                    int((now_dt - removed_dt).total_seconds() // (24 * 60 * 60))
+                    if removed_dt
+                    else 0
+                )
                 if age_days >= max(1, int(remove_to_archive_days or 1)):
                     entry["status"] = "archived"
                     entry["archivedAt"] = finished_at
@@ -267,7 +303,9 @@ def apply_job_lifecycle_state(
     return [CanonicalJob.from_mapping(row) for row in payload_rows], next_rows, counts
 
 
-def should_skip_source_by_ttl(source_name: str, state_rows: dict[str, dict[str, Any]], ttl_minutes: int) -> bool:
+def should_skip_source_by_ttl(
+    source_name: str, state_rows: dict[str, dict[str, Any]], ttl_minutes: int
+) -> bool:
     if ttl_minutes <= 0:
         return False
     entry = state_rows.get(source_name)
@@ -322,7 +360,10 @@ def _decision_window_minutes(entry: dict[str, Any], *, adapter: str) -> int:
     last_status = norm_text(entry.get("lastStatus"))
     last_error = norm_text(entry.get("lastError"))
     if adapter == "static":
-        if last_status == "error" and any(token in last_error for token in ("dead_listing_page", "parser_stale", "fetch_ok_extract_zero")):
+        if last_status == "error" and any(
+            token in last_error
+            for token in ("dead_listing_page", "parser_stale", "fetch_ok_extract_zero")
+        ):
             return DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES
         if last_kept <= 0:
             return DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES
@@ -370,9 +411,14 @@ def get_incremental_cache_decision(
     if effective_adapter == "personio":
         last_error = norm_text(entry.get("lastError"))
         last_failure_at = parse_datetime(entry.get("lastFailureAt"))
-        cooldown_cutoff = now_dt - timedelta(minutes=max(1, int(common_config.DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES)))
+        cooldown_cutoff = now_dt - timedelta(
+            minutes=max(1, int(common_config.DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES))
+        )
         if "429" in last_error and last_failure_at and last_failure_at >= cooldown_cutoff:
-            return {"cacheDecision": "cooldown_skip", "cacheDecisionReason": "personio_rate_limited"}
+            return {
+                "cacheDecision": "cooldown_skip",
+                "cacheDecisionReason": "personio_rate_limited",
+            }
     last_success = parse_datetime(entry.get("lastSuccessAt"))
     if not last_success:
         return {"cacheDecision": "run_now", "cacheDecisionReason": "no_success_history"}
@@ -380,12 +426,28 @@ def get_incremental_cache_decision(
     last_kept = int(entry.get("lastKeptCount") or entry.get("lastJobsFound") or 0)
     last_status = norm_text(entry.get("lastStatus"))
     last_error = norm_text(entry.get("lastError"))
-    has_validators = bool(clean_text(entry.get("lastHttpEtag")) or clean_text(entry.get("lastHttpLastModified")))
+    has_validators = bool(
+        clean_text(entry.get("lastHttpEtag")) or clean_text(entry.get("lastHttpLastModified"))
+    )
     if effective_adapter == "static":
-        if clean_text(entry.get("lastListingFingerprint")) and last_kept > 0 and age_seconds < float(DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES * 60):
+        if (
+            clean_text(entry.get("lastListingFingerprint"))
+            and last_kept > 0
+            and age_seconds < float(DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES * 60)
+        ):
             return {"cacheDecision": "listing_only", "cacheDecisionReason": "static_listing_fresh"}
-        if last_status == "error" and any(token in last_error for token in ("dead_listing_page", "parser_stale", "fetch_ok_extract_zero")) and age_seconds < float(DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES * 60):
-            return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "static_dead_or_stale_fresh"}
+        if (
+            last_status == "error"
+            and any(
+                token in last_error
+                for token in ("dead_listing_page", "parser_stale", "fetch_ok_extract_zero")
+            )
+            and age_seconds < float(DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES * 60)
+        ):
+            return {
+                "cacheDecision": "skip_fresh",
+                "cacheDecisionReason": "static_dead_or_stale_fresh",
+            }
         if last_kept <= 0 and age_seconds < float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60):
             return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "static_empty_fresh"}
         return {"cacheDecision": "run_now", "cacheDecisionReason": "static_refresh_due"}
@@ -394,16 +456,23 @@ def get_incremental_cache_decision(
     changed_at = parse_datetime(entry.get("lastChangedAt"))
     if changed_at:
         age_since_change_seconds = max(0.0, (now_dt - changed_at).total_seconds())
-        if age_since_change_seconds <= 24 * 60 * 60 and age_seconds < float(common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES * 60):
+        if age_since_change_seconds <= 24 * 60 * 60 and age_seconds < float(
+            common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES * 60
+        ):
             return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "provider_hot_fresh"}
     if age_seconds < float(DEFAULT_INCREMENTAL_PROVIDER_STABLE_MINUTES * 60):
         if has_validators:
-            return {"cacheDecision": "revalidate_only", "cacheDecisionReason": "provider_stable_revalidate"}
+            return {
+                "cacheDecision": "revalidate_only",
+                "cacheDecisionReason": "provider_stable_revalidate",
+            }
         return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "provider_stable_fresh"}
     return {"cacheDecision": "run_now", "cacheDecisionReason": "provider_refresh_due"}
 
 
-def circuit_breaker_until(source_name: str, state_rows: dict[str, dict[str, Any]], failure_threshold: int) -> datetime | None:
+def circuit_breaker_until(
+    source_name: str, state_rows: dict[str, dict[str, Any]], failure_threshold: int
+) -> datetime | None:
     if failure_threshold <= 0:
         return None
     entry = state_rows.get(source_name)
@@ -422,7 +491,8 @@ def _build_excluded_source_report(source_name: str, reason: str) -> dict[str, An
         "name": source_name,
         "status": "excluded",
         "adapter": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter")) or "custom",
-        "fetchStrategy": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy")) or "auto",
+        "fetchStrategy": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy"))
+        or "auto",
         "studio": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("studio")) or "",
         "fetchedCount": 0,
         "keptCount": 0,
@@ -440,7 +510,11 @@ def apply_circuit_breaker_exclusions(
     circuit_breaker_cooldown_minutes: int,
     ignore_circuit_breaker: bool,
 ) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]]]:
-    if ignore_circuit_breaker or circuit_breaker_failures <= 0 or circuit_breaker_cooldown_minutes <= 0:
+    if (
+        ignore_circuit_breaker
+        or circuit_breaker_failures <= 0
+        or circuit_breaker_cooldown_minutes <= 0
+    ):
         return list(selected_loaders), []
     filtered: list[tuple[str, SourceLoader]] = []
     excluded_rows: list[dict[str, Any]] = []
@@ -448,7 +522,11 @@ def apply_circuit_breaker_exclusions(
     for name, loader in selected_loaders:
         blocked_until = circuit_breaker_until(name, source_state_rows, circuit_breaker_failures)
         if blocked_until and blocked_until > now_dt:
-            excluded_rows.append(_build_excluded_source_report(name, f"circuit_breaker_active_until:{blocked_until.isoformat()}"))
+            excluded_rows.append(
+                _build_excluded_source_report(
+                    name, f"circuit_breaker_active_until:{blocked_until.isoformat()}"
+                )
+            )
             continue
         filtered.append((name, loader))
     return filtered, excluded_rows
@@ -474,16 +552,24 @@ def update_source_state_rows(
         entry["lastRunAt"] = finished_at
         entry["lastCheckedAt"] = finished_at
         entry["lastStatus"] = clean_text(report.get("status"))
-        entry["lastAdapter"] = clean_text(report.get("adapter")) or clean_text(entry.get("lastAdapter"))
+        entry["lastAdapter"] = clean_text(report.get("adapter")) or clean_text(
+            entry.get("lastAdapter")
+        )
         entry["lastDurationMs"] = int(report.get("durationMs") or 0)
         entry["lastFetchedCount"] = int(report.get("fetchedCount") or 0)
         entry["lastKeptCount"] = int(report.get("keptCount") or 0)
         entry["lastJobsFound"] = int(report.get("keptCount") or 0)
-        entry["cacheDecision"] = clean_text(report.get("cacheDecision")) or clean_text(entry.get("cacheDecision"))
-        entry["cacheDecisionReason"] = clean_text(report.get("cacheDecisionReason")) or clean_text(entry.get("cacheDecisionReason"))
+        entry["cacheDecision"] = clean_text(report.get("cacheDecision")) or clean_text(
+            entry.get("cacheDecision")
+        )
+        entry["cacheDecisionReason"] = clean_text(report.get("cacheDecisionReason")) or clean_text(
+            entry.get("cacheDecisionReason")
+        )
         if clean_text(report.get("listingFingerprint")):
             entry["lastListingFingerprint"] = clean_text(report.get("listingFingerprint"))
-            entry["lastListingCheckedAt"] = clean_text(report.get("listingCheckedAt")) or finished_at
+            entry["lastListingCheckedAt"] = (
+                clean_text(report.get("listingCheckedAt")) or finished_at
+            )
         if clean_text(report.get("httpEtag")):
             entry["lastHttpEtag"] = clean_text(report.get("httpEtag"))
         if clean_text(report.get("httpLastModified")):
@@ -495,14 +581,20 @@ def update_source_state_rows(
             return
         details = report.get("details") if isinstance(report.get("details"), list) else []
         static_detail = details[0] if len(details) == 1 and isinstance(details[0], dict) else {}
-        static_stats = static_detail.get("stats") if isinstance(static_detail, dict) and isinstance(static_detail.get("stats"), dict) else {}
+        static_stats = (
+            static_detail.get("stats")
+            if isinstance(static_detail, dict) and isinstance(static_detail.get("stats"), dict)
+            else {}
+        )
         entry["lastCandidateLinksFound"] = int(static_stats.get("candidate_links_found") or 0)
         entry["lastDetailPagesVisited"] = int(static_stats.get("detail_pages_visited") or 0)
         entry["lastDetailYieldPct"] = int(static_stats.get("detail_yield_percent") or 0)
         entry["lastRedirectCandidates"] = int(static_stats.get("redirect_candidates") or 0)
         entry["lastRedirectResolved"] = int(static_stats.get("redirect_resolved") or 0)
         entry["lastRedirectCacheHits"] = int(static_stats.get("redirect_cache_hits") or 0)
-        stage_timings = report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
+        stage_timings = (
+            report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
+        )
         clean_stage_timings = {
             "listingFetch": int(stage_timings.get("listingFetch") or 0),
             "parseCsv": int(stage_timings.get("parseCsv") or 0),
@@ -543,7 +635,11 @@ def update_source_state_rows(
             entry["consecutiveFailures"] = failure_count
             entry["lastFailureAt"] = finished_at
             entry["lastError"] = clean_text(report.get("error"))
-            if circuit_breaker_failures > 0 and failure_count >= circuit_breaker_failures and circuit_breaker_cooldown_minutes > 0:
+            if (
+                circuit_breaker_failures > 0
+                and failure_count >= circuit_breaker_failures
+                and circuit_breaker_cooldown_minutes > 0
+            ):
                 entry["quarantinedUntilAt"] = (
                     datetime.now(UTC) + timedelta(minutes=circuit_breaker_cooldown_minutes)
                 ).isoformat()
@@ -553,7 +649,9 @@ def update_source_state_rows(
                 checked_at=finished_at,
             )
         elif entry["lastStatus"] == "excluded":
-            exclusion_reason = clean_text(report.get("exclusionReason")) or clean_text(report.get("cacheDecisionReason"))
+            exclusion_reason = clean_text(report.get("exclusionReason")) or clean_text(
+                report.get("cacheDecisionReason")
+            )
             if exclusion_reason == "not_modified_304":
                 entry["lastSuccessAt"] = finished_at
                 entry["consecutiveFailures"] = 0
@@ -576,8 +674,6 @@ def update_source_state_rows(
             continue
         _apply_report_to_entry(name, report)
     return source_state_rows
-
-
 
 
 def read_previously_successful_sources(report_path: Path) -> set[str]:
@@ -621,7 +717,9 @@ def write_success_cache(cache_path: Path, source_reports: Sequence[dict[str, Any
     successful = {
         clean_text(row.get("name"))
         for row in source_reports
-        if norm_text(row.get("status")) == "ok" and int(row.get("keptCount") or 0) > 0 and clean_text(row.get("name"))
+        if norm_text(row.get("status")) == "ok"
+        and int(row.get("keptCount") or 0) > 0
+        and clean_text(row.get("name"))
     }
     if not successful:
         return
@@ -629,7 +727,6 @@ def write_success_cache(cache_path: Path, source_reports: Sequence[dict[str, Any
     merged = sorted(previous | successful)
     payload = {"updatedAt": now_iso(), "successfulSources": merged}
     write_text_if_changed(cache_path, json.dumps(payload, indent=2, ensure_ascii=False))
-
 
 
 __all__ = [

@@ -29,4 +29,3 @@ export function logInfo(scope, message, ...args) {
 export function logError(scope, context, err) {
   console.error(`[${scope}] ${context}:`, err);
 }
-

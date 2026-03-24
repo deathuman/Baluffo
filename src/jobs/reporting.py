@@ -54,7 +54,9 @@ def build_pipeline_summary(
     light_json_bytes: int,
     lifecycle_counts_map: dict[str, int] | None = None,
 ) -> dict[str, Any]:
-    deduped_payload = [row.to_dict() if isinstance(row, CanonicalJob) else dict(row) for row in deduped_rows]
+    deduped_payload = [
+        row.to_dict() if isinstance(row, CanonicalJob) else dict(row) for row in deduped_rows
+    ]
     lifecycle = lifecycle_counts_map or {}
     cache_rows: list[dict[str, Any]] = []
     for row in source_reports:
@@ -68,7 +70,13 @@ def build_pipeline_summary(
         decision = clean_text(row.get("cacheDecision"))
         if decision:
             cache_decision_counts[decision] = int(cache_decision_counts.get(decision, 0)) + 1
-    raw_fetched = int(sum(int(row.get("fetchedCount") or 0) for row in source_reports if norm_text(row.get("status")) == "ok"))
+    raw_fetched = int(
+        sum(
+            int(row.get("fetchedCount") or 0)
+            for row in source_reports
+            if norm_text(row.get("status")) == "ok"
+        )
+    )
     canonical_kept = int(canonical_count)
     canonical_dropped = max(0, raw_fetched - canonical_kept)
     dedup_merged = int(dedup_stats.get("mergedCount") or 0)
@@ -82,30 +90,55 @@ def build_pipeline_summary(
         "finalOutput": final_output,
         "rawFetchedCount": canonical_count,
         "uniqueOutputCount": len(deduped_payload),
-        "sourceBundleCollisions": sum(1 for row in deduped_payload if int(row.get("sourceBundleCount") or 0) > 1),
-        "targetRoleCount": sum(1 for row in deduped_payload if norm_text(row.get("profession")) in TARGET_PROFESSIONS),
-        "netherlandsCount": sum(1 for row in deduped_payload if clean_text(row.get("country")).upper() == "NL"),
-        "remoteCount": sum(1 for row in deduped_payload if norm_text(row.get("workType")) == "remote"),
+        "sourceBundleCollisions": sum(
+            1 for row in deduped_payload if int(row.get("sourceBundleCount") or 0) > 1
+        ),
+        "targetRoleCount": sum(
+            1 for row in deduped_payload if norm_text(row.get("profession")) in TARGET_PROFESSIONS
+        ),
+        "netherlandsCount": sum(
+            1 for row in deduped_payload if clean_text(row.get("country")).upper() == "NL"
+        ),
+        "remoteCount": sum(
+            1 for row in deduped_payload if norm_text(row.get("workType")) == "remote"
+        ),
         "targetRoleNetherlandsCount": sum(
             1
             for row in deduped_payload
-            if norm_text(row.get("profession")) in TARGET_PROFESSIONS and clean_text(row.get("country")).upper() == "NL"
+            if norm_text(row.get("profession")) in TARGET_PROFESSIONS
+            and clean_text(row.get("country")).upper() == "NL"
         ),
         "targetRoleRemoteCount": sum(
             1
             for row in deduped_payload
-            if norm_text(row.get("profession")) in TARGET_PROFESSIONS and norm_text(row.get("workType")) == "remote"
+            if norm_text(row.get("profession")) in TARGET_PROFESSIONS
+            and norm_text(row.get("workType")) == "remote"
         ),
         "preservedPreviousOutput": preserved_previous,
         "sourceCount": len(source_reports),
         "successfulSources": sum(1 for row in source_reports if row["status"] == "ok"),
         "failedSources": sum(1 for row in source_reports if row["status"] == "error"),
         "excludedSources": sum(1 for row in source_reports if row["status"] == "excluded"),
-        "cacheSkippedCount": sum(1 for row in cache_rows if norm_text(row.get("status")) == "excluded" and clean_text(row.get("cacheDecision")) in {"skip_fresh", "cooldown_skip"}),
-        "revalidatedCount": sum(1 for row in cache_rows if clean_text(row.get("cacheDecision")) == "revalidate_only"),
-        "notModifiedCount": sum(1 for row in cache_rows if clean_text(row.get("cacheDecisionReason")) == "not_modified_304"),
-        "listingOnlyCount": sum(1 for row in cache_rows if clean_text(row.get("cacheDecision")) == "listing_only"),
-        "detailSkippedByListingFingerprintCount": sum(1 for row in cache_rows if bool(row.get("detailSkippedByListingFingerprint"))),
+        "cacheSkippedCount": sum(
+            1
+            for row in cache_rows
+            if norm_text(row.get("status")) == "excluded"
+            and clean_text(row.get("cacheDecision")) in {"skip_fresh", "cooldown_skip"}
+        ),
+        "revalidatedCount": sum(
+            1 for row in cache_rows if clean_text(row.get("cacheDecision")) == "revalidate_only"
+        ),
+        "notModifiedCount": sum(
+            1
+            for row in cache_rows
+            if clean_text(row.get("cacheDecisionReason")) == "not_modified_304"
+        ),
+        "listingOnlyCount": sum(
+            1 for row in cache_rows if clean_text(row.get("cacheDecision")) == "listing_only"
+        ),
+        "detailSkippedByListingFingerprintCount": sum(
+            1 for row in cache_rows if bool(row.get("detailSkippedByListingFingerprint"))
+        ),
         "cacheDecisionCounts": cache_decision_counts,
         "activeSourceCount": active_source_count,
         "pendingSourceCount": pending_source_count,
@@ -138,7 +171,10 @@ def build_browser_fallback_queue(
                 continue
             classification = norm_text(item.get("classification"))
             recommend = bool(item.get("browserFallbackRecommended"))
-            if not recommend or classification not in common_config.STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE:
+            if (
+                not recommend
+                or classification not in common_config.STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE
+            ):
                 continue
             source_id = clean_text(item.get("sourceId"))
             name = clean_text(item.get("name"))
@@ -152,7 +188,9 @@ def build_browser_fallback_queue(
             profile = domain_profile_for_url(canonical)
             if clean_text(profile.get("job_provider")):
                 continue
-            dedupe_key = hashlib.sha1("|".join(["scrapy_static", source_id or name, canonical]).encode("utf-8")).hexdigest()
+            dedupe_key = hashlib.sha1(
+                "|".join(["scrapy_static", source_id or name, canonical]).encode("utf-8")
+            ).hexdigest()
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
@@ -169,9 +207,14 @@ def build_browser_fallback_queue(
                     "generatedAt": clean_text(generated_at),
                 }
             )
-    rows.sort(key=lambda row: (clean_text(row.get("studio")), clean_text(row.get("name")), clean_text(row.get("page"))))
+    rows.sort(
+        key=lambda row: (
+            clean_text(row.get("studio")),
+            clean_text(row.get("name")),
+            clean_text(row.get("page")),
+        )
+    )
     return rows
-
 
 
 __all__ = [

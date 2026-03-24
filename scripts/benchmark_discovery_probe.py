@@ -95,7 +95,13 @@ def run_one_preset(
             )
             elapsed = time.perf_counter() - t0
         finally:
-            sd.ACTIVE_PATH, sd.PENDING_PATH, sd.REJECTED_PATH, sd.DISCOVERY_CANDIDATES_PATH, sd.DISCOVERY_REPORT_PATH = orig
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+            ) = orig
     finally:
         for k, v in prev.items():
             if v is None:
@@ -122,6 +128,7 @@ def run_one_preset(
 
 def main() -> int:
     import argparse
+
     p = argparse.ArgumentParser(description="Benchmark discovery probe concurrency.")
     p.add_argument("--rows", type=int, default=35, help="Max sheet rows (candidate cap)")
     p.add_argument("--timeout", type=int, default=12, help="Request timeout per URL (s)")
@@ -149,24 +156,28 @@ def main() -> int:
             try:
                 r = run_one_preset(name, total, static, provider, tt, rows, timeout_s, root)
                 results.append(r)
-                print(f"    -> {r['wall_seconds']}s, probed={r['probed']}, failed={r['failed_probes']}, queued={r['queued']}")
+                print(
+                    f"    -> {r['wall_seconds']}s, probed={r['probed']}, failed={r['failed_probes']}, queued={r['queued']}"
+                )
             except Exception as e:
                 print(f"    -> ERROR: {e}")
-                results.append({
-                    "preset": name,
-                    "total": total,
-                    "static": static,
-                    "provider": provider,
-                    "teamtailor": tt,
-                    "wall_seconds": None,
-                    "found": None,
-                    "probed": None,
-                    "queued": None,
-                    "failed_probes": None,
-                    "probe_misses": None,
-                    "deferred": None,
-                    "error": str(e),
-                })
+                results.append(
+                    {
+                        "preset": name,
+                        "total": total,
+                        "static": static,
+                        "provider": provider,
+                        "teamtailor": tt,
+                        "wall_seconds": None,
+                        "found": None,
+                        "probed": None,
+                        "queued": None,
+                        "failed_probes": None,
+                        "probe_misses": None,
+                        "deferred": None,
+                        "error": str(e),
+                    }
+                )
 
     # Summary table
     print()
@@ -191,8 +202,12 @@ def main() -> int:
         by_time = sorted(valid, key=lambda x: (x["wall_seconds"], -x["queued"]))
         best = by_time[0]
         print()
-        print("Recommendation: Code defaults use 'moderate' (25/10/25/15). For faster runs try 'high' or 'aggressive'.")
-        print(f"  Fastest this run: {best['preset']} ({best['wall_seconds']}s, failed={best['failed_probes']}, queued={best['queued']})")
+        print(
+            "Recommendation: Code defaults use 'moderate' (25/10/25/15). For faster runs try 'high' or 'aggressive'."
+        )
+        print(
+            f"  Fastest this run: {best['preset']} ({best['wall_seconds']}s, failed={best['failed_probes']}, queued={best['queued']})"
+        )
     return 0
 
 

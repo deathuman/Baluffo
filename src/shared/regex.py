@@ -1,4 +1,5 @@
 """Shared regex patterns (stdlib-only)."""
+
 from __future__ import annotations
 
 import re

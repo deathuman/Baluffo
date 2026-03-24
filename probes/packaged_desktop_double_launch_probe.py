@@ -39,7 +39,9 @@ def fetch_json(url: str, timeout_s: float = 2.0) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def wait_for_bridge_ready(bridge_port: int, *, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict[str, Any]:
+def wait_for_bridge_ready(
+    bridge_port: int, *, timeout_s: float = DEFAULT_TIMEOUT_S
+) -> dict[str, Any]:
     deadline = time.monotonic() + max(1.0, float(timeout_s))
     last_error = ""
     while time.monotonic() < deadline:
@@ -47,7 +49,13 @@ def wait_for_bridge_ready(bridge_port: int, *, timeout_s: float = DEFAULT_TIMEOU
             payload = fetch_json(f"http://127.0.0.1:{int(bridge_port)}/ops/health", timeout_s=1.5)
             if str(payload.get("service") or "") == "baluffo-bridge":
                 return payload
-        except (OSError, ValueError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+        except (
+            OSError,
+            ValueError,
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            json.JSONDecodeError,
+        ) as exc:
             last_error = str(exc)
         time.sleep(0.25)
     raise TimeoutError(f"Bridge did not become ready on port {bridge_port}. {last_error}".strip())
@@ -99,7 +107,9 @@ def launch_packaged_exe(
     env["LOCALAPPDATA"] = str(local_app_data_root)
     stdout_handle = stdout_path.open("wb")
     stderr_handle = stderr_path.open("wb")
-    process = subprocess.Popen(command, cwd=exe_path.parent, stdout=stdout_handle, stderr=stderr_handle, env=env)
+    process = subprocess.Popen(
+        command, cwd=exe_path.parent, stdout=stdout_handle, stderr=stderr_handle, env=env
+    )
     return process, stdout_handle, stderr_handle
 
 
@@ -143,15 +153,21 @@ def seed_stale_artifacts(local_app_data_root: Path) -> None:
         "url": "http://127.0.0.1:8080/jobs.html?desktop=1",
         "exePath": "C:/stale/Baluffo.exe",
     }
-    (session_root / "desktop-instance.lock").write_text(json.dumps(stale_lock, ensure_ascii=False), encoding="utf-8")
-    (session_root / "desktop-session.json").write_text(json.dumps(stale_session, ensure_ascii=False), encoding="utf-8")
+    (session_root / "desktop-instance.lock").write_text(
+        json.dumps(stale_lock, ensure_ascii=False), encoding="utf-8"
+    )
+    (session_root / "desktop-session.json").write_text(
+        json.dumps(stale_session, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def run_probe(args: argparse.Namespace) -> int:
     exe_path = Path(args.exe_path).expanduser().resolve()
     if not exe_path.exists():
         raise RuntimeError(f"Packaged executable not found: {exe_path}")
-    run_dir = Path(args.artifacts_dir).expanduser().resolve() / datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    run_dir = Path(args.artifacts_dir).expanduser().resolve() / datetime.now(UTC).strftime(
+        "%Y%m%d-%H%M%S"
+    )
     runtime_data_dir = run_dir / "runtime-data"
     local_app_data_root = run_dir / "local-user-data"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -247,20 +263,26 @@ def run_probe(args: argparse.Namespace) -> int:
         if second_err is not None:
             second_err.close()
         report["finishedAt"] = utc_now_iso()
-        (run_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        (run_dir / "report.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report.get("ok") else 1
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Probe rapid double-launch hardening of packaged Baluffo desktop executable.")
+    parser = argparse.ArgumentParser(
+        description="Probe rapid double-launch hardening of packaged Baluffo desktop executable."
+    )
     parser.add_argument("--exe-path", default=str(DEFAULT_EXE_PATH))
     parser.add_argument("--artifacts-dir", default=str(DEFAULT_ARTIFACT_DIR))
     parser.add_argument("--site-port", type=int, default=0)
     parser.add_argument("--bridge-port", type=int, default=0)
     parser.add_argument("--gap-ms", type=int, default=100)
     parser.add_argument("--timeout-s", type=float, default=DEFAULT_TIMEOUT_S)
-    parser.add_argument("--inject-stale-artifacts", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--inject-stale-artifacts", action=argparse.BooleanOptionalAction, default=True
+    )
     return parser.parse_args(argv)
 
 

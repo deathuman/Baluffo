@@ -13,4 +13,3 @@ class NoPluginFoundError(PluginError):
         super().__init__(msg)
         self.family = family
         self.context = context
-

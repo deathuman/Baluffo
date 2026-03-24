@@ -48,8 +48,7 @@ def test_source_url_fingerprint_prefers_endpoint_fields() -> None:
         "api_url": "https://apply.workable.com/api/v1/widget/accounts/acme/?details=true",
     }
     assert (
-        sr.source_url_fingerprint(row)
-        == "https://apply.workable.com/api/v1/widget/accounts/acme"
+        sr.source_url_fingerprint(row) == "https://apply.workable.com/api/v1/widget/accounts/acme"
     )
 
 

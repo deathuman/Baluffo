@@ -464,18 +464,18 @@ export function createAdminDiscoveryController({
       getBridge("/discovery/report"),
       loadDiscoveryLogChunk().catch(() => null)
     ]);
-    
+
     // Always update progress during polling for real-time updates
     if (report) {
       const startedMs = parseReportTimestampMs(report?.startedAt);
       if (startedMs >= (state.discoveryLaunchAtMs - 1000)) {
         runProgressAppend(report, now);
       }
-      
+
       // Update progress even if not started yet, for better UX
       updateDiscoveryProgressFromReport(report, { running: true });
     }
-    
+
     const finishedMs = parseReportTimestampMs(report?.finishedAt);
     if (finishedMs >= (state.discoveryLaunchAtMs - 1000)) {
       const summary = report?.summary || {};

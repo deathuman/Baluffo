@@ -38,7 +38,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             job_key = api.desktop_local_data_store().save_job_for_user(
                 str((payload or {}).get("uid") or ""),
                 job,
-                (payload or {}).get("options") if isinstance((payload or {}).get("options"), dict) else {},
+                (payload or {}).get("options")
+                if isinstance((payload or {}).get("options"), dict)
+                else {},
             )
             handler._send_json({"ok": True, "jobKey": job_key})  # noqa: SLF001
         except PydanticValidationError as exc:  # noqa: BLE001
@@ -73,7 +75,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
                 str((payload or {}).get("uid") or ""),
                 str((payload or {}).get("jobKey") or ""),
                 str((payload or {}).get("status") or ""),
-                (payload or {}).get("options") if isinstance((payload or {}).get("options"), dict) else {},
+                (payload or {}).get("options")
+                if isinstance((payload or {}).get("options"), dict)
+                else {},
             )
             handler._send_json({"ok": True})  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
@@ -97,7 +101,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             attachment_id = api.desktop_local_data_store().add_attachment_for_job(
                 str((payload or {}).get("uid") or ""),
                 str((payload or {}).get("jobKey") or ""),
-                (payload or {}).get("fileMeta") if isinstance((payload or {}).get("fileMeta"), dict) else {},
+                (payload or {}).get("fileMeta")
+                if isinstance((payload or {}).get("fileMeta"), dict)
+                else {},
                 str((payload or {}).get("blobDataUrl") or ""),
             )
             handler._send_json({"ok": True, "attachmentId": attachment_id})  # noqa: SLF001
@@ -121,7 +127,13 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         try:
             result = api.desktop_local_data_store().export_profile_data(
                 str((payload or {}).get("uid") or ""),
-                bool((((payload or {}).get("options") or {}) if isinstance((payload or {}).get("options"), dict) else {}).get("includeFiles")),
+                bool(
+                    (
+                        ((payload or {}).get("options") or {})
+                        if isinstance((payload or {}).get("options"), dict)
+                        else {}
+                    ).get("includeFiles")
+                ),
             )
             handler._send_json({"ok": True, "payload": result})  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
@@ -132,7 +144,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         try:
             result = api.desktop_local_data_store().import_profile_data(
                 str((payload or {}).get("uid") or ""),
-                (payload or {}).get("payload") if isinstance((payload or {}).get("payload"), dict) else {},
+                (payload or {}).get("payload")
+                if isinstance((payload or {}).get("payload"), dict)
+                else {},
             )
             handler._send_json({"ok": True, "result": result})  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
@@ -141,7 +155,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
 
     if path == "/desktop-local-data/admin/overview":
         try:
-            handler._send_json({"ok": True, "overview": api.desktop_local_data_store().get_admin_overview()})  # noqa: SLF001,E501
+            handler._send_json(
+                {"ok": True, "overview": api.desktop_local_data_store().get_admin_overview()}
+            )  # noqa: SLF001,E501
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True
@@ -151,7 +167,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             api.desktop_local_data_store().wipe_account_admin(
                 str((payload or {}).get("uid") or ""),
             )
-            handler._send_json({"ok": True, "user": api.desktop_local_data_store().get_current_user()})  # noqa: SLF001
+            handler._send_json(
+                {"ok": True, "user": api.desktop_local_data_store().get_current_user()}
+            )  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True
@@ -159,7 +177,11 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
     if path == "/desktop-local-data/startup-metric":
         try:
             event = str((payload or {}).get("event") or "").strip() or "unknown"
-            details = (payload or {}).get("payload") if isinstance((payload or {}).get("payload"), dict) else {}
+            details = (
+                (payload or {}).get("payload")
+                if isinstance((payload or {}).get("payload"), dict)
+                else {}
+            )
             api.append_startup_metric(event, details)
             handler._send_json({"ok": True})  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
@@ -188,7 +210,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         state["active"] = api.unique_sources([*state["active"], *moved])
         state = api.persist_state_and_auto_sync(state, reason="registry_approve")
         approval = api.load_json_object(api.APPROVAL_STATE_PATH, {"approvedSinceLastRun": 0})
-        approval["approvedSinceLastRun"] = int(approval.get("approvedSinceLastRun") or 0) + len(moved)
+        approval["approvedSinceLastRun"] = int(approval.get("approvedSinceLastRun") or 0) + len(
+            moved
+        )
         api.save_json_atomic(api.APPROVAL_STATE_PATH, approval)
         handler._send_json({"approved": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
         return True
@@ -233,13 +257,21 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
         urls = (payload or {}).get("urls") if isinstance((payload or {}).get("urls"), list) else []
         selected = {str(item).strip().lower() for item in ids if str(item).strip()}
-        selected_urls = {api.normalize_source_url(str(item)) for item in urls if api.normalize_source_url(str(item))}
+        selected_urls = {
+            api.normalize_source_url(str(item))
+            for item in urls
+            if api.normalize_source_url(str(item))
+        }
         if not selected:
             selected = set()
         if not selected and not selected_urls:
             handler._send_json({"deleted": 0, "summary": api.summarize_state(state)})  # noqa: SLF001
             return True
-        before = len(state.get("active", [])) + len(state.get("pending", [])) + len(state.get("rejected", []))
+        before = (
+            len(state.get("active", []))
+            + len(state.get("pending", []))
+            + len(state.get("rejected", []))
+        )
 
         def keep_row(row: dict) -> bool:
             row_id = api.source_identity(row)
@@ -254,8 +286,14 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         state["pending"] = [row for row in state["pending"] if keep_row(row)]
         state["rejected"] = [row for row in state["rejected"] if keep_row(row)]
         state = api.persist_state_and_auto_sync(state, reason="registry_delete")
-        after = len(state.get("active", [])) + len(state.get("pending", [])) + len(state.get("rejected", []))
-        handler._send_json({"deleted": max(0, before - after), "summary": api.summarize_state(state)})  # noqa: SLF001
+        after = (
+            len(state.get("active", []))
+            + len(state.get("pending", []))
+            + len(state.get("rejected", []))
+        )
+        handler._send_json(
+            {"deleted": max(0, before - after), "summary": api.summarize_state(state)}
+        )  # noqa: SLF001
         return True
 
     if path == "/tasks/run-discovery":
@@ -286,7 +324,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
                 )
             except Exception:  # noqa: BLE001
                 pass
-            handler._send_json({"started": False, "task": "discovery", "error": str(exc)}, status=500)  # noqa: SLF001,E501
+            handler._send_json(
+                {"started": False, "task": "discovery", "error": str(exc)}, status=500
+            )  # noqa: SLF001,E501
         return True
 
     if path == "/tasks/run-jobs-pipeline":
@@ -301,7 +341,10 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             status_code = 200 if bool(result.get("started")) else 409
             handler._send_json(result, status=status_code)  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"started": False, "task": "source_sync", "action": "pull", "error": str(exc)}, status=500)  # noqa: SLF001,E501
+            handler._send_json(
+                {"started": False, "task": "source_sync", "action": "pull", "error": str(exc)},
+                status=500,
+            )  # noqa: SLF001,E501
         return True
 
     if path == "/tasks/run-sync-push":
@@ -310,7 +353,10 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             status_code = 200 if bool(result.get("started")) else 409
             handler._send_json(result, status=status_code)  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"started": False, "task": "source_sync", "action": "push", "error": str(exc)}, status=500)  # noqa: SLF001,E501
+            handler._send_json(
+                {"started": False, "task": "source_sync", "action": "push", "error": str(exc)},
+                status=500,
+            )  # noqa: SLF001,E501
         return True
 
     if path == "/tasks/run-fetcher":
@@ -318,7 +364,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             result = api.start_fetcher_task(payload if isinstance(payload, dict) else {})
             handler._send_json(result)  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"started": False, "task": "jobs_fetcher", "error": str(exc)}, status=500)  # noqa: SLF001,E501
+            handler._send_json(
+                {"started": False, "task": "jobs_fetcher", "error": str(exc)}, status=500
+            )  # noqa: SLF001,E501
         return True
 
     if path == "/discovery/config":
@@ -326,7 +374,14 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             api.update_saved_discovery_settings(payload if isinstance(payload, dict) else {})
             handler._send_json(api.get_discovery_config_payload())  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc), "savedConfig": api.get_discovery_config_payload().get("savedConfig", {})}, status=400)  # noqa: SLF001,E501
+            handler._send_json(
+                {
+                    "ok": False,
+                    "error": str(exc),
+                    "savedConfig": api.get_discovery_config_payload().get("savedConfig", {}),
+                },
+                status=400,
+            )  # noqa: SLF001,E501
         return True
 
     if path == "/ops/alerts/ack":
@@ -346,15 +401,21 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             api.update_saved_sync_settings(payload if isinstance(payload, dict) else {})
             handler._send_json(api.get_sync_status_payload())  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=400)  # noqa: SLF001
+            handler._send_json(
+                {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=400
+            )  # noqa: SLF001
         return True
 
     if path == "/sync/test":
         try:
             handler._send_json(api.test_sync_config())  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
-            api.set_sync_status(action="test", result="error", error=str(exc), pulled=False, pushed=False)
-            handler._send_json({"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500)  # noqa: SLF001
+            api.set_sync_status(
+                action="test", result="error", error=str(exc), pulled=False, pushed=False
+            )
+            handler._send_json(
+                {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500
+            )  # noqa: SLF001
         return True
 
     if path == "/sync/pull":
@@ -362,7 +423,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             handler._send_json(api.sync_pull_sources())  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             api.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
-            handler._send_json({"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500)  # noqa: SLF001
+            handler._send_json(
+                {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500
+            )  # noqa: SLF001
         return True
 
     if path == "/sync/push":
@@ -370,8 +433,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             handler._send_json(api.sync_push_sources())  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             api.set_sync_status(action="push", result="error", error=str(exc), pushed=False)
-            handler._send_json({"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500)  # noqa: SLF001
+            handler._send_json(
+                {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500
+            )  # noqa: SLF001
         return True
 
     return False
-

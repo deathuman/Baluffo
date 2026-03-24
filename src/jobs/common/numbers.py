@@ -11,4 +11,3 @@ def _clamped_int(value: Any, default: int = 0, minimum: int = 0) -> int:
     except (TypeError, ValueError):
         parsed = int(default)
     return max(int(minimum), int(parsed))
-

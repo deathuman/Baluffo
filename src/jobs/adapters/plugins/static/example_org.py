@@ -2,6 +2,7 @@
 Static plugin for example.org (and subdomains). Fetches first page and parses with
 parse_jobpostings_from_html. Use as a template for adding new static site plugins.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -33,7 +34,10 @@ def run(
     page_url = clean_text(pages[0])
     if not page_url:
         return []
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Unknown"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Unknown"
+    )
     source_id = (source_row.get("id") or "").strip() or "example_org"
     try:
         html = fetch_text(page_url, timeout_s)

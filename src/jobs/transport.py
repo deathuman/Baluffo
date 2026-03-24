@@ -90,7 +90,13 @@ def conditional_revalidate_url(
     clean_etag = str(etag or "").strip()
     clean_last_modified = str(last_modified or "").strip()
     if not clean_etag and not clean_last_modified:
-        return {"supported": False, "notModified": False, "statusCode": 0, "etag": "", "lastModified": ""}
+        return {
+            "supported": False,
+            "notModified": False,
+            "statusCode": 0,
+            "etag": "",
+            "lastModified": "",
+        }
     headers = dict(DEFAULT_HTTP_HEADERS)
     if clean_etag:
         headers["If-None-Match"] = clean_etag
@@ -98,7 +104,11 @@ def conditional_revalidate_url(
         headers["If-Modified-Since"] = clean_last_modified
     if httpx is not None:
         try:
-            with httpx.Client(follow_redirects=True, headers=headers, timeout=httpx.Timeout(float(max(1, timeout_s)))) as client:
+            with httpx.Client(
+                follow_redirects=True,
+                headers=headers,
+                timeout=httpx.Timeout(float(max(1, timeout_s))),
+            ) as client:
                 response = client.request("HEAD", url)
                 return {
                     "supported": True,
@@ -117,7 +127,13 @@ def conditional_revalidate_url(
                     "etag": str(response.headers.get("ETag") or ""),
                     "lastModified": str(response.headers.get("Last-Modified") or ""),
                 }
-    return {"supported": False, "notModified": False, "statusCode": 0, "etag": "", "lastModified": ""}
+    return {
+        "supported": False,
+        "notModified": False,
+        "statusCode": 0,
+        "etag": "",
+        "lastModified": "",
+    }
 
 
 class PooledRedirectResolver:
@@ -284,7 +300,9 @@ class AsyncHttpTextFetcher:
     def fetch_text(self, url: str, timeout_s: int, request: RequestConfig | None = None) -> str:
         if self._closed:
             raise RuntimeError("Async HTTP fetcher is closed")
-        future = asyncio.run_coroutine_threadsafe(self._fetch(url, timeout_s, request=request), self._loop)
+        future = asyncio.run_coroutine_threadsafe(
+            self._fetch(url, timeout_s, request=request), self._loop
+        )
         return str(future.result())
 
     def close(self) -> None:
@@ -328,6 +346,7 @@ def make_fetch_text(
             return fetch_text(url, timeout_s, request=request)
         except TypeError:
             return fetch_text(url, timeout_s)
+
     return _wrapped
 
 
@@ -350,5 +369,3 @@ def resolve_fetch_text_impl(
         except Exception:  # noqa: BLE001
             pass
     return default_fetch_text, chosen, async_fetcher
-
-

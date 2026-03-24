@@ -3,7 +3,7 @@ import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 export function cacheJobsDom(doc = document) {
   const t = UI_TOKENS.jobs;
   const g = UI_TOKENS.global;
-  
+
   return {
     jobsList: doc.querySelector(ui(t.list)),
     workTypeFilter: doc.querySelector(ui(t.workTypeFilter)),
@@ -34,7 +34,7 @@ export function cacheJobsDom(doc = document) {
     authSignInBtn: doc.querySelector(ui(g.authSignInBtn)),
     authSignOutBtn: doc.querySelector(ui(g.authSignOutBtn)),
     adminPageBtn: doc.querySelector(ui(g.adminPageBtn)),
-    savedJobsBtn: doc.querySelector(ui(g.savedPageBtn)), 
+    savedJobsBtn: doc.querySelector(ui(g.savedPageBtn)),
     activeFiltersSummaryEl: doc.querySelector(ui(t.activeFiltersSummary)),
     quickActionsEl: doc.querySelector(ui(t.quickActions)),
     customizeQuickFiltersBtn: doc.querySelector(ui(t.customizeQuickFiltersBtn)),

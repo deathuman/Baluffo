@@ -76,7 +76,15 @@ def resolve_supported_redirect_url(url: Any, *, timeout_s: int = DEFAULT_TIMEOUT
                 return resolved or normalized
         except HTTPError as exc:
             last_error = exc
-            if method == "HEAD" and int(getattr(exc, "code", 0) or 0) in {400, 403, 405, 429, 500, 501, 503}:
+            if method == "HEAD" and int(getattr(exc, "code", 0) or 0) in {
+                400,
+                403,
+                405,
+                429,
+                500,
+                501,
+                503,
+            }:
                 continue
             return normalized
         except (URLError, ValueError) as exc:
@@ -86,4 +94,3 @@ def resolve_supported_redirect_url(url: Any, *, timeout_s: int = DEFAULT_TIMEOUT
             break
     _ = last_error
     return normalized
-

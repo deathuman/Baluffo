@@ -52,7 +52,9 @@ def test_trigger_discovery_task_uncapped_uses_explicit_uncapped_args(tmp_path: P
     assert result["started"] is True
     assert result["preset"] == "uncapped"
     assert result["args"] == ["--mode", "dynamic", "--top", "0", "--preset", "uncapped"]
-    assert calls == [("source_discovery.py", ["--mode", "dynamic", "--top", "0", "--preset", "uncapped"])]
+    assert calls == [
+        ("source_discovery.py", ["--mode", "dynamic", "--top", "0", "--preset", "uncapped"])
+    ]
 
 
 def test_trigger_discovery_task_logs_launch_start_and_persists_shell(tmp_path: Path) -> None:
@@ -182,9 +184,7 @@ def test_update_discovery_settings_persists_normalized_bool(tmp_path: Path) -> N
         ),
     )
 
-    saved = service.update_saved_discovery_settings(
-        {"autoApproveHealthyPendingOnComplete": 0}
-    )
+    saved = service.update_saved_discovery_settings({"autoApproveHealthyPendingOnComplete": 0})
 
     assert saved == {"autoApproveHealthyPendingOnComplete": False}
     persisted = json.loads(settings_path.read_text(encoding="utf-8"))
@@ -195,23 +195,30 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     report_path = tmp_path / "source-discovery-report.json"
     settings_path = tmp_path / "source-discovery-config.json"
     approval_state_path = tmp_path / "source-approval-state.json"
-    report_path.write_text(json.dumps({
-        "startedAt": "2026-03-20T12:00:00Z",
-        "finishedAt": "2026-03-20T12:05:00Z",
-        "summary": {"queuedCandidateCount": 1},
-        "runtime": {},
-        "candidates": [
+    report_path.write_text(
+        json.dumps(
             {
-                "id": "pending-ok",
-                "adapter": "static",
-                "name": "Healthy Pending",
-                "deferred": False,
-                "jobsFound": 0,
-                "sampleCount": 0,
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "2026-03-20T12:05:00Z",
+                "summary": {"queuedCandidateCount": 1},
+                "runtime": {},
+                "candidates": [
+                    {
+                        "id": "pending-ok",
+                        "adapter": "static",
+                        "name": "Healthy Pending",
+                        "deferred": False,
+                        "jobsFound": 0,
+                        "sampleCount": 0,
+                    }
+                ],
             }
-        ],
-    }), encoding="utf-8")
-    settings_path.write_text(json.dumps({"autoApproveHealthyPendingOnComplete": True}), encoding="utf-8")
+        ),
+        encoding="utf-8",
+    )
+    settings_path.write_text(
+        json.dumps({"autoApproveHealthyPendingOnComplete": True}), encoding="utf-8"
+    )
 
     persisted_states: list[dict[str, object]] = []
     bridge_events: list[str] = []
@@ -220,9 +227,27 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     state = {
         "active": [{"id": "active-1", "adapter": "static", "name": "Already Active"}],
         "pending": [
-            {"id": "pending-ok", "adapter": "static", "name": "Healthy Pending", "jobsFound": 0, "sampleCount": 0},
-            {"id": "pending-zero", "adapter": "static", "name": "Zero Pending", "jobsFound": 0, "status": "healthy"},
-            {"id": "pending-error", "adapter": "static", "name": "Errored Pending", "sampleCount": 2, "status": "error"},
+            {
+                "id": "pending-ok",
+                "adapter": "static",
+                "name": "Healthy Pending",
+                "jobsFound": 0,
+                "sampleCount": 0,
+            },
+            {
+                "id": "pending-zero",
+                "adapter": "static",
+                "name": "Zero Pending",
+                "jobsFound": 0,
+                "status": "healthy",
+            },
+            {
+                "id": "pending-error",
+                "adapter": "static",
+                "name": "Errored Pending",
+                "sampleCount": 2,
+                "status": "error",
+            },
         ],
         "rejected": [],
     }
@@ -241,7 +266,9 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     def save_json_atomic(path: Path, payload: object) -> None:
         Path(path).write_text(json.dumps(payload), encoding="utf-8")
 
-    def persist_state_and_auto_sync(next_state: dict[str, list[dict[str, object]]], **_kwargs: object) -> dict[str, list[dict[str, object]]]:
+    def persist_state_and_auto_sync(
+        next_state: dict[str, list[dict[str, object]]], **_kwargs: object
+    ) -> dict[str, list[dict[str, object]]]:
         state["active"] = list(next_state.get("active") or [])
         state["pending"] = list(next_state.get("pending") or [])
         state["rejected"] = list(next_state.get("rejected") or [])
@@ -290,7 +317,13 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     approval_state = json.loads(approval_state_path.read_text(encoding="utf-8"))
     assert int(approval_state["approvedSinceLastRun"]) == 1
     saved_report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert int((((saved_report.get("runtime") or {}).get("autoApproval") or {}).get("approvedCount")) or 0) == 1
+    assert (
+        int(
+            (((saved_report.get("runtime") or {}).get("autoApproval") or {}).get("approvedCount"))
+            or 0
+        )
+        == 1
+    )
     assert sync_calls == ["discovery_completed"]
     assert marked == ["2026-03-20T12:05:00Z"]
     assert "discovery_auto_approval_completed" in bridge_events
@@ -380,12 +413,12 @@ def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> 
     assert persisted_states == []
     assert state["pending"][0]["id"] == "pending-ok"
     saved_report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert ((saved_report.get("runtime") or {}).get("autoApproval") or {}).get("enabled") is False
     assert (
-        ((saved_report.get("runtime") or {}).get("autoApproval") or {}).get("enabled")
-        is False
+        int(
+            (((saved_report.get("runtime") or {}).get("autoApproval") or {}).get("approvedCount"))
+            or 0
+        )
+        == 0
     )
-    assert int(
-        (((saved_report.get("runtime") or {}).get("autoApproval") or {}).get("approvedCount"))
-        or 0
-    ) == 0
     assert sync_calls == []

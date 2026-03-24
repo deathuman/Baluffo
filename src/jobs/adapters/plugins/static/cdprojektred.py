@@ -3,6 +3,7 @@ Static plugin for cdprojektred.com careers. Fetches listing and parses with
 parse_jobpostings_from_html. Uses try_playwright when provided on fetch failure
 or JS shell so JS-rendered content can be extracted.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -36,7 +37,10 @@ def run(
     page_url = clean_text(pages[0])
     if not page_url:
         return []
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "CD Projekt Red"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "CD Projekt Red"
+    )
     source_id = (source_row.get("id") or "").strip() or "cdprojektred"
     html = ""
     try:

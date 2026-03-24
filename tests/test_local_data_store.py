@@ -88,7 +88,9 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
                 },
             },
         )
-        store.update_application_status(uid, job_1, "interview_1", {"preserveTimestamp": "2026-03-10T11:30:00.000Z"})
+        store.update_application_status(
+            uid, job_1, "interview_1", {"preserveTimestamp": "2026-03-10T11:30:00.000Z"}
+        )
         store.update_job_notes(uid, job_1, "Interview planned")
 
         job_2 = store.save_job_for_user(
@@ -128,14 +130,36 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
         payload_no_files = store.export_profile_data(uid, include_files=False)
         assert payload_no_files.get("schemaVersion") == 2
         assert payload_no_files.get("includesFiles") is False
-        assert payload_no_files.get("counts") == {"savedJobs": 2, "customJobs": 1, "historyEvents": activity_before_len, "attachments": 2}
-        assert any(bool((row or {}).get("blobDataUrl")) for row in payload_no_files.get("attachments") or []) is False
+        assert payload_no_files.get("counts") == {
+            "savedJobs": 2,
+            "customJobs": 1,
+            "historyEvents": activity_before_len,
+            "attachments": 2,
+        }
+        assert (
+            any(
+                bool((row or {}).get("blobDataUrl"))
+                for row in payload_no_files.get("attachments") or []
+            )
+            is False
+        )
 
         payload_with_files = store.export_profile_data(uid, include_files=True)
         assert payload_with_files.get("schemaVersion") == 2
         assert payload_with_files.get("includesFiles") is True
-        assert payload_with_files.get("counts") == {"savedJobs": 2, "customJobs": 1, "historyEvents": activity_before_len, "attachments": 2}
-        assert all(bool((row or {}).get("blobDataUrl")) for row in payload_with_files.get("attachments") or []) is True
+        assert payload_with_files.get("counts") == {
+            "savedJobs": 2,
+            "customJobs": 1,
+            "historyEvents": activity_before_len,
+            "attachments": 2,
+        }
+        assert (
+            all(
+                bool((row or {}).get("blobDataUrl"))
+                for row in payload_with_files.get("attachments") or []
+            )
+            is True
+        )
 
         store.wipe_account_admin("1234", uid)
         recreated = store.sign_in("BackupRoundtrip")
@@ -161,8 +185,12 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
         attachments_after_2 = store.list_attachments_for_job(uid_after, job_2)
         assert len(attachments_after_1) == 1
         assert len(attachments_after_2) == 1
-        blob_after_1, _, _ = store.get_attachment_blob(uid_after, job_1, str(attachments_after_1[0]["id"]))
-        blob_after_2, _, _ = store.get_attachment_blob(uid_after, job_2, str(attachments_after_2[0]["id"]))
+        blob_after_1, _, _ = store.get_attachment_blob(
+            uid_after, job_1, str(attachments_after_1[0]["id"])
+        )
+        blob_after_2, _, _ = store.get_attachment_blob(
+            uid_after, job_2, str(attachments_after_2[0]["id"])
+        )
         assert blob_after_1 == blob_before_1
         assert blob_after_2 == blob_before_2
         assert len(store.list_activity_for_user(uid_after, 2000)) >= activity_before_len
@@ -191,10 +219,24 @@ def test_import_skips_malformed_rows_and_keeps_valid_rows() -> None:
             ],
             "attachments": [
                 {"id": "att_orphan", "name": "orphan.txt", "type": "text/plain", "size": 2},
-                {"id": "att_ok", "jobKey": job_key, "name": "ok.txt", "type": "text/plain", "size": 2, "blobDataUrl": "data:text/plain;base64,T0s="},
+                {
+                    "id": "att_ok",
+                    "jobKey": job_key,
+                    "name": "ok.txt",
+                    "type": "text/plain",
+                    "size": 2,
+                    "blobDataUrl": "data:text/plain;base64,T0s=",
+                },
             ],
             "activityLog": [
-                {"type": "note", "jobKey": job_key, "title": "QA Engineer Updated", "company": "Studio Three", "createdAt": "2026-03-09T10:00:00.000Z", "details": {"ok": True}},
+                {
+                    "type": "note",
+                    "jobKey": job_key,
+                    "title": "QA Engineer Updated",
+                    "company": "Studio Three",
+                    "createdAt": "2026-03-09T10:00:00.000Z",
+                    "details": {"ok": True},
+                },
                 "bad-activity-row",
             ],
         }

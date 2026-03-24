@@ -634,18 +634,18 @@ export function createAdminFetcherController({
     }
 
     const report = await fetchJobsFetchReportJson();
-    
+
     // Always update progress during polling for real-time updates
     if (report) {
       const startedMs = parseReportTimestampMs(report?.startedAt);
       if (startedMs >= (state.fetcherLaunchAtMs - 1000)) {
         appendFetcherProgressFromReport(report, now);
       }
-      
+
       // Update progress even if not started yet, for better UX
       updateFetcherProgressFromReport(report, { running: true });
     }
-    
+
     const finishedMs = parseReportTimestampMs(report?.finishedAt);
     if (finishedMs >= (state.fetcherLaunchAtMs - 1000)) {
       const summary = report?.summary || {};

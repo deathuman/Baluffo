@@ -85,7 +85,7 @@ function compactStaticSourceLabel(rawName) {
 function detectAdapterFromSource(sourceName, sourceUrl) {
   const name = String(sourceName || "").toLowerCase();
   const url = String(sourceUrl || "").toLowerCase();
-  
+
   // Check for common adapter patterns
   if (name.includes("lever") || url.includes("lever.co")) return "Lever";
   if (name.includes("greenhouse") || url.includes("greenhouse.io") || url.includes("app.greenhouse.io")) return "Greenhouse";
@@ -98,7 +98,7 @@ function detectAdapterFromSource(sourceName, sourceUrl) {
   if (name.includes("recruitee") || url.includes("recruitee.com")) return "Recruitee";
   if (name.includes("gamesmap") || url.includes("gamesmap.com")) return "Gamesmap";
   if (name.includes("sheet") || name.includes("google")) return "Sheet";
-  
+
   return "Manual Website";
 }
 
@@ -148,12 +148,12 @@ export function normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackS
 
   // Group non-static sources by adapter type
   const adapterGroups = new Map();
-  
+
   activeNonStaticRows.forEach(row => {
     const name = String(row.name || row.studio || row.adapter || "Source").trim();
     const url = row._safeUrl || "";
     const adapter = detectAdapterFromSource(name, url);
-    
+
     if (!adapterGroups.has(adapter)) {
       adapterGroups.set(adapter, {
         adapter: adapter,
@@ -164,7 +164,7 @@ export function normalizeSourceRows(activeRegistry, fetchReport, sheetsFallbackS
         note: ""
       });
     }
-    
+
     const group = adapterGroups.get(adapter);
     group.count += 1;
     group.name = `${group.count} ${adapter} sources`;

@@ -30,7 +30,9 @@ google_sheet_candidate_urls = _google_sheets.google_sheet_candidate_urls
 GOOGLE_SHEETS_SOURCES = _google_sheets.GOOGLE_SHEETS_SOURCES
 DEFAULT_GOOGLE_SHEET_ID = _google_sheets.DEFAULT_GOOGLE_SHEET_ID
 DEFAULT_GOOGLE_SHEET_GID = _google_sheets.DEFAULT_GOOGLE_SHEET_GID
-DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = _google_sheets.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
+DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = (
+    _google_sheets.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
+)
 parse_google_sheets_csv = _google_sheets.parse_google_sheets_csv
 
 GAMEJOBS_URLS = ["https://gamejobs.co/"]
@@ -94,21 +96,33 @@ def run_google_sheets_source(
             details=details,
             partial_errors=errors,
         )
-    raise AdapterValidationError.from_errors(errors) if errors else AdapterValidationError("Google Sheets source failed")
+    raise (
+        AdapterValidationError.from_errors(errors)
+        if errors
+        else AdapterValidationError("Google Sheets source failed")
+    )
 
 
-def run_remote_ok_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_remote_ok_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     errors: list[str] = []
     for url in REMOTE_OK_URLS:
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            parsed = _parse_remote_ok_payload(json.loads(text), looks_like_game_job=looks_like_game_job)
+            parsed = _parse_remote_ok_payload(
+                json.loads(text), looks_like_game_job=looks_like_game_job
+            )
             if parsed:
                 return parsed
             errors.append(f"{url}: empty/invalid payload")
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{url}: {exc}")
-    raise AdapterValidationError.from_errors(errors) if errors else AdapterValidationError("Remote OK source failed")
+    raise (
+        AdapterValidationError.from_errors(errors)
+        if errors
+        else AdapterValidationError("Remote OK source failed")
+    )
 
 
 def run_gamesindustry_source(
@@ -156,18 +170,20 @@ def parse_gamejobs_html(
             continue
         seen_links.add(link)
         city, country, work_type = _location_fields(location)
-        jobs.append({
-            "sourceJobId": f"gamejobs:{link}",
-            "title": title,
-            "company": company,
-            "city": city,
-            "country": country,
-            "workType": work_type,
-            "contractType": "",
-            "jobLink": link,
-            "sector": "Game",
-            "postedAt": "",
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"gamejobs:{link}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country,
+                "workType": work_type,
+                "contractType": "",
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": "",
+            }
+        )
     return jobs
 
 
@@ -186,7 +202,9 @@ def parse_workwithindies_html(
         if not link or link in seen_links:
             continue
         body = match.group("body")
-        bold_fields = re.findall(r'(?is)<div[^>]*class=["\'][^"\']*job-card-text bold[^"\']*["\'][^>]*>(.*?)</div>', body)
+        bold_fields = re.findall(
+            r'(?is)<div[^>]*class=["\'][^"\']*job-card-text bold[^"\']*["\'][^>]*>(.*?)</div>', body
+        )
         company = _strip_html(bold_fields[0]) if bold_fields else ""
         location = _strip_html(bold_fields[-1]) if len(bold_fields) > 1 else ""
         title_match = re.search(
@@ -198,18 +216,20 @@ def parse_workwithindies_html(
             continue
         seen_links.add(link)
         city, country, work_type = _location_fields(location)
-        jobs.append({
-            "sourceJobId": f"workwithindies:{link}",
-            "title": title,
-            "company": company,
-            "city": city,
-            "country": country,
-            "workType": work_type,
-            "contractType": "",
-            "jobLink": link,
-            "sector": "Game",
-            "postedAt": "",
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"workwithindies:{link}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country,
+                "workType": work_type,
+                "contractType": "",
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": "",
+            }
+        )
     return jobs
 
 
@@ -226,9 +246,16 @@ def parse_8bitplay_html(
     for match in pattern.finditer(html_text):
         link = urljoin(base_url, clean_text(match.group("href")))
         body = match.group("body")
-        title_match = re.search(r'(?is)<h3[^>]*class=["\'][^"\']*acf-jtw__title[^"\']*["\'][^>]*>(.*?)</h3>', body)
-        company_match = re.search(r'(?is)<p[^>]*class=["\'][^"\']*acf-job-board__img-text[^"\']*["\'][^>]*>(.*?)</p>', body)
-        props_match = re.search(r'(?is)<h2[^>]*class=["\'][^"\']*acf-job-board__props[^"\']*["\'][^>]*>(.*?)</h2>', body)
+        title_match = re.search(
+            r'(?is)<h3[^>]*class=["\'][^"\']*acf-jtw__title[^"\']*["\'][^>]*>(.*?)</h3>', body
+        )
+        company_match = re.search(
+            r'(?is)<p[^>]*class=["\'][^"\']*acf-job-board__img-text[^"\']*["\'][^>]*>(.*?)</p>',
+            body,
+        )
+        props_match = re.search(
+            r'(?is)<h2[^>]*class=["\'][^"\']*acf-job-board__props[^"\']*["\'][^>]*>(.*?)</h2>', body
+        )
         title = _strip_html(title_match.group(1)) if title_match else ""
         company = _strip_html(company_match.group(1)) if company_match else ""
         location = _props_to_location(props_match.group(1) if props_match else "")
@@ -236,18 +263,20 @@ def parse_8bitplay_html(
             continue
         seen_links.add(link)
         city, country, work_type = _location_fields(location)
-        jobs.append({
-            "sourceJobId": f"8bitplay:{link}",
-            "title": title,
-            "company": company,
-            "city": city,
-            "country": country,
-            "workType": work_type,
-            "contractType": "",
-            "jobLink": link,
-            "sector": "Game",
-            "postedAt": "",
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"8bitplay:{link}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country,
+                "workType": work_type,
+                "contractType": "",
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": "",
+            }
+        )
     return jobs
 
 
@@ -274,18 +303,20 @@ def parse_gracklehq_html(
             continue
         seen_links.add(link)
         city, country, work_type = _location_fields(location)
-        jobs.append({
-            "sourceJobId": f"gracklehq:{link}",
-            "title": title,
-            "company": company,
-            "city": city,
-            "country": country,
-            "workType": work_type,
-            "contractType": "",
-            "jobLink": link,
-            "sector": "Game",
-            "postedAt": "",
-        })
+        jobs.append(
+            {
+                "sourceJobId": f"gracklehq:{link}",
+                "title": title,
+                "company": company,
+                "city": city,
+                "country": country,
+                "workType": work_type,
+                "contractType": "",
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": "",
+            }
+        )
     return jobs
 
 
@@ -309,10 +340,22 @@ def _strip_html(value: str) -> str:
 
 
 def _props_to_location(props_html: str) -> str:
-    props = [_strip_html(item) for item in re.findall(r'(?is)<span[^>]*>(.*?)</span>', props_html) if _strip_html(item)]
+    props = [
+        _strip_html(item)
+        for item in re.findall(r"(?is)<span[^>]*>(.*?)</span>", props_html)
+        if _strip_html(item)
+    ]
     for value in reversed(props):
         lowered = value.lower()
-        if lowered in {"pc/console", "mobile", "cloud", "other", "player support", "vr/ar/xr", "metaverse"}:
+        if lowered in {
+            "pc/console",
+            "mobile",
+            "cloud",
+            "other",
+            "player support",
+            "vr/ar/xr",
+            "metaverse",
+        }:
             continue
         return value
     return ""
@@ -365,7 +408,9 @@ def run_gamejobs_source(
     errors: list[str] = []
     seen_source_ids = set()
     gamejobs_urls = list(GAMEJOBS_URLS)
-    gamejobs_urls.extend([f"{GAMEJOBS_SEARCH_URL}?page={page}" for page in range(2, GAMEJOBS_MAX_PAGES + 1)])
+    gamejobs_urls.extend(
+        [f"{GAMEJOBS_SEARCH_URL}?page={page}" for page in range(2, GAMEJOBS_MAX_PAGES + 1)]
+    )
     for index, url in enumerate(gamejobs_urls):
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
@@ -425,7 +470,12 @@ def run_8bitplay_source(
     errors: list[str] = []
     seen_source_ids = set()
     eightbit_urls = list(EIGHTBITPLAY_URLS)
-    eightbit_urls.extend([f"{EIGHTBITPLAY_URLS[0]}?job-board-paged={page}" for page in range(2, EIGHTBITPLAY_MAX_PAGES + 1)])
+    eightbit_urls.extend(
+        [
+            f"{EIGHTBITPLAY_URLS[0]}?job-board-paged={page}"
+            for page in range(2, EIGHTBITPLAY_MAX_PAGES + 1)
+        ]
+    )
     for index, url in enumerate(eightbit_urls):
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
@@ -482,9 +532,20 @@ def run_gracklehq_source(
                     seen_source_ids.add(source_job_id)
                 jobs.append(row)
                 new_rows += 1
-            next_match = re.search(r'(?is)<a[^>]+href=["\'](?P<href>\./jobs\?pageidx=\d+)["\'][^>]*>\s*Next\s*</a>', text)
-            candidate_next_url = urljoin(current_url, clean_text(next_match.group("href"))) if next_match and new_rows > 0 else ""
-            next_url = candidate_next_url if candidate_next_url and candidate_next_url not in seen_page_urls else ""
+            next_match = re.search(
+                r'(?is)<a[^>]+href=["\'](?P<href>\./jobs\?pageidx=\d+)["\'][^>]*>\s*Next\s*</a>',
+                text,
+            )
+            candidate_next_url = (
+                urljoin(current_url, clean_text(next_match.group("href")))
+                if next_match and new_rows > 0
+                else ""
+            )
+            next_url = (
+                candidate_next_url
+                if candidate_next_url and candidate_next_url not in seen_page_urls
+                else ""
+            )
             page_count += 1
         except Exception as exc:  # noqa: BLE001
             if jobs and page_count > 0:
@@ -498,7 +559,9 @@ def run_gracklehq_source(
     return []
 
 
-def run_wellfound_source(*, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float) -> list[RawJob]:
+def run_wellfound_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
     jobs: list[RawJob] = []
     errors: list[str] = []
     for url in WELLFOUND_URLS:

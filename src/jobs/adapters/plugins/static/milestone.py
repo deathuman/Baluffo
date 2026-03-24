@@ -35,7 +35,10 @@ def run(
     if not page_url:
         return []
 
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Milestone"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Milestone"
+    )
     source_id = (source_row.get("id") or "").strip() or "milestone"
 
     try:
@@ -102,9 +105,13 @@ def run(
                 "atsLinks": ats_links[:5],
             }
         else:
-            likely_js = _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            likely_js = (
+                _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            )
             source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE if likely_js else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
+                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
+                if likely_js
+                else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
                 "browserFallbackRecommended": True,
                 "extractorHint": "parse_empty_js_shell_suspected" if likely_js else "parse_empty",
                 "atsLinks": ats_links[:5],
@@ -142,7 +149,9 @@ def _build_intervieweb_iframe_url(html: str, page_url: str) -> str:
     return f"{parsed.scheme or 'https'}://{parsed.netloc}/app.php?{urlencode(params)}"
 
 
-def _parse_intervieweb_rows(*, html: str, base_url: str, company: str, source_id: str) -> list[RawJob]:
+def _parse_intervieweb_rows(
+    *, html: str, base_url: str, company: str, source_id: str
+) -> list[RawJob]:
     rows: list[RawJob] = []
     seen = set()
     pattern = re.compile(
@@ -154,14 +163,21 @@ def _parse_intervieweb_rows(*, html: str, base_url: str, company: str, source_id
         if not link or not title or link in seen:
             continue
         seen.add(link)
-        source_job_id = clean_text((parse_qs(urlparse(link).query).get("IdAnnuncio") or [""])[0]) or f"static:{source_id}:{len(rows)+1}"
+        source_job_id = (
+            clean_text((parse_qs(urlparse(link).query).get("IdAnnuncio") or [""])[0])
+            or f"static:{source_id}:{len(rows) + 1}"
+        )
         context = strip_html_text(trailing)
         location = ""
         category = ""
         location_match = re.search(r"([A-Z][A-Za-z' .-]+,\s*[A-Z][A-Za-z .-]+)", context)
         if location_match:
             location = clean_text(location_match.group(1))
-        category_match = re.search(r"(Design|Human Resources|ICT and Information Systems|Programming|Production|Art|Marketing)", context, flags=re.I)
+        category_match = re.search(
+            r"(Design|Human Resources|ICT and Information Systems|Programming|Production|Art|Marketing)",
+            context,
+            flags=re.I,
+        )
         if category_match:
             category = clean_text(category_match.group(1))
         rows.append(
@@ -180,4 +196,3 @@ def _parse_intervieweb_rows(*, html: str, base_url: str, company: str, source_id
             }
         )
     return rows
-

@@ -114,8 +114,12 @@ def build_public_text_quality_report(rows: list[dict[str, Any]]) -> dict[str, An
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Audit unified jobs output for HTML-like contamination.")
-    parser.add_argument("--input", default="data/jobs-unified.json", help="Unified jobs JSON to scan.")
+    parser = argparse.ArgumentParser(
+        description="Audit unified jobs output for HTML-like contamination."
+    )
+    parser.add_argument(
+        "--input", default="data/jobs-unified.json", help="Unified jobs JSON to scan."
+    )
     parser.add_argument("--output", default="", help="Optional JSON output path.")
     return parser.parse_args()
 
@@ -127,7 +131,11 @@ def main() -> int:
     if not isinstance(rows, list):
         rows = []
     report = build_public_text_quality_report(rows)
-    output_path = Path(args.output).resolve() if clean_text(args.output) else input_path.parent / "jobs-contamination-audit.json"
+    output_path = (
+        Path(args.output).resolve()
+        if clean_text(args.output)
+        else input_path.parent / "jobs-contamination-audit.json"
+    )
     output_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(str(output_path))
     return 0

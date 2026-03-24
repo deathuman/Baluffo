@@ -37,7 +37,10 @@ def run(
     if not page_url:
         return []
 
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Kojima Productions"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Kojima Productions"
+    )
     source_id = (source_row.get("id") or "").strip() or "kojima"
 
     try:
@@ -116,9 +119,13 @@ def run(
                 "atsLinks": ats_links[:5],
             }
         else:
-            likely_js = _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            likely_js = (
+                _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            )
             source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE if likely_js else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
+                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
+                if likely_js
+                else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
                 "browserFallbackRecommended": True,
                 "extractorHint": "parse_empty_js_shell_suspected" if likely_js else "parse_empty",
                 "atsLinks": ats_links[:5],
@@ -126,7 +133,9 @@ def run(
     return cleaned
 
 
-def _parse_kojima_listing_rows(*, html: str, base_url: str, company: str, source_id: str) -> list[RawJob]:
+def _parse_kojima_listing_rows(
+    *, html: str, base_url: str, company: str, source_id: str
+) -> list[RawJob]:
     rows: list[RawJob] = []
     seen = set()
     excluded_paths = {
@@ -141,7 +150,9 @@ def _parse_kojima_listing_rows(*, html: str, base_url: str, company: str, source
         "/en/cookie-policy",
         "/en/newsletter-signup",
     }
-    role_pattern = re.compile(r"(programmer|artist|designer|engineer|writer|specialist|relations|support)", flags=re.I)
+    role_pattern = re.compile(
+        r"(programmer|artist|designer|engineer|writer|specialist|relations|support)", flags=re.I
+    )
     for href, inner in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html):
         absolute = normalize_url(urljoin(base_url, clean_text(href)))
         if not absolute or absolute in seen:
@@ -155,7 +166,10 @@ def _parse_kojima_listing_rows(*, html: str, base_url: str, company: str, source
         text = sanitize_public_text(strip_html_text(inner))
         if not role_pattern.search(text):
             continue
-        lines = [sanitize_public_text(part) for part in re.split(r"[\r\n]+", re.sub(r"(?is)<br\s*/?>", "\n", inner))]
+        lines = [
+            sanitize_public_text(part)
+            for part in re.split(r"[\r\n]+", re.sub(r"(?is)<br\s*/?>", "\n", inner))
+        ]
         lines = [part for part in lines if part]
         title = sanitize_public_text(lines[0] if lines else text.split("  ")[0])
         city = ""
@@ -165,7 +179,7 @@ def _parse_kojima_listing_rows(*, html: str, base_url: str, company: str, source
             country = sanitize_public_text(lines[-1].split(",", 1)[1]) or "Japan"
         elif len(lines) >= 3:
             city = sanitize_public_text(lines[-1])
-        source_job_id = path.rstrip("/").split("/")[-1] or f"{source_id}-{len(rows)+1}"
+        source_job_id = path.rstrip("/").split("/")[-1] or f"{source_id}-{len(rows) + 1}"
         rows.append(
             {
                 "sourceJobId": f"static:{source_id}:{source_job_id}",
@@ -182,4 +196,3 @@ def _parse_kojima_listing_rows(*, html: str, base_url: str, company: str, source
         )
         seen.add(absolute)
     return rows
-

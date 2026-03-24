@@ -23,7 +23,9 @@ from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 
 
-def _request_json_with_headers(url: str, *, timeout_s: int, headers: dict[str, str] | None = None) -> dict[str, Any]:
+def _request_json_with_headers(
+    url: str, *, timeout_s: int, headers: dict[str, str] | None = None
+) -> dict[str, Any]:
     deps = runtime_deps.facade()
     req = Request(url=url, headers=headers or {})
     with deps.urlopen(req, timeout=timeout_s) as resp:
@@ -44,14 +46,20 @@ def run_social_reddit_source(
 ) -> list[RawJob]:
     cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
-        set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
+        set_source_diagnostics(
+            "social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[]
+        )
         return []
 
     ensure_social_plugins(social_config=social_config)
-    plugin, _selection = default_registry.select(AdapterPluginContext(family="social", adapter_key="social_reddit"))
+    plugin, _selection = default_registry.select(
+        AdapterPluginContext(family="social", adapter_key="social_reddit")
+    )
     subs = [clean_text(item) for item in (cfg.get("subreddits") or []) if clean_text(item)]
     if not subs:
-        set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
+        set_source_diagnostics(
+            "social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[]
+        )
         return []
 
     details: list[dict[str, Any]] = []
@@ -75,7 +83,9 @@ def run_social_reddit_source(
             force_refresh_all=force_refresh_all,
         )
         entry["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-        entry["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        entry["cacheDecisionReason"] = (
+            clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        )
         if entry["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
             entry["status"] = "excluded"
             entry["error"] = entry["cacheDecisionReason"]
@@ -99,7 +109,11 @@ def run_social_reddit_source(
             errors.append(f"reddit:{sub}: {exc}")
         details.append(entry)
 
-    plugin_diag = SOURCE_DIAGNOSTICS.get("social_reddit") if isinstance(SOURCE_DIAGNOSTICS.get("social_reddit"), dict) else {}
+    plugin_diag = (
+        SOURCE_DIAGNOSTICS.get("social_reddit")
+        if isinstance(SOURCE_DIAGNOSTICS.get("social_reddit"), dict)
+        else {}
+    )
     plugin_detail_by_name = {
         clean_text(item.get("name")): item
         for item in (plugin_diag.get("details") or [])
@@ -111,8 +125,12 @@ def run_social_reddit_source(
         if isinstance(reject_reason_counts, dict) and reject_reason_counts:
             entry["rejectReasonCounts"] = dict(reject_reason_counts)
 
-    set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=details, partial_errors=errors)
-    SOURCE_DIAGNOSTICS["social_reddit"]["lowConfidenceDropped"] = int(plugin_diag.get("lowConfidenceDropped") or 0)
+    set_source_diagnostics(
+        "social_reddit", adapter="social", studio="reddit", details=details, partial_errors=errors
+    )
+    SOURCE_DIAGNOSTICS["social_reddit"]["lowConfidenceDropped"] = int(
+        plugin_diag.get("lowConfidenceDropped") or 0
+    )
     if rows:
         return rows
     if errors:
@@ -132,7 +150,9 @@ def run_social_x_source(
 ) -> list[RawJob]:
     cfg = social_config.get("x") if isinstance(social_config.get("x"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
-        set_source_diagnostics("social_x", adapter="social", studio="x", details=[], partial_errors=[])
+        set_source_diagnostics(
+            "social_x", adapter="social", studio="x", details=[], partial_errors=[]
+        )
         return []
     queries = [clean_text(item) for item in (cfg.get("queries") or []) if clean_text(item)]
     if not queries:
@@ -142,7 +162,11 @@ def run_social_x_source(
         0,
         min(
             100,
-            int(cfg.get("minConfidence") or social_config.get("minConfidence") or common_config.DEFAULT_SOCIAL_MIN_CONFIDENCE),
+            int(
+                cfg.get("minConfidence")
+                or social_config.get("minConfidence")
+                or common_config.DEFAULT_SOCIAL_MIN_CONFIDENCE
+            ),
         ),
     )
     reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
@@ -153,7 +177,11 @@ def run_social_x_source(
     bearer = clean_text(os.environ.get(bearer_env))
     endpoint = clean_text(api_cfg.get("endpoint"))
     scraper_endpoint = clean_text(scraper_cfg.get("endpoint"))
-    rss_instances = [clean_text(item).rstrip("/") for item in (rss_cfg.get("instances") or []) if clean_text(item)]
+    rss_instances = [
+        clean_text(item).rstrip("/")
+        for item in (rss_cfg.get("instances") or [])
+        if clean_text(item)
+    ]
 
     details: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -161,7 +189,15 @@ def run_social_x_source(
     low_conf_total = 0
 
     for query in queries:
-        entry = {"adapter": "social", "studio": "x", "name": f"x:{query}", "status": "ok", "fetchedCount": 0, "keptCount": 0, "error": ""}
+        entry = {
+            "adapter": "social",
+            "studio": "x",
+            "name": f"x:{query}",
+            "status": "ok",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "error": "",
+        }
         cache_decision = get_incremental_cache_decision(
             entry["name"],
             source_state_rows or {},
@@ -169,7 +205,9 @@ def run_social_x_source(
             force_refresh_all=force_refresh_all,
         )
         entry["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-        entry["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        entry["cacheDecisionReason"] = (
+            clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        )
         parsed_rows: list[RawJob] = []
         low_conf_query = 0
         reject_reason_counts: dict[str, int] = {}
@@ -198,12 +236,18 @@ def run_social_x_source(
                 for instance in rss_instances:
                     rss_url = f"{instance}/search/rss?f=tweets&q={quote(query, safe='')}"
                     try:
-                        rss_payload_text = fetch_with_retries(rss_url, fetch_text, timeout_s, retries, backoff_s)
+                        rss_payload_text = fetch_with_retries(
+                            rss_url, fetch_text, timeout_s, retries, backoff_s
+                        )
                         break
                     except Exception as rss_exc:  # noqa: BLE001
                         rss_errors.append(f"{instance}: {rss_exc}")
                 if not rss_payload_text:
-                    raise AdapterValidationError.from_errors(rss_errors) if rss_errors else AdapterValidationError("x rss fallback failed")
+                    raise (
+                        AdapterValidationError.from_errors(rss_errors)
+                        if rss_errors
+                        else AdapterValidationError("x rss fallback failed")
+                    )
                 parsed_rows, low_conf_query = _social_parsers.parse_x_rss_payload(
                     rss_payload_text,
                     query_label=query,
@@ -248,7 +292,9 @@ def run_social_x_source(
         jobs.extend(parsed_rows)
         details.append(entry)
 
-    set_source_diagnostics("social_x", adapter="social", studio="x", details=details, partial_errors=errors)
+    set_source_diagnostics(
+        "social_x", adapter="social", studio="x", details=details, partial_errors=errors
+    )
     SOURCE_DIAGNOSTICS["social_x"]["lowConfidenceDropped"] = int(low_conf_total)
     if jobs:
         return jobs
@@ -277,10 +323,20 @@ def run_social_mastodon_source(
             partial_errors=[],
         )
         return []
-    instances = [clean_text(item).rstrip("/") for item in (cfg.get("instances") or []) if clean_text(item)]
-    tags = [clean_text(item).lstrip("#") for item in (cfg.get("hashtags") or []) if clean_text(item)]
+    instances = [
+        clean_text(item).rstrip("/") for item in (cfg.get("instances") or []) if clean_text(item)
+    ]
+    tags = [
+        clean_text(item).lstrip("#") for item in (cfg.get("hashtags") or []) if clean_text(item)
+    ]
     max_posts = max(1, int(cfg.get("maxPostsPerTag") or 40))
-    min_conf = max(0, min(100, int(social_config.get("minConfidence") or common_config.DEFAULT_SOCIAL_MIN_CONFIDENCE)))
+    min_conf = max(
+        0,
+        min(
+            100,
+            int(social_config.get("minConfidence") or common_config.DEFAULT_SOCIAL_MIN_CONFIDENCE),
+        ),
+    )
     reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
     details: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -306,7 +362,9 @@ def run_social_mastodon_source(
                 force_refresh_all=force_refresh_all,
             )
             entry["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-            entry["cacheDecisionReason"] = clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+            entry["cacheDecisionReason"] = (
+                clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+            )
             if entry["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
                 entry["status"] = "excluded"
                 entry["error"] = entry["cacheDecisionReason"]
@@ -325,7 +383,11 @@ def run_social_mastodon_source(
                     reject_for_hire_posts=reject_for_hire,
                     reject_reasons=reject_reason_counts,
                 )
-                entry["fetchedCount"] = len(payload) if isinstance(payload, list) else len(parsed_rows) + int(low_conf_tag)
+                entry["fetchedCount"] = (
+                    len(payload)
+                    if isinstance(payload, list)
+                    else len(parsed_rows) + int(low_conf_tag)
+                )
                 entry["keptCount"] = len(parsed_rows)
                 if reject_reason_counts:
                     entry["rejectReasonCounts"] = reject_reason_counts
@@ -337,12 +399,16 @@ def run_social_mastodon_source(
                 errors.append(f"mastodon:{instance}:#{tag}: {exc}")
             details.append(entry)
 
-    set_source_diagnostics("social_mastodon", adapter="social", studio="mastodon", details=details, partial_errors=errors)
+    set_source_diagnostics(
+        "social_mastodon",
+        adapter="social",
+        studio="mastodon",
+        details=details,
+        partial_errors=errors,
+    )
     SOURCE_DIAGNOSTICS["social_mastodon"]["lowConfidenceDropped"] = int(low_conf_total)
     if jobs:
         return jobs
     if errors:
         raise AdapterValidationError.from_errors(errors)
     return []
-
-

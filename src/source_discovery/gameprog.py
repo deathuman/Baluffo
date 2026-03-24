@@ -29,45 +29,102 @@ GAMEPROG_BASE_URL = "https://gameprog.it/"
 
 
 CAREERS_KEYWORDS = [
-    "careers", "career", "jobs", "job", "hiring", "work-with-us",
-    "join-us", "join-team", "open-positions", "open-roles",
-    "vacancies", "job-openings", "job-opportunities",
-    "we-are-hiring", "hiring-now", "careers-page", "job-page",
-    "lavora", "lavoro", "posizioni", "lavora-con-noi",
-    "lavora con noi", "posizioni-aperte", "cerchiamo",
-    "collabora", "offerta di lavoro", "annunci di lavoro",
+    "careers",
+    "career",
+    "jobs",
+    "job",
+    "hiring",
+    "work-with-us",
+    "join-us",
+    "join-team",
+    "open-positions",
+    "open-roles",
+    "vacancies",
+    "job-openings",
+    "job-opportunities",
+    "we-are-hiring",
+    "hiring-now",
+    "careers-page",
+    "job-page",
+    "lavora",
+    "lavoro",
+    "posizioni",
+    "lavora-con-noi",
+    "lavora con noi",
+    "posizioni-aperte",
+    "cerchiamo",
+    "collabora",
+    "offerta di lavoro",
+    "annunci di lavoro",
 ]
 
 
 COMMON_CAREERS_PATTERNS = [
-    "/careers", "/jobs", "/hiring", "/work-with-us",
-    "/lavora-con-noi", "/lavoro", "/posizioni-aperte",
-    "/about-us/careers", "/we-are-hiring",
+    "/careers",
+    "/jobs",
+    "/hiring",
+    "/work-with-us",
+    "/lavora-con-noi",
+    "/lavoro",
+    "/posizioni-aperte",
+    "/about-us/careers",
+    "/we-are-hiring",
 ]
 
 
 JOB_LISTING_KEYWORDS = [
-    "job", "position", "opening", "vacancy", "role", "apply",
-    "application", "hiring", "hired", "job description",
-    "we're hiring", "we are hiring", "join our team",
-    "posizione", "offerta", "lavora con noi", "cerchiamo",
-    "job opportunity", "career opportunity", "open position",
-    "job title", "department", "location", "apply now",
-    "submit application", "job requirements", "qualifications",
+    "job",
+    "position",
+    "opening",
+    "vacancy",
+    "role",
+    "apply",
+    "application",
+    "hiring",
+    "hired",
+    "job description",
+    "we're hiring",
+    "we are hiring",
+    "join our team",
+    "posizione",
+    "offerta",
+    "lavora con noi",
+    "cerchiamo",
+    "job opportunity",
+    "career opportunity",
+    "open position",
+    "job title",
+    "department",
+    "location",
+    "apply now",
+    "submit application",
+    "job requirements",
+    "qualifications",
 ]
 
 
 NO_JOBS_PATTERNS = [
-    "no open positions", "no openings", "not hiring",
-    "currently no positions", "no job openings", "no jobs available",
-    "we are not hiring", "no positions available", "no vacancies",
-    "non ci sono posizioni", "non stiamo assumendo",
-    "non ci sono posti", "al momento non assumiamo",
-    "nessuna posizione aperta", "non abbiamo posizioni",
+    "no open positions",
+    "no openings",
+    "not hiring",
+    "currently no positions",
+    "no job openings",
+    "no jobs available",
+    "we are not hiring",
+    "no positions available",
+    "no vacancies",
+    "non ci sono posizioni",
+    "non stiamo assumendo",
+    "non ci sono posti",
+    "al momento non assumiamo",
+    "nessuna posizione aperta",
+    "non abbiamo posizioni",
 ]
 
 
-def _find_careers_page_link(html: str, base_url: str, fetcher=None, timeout_s: int = 10, verify: bool = True) -> str:
+def _find_careers_page_link(
+    html: str, base_url: str, fetcher=None, timeout_s: int = 10, verify: bool = True
+) -> str:
     links = extract_links_from_html(html)
     for link in links:
         if any(kw in link.lower() for kw in CAREERS_KEYWORDS):
@@ -75,14 +132,14 @@ def _find_careers_page_link(html: str, base_url: str, fetcher=None, timeout_s: i
                 if _verify_careers_page_has_jobs(link, fetcher, timeout_s):
                     return link
             return link
-    
+
     if not verify and fetcher:
         parsed = urlparse(base_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
         for pattern in COMMON_CAREERS_PATTERNS[:3]:
             candidate = base + pattern
             return candidate
-    
+
     return ""
 
 
@@ -90,13 +147,13 @@ def _verify_careers_page_has_jobs(url: str, fetcher, timeout_s: int = 10) -> boo
     try:
         html = fetcher(url, timeout_s)
         text = _strip_html_tags(html).lower()
-        
+
         keyword_matches = sum(1 for kw in JOB_LISTING_KEYWORDS if kw in text)
-        
+
         has_no_jobs = any(p in text for p in NO_JOBS_PATTERNS)
         if has_no_jobs:
             return False
-        
+
         return keyword_matches >= 2
     except Exception:
         return False
@@ -153,7 +210,9 @@ def _gameprog_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _load_gameprog_cache(config: dict[str, Any] | None, cfg: dict[str, Any], *, fetcher: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
+def _load_gameprog_cache(
+    config: dict[str, Any] | None, cfg: dict[str, Any], *, fetcher: Any
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
     cache_path = _gameprog_cache_path(config)
     ttl_minutes = _gameprog_cache_ttl_minutes(config)
     if ttl_minutes <= 0 or cache_path is None:
@@ -181,7 +240,11 @@ def _load_gameprog_cache(config: dict[str, Any] | None, cfg: dict[str, Any], *, 
     provider_rows = payload.get("providerCandidates")
     static_rows = payload.get("staticCandidates")
     failures = payload.get("failures")
-    if not isinstance(provider_rows, list) or not isinstance(static_rows, list) or not isinstance(failures, list):
+    if (
+        not isinstance(provider_rows, list)
+        or not isinstance(static_rows, list)
+        or not isinstance(failures, list)
+    ):
         return None
     return unique_sources(provider_rows), unique_sources(static_rows), failures
 
@@ -233,11 +296,13 @@ def parse_gameprog_teams_json(json_text: str) -> list[dict[str, Any]]:
         seen.add(studio.lower())
         if not url.startswith("http://") and not url.startswith("https://"):
             continue
-        out.append({
-            "studio": studio,
-            "url": url,
-            "place": place,
-        })
+        out.append(
+            {
+                "studio": studio,
+                "url": url,
+                "place": place,
+            }
+        )
     return out
 
 
@@ -392,7 +457,11 @@ def discover_gameprog_candidates(
             for inferred in providers:
                 inferred["evidenceSource"] = "gameprog"
                 inferred["evidenceTypes"] = unique_string_list(
-                    [*(inferred.get("evidenceTypes") or []), "gameprog_directory", "gameprog_website_fetch"]
+                    [
+                        *(inferred.get("evidenceTypes") or []),
+                        "gameprog_directory",
+                        "gameprog_website_fetch",
+                    ]
                 )
                 inferred["evidenceScore"] = max(int(inferred.get("evidenceScore") or 0), 44)
                 inferred["sourceDirectory"] = "gameprog"
@@ -402,8 +471,12 @@ def discover_gameprog_candidates(
             provider_candidates.extend(providers)
         else:
             homepage_links = extract_links_from_html(website_html)
-            homepage_careers = [link for link in homepage_links if any(kw in link.lower() for kw in CAREERS_KEYWORDS)]
-            
+            homepage_careers = [
+                link
+                for link in homepage_links
+                if any(kw in link.lower() for kw in CAREERS_KEYWORDS)
+            ]
+
             careers_url = ""
             if homepage_careers:
                 careers_url = homepage_careers[0]
@@ -413,7 +486,7 @@ def discover_gameprog_candidates(
                 for pattern in COMMON_CAREERS_PATTERNS[:3]:
                     careers_url = base + pattern
                     break
-            
+
             if careers_url:
                 is_homepage_link = bool(homepage_careers)
                 static_candidates.append(

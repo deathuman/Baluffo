@@ -26,7 +26,11 @@ def expand_aliases(seed: dict[str, Any]) -> list[str]:
 
 
 def likely_providers_for_seed(seed: dict[str, Any]) -> list[str]:
-    explicit = [str(item).strip().lower() for item in (seed.get("likelyProviders") or []) if str(item).strip()]
+    explicit = [
+        str(item).strip().lower()
+        for item in (seed.get("likelyProviders") or [])
+        if str(item).strip()
+    ]
     if explicit:
         return [item for item in explicit if item in SUPPORTED_PROVIDERS or item == "static"]
     providers = {"greenhouse", "workable", "teamtailor"}
@@ -69,7 +73,11 @@ def provider_reinforcement_score(seed: dict[str, Any], provider: str) -> int:
 
 def _pattern_aliases_for_provider(seed: dict[str, Any], provider: str) -> list[str]:
     aliases = expand_aliases(seed)
-    scoped = aliases[:2] if provider in {"greenhouse", "lever", "workable", "teamtailor", "recruitee"} else aliases[:1]
+    scoped = (
+        aliases[:2]
+        if provider in {"greenhouse", "lever", "workable", "teamtailor", "recruitee"}
+        else aliases[:1]
+    )
     if provider in {"lever", "teamtailor", "recruitee", "pinpoint"}:
         expanded: list[str] = []
         seen = set()
@@ -93,7 +101,11 @@ def build_pattern_candidates(studio_seeds: list[dict[str, Any]]) -> list[dict[st
         nl_priority = bool(seed.get("nlPriority"))
         careers_url = str(seed.get("careersUrl") or "").strip()
         evidence_types = ["seed_provider_hint", "seed_catalog"]
-        explicit = [str(item).strip().lower() for item in (seed.get("likelyProviders") or []) if str(item).strip()]
+        explicit = [
+            str(item).strip().lower()
+            for item in (seed.get("likelyProviders") or [])
+            if str(item).strip()
+        ]
         for provider in likely_providers_for_seed(seed):
             reinforcement = provider_reinforcement_score(seed, provider)
             for alias in _pattern_aliases_for_provider(seed, provider):
@@ -105,94 +117,116 @@ def build_pattern_candidates(studio_seeds: list[dict[str, Any]]) -> list[dict[st
                     "careersUrl": careers_url,
                     "evidenceScore": 14 + (10 if provider in explicit else 0) + reinforcement,
                     "evidenceTypes": unique_string_list(
-                        [*evidence_types, "seed_provider_reinforced"] if reinforcement else evidence_types
+                        [*evidence_types, "seed_provider_reinforced"]
+                        if reinforcement
+                        else evidence_types
                     ),
                     "evidenceSource": "pattern",
                 }
                 if provider == "lever":
-                    rows.append({
-                        **base,
-                        "name": f"{studio} (Lever)",
-                        "adapter": "lever",
-                        "account": alias,
-                        "api_url": f"https://api.lever.co/v0/postings/{alias}?mode=json",
-                    })
+                    rows.append(
+                        {
+                            **base,
+                            "name": f"{studio} (Lever)",
+                            "adapter": "lever",
+                            "account": alias,
+                            "api_url": f"https://api.lever.co/v0/postings/{alias}?mode=json",
+                        }
+                    )
                 elif provider == "greenhouse":
-                    rows.append({
-                        **base,
-                        "name": f"{studio} (Greenhouse)",
-                        "adapter": "greenhouse",
-                        "slug": alias,
-                        "api_url": f"https://boards-api.greenhouse.io/v1/boards/{alias}/jobs?content=true",
-                    })
+                    rows.append(
+                        {
+                            **base,
+                            "name": f"{studio} (Greenhouse)",
+                            "adapter": "greenhouse",
+                            "slug": alias,
+                            "api_url": f"https://boards-api.greenhouse.io/v1/boards/{alias}/jobs?content=true",
+                        }
+                    )
                 elif provider == "smartrecruiters":
-                    rows.append({
-                        **base,
-                        "name": f"{studio} (SmartRecruiters)",
-                        "adapter": "smartrecruiters",
-                        "company_id": alias.upper(),
-                        "api_url": f"https://api.smartrecruiters.com/v1/companies/{alias.upper()}/postings",
-                    })
+                    rows.append(
+                        {
+                            **base,
+                            "name": f"{studio} (SmartRecruiters)",
+                            "adapter": "smartrecruiters",
+                            "company_id": alias.upper(),
+                            "api_url": f"https://api.smartrecruiters.com/v1/companies/{alias.upper()}/postings",
+                        }
+                    )
                 elif provider == "workable":
-                    rows.append({
-                        **base,
-                        "name": f"{studio} (Workable)",
-                        "adapter": "workable",
-                        "account": alias,
-                        "api_url": f"https://apply.workable.com/api/v1/widget/accounts/{alias}?details=true",
-                    })
+                    rows.append(
+                        {
+                            **base,
+                            "name": f"{studio} (Workable)",
+                            "adapter": "workable",
+                            "account": alias,
+                            "api_url": f"https://apply.workable.com/api/v1/widget/accounts/{alias}?details=true",
+                        }
+                    )
                 elif provider == "teamtailor":
                     if careers_url and "/jobs" in careers_url.lower():
                         parsed = urlparse(careers_url)
                         if parsed.scheme and parsed.netloc:
                             base_url = f"{parsed.scheme}://{parsed.netloc}"
-                            rows.append({
-                                **base,
-                                "name": f"{studio} (Teamtailor)",
-                                "adapter": "teamtailor",
-                                "company": studio,
-                                "listing_url": careers_url,
-                                "base_url": base_url,
-                            })
+                            rows.append(
+                                {
+                                    **base,
+                                    "name": f"{studio} (Teamtailor)",
+                                    "adapter": "teamtailor",
+                                    "company": studio,
+                                    "listing_url": careers_url,
+                                    "base_url": base_url,
+                                }
+                            )
                             continue
-                    rows.append({
-                        **base,
-                        "name": f"{studio} (Teamtailor)",
-                        "adapter": "teamtailor",
-                        "company": studio,
-                        "listing_url": f"https://{alias}.teamtailor.com/jobs",
-                        "base_url": f"https://{alias}.teamtailor.com",
-                    })
+                    rows.append(
+                        {
+                            **base,
+                            "name": f"{studio} (Teamtailor)",
+                            "adapter": "teamtailor",
+                            "company": studio,
+                            "listing_url": f"https://{alias}.teamtailor.com/jobs",
+                            "base_url": f"https://{alias}.teamtailor.com",
+                        }
+                    )
                 elif provider == "ashby":
-                    rows.append({
-                        **base,
-                        "name": f"{studio} (Ashby)",
-                        "adapter": "ashby",
-                        "board_url": f"https://jobs.ashbyhq.com/{alias}",
-                    })
+                    rows.append(
+                        {
+                            **base,
+                            "name": f"{studio} (Ashby)",
+                            "adapter": "ashby",
+                            "board_url": f"https://jobs.ashbyhq.com/{alias}",
+                        }
+                    )
                 elif provider == "recruitee":
                     host = alias if ".recruitee.com" in alias else f"{alias}.recruitee.com"
-                    rows.append({
-                        **base,
-                        "name": f"{studio} (Recruitee)",
-                        "adapter": "recruitee",
-                        "subdomain": host.split(".recruitee.com", 1)[0],
-                        "api_url": f"https://{host}/api/offers/",
-                    })
+                    rows.append(
+                        {
+                            **base,
+                            "name": f"{studio} (Recruitee)",
+                            "adapter": "recruitee",
+                            "subdomain": host.split(".recruitee.com", 1)[0],
+                            "api_url": f"https://{host}/api/offers/",
+                        }
+                    )
                 elif provider == "pinpoint":
                     host = alias if ".pinpointhq.com" in alias else f"{alias}.pinpointhq.com"
-                    rows.append({
-                        **base,
-                        "name": f"{studio} (Pinpoint)",
-                        "adapter": "pinpoint",
-                        "subdomain": host.split(".pinpointhq.com", 1)[0],
-                        "api_url": f"https://{host}/postings.json",
-                    })
+                    rows.append(
+                        {
+                            **base,
+                            "name": f"{studio} (Pinpoint)",
+                            "adapter": "pinpoint",
+                            "subdomain": host.split(".pinpointhq.com", 1)[0],
+                            "api_url": f"https://{host}/postings.json",
+                        }
+                    )
                 elif provider == "personio":
-                    rows.append({
-                        **base,
-                        "name": f"{studio} (Personio)",
-                        "adapter": "personio",
-                        "feed_url": f"https://{alias}.jobs.personio.de/xml",
-                    })
+                    rows.append(
+                        {
+                            **base,
+                            "name": f"{studio} (Personio)",
+                            "adapter": "personio",
+                            "feed_url": f"https://{alias}.jobs.personio.de/xml",
+                        }
+                    )
     return unique_sources(rows)

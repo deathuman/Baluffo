@@ -25,8 +25,7 @@ def fetch_with_retries(
                 # Special-case rate limiting. Async fetcher raises RuntimeError("HTTP 429 for <url>").
                 if "HTTP 429" in message:
                     # Back off more aggressively so we don't hammer the provider.
-                    time.sleep(max(float(backoff_s) * float(2 ** attempt), 8.0 * float(attempt + 1)))
+                    time.sleep(max(float(backoff_s) * float(2**attempt), 8.0 * float(attempt + 1)))
                 else:
-                    time.sleep(float(backoff_s) * float(2 ** attempt))
+                    time.sleep(float(backoff_s) * float(2**attempt))
     raise RuntimeError(str(last_error) if last_error else f"Unknown fetch error for {url}")
-

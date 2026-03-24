@@ -38,8 +38,14 @@ def run(
     if not page_url:
         return []
 
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or _company_name_from_url(page_url) or "HRMOS"
-    source_id = clean_text(source_row.get("id")) or f"hrmos:{_company_name_from_url(page_url) or 'listing'}"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or _company_name_from_url(page_url)
+        or "HRMOS"
+    )
+    source_id = (
+        clean_text(source_row.get("id")) or f"hrmos:{_company_name_from_url(page_url) or 'listing'}"
+    )
     try:
         html = fetch_text(page_url, timeout_s)
     except Exception as exc:  # noqa: BLE001
@@ -52,7 +58,13 @@ def run(
         }
         return []
 
-    jobs = _parse_listing_rows(html=html, page_url=page_url, company=company, source_id=source_id, source_name=clean_text(source_row.get("name")) or company)
+    jobs = _parse_listing_rows(
+        html=html,
+        page_url=page_url,
+        company=company,
+        source_id=source_id,
+        source_name=clean_text(source_row.get("name")) or company,
+    )
     if not jobs:
         source_row["_staticPluginMeta"] = {
             "classification": _heuristics.CLASSIFICATION_PARSER_STALE,
@@ -70,7 +82,9 @@ def run(
     return jobs
 
 
-def _parse_listing_rows(*, html: str, page_url: str, company: str, source_id: str, source_name: str) -> list[RawJob]:
+def _parse_listing_rows(
+    *, html: str, page_url: str, company: str, source_id: str, source_name: str
+) -> list[RawJob]:
     jobs: list[RawJob] = []
     seen: set[str] = set()
 
@@ -100,10 +114,25 @@ def _parse_listing_rows(*, html: str, page_url: str, company: str, source_id: st
             if (
                 not location
                 and len(line) <= 80
-                and any(token in lowered for token in ("remote", "tokyo", "japan", "osaka", "fukuoka", "kyoto", "sapporo", "nagoya"))
+                and any(
+                    token in lowered
+                    for token in (
+                        "remote",
+                        "tokyo",
+                        "japan",
+                        "osaka",
+                        "fukuoka",
+                        "kyoto",
+                        "sapporo",
+                        "nagoya",
+                    )
+                )
             ):
                 location = line
-            if not contract_type and any(token in lowered for token in ("full", "contract", "intern", "temporary", "part-time")):
+            if not contract_type and any(
+                token in lowered
+                for token in ("full", "contract", "intern", "temporary", "part-time")
+            ):
                 contract_type = line
         jobs.append(
             {

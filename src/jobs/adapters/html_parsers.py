@@ -3,6 +3,7 @@
 Extracted from jobs/common; used by static adapter, plugins, community adapter,
 and bridge source_check. Re-exported via jobs.parsers for backward compatibility.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,7 +41,11 @@ def html_fragment_lines(fragment: str) -> list[str]:
     text = re.sub(r"(?is)</(?:div|span|p|li|tr|td|th|h[1-6]|section|article)>", "\n", text)
     text = re.sub(r"(?is)<(?:div|p|li|tr|td|th|section|article)\b[^>]*>", "\n", text)
     normalized = re.sub(r"(?is)<[^>]+>", " ", text)
-    return [re.sub(r"\s+", " ", line).strip() for line in normalized.splitlines() if re.sub(r"\s+", " ", line).strip()]
+    return [
+        re.sub(r"\s+", " ", line).strip()
+        for line in normalized.splitlines()
+        if re.sub(r"\s+", " ", line).strip()
+    ]
 
 
 def extract_first_tag_text(fragment: str, tags: Iterable[str]) -> str:
@@ -202,7 +207,9 @@ def parse_jobpostings_from_html(
             city, country = parse_jobposting_locations(row.get("jobLocation"))
             source_id = parse_jobposting_source_id(
                 row.get("identifier"),
-                fallback=f"{fallback_source_id_prefix}-{counter}" if fallback_source_id_prefix else "",
+                fallback=f"{fallback_source_id_prefix}-{counter}"
+                if fallback_source_id_prefix
+                else "",
             )
 
             jobs.append(
@@ -233,7 +240,7 @@ def maybe_fetch_kojima_job_listing_html(
     """Kojima careers renders the full listing via /kjpviewloader/load POST."""
     if "kojimaproductions.jp" not in (urlparse(page_url).netloc or "").lower():
         return ""
-    if "kjp_job_listing" not in page_html and "data-viewref=\"kjp_job_listing\"" not in page_html:
+    if "kjp_job_listing" not in page_html and 'data-viewref="kjp_job_listing"' not in page_html:
         return ""
 
     parsed = urlparse(page_url)
@@ -337,8 +344,7 @@ def parse_gamesindustry_html(
                 location = location[0]
             address = (
                 location.get("address")
-                if isinstance(location, dict)
-                and isinstance(location.get("address"), dict)
+                if isinstance(location, dict) and isinstance(location.get("address"), dict)
                 else {}
             )
             city = clean_text(address.get("addressLocality"))
@@ -348,11 +354,7 @@ def parse_gamesindustry_html(
                 link = urljoin(base_url, link)
             if not title or not company:
                 continue
-            identifier = (
-                row.get("identifier")
-                if isinstance(row.get("identifier"), dict)
-                else {}
-            )
+            identifier = row.get("identifier") if isinstance(row.get("identifier"), dict) else {}
             push_job(
                 {
                     "sourceJobId": clean_text(identifier.get("value")),
@@ -378,16 +380,10 @@ def parse_gamesindustry_html(
             continue
         if norm_text(title) in {"read more", "find jobs", "search for jobs"}:
             continue
-        context = html_text[
-            max(0, match.start() - 500) : min(len(html_text), match.end() + 2500)
-        ]
-        company_match = re.search(
-            r'(?is)<div class="company-name">(.*?)</div>', context
-        )
+        context = html_text[max(0, match.start() - 500) : min(len(html_text), match.end() + 2500)]
+        company_match = re.search(r'(?is)<div class="company-name">(.*?)</div>', context)
         city_match = re.search(r'(?is)<div class="city">(.*?)</div>', context)
-        changed_match = re.search(
-            r'(?is)<div class="job-changed-date">(.*?)</div>', context
-        )
+        changed_match = re.search(r'(?is)<div class="job-changed-date">(.*?)</div>', context)
 
         company = strip_html_text(company_match.group(1)) if company_match else ""
         city = strip_html_text(city_match.group(1)) if city_match else ""
@@ -396,9 +392,7 @@ def parse_gamesindustry_html(
 
         push_job(
             {
-                "sourceJobId": clean_text(
-                    source_id_match.group(1) if source_id_match else ""
-                ),
+                "sourceJobId": clean_text(source_id_match.group(1) if source_id_match else ""),
                 "title": title,
                 "company": company or "Unknown",
                 "city": city,
@@ -425,9 +419,7 @@ def parse_gamesindustry_html(
         source_id_match = re.search(r"/job/[^/?#]*-(\d+)", href)
         push_job(
             {
-                "sourceJobId": clean_text(
-                    source_id_match.group(1) if source_id_match else ""
-                ),
+                "sourceJobId": clean_text(source_id_match.group(1) if source_id_match else ""),
                 "title": title,
                 "company": "Unknown",
                 "city": "",
@@ -442,18 +434,14 @@ def parse_gamesindustry_html(
     return jobs
 
 
-def parse_wellfound_candidate(
-    node: dict[str, Any], base_url: str
-) -> RawJob | None:
+def parse_wellfound_candidate(node: dict[str, Any], base_url: str) -> RawJob | None:
     title = clean_text(node.get("title") or node.get("jobTitle"))
     company = ""
     if isinstance(node.get("company"), dict):
         company = clean_text(node["company"].get("name"))
     if not company:
         company = clean_text(
-            node.get("companyName")
-            or node.get("company_name")
-            or node.get("company")
+            node.get("companyName") or node.get("company_name") or node.get("company")
         )
     link = clean_text(
         node.get("url")
@@ -467,9 +455,7 @@ def parse_wellfound_candidate(
     if not title or not company:
         return None
     tags = node.get("tags") or []
-    tags_text = (
-        " ".join(str(tag) for tag in tags) if isinstance(tags, list) else clean_text(tags)
-    )
+    tags_text = " ".join(str(tag) for tag in tags) if isinstance(tags, list) else clean_text(tags)
     description = clean_text(node.get("description") or node.get("snippet"))
     if not looks_like_game_job(title, company, tags_text, description):
         return None
@@ -496,9 +482,7 @@ def parse_wellfound_candidate(
         "contractType": clean_text(node.get("employmentType") or ""),
         "jobLink": link,
         "sector": clean_text(node.get("industry") or ""),
-        "postedAt": node.get("postedAt")
-        or node.get("publishedAt")
-        or node.get("createdAt"),
+        "postedAt": node.get("postedAt") or node.get("publishedAt") or node.get("createdAt"),
     }
 
 

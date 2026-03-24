@@ -67,4 +67,3 @@ class SimpleAdapterPlugin:
             backoff_s=backoff_s,
             **kwargs,
         )
-

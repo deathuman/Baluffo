@@ -6,12 +6,16 @@ from src import ashby_registry_refresh as refresh
 def _app_data_html(*, organization: str, postings: list[dict]) -> str:
     return (
         "<script>window.__appData = "
-        + json.dumps({"organization": {"name": organization}, "jobBoard": {"jobPostings": postings}})
+        + json.dumps(
+            {"organization": {"name": organization}, "jobBoard": {"jobPostings": postings}}
+        )
         + ";</script>"
     )
 
 
-def test_refresh_active_ashby_registry_removes_empty_rows_and_adds_validated_curated_rows(tmp_path) -> None:
+def test_refresh_active_ashby_registry_removes_empty_rows_and_adds_validated_curated_rows(
+    tmp_path,
+) -> None:
     active_path = tmp_path / "source-registry-active.json"
     report_path = tmp_path / "ashby-registry-refresh-report.json"
     active_path.write_text(
@@ -73,7 +77,9 @@ def test_refresh_active_ashby_registry_removes_empty_rows_and_adds_validated_cur
     assert report["addedCount"] == 1
 
 
-def test_refresh_active_ashby_registry_keeps_live_existing_rows_and_normalizes_urls(tmp_path) -> None:
+def test_refresh_active_ashby_registry_keeps_live_existing_rows_and_normalizes_urls(
+    tmp_path,
+) -> None:
     active_path = tmp_path / "source-registry-active.json"
     report_path = tmp_path / "ashby-registry-refresh-report.json"
     active_path.write_text(
@@ -164,7 +170,9 @@ def test_refresh_active_ashby_registry_rejects_irrelevant_discovery_rows(tmp_pat
     assert report["rejectedCandidates"][0]["name"] == "Level (Ashby)"
 
 
-def test_refresh_active_ashby_registry_keeps_live_existing_rows_even_if_not_newly_relevant(tmp_path) -> None:
+def test_refresh_active_ashby_registry_keeps_live_existing_rows_even_if_not_newly_relevant(
+    tmp_path,
+) -> None:
     active_path = tmp_path / "source-registry-active.json"
     report_path = tmp_path / "ashby-registry-refresh-report.json"
     active_path.write_text(

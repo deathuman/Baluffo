@@ -21,4 +21,3 @@ __all__ = [
     "default_registry",
     "normalize_schema_version",
 ]
-

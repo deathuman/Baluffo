@@ -37,9 +37,12 @@ from .config import (  # noqa: F401
 def load_discovery_config():
     """Load discovery config; uses this module's DISCOVERY_CONFIG_PATH so tests can override it."""
     import sys
+
     pkg = sys.modules[__name__]
     path = getattr(pkg, "DISCOVERY_CONFIG_PATH", _config.DISCOVERY_CONFIG_PATH)
     return _config.load_discovery_config(path)
+
+
 from .provider_patterns import build_pattern_candidates as _build_pattern_candidates
 from .sheet_directory import (  # noqa: F401
     discover_game_studio_sheet_candidates,
@@ -53,6 +56,8 @@ def build_pattern_candidates(studio_seeds=None):
     if studio_seeds is None:
         studio_seeds = STUDIO_SEEDS
     return _build_pattern_candidates(studio_seeds)
+
+
 from src.shared.utils import now_iso  # noqa: F401
 from src.source_registry import (  # noqa: F401
     ACTIVE_PATH,
@@ -122,4 +127,3 @@ def discover_seed_careers_page_candidates(timeout_s: int, *, fetcher=None):
     from .web_search import discover_seed_careers_page_candidates as _discover
 
     return _discover(timeout_s, studio_seeds=STUDIO_SEEDS, fetcher=fetcher or fetch_text)
-

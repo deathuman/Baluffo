@@ -71,7 +71,10 @@ def _is_provider_family_adapter(adapter_name: str) -> bool:
 
 
 def _is_social_subsource_report(source_name: str, adapter_name: str) -> bool:
-    return norm_text(adapter_name) == "social" and clean_text(source_name) in {"social_x", "social_mastodon"}
+    return norm_text(adapter_name) == "social" and clean_text(source_name) in {
+        "social_x",
+        "social_mastodon",
+    }
 
 
 def _console_safe_text(value: Any) -> str:
@@ -124,7 +127,9 @@ def run_source_execution_stage(
     # Resolve optional Playwright fetch helper.
     _try_playwright = _best_effort_get_try_playwright()
 
-    def execute_loader(name: str, loader: Callable[..., list[dict[str, Any]]]) -> tuple[dict[str, Any], list[CanonicalJob]]:
+    def execute_loader(
+        name: str, loader: Callable[..., list[dict[str, Any]]]
+    ) -> tuple[dict[str, Any], list[CanonicalJob]]:
         source_started = time.perf_counter()
         base_meta = SOURCE_REPORT_META.get(name, {})
         report: dict[str, Any] = {
@@ -182,9 +187,15 @@ def run_source_execution_stage(
                     parameter.kind == inspect.Parameter.VAR_KEYWORD
                     for parameter in signature.parameters.values()
                 )
-                accepted_kwargs = loader_kwargs if accepts_var_kwargs else {
-                    key: value for key, value in loader_kwargs.items() if key in signature.parameters
-                }
+                accepted_kwargs = (
+                    loader_kwargs
+                    if accepts_var_kwargs
+                    else {
+                        key: value
+                        for key, value in loader_kwargs.items()
+                        if key in signature.parameters
+                    }
+                )
             except (TypeError, ValueError):
                 accepted_kwargs = {
                     "fetch_text": fetch_text_limited,
@@ -229,7 +240,9 @@ def run_source_execution_stage(
             }
 
             current_fingerprint = source_rows_fingerprint(_rows_to_legacy_dicts(canonical_batch))
-            previous_fingerprint = clean_text((source_state_rows.get(name) or {}).get("lastFingerprint"))
+            previous_fingerprint = clean_text(
+                (source_state_rows.get(name) or {}).get("lastFingerprint")
+            )
             report["sourceFingerprint"] = current_fingerprint
             report["fingerprintChanged"] = bool(current_fingerprint != previous_fingerprint)
 
@@ -249,7 +262,9 @@ def run_source_execution_stage(
                     for detail in detail_rows
                     if isinstance(detail, dict) and clean_text(detail.get("cacheDecision"))
                 )
-                report["boardCount"] = len([detail for detail in detail_rows if isinstance(detail, dict)])
+                report["boardCount"] = len(
+                    [detail for detail in detail_rows if isinstance(detail, dict)]
+                )
                 report["boardCacheDecisionCounts"] = dict(board_decision_counts)
                 report["boardSkippedCount"] = sum(
                     1
@@ -261,17 +276,20 @@ def run_source_execution_stage(
                 report["boardRevalidatedCount"] = sum(
                     1
                     for detail in detail_rows
-                    if isinstance(detail, dict) and clean_text(detail.get("cacheDecision")) == "revalidate_only"
+                    if isinstance(detail, dict)
+                    and clean_text(detail.get("cacheDecision")) == "revalidate_only"
                 )
                 report["boardNotModifiedCount"] = sum(
                     1
                     for detail in detail_rows
-                    if isinstance(detail, dict) and clean_text(detail.get("cacheDecisionReason")) == "not_modified_304"
+                    if isinstance(detail, dict)
+                    and clean_text(detail.get("cacheDecisionReason")) == "not_modified_304"
                 )
                 report["boardRefreshedCount"] = sum(
                     1
                     for detail in detail_rows
-                    if isinstance(detail, dict) and norm_text(detail.get("status")) in {"ok", "error"}
+                    if isinstance(detail, dict)
+                    and norm_text(detail.get("status")) in {"ok", "error"}
                 )
             if detail_rows and _is_social_subsource_report(name, clean_text(report.get("adapter"))):
                 subsource_decision_counts = Counter(
@@ -279,7 +297,9 @@ def run_source_execution_stage(
                     for detail in detail_rows
                     if isinstance(detail, dict) and clean_text(detail.get("cacheDecision"))
                 )
-                report["subsourceCount"] = len([detail for detail in detail_rows if isinstance(detail, dict)])
+                report["subsourceCount"] = len(
+                    [detail for detail in detail_rows if isinstance(detail, dict)]
+                )
                 report["subsourceCacheDecisionCounts"] = dict(subsource_decision_counts)
                 report["subsourceSkippedCount"] = sum(
                     1
@@ -291,20 +311,27 @@ def run_source_execution_stage(
                 report["subsourceRevalidatedCount"] = sum(
                     1
                     for detail in detail_rows
-                    if isinstance(detail, dict) and clean_text(detail.get("cacheDecision")) == "revalidate_only"
+                    if isinstance(detail, dict)
+                    and clean_text(detail.get("cacheDecision")) == "revalidate_only"
                 )
                 report["subsourceNotModifiedCount"] = sum(
                     1
                     for detail in detail_rows
-                    if isinstance(detail, dict) and clean_text(detail.get("cacheDecisionReason")) == "not_modified_304"
+                    if isinstance(detail, dict)
+                    and clean_text(detail.get("cacheDecisionReason")) == "not_modified_304"
                 )
                 report["subsourceRefreshedCount"] = sum(
                     1
                     for detail in detail_rows
-                    if isinstance(detail, dict) and norm_text(detail.get("status")) in {"ok", "error"}
+                    if isinstance(detail, dict)
+                    and norm_text(detail.get("status")) in {"ok", "error"}
                 )
 
-            stage_timings = report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
+            stage_timings = (
+                report.get("stageTimingsMs")
+                if isinstance(report.get("stageTimingsMs"), dict)
+                else {}
+            )
             stage_timings["fetchAndParse"] = int(fetch_and_parse_ms)
             if norm_text(report.get("adapter")) == "static":
                 listing_fetch_ms = 0
@@ -333,15 +360,27 @@ def run_source_execution_stage(
                     stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
                     parse_csv_ms += int(stats.get("parse_csv_ms") or 0)
                     if google_sheet_redirect_stats:
-                        stats["redirect_candidates"] = int(google_sheet_redirect_stats.get("redirect_candidates") or 0)
-                        stats["redirect_resolved"] = int(google_sheet_redirect_stats.get("redirect_resolved") or 0)
-                        stats["redirect_cache_hits"] = int(google_sheet_redirect_stats.get("redirect_cache_hits") or 0)
-                        stats["redirect_resolve_ms"] = int(google_sheet_redirect_stats.get("redirect_resolve_ms") or 0)
-                        stats["canonicalize_ms"] = int(google_sheet_redirect_stats.get("canonicalize_ms") or 0)
+                        stats["redirect_candidates"] = int(
+                            google_sheet_redirect_stats.get("redirect_candidates") or 0
+                        )
+                        stats["redirect_resolved"] = int(
+                            google_sheet_redirect_stats.get("redirect_resolved") or 0
+                        )
+                        stats["redirect_cache_hits"] = int(
+                            google_sheet_redirect_stats.get("redirect_cache_hits") or 0
+                        )
+                        stats["redirect_resolve_ms"] = int(
+                            google_sheet_redirect_stats.get("redirect_resolve_ms") or 0
+                        )
+                        stats["canonicalize_ms"] = int(
+                            google_sheet_redirect_stats.get("canonicalize_ms") or 0
+                        )
                 stage_timings.update(
                     {
                         "parseCsv": int(parse_csv_ms),
-                        "redirectResolve": int(google_sheet_redirect_stats.get("redirect_resolve_ms") or 0),
+                        "redirectResolve": int(
+                            google_sheet_redirect_stats.get("redirect_resolve_ms") or 0
+                        ),
                     }
                 )
 
@@ -349,9 +388,13 @@ def run_source_execution_stage(
             if any(int(value or 0) > 0 for value in stage_timings.values()):
                 report["stageTimingsMs"] = stage_timings
 
-            partial_errors = [clean_text(err) for err in (diag.get("partialErrors") or []) if clean_text(err)]
+            partial_errors = [
+                clean_text(err) for err in (diag.get("partialErrors") or []) if clean_text(err)
+            ]
             if partial_errors:
-                report["error"] = "; ".join(format_source_error(name, err) for err in partial_errors[:6])
+                report["error"] = "; ".join(
+                    format_source_error(name, err) for err in partial_errors[:6]
+                )
             report["lowConfidenceDropped"] = int(diag.get("lowConfidenceDropped") or 0)
 
             if name == "scrapy_static_sources":
@@ -423,8 +466,12 @@ def run_source_execution_stage(
         return {
             "name": source_name,
             "status": "error",
-            "adapter": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter")) or "custom",
-            "fetchStrategy": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy")) or "auto",
+            "adapter": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter"))
+            or "custom",
+            "fetchStrategy": clean_text(
+                SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy")
+            )
+            or "auto",
             "studio": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("studio")) or "",
             "fetchedCount": 0,
             "keptCount": 0,
@@ -488,4 +535,3 @@ def run_source_execution_stage(
 
 
 __all__ = ["SourceExecutionStageConfig", "run_source_execution_stage"]
-

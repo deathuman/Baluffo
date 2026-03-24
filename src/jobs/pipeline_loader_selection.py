@@ -38,7 +38,8 @@ def build_excluded_source_report(
         "name": source_name,
         "status": "excluded",
         "adapter": clean_text(source_report_meta.get(source_name, {}).get("adapter")) or "custom",
-        "fetchStrategy": clean_text(source_report_meta.get(source_name, {}).get("fetchStrategy")) or "auto",
+        "fetchStrategy": clean_text(source_report_meta.get(source_name, {}).get("fetchStrategy"))
+        or "auto",
         "studio": clean_text(source_report_meta.get(source_name, {}).get("studio")) or "",
         "fetchedCount": 0,
         "keptCount": 0,
@@ -75,7 +76,11 @@ def sort_selected_loaders(
     def _source_priority(item: tuple[str, SourceLoader]) -> tuple[int, int]:
         source_name = clean_text(item[0])
         adapter = clean_text(source_report_meta.get(source_name, {}).get("adapter"))
-        state = source_state_rows.get(source_name) if isinstance(source_state_rows.get(source_name), dict) else {}
+        state = (
+            source_state_rows.get(source_name)
+            if isinstance(source_state_rows.get(source_name), dict)
+            else {}
+        )
         duration_ms = int((state or {}).get("lastDurationMs") or 0)
         detail_pages = int((state or {}).get("lastDetailPagesVisited") or 0)
         static_priority = 0 if adapter == "static" else 1
@@ -127,7 +132,10 @@ def apply_incremental_cache_exclusions(
     filtered_loaders: list[tuple[str, SourceLoader]] = []
     for name, loader in selected_loaders:
         adapter = clean_text(source_report_meta.get(name, {}).get("adapter"))
-        if adapter in BOARD_LEVEL_INCREMENTAL_PROVIDER_ADAPTERS or name in DETAIL_LEVEL_INCREMENTAL_SOURCE_NAMES:
+        if (
+            adapter in BOARD_LEVEL_INCREMENTAL_PROVIDER_ADAPTERS
+            or name in DETAIL_LEVEL_INCREMENTAL_SOURCE_NAMES
+        ):
             filtered_loaders.append((name, loader))
             continue
         decision = get_incremental_cache_decision(
@@ -179,31 +187,44 @@ def build_pipeline_runtime_payload(
     default_canonical_strict_url: bool,
     normalize_runtime_payload: Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
-    return normalize_runtime_payload({
-        "maxWorkers": max_workers,
-        "maxPerDomain": max_per_domain,
-        "fetchStrategy": clean_text(fetch_strategy) or default_fetch_strategy,
-        "fetchClient": fetch_client,
-        "adapterHttpConcurrency": adapter_http_concurrency,
-        "staticDetailConcurrency": static_detail_concurrency,
-        "googleSheetsRedirectConcurrency": google_sheets_redirect_concurrency,
-        "seedFromExistingOutput": bool(seed_from_existing_output),
-        "incrementalCacheEnabled": bool(incremental_cache_enabled),
-        "forceRefreshAll": bool(force_refresh_all),
-        "sourceTtlMinutes": int(source_ttl_minutes or 0),
-        "respectSourceCadence": bool(respect_source_cadence),
-        "hotSourceCadenceMinutes": hot_source_cadence_minutes,
-        "coldSourceCadenceMinutes": cold_source_cadence_minutes,
-        "circuitBreakerFailures": int(circuit_breaker_failures or 0),
-        "circuitBreakerCooldownMinutes": int(circuit_breaker_cooldown_minutes or 0),
-        "ignoreCircuitBreaker": bool(ignore_circuit_breaker),
-        "socialEnabled": bool(social_enabled),
-        "socialConfigPath": str(effective_social_config_path),
-        "socialLookbackMinutes": int(social_config.get("lookbackMinutes") or default_social_lookback_minutes),
-        "socialMinConfidence": int(social_config.get("minConfidence") or default_social_min_confidence),
-        "staticDetailHeuristicsProfile": norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE"))
-        or default_static_detail_heuristics_profile,
-        "scrapyValidationStrict": env_flag("BALUFFO_SCRAPY_VALIDATION_STRICT", default_scrapy_validation_strict),
-        "canonicalStrictUrlValidation": env_flag("BALUFFO_CANONICAL_STRICT_URL", default_canonical_strict_url),
-        "selectedSourceCount": len(selected_loaders),
-    }, selected_source_count=len(selected_loaders))
+    return normalize_runtime_payload(
+        {
+            "maxWorkers": max_workers,
+            "maxPerDomain": max_per_domain,
+            "fetchStrategy": clean_text(fetch_strategy) or default_fetch_strategy,
+            "fetchClient": fetch_client,
+            "adapterHttpConcurrency": adapter_http_concurrency,
+            "staticDetailConcurrency": static_detail_concurrency,
+            "googleSheetsRedirectConcurrency": google_sheets_redirect_concurrency,
+            "seedFromExistingOutput": bool(seed_from_existing_output),
+            "incrementalCacheEnabled": bool(incremental_cache_enabled),
+            "forceRefreshAll": bool(force_refresh_all),
+            "sourceTtlMinutes": int(source_ttl_minutes or 0),
+            "respectSourceCadence": bool(respect_source_cadence),
+            "hotSourceCadenceMinutes": hot_source_cadence_minutes,
+            "coldSourceCadenceMinutes": cold_source_cadence_minutes,
+            "circuitBreakerFailures": int(circuit_breaker_failures or 0),
+            "circuitBreakerCooldownMinutes": int(circuit_breaker_cooldown_minutes or 0),
+            "ignoreCircuitBreaker": bool(ignore_circuit_breaker),
+            "socialEnabled": bool(social_enabled),
+            "socialConfigPath": str(effective_social_config_path),
+            "socialLookbackMinutes": int(
+                social_config.get("lookbackMinutes") or default_social_lookback_minutes
+            ),
+            "socialMinConfidence": int(
+                social_config.get("minConfidence") or default_social_min_confidence
+            ),
+            "staticDetailHeuristicsProfile": norm_text(
+                os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE")
+            )
+            or default_static_detail_heuristics_profile,
+            "scrapyValidationStrict": env_flag(
+                "BALUFFO_SCRAPY_VALIDATION_STRICT", default_scrapy_validation_strict
+            ),
+            "canonicalStrictUrlValidation": env_flag(
+                "BALUFFO_CANONICAL_STRICT_URL", default_canonical_strict_url
+            ),
+            "selectedSourceCount": len(selected_loaders),
+        },
+        selected_source_count=len(selected_loaders),
+    )

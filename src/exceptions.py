@@ -1,4 +1,5 @@
 """Shared exception types for Baluffo (adapters, validation, bridge)."""
+
 from __future__ import annotations
 
 

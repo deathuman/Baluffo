@@ -192,7 +192,15 @@ def log_event(paths: ShipPaths, event: str, payload: dict[str, Any]) -> None:
 
 
 def validate_manifest(manifest: dict[str, Any]) -> None:
-    required = ("version", "artifact_url", "sha256", "signature", "min_updater_version", "migration_plan", "rollback_allowed")
+    required = (
+        "version",
+        "artifact_url",
+        "sha256",
+        "signature",
+        "min_updater_version",
+        "migration_plan",
+        "rollback_allowed",
+    )
     missing = [key for key in required if key not in manifest]
     if missing:
         raise ValueError(f"Manifest missing fields: {', '.join(missing)}")
@@ -256,7 +264,9 @@ def restore_data_backup(paths: ShipPaths, backup_path: Path) -> None:
         archive.extractall(paths.data)
 
 
-def run_migrations(paths: ShipPaths, migration_names: Iterable[str], backup_ref: Path) -> dict[str, Any]:
+def run_migrations(
+    paths: ShipPaths, migration_names: Iterable[str], backup_ref: Path
+) -> dict[str, Any]:
     report: dict[str, Any] = {"applied": [], "verified": [], "rolled_back": []}
     migrations = resolve_migrations(migration_names)
     for migration in migrations:
@@ -265,28 +275,38 @@ def run_migrations(paths: ShipPaths, migration_names: Iterable[str], backup_ref:
         if not result.ok:
             raise RuntimeError(f"Migration apply failed: {migration.name}")
         verify_result = migration.verify(paths.data)
-        report["verified"].append({"name": migration.name, "ok": verify_result.ok, "detail": verify_result.detail})
+        report["verified"].append(
+            {"name": migration.name, "ok": verify_result.ok, "detail": verify_result.detail}
+        )
         if not verify_result.ok:
             raise RuntimeError(f"Migration verify failed: {migration.name}")
     return report
 
 
-def rollback_migrations(paths: ShipPaths, migration_names: Iterable[str], backup_ref: Path) -> dict[str, Any]:
+def rollback_migrations(
+    paths: ShipPaths, migration_names: Iterable[str], backup_ref: Path
+) -> dict[str, Any]:
     report: dict[str, Any] = {"rolled_back": []}
     for migration in reversed(resolve_migrations(migration_names)):
         result = migration.rollback(paths.data, backup_ref)
-        report["rolled_back"].append({"name": migration.name, "ok": result.ok, "detail": result.detail})
+        report["rolled_back"].append(
+            {"name": migration.name, "ok": result.ok, "detail": result.detail}
+        )
     return report
 
 
 def locate_staged_version_dir(stage_root: Path, version: str) -> Path:
     candidates = list(stage_root.rglob(f"app/versions/{version}"))
     if len(candidates) != 1:
-        raise RuntimeError(f"Expected one app/versions/{version} in artifact, found {len(candidates)}.")
+        raise RuntimeError(
+            f"Expected one app/versions/{version} in artifact, found {len(candidates)}."
+        )
     return candidates[0]
 
 
-def apply_update(root: Path, bundle_zip: Path, manifest_path: Path, signing_key: str) -> dict[str, Any]:
+def apply_update(
+    root: Path, bundle_zip: Path, manifest_path: Path, signing_key: str
+) -> dict[str, Any]:
     paths = ShipPaths.from_root(root.resolve())
     state = ensure_state(paths)
     manifest = read_json(manifest_path)
@@ -312,7 +332,12 @@ def apply_update(root: Path, bundle_zip: Path, manifest_path: Path, signing_key:
     stage_root.mkdir(parents=True, exist_ok=True)
 
     backup_ref = create_data_backup(paths)
-    migration_report: dict[str, Any] = {"backup_ref": str(backup_ref), "applied": [], "verified": [], "rolled_back": []}
+    migration_report: dict[str, Any] = {
+        "backup_ref": str(backup_ref),
+        "applied": [],
+        "verified": [],
+        "rolled_back": [],
+    }
     target_dir = paths.versions / next_version
     if target_dir.exists():
         shutil.rmtree(target_dir)
@@ -324,7 +349,9 @@ def apply_update(root: Path, bundle_zip: Path, manifest_path: Path, signing_key:
         staged_version = locate_staged_version_dir(stage_root, next_version)
         shutil.copytree(staged_version, target_dir)
 
-        migration_report.update(run_migrations(paths, manifest.get("migration_plan") or [], backup_ref))
+        migration_report.update(
+            run_migrations(paths, manifest.get("migration_plan") or [], backup_ref)
+        )
         ok, health_error = health_check_version(target_dir)
         if not ok:
             raise RuntimeError(f"Health check failed: {health_error}")
@@ -334,7 +361,9 @@ def apply_update(root: Path, bundle_zip: Path, manifest_path: Path, signing_key:
         write_state(paths, state, status="ready", error="")
         log_event(paths, "update_succeeded", {"from": current_version, "to": next_version})
     except Exception as exc:
-        rollback_report = rollback_migrations(paths, manifest.get("migration_plan") or [], backup_ref)
+        rollback_report = rollback_migrations(
+            paths, manifest.get("migration_plan") or [], backup_ref
+        )
         migration_report["rolled_back"] = rollback_report["rolled_back"]
         restore_data_backup(paths, backup_ref)
         if target_dir.exists():
@@ -342,10 +371,15 @@ def apply_update(root: Path, bundle_zip: Path, manifest_path: Path, signing_key:
         write_text_atomic(paths.current, f"{current_version}\n")
         state["current_version"] = current_version
         write_state(paths, state, status="failed", error=str(exc))
-        log_event(paths, "update_failed", {"from": current_version, "to": next_version, "error": str(exc)})
+        log_event(
+            paths, "update_failed", {"from": current_version, "to": next_version, "error": str(exc)}
+        )
         raise
     finally:
-        report_path = paths.migration_reports / f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{next_version}.json"
+        report_path = (
+            paths.migration_reports
+            / f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{next_version}.json"
+        )
         write_json_atomic(report_path, migration_report)
         if stage_root.exists():
             shutil.rmtree(stage_root)
@@ -436,11 +470,15 @@ def parse_args() -> argparse.Namespace:
     recover_parser = sub.add_parser("recover", help="Switch back to previous version.")
     recover_parser.add_argument("--root", required=True)
 
-    check_parser = sub.add_parser("startup-check", help="Validate active version and data path before startup.")
+    check_parser = sub.add_parser(
+        "startup-check", help="Validate active version and data path before startup."
+    )
     check_parser.add_argument("--root", required=True)
     check_parser.add_argument("--data-dir", required=True)
 
-    support_parser = sub.add_parser("support-bundle", help="Build a support bundle for diagnostics.")
+    support_parser = sub.add_parser(
+        "support-bundle", help="Build a support bundle for diagnostics."
+    )
     support_parser.add_argument("--root", required=True)
     support_parser.add_argument("--output", default="")
 
@@ -456,7 +494,9 @@ def main() -> int:
     try:
         if args.command == "apply":
             if not str(args.signing_key).strip():
-                raise RuntimeError("Missing signing key. Use --signing-key or BALUFFO_UPDATE_SIGNING_KEY.")
+                raise RuntimeError(
+                    "Missing signing key. Use --signing-key or BALUFFO_UPDATE_SIGNING_KEY."
+                )
             result = apply_update(
                 Path(args.root),
                 Path(args.bundle_zip),
@@ -482,7 +522,9 @@ def main() -> int:
 
         if args.command == "sign-manifest":
             if not str(args.signing_key).strip():
-                raise RuntimeError("Missing signing key. Use --signing-key or BALUFFO_UPDATE_SIGNING_KEY.")
+                raise RuntimeError(
+                    "Missing signing key. Use --signing-key or BALUFFO_UPDATE_SIGNING_KEY."
+                )
             print(sign_manifest(args.version, args.sha256, str(args.signing_key)))
             return 0
 
@@ -494,4 +536,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

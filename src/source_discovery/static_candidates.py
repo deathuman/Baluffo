@@ -56,4 +56,3 @@ def build_static_candidate_from_page(
         "detailPageCount": len(detail_links),
         "detailPagesSample": detail_sample,
     }
-

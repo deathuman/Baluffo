@@ -126,4 +126,3 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
     await expect(metrics).toContainText(/Extract Zero|Blocked\/Challenge|Timeout|Provider Rate Limited|Provider Bad Config|Uncategorized/i);
   }
 });
-

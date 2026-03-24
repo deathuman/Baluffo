@@ -50,13 +50,17 @@ def _parse_state_timestamp(value: object) -> datetime | None:
 
 def _personio_rate_limit_cutoff() -> datetime:
     try:
-        cooldown_minutes = max(1, int(clean_text(os.getenv("BALUFFO_PERSONIO_RATE_LIMIT_COOLDOWN_MINUTES")) or 180))
+        cooldown_minutes = max(
+            1, int(clean_text(os.getenv("BALUFFO_PERSONIO_RATE_LIMIT_COOLDOWN_MINUTES")) or 180)
+        )
     except ValueError:
         cooldown_minutes = 180
     return datetime.now(UTC) - timedelta(minutes=cooldown_minutes)
 
 
-def _should_skip_rate_limited_personio_source(state_row: dict[str, Any] | None, *, cutoff: datetime) -> bool:
+def _should_skip_rate_limited_personio_source(
+    state_row: dict[str, Any] | None, *, cutoff: datetime
+) -> bool:
     if not isinstance(state_row, dict):
         return False
     last_error = clean_text(state_row.get("lastError")).lower()
@@ -68,11 +72,17 @@ def _should_skip_rate_limited_personio_source(state_row: dict[str, Any] | None, 
     return last_failure_at >= cutoff
 
 
-def _ashby_result_from_markup(text: str, source: dict[str, object], studio: str) -> tuple[list[RawJob], str, str]:
-    parsed = parse_ashby_jobs_from_html(text, clean_text(source.get("board_url")), fallback_company=studio)
+def _ashby_result_from_markup(
+    text: str, source: dict[str, object], studio: str
+) -> tuple[list[RawJob], str, str]:
+    parsed = parse_ashby_jobs_from_html(
+        text, clean_text(source.get("board_url")), fallback_company=studio
+    )
     if parsed:
         return parsed, "ok_with_jobs", ""
-    if _provider_body_has_text(text, "page not found", "job not found", "the page you requested was not found"):
+    if _provider_body_has_text(
+        text, "page not found", "job not found", "the page you requested was not found"
+    ):
         return [], "dead_listing_page", "ashby board page not found"
     return [], "parser_stale", "no jobs extracted from ashby page"
 
@@ -120,6 +130,7 @@ def set_source_diagnostics(
         "details": details or [],
         "partialErrors": partial_errors or [],
     }
+
 
 def _dispatch_provider_api(
     adapter_key: str,
@@ -456,7 +467,9 @@ def run_personio_sources_source(
             entry_report["keptCount"] = len(parsed)
             if not parsed:
                 entry_report["status"] = "error"
-                if _provider_body_has_text(text, "<html", "hr und lohnbuchhaltung endlich vereint", "personio homepage"):
+                if _provider_body_has_text(
+                    text, "<html", "hr und lohnbuchhaltung endlich vereint", "personio homepage"
+                ):
                     entry_report["classification"] = "dead_listing_page"
                     entry_report["error"] = "personio feed redirected to marketing site"
                 else:
@@ -473,11 +486,15 @@ def run_personio_sources_source(
             errors.append(f"personio:{source_name}: {exc}")
         details.append(entry_report)
 
-    set_source_diagnostics("personio_sources", adapter="personio", studio="multiple", details=details, partial_errors=errors)
+    set_source_diagnostics(
+        "personio_sources",
+        adapter="personio",
+        studio="multiple",
+        details=details,
+        partial_errors=errors,
+    )
     if jobs:
         return jobs
     if errors:
         raise AdapterValidationError.from_errors(errors)
     return []
-
-

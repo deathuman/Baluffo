@@ -32,7 +32,9 @@ def _source_id(name: str, studio: str, pages: list[str]) -> str:
     return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
 
 
-def _classify_result(*, ok: bool, fetched_count: int, kept_count: int, partial_errors: list[str]) -> str:
+def _classify_result(
+    *, ok: bool, fetched_count: int, kept_count: int, partial_errors: list[str]
+) -> str:
     if not ok:
         return "parse_error"
     if kept_count > 0:
@@ -40,7 +42,12 @@ def _classify_result(*, ok: bool, fetched_count: int, kept_count: int, partial_e
     if fetched_count <= 0:
         return "blocked_or_challenge"
     lower_errors = " ".join(item.lower() for item in partial_errors)
-    if "captcha" in lower_errors or "cloudflare" in lower_errors or "challenge" in lower_errors or "403" in lower_errors:
+    if (
+        "captcha" in lower_errors
+        or "cloudflare" in lower_errors
+        or "challenge" in lower_errors
+        or "403" in lower_errors
+    ):
         return "blocked_or_challenge"
     if fetched_count > 0 and kept_count == 0:
         return "fetch_ok_extract_zero"
@@ -51,7 +58,9 @@ def _stats_subset(stats: dict[str, Any]) -> dict[str, Any]:
     return {
         "downloader/request_count": _to_int(stats.get("downloader/request_count")),
         "downloader/response_count": _to_int(stats.get("downloader/response_count")),
-        "downloader/response_status_count/200": _to_int(stats.get("downloader/response_status_count/200")),
+        "downloader/response_status_count/200": _to_int(
+            stats.get("downloader/response_status_count/200")
+        ),
         "retry/count": _to_int(stats.get("retry/count")),
         "autothrottle/current_delay": _to_float(stats.get("autothrottle/current_delay")),
         "autothrottle/start_delay": _to_float(stats.get("autothrottle/start_delay")),
@@ -110,7 +119,11 @@ def _emit_envelope(envelope: dict[str, Any]) -> None:
         payload = json.dumps(safe_envelope, ensure_ascii=False)
     except Exception as exc:  # noqa: BLE001
         details = safe_envelope.get("details") if isinstance(safe_envelope, dict) else []
-        first_detail = details[0] if isinstance(details, list) and details and isinstance(details[0], dict) else {}
+        first_detail = (
+            details[0]
+            if isinstance(details, list) and details and isinstance(details[0], dict)
+            else {}
+        )
         fallback = _json_error_envelope(
             f"Envelope serialization failed: {exc}",
             source_name=_clean_text(first_detail.get("name")) or "unknown",
@@ -242,11 +255,13 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
     job_provider = _clean_text(domain_profile.get("job_provider"))
     if job_provider == "jobylon_v1":
         for page_url in pages:
-            provider_jobs, provider_stats, provider_errors, provider_rejects = extract_jobylon_v1_jobs(
-                source_name=source_name,
-                studio=studio,
-                page_url=_clean_text(page_url),
-                timeout_s=_to_int(runtime.get("timeout_s"), 20),
+            provider_jobs, provider_stats, provider_errors, provider_rejects = (
+                extract_jobylon_v1_jobs(
+                    source_name=source_name,
+                    studio=studio,
+                    page_url=_clean_text(page_url),
+                    timeout_s=_to_int(runtime.get("timeout_s"), 20),
+                )
             )
             partial_errors.extend(provider_errors)
             for key, value in provider_stats.items():
@@ -282,7 +297,9 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
         from scrapy.crawler import CrawlerProcess
         from scrapy.settings import Settings
     except Exception as exc:  # noqa: BLE001
-        return _json_error_envelope(f"Scrapy import failed: {exc}", source_name=source_name, studio=studio)
+        return _json_error_envelope(
+            f"Scrapy import failed: {exc}", source_name=source_name, studio=studio
+        )
 
     settings_dict = dict(SCRAPY_SETTINGS_DEFAULTS)
     if runtime.get("download_delay") is not None:
@@ -296,6 +313,7 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
     if use_browser:
         try:
             import scrapy_playwright  # noqa: F401
+
             for key, value in SCRAPY_PLAYWRIGHT_SETTINGS.items():
                 settings_dict[key] = value
         except ImportError:
@@ -329,9 +347,14 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
     stats = _stats_subset(crawler_stats)
     fetched_count = _to_int(stats.get("downloader/response_count"))
     kept_count = len(jobs)
-    classification = _classify_result(ok=ok, fetched_count=fetched_count, kept_count=kept_count, partial_errors=partial_errors)
+    classification = _classify_result(
+        ok=ok, fetched_count=fetched_count, kept_count=kept_count, partial_errors=partial_errors
+    )
     top_reject_reasons = [f"{key}:{count}" for key, count in reject_reasons.most_common(5)]
-    browser_fallback_recommended = classification in {"fetch_ok_extract_zero", "blocked_or_challenge"}
+    browser_fallback_recommended = classification in {
+        "fetch_ok_extract_zero",
+        "blocked_or_challenge",
+    }
 
     details = [
         {
@@ -364,7 +387,11 @@ def main() -> int:
     try:
         payload = json.load(sys.stdin)
     except Exception as exc:  # noqa: BLE001
-        _emit_envelope(_json_error_envelope(f"Failed to parse stdin JSON: {exc}", source_name=source_name, studio=studio))
+        _emit_envelope(
+            _json_error_envelope(
+                f"Failed to parse stdin JSON: {exc}", source_name=source_name, studio=studio
+            )
+        )
         return 1
 
     validated, error = _validate_input(payload)

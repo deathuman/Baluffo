@@ -82,7 +82,11 @@ class DiscoveryService:
     def get_saved_discovery_config_payload(self) -> dict[str, Any]:
         settings = self.load_saved_discovery_settings()
         if "autoApproveHealthyPendingOnComplete" in settings:
-            return {"autoApproveHealthyPendingOnComplete": bool(settings.get("autoApproveHealthyPendingOnComplete"))}
+            return {
+                "autoApproveHealthyPendingOnComplete": bool(
+                    settings.get("autoApproveHealthyPendingOnComplete")
+                )
+            }
         return self._normalize_discovery_settings({})
 
     def get_discovery_config_payload(self) -> dict[str, Any]:
@@ -132,8 +136,12 @@ class DiscoveryService:
     def _increment_approval_state(self, count: int) -> None:
         if count <= 0:
             return
-        approval = self._deps.load_json_object(self._paths.approval_state, {"approvedSinceLastRun": 0})
-        approval["approvedSinceLastRun"] = int(approval.get("approvedSinceLastRun") or 0) + int(count)
+        approval = self._deps.load_json_object(
+            self._paths.approval_state, {"approvedSinceLastRun": 0}
+        )
+        approval["approvedSinceLastRun"] = int(approval.get("approvedSinceLastRun") or 0) + int(
+            count
+        )
         self._deps.save_json_atomic(self._paths.approval_state, approval)
 
     @staticmethod
@@ -146,12 +154,18 @@ class DiscoveryService:
             queued_ids.add(source_identity(row))
         return queued_ids
 
-    def _auto_approve_healthy_pending_sources(self, *, queued_candidate_ids: set[str] | None = None) -> int:
+    def _auto_approve_healthy_pending_sources(
+        self, *, queued_candidate_ids: set[str] | None = None
+    ) -> int:
         state = self._deps.load_state()
         pending_rows = list(state.get("pending") or [])
         moved: list[dict[str, Any]] = []
         remaining: list[dict[str, Any]] = []
-        queued_ids = {str(item or "").strip().lower() for item in (queued_candidate_ids or set()) if str(item or "").strip()}
+        queued_ids = {
+            str(item or "").strip().lower()
+            for item in (queued_candidate_ids or set())
+            if str(item or "").strip()
+        }
         for row in pending_rows:
             row_id = source_identity(row)
             if row_id in queued_ids or self._pending_row_is_auto_approvable(row):
@@ -184,7 +198,9 @@ class DiscoveryService:
             if not finished_dt or finished_dt < started_dt:
                 return
             summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
-            queued = int(summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0)
+            queued = int(
+                summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0
+            )
             saved_config = self.get_saved_discovery_config_payload()
             auto_approve_enabled = bool(saved_config.get("autoApproveHealthyPendingOnComplete"))
             auto_approved = 0
@@ -267,19 +283,23 @@ class DiscoveryService:
                 "candidates": [],
                 "failures": [],
                 "topFailures": [],
-                    "outputs": {
-                        "report": str(self._paths.report),
-                        "candidates": str(self._paths.candidates),
-                        "pending": str(self._paths.pending),
-                    },
-                    "runtime": {
-                        "autoApproval": {
-                            "enabled": bool(self.get_saved_discovery_config_payload().get("autoApproveHealthyPendingOnComplete")),
-                            "approvedCount": 0,
-                        }
-                    },
+                "outputs": {
+                    "report": str(self._paths.report),
+                    "candidates": str(self._paths.candidates),
+                    "pending": str(self._paths.pending),
                 },
-            )
+                "runtime": {
+                    "autoApproval": {
+                        "enabled": bool(
+                            self.get_saved_discovery_config_payload().get(
+                                "autoApproveHealthyPendingOnComplete"
+                            )
+                        ),
+                        "approvedCount": 0,
+                    }
+                },
+            },
+        )
         try:
             self._paths.log.parent.mkdir(parents=True, exist_ok=True)
             self._paths.log.write_text(
@@ -337,7 +357,11 @@ class DiscoveryService:
                     },
                     "runtime": {
                         "autoApproval": {
-                            "enabled": bool(self.get_saved_discovery_config_payload().get("autoApproveHealthyPendingOnComplete")),
+                            "enabled": bool(
+                                self.get_saved_discovery_config_payload().get(
+                                    "autoApproveHealthyPendingOnComplete"
+                                )
+                            ),
                             "approvedCount": 0,
                         }
                     },
@@ -397,4 +421,3 @@ class DiscoveryService:
 
 
 __all__ = ["DiscoveryDeps", "DiscoveryPaths", "DiscoveryService"]
-

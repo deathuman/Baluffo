@@ -28,7 +28,7 @@ export function ensureProgressElementVisible(rootEl) {
   rootEl.setAttribute('role', 'progressbar');
   rootEl.setAttribute('aria-valuemin', '0');
   rootEl.setAttribute('aria-valuemax', '100');
-  
+
   return true;
 }
 
@@ -47,7 +47,7 @@ export function testProgressBars() {
       determinate: false,
       label: "Test: Indeterminate progress..."
     });
-    
+
     setTimeout(() => {
       // Test determinate progress
       applyAdminTaskProgress(fetcherProgress, fetcherBar, fetcherLabel, {
@@ -56,7 +56,7 @@ export function testProgressBars() {
         ratio: 0.65,
         label: "Test: 65% complete"
       });
-      
+
       setTimeout(() => {
         // Reset to hidden
         applyAdminTaskProgress(fetcherProgress, fetcherBar, fetcherLabel, {

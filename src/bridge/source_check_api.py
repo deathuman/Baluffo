@@ -18,15 +18,18 @@ def normalize_manual_static_studio_fields(
     source_url = normalize_source_url(
         str(normalized.get("listing_url") or "")
     ) or normalize_source_url(
-        str((normalized.get("pages") or [""])[0] if isinstance(normalized.get("pages"), list) else "")
+        str(
+            (normalized.get("pages") or [""])[0]
+            if isinstance(normalized.get("pages"), list)
+            else ""
+        )
     )
     if not source_url:
         return normalized
     inferred = infer_studio_name_from_host(source_url)
     current_studio = str(normalized.get("studio") or "").strip().lower()
-    if (
-        current_studio in {"", "www", "w", "manual source"}
-        or bool(re.search(r"\b(?:game|studio)\s+s\b", current_studio))
+    if current_studio in {"", "www", "w", "manual source"} or bool(
+        re.search(r"\b(?:game|studio)\s+s\b", current_studio)
     ):
         normalized["studio"] = inferred
         normalized["company"] = inferred
@@ -85,14 +88,24 @@ def _reconstruct_probe_candidate(row: dict[str, Any]) -> dict[str, Any]:
     reconstructed = dict(row)
     adapter = str(reconstructed.get("adapter") or "").strip().lower()
     if adapter == "greenhouse" and not reconstructed.get("api_url") and reconstructed.get("slug"):
-        reconstructed["api_url"] = f"https://boards-api.greenhouse.io/v1/boards/{reconstructed.get('slug')}/jobs"
+        reconstructed["api_url"] = (
+            f"https://boards-api.greenhouse.io/v1/boards/{reconstructed.get('slug')}/jobs"
+        )
     elif adapter == "lever" and not reconstructed.get("api_url") and reconstructed.get("account"):
-        reconstructed["api_url"] = f"https://api.lever.co/v0/postings/{reconstructed.get('account')}?mode=json"
-    elif adapter == "workable" and not reconstructed.get("api_url") and reconstructed.get("account"):
+        reconstructed["api_url"] = (
+            f"https://api.lever.co/v0/postings/{reconstructed.get('account')}?mode=json"
+        )
+    elif (
+        adapter == "workable" and not reconstructed.get("api_url") and reconstructed.get("account")
+    ):
         reconstructed["api_url"] = (
             f"https://apply.workable.com/api/v1/widget/accounts/{reconstructed.get('account')}?details=true"
         )
-    elif adapter == "smartrecruiters" and not reconstructed.get("api_url") and reconstructed.get("company_id"):
+    elif (
+        adapter == "smartrecruiters"
+        and not reconstructed.get("api_url")
+        and reconstructed.get("company_id")
+    ):
         reconstructed["api_url"] = (
             f"https://api.smartrecruiters.com/v1/companies/{reconstructed.get('company_id')}/postings"
         )
@@ -116,7 +129,9 @@ def trigger_source_check(
     load_state: Callable[[], dict[str, Any]],
     source_identity: Callable[[dict[str, Any]], str],
     normalize_manual_static_studio_fields_fn: Callable[[dict[str, Any]], dict[str, Any]],
-    check_static_source_fn: Callable[[dict[str, Any], int], tuple[bool, int, str, bool, dict[str, Any]]],
+    check_static_source_fn: Callable[
+        [dict[str, Any], int], tuple[bool, int, str, bool, dict[str, Any]]
+    ],
     now_iso: Callable[[], str],
     compute_candidate_score: Callable[[dict[str, Any], int], tuple[int, list[str]]],
     normalize_candidate: Callable[..., dict[str, Any]],
@@ -138,7 +153,9 @@ def trigger_source_check(
                 continue
             if str(row.get("adapter") or "").strip().lower() == "static":
                 row = normalize_manual_static_studio_fields_fn(row)
-                ok, jobs_found, error, weak_signal, probe_meta = check_static_source_fn(row, timeout_s)
+                ok, jobs_found, error, weak_signal, probe_meta = check_static_source_fn(
+                    row, timeout_s
+                )
                 updated = dict(row)
                 updated["lastProbedAt"] = now_iso()
                 if ok:
@@ -147,7 +164,9 @@ def trigger_source_check(
                     updated["sampleCount"] = int(jobs_found)
                     updated["score"] = int(score)
                     updated["reasons"] = reasons
-                    updated["confidence"] = "high" if jobs_found >= 10 else ("medium" if jobs_found >= 1 else "low")
+                    updated["confidence"] = (
+                        "high" if jobs_found >= 10 else ("medium" if jobs_found >= 1 else "low")
+                    )
                     updated.pop("lastProbeError", None)
                     updated["lastProbeWeakSignal"] = bool(weak_signal)
                     rows[idx] = updated
@@ -165,15 +184,23 @@ def trigger_source_check(
                 rows[idx] = updated
                 state[bucket] = rows
                 persist_state_and_auto_sync(state, reason="source_check_updated")
-                source_url = normalize_source_url(
-                    str(updated.get("listing_url") or "")
-                ) or normalize_source_url(
-                    str((updated.get("pages") or [""])[0] if isinstance(updated.get("pages"), list) else "")
-                ) or ""
+                source_url = (
+                    normalize_source_url(str(updated.get("listing_url") or ""))
+                    or normalize_source_url(
+                        str(
+                            (updated.get("pages") or [""])[0]
+                            if isinstance(updated.get("pages"), list)
+                            else ""
+                        )
+                    )
+                    or ""
+                )
                 failure_details = build_check_failure_details(
                     str(error or "probe failed"),
                     source_url,
-                    browser_fallback_attempted=bool((probe_meta or {}).get("browserFallbackAttempted")),
+                    browser_fallback_attempted=bool(
+                        (probe_meta or {}).get("browserFallbackAttempted")
+                    ),
                 )
                 return _build_failure_result(
                     run_id=run_id,
@@ -187,7 +214,9 @@ def trigger_source_check(
 
             ok, jobs_found, error = probe_candidate(row, timeout_s=timeout_s)
             if not ok and str(error or "").strip().lower() == "missing adapter or url":
-                ok, jobs_found, error = probe_candidate(_reconstruct_probe_candidate(row), timeout_s=timeout_s)
+                ok, jobs_found, error = probe_candidate(
+                    _reconstruct_probe_candidate(row), timeout_s=timeout_s
+                )
             if ok:
                 score, reasons = compute_candidate_score(row, jobs_found)
                 updated = normalize_candidate(row, score, reasons, jobs_found, probed_at=now_iso())
@@ -212,8 +241,12 @@ def trigger_source_check(
             rows[idx] = updated
             state[bucket] = rows
             persist_state_and_auto_sync(state, reason="source_check_updated")
-            source_url = normalize_source_url(endpoint_url := _candidate_endpoint_url(row)) or endpoint_url
-            failure_details = build_check_failure_details(str(error or "probe failed"), str(source_url or ""))
+            source_url = (
+                normalize_source_url(endpoint_url := _candidate_endpoint_url(row)) or endpoint_url
+            )
+            failure_details = build_check_failure_details(
+                str(error or "probe failed"), str(source_url or "")
+            )
             return _build_failure_result(
                 run_id=run_id,
                 updated=updated,

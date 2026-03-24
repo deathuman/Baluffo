@@ -65,4 +65,3 @@ parse_personio_feed_xml = _provider_parsers.parse_personio_feed_xml
 
 def parse_remote_ok_payload(payload: Any) -> list[RawJob]:
     return _parse_remote_ok_payload(payload, looks_like_game_job=looks_like_game_job)
-

@@ -43,9 +43,14 @@ def run(
         parsed = urlparse(page_url)
         path = clean_text(parsed.path)
         if not path or path == "/":
-            page_url = urlunparse((parsed.scheme or "https", parsed.netloc, canonical_path, "", "", ""))
+            page_url = urlunparse(
+                (parsed.scheme or "https", parsed.netloc, canonical_path, "", "", "")
+            )
 
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Activision"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Activision"
+    )
     source_id = (source_row.get("id") or "").strip() or "activision"
 
     try:
@@ -88,7 +93,9 @@ def run(
             )
     if not rows:
         seen = set()
-        for match in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+/job/[^"\']+)["\'][^>]*>(.*?)</a>', html):
+        for match in re.finditer(
+            r'(?is)<a[^>]+href=["\']([^"\']+/job/[^"\']+)["\'][^>]*>(.*?)</a>', html
+        ):
             href = clean_text(match.group(1))
             title = clean_text(re.sub(r"(?is)<[^>]+>", " ", match.group(2) or ""))
             if not href or not title:
@@ -141,4 +148,3 @@ def run(
             "detailTraversalMode": "listing_only",
         }
     return cleaned
-

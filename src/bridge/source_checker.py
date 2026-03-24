@@ -1,4 +1,5 @@
 """Static source check: probe a static source row for job links and signals."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -50,7 +51,10 @@ def _expand_static_alt_pages(
     suggest_alternate_career_urls: Callable[[str], list[str]],
 ) -> None:
     low_page = str(page_url or "").lower()
-    if not any(token in low_page for token in ("/career", "/careers", "/jobs", "/job", "/vacancies", "/vacancy")):
+    if not any(
+        token in low_page
+        for token in ("/career", "/careers", "/jobs", "/job", "/vacancies", "/vacancy")
+    ):
         return
     for alt_url in suggest_alternate_career_urls(page_url):
         if len(pages_to_visit) >= max_pages_to_visit:
@@ -78,10 +82,16 @@ def check_static_source(
     """Probe a static source row; returns (ok, jobs_found, error, weak_signal, probe_meta)."""
     pages = _resolve_static_source_pages(row)
     if not pages:
-        return False, 0, "missing source pages", False, {
-            "browserFallbackAttempted": False,
-            "browserFallbackUsed": False,
-        }
+        return (
+            False,
+            0,
+            "missing source pages",
+            False,
+            {
+                "browserFallbackAttempted": False,
+                "browserFallbackUsed": False,
+            },
+        )
 
     company = str(row.get("company") or row.get("studio") or row.get("name") or "Unknown")
     source_id = source_identity(row)
@@ -99,7 +109,9 @@ def check_static_source(
         idx += 1
         before_structured_count = len(structured_links)
         before_weak_count = len(weak_links)
-        html, fetch_error, attempted, used, redirected_url = fetch_page_with_alternates(page_url, timeout_s)
+        html, fetch_error, attempted, used, redirected_url = fetch_page_with_alternates(
+            page_url, timeout_s
+        )
         browser_fallback_attempted = browser_fallback_attempted or attempted
         browser_fallback_used = browser_fallback_used or used
         if redirected_url:
@@ -127,7 +139,8 @@ def check_static_source(
             if workable_account:
                 try:
                     workable_count = html_extractor.count_workable_jobs(
-                        workable_account, timeout_s,
+                        workable_account,
+                        timeout_s,
                         lambda url, timeout: fetch_text(url, timeout),
                     )
                     for i in range(max(0, workable_count)):
@@ -135,7 +148,9 @@ def check_static_source(
                 except Exception as exc:  # noqa: BLE001
                     errors.append(f"workable:{workable_account}: {exc}")
 
-        embedded_structured_links, embedded_weak_signals = html_extractor.extract_embedded_job_filter_signals(html, page_url)
+        embedded_structured_links, embedded_weak_signals = (
+            html_extractor.extract_embedded_job_filter_signals(html, page_url)
+        )
         for link in embedded_structured_links:
             structured_links.add(link)
         for signal in embedded_weak_signals:
@@ -148,7 +163,9 @@ def check_static_source(
             weak_links.add(jobylon_link)
             try:
                 jobylon_html = fetch_text(jobylon_link, timeout_s)
-                for embedded_job_link in html_extractor.extract_embedded_job_urls(jobylon_html, jobylon_link):
+                for embedded_job_link in html_extractor.extract_embedded_job_urls(
+                    jobylon_html, jobylon_link
+                ):
                     weak_links.add(embedded_job_link)
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{jobylon_link}: {exc}")
@@ -193,7 +210,9 @@ def check_static_source(
                 if parsed_link:
                     structured_links.add(parsed_link)
 
-        page_has_signals = len(structured_links) > before_structured_count or len(weak_links) > before_weak_count
+        page_has_signals = (
+            len(structured_links) > before_structured_count or len(weak_links) > before_weak_count
+        )
         if not page_has_signals:
             _expand_static_alt_pages(
                 page_url=page_url,
@@ -204,21 +223,45 @@ def check_static_source(
             )
 
     if structured_links:
-        return True, len(structured_links), "", False, {
-            "browserFallbackAttempted": browser_fallback_attempted,
-            "browserFallbackUsed": browser_fallback_used,
-        }
+        return (
+            True,
+            len(structured_links),
+            "",
+            False,
+            {
+                "browserFallbackAttempted": browser_fallback_attempted,
+                "browserFallbackUsed": browser_fallback_used,
+            },
+        )
     if weak_links:
-        return True, len(weak_links), "", True, {
-            "browserFallbackAttempted": browser_fallback_attempted,
-            "browserFallbackUsed": browser_fallback_used,
-        }
+        return (
+            True,
+            len(weak_links),
+            "",
+            True,
+            {
+                "browserFallbackAttempted": browser_fallback_attempted,
+                "browserFallbackUsed": browser_fallback_used,
+            },
+        )
     if errors:
-        return False, 0, "; ".join(errors[:4]), False, {
+        return (
+            False,
+            0,
+            "; ".join(errors[:4]),
+            False,
+            {
+                "browserFallbackAttempted": browser_fallback_attempted,
+                "browserFallbackUsed": browser_fallback_used,
+            },
+        )
+    return (
+        False,
+        0,
+        "no job postings found",
+        False,
+        {
             "browserFallbackAttempted": browser_fallback_attempted,
             "browserFallbackUsed": browser_fallback_used,
-        }
-    return False, 0, "no job postings found", False, {
-        "browserFallbackAttempted": browser_fallback_attempted,
-        "browserFallbackUsed": browser_fallback_used,
-    }
+        },
+    )

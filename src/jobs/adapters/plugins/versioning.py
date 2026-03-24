@@ -12,4 +12,3 @@ def normalize_schema_version(value: Any, *, default: int = 1) -> int:
             return int(float(str(value)))
         except (TypeError, ValueError):
             return int(default)
-

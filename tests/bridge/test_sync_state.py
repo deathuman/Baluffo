@@ -31,4 +31,3 @@ def test_sync_state_persists_runtime_status_fields() -> None:
         payload = json.loads(runtime_path.read_text(encoding="utf-8"))
         assert str(payload.get("lastAction") or "") == "pull"
         assert str(payload.get("lastResult") or "") == "ok"
-

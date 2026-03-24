@@ -74,7 +74,9 @@ class PipelineService:
             "label": str(label or ""),
         }
 
-    def _mark_stage(self, *, stage: str, current_step: int, total_steps: int, label: str, error: str = "") -> None:
+    def _mark_stage(
+        self, *, stage: str, current_step: int, total_steps: int, label: str, error: str = ""
+    ) -> None:
         with self._lock:
             self._status["stage"] = str(stage or "unknown")
             self._status["progress"] = self._pipeline_progress(current_step, total_steps, label)
@@ -137,7 +139,9 @@ class PipelineService:
             payload = dict(self._status)
             progress = payload.get("progress")
             payload["progress"] = (
-                dict(progress) if isinstance(progress, dict) else self._pipeline_progress(0, 3, "Idle")
+                dict(progress)
+                if isinstance(progress, dict)
+                else self._pipeline_progress(0, 3, "Idle")
             )
             payload["active"] = bool(payload.get("active"))
             payload["appVersion"] = self._get_app_version()
@@ -145,7 +149,9 @@ class PipelineService:
 
     def _run_worker(self, run_id: str) -> None:
         try:
-            self._mark_stage(stage="discovery", current_step=1, total_steps=3, label="Running discovery...")
+            self._mark_stage(
+                stage="discovery", current_step=1, total_steps=3, label="Running discovery..."
+            )
             discovery_status, discovery_result = self._trigger_discovery_task(
                 route_name="/tasks/run-jobs-pipeline",
                 enable_auto_sync_watch=False,
@@ -170,7 +176,9 @@ class PipelineService:
                 report_name="fetch report",
             )
 
-            self._mark_stage(stage="sync_push", current_step=3, total_steps=3, label="Running sync push...")
+            self._mark_stage(
+                stage="sync_push", current_step=3, total_steps=3, label="Running sync push..."
+            )
             sync_result = self._start_sync_task("push", reason="jobs_pipeline", automatic=False)
             if not bool(sync_result.get("started")):
                 raise RuntimeError(str(sync_result.get("error") or "sync push failed to start"))
@@ -271,4 +279,3 @@ class PipelineService:
 
 
 __all__ = ["PipelineRuntime", "PipelineService"]
-

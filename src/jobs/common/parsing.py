@@ -48,7 +48,9 @@ def parse_remote_ok_payload(payload: Any, *, looks_like_game_job) -> list[RawJob
         title = clean_text(row.get("position") or row.get("title"))
         company = clean_text(row.get("company") or row.get("company_name"))
         tags = row.get("tags") or []
-        tags_text = " ".join(str(tag) for tag in tags) if isinstance(tags, list) else clean_text(tags)
+        tags_text = (
+            " ".join(str(tag) for tag in tags) if isinstance(tags, list) else clean_text(tags)
+        )
         description = clean_text(row.get("description"))
         if not title or not company:
             continue
@@ -71,4 +73,3 @@ def parse_remote_ok_payload(payload: Any, *, looks_like_game_job) -> list[RawJob
             }
         )
     return jobs
-

@@ -1,4 +1,5 @@
 """Probe discovery candidates (validate, fetch, parse job count)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -44,9 +45,7 @@ def _is_playwright_fallback_error(error: str) -> bool:
 def _is_valid_identity_token(token: str) -> bool:
     value = str(token or "").strip()
     return bool(
-        len(value) >= 3
-        and re.match(r"^[A-Za-z0-9][A-Za-z0-9_-]*$", value)
-        and not value.isdigit()
+        len(value) >= 3 and re.match(r"^[A-Za-z0-9][A-Za-z0-9_-]*$", value) and not value.isdigit()
     )
 
 
@@ -55,18 +54,25 @@ def validate_candidate_for_probe(candidate: dict[str, Any]) -> tuple[bool, str]:
     if adapter in {"lever", "workable"}:
         token = str(candidate.get("account") or "").strip()
         return (
-            (_is_valid_identity_token(token), "" if _is_valid_identity_token(token) else "invalid account token")
+            _is_valid_identity_token(token),
+            "" if _is_valid_identity_token(token) else "invalid account token",
         )
     if adapter == "greenhouse":
         slug = str(candidate.get("slug") or "").strip()
-        return (_is_valid_identity_token(slug), "" if _is_valid_identity_token(slug) else "invalid board slug")
+        return (
+            _is_valid_identity_token(slug),
+            "" if _is_valid_identity_token(slug) else "invalid board slug",
+        )
     if adapter == "smartrecruiters":
         company_id = str(candidate.get("company_id") or "").strip()
         valid = len(company_id) >= 3 and bool(re.search(r"[A-Za-z]", company_id))
         return (valid, "" if valid else "invalid company identifier")
     if adapter == "personio":
         host = (urlparse(str(candidate.get("feed_url") or "")).netloc or "").lower()
-        return (".jobs.personio.de" in host, "" if ".jobs.personio.de" in host else "invalid personio host")
+        return (
+            ".jobs.personio.de" in host,
+            "" if ".jobs.personio.de" in host else "invalid personio host",
+        )
     if adapter == "teamtailor":
         parsed = urlparse(str(candidate.get("listing_url") or "").strip())
         host = (parsed.netloc or "").lower()
@@ -78,10 +84,16 @@ def validate_candidate_for_probe(candidate: dict[str, Any]) -> tuple[bool, str]:
         return ("ashbyhq.com" in host, "" if "ashbyhq.com" in host else "invalid ashby host")
     if adapter == "recruitee":
         host = (urlparse(str(candidate.get("api_url") or "").strip()).netloc or "").lower()
-        return (".recruitee.com" in host, "" if ".recruitee.com" in host else "invalid recruitee host")
+        return (
+            ".recruitee.com" in host,
+            "" if ".recruitee.com" in host else "invalid recruitee host",
+        )
     if adapter == "pinpoint":
         host = (urlparse(str(candidate.get("api_url") or "").strip()).netloc or "").lower()
-        return (".pinpointhq.com" in host, "" if ".pinpointhq.com" in host else "invalid pinpoint host")
+        return (
+            ".pinpointhq.com" in host,
+            "" if ".pinpointhq.com" in host else "invalid pinpoint host",
+        )
     if adapter == "static":
         listing = str(candidate.get("listing_url") or "").strip()
         pages = candidate.get("pages")
@@ -240,7 +252,9 @@ async def async_probe_candidate(
             continue
         seen_urls.add(probe_url)
         try:
-            text = await async_fetch_text_with_retry(probe_url, timeout_s, adapter=adapter, fetcher=fetcher)
+            text = await async_fetch_text_with_retry(
+                probe_url, timeout_s, adapter=adapter, fetcher=fetcher
+            )
             return True, max(0, int(parse_probe_count(adapter, text))), ""
         except Exception as exc:  # noqa: BLE001
             last_error = f"{probe_url}: {exc}"

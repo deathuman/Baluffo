@@ -37,14 +37,24 @@ def build_fetch_task_progress_payload(
 ) -> dict[str, Any]:
     rows = [row for row in task_rows.values() if isinstance(row, dict)]
     total_tasks = len(rows)
-    queued_tasks = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "queued")
-    running_tasks = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "running")
+    queued_tasks = sum(
+        1 for row in rows if str(row.get("status") or "").strip().lower() == "queued"
+    )
+    running_tasks = sum(
+        1 for row in rows if str(row.get("status") or "").strip().lower() == "running"
+    )
     ok_tasks = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "ok")
     error_tasks = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "error")
     completed_tasks = ok_tasks + error_tasks
-    failed_sources = sum(1 for row in source_reports if str(row.get("status") or "").strip().lower() == "error")
-    excluded_sources = sum(1 for row in source_reports if str(row.get("status") or "").strip().lower() == "excluded")
-    successful_sources = sum(1 for row in source_reports if str(row.get("status") or "").strip().lower() == "ok")
+    failed_sources = sum(
+        1 for row in source_reports if str(row.get("status") or "").strip().lower() == "error"
+    )
+    excluded_sources = sum(
+        1 for row in source_reports if str(row.get("status") or "").strip().lower() == "excluded"
+    )
+    successful_sources = sum(
+        1 for row in source_reports if str(row.get("status") or "").strip().lower() == "ok"
+    )
     resolved_sources = successful_sources + failed_sources + excluded_sources
 
     mode = "indeterminate"
@@ -81,7 +91,9 @@ def build_fetch_task_progress_payload(
     }
 
 
-def initialize_task_runtime(selected_loaders: list[tuple[str, Any]], *, show_progress: bool = False) -> PipelineTaskRuntime:
+def initialize_task_runtime(
+    selected_loaders: list[tuple[str, Any]], *, show_progress: bool = False
+) -> PipelineTaskRuntime:
     return PipelineTaskRuntime(
         task_rows={
             name: {
@@ -132,45 +144,55 @@ def write_progress_report(
     dedup_progress_stats = deduplicator.stats
     dedup_progress_stats["outputCount"] = len(deduped_progress_rows)
     progress_lifecycle_counts = lifecycle_counts(lifecycle_rows)
-    progress_payload = normalize_fetch_report_payload({
-        "schemaVersion": schema_version,
-        "runId": run_id,
-        "startedAt": started_at,
-        "finishedAt": "",
-        "runtime": runtime_payload,
-        "taskProgress": build_fetch_task_progress_payload(
-            phase_key=phase_key,
-            phase_label=phase_label,
-            task_rows=task_rows,
-            source_reports=source_reports,
-            output_count=int(dedup_progress_stats.get("outputCount") or 0),
-            finished=False,
-        ),
-        "summary": build_pipeline_summary(
-            dedup_progress_stats,
-            deduped_progress_rows,
-            source_reports,
-            len(canonical_rows),
-            False,
-            len([row for row in studio_source_registry if bool(row.get("enabledByDefault", True))]),
-            len(load_registry_from_file(paths.pending_registry_path, [])),
-            read_approved_since_last_run(paths.approval_state_path),
-            json_bytes=0,
-            csv_bytes=0,
-            light_json_bytes=0,
-            lifecycle_counts_map=progress_lifecycle_counts,
-        ),
-        "sources": source_reports,
-        "outputs": {
-            "json": str(paths.json_path),
-            "csv": str(paths.csv_path),
-            "lightJson": str(paths.light_json_path),
-            "report": str(paths.report_path),
-            "lifecycleState": str(paths.lifecycle_state_path),
-            "changed": {"json": False, "csv": False, "lightJson": False},
-        },
-    })
-    write_text_if_changed(paths.report_path, json.dumps(progress_payload, indent=2, ensure_ascii=False))
+    progress_payload = normalize_fetch_report_payload(
+        {
+            "schemaVersion": schema_version,
+            "runId": run_id,
+            "startedAt": started_at,
+            "finishedAt": "",
+            "runtime": runtime_payload,
+            "taskProgress": build_fetch_task_progress_payload(
+                phase_key=phase_key,
+                phase_label=phase_label,
+                task_rows=task_rows,
+                source_reports=source_reports,
+                output_count=int(dedup_progress_stats.get("outputCount") or 0),
+                finished=False,
+            ),
+            "summary": build_pipeline_summary(
+                dedup_progress_stats,
+                deduped_progress_rows,
+                source_reports,
+                len(canonical_rows),
+                False,
+                len(
+                    [
+                        row
+                        for row in studio_source_registry
+                        if bool(row.get("enabledByDefault", True))
+                    ]
+                ),
+                len(load_registry_from_file(paths.pending_registry_path, [])),
+                read_approved_since_last_run(paths.approval_state_path),
+                json_bytes=0,
+                csv_bytes=0,
+                light_json_bytes=0,
+                lifecycle_counts_map=progress_lifecycle_counts,
+            ),
+            "sources": source_reports,
+            "outputs": {
+                "json": str(paths.json_path),
+                "csv": str(paths.csv_path),
+                "lightJson": str(paths.light_json_path),
+                "report": str(paths.report_path),
+                "lifecycleState": str(paths.lifecycle_state_path),
+                "changed": {"json": False, "csv": False, "lightJson": False},
+            },
+        }
+    )
+    write_text_if_changed(
+        paths.report_path, json.dumps(progress_payload, indent=2, ensure_ascii=False)
+    )
 
 
 def make_task_state_writer(
@@ -190,27 +212,37 @@ def make_task_state_writer(
         runtime.last_task_write_monotonic = now_mono
         with runtime.task_lock:
             rows_snapshot = [dict(row) for row in runtime.task_rows.values()]
-        payload = normalize_task_state_payload({
-            "runId": run_id,
-            "startedAt": started_at,
-            "finishedAt": finished_at,
-            "summary": {
-                "queued": sum(1 for row in rows_snapshot if row.get("status") == "queued"),
-                "running": sum(1 for row in rows_snapshot if row.get("status") == "running"),
-                "ok": sum(1 for row in rows_snapshot if row.get("status") == "ok"),
-                "error": sum(1 for row in rows_snapshot if row.get("status") == "error"),
+        payload = normalize_task_state_payload(
+            {
+                "runId": run_id,
+                "startedAt": started_at,
+                "finishedAt": finished_at,
+                "summary": {
+                    "queued": sum(1 for row in rows_snapshot if row.get("status") == "queued"),
+                    "running": sum(1 for row in rows_snapshot if row.get("status") == "running"),
+                    "ok": sum(1 for row in rows_snapshot if row.get("status") == "ok"),
+                    "error": sum(1 for row in rows_snapshot if row.get("status") == "error"),
+                },
+                "taskProgress": build_fetch_task_progress_payload(
+                    phase_key="completed" if finished_at else "executing_sources",
+                    phase_label="Completed" if finished_at else "Executing sources",
+                    task_rows={
+                        str(row.get("name") or ""): row
+                        for row in rows_snapshot
+                        if str(row.get("name") or "").strip()
+                    },
+                    source_reports=[],
+                    output_count=0,
+                    finished=bool(finished_at),
+                ),
+                "tasks": rows_snapshot,
+                "outputs": {"report": str(report_path)},
             },
-            "taskProgress": build_fetch_task_progress_payload(
-                phase_key="completed" if finished_at else "executing_sources",
-                phase_label="Completed" if finished_at else "Executing sources",
-                task_rows={str(row.get("name") or ""): row for row in rows_snapshot if str(row.get("name") or "").strip()},
-                source_reports=[],
-                output_count=0,
-                finished=bool(finished_at),
-            ),
-            "tasks": rows_snapshot,
-            "outputs": {"report": str(report_path)},
-        }, run_id=run_id, started_at=started_at, finished_at=finished_at, report_path=str(report_path))
+            run_id=run_id,
+            started_at=started_at,
+            finished_at=finished_at,
+            report_path=str(report_path),
+        )
         write_text_if_changed(task_state_path, json.dumps(payload, indent=2, ensure_ascii=False))
 
     return write_task_state
@@ -239,9 +271,16 @@ def make_fetch_text_limited(
                     with runtime.task_lock:
                         if runtime.task_rows[current].get("status") == "running":
                             runtime.task_rows[current]["heartbeatAt"] = now_iso()
-                            started_mono = float(runtime.task_rows[current].get("_startedMonotonic") or 0.0)
+                            started_mono = float(
+                                runtime.task_rows[current].get("_startedMonotonic") or 0.0
+                            )
                             warned = bool(runtime.task_rows[current].get("_slowWarned"))
-                            if runtime.show_progress and started_mono > 0 and not warned and (now_mono - started_mono) >= 20.0:
+                            if (
+                                runtime.show_progress
+                                and started_mono > 0
+                                and not warned
+                                and (now_mono - started_mono) >= 20.0
+                            ):
                                 runtime.task_rows[current]["_slowWarned"] = True
                                 print(
                                     f"[jobs_fetcher] WARN source={current} runningForMs={int((now_mono - started_mono) * 1000)}",

@@ -20,11 +20,19 @@ def _ensure_repo_on_path() -> Path:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run an isolated discovery sanity benchmark.")
-    parser.add_argument("--output-dir", default="_out/perf-sanity-discovery", help="Isolated data root for benchmark artifacts.")
+    parser.add_argument(
+        "--output-dir",
+        default="_out/perf-sanity-discovery",
+        help="Isolated data root for benchmark artifacts.",
+    )
     parser.add_argument("--timeout", type=int, default=12)
     parser.add_argument("--top", type=int, default=20)
     parser.add_argument("--mode", choices=("dynamic", "static"), default="dynamic")
-    parser.add_argument("--include-web-search", action="store_true", help="Enable web search for this benchmark run.")
+    parser.add_argument(
+        "--include-web-search",
+        action="store_true",
+        help="Enable web search for this benchmark run.",
+    )
     return parser.parse_args(argv)
 
 

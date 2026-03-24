@@ -82,4 +82,3 @@ def load_social_config(
         enabled=enabled,
         lookback_minutes=lookback_minutes,
     )
-

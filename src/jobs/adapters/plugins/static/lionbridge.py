@@ -34,7 +34,10 @@ def run(
     if not pages:
         return []
     page_url = clean_text(pages[0])
-    company = clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name")) or "Lionbridge Games"
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or "Lionbridge Games"
+    )
     source_id = clean_text(source_row.get("id")) or "lionbridge"
     try:
         html = fetch_text(page_url, timeout_s)
@@ -50,7 +53,14 @@ def run(
     jobs: list[RawJob] = []
     seen: set[str] = set()
     for row_html in iter_block_fragments(html or "", "tr"):
-        anchor = next((item for item in iter_anchor_fragments(row_html) if "/jobs/" in clean_text(item.get("href"))), None)
+        anchor = next(
+            (
+                item
+                for item in iter_anchor_fragments(row_html)
+                if "/jobs/" in clean_text(item.get("href"))
+            ),
+            None,
+        )
         if not anchor:
             continue
         href = clean_text(anchor.get("href"))
@@ -61,11 +71,28 @@ def run(
         if not link or link in seen:
             continue
         seen.add(link)
-        meta = [clean_text(line) for line in html_fragment_lines(row_html) if clean_text(line) and clean_text(line) != title]
+        meta = [
+            clean_text(line)
+            for line in html_fragment_lines(row_html)
+            if clean_text(line) and clean_text(line) != title
+        ]
         location = ""
         work_type = ""
         for line in meta:
-            if not location and any(token in line.lower() for token in ("united", "mexico", "japan", "berlin", "yokohama", "warsaw", "remote", "spain", "india")):
+            if not location and any(
+                token in line.lower()
+                for token in (
+                    "united",
+                    "mexico",
+                    "japan",
+                    "berlin",
+                    "yokohama",
+                    "warsaw",
+                    "remote",
+                    "spain",
+                    "india",
+                )
+            ):
                 location = line
             elif not work_type and line.lower() in {"remote", "hybrid", "onsite"}:
                 work_type = line
@@ -96,5 +123,8 @@ def run(
             "detailTraversalMode": "listing_only",
         }
         return []
-    source_row["_staticPluginMeta"] = {"detailFetchRequired": False, "detailTraversalMode": "listing_only"}
+    source_row["_staticPluginMeta"] = {
+        "detailFetchRequired": False,
+        "detailTraversalMode": "listing_only",
+    }
     return jobs
