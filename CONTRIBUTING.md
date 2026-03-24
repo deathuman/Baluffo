@@ -50,6 +50,22 @@ npm run test:smoke
 - **JavaScript**: Use ES modules, avoid default exports
 - **Pre-commit hooks**: Run `pre-commit install` to set up automatic formatting
 
+### Running Linters
+
+```bash
+# Python (ruff) - via pre-commit
+pre-commit run --all-files
+
+# Python only (direct)
+python3 -m ruff check .
+
+# JavaScript/TypeScript (ESLint)
+npm run lint:js
+
+# Run both
+pre-commit run --all-files && npm run lint:js
+```
+
 ## Pull Request Process
 
 1. Update documentation for any changed functionality
