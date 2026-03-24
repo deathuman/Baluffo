@@ -21,6 +21,7 @@ repos:
       - id: check-case-conflict
       - id: debug-statements
       - id: detect-private-key
+        exclude: ^tests/|^.github/workflows/
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.10
