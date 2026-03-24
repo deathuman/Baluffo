@@ -50,7 +50,10 @@ jobs:
         shell: bash
 
       - name: Wait for services
-        run: sleep 5
+        run: sleep 15
+
+      - name: Verify bridge is running
+        run: curl -s http://127.0.0.1:8877/health || echo "Bridge not ready yet, continuing..."
 
       - name: Run frontend unit tests
         run: npm run test:unit
