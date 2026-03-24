@@ -105,4 +105,6 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await page.goto("/admin.html");
   await expect(page.locator("#admin-content")).toBeVisible();
   await expect(page.locator("h1")).toContainText(/Administration/i);
+  await page.click("#admin-refresh-report-btn");
+  await expect(page.locator("#admin-ops-fetcher-metrics")).not.toContainText(/Loading/i);
 });
