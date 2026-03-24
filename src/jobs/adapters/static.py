@@ -24,7 +24,6 @@ from src.jobs.adapters.plugins.errors import NoPluginFoundError
 from src.jobs.adapters.plugins.static import register_static_plugins
 from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.static_scrapy import run_scrapy_static_source
 from src.jobs.adapters.static_helpers import (
     add_detail_link,
     build_static_entry_report,
@@ -35,6 +34,7 @@ from src.jobs.adapters.static_helpers import (
     source_detail_concurrency_for,
     source_detail_limit_for,
 )
+from src.jobs.adapters.static_scrapy import run_scrapy_static_source
 from src.jobs.common import config as common_config
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.interfaces import SourceLoader

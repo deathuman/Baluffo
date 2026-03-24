@@ -78,12 +78,12 @@ import {
 import { computeAnchorScrollDelta } from "./render-cycle.js";
 import {
   SAVED_FILTER_ALL,
-  SAVED_FILTER_CUSTOM,
-  SAVED_FILTER_IMPORTED,
+  SAVED_FILTER_CUSTOM as _SAVED_FILTER_CUSTOM,
+  SAVED_FILTER_IMPORTED as _SAVED_FILTER_IMPORTED,
   SORT_UPDATED,
-  SORT_SAVED,
-  SORT_REMINDER,
-  SORT_PERSONAL,
+  SORT_SAVED as _SORT_SAVED,
+  SORT_REMINDER as _SORT_REMINDER,
+  SORT_PERSONAL as _SORT_PERSONAL,
   isCustomJob,
   filterSavedJobs,
   isValidSavedFilter,
@@ -92,8 +92,8 @@ import {
   REMINDER_SOON_HOURS,
 } from "./view-state.js";
 import {
-  isAllowedAttachment,
-  formatFileSize,
+  isAllowedAttachment as _isAllowedAttachment,
+  formatFileSize as _formatFileSize,
   hydrateAttachmentLists as hydrateAttachmentListsFromModule,
   uploadAttachments as uploadAttachmentsFromModule,
   getAttachmentPreviewUrl as getAttachmentPreviewUrlFromModule,
@@ -103,8 +103,8 @@ import {
 import { createSavedPageState } from "./runtime/state.js";
 import { createSavedStartupMetrics } from "./runtime/effects.js";
 import { setStatusText, setElementText } from "./runtime/view.js";
-import { runSavedAction } from "./runtime/actions.js";
-import { bindDocumentKeydown } from "./runtime/events.js";
+import { runSavedAction as _runSavedAction } from "./runtime/actions.js";
+import { bindDocumentKeydown as _bindDocumentKeydown } from "./runtime/events.js";
 let savedJobsListEl;
 let savedSourceStatusEl;
 let savedAuthStatusEl;

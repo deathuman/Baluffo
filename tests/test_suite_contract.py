@@ -116,7 +116,7 @@ def test_bridge_api_uses_sync_service_for_sync_status_wiring(repo_root: Path) ->
     assert "set_sync_status=_set_sync_status" not in build_api_section
     assert 'if self._field_is_default("sync_config_status"):' in bridge_api
     assert 'if self._field_is_default("set_sync_status"):' in bridge_api
-    assert "def sync_config_status(self) -> Dict[str, Any]:" in sync_service
+    assert "def sync_config_status(self) -> dict[str, Any]:" in sync_service
     assert "def set_sync_status(" in sync_service
 
 
@@ -128,9 +128,9 @@ def test_bridge_api_exposes_route_facing_entrypoints(repo_root: Path) -> None:
     assert "persist_state_and_auto_sync=persist_state_and_auto_sync" in build_api_section
     assert "add_manual_source=add_manual_source" in build_api_section
     assert "trigger_source_check=trigger_source_check" in build_api_section
-    assert "append_startup_metric: Callable[[str, Dict[str, Any] | None], None]" in bridge_api
-    assert "add_manual_source: Callable[[str], Dict[str, Any]]" in bridge_api
-    assert "trigger_source_check: Callable[..., Dict[str, Any]]" in bridge_api
+    assert "append_startup_metric: Callable[[str, dict[str, Any] | None], None]" in bridge_api
+    assert "add_manual_source: Callable[[str], dict[str, Any]]" in bridge_api
+    assert "trigger_source_check: Callable[..., dict[str, Any]]" in bridge_api
 
 
 def test_admin_bridge_delegates_source_check_orchestration_to_bridge_module(repo_root: Path) -> None:
@@ -185,8 +185,8 @@ def test_bridge_api_defaults_registry_identity_helpers_to_source_registry(repo_r
     assert "from src.source_registry import source_identity as source_identity_impl" in bridge_api
     assert "from src.source_registry import source_url_fingerprint as source_url_fingerprint_impl" in bridge_api
     assert "from src.source_registry import unique_sources as unique_sources_impl" in bridge_api
-    assert "unique_sources: Callable[[List[Dict[str, Any]]], List[Dict[str, Any]]] = unique_sources_impl" in bridge_api
-    assert "source_identity: Callable[[Dict[str, Any]], str] = source_identity_impl" in bridge_api
+    assert "unique_sources: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] = unique_sources_impl" in bridge_api
+    assert "source_identity: Callable[[dict[str, Any]], str] = source_identity_impl" in bridge_api
 
 
 def test_bridge_api_prefers_registry_service_identity_helpers_when_present(repo_root: Path) -> None:
@@ -196,5 +196,5 @@ def test_bridge_api_prefers_registry_service_identity_helpers_when_present(repo_
     assert 'if self._field_is_default("source_identity"):' in bridge_api
     assert 'if self._field_is_default("source_url_fingerprint"):' in bridge_api
     assert 'if self._field_is_default("normalize_source_url"):' in bridge_api
-    assert "def unique_sources(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:" in registry_service
-    assert "def source_identity(row: Dict[str, Any]) -> str:" in registry_service
+    assert "def unique_sources(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:" in registry_service
+    assert "def source_identity(row: dict[str, Any]) -> str:" in registry_service

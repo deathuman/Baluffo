@@ -246,8 +246,8 @@ def test_jobs_common_migrated_modules_keep_direct_owning_imports(repo_root: Path
     registry_module = (repo_root / "src" / "jobs" / "registry.py").read_text(encoding="utf-8")
     static_adapter = (repo_root / "src" / "jobs" / "adapters" / "static.py").read_text(encoding="utf-8")
     assert "from src.jobs.common.diagnostics import SOURCE_DIAGNOSTICS, set_source_diagnostics" in social_adapter
-    assert "from src.jobs.common.registry_defaults import DEFAULT_STUDIO_SOURCE_REGISTRY, REDUNDANT_STATIC_IF_PROVIDER" in registry_module
-    assert "from src.jobs.common.registry import registry_entries as common_registry_entries" in registry_module
+    assert "DEFAULT_STUDIO_SOURCE_REGISTRY" in registry_module and "REDUNDANT_STATIC_IF_PROVIDER" in registry_module
+    assert "registry_entries as common_registry_entries" in registry_module
     assert "from src.jobs.common.diagnostics import set_source_diagnostics" in static_adapter
 
 

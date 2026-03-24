@@ -71,6 +71,7 @@ from src.source_registry import (
     normalize_source_url,
     save_json_atomic,
     source_identity,
+    source_url_fingerprint,
     unique_sources,
 )
 

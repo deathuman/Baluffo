@@ -12,7 +12,7 @@ from typing import Any
 
 from src.jobs.adapters import community
 from src.jobs.common import config as common_config
-from src.jobs.common.datetime_utils import to_iso, posted_ts
+from src.jobs.common.datetime_utils import posted_ts, to_iso
 from src.jobs.common.heuristics import (
     classify_company_type,
     compute_focus_score,

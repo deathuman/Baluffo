@@ -42,7 +42,6 @@ def run_social_reddit_source(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
-    deps = runtime_deps.facade()
     cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
         set_source_diagnostics("social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[])
@@ -131,7 +130,6 @@ def run_social_x_source(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
-    deps = runtime_deps.facade()
     cfg = social_config.get("x") if isinstance(social_config.get("x"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
         set_source_diagnostics("social_x", adapter="social", studio="x", details=[], partial_errors=[])
@@ -269,7 +267,6 @@ def run_social_mastodon_source(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
-    deps = runtime_deps.facade()
     cfg = social_config.get("mastodon") if isinstance(social_config.get("mastodon"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
         set_source_diagnostics(

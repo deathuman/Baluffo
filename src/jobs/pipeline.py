@@ -26,6 +26,7 @@ from src.jobs.common import config as common_config
 from src.jobs.common import social as common_social
 from src.jobs.common import sources as common_sources
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
+from src.jobs.common.contracts import normalize_task_state_payload
 from src.jobs.contamination_audit import build_public_text_quality_report
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob
@@ -520,7 +521,7 @@ def run_pipeline(
         started_at=started_at,
         report_path=str(paths.report_path),
         task_state_path=paths.task_state_path,
-        normalize_source_state_payload=normalize_source_state_payload,
+        normalize_task_state_payload=normalize_task_state_payload,
         write_text_if_changed=write_text_if_changed,
     )
     fetch_text_limited = make_fetch_text_limited(
