@@ -1,0 +1,45 @@
+# See https://pre-commit.com for more information
+repos:
+  # Python hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: debug-statements
+
+  # Python formatting
+  - repo: https://github.com/psf/black
+    rev: 24.1.0
+    hooks:
+      - id: black
+        language_version: python3
+
+  # Python linting
+  - repo: https://github.com/astral-sh/ruff
+    rev: v0.1.14
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  # JavaScript/Node hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+        files: \.ya?ml$
+      - id: trailing-whitespace
+        files: \.js$
+
+  # npm package.json hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-json
+      - id: check-yaml
