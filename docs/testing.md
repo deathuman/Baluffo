@@ -93,3 +93,34 @@ Playwright smoke tests are run by `npm run test:smoke` / `npm run test`.
 Make sure `python` on your machine resolves to Python 3 (not Python 2), otherwise the web server will fail to start.
 
 If needed for local development, set `PLAYWRIGHT_PYTHON=py` (or any Python 3 launcher) to override what Playwright uses.
+
+## Test types in Baluffo
+
+Baluffo uses multiple test layers:
+
+- **Python tests (`pytest`)**: backend, bridge, pipeline, packaging-adjacent logic
+- **Frontend unit tests (`node --test`)**: fast JavaScript unit coverage
+- **Frontend smoke tests (`Playwright`)**: browser-level behavior checks
+- **Full verification (`npm run verify`)**: broader end-to-end confidence
+
+## Coverage
+
+Run Python tests with coverage:
+
+```bash
+npm run test:py:cov
+```
+
+Equivalent direct command:
+
+```bash
+python -m pytest tests -q -m "not slow" --cov=src --cov-report=term-missing --color=no
+```
+
+## Which command should I run?
+
+- Small Python logic change: `npm run test:py`
+- Python logic change with coverage review: `npm run test:py:cov`
+- JavaScript/frontend unit change: `npm run test:unit`
+- Browser or page-flow change: `npm run test:smoke`
+- Broad or risky change: `npm run verify`
