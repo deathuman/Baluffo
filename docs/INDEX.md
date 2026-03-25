@@ -51,6 +51,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Debugging help | You are investigating a known issue or checking common failure modes |
 | [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
 | [`refactor-charter-template.md`](refactor-charter-template.md) | Planning template | You are drafting a structured refactor proposal |
+| [`quality-improvement-roadmap.md`](quality-improvement-roadmap.md) | Q2 2026 roadmap | You are working on pipeline health, provider fixes, discovery, or coverage expansion |
 
 ---
 
