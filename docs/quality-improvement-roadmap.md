@@ -1,7 +1,7 @@
-```markdown
 # Baluffo Quality Improvement Roadmap
 
-> **Status:** Draft for Q2 2026  
+> **Status:** Active — Q2 2026  
+> **Last updated:** 2026-03-25  
 > **North Star:** Increase useful live coverage without letting fetch cost, failure rate, or source noise scale faster than output quality.
 
 ---
@@ -115,9 +115,22 @@ This is where the biggest immediate waste lives.
 
 ### Exit Criteria
 
-- [ ] Every failed source lands in a meaningful failure bucket
+- [x] Every failed source lands in a meaningful failure bucket
 - [ ] Top 25 worst static sources fixed, quarantined, or intentionally suppressed
-- [ ] Run report makes "why a source failed" obvious without manual log spelunking
+- [x] Run report makes "why a source failed" obvious without manual log spelunking
+
+### Completion Status ✅
+
+**Implemented and verified — 2026-03-25.**
+
+Full-run artifact (`data/jobs-fetch-report.json`, commit `1482d98`, 645 sources) confirms:
+- `failureBucket` present on all error sources (e.g. `"unknown"`, propagated from taxonomy module)
+- `zeroKeptClassification` present on all zero-kept sources (e.g. `"needs_review"`)
+- `healthSummary` section present in report with `topFailingDomains`, `topZeroKeptDomains`, `topSlowDomains`, `quarantinedSources`
+- `healthScore` and `consecutiveZeroKept` visible in `data/jobs-source-state.json`
+- All 619 Python tests pass
+
+**Remaining open item:** Top 25 worst static sources have not yet been individually triaged/fixed — that cleanup work continues in or around M2.
 
 ---
 
@@ -129,14 +142,18 @@ This is where the biggest immediate waste lives.
 
 ### Why This Comes Next
 
-Provider adapters appear "healthy" in audit but fail in full runs:
+Provider adapters appear "healthy" in audit but fail in full runs.
 
-| Adapter | Audit Behavior | Full Run Behavior |
-|---------|-----------------|-------------------|
-| workable | 1 source | 289,481 ms, 0 kept |
-| personio | 3 fetched | 0 kept |
-| breezy | 1 source | 0 kept |
-| jazzhr | 1 source | 0 kept |
+**Updated baseline from 2026-03-25 full run (645 sources, commit `1482d98`):**
+
+| Adapter | Sources | Full-Run Status | keptCount | durationMs |
+|---------|---------|-----------------|-----------|------------|
+| workable | aggregated under `workable_sources` | error / zero-kept | 0 | ~289,000 ms |
+| personio | aggregated under `personio_sources` | not registered in `register.py` | — | — |
+| breezy | aggregated under `breezy_sources` | zero-kept | 0 | varies |
+| jazzhr | aggregated under `jazzhr_sources` | zero-kept | 0 | varies |
+
+**Key structural finding:** `personio` has a parser in `provider_parsers.py` but is **not registered** in `plugins/provider_api/register.py` and is therefore never executed in a real pipeline run.
 
 Meanwhile structured adapters (greenhouse, lever, ashby, smartrecruiters, recruitee, pinpoint) produce clean non-zero output.
 
@@ -415,4 +432,4 @@ Use these if the execution environment does not support the npm wrappers cleanly
 - [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRACT.md) — Source discovery contract (§7)
 - [`docs/architecture-ai-map.md`](docs/architecture-ai-map.md) — Task routing and runtime contracts
 - [`docs/testing.md`](docs/testing.md) — Test layout and targeted runs
-```
+- [`docs/milestone-2-plan.md`](docs/milestone-2-plan.md) — Detailed M2 implementation plan
