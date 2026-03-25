@@ -224,6 +224,12 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         "error": clean_text(src.get("error")),
         "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
     }
+    failure_bucket = clean_text(src.get("failureBucket"))
+    if failure_bucket:
+        normalized["failureBucket"] = failure_bucket
+    zk_classification = clean_text(src.get("zeroKeptClassification"))
+    if zk_classification:
+        normalized["zeroKeptClassification"] = zk_classification
     cache_decision = clean_text(src.get("cacheDecision"))
     if cache_decision:
         normalized["cacheDecision"] = cache_decision
@@ -338,6 +344,12 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
                     "classification": clean_text(item.get("classification")) or "",
                     "browserFallbackRecommended": bool(item.get("browserFallbackRecommended")),
                 }
+                item_bucket = clean_text(item.get("failureBucket"))
+                if item_bucket:
+                    clean_item["failureBucket"] = item_bucket
+                item_zk = clean_text(item.get("zeroKeptClassification"))
+                if item_zk:
+                    clean_item["zeroKeptClassification"] = item_zk
                 item_cache_decision = clean_text(item.get("cacheDecision"))
                 if item_cache_decision:
                     clean_item["cacheDecision"] = item_cache_decision

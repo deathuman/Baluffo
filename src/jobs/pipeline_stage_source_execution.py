@@ -433,6 +433,20 @@ def run_source_execution_stage(
             thread_local.source_name = ""
 
         report["durationMs"] = int((time.perf_counter() - source_started) * 1000)
+
+        from src.jobs.common.taxonomy import ClassificationContext, map_error_to_failure_bucket, classify_zero_kept
+        cls_context = ClassificationContext(
+            status=str(report.get("status") or ""),
+            error=str(report.get("error") or ""),
+            classification="",
+            http_status=None,
+            fetched_count=int(report.get("fetchedCount") or 0),
+        )
+        if report["status"] == "error" or report.get("error"):
+            report["failureBucket"] = map_error_to_failure_bucket(cls_context).value
+        if int(report.get("keptCount") or 0) == 0 and report["status"] != "excluded":
+            report["zeroKeptClassification"] = classify_zero_kept(cls_context).value
+
         return report, canonical_batch
 
     def run_stage() -> None:
@@ -463,7 +477,7 @@ def run_source_execution_stage(
 
     # The closure below expects `now_iso()` and `fallback_error_report()`/`mark_task_finished()`.
     def fallback_error_report(source_name: str, exc: Exception) -> dict[str, Any]:
-        return {
+        report: dict[str, Any] = {
             "name": source_name,
             "status": "error",
             "adapter": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter"))
@@ -492,6 +506,17 @@ def run_source_execution_stage(
                 },
             },
         }
+        from src.jobs.common.taxonomy import ClassificationContext, map_error_to_failure_bucket, classify_zero_kept
+        cls_context = ClassificationContext(
+            status="error",
+            error=report["error"],
+            classification="",
+            http_status=None,
+            fetched_count=0,
+        )
+        report["failureBucket"] = map_error_to_failure_bucket(cls_context).value
+        report["zeroKeptClassification"] = classify_zero_kept(cls_context).value
+        return report
 
     def mark_task_started(source_name: str) -> None:
         start_time = now_iso()

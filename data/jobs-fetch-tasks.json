@@ -1,131 +1,40 @@
 {
   "schemaVersion": "1.0",
-  "runId": "fetch_b2026a927e",
-  "startedAt": "2026-03-21T19:17:38.906524+00:00",
-  "finishedAt": "2026-03-21T19:18:33.222469+00:00",
+  "runId": "",
+  "startedAt": "2026-03-25T20:55:40.212144+00:00",
+  "finishedAt": "2026-03-25T20:55:57.810145+00:00",
   "summary": {
     "queued": 0,
     "running": 0,
-    "ok": 13,
-    "error": 0
+    "ok": 0,
+    "error": 1
+  },
+  "taskProgress": {
+    "active": false,
+    "phaseKey": "completed",
+    "phaseLabel": "Completed",
+    "mode": "determinate",
+    "ratio": 1.0,
+    "counts": {
+      "totalTasks": 1,
+      "queuedTasks": 0,
+      "runningTasks": 0,
+      "completedTasks": 1,
+      "resolvedSources": 0,
+      "outputCount": 0,
+      "failedSources": 0,
+      "excludedSources": 0
+    }
   },
   "tasks": [
     {
-      "name": "teamtailor_sources",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.692813+00:00",
-      "finishedAt": "2026-03-21T19:18:08.019466+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:18:08.019466+00:00",
-      "error": ""
-    },
-    {
-      "name": "lever_sources",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.694290+00:00",
-      "finishedAt": "2026-03-21T19:18:11.190896+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:18:11.190896+00:00",
-      "error": ""
-    },
-    {
-      "name": "greenhouse_boards",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.694920+00:00",
-      "finishedAt": "2026-03-21T19:17:54.717278+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:17:54.717278+00:00",
-      "error": ""
-    },
-    {
-      "name": "recruitee_sources",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.695858+00:00",
-      "finishedAt": "2026-03-21T19:18:14.410929+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:18:14.410929+00:00",
-      "error": ""
-    },
-    {
-      "name": "ashby_sources",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.697019+00:00",
-      "finishedAt": "2026-03-21T19:18:20.835029+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:18:20.835029+00:00",
-      "error": ""
-    },
-    {
-      "name": "pinpoint_sources",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.697896+00:00",
-      "finishedAt": "2026-03-21T19:18:04.849581+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:18:04.849581+00:00",
-      "error": ""
-    },
-    {
-      "name": "workable_sources",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.698911+00:00",
-      "finishedAt": "2026-03-21T19:17:51.261457+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:17:51.261457+00:00",
-      "error": ""
-    },
-    {
-      "name": "social_mastodon",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.699697+00:00",
-      "finishedAt": "2026-03-21T19:18:01.663755+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:18:01.663755+00:00",
-      "error": ""
-    },
-    {
-      "name": "smartrecruiters_sources",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.700476+00:00",
-      "finishedAt": "2026-03-21T19:18:17.494234+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:18:17.494234+00:00",
-      "error": ""
-    },
-    {
-      "name": "personio_sources",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.701271+00:00",
-      "finishedAt": "2026-03-21T19:18:27.198970+00:00",
-      "durationMs": 4094,
-      "heartbeatAt": "2026-03-21T19:18:27.198970+00:00",
-      "error": ""
-    },
-    {
-      "name": "breezy_sources",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.702035+00:00",
-      "finishedAt": "2026-03-21T19:17:57.998034+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:17:57.998034+00:00",
-      "error": ""
-    },
-    {
-      "name": "jazzhr_sources",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.703461+00:00",
-      "finishedAt": "2026-03-21T19:17:47.704975+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:17:47.704975+00:00",
-      "error": ""
-    },
-    {
-      "name": "social_x",
-      "status": "ok",
-      "startedAt": "2026-03-21T19:17:47.704127+00:00",
-      "finishedAt": "2026-03-21T19:18:23.981999+00:00",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-21T19:18:23.981999+00:00",
-      "error": ""
+      "name": "static_source::static:listing_url:https://www.ypuniverse.com/career",
+      "status": "error",
+      "startedAt": "2026-03-25T20:55:50.065506+00:00",
+      "finishedAt": "2026-03-25T20:55:50.250227+00:00",
+      "durationMs": 183,
+      "heartbeatAt": "2026-03-25T20:55:50.250227+00:00",
+      "error": "static_source::static:listing_url:https://www.ypuniverse.com/career: static:You Pass Universe LLC. (Sheet): no jobs extracted from source pages"
     }
   ],
   "outputs": {

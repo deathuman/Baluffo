@@ -1179,3 +1179,7 @@ def main() -> int:
         if slowest_summary:
             print(f"[jobs_fetcher] TIMING slowest-sources {slowest_summary}", flush=True)
     return 0 if output_count > 0 else 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
