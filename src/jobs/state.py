@@ -91,10 +91,18 @@ def normalize_source_state_payload(
                 "cacheDecision": clean_text(raw_entry.get("cacheDecision")),
                 "cacheDecisionReason": clean_text(raw_entry.get("cacheDecisionReason")),
                 "consecutiveFailures": _clamped_int(raw_entry.get("consecutiveFailures"), 0, 0),
+                "consecutiveZeroKept": _clamped_int(raw_entry.get("consecutiveZeroKept"), 0, 0),
                 "quarantinedUntilAt": clean_text(raw_entry.get("quarantinedUntilAt")),
                 "lastFailureAt": clean_text(raw_entry.get("lastFailureAt")),
                 "lastError": clean_text(raw_entry.get("lastError")),
+                "healthScore": _clamped_int(raw_entry.get("healthScore"), 0, 100),
+                "lastFailureBucket": clean_text(raw_entry.get("lastFailureBucket")),
             }
+            raw_latencies = raw_entry.get("recentLatencies")
+            if isinstance(raw_latencies, list):
+                clean_latencies = [_clamped_int(x, 0, 2**31 - 1) for x in raw_latencies if isinstance(x, (int, float))]
+                if clean_latencies:
+                    entry["recentLatencies"] = clean_latencies
             raw_stage_timings = (
                 raw_entry.get("lastStageTimingsMs")
                 if isinstance(raw_entry.get("lastStageTimingsMs"), dict)
@@ -545,6 +553,7 @@ def update_source_state_rows(
     finished_at: str,
     circuit_breaker_failures: int,
     circuit_breaker_cooldown_minutes: int,
+    circuit_breaker_zero_kept: int = 3,
 ) -> dict[str, dict[str, Any]]:
     def _apply_report_to_entry(name: str, report: dict[str, Any]) -> None:
         nonlocal source_state_rows
@@ -611,6 +620,18 @@ def update_source_state_rows(
             entry["lastSuccessAt"] = finished_at
             if entry["lastKeptCount"] > 0:
                 entry["lastNonEmptyAt"] = finished_at
+                entry["consecutiveZeroKept"] = 0
+            else:
+                zero_kept_count = int(entry.get("consecutiveZeroKept") or 0) + 1
+                entry["consecutiveZeroKept"] = zero_kept_count
+                if (
+                    circuit_breaker_zero_kept > 0
+                    and zero_kept_count >= circuit_breaker_zero_kept
+                    and circuit_breaker_cooldown_minutes > 0
+                ):
+                    entry["quarantinedUntilAt"] = (
+                        datetime.now(UTC) + timedelta(minutes=circuit_breaker_cooldown_minutes)
+                    ).isoformat()
             reported_fingerprint = clean_text(report.get("sourceFingerprint"))
             if not reported_fingerprint and entry["lastKeptCount"] > 0:
                 reported_fingerprint = source_rows_fingerprint(
@@ -625,6 +646,9 @@ def update_source_state_rows(
             entry.pop("quarantinedUntilAt", None)
             entry.pop("lastFailureAt", None)
             entry.pop("lastError", None)
+            failure_bucket = report.get("failureBucket")
+            if failure_bucket:
+                entry["lastFailureBucket"] = clean_text(failure_bucket)
             entry["nextEligibleCheckAt"] = _compute_next_eligible_check_at(
                 entry,
                 adapter=_adapter_for_cache(name, entry),
@@ -635,6 +659,9 @@ def update_source_state_rows(
             entry["consecutiveFailures"] = failure_count
             entry["lastFailureAt"] = finished_at
             entry["lastError"] = clean_text(report.get("error"))
+            failure_bucket = report.get("failureBucket")
+            if failure_bucket:
+                entry["lastFailureBucket"] = clean_text(failure_bucket)
             if (
                 circuit_breaker_failures > 0
                 and failure_count >= circuit_breaker_failures

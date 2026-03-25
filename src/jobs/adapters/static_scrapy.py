@@ -12,6 +12,11 @@ from typing import Any
 from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.common import config as common_config
 from src.jobs.common.datetime_utils import to_iso
+from src.jobs.common.taxonomy import (
+    ClassificationContext,
+    classify_zero_kept,
+    map_error_to_failure_bucket,
+)
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.shared.utils import coerce_int, env_flag
@@ -21,6 +26,19 @@ TIMEOUT_BUCKET_SOURCE_NAMES = {
     "kevuru games (manual website)",
     "tequilaworks (manual website)",
 }
+
+
+def _update_taxonomy_fields(source_detail: dict[str, Any]) -> dict[str, Any]:
+    """Update failureBucket and zeroKeptClassification based on current state."""
+    context = ClassificationContext(
+        status=source_detail.get("status", ""),
+        error=source_detail.get("error", ""),
+        classification=source_detail.get("classification", ""),
+    )
+    source_detail["failureBucket"] = map_error_to_failure_bucket(context).value
+    if int(source_detail.get("keptCount", 0)) == 0 and source_detail.get("status") == "ok":
+        source_detail["zeroKeptClassification"] = classify_zero_kept(context).value
+    return source_detail
 
 
 def _clean_errors(values: Any) -> list[str]:
@@ -44,6 +62,17 @@ def _base_detail(
     if not source_id:
         seed = "|".join([source_name, studio_name, *[clean_text(page) for page in pages]])
         source_id = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+    classification = "parse_error" if norm_text(status) == "error" else "ok_no_jobs"
+    context = ClassificationContext(
+        status=status,
+        error=error or "",
+        classification=classification,
+    )
+    failure_bucket = map_error_to_failure_bucket(context)
+    zero_kept_classification = None
+    if classification in ("ok_no_jobs", "parser_stale") or status == "ok":
+        zero_kept_class = classify_zero_kept(context)
+        zero_kept_classification = zero_kept_class.value
     return {
         "adapter": "scrapy_static",
         "studio": studio_name,
@@ -52,7 +81,9 @@ def _base_detail(
         "fetchedCount": 0,
         "keptCount": 0,
         "error": clean_text(error),
-        "classification": "parse_error" if norm_text(status) == "error" else "ok_no_jobs",
+        "classification": classification,
+        "failureBucket": failure_bucket.value,
+        "zeroKeptClassification": zero_kept_classification,
         "top_reject_reasons": [],
         "browserFallbackRecommended": False,
         "sourceId": source_id,
@@ -233,6 +264,7 @@ def run_scrapy_static_source(
                     errors_list.append(f"{source_name}: invalid envelope type")
                 else:
                     errors_list.append(f"{source_name}: invalid envelope missing 'ok'")
+                _update_taxonomy_fields(source_detail)
                 details.append(source_detail)
                 continue
 
@@ -338,6 +370,7 @@ def run_scrapy_static_source(
                         source_detail["stats"]["downloader/response_count"]
                     )
 
+            _update_taxonomy_fields(source_detail)
             details.append(source_detail)
         except subprocess.TimeoutExpired:
             source_detail.update(
@@ -348,6 +381,7 @@ def run_scrapy_static_source(
                     "browserFallbackRecommended": False,
                 }
             )
+            _update_taxonomy_fields(source_detail)
             errors_list.append(f"{source_name}: subprocess timeout")
             details.append(source_detail)
         except Exception as exc:  # noqa: BLE001
@@ -359,6 +393,7 @@ def run_scrapy_static_source(
                     "browserFallbackRecommended": False,
                 }
             )
+            _update_taxonomy_fields(source_detail)
             errors_list.append(f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}")
             details.append(source_detail)
 

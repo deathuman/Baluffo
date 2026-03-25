@@ -23,6 +23,7 @@ from src.jobs.adapters import community as community_adapter
 from src.jobs.adapters import static as static_adapter
 from src.jobs.adapters.api import default_source_loaders as adapters_default_source_loaders
 from src.jobs.common import config as common_config
+from src.jobs.common import health as health_module
 from src.jobs.common import social as common_social
 from src.jobs.common import sources as common_sources
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
@@ -437,6 +438,7 @@ def run_pipeline(
     cold_source_cadence_minutes: int = DEFAULT_COLD_SOURCE_CADENCE_MINUTES,
     circuit_breaker_failures: int = 3,
     circuit_breaker_cooldown_minutes: int = 180,
+    circuit_breaker_zero_kept: int = 3,
     ignore_circuit_breaker: bool = False,
     social_enabled: bool = False,
     social_config_path: Path | None = None,
@@ -843,6 +845,12 @@ def run_pipeline(
             "sources": source_reports,
             "contaminationAudit": contamination_report,
             "locationQualityAudit": location_quality_audit,
+            "healthSummary": {
+                "topFailingDomains": health_module.get_top_failing_sources(source_state_rows, limit=10),
+                "topZeroKeptDomains": health_module.get_top_zero_kept_sources(source_state_rows, limit=10),
+                "topSlowDomains": health_module.get_top_slow_sources(source_state_rows, limit=10),
+                "quarantinedSources": health_module.get_quarantined_sources(source_state_rows),
+            },
             "outputs": {
                 "json": str(paths.json_path),
                 "csv": str(paths.csv_path),
@@ -868,6 +876,7 @@ def run_pipeline(
         finished_at=finished_at,
         circuit_breaker_failures=circuit_breaker_failures,
         circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+        circuit_breaker_zero_kept=circuit_breaker_zero_kept,
     )
     write_source_state(paths.source_state_path, source_state_rows)
     write_job_lifecycle_state(paths.lifecycle_state_path, lifecycle_rows)
@@ -984,6 +993,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=180,
         help="Minutes to quarantine a source after it trips the circuit breaker.",
+    )
+    parser.add_argument(
+        "--circuit-breaker-zero-kept",
+        type=int,
+        default=3,
+        help="Consecutive zero-kept runs required before a source is temporarily quarantined.",
     )
     parser.add_argument(
         "--ignore-circuit-breaker",
@@ -1114,6 +1129,7 @@ def main() -> int:
         static_detail_concurrency=args.static_detail_concurrency,
         circuit_breaker_failures=args.circuit_breaker_failures,
         circuit_breaker_cooldown_minutes=args.circuit_breaker_cooldown_minutes,
+        circuit_breaker_zero_kept=args.circuit_breaker_zero_kept,
         respect_source_cadence=bool(args.respect_source_cadence),
         hot_source_cadence_minutes=args.hot_source_cadence_minutes,
         cold_source_cadence_minutes=args.cold_source_cadence_minutes,
