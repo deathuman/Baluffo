@@ -14,6 +14,11 @@ from urllib.parse import urljoin, urlparse
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, strip_html_text
 from src.jobs.common import config as common_config
 from src.jobs.common.fetch import fetch_with_retries
+from src.jobs.common.taxonomy import (
+    ClassificationContext,
+    classify_zero_kept,
+    map_error_to_failure_bucket,
+)
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 
@@ -96,6 +101,19 @@ def build_static_entry_report(
             "detail_skipped_by_listing_fingerprint": 0,
         },
     }
+
+
+def update_source_detail_taxonomy(source_detail: dict[str, Any]) -> dict[str, Any]:
+    """Update failureBucket and zeroKeptClassification based on current state."""
+    context = ClassificationContext(
+        status=source_detail.get("status", ""),
+        error=source_detail.get("error", ""),
+        classification=source_detail.get("classification", ""),
+    )
+    source_detail["failureBucket"] = map_error_to_failure_bucket(context).value
+    if int(source_detail.get("keptCount", 0)) == 0 and source_detail.get("status") == "ok":
+        source_detail["zeroKeptClassification"] = classify_zero_kept(context).value
+    return source_detail
 
 
 def source_detail_concurrency_for(

@@ -25,7 +25,6 @@ from src.jobs.adapters.plugins.static import register_static_plugins
 from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_helpers import (
-    add_detail_link,
     build_static_entry_report,
     build_static_source_runtime_config,
     choose_detail_traversal_mode,
@@ -33,6 +32,7 @@ from src.jobs.adapters.static_helpers import (
     process_detail_link,
     source_detail_concurrency_for,
     source_detail_limit_for,
+    update_source_detail_taxonomy,
 )
 from src.jobs.adapters.static_scrapy import run_scrapy_static_source
 from src.jobs.common import config as common_config
@@ -147,6 +147,7 @@ def run_static_studio_pages_source(
             entry_report["status"] = "excluded"
             entry_report["error"] = entry_report["cacheDecisionReason"]
             entry_report["exclusionReason"] = f"cache_{entry_report['cacheDecisionReason']}"
+            update_source_detail_taxonomy(entry_report)
             details.append(entry_report)
             continue
         state_entry = (
@@ -171,6 +172,7 @@ def run_static_studio_pages_source(
                 entry_report["error"] = "not_modified_304"
                 entry_report["exclusionReason"] = "cache_not_modified_304"
                 entry_report["cacheDecisionReason"] = "not_modified_304"
+                update_source_detail_taxonomy(entry_report)
                 details.append(entry_report)
                 continue
 
@@ -247,6 +249,7 @@ def run_static_studio_pages_source(
                     entry_report["error"] = ""
             else:
                 entry_report["status"] = "ok"
+            update_source_detail_taxonomy(entry_report)
             details.append(entry_report)
             continue
         except NoPluginFoundError:
@@ -570,6 +573,7 @@ def run_static_studio_pages_source(
             # so it isn't silently reported as ok-with-zero.
             if len(selected_sources) == 1:
                 errors.append(f"static:{source_name}: no jobs extracted from source pages")
+        update_source_detail_taxonomy(entry_report)
         details.append(entry_report)
 
     diag_studio = "multiple"

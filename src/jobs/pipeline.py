@@ -845,12 +845,6 @@ def run_pipeline(
             "sources": source_reports,
             "contaminationAudit": contamination_report,
             "locationQualityAudit": location_quality_audit,
-            "healthSummary": {
-                "topFailingDomains": health_module.get_top_failing_sources(source_state_rows, limit=10),
-                "topZeroKeptDomains": health_module.get_top_zero_kept_sources(source_state_rows, limit=10),
-                "topSlowDomains": health_module.get_top_slow_sources(source_state_rows, limit=10),
-                "quarantinedSources": health_module.get_quarantined_sources(source_state_rows),
-            },
             "outputs": {
                 "json": str(paths.json_path),
                 "csv": str(paths.csv_path),
@@ -862,13 +856,7 @@ def run_pipeline(
             },
         }
     )
-    write_text_if_changed(
-        paths.report_path, json.dumps(report_payload, indent=2, ensure_ascii=False)
-    )
     finished_at = clean_text(report_payload.get("finishedAt")) or now_iso()
-    write_task_state(finished_at=finished_at, force=True)
-    write_success_cache(paths.success_cache_path, source_reports)
-
     source_state_rows = update_source_state_rows(
         source_state_rows=source_state_rows,
         source_reports=source_reports,
@@ -878,6 +866,20 @@ def run_pipeline(
         circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
         circuit_breaker_zero_kept=circuit_breaker_zero_kept,
     )
+    report_payload["healthSummary"] = {
+        "topFailingDomains": health_module.get_top_failing_sources(source_state_rows, limit=10),
+        "topZeroKeptDomains": health_module.get_top_zero_kept_sources(source_state_rows, limit=10),
+        "topSlowDomains": health_module.get_top_slow_sources(source_state_rows, limit=10),
+        "quarantinedSources": health_module.get_quarantined_sources(source_state_rows),
+    }
+    import sys
+    print(f"DEBUG: healthSummary in input: {'healthSummary' in report_payload}", file=sys.stderr)
+    print(f"DEBUG: report_payload keys: {list(report_payload.keys())}", file=sys.stderr)
+    write_text_if_changed(
+        paths.report_path, json.dumps(report_payload, indent=2, ensure_ascii=False)
+    )
+    write_task_state(finished_at=finished_at, force=True)
+    write_success_cache(paths.success_cache_path, source_reports)
     write_source_state(paths.source_state_path, source_state_rows)
     write_job_lifecycle_state(paths.lifecycle_state_path, lifecycle_rows)
     return report_payload
