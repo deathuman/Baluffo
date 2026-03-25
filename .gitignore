@@ -19,14 +19,26 @@ data/*.json
 data/*.csv
 data/*.log
 data/*.md
+data/*.jsonl
 data/local-user-data/
 !data/.gitkeep
 !data/source-discovery-config.json
+!data/jobs-unified.json
+!data/jobs-unified-light.json
 
 # Phantom/temp files
 nul
+
+# Temp test directories
+tmp-manual-check/
+tmp-pytest-bridge/
 
 # Packaged/local secrets
 packaging/github-app-sync-config.json
 packaging/github-app-sync-config.localkey.json
 baluffo.config.local.json
+
+# Dev tool configs
+.kilo/
+.kilocode/
+.opencode/

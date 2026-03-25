@@ -1,0 +1,451 @@
+# Baluffo Maturity Criteria
+# Config-driven criteria for repository maturity analysis
+# Supports four-state evaluation: met, unmet, not_applicable, unknown
+# Evidence levels: present, enforced, passes
+
+version: 1
+profile: baluffo
+
+pillars:
+  style_validation:
+    weight: 1.0
+    description: Linting, formatting, and type hints
+    criteria:
+      linting_config_exists:
+        weight: 0.8
+        check: file_exists_any
+        paths:
+          - ".eslintrc"
+          - "pyproject.toml"
+          - "ruff.toml"
+          - ".ruff.toml"
+        evidence: present
+
+      linting_enforced:
+        weight: 1.0
+        check: script_in_package_json
+        script: "lint:py"
+        evidence: enforced
+
+      linting_passes:
+        weight: 1.5
+        check: command_passes
+        command: "npm run lint:py"
+        mode: verify
+        evidence: passes
+
+      js_linting_config:
+        weight: 0.7
+        check: file_exists_any
+        paths:
+          - ".eslintrc"
+          - ".eslintrc.js"
+          - ".eslintrc.json"
+          - "eslint.config.js"
+        evidence: present
+
+      js_linting_passes:
+        weight: 1.0
+        check: command_passes
+        command: "npm run lint:js"
+        mode: verify
+        evidence: passes
+
+      python_formatting_config:
+        weight: 0.7
+        check: file_exists_any
+        paths:
+          - "pyproject.toml"
+          - "ruff.toml"
+          - ".ruff.toml"
+        evidence: present
+
+      formatting_enforced:
+        weight: 0.8
+        check: script_in_package_json
+        script: "format:py"
+        evidence: enforced
+
+      type_hints_present:
+        weight: 0.6
+        check: code_contains_pattern
+        pattern: ": (int|str|bool|float|list|dict|tuple|None)"
+        paths:
+          - "src/**/*.py"
+        evidence: present
+        min_matches: 3
+
+  build_system:
+    weight: 1.0
+    description: Build scripts, lockfiles, and release processes
+    criteria:
+      build_entrypoint:
+        weight: 1.0
+        check: script_in_package_json
+        script: "build"
+        evidence: present
+
+      portable_build:
+        weight: 1.2
+        check: script_in_package_json
+        script: "build:portable-exe"
+        evidence: present
+
+      ship_bundle:
+        weight: 1.0
+        check: script_in_package_json
+        script: "build:ship-bundle"
+        evidence: present
+
+      npm_lockfile:
+        weight: 1.0
+        check: file_exists
+        path: "package-lock.json"
+        evidence: present
+
+      python_version_guard:
+        weight: 0.8
+        check: script_in_package_json
+        script: "check:python-version"
+        evidence: present
+
+      release_docs:
+        weight: 0.8
+        check: file_exists_any
+        paths:
+          - "docs/RELEASE.md"
+          - "RELEASE.md"
+        evidence: present
+
+  testing:
+    weight: 1.2
+    description: Test suites, coverage, and CI integration
+    criteria:
+      python_tests_exist:
+        weight: 1.0
+        check: directory_exists
+        path: "tests"
+        evidence: present
+
+      pytest_config:
+        weight: 0.8
+        check: file_exists_any
+        paths:
+          - "pytest.ini"
+          - "pyproject.toml"
+          - "setup.cfg"
+        evidence: present
+
+      python_tests_pass:
+        weight: 1.5
+        check: command_passes
+        command: "npm run test:py"
+        mode: verify
+        evidence: passes
+
+      frontend_unit_tests:
+        weight: 1.0
+        check: script_in_package_json
+        script: "test:frontend:unit"
+        evidence: present
+
+      frontend_unit_tests_pass:
+        weight: 1.2
+        check: command_passes
+        command: "npm run test:unit"
+        mode: verify
+        evidence: passes
+
+      smoke_tests:
+        weight: 1.0
+        check: script_in_package_json
+        script: "test:smoke"
+        evidence: present
+
+      smoke_tests_pass:
+        weight: 1.2
+        check: command_passes
+        command: "npm run test:smoke"
+        mode: verify
+        evidence: passes
+
+      packaged_desktop_smoke:
+        weight: 1.0
+        check: script_in_package_json
+        script: "test:frontend:packaged"
+        evidence: present
+
+      testing_docs:
+        weight: 0.7
+        check: file_exists
+        path: "docs/testing.md"
+        evidence: present
+
+      architecture_docs:
+        weight: 0.7
+        check: file_exists
+        path: "docs/architecture-ai-map.md"
+        evidence: present
+
+  documentation:
+    weight: 1.0
+    description: README, AGENTS.md, and technical docs
+    criteria:
+      readme_exists:
+        weight: 1.0
+        check: file_exists_any
+        paths:
+          - "README.md"
+          - "README.rst"
+        evidence: present
+
+      readme_complete:
+        weight: 1.0
+        check: readme_has_sections
+        sections:
+          - "install"
+          - "usage"
+        evidence: present
+
+      agents_md:
+        weight: 1.2
+        check: file_exists
+        path: "AGENTS.md"
+        evidence: present
+
+      contributing_md:
+        weight: 0.8
+        check: file_exists_any
+        paths:
+          - "CONTRIBUTING.md"
+          - "CONTRIBUTING.rst"
+        evidence: present
+
+      admin_bridge_api_docs:
+        weight: 1.0
+        check: file_exists
+        path: "docs/admin-bridge-api.md"
+        evidence: present
+
+      data_contract_docs:
+        weight: 0.8
+        check: file_exists
+        path: "docs/DATA_CONTRACT.md"
+        evidence: present
+
+      troubleshooting_docs:
+        weight: 0.6
+        check: file_exists_any
+        paths:
+          - "docs/TROUBLESHOOTING.md"
+          - "TROUBLESHOOTING.md"
+        evidence: present
+
+  dev_environment:
+    weight: 1.0
+    description: Setup, dev servers, and local configuration
+    criteria:
+      setup_docs:
+        weight: 1.0
+        check: readme_has_sections
+        sections:
+          - "setup"
+          - "install"
+        evidence: present
+
+      npm_ci_documented:
+        weight: 0.7
+        check: readme_has_sections
+        sections:
+          - "npm ci"
+        evidence: present
+
+      dev_bridge_entrypoint:
+        weight: 1.0
+        check: script_in_package_json
+        script: "dev:bridge"
+        evidence: present
+
+      dev_pipeline_entrypoint:
+        weight: 1.0
+        check: script_in_package_json
+        script: "dev:pipeline"
+        evidence: present
+
+      python_version_guard:
+        weight: 0.8
+        check: script_in_package_json
+        script: "check:python-version"
+        evidence: present
+
+      precommit_config:
+        weight: 0.8
+        check: file_exists
+        path: ".pre-commit-config.yaml"
+        evidence: present
+
+      precommit_installed:
+        weight: 0.6
+        check: command_passes
+        command: "pre-commit --version"
+        mode: verify
+        evidence: passes
+
+  debugging:
+    weight: 0.8
+    description: Logging, error handling, and diagnostics
+    criteria:
+      logging_present:
+        weight: 0.8
+        check: code_contains_pattern
+        pattern: "import logging|from log"
+        paths:
+          - "src/**/*.py"
+        evidence: present
+        min_matches: 3
+
+      error_handling:
+        weight: 0.8
+        check: code_contains_pattern
+        pattern: "try:|except"
+        paths:
+          - "src/**/*.py"
+        evidence: present
+        min_matches: 3
+
+      health_entrypoint:
+        weight: 0.7
+        check: script_in_package_json
+        script: "verify"
+        evidence: present
+
+      logs_documented:
+        weight: 0.6
+        check: readme_has_sections
+        sections:
+          - "log"
+        evidence: present
+
+  versioning:
+    weight: 0.9
+    description: Version source, changelog, and release process
+    criteria:
+      version_source:
+        weight: 1.0
+        check: file_exists_any
+        paths:
+          - "pyproject.toml"
+          - "package.json"
+        evidence: present
+
+      changelog:
+        weight: 1.0
+        check: file_exists_any
+        paths:
+          - "CHANGELOG.md"
+          - "CHANGELOG.rst"
+          - "CHANGES.md"
+        evidence: present
+
+      release_process_doc:
+        weight: 0.8
+        check: file_exists_any
+        paths:
+          - "docs/RELEASE.md"
+          - "RELEASE.md"
+        evidence: present
+
+      ci_workflows:
+        weight: 0.8
+        check: directory_exists
+        path: ".github/workflows"
+        evidence: present
+
+  security:
+    weight: 0.9
+    description: Security policy, dependency scanning, and git hygiene
+    criteria:
+      security_md:
+        weight: 1.0
+        check: file_exists_any
+        paths:
+          - "SECURITY.md"
+          - "security.md"
+        evidence: present
+
+      dependabot_config:
+        weight: 0.9
+        check: file_exists
+        path: ".github/dependabot.yml"
+        evidence: present
+
+      gitignore:
+        weight: 1.0
+        check: file_exists
+        path: ".gitignore"
+        evidence: present
+
+      no_hardcoded_secrets:
+        weight: 1.0
+        check: no_secrets_in_code
+        evidence: present
+        # Assumed present, verified by code review
+
+  onboarding:
+    weight: 0.8
+    description: First-user paths for humans and AI agents
+    criteria:
+      start_here_links:
+        weight: 0.8
+        check: readme_has_sections
+        sections:
+          - "quick start"
+        evidence: present
+
+      command_cheat_sheet:
+        weight: 1.0
+        check: file_exists
+        path: "AGENTS.md"
+        evidence: present
+        # AGENTS.md typically contains cheat sheet
+
+      first_contributor_path:
+        weight: 0.7
+        check: file_exists_any
+        paths:
+          - "CONTRIBUTING.md"
+          - "docs/contributing.md"
+        evidence: present
+
+      issue_pr_templates:
+        weight: 0.6
+        check: directory_exists
+        path: ".github/ISSUE_TEMPLATE"
+        evidence: present
+        not_applicable_if:
+          # Baluffo is a personal/project tool, not a community repo
+          - "true"
+
+# Suggestion logic for next steps
+suggestions:
+  style_validation:
+    - "Add pre-commit hooks for linting enforcement"
+    - "Enable type hints in more Python modules"
+  build_system:
+    - "Document release process in docs/RELEASE.md"
+  testing:
+    - "Add packaged desktop smoke tests if not present"
+    - "Add test coverage reporting"
+  documentation:
+    - "Add troubleshooting docs"
+    - "Add data contract documentation"
+  dev_environment:
+    - "Add .env.example for local overrides"
+  debugging:
+    - "Document logging configuration"
+  versioning:
+    - "Ensure changelog is maintained"
+  security:
+    - "Review and update security policy"
+  onboarding:
+    - "Add quick start section to README"
