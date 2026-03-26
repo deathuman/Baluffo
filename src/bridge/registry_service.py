@@ -55,9 +55,7 @@ class RegistryService:
     def normalize_state(
         self, state: dict[str, list[dict[str, Any]]]
     ) -> dict[str, list[dict[str, Any]]]:
-        def _apply_bucket_lifecycle_defaults(
-            row: dict[str, Any], *, bucket: str
-        ) -> dict[str, Any]:
+        def _apply_bucket_lifecycle_defaults(row: dict[str, Any], *, bucket: str) -> dict[str, Any]:
             updated = dict(row)
             default_state = {
                 "active": "live",

@@ -302,10 +302,7 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
         moved, remaining = api.move_entries(state["rejected"], [str(item) for item in ids])
         state["rejected"] = remaining
-        moved = [
-            _transition_registry_row(api, row, candidate_state="validated")
-            for row in moved
-        ]
+        moved = [_transition_registry_row(api, row, candidate_state="validated") for row in moved]
         state["pending"] = api.unique_sources([*state["pending"], *moved])
         state = api.persist_state_and_auto_sync(state, reason="registry_restore_rejected")
         handler._send_json({"restored": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001

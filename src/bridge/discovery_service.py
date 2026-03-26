@@ -234,7 +234,9 @@ class DiscoveryService:
             )
             report["summary"] = summary
             queued_ids = self._queued_report_candidate_ids(report)
-            candidates = report.get("candidates") if isinstance(report.get("candidates"), list) else []
+            candidates = (
+                report.get("candidates") if isinstance(report.get("candidates"), list) else []
+            )
             if candidates:
                 report["candidates"] = [
                     self._stamp_live_transition(row, approved_by="discovery_auto_approve")

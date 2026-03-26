@@ -2326,10 +2326,14 @@ def test_run_discovery_persists_deferred_candidates_in_candidates_file() -> None
                     discovery_orchestrator, "discover_web_search_candidates", return_value=([], [])
                 ),
                 mock.patch.object(
-                    discovery_orchestrator, "discover_gamesmap_candidates", return_value=([], [], [])
+                    discovery_orchestrator,
+                    "discover_gamesmap_candidates",
+                    return_value=([], [], []),
                 ),
                 mock.patch.object(
-                    discovery_orchestrator, "discover_gameprog_candidates", return_value=([], [], [])
+                    discovery_orchestrator,
+                    "discover_gameprog_candidates",
+                    return_value=([], [], []),
                 ),
                 mock.patch.object(discovery_orchestrator, "load_url_patches", return_value={}),
                 mock.patch.object(
@@ -2342,11 +2346,16 @@ def test_run_discovery_persists_deferred_candidates_in_candidates_file() -> None
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                    discovery_config={
+                        "gamesmap": {"enabled": False},
+                        "gameprog": {"enabled": False},
+                    },
                     fetcher=fake_fetch,
                 )
 
-            persisted_candidates = json.loads(sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8"))
+            persisted_candidates = json.loads(
+                sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8")
+            )
             assert report["summary"]["queuedCandidateCount"] == 2
             assert report["summary"]["discoverableButDeferredCount"] == 1
             assert len(persisted_candidates) == 3
@@ -2460,10 +2469,14 @@ def test_run_discovery_uses_previous_deferred_review_history_in_ranking() -> Non
                     discovery_orchestrator, "discover_web_search_candidates", return_value=([], [])
                 ),
                 mock.patch.object(
-                    discovery_orchestrator, "discover_gamesmap_candidates", return_value=([], [], [])
+                    discovery_orchestrator,
+                    "discover_gamesmap_candidates",
+                    return_value=([], [], []),
                 ),
                 mock.patch.object(
-                    discovery_orchestrator, "discover_gameprog_candidates", return_value=([], [], [])
+                    discovery_orchestrator,
+                    "discover_gameprog_candidates",
+                    return_value=([], [], []),
                 ),
                 mock.patch.object(discovery_orchestrator, "load_url_patches", return_value={}),
                 mock.patch.object(
@@ -2476,7 +2489,10 @@ def test_run_discovery_uses_previous_deferred_review_history_in_ranking() -> Non
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                    discovery_config={
+                        "gamesmap": {"enabled": False},
+                        "gameprog": {"enabled": False},
+                    },
                     fetcher=fake_fetch,
                 )
 
