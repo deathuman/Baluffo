@@ -2,7 +2,7 @@
 
 > **Status:** Active — Q2 2026
 > **Last updated:** 2026-03-26
-> **Current milestone:** M4 is complete; M5 is next.
+> **Current milestone:** M4 is complete; M5 planning is next.
 > **North Star:** Increase useful live coverage without letting fetch cost, failure rate, or source noise scale faster than output quality.
 
 ---
@@ -291,7 +291,7 @@ For this milestone, "measurably cleaner and faster" means:
 
 ### Completion Status âœ…
 
-**Implemented and verified â€” 2026-03-26.**
+**Implemented, verified, and pushed â€” 2026-03-26.**
 
 The codebase now includes:
 - BambooHR and Workday provider loaders in the provider plugin registry and fetcher compatibility surface
@@ -304,6 +304,8 @@ The codebase now includes:
 
 ## Milestone 5 — Strategic Coverage Expansion
 
+**Status:** Ready for planning.
+
 **Window:** Week 7–10
 **Owner:** Coverage / source curator
 **Support:** Discovery maintainer
@@ -311,6 +313,7 @@ The codebase now includes:
 ### Why This Comes Fifth
 
 Remaining work should be targeted, not broad. Current fetch shows EA and Nintendo already present as active static sources.
+Milestone 5 is now the next planning target, so the next pass should focus on curating the backlog and tightening the inclusion rubric before implementation starts.
 
 ### Deliverables
 
