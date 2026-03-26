@@ -63,6 +63,7 @@ from src.source_registry import (  # noqa: F401
     ACTIVE_PATH,
     DISCOVERY_CANDIDATES_PATH,
     DISCOVERY_REPORT_PATH,
+    M5_STRATEGIC_BACKLOG_PATH,
     PENDING_PATH,
     REJECTED_PATH,
     URL_PATCH_MANIFEST_PATH,
@@ -101,6 +102,7 @@ from .probe import (  # noqa: F401
     validate_candidate_for_probe,
 )
 from .reporting import (  # noqa: F401
+    build_m5_strategic_backlog,
     emit_log,
     merge_candidate_streams,
     stage_curated_seed_candidates,

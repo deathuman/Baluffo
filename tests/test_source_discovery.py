@@ -778,7 +778,9 @@ def test_discover_seed_careers_page_candidates_infers_provider_without_web_searc
     try:
         providers, static_rows, failures = sd.discover_seed_careers_page_candidates(
             5,
-            fetcher=lambda *_: '<a href="https://boards.greenhouse.io/example-studio/jobs/123">Job</a>',
+            fetcher=lambda *_: (
+                '<a href="https://boards.greenhouse.io/example-studio/jobs/123">Job</a>'
+            ),
         )
     finally:
         sd.STUDIO_SEEDS = previous
@@ -827,10 +829,12 @@ def test_discover_seed_careers_page_candidates_builds_static_candidate_without_w
     try:
         providers, static_rows, failures = sd.discover_seed_careers_page_candidates(
             5,
-            fetcher=lambda *_: """
+            fetcher=lambda *_: (
+                """
             <a href="/jobs/rendering-engineer">Rendering Engineer</a>
             <a href="/jobs/gameplay-engineer">Gameplay Engineer</a>
-            """,
+            """
+            ),
         )
     finally:
         sd.STUDIO_SEEDS = previous
@@ -2510,6 +2514,228 @@ def test_run_discovery_uses_previous_deferred_review_history_in_ranking() -> Non
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
+
+
+def test_build_m5_strategic_backlog_applies_frozen_lanes_and_identity_rules() -> None:
+    backlog = sd.build_m5_strategic_backlog(
+        report_candidates=[
+            {
+                "sourceId": "source-1",
+                "name": "TiMi Studio Group",
+                "studio": "TiMi Studio Group",
+                "adapter": "static",
+                "rankScore": 88,
+                "rankReasons": ["live_jobs_detected"],
+                "jobsFound": 4,
+                "hqRegion": "Asia",
+            },
+            {
+                "id": "custom-row",
+                "name": "Custom Studio",
+                "studio": "Custom Studio",
+                "adapter": "static",
+                "score": 55,
+                "rankReasons": [],
+                "jobsFound": 0,
+                "region": "North America",
+            },
+            {
+                "id": "workday-row",
+                "name": "Wolcen Studios",
+                "studio": "Wolcen Studios",
+                "adapter": "workday",
+                "rankScore": 80,
+                "rankReasons": ["live_jobs_detected"],
+                "jobsFound": 2,
+            },
+        ],
+        failures=[
+            {
+                "name": "Blocked Static",
+                "adapter": "static",
+                "dropReason": "blocked_domain",
+                "dropStage": "suppressed_static",
+            },
+            {
+                "name": "Existing Source",
+                "adapter": "static",
+                "dropReason": "existing_id",
+            },
+        ],
+        active_rows=[],
+        source_state_rows={
+            "Custom Studio": {
+                "lastStatus": "ok",
+                "lastKeptCount": 4,
+            }
+        },
+    )
+
+    assert [row["coverageLane"] for row in backlog] == [
+        "lane_c_asia_custom",
+        "lane_b_custom",
+        "lane_a_m4_followup",
+        "lane_d_defer",
+        "lane_d_defer",
+    ]
+    assert {row["coverageLane"] for row in backlog}.issubset(
+        {
+            "lane_a_m4_followup",
+            "lane_b_custom",
+            "lane_c_asia_custom",
+            "lane_d_defer",
+        }
+    )
+
+    asia_row = backlog[0]
+    assert asia_row["candidateIdentityKey"] == "source-1"
+    assert asia_row["coveragePriority"] > backlog[1]["coveragePriority"]
+    assert "asia_hq" in asia_row["rankReasons"]
+    assert "open_role_evidence" in asia_row["rankReasons"]
+    assert "weak_regional_coverage" in asia_row["rankReasons"]
+
+    custom_row = backlog[1]
+    assert custom_row["candidateIdentityKey"] == sr.source_identity(
+        {"id": "custom-row", "name": "Custom Studio", "adapter": "static"}
+    )
+    assert custom_row["firstRunOutcome"] == "healthy_keep"
+    assert custom_row["firstRunKeptCount"] == 4
+
+    workday_row = backlog[2]
+    assert workday_row["coverageLane"] == "lane_a_m4_followup"
+    assert workday_row["exclusionStatus"] == "excluded"
+    assert workday_row["exclusionReason"] == "m4_family_followup"
+
+    blocked_row = backlog[3]
+    assert blocked_row["exclusionStatus"] == "excluded"
+    assert blocked_row["exclusionReason"] == "blocked_domain"
+
+    existing_row = backlog[4]
+    assert existing_row["exclusionStatus"] == "excluded"
+    assert existing_row["exclusionReason"] == "existing_id"
+
+
+def test_run_discovery_writes_m5_backlog_snapshot() -> None:
+    with workspace_tmpdir("source-discovery") as root:
+        prev_paths = (
+            sd.ACTIVE_PATH,
+            sd.PENDING_PATH,
+            sd.REJECTED_PATH,
+            sd.DISCOVERY_CANDIDATES_PATH,
+            sd.DISCOVERY_REPORT_PATH,
+            sd.M5_STRATEGIC_BACKLOG_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
+        )
+        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+        prev_seeds = list(sd.STUDIO_SEEDS)
+        prev_sheet = discovery_orchestrator.discover_game_studio_sheet_candidates
+        prev_gamesmap = discovery_orchestrator.discover_gamesmap_candidates
+        prev_gameprog = discovery_orchestrator.discover_gameprog_candidates
+        prev_web = discovery_orchestrator.discover_web_search_candidates
+        prev_seed_scan = discovery_orchestrator.sd.discover_seed_careers_page_candidates
+        prev_probe = discovery_orchestrator.async_probe_candidate
+        try:
+            sd.ACTIVE_PATH = root / "active.json"
+            sd.PENDING_PATH = root / "pending.json"
+            sd.REJECTED_PATH = root / "rejected.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+            sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.M5_STRATEGIC_BACKLOG_PATH = root / "m5-strategic-backlog.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+            sd.STUDIO_SEEDS = []
+            sd.STATIC_DISCOVERY_CANDIDATES = [
+                {
+                    "name": "Asia Studio",
+                    "studio": "Asia Studio",
+                    "adapter": "static",
+                    "listing_url": "https://asia.example/jobs",
+                    "evidenceScore": 88,
+                    "jobsFound": 4,
+                    "hqRegion": "Asia",
+                    "discoveryMethod": "seed",
+                    "discoveryStage": "curated_seed",
+                }
+            ]
+
+            async def fake_probe(
+                candidate, timeout_s, *, fetcher, try_playwright=None, playwright_semaphore=None
+            ):
+                return True, 4, ""
+
+            discovery_orchestrator.discover_game_studio_sheet_candidates = lambda *args, **kwargs: (
+                [],
+                [],
+                [],
+            )
+            discovery_orchestrator.discover_gamesmap_candidates = lambda *args, **kwargs: (
+                [],
+                [],
+                [],
+            )
+            discovery_orchestrator.discover_gameprog_candidates = lambda *args, **kwargs: (
+                [],
+                [],
+                [],
+            )
+            discovery_orchestrator.discover_web_search_candidates = lambda *args, **kwargs: (
+                [],
+                [],
+                [],
+            )
+            discovery_orchestrator.sd.discover_seed_careers_page_candidates = (
+                lambda *args, **kwargs: ([], [], [])
+            )
+            discovery_orchestrator.async_probe_candidate = fake_probe
+
+            report = discovery_orchestrator.run_discovery(
+                timeout_s=1,
+                top_n=0,
+                preset="uncapped",
+                mode="static",
+                include_web_search=False,
+                discovery_config=sd.load_discovery_config(),
+                fetcher=lambda *args, **kwargs: "",
+            )
+
+            assert report["summary"]["queuedCandidateCount"] == 1
+            assert sd.DISCOVERY_CANDIDATES_PATH.exists()
+            assert sd.M5_STRATEGIC_BACKLOG_PATH.exists()
+
+            backlog = json.loads(sd.M5_STRATEGIC_BACKLOG_PATH.read_text(encoding="utf-8"))
+            assert len(backlog) == 1
+            assert backlog[0]["candidateIdentityKey"] == sr.source_identity(
+                {
+                    "name": "Asia Studio",
+                    "studio": "Asia Studio",
+                    "adapter": "static",
+                    "listing_url": "https://asia.example/jobs",
+                    "evidenceScore": 88,
+                    "jobsFound": 4,
+                    "hqRegion": "Asia",
+                    "discoveryMethod": "seed",
+                    "discoveryStage": "curated_seed",
+                }
+            )
+            assert backlog[0]["coverageLane"] == "lane_c_asia_custom"
+            assert backlog[0]["ownerMilestone"] == "M5"
+        finally:
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+                sd.M5_STRATEGIC_BACKLOG_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
+            ) = prev_paths
+            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+            sd.STUDIO_SEEDS = prev_seeds
+            discovery_orchestrator.discover_game_studio_sheet_candidates = prev_sheet
+            discovery_orchestrator.discover_gamesmap_candidates = prev_gamesmap
+            discovery_orchestrator.discover_gameprog_candidates = prev_gameprog
+            discovery_orchestrator.discover_web_search_candidates = prev_web
+            discovery_orchestrator.sd.discover_seed_careers_page_candidates = prev_seed_scan
+            discovery_orchestrator.async_probe_candidate = prev_probe
 
 
 def test_load_discovery_config_uses_configured_path() -> None:

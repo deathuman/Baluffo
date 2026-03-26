@@ -2,6 +2,16 @@
 
 This file defines repo-specific working defaults for Baluffo. These instructions are meant to reduce friction for routine coding while preserving stricter behavior for release-grade and high-risk work.
 
+## Shell Policy
+
+For this repository, AI coders should treat the elevated shell as the default execution context for PowerShell commands when the tool layer supports it.
+
+Defaults:
+- Prefer `require_escalated` for shell commands in this repo unless the user explicitly asks for a non-elevated run.
+- If a command fails because the normal sandbox shell cannot start or cannot access the needed environment, retry with elevated execution rather than assuming the repo is broken.
+- Keep using the same elevated shell choice consistently for the rest of the task once it has been established.
+- This policy guides agent behavior inside the repo; it does not override higher-priority platform or sandbox rules.
+
 ## Working Lanes
 
 ### Routine Changes

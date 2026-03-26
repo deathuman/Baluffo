@@ -52,6 +52,7 @@ from .gamesmap import discover_gamesmap_candidates
 from .probe import async_probe_candidate, validate_candidate_for_probe
 from .reporting import (
     build_discovery_task_progress,
+    build_m5_strategic_backlog,
     build_stage_summary,
     merge_candidate_streams,
     stage_curated_seed_candidates,
@@ -1211,6 +1212,13 @@ def run_discovery(
 
     save_json_atomic(sd.PENDING_PATH, unique_sources([*queued_candidates, *pending_existing]))
     save_json_atomic(sd.DISCOVERY_CANDIDATES_PATH, report_candidates)
+    m5_strategic_backlog = build_m5_strategic_backlog(
+        report_candidates=report_candidates,
+        failures=failures,
+        active_rows=active,
+        source_state_rows=source_state_rows,
+    )
+    save_json_atomic(sd.M5_STRATEGIC_BACKLOG_PATH, m5_strategic_backlog)
 
     summary = build_stage_summary(
         report_candidates,
