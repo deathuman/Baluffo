@@ -47,6 +47,31 @@ def build_stage_summary(
     deferred_by_cap = int(sum(int(value or 0) for value in deferred_reason_rows.values()))
     failed_probe_count_final = len([row for row in failures if str(row.get("stage")) == "probe"])
     probe_miss_count_final = len([row for row in failures if str(row.get("stage")) == "probe_miss"])
+    validated_count = len([row for row in current_candidates if isinstance(row, dict)])
+    approved_count = len(
+        [
+            row
+            for row in current_candidates
+            if isinstance(row, dict)
+            and str(row.get("candidateState") or "").strip().lower() in {"approved", "live"}
+        ]
+    )
+    live_count = len(
+        [
+            row
+            for row in current_candidates
+            if isinstance(row, dict)
+            and str(row.get("candidateState") or "").strip().lower() == "live"
+        ]
+    )
+    quarantined_count = len(
+        [
+            row
+            for row in current_candidates
+            if isinstance(row, dict)
+            and str(row.get("candidateState") or "").strip().lower() == "quarantined"
+        ]
+    )
     return {
         "phase": str(phase or ""),
         "phaseKey": str(phase or ""),
@@ -65,6 +90,10 @@ def build_stage_summary(
         "queuedCandidateCount": len(
             [row for row in current_candidates if not bool(row.get("deferred"))]
         ),
+        "validatedCandidateCount": validated_count,
+        "approvedCandidateCount": approved_count,
+        "liveCandidateCount": live_count,
+        "quarantinedCandidateCount": quarantined_count,
         "discoverableButDeferredCount": len(
             [row for row in current_candidates if bool(row.get("deferred"))]
         ),

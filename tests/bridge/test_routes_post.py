@@ -95,8 +95,12 @@ def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
     def persist_state_and_auto_sync(
         new_state: dict[str, Any], reason: str = None
     ) -> dict[str, Any]:
+        persisted = {
+            bucket: [dict(row) for row in (rows or [])]
+            for bucket, rows in (new_state or {}).items()
+        }
         state.clear()
-        state.update(new_state)
+        state.update(persisted)
         return state
 
     def summarize_state(state_data: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
@@ -111,6 +115,26 @@ def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
 
     def source_url_fingerprint(row: dict) -> str:
         return row.get("listing_url", "")
+
+    def move_entries(
+        rows: list[dict[str, Any]], selected_ids: list[str]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        selected = {str(item) for item in selected_ids}
+        moved = [dict(row) for row in rows if str(row.get("id") or "") in selected]
+        remaining = [dict(row) for row in rows if str(row.get("id") or "") not in selected]
+        return moved, remaining
+
+    def unique_sources(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for row in rows:
+            row_id = str((row or {}).get("id") or "")
+            if row_id and row_id in seen:
+                continue
+            if row_id:
+                seen.add(row_id)
+            out.append(dict(row))
+        return out
 
     api = BridgeApi(
         runtime_config=_RuntimeConfig(root=tmp_path),
@@ -128,6 +152,8 @@ def _make_api(tmp_path: Path, store: _FakeDesktopLocalDataStore) -> BridgeApi:
     api.persist_state_and_auto_sync = persist_state_and_auto_sync
     api.source_identity = source_identity
     api.source_url_fingerprint = source_url_fingerprint
+    api.move_entries = move_entries
+    api.unique_sources = unique_sources
     api.compute_ops_health = lambda: {"ok": True, "detail": "unit-test", "alerts": []}
     api.compute_fetcher_metrics = lambda **kw: {"windowRuns": 20, "runs": [], "aggregates": {}}
     api.sync_history_from_reports = lambda: []
@@ -441,6 +467,98 @@ def test_run_discovery_response_write_failure_is_logged_and_returns_error_json(
     assert any(
         message == "discovery_launch_response_write_failed" for message, _fields in log_calls
     )
+
+
+def test_registry_approve_stamps_live_lifecycle_metadata(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    handler = _FakeHandler()
+
+    result = handle_post(
+        handler,
+        api=api,
+        path="/registry/approve",
+        payload={"ids": ["src-2"]},
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    approved_row = api.load_state()["active"][-1]
+    assert approved_row["candidateState"] == "live"
+    assert approved_row["approvedBy"] == "registry_manual_approve"
+    assert approved_row["approvedAt"] == "2024-01-01T00:00:00Z"
+    assert approved_row["liveAt"] == "2024-01-01T00:00:00Z"
+
+
+def test_registry_reject_and_restore_update_candidate_lifecycle(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    handler = _FakeHandler()
+
+    result = handle_post(
+        handler,
+        api=api,
+        path="/registry/reject",
+        payload={"ids": ["src-2"]},
+    )
+
+    assert result is True
+    rejected_row = api.load_state()["rejected"][-1]
+    assert rejected_row["candidateState"] == "quarantined"
+    assert rejected_row["quarantinedAt"] == "2024-01-01T00:00:00Z"
+    assert rejected_row["quarantineReason"] == "registry_reject"
+
+    result = handle_post(
+        handler,
+        api=api,
+        path="/registry/restore-rejected",
+        payload={"ids": ["src-2"]},
+    )
+
+    assert result is True
+    restored_row = api.load_state()["pending"][-1]
+    assert restored_row["candidateState"] == "validated"
+    assert restored_row["approvedAt"] == ""
+    assert restored_row["liveAt"] == ""
+    assert restored_row["quarantinedAt"] == ""
+
+
+def test_registry_rollback_resets_live_row_to_validated(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    handler = _FakeHandler()
+
+    api.persist_state_and_auto_sync(
+        {
+            "active": [
+                {
+                    "id": "src-1",
+                    "adapter": "static",
+                    "name": "Active Source",
+                    "candidateState": "live",
+                    "approvedAt": "2023-12-31T00:00:00Z",
+                    "approvedBy": "registry_manual_approve",
+                    "liveAt": "2023-12-31T00:00:00Z",
+                }
+            ],
+            "pending": [],
+            "rejected": [],
+        }
+    )
+
+    result = handle_post(
+        handler,
+        api=api,
+        path="/registry/rollback",
+        payload={"ids": ["src-1"]},
+    )
+
+    assert result is True
+    pending_row = api.load_state()["pending"][0]
+    assert pending_row["candidateState"] == "validated"
+    assert pending_row["approvedAt"] == ""
+    assert pending_row["approvedBy"] == ""
+    assert pending_row["liveAt"] == ""
 
 
 def test_run_jobs_pipeline(tmp_path: Path) -> None:

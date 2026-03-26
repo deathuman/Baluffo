@@ -1,5 +1,5 @@
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
-import { deriveDiscoveryQueuedCount } from "../domain.js";
+import { deriveDiscoveryLifecycleCounts, deriveDiscoveryQueuedCount } from "../domain.js";
 
 export function createAdminRegistryController({
   state,
@@ -292,6 +292,8 @@ export function createAdminRegistryController({
       const foundCount = Number(summary.foundEndpointCount ?? summary.probedCount ?? 0);
       const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
       const queuedCount = deriveDiscoveryQueuedCount(report);
+      const deferredCount = Number(summary.discoverableButDeferredCount ?? 0);
+      const lifecycleCounts = deriveDiscoveryLifecycleCounts(report);
       const skippedCount = Number(summary.skippedDuplicateCount || 0);
       const failedCount = Number(summary.failedProbeCount || 0);
       const pendingRows = mergeSourceStatusFromReport(Array.isArray(pending?.sources) ? pending.sources : [], latestFetchReport, "pending");
@@ -307,7 +309,7 @@ export function createAdminRegistryController({
 
       if (refs.adminDiscoverySummaryEl) {
         refs.adminDiscoverySummaryEl.textContent =
-          `Found ${foundCount} | Probed ${probedCount} | Queued (new) ${queuedCount} | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Active ${Number(active?.summary?.activeCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
+          `Found ${foundCount} | Probed ${probedCount} | Queued (new) ${queuedCount} | Deferred review ${deferredCount} | Validated ${lifecycleCounts.validated} | Live ${lifecycleCounts.live} | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Active ${Number(active?.summary?.activeCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
       }
       renderSourcesTable(refs.adminPendingSourcesEl, visiblePendingRows, "pending");
       renderSourcesTable(refs.adminActiveSourcesEl, visibleActiveRows, "active");

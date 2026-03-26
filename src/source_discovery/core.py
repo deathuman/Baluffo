@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import os
 from collections import Counter
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
+
+from src.source_registry import source_identity
 
 from .config import (
     ADAPTER_QUEUE_CAPS,
@@ -24,6 +27,21 @@ from .io_runtime import endpoint_url
 from .scoring import clean_token, unique_string_list
 
 STATIC_STRONG_EVIDENCE_TYPES = frozenset({"structured_job_links", "jobposting_jsonld"})
+STRUCTURED_BATCH_ADAPTERS = frozenset({"greenhouse", "lever", "ashby"})
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def adapter_domain_fingerprint(candidate: dict[str, Any]) -> str:
@@ -354,6 +372,84 @@ def compute_candidate_score(candidate: dict[str, Any], jobs_found: int) -> tuple
     return min(100, score), reasons
 
 
+def compute_candidate_rank(
+    candidate: dict[str, Any],
+    *,
+    existing_rows: list[dict[str, Any]] | None = None,
+    prior_candidate: dict[str, Any] | None = None,
+    ranked_at: str = "",
+) -> tuple[int, list[str], str]:
+    rank = max(0, int(candidate.get("score") or 0))
+    reasons: list[str] = []
+    adapter = str(candidate.get("adapter") or "").strip().lower()
+    confidence = str(candidate.get("confidence") or "").strip().lower()
+    jobs_found = max(0, int(candidate.get("jobsFound") or candidate.get("sampleCount") or 0))
+    evidence = max(0, int(candidate.get("evidenceScore") or 0))
+    discovery_stage = str(candidate.get("discoveryStage") or "").strip().lower()
+    existing = [row for row in (existing_rows or []) if isinstance(row, dict)]
+
+    confidence_bonus = {"high": 18, "medium": 10}.get(confidence, 0)
+    if confidence_bonus:
+        rank += confidence_bonus
+        reasons.append(f"{confidence}_confidence")
+
+    if jobs_found > 0:
+        jobs_bonus = min(12, jobs_found * 3)
+        rank += jobs_bonus
+        reasons.append("jobs_found_bonus")
+
+    evidence_bonus = min(10, evidence // 8) if evidence > 0 else 0
+    if evidence_bonus:
+        rank += evidence_bonus
+        reasons.append("evidence_rank_bonus")
+
+    if adapter in STRUCTURED_BATCH_ADAPTERS:
+        rank += 10
+        reasons.append("structured_batch_family")
+    elif adapter != "static":
+        rank += 4
+        reasons.append("structured_family")
+
+    if bool(candidate.get("nlPriority")):
+        rank += 5
+        reasons.append("nl_priority")
+
+    if discovery_stage == "curated_seed":
+        rank += 4
+        reasons.append("curated_seed")
+
+    candidate_id = source_identity(candidate)
+    candidate_family = queue_family_key(candidate)
+    exact_match = any(source_identity(row) == candidate_id for row in existing)
+    family_match = bool(
+        candidate_family and any(queue_family_key(row) == candidate_family for row in existing)
+    )
+    if exact_match:
+        rank -= 20
+        reasons.append("existing_registry_match")
+    elif family_match:
+        rank -= 8
+        reasons.append("existing_family_match")
+
+    prior = prior_candidate if isinstance(prior_candidate, dict) else {}
+    prior_defer_count = max(0, int(prior.get("deferCount") or 0))
+    ranked_dt = _parse_iso_datetime(ranked_at)
+    first_deferred_dt = _parse_iso_datetime(
+        prior.get("firstDeferredAt") or prior.get("lastDeferredAt")
+    )
+    if ranked_dt and first_deferred_dt and prior_defer_count > 0:
+        age_days = max(0, int((ranked_dt - first_deferred_dt).total_seconds() // 86400))
+        age_bonus = min(15, 2 + prior_defer_count + (age_days // 3))
+        rank += age_bonus
+        reasons.append("deferred_backlog_age")
+
+    promotion_lane = "manual_review"
+    if adapter in STRUCTURED_BATCH_ADAPTERS and confidence != "low":
+        promotion_lane = "structured_batch"
+
+    return max(0, rank), unique_string_list(reasons), promotion_lane
+
+
 def compute_confidence(candidate: dict[str, Any], jobs_found: int) -> str:
     adapter = str(candidate.get("adapter") or "").strip().lower()
     evidence = int(candidate.get("evidenceScore") or 0)
@@ -402,6 +498,18 @@ def normalize_candidate(
     row["careersUrl"] = str(row.get("careersUrl") or endpoint_url(row) or "")
     row["weakSignal"] = bool(row.get("weakSignal"))
     row["deferred"] = bool(row.get("deferred"))
+    row["candidateState"] = str(row.get("candidateState") or "validated")
+    row["rankScore"] = int(row.get("rankScore") or row.get("score") or 0)
+    row["rankReasons"] = unique_string_list(row.get("rankReasons") or row.get("reasons") or [])
+    row["promotionLane"] = str(row.get("promotionLane") or "manual_review")
+    row["approvedAt"] = str(row.get("approvedAt") or "")
+    row["approvedBy"] = str(row.get("approvedBy") or "")
+    row["liveAt"] = str(row.get("liveAt") or "")
+    row["quarantinedAt"] = str(row.get("quarantinedAt") or "")
+    row["quarantineReason"] = str(row.get("quarantineReason") or "")
+    row["deferCount"] = max(0, int(row.get("deferCount") or 0))
+    row["firstDeferredAt"] = str(row.get("firstDeferredAt") or "")
+    row["lastDeferredAt"] = str(row.get("lastDeferredAt") or "")
     return row
 
 

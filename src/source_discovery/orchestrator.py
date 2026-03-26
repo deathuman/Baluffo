@@ -220,6 +220,46 @@ def _build_discovery_runtime_payload(
     }
 
 
+def _update_candidate_review_metadata(
+    row: dict[str, Any],
+    *,
+    prior_candidate: dict[str, Any] | None,
+    now_iso: str,
+) -> dict[str, Any]:
+    updated = dict(row)
+    prior = prior_candidate if isinstance(prior_candidate, dict) else {}
+    updated["candidateState"] = str(updated.get("candidateState") or "validated")
+    updated["rankScore"] = int(updated.get("rankScore") or updated.get("score") or 0)
+    updated["rankReasons"] = sd.unique_string_list(
+        updated.get("rankReasons") or updated.get("reasons") or []
+    )
+    updated["promotionLane"] = str(updated.get("promotionLane") or "manual_review")
+    updated["approvedAt"] = str(updated.get("approvedAt") or "")
+    updated["approvedBy"] = str(updated.get("approvedBy") or "")
+    updated["liveAt"] = str(updated.get("liveAt") or "")
+    updated["quarantinedAt"] = str(updated.get("quarantinedAt") or "")
+    updated["quarantineReason"] = str(updated.get("quarantineReason") or "")
+    updated["deferCount"] = max(0, int(updated.get("deferCount") or prior.get("deferCount") or 0))
+    updated["firstDeferredAt"] = str(
+        updated.get("firstDeferredAt") or prior.get("firstDeferredAt") or ""
+    )
+    updated["lastDeferredAt"] = str(
+        updated.get("lastDeferredAt") or prior.get("lastDeferredAt") or ""
+    )
+
+    if bool(updated.get("deferred")):
+        updated["candidateState"] = "validated"
+        updated["deferCount"] = max(1, int(prior.get("deferCount") or 0) + 1)
+        updated["firstDeferredAt"] = str(
+            prior.get("firstDeferredAt") or prior.get("lastDeferredAt") or now_iso
+        )
+        updated["lastDeferredAt"] = str(now_iso)
+        if str(updated.get("deferReason") or "").strip().lower() == "domain_cap":
+            updated["promotionLane"] = "domain_cap_review"
+
+    return updated
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Discover new job source candidates.")
     parser.add_argument("--timeout", type=int, default=12)
@@ -289,6 +329,16 @@ def run_discovery(
     active = load_json_array(sd.ACTIVE_PATH, [])
     pending_existing = load_json_array(sd.PENDING_PATH, [])
     rejected = load_json_array(sd.REJECTED_PATH, [])
+    prior_review_candidates = load_json_array(sd.DISCOVERY_CANDIDATES_PATH, [])
+    prior_review_candidates_by_id = {
+        source_identity(row): dict(row)
+        for row in prior_review_candidates
+        if isinstance(row, dict)
+    }
+    ranking_registry_rows = [
+        *[dict(row) for row in active if isinstance(row, dict)],
+        *[dict(row) for row in pending_existing if isinstance(row, dict)],
+    ]
 
     sd.emit_log(
         f"Starting source discovery: mode={mode}, preset={preset_name}, top_n={top_n}, web_search={'on' if include_web_search else 'off'}."
@@ -955,6 +1005,16 @@ def run_discovery(
             normalized = sd.normalize_candidate(
                 raw, score, reasons, jobs_found, probed_at=sd.now_iso()
             )
+            prior_candidate = prior_review_candidates_by_id.get(source_identity(normalized))
+            rank_score, rank_reasons, promotion_lane = sd.compute_candidate_rank(
+                normalized,
+                existing_rows=ranking_registry_rows,
+                prior_candidate=prior_candidate,
+                ranked_at=normalized.get("lastProbedAt") or sd.now_iso(),
+            )
+            normalized["rankScore"] = int(rank_score)
+            normalized["rankReasons"] = sd.unique_string_list(rank_reasons)
+            normalized["promotionLane"] = str(promotion_lane or "manual_review")
             queueable_candidates.append(normalized)
             _increment_adapter_runtime(
                 adapter_runtime, normalized.get("adapter"), healthy=1, queued=1
@@ -1083,6 +1143,16 @@ def run_discovery(
                         jobs_found,
                         probed_at=sd.now_iso(),
                     )
+                    prior_candidate = prior_review_candidates_by_id.get(source_identity(normalized))
+                    rank_score, rank_reasons, promotion_lane = sd.compute_candidate_rank(
+                        normalized,
+                        existing_rows=ranking_registry_rows,
+                        prior_candidate=prior_candidate,
+                        ranked_at=normalized.get("lastProbedAt") or sd.now_iso(),
+                    )
+                    normalized["rankScore"] = int(rank_score)
+                    normalized["rankReasons"] = sd.unique_string_list(rank_reasons)
+                    normalized["promotionLane"] = str(promotion_lane or "manual_review")
                     queueable_candidates.append(normalized)
                     _adjust_adapter_runtime(
                         adapter_runtime, normalized.get("adapter"), healthy=1, queued=1
@@ -1106,12 +1176,26 @@ def run_discovery(
     _distribute_duration_by_adapter(
         adapter_runtime, duration_ms=queue_balancing_duration_ms, rows=queued_candidates
     )
-    for row in report_candidates:
+    review_timestamp = sd.now_iso()
+    for index, row in enumerate(report_candidates):
         if not isinstance(row, dict):
             continue
         if bool(row.get("deferred")):
             row["dropStage"] = "deferred_by_cap"
             row["dropReason"] = str(row.get("deferReason") or "deferred")
+        report_candidates[index] = _update_candidate_review_metadata(
+            row,
+            prior_candidate=prior_review_candidates_by_id.get(source_identity(row)),
+            now_iso=review_timestamp,
+        )
+    queued_ids = {
+        source_identity(row) for row in queued_candidates if isinstance(row, dict)
+    }
+    queued_candidates = [
+        dict(row)
+        for row in report_candidates
+        if isinstance(row, dict) and source_identity(row) in queued_ids and not bool(row.get("deferred"))
+    ]
     for row in queued_candidates:
         queued_count_by_stage[str(row.get("discoveryStage") or "provider_pattern")] += 1
 
@@ -1124,7 +1208,7 @@ def run_discovery(
     )
 
     save_json_atomic(sd.PENDING_PATH, unique_sources([*queued_candidates, *pending_existing]))
-    save_json_atomic(sd.DISCOVERY_CANDIDATES_PATH, queued_candidates)
+    save_json_atomic(sd.DISCOVERY_CANDIDATES_PATH, report_candidates)
 
     summary = build_stage_summary(
         report_candidates,

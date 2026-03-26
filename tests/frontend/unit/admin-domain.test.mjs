@@ -14,6 +14,7 @@ import {
   deriveAdminRunsModel,
   deriveFetcherProgressModel,
   deriveDiscoveryProgressModel,
+  deriveDiscoveryLifecycleCounts,
   deriveDiscoveryQueuedCount,
   getOpsPollIntervalMs
 } from "../../../frontend/admin/domain.js";
@@ -526,6 +527,24 @@ test("admin domain derives queued discovery count from candidate rows when summa
   });
 
   assert.equal(queued, 2);
+});
+
+test("admin domain exposes additive lifecycle counts from discovery summary", () => {
+  const counts = deriveDiscoveryLifecycleCounts({
+    summary: {
+      validatedCandidateCount: 7,
+      approvedCandidateCount: 3,
+      liveCandidateCount: 2,
+      quarantinedCandidateCount: 1
+    }
+  });
+
+  assert.deepEqual(counts, {
+    validated: 7,
+    approved: 3,
+    live: 2,
+    quarantined: 1
+  });
 });
 
 test("admin domain uses probe totals instead of found endpoints for discovery progress", () => {

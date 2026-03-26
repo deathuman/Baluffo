@@ -55,6 +55,29 @@ class RegistryService:
     def normalize_state(
         self, state: dict[str, list[dict[str, Any]]]
     ) -> dict[str, list[dict[str, Any]]]:
+        def _apply_bucket_lifecycle_defaults(
+            row: dict[str, Any], *, bucket: str
+        ) -> dict[str, Any]:
+            updated = dict(row)
+            default_state = {
+                "active": "live",
+                "pending": "validated",
+                "rejected": "quarantined",
+            }.get(bucket, "validated")
+            updated["candidateState"] = str(updated.get("candidateState") or default_state)
+            updated["approvedAt"] = str(updated.get("approvedAt") or "")
+            updated["approvedBy"] = str(updated.get("approvedBy") or "")
+            updated["liveAt"] = str(updated.get("liveAt") or "")
+            updated["quarantinedAt"] = str(updated.get("quarantinedAt") or "")
+            updated["quarantineReason"] = str(updated.get("quarantineReason") or "")
+            updated["promotionLane"] = str(updated.get("promotionLane") or "")
+            updated["rankScore"] = int(updated.get("rankScore") or 0)
+            updated["rankReasons"] = list(updated.get("rankReasons") or [])
+            updated["deferCount"] = max(0, int(updated.get("deferCount") or 0))
+            updated["firstDeferredAt"] = str(updated.get("firstDeferredAt") or "")
+            updated["lastDeferredAt"] = str(updated.get("lastDeferredAt") or "")
+            return updated
+
         # Precedence is explicit: active > pending > rejected.
         seen = set()
         normalized: dict[str, list[dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
@@ -64,6 +87,7 @@ class RegistryService:
                     continue
                 if str(row.get("adapter") or "").strip().lower() == "static":
                     row = self._normalize_manual_static(row)
+                row = _apply_bucket_lifecycle_defaults(row, bucket=bucket)
                 key = source_identity(row)
                 if key in seen:
                     continue

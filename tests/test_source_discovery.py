@@ -2229,6 +2229,273 @@ def test_run_discovery_prefers_fresh_queued_candidate_over_stale_pending_duplica
     assert int(merged[0]["sampleCount"] or 0) == 3
 
 
+def test_run_discovery_persists_deferred_candidates_in_candidates_file() -> None:
+    with workspace_tmpdir("source-discovery") as root:
+        prev_paths = (
+            sd.ACTIVE_PATH,
+            sd.PENDING_PATH,
+            sd.REJECTED_PATH,
+            sd.DISCOVERY_CANDIDATES_PATH,
+            sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
+        )
+        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+        prev_seeds = list(sd.STUDIO_SEEDS)
+        try:
+            sd.ACTIVE_PATH = root / "active.json"
+            sd.PENDING_PATH = root / "pending.json"
+            sd.REJECTED_PATH = root / "rejected.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+            sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+            sd.STUDIO_SEEDS = []
+            sd.STATIC_DISCOVERY_CANDIDATES = []
+            payloads = {
+                "https://boards-api.greenhouse.io/v1/boards/demo/jobs?content=true": json.dumps(
+                    {"jobs": [{}, {}]}
+                ),
+                "https://boards-api.greenhouse.io/v1/boards/demo-alt/jobs?content=true": json.dumps(
+                    {"jobs": [{}, {}]}
+                ),
+                "https://boards-api.greenhouse.io/v1/boards/demo-third/jobs?content=true": json.dumps(
+                    {"jobs": [{}, {}]}
+                ),
+            }
+
+            def fake_fetch(url: str, _: int) -> str:
+                if url not in payloads:
+                    raise RuntimeError(f"unexpected URL: {url}")
+                return payloads[url]
+
+            with (
+                mock.patch.object(
+                    discovery_orchestrator, "stage_curated_seed_candidates", return_value=[]
+                ),
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "discover_game_studio_sheet_candidates",
+                    return_value=(
+                        [
+                            {
+                                "name": "Demo Greenhouse",
+                                "studio": "Demo",
+                                "adapter": "greenhouse",
+                                "slug": "demo",
+                                "api_url": "https://boards-api.greenhouse.io/v1/boards/demo/jobs?content=true",
+                                "discoveryMethod": "sheet_directory",
+                                "discoveryStage": "sheet_directory",
+                                "evidenceScore": 46,
+                                "evidenceTypes": ["sheet_directory"],
+                            },
+                            {
+                                "name": "Demo Greenhouse Alt",
+                                "studio": "Demo Alt",
+                                "adapter": "greenhouse",
+                                "slug": "demo-alt",
+                                "api_url": "https://boards-api.greenhouse.io/v1/boards/demo-alt/jobs?content=true",
+                                "discoveryMethod": "sheet_directory",
+                                "discoveryStage": "sheet_directory",
+                                "evidenceScore": 46,
+                                "evidenceTypes": ["sheet_directory"],
+                            },
+                            {
+                                "name": "Demo Greenhouse Third",
+                                "studio": "Demo Third",
+                                "adapter": "greenhouse",
+                                "slug": "demo-third",
+                                "api_url": "https://boards-api.greenhouse.io/v1/boards/demo-third/jobs?content=true",
+                                "discoveryMethod": "sheet_directory",
+                                "discoveryStage": "sheet_directory",
+                                "evidenceScore": 46,
+                                "evidenceTypes": ["sheet_directory"],
+                            },
+                        ],
+                        [],
+                        [],
+                    ),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator.sd, "build_pattern_candidates", return_value=[]
+                ),
+                mock.patch.object(
+                    discovery_orchestrator.sd,
+                    "discover_seed_careers_page_candidates",
+                    return_value=([], [], []),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator, "discover_web_search_candidates", return_value=([], [])
+                ),
+                mock.patch.object(
+                    discovery_orchestrator, "discover_gamesmap_candidates", return_value=([], [], [])
+                ),
+                mock.patch.object(
+                    discovery_orchestrator, "discover_gameprog_candidates", return_value=([], [], [])
+                ),
+                mock.patch.object(discovery_orchestrator, "load_url_patches", return_value={}),
+                mock.patch.object(
+                    discovery_orchestrator, "save_url_patch_manifest", return_value=None
+                ),
+                mock.patch.object(discovery_orchestrator, "read_source_state", return_value={}),
+            ):
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                    fetcher=fake_fetch,
+                )
+
+            persisted_candidates = json.loads(sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8"))
+            assert report["summary"]["queuedCandidateCount"] == 2
+            assert report["summary"]["discoverableButDeferredCount"] == 1
+            assert len(persisted_candidates) == 3
+            assert len([row for row in persisted_candidates if not bool(row.get("deferred"))]) == 2
+            deferred_row = next(row for row in persisted_candidates if bool(row.get("deferred")))
+            assert deferred_row["deferReason"] == "domain_cap"
+            assert deferred_row["promotionLane"] == "domain_cap_review"
+            assert deferred_row["candidateState"] == "validated"
+            assert int(deferred_row["deferCount"]) == 1
+            assert deferred_row["firstDeferredAt"]
+            assert deferred_row["lastDeferredAt"]
+        finally:
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
+            ) = prev_paths
+            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+            sd.STUDIO_SEEDS = prev_seeds
+
+
+def test_run_discovery_uses_previous_deferred_review_history_in_ranking() -> None:
+    with workspace_tmpdir("source-discovery") as root:
+        prev_paths = (
+            sd.ACTIVE_PATH,
+            sd.PENDING_PATH,
+            sd.REJECTED_PATH,
+            sd.DISCOVERY_CANDIDATES_PATH,
+            sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
+        )
+        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+        prev_seeds = list(sd.STUDIO_SEEDS)
+        try:
+            sd.ACTIVE_PATH = root / "active.json"
+            sd.PENDING_PATH = root / "pending.json"
+            sd.REJECTED_PATH = root / "rejected.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+            sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+            sd.STUDIO_SEEDS = []
+            sd.STATIC_DISCOVERY_CANDIDATES = []
+            sd.DISCOVERY_CANDIDATES_PATH.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "greenhouse:slug:demo-deferred",
+                            "name": "Demo Deferred",
+                            "studio": "Demo Deferred",
+                            "adapter": "greenhouse",
+                            "slug": "demo-deferred",
+                            "api_url": "https://boards-api.greenhouse.io/v1/boards/demo-deferred/jobs?content=true",
+                            "deferred": True,
+                            "deferReason": "domain_cap",
+                            "deferCount": 2,
+                            "firstDeferredAt": "2026-03-20T00:00:00Z",
+                            "lastDeferredAt": "2026-03-22T00:00:00Z",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            payloads = {
+                "https://boards-api.greenhouse.io/v1/boards/demo-deferred/jobs?content=true": json.dumps(
+                    {"jobs": [{}, {}]}
+                ),
+            }
+
+            def fake_fetch(url: str, _: int) -> str:
+                if url not in payloads:
+                    raise RuntimeError(f"unexpected URL: {url}")
+                return payloads[url]
+
+            with (
+                mock.patch.object(
+                    discovery_orchestrator, "stage_curated_seed_candidates", return_value=[]
+                ),
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "discover_game_studio_sheet_candidates",
+                    return_value=(
+                        [
+                            {
+                                "name": "Demo Deferred",
+                                "studio": "Demo Deferred",
+                                "adapter": "greenhouse",
+                                "slug": "demo-deferred",
+                                "api_url": "https://boards-api.greenhouse.io/v1/boards/demo-deferred/jobs?content=true",
+                                "discoveryMethod": "sheet_directory",
+                                "discoveryStage": "sheet_directory",
+                                "evidenceScore": 46,
+                                "evidenceTypes": ["sheet_directory"],
+                            }
+                        ],
+                        [],
+                        [],
+                    ),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator.sd, "build_pattern_candidates", return_value=[]
+                ),
+                mock.patch.object(
+                    discovery_orchestrator.sd,
+                    "discover_seed_careers_page_candidates",
+                    return_value=([], [], []),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator, "discover_web_search_candidates", return_value=([], [])
+                ),
+                mock.patch.object(
+                    discovery_orchestrator, "discover_gamesmap_candidates", return_value=([], [], [])
+                ),
+                mock.patch.object(
+                    discovery_orchestrator, "discover_gameprog_candidates", return_value=([], [], [])
+                ),
+                mock.patch.object(discovery_orchestrator, "load_url_patches", return_value={}),
+                mock.patch.object(
+                    discovery_orchestrator, "save_url_patch_manifest", return_value=None
+                ),
+                mock.patch.object(discovery_orchestrator, "read_source_state", return_value={}),
+            ):
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                    fetcher=fake_fetch,
+                )
+
+            row = report["candidates"][0]
+            assert row["rankScore"] > row["score"]
+            assert "deferred_backlog_age" in row["rankReasons"]
+        finally:
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
+            ) = prev_paths
+            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+            sd.STUDIO_SEEDS = prev_seeds
+
+
 def test_load_discovery_config_uses_configured_path() -> None:
     with workspace_tmpdir("source-discovery") as root:
         previous_path = sd.DISCOVERY_CONFIG_PATH

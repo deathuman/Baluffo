@@ -279,6 +279,9 @@ test("admin registry controller loads filtered discovery state and dispatches re
             foundEndpointCount: 4,
             probedCandidateCount: 3,
             queuedCandidateCount: 2,
+            discoverableButDeferredCount: 1,
+            validatedCandidateCount: 3,
+            liveCandidateCount: 2,
             skippedDuplicateCount: 1,
             failedProbeCount: 1
           },
@@ -341,6 +344,9 @@ test("admin registry controller loads filtered discovery state and dispatches re
   await controller.loadDiscoveryData();
 
   assert.match(refs.adminDiscoverySummaryEl.textContent, /Found 4 \| Probed 3 \| Queued \(new\) 2/);
+  assert.match(refs.adminDiscoverySummaryEl.textContent, /Deferred review 1/);
+  assert.match(refs.adminDiscoverySummaryEl.textContent, /Validated 3/);
+  assert.match(refs.adminDiscoverySummaryEl.textContent, /Live 2/);
   assert.match(refs.adminDiscoverySummaryEl.textContent, /Hidden zero-jobs 1/);
   assert.equal(refs.adminPendingSourcesEl.innerHTML, "One");
   assert.equal(refs.adminActiveSourcesEl.innerHTML, "Active");

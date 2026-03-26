@@ -884,6 +884,16 @@ export function deriveDiscoveryQueuedCount(report) {
   return Math.max(summaryQueued, derivedQueued);
 }
 
+export function deriveDiscoveryLifecycleCounts(report) {
+  const summary = report?.summary || {};
+  return {
+    validated: Math.max(0, Number(summary.validatedCandidateCount ?? 0)),
+    approved: Math.max(0, Number(summary.approvedCandidateCount ?? 0)),
+    live: Math.max(0, Number(summary.liveCandidateCount ?? 0)),
+    quarantined: Math.max(0, Number(summary.quarantinedCandidateCount ?? 0))
+  };
+}
+
 export function getOpsPollIntervalMs(hasLiveRuns, idleMs = 10000, liveMs = 2000) {
   return hasLiveRuns ? Number(liveMs) : Number(idleMs);
 }

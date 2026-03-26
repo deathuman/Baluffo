@@ -154,6 +154,18 @@ class DiscoveryService:
             queued_ids.add(source_identity(row))
         return queued_ids
 
+    def _stamp_live_transition(self, row: dict[str, Any], *, approved_by: str) -> dict[str, Any]:
+        now_iso = self._deps.now_iso()
+        updated = dict(row)
+        updated["enabledByDefault"] = True
+        updated["candidateState"] = "live"
+        updated["approvedAt"] = str(updated.get("approvedAt") or now_iso)
+        updated["approvedBy"] = str(approved_by or updated.get("approvedBy") or "")
+        updated["liveAt"] = str(updated.get("liveAt") or now_iso)
+        updated["quarantinedAt"] = ""
+        updated["quarantineReason"] = ""
+        return updated
+
     def _auto_approve_healthy_pending_sources(
         self, *, queued_candidate_ids: set[str] | None = None
     ) -> int:
@@ -169,9 +181,12 @@ class DiscoveryService:
         for row in pending_rows:
             row_id = source_identity(row)
             if row_id in queued_ids or self._pending_row_is_auto_approvable(row):
-                approved = dict(row)
-                approved["enabledByDefault"] = True
-                moved.append(approved)
+                moved.append(
+                    self._stamp_live_transition(
+                        row,
+                        approved_by="discovery_auto_approve",
+                    )
+                )
             else:
                 remaining.append(row)
         if not moved:
@@ -208,6 +223,27 @@ class DiscoveryService:
                 auto_approved = self._auto_approve_healthy_pending_sources(
                     queued_candidate_ids=self._queued_report_candidate_ids(report)
                 )
+            summary = summary if isinstance(summary, dict) else {}
+            summary["approvedCandidateCount"] = max(
+                int(summary.get("approvedCandidateCount") or 0),
+                int(auto_approved),
+            )
+            summary["liveCandidateCount"] = max(
+                int(summary.get("liveCandidateCount") or 0),
+                int(auto_approved),
+            )
+            report["summary"] = summary
+            queued_ids = self._queued_report_candidate_ids(report)
+            candidates = report.get("candidates") if isinstance(report.get("candidates"), list) else []
+            if candidates:
+                report["candidates"] = [
+                    self._stamp_live_transition(row, approved_by="discovery_auto_approve")
+                    if isinstance(row, dict)
+                    and not bool(row.get("deferred"))
+                    and source_identity(row) in queued_ids
+                    else row
+                    for row in candidates
+                ]
             runtime = dict(report.get("runtime") or {})
             runtime["autoApproval"] = {
                 "enabled": auto_approve_enabled,

@@ -74,6 +74,7 @@ from .core import (  # noqa: F401
     apply_sheet_directory_static_probe_cap,
     classify_probe_failure_stage,
     classify_static_suppression,
+    compute_candidate_rank,
     compute_candidate_score,
     normalize_candidate,
     probe_concurrency_defaults,

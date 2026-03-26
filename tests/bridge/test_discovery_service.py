@@ -314,6 +314,10 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     assert [row["id"] for row in state["active"]] == ["active-1", "pending-ok"]
     assert [row["id"] for row in state["pending"]] == ["pending-zero", "pending-error"]
     assert state["active"][1]["enabledByDefault"] is True
+    assert state["active"][1]["candidateState"] == "live"
+    assert state["active"][1]["approvedBy"] == "discovery_auto_approve"
+    assert state["active"][1]["approvedAt"] == "2026-03-20T12:06:00Z"
+    assert state["active"][1]["liveAt"] == "2026-03-20T12:06:00Z"
     approval_state = json.loads(approval_state_path.read_text(encoding="utf-8"))
     assert int(approval_state["approvedSinceLastRun"]) == 1
     saved_report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -324,6 +328,8 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
         )
         == 1
     )
+    assert int((saved_report.get("summary") or {}).get("approvedCandidateCount") or 0) == 1
+    assert int((saved_report.get("summary") or {}).get("liveCandidateCount") or 0) == 1
     assert sync_calls == ["discovery_completed"]
     assert marked == ["2026-03-20T12:05:00Z"]
     assert "discovery_auto_approval_completed" in bridge_events

@@ -7,6 +7,46 @@ from pydantic import ValidationError as PydanticValidationError
 from src.core.schemas import SavedJobSchema
 
 
+def _transition_registry_row(
+    api: Any,
+    row: dict[str, Any],
+    *,
+    candidate_state: str,
+    approved_by: str = "",
+    quarantine_reason: str = "",
+) -> dict[str, Any]:
+    updated = dict(row)
+    now_iso = str(getattr(api, "now_iso", lambda: "")() or "")
+    updated["candidateState"] = str(candidate_state or updated.get("candidateState") or "")
+    updated["approvedAt"] = str(updated.get("approvedAt") or "")
+    updated["approvedBy"] = str(updated.get("approvedBy") or "")
+    updated["liveAt"] = str(updated.get("liveAt") or "")
+    updated["quarantinedAt"] = str(updated.get("quarantinedAt") or "")
+    updated["quarantineReason"] = str(updated.get("quarantineReason") or "")
+    if candidate_state == "live":
+        updated["enabledByDefault"] = True
+        updated["approvedAt"] = str(updated.get("approvedAt") or now_iso)
+        updated["approvedBy"] = str(approved_by or updated.get("approvedBy") or "")
+        updated["liveAt"] = str(updated.get("liveAt") or now_iso)
+        updated["quarantinedAt"] = ""
+        updated["quarantineReason"] = ""
+    elif candidate_state == "validated":
+        updated["enabledByDefault"] = False
+        updated["approvedAt"] = ""
+        updated["approvedBy"] = ""
+        updated["liveAt"] = ""
+        updated["quarantinedAt"] = ""
+        updated["quarantineReason"] = ""
+    elif candidate_state == "quarantined":
+        updated["enabledByDefault"] = False
+        updated["approvedAt"] = ""
+        updated["approvedBy"] = ""
+        updated["liveAt"] = ""
+        updated["quarantinedAt"] = str(now_iso)
+        updated["quarantineReason"] = str(quarantine_reason or "registry_reject")
+    return updated
+
+
 def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
     """Handle POST routes for the admin bridge.
 
@@ -204,8 +244,15 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
     if path == "/registry/approve":
         ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
         moved, remaining = api.move_entries(state["pending"], [str(item) for item in ids])
-        for row in moved:
-            row["enabledByDefault"] = True
+        moved = [
+            _transition_registry_row(
+                api,
+                row,
+                candidate_state="live",
+                approved_by="registry_manual_approve",
+            )
+            for row in moved
+        ]
         state["pending"] = remaining
         state["active"] = api.unique_sources([*state["active"], *moved])
         state = api.persist_state_and_auto_sync(state, reason="registry_approve")
@@ -221,6 +268,15 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
         moved, remaining = api.move_entries(state["pending"], [str(item) for item in ids])
         state["pending"] = remaining
+        moved = [
+            _transition_registry_row(
+                api,
+                row,
+                candidate_state="quarantined",
+                quarantine_reason="registry_reject",
+            )
+            for row in moved
+        ]
         state["rejected"] = api.unique_sources([*state["rejected"], *moved])
         state = api.persist_state_and_auto_sync(state, reason="registry_reject")
         handler._send_json({"rejected": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
@@ -233,7 +289,7 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         active_remaining = []
         for row in state["active"]:
             if api.source_identity(row) in selected:
-                moved.append(row)
+                moved.append(_transition_registry_row(api, row, candidate_state="validated"))
             else:
                 active_remaining.append(row)
         state["active"] = active_remaining
@@ -246,8 +302,10 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
         moved, remaining = api.move_entries(state["rejected"], [str(item) for item in ids])
         state["rejected"] = remaining
-        for row in moved:
-            row["enabledByDefault"] = False
+        moved = [
+            _transition_registry_row(api, row, candidate_state="validated")
+            for row in moved
+        ]
         state["pending"] = api.unique_sources([*state["pending"], *moved])
         state = api.persist_state_and_auto_sync(state, reason="registry_restore_rejected")
         handler._send_json({"restored": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
