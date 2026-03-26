@@ -15,6 +15,7 @@
 - `--only-sources`: comma-separated list of source loader names to run.
 - `--circuit-breaker-failures` (default `3`): consecutive failures to trigger quarantine.
 - `--circuit-breaker-cooldown-minutes` (default `180`): quarantine duration.
+- `--browser-fallback-cooldown-minutes` (default `30`): short-lived cooldown applied after an environment-level Playwright/browser failure.
 - `--ignore-circuit-breaker`: force run quarantined sources.
 - `--social-enabled`: include social-source loaders (Reddit/X/Mastodon) in this run.
 - `--social-config-path`: path to social source config JSON.

@@ -59,8 +59,10 @@ parse_pinpoint_jobs_payload = _provider_parsers.parse_pinpoint_jobs_payload
 parse_epic_games_jobs_payload = _provider_parsers.parse_epic_games_jobs_payload
 parse_ashby_jobs_from_html = _provider_parsers.parse_ashby_jobs_from_html
 parse_breezy_jobs_html = _provider_parsers.parse_breezy_jobs_html
+parse_bamboohr_jobs_html = _provider_parsers.parse_bamboohr_jobs_html
 parse_jazzhr_jobs_html = _provider_parsers.parse_jazzhr_jobs_html
 parse_personio_feed_xml = _provider_parsers.parse_personio_feed_xml
+parse_workday_jobs_html = _provider_parsers.parse_workday_jobs_html
 
 
 def parse_remote_ok_payload(payload: Any) -> list[RawJob]:

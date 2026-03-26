@@ -162,6 +162,9 @@ class TaskLaunchApi:
         circuit_cooldown = self._deps.safe_int(
             data.get("circuitBreakerCooldownMinutes"), 180, 0, 24 * 60
         )
+        browser_fallback_cooldown = self._deps.safe_int(
+            data.get("browserFallbackCooldownMinutes"), 30, 0, 24 * 60
+        )
 
         if preset == "incremental":
             args.extend(["--skip-successful-sources", "--source-ttl-minutes", str(source_ttl)])
@@ -207,6 +210,7 @@ class TaskLaunchApi:
             )
             args.extend(["--circuit-breaker-failures", str(circuit_failures)])
             args.extend(["--circuit-breaker-cooldown-minutes", str(circuit_cooldown)])
+            args.extend(["--browser-fallback-cooldown-minutes", str(browser_fallback_cooldown)])
             args.extend(
                 [
                     "--hot-source-cadence-minutes",

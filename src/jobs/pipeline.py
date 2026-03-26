@@ -438,6 +438,7 @@ def run_pipeline(
     cold_source_cadence_minutes: int = DEFAULT_COLD_SOURCE_CADENCE_MINUTES,
     circuit_breaker_failures: int = 3,
     circuit_breaker_cooldown_minutes: int = 180,
+    browser_fallback_cooldown_minutes: int = 30,
     circuit_breaker_zero_kept: int = 3,
     ignore_circuit_breaker: bool = False,
     social_enabled: bool = False,
@@ -531,6 +532,7 @@ def run_pipeline(
         cold_source_cadence_minutes=cold_source_cadence_minutes,
         circuit_breaker_failures=circuit_breaker_failures,
         circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+        browser_fallback_cooldown_minutes=browser_fallback_cooldown_minutes,
         ignore_circuit_breaker=ignore_circuit_breaker,
         social_enabled=bool(social_enabled),
         effective_social_config_path=str(effective_social_config_path),
@@ -638,6 +640,7 @@ def run_pipeline(
         started_at=started_at,
         show_progress=show_progress,
         force_refresh_all=force_refresh_all,
+        browser_fallback_cooldown_minutes=browser_fallback_cooldown_minutes,
     )
     progress_phase["key"] = "executing_sources"
     progress_phase["label"] = "Executing sources"
@@ -998,6 +1001,12 @@ def parse_args() -> argparse.Namespace:
         help="Minutes to quarantine a source after it trips the circuit breaker.",
     )
     parser.add_argument(
+        "--browser-fallback-cooldown-minutes",
+        type=int,
+        default=30,
+        help="Minutes to disable browser fallback after an environment-level Playwright failure.",
+    )
+    parser.add_argument(
         "--circuit-breaker-zero-kept",
         type=int,
         default=3,
@@ -1132,6 +1141,7 @@ def main() -> int:
         static_detail_concurrency=args.static_detail_concurrency,
         circuit_breaker_failures=args.circuit_breaker_failures,
         circuit_breaker_cooldown_minutes=args.circuit_breaker_cooldown_minutes,
+        browser_fallback_cooldown_minutes=args.browser_fallback_cooldown_minutes,
         circuit_breaker_zero_kept=args.circuit_breaker_zero_kept,
         respect_source_cadence=bool(args.respect_source_cadence),
         hot_source_cadence_minutes=args.hot_source_cadence_minutes,

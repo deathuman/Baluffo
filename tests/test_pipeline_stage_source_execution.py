@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import threading
-from pathlib import Path
 
 from src.jobs.pipeline_stage_source_execution import (
     SourceExecutionStageConfig,
@@ -14,7 +13,7 @@ class _ThreadLocal:
     source_name = ""
 
 
-def test_stage_progress_logging_is_windows_console_safe(monkeypatch, tmp_path: Path) -> None:
+def test_stage_progress_logging_is_windows_console_safe(monkeypatch) -> None:
     raw_buffer = io.BytesIO()
     stdout = io.TextIOWrapper(raw_buffer, encoding="cp1252", errors="strict")
     monkeypatch.setattr("sys.stdout", stdout)
@@ -44,6 +43,7 @@ def test_stage_progress_logging_is_windows_console_safe(monkeypatch, tmp_path: P
         started_at="2026-03-23T00:00:00Z",
         show_progress=True,
         force_refresh_all=False,
+        browser_fallback_cooldown_minutes=30,
     )
 
     def failing_loader(**_kwargs):  # noqa: ANN202

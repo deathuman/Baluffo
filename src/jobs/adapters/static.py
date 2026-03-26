@@ -41,7 +41,10 @@ from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
-from src.jobs.state import get_incremental_cache_decision
+from src.jobs.state import (
+    get_incremental_cache_decision,
+    should_skip_static_source_for_structured_migration,
+)
 from src.jobs.text_utils import clean_text, normalize_url
 from src.jobs.transport import conditional_revalidate_url
 from src.scrapers.domain_profiles import domain_profile_for_url
@@ -176,6 +179,16 @@ def run_static_studio_pages_source(
                 update_source_detail_taxonomy(entry_report)
                 details.append(entry_report)
                 continue
+        if should_skip_static_source_for_structured_migration(
+            source_name, source, source_state_rows
+        ):
+            entry_report["status"] = "excluded"
+            entry_report["error"] = "structured_migration_promoted"
+            entry_report["exclusionReason"] = "structured_migration_promoted"
+            entry_report["structuredMigrationSkipped"] = True
+            update_source_detail_taxonomy(entry_report)
+            details.append(entry_report)
+            continue
 
         host = ""
         if pages:

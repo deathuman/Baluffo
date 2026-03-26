@@ -100,6 +100,7 @@ def detect_outbound_ats_links(html: str, *, base_url: str) -> list[str]:
             for host in (
                 "greenhouse.io",
                 "lever.co",
+                "bamboohr.com",
                 "myworkdayjobs.com",
                 "workday.com",
                 "smartrecruiters.com",

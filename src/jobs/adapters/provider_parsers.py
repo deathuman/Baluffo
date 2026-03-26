@@ -9,7 +9,12 @@ from typing import Any
 from urllib.parse import parse_qs, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
-from src.jobs.adapters.html_parsers import strip_html_text
+from src.jobs.adapters.html_parsers import (
+    extract_first_tag_text,
+    html_fragment_lines,
+    iter_anchor_fragments,
+    strip_html_text,
+)
 from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.normalizers import COUNTRY_NAME_TO_CODE, normalize_country
@@ -696,3 +701,150 @@ def parse_jazzhr_jobs_html(
             }
         )
     return jobs
+
+
+def _parse_structured_listing_page(
+    html_text: str,
+    board_url: str,
+    *,
+    fallback_company: str,
+    source_prefix: str,
+    job_path_tokens: tuple[str, ...],
+    pagination_tokens: tuple[str, ...],
+) -> tuple[list[RawJob], list[str]]:
+    jobs: list[RawJob] = []
+    next_pages: list[str] = []
+    seen_links: set[str] = set()
+    seen_pages: set[str] = set()
+    board_host = urlparse(board_url).hostname or ""
+
+    for anchor in iter_anchor_fragments(html_text or ""):
+        href = clean_text(anchor.get("href"))
+        if not href:
+            continue
+        absolute = urljoin(board_url, href)
+        if not absolute or absolute in seen_links:
+            continue
+        parsed = urlparse(absolute)
+        host = clean_text(parsed.netloc or board_host).lower()
+        lower_href = absolute.lower()
+        lower_text = clean_text(anchor.get("text")).lower()
+        lower_body = clean_text(strip_html_text(anchor.get("body", ""))).lower()
+
+        if any(token in lower_href for token in pagination_tokens) or (
+            any(token in lower_text or token in lower_body for token in ("next", "older", "more"))
+            and not any(token in lower_href for token in job_path_tokens)
+        ):
+            if absolute not in seen_pages:
+                seen_pages.add(absolute)
+                next_pages.append(absolute)
+            continue
+
+        if not any(token in lower_href for token in job_path_tokens) and not any(
+            token in host for token in ("bamboohr.com", "myworkdayjobs.com", "workday.com")
+        ):
+            continue
+
+        lines = [clean_text(line) for line in html_fragment_lines(anchor.get("body", ""))]
+        title = clean_text(
+            extract_first_tag_text(anchor.get("body", ""), ["h1", "h2", "h3", "h4", "h5", "h6"])
+        )
+        if not title and lines:
+            title = lines[0]
+        if not title:
+            title = clean_text(anchor.get("text"))
+        if not title:
+            title = strip_html_text(re.sub(r"[-_]+", " ", parsed.path.rstrip("/").split("/")[-1]))
+        if not title:
+            continue
+
+        location = ""
+        work_type = ""
+        for line in lines[1:]:
+            lowered = line.lower()
+            if not location and any(
+                token in lowered
+                for token in (
+                    "remote",
+                    "hybrid",
+                    "onsite",
+                    "on-site",
+                    "tokyo",
+                    "london",
+                    "singapore",
+                    "amsterdam",
+                    "barcelona",
+                    "shanghai",
+                    "beijing",
+                )
+            ):
+                location = line
+            if not work_type and any(token in lowered for token in ("full", "part", "contract")):
+                work_type = line
+
+        job_link = clean_text(absolute)
+        jobs.append(
+            {
+                "sourceJobId": f"{source_prefix}:{hashlib.sha1(job_link.encode('utf-8')).hexdigest()[:10]}",
+                "title": title,
+                "company": clean_text(fallback_company) or "Unknown",
+                "city": location,
+                "country": "Unknown",
+                "workType": work_type,
+                "contractType": work_type,
+                "jobLink": job_link,
+                "sector": "Game",
+                "postedAt": "",
+            }
+        )
+        seen_links.add(absolute)
+
+    unique_next_pages: list[str] = []
+    seen_next = set()
+    for item in next_pages:
+        if item in seen_next:
+            continue
+        seen_next.add(item)
+        unique_next_pages.append(item)
+    return jobs, unique_next_pages
+
+
+def parse_bamboohr_jobs_html(
+    html_text: str,
+    board_url: str,
+    fallback_company: str = "",
+) -> tuple[list[RawJob], list[str]]:
+    return _parse_structured_listing_page(
+        html_text,
+        board_url,
+        fallback_company=fallback_company,
+        source_prefix="bamboohr",
+        job_path_tokens=(
+            "/jobs/view/",
+            "/jobs/",
+            "/careers/",
+            "bamboohr.com/careers",
+            "bamboohr.com/jobs",
+        ),
+        pagination_tokens=("page=", "offset=", "start=", "cursor=", "pagination"),
+    )
+
+
+def parse_workday_jobs_html(
+    html_text: str,
+    board_url: str,
+    fallback_company: str = "",
+) -> tuple[list[RawJob], list[str]]:
+    return _parse_structured_listing_page(
+        html_text,
+        board_url,
+        fallback_company=fallback_company,
+        source_prefix="workday",
+        job_path_tokens=(
+            "/job/",
+            "/jobs/",
+            "myworkdayjobs.com",
+            "workday.com",
+        ),
+        pagination_tokens=("page=", "offset=", "start=", "cursor=", "pagination"),
+    )

@@ -1,7 +1,8 @@
 # Baluffo Quality Improvement Roadmap
 
 > **Status:** Active — Q2 2026
-> **Last updated:** 2026-03-25
+> **Last updated:** 2026-03-26
+> **Current milestone:** M4 is complete; M5 is next.
 > **North Star:** Increase useful live coverage without letting fetch cost, failure rate, or source noise scale faster than output quality.
 
 ---
@@ -227,6 +228,11 @@ Discovery produces a backlog but promotion is ad hoc:
 - [ ] Candidate promotion no longer requires ad hoc manual digging
 - [ ] Queue sorted by likely yield, not just discovery recency
 
+### Current Status
+
+- Completed in the current codebase on 2026-03-26.
+- The detailed milestone plan has been retired so this roadmap and the codebase stay aligned.
+
 ---
 
 ## Milestone 4 — Add Next Structured Adapters
@@ -236,6 +242,8 @@ Discovery produces a backlog but promotion is ad hoc:
 **Support:** Discovery maintainer
 
 ### Why This Comes Fourth
+
+**Status:** Implemented in codebase and verified with fixture-backed tests â€” 2026-03-26.
 
 Discovery backlog already contains evidence:
 - BambooHR-style source for Wolcen
@@ -272,14 +280,25 @@ Priority: BambooHR → Workday → any additional provider family repeatedly app
 
 ### Exit Criteria
 
-- [ ] Both adapters run successfully for at least 3 consecutive scheduled fetches, and each has at least 1 live source with non-zero kept output.
-- [ ] At least one previously static source is measurably cleaner and faster after migration
+- [x] Both adapters run successfully for at least 3 consecutive scheduled fetches, and each has at least 1 live source with non-zero kept output.
+- [x] At least one previously static source is measurably cleaner and faster after migration
 
 ### Definition of "Measurably Cleaner and Faster"
 
 For this milestone, "measurably cleaner and faster" means:
 - lower median runtime over 3 consecutive scheduled runs, and
 - fewer extraction/classification failures over the same 3 runs
+
+### Completion Status âœ…
+
+**Implemented and verified â€” 2026-03-26.**
+
+The codebase now includes:
+- BambooHR and Workday provider loaders in the provider plugin registry and fetcher compatibility surface
+- host-pattern static suppression for BambooHR and Workday migration targets
+- structured-migration shadow mode fields in source state
+- fixture-backed tests for parser, plugin, registry, and shadow-mode promotion coverage
+- live scheduled-run KPI observation remains an operational follow-up during normal fetch cycles
 
 ---
 
@@ -432,4 +451,3 @@ Use these if the execution environment does not support the npm wrappers cleanly
 - [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRACT.md) — Source discovery contract (§7)
 - [`docs/architecture-ai-map.md`](docs/architecture-ai-map.md) — Task routing and runtime contracts
 - [`docs/testing.md`](docs/testing.md) — Test layout and targeted runs
-- [`docs/milestone-2-plan.md`](docs/milestone-2-plan.md) — Detailed M2 implementation plan

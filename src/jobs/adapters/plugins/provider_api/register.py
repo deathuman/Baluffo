@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import _runtime as runtime_deps
+from src.jobs.adapters import provider_migration as _provider_migration
 from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.adapters import provider_personio as _provider_personio
 from src.jobs.adapters.html_parsers import (
@@ -721,6 +722,26 @@ def ensure_registered() -> None:
             can_handle_fn=lambda ctx: ctx.family == "provider_api"
             and ctx.adapter_key == "personio_sources",
             run_fn=_provider_personio.run_personio_sources_source,
+        )
+    )
+    default_registry.register(
+        SimpleAdapterPlugin(
+            name="bamboohr_sources",
+            family="provider_api",
+            priority=56,
+            can_handle_fn=lambda ctx: ctx.family == "provider_api"
+            and ctx.adapter_key == "bamboohr_sources",
+            run_fn=_provider_migration.run_bamboohr_sources_source,
+        )
+    )
+    default_registry.register(
+        SimpleAdapterPlugin(
+            name="workday_sources",
+            family="provider_api",
+            priority=56,
+            can_handle_fn=lambda ctx: ctx.family == "provider_api"
+            and ctx.adapter_key == "workday_sources",
+            run_fn=_provider_migration.run_workday_sources_source,
         )
     )
     default_registry.register(_html_board_plugin("breezy"))

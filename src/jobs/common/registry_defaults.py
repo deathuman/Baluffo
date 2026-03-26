@@ -200,6 +200,18 @@ REDUNDANT_STATIC_IF_PROVIDER: list[dict[str, Any]] = [
         "provider_id_field": "slug",
         "provider_id_value": "bandainamco",
     },
+    {
+        "hosts": ["*.bamboohr.com", "bamboohr.com"],
+        "adapter": "bamboohr",
+        "provider_id_field": "adapter",
+        "provider_id_value": "bamboohr",
+    },
+    {
+        "hosts": ["*.myworkdayjobs.com", "*.workday.com", "workday.com"],
+        "adapter": "workday",
+        "provider_id_field": "adapter",
+        "provider_id_value": "workday",
+    },
 ]
 
 

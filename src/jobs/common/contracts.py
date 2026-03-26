@@ -36,6 +36,9 @@ def normalize_runtime_payload(
         "circuitBreakerCooldownMinutes": _clamped_int(
             src.get("circuitBreakerCooldownMinutes"), 0, 0
         ),
+        "browserFallbackCooldownMinutes": _clamped_int(
+            src.get("browserFallbackCooldownMinutes"), 0, 0
+        ),
         "ignoreCircuitBreaker": bool(src.get("ignoreCircuitBreaker")),
         "socialEnabled": bool(src.get("socialEnabled")),
         "socialLookbackMinutes": _clamped_int(src.get("socialLookbackMinutes"), 0, 1),
@@ -179,6 +182,12 @@ def normalize_runtime_payload(
 def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     src = row if isinstance(row, dict) else {}
 
+    def _float_or_zero(value: Any) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
     def _normalize_loss(loss: Any) -> dict[str, Any]:
         payload = loss if isinstance(loss, dict) else {}
         drop_reasons = (
@@ -221,6 +230,7 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         "fetchedCount": _clamped_int(src.get("fetchedCount"), 0, 0),
         "keptCount": _clamped_int(src.get("keptCount"), 0, 0),
         "lowConfidenceDropped": _clamped_int(src.get("lowConfidenceDropped"), 0, 0),
+        "duplicateRate": _float_or_zero(src.get("duplicateRate")),
         "error": clean_text(src.get("error")),
         "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
     }
@@ -253,6 +263,56 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         normalized["listingCheckedAt"] = listing_checked_at
     if "listingChanged" in src:
         normalized["listingChanged"] = bool(src.get("listingChanged"))
+    if "structuredMigrationTargetAdapter" in src:
+        normalized["structuredMigrationTargetAdapter"] = clean_text(
+            src.get("structuredMigrationTargetAdapter")
+        )
+    if "structuredMigrationShadowRunCount" in src:
+        normalized["structuredMigrationShadowRunCount"] = _clamped_int(
+            src.get("structuredMigrationShadowRunCount"), 0, 0
+        )
+    if "structuredMigrationHealthyRunCount" in src:
+        normalized["structuredMigrationHealthyRunCount"] = _clamped_int(
+            src.get("structuredMigrationHealthyRunCount"), 0, 0
+        )
+    if "structuredMigrationPromotedAt" in src:
+        normalized["structuredMigrationPromotedAt"] = clean_text(
+            src.get("structuredMigrationPromotedAt")
+        )
+    if "structuredMigrationDemotedAt" in src:
+        normalized["structuredMigrationDemotedAt"] = clean_text(
+            src.get("structuredMigrationDemotedAt")
+        )
+    if "structuredMigrationLastDuplicateRate" in src:
+        normalized["structuredMigrationLastDuplicateRate"] = _float_or_zero(
+            src.get("structuredMigrationLastDuplicateRate")
+        )
+    if "structuredMigrationLastKeptCount" in src:
+        normalized["structuredMigrationLastKeptCount"] = _clamped_int(
+            src.get("structuredMigrationLastKeptCount"), 0, 0
+        )
+    if "browserFallbackQuarantinedUntilAt" in src:
+        normalized["browserFallbackQuarantinedUntilAt"] = clean_text(
+            src.get("browserFallbackQuarantinedUntilAt")
+        )
+    if "browserFallbackLastAttemptAt" in src:
+        normalized["browserFallbackLastAttemptAt"] = clean_text(
+            src.get("browserFallbackLastAttemptAt")
+        )
+    if "browserFallbackLastFailureAt" in src:
+        normalized["browserFallbackLastFailureAt"] = clean_text(
+            src.get("browserFallbackLastFailureAt")
+        )
+    if "browserFallbackLastSuccessAt" in src:
+        normalized["browserFallbackLastSuccessAt"] = clean_text(
+            src.get("browserFallbackLastSuccessAt")
+        )
+    if "browserFallbackLastError" in src:
+        normalized["browserFallbackLastError"] = clean_text(src.get("browserFallbackLastError"))
+    if "browserFallbackFailureCount" in src:
+        normalized["browserFallbackFailureCount"] = _clamped_int(
+            src.get("browserFallbackFailureCount"), 0, 0
+        )
     if "detailSkippedByListingFingerprint" in src:
         normalized["detailSkippedByListingFingerprint"] = bool(
             src.get("detailSkippedByListingFingerprint")

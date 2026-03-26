@@ -18,6 +18,7 @@ from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_helpers import source_detail_limit_for
+from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.contamination_audit import build_contamination_report, build_location_quality_report
 from src.scrapers import runner as scrapy_runner
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -61,6 +62,7 @@ def test_runtime_facade_falls_back_to_main_module_for_jobs_fetcher_runs() -> Non
         assert resolved is main_mod
         assert callable(getattr(resolved, "parse_ashby_jobs_from_html", None))
         assert callable(getattr(resolved, "parse_breezy_jobs_html", None))
+        assert callable(getattr(resolved, "parse_bamboohr_jobs_html", None))
         assert callable(getattr(resolved, "parse_jazzhr_jobs_html", None))
         assert callable(getattr(resolved, "parse_recruitee_jobs_payload", None))
         assert callable(getattr(resolved, "parse_pinpoint_jobs_payload", None))
@@ -68,6 +70,7 @@ def test_runtime_facade_falls_back_to_main_module_for_jobs_fetcher_runs() -> Non
         assert callable(getattr(resolved, "parse_gracklehq_html", None))
         assert callable(getattr(resolved, "parse_personio_feed_xml", None))
         assert callable(getattr(resolved, "parse_epic_games_jobs_payload", None))
+        assert callable(getattr(resolved, "parse_workday_jobs_html", None))
         main_mod.__spec__ = prev_spec  # type: ignore[attr-defined]
     finally:
         if prev_main is not None:
@@ -123,6 +126,39 @@ def test_registry_entries_static_filters_redundant_when_provider_present() -> No
     names = [e.get("name") for e in static_entries]
     assert "Other Studio (Manual Website)" in names
     assert "Cdprojektred (Manual Website)" not in names
+
+
+def test_registry_entries_bamboohr_derives_static_rows_and_suppresses_static_when_provider_exists() -> (
+    None
+):
+    static_bamboohr = {
+        "name": "Wolcen Studios (Manual Website)",
+        "studio": "Wolcen Studios",
+        "adapter": "static",
+        "pages": ["https://wolcenstudios.bamboohr.com/jobs/"],
+        "enabledByDefault": True,
+    }
+    bamboohr_provider = {
+        "name": "Wolcen Studios BambooHR",
+        "studio": "Wolcen Studios",
+        "adapter": "bamboohr",
+        "listing_url": "https://wolcenstudios.bamboohr.com/careers",
+        "enabledByDefault": True,
+    }
+    with mock.patch.object(
+        jobs_common, "STUDIO_SOURCE_REGISTRY", [static_bamboohr, bamboohr_provider]
+    ):
+        bamboohr_entries = jobs_common.registry_entries("bamboohr")
+        static_entries = jobs_common.registry_entries("static")
+
+    assert any(
+        row.get("name") == "Wolcen Studios (Manual Website)"
+        and row.get("adapter") == "bamboohr"
+        and row.get("migrationSourceAdapter") == "static"
+        for row in bamboohr_entries
+    )
+    assert any(row.get("name") == "Wolcen Studios BambooHR" for row in bamboohr_entries)
+    assert all(row.get("name") != "Wolcen Studios (Manual Website)" for row in static_entries)
 
 
 def test_parse_google_sheets_csv_supports_job_type_link_headers() -> None:
@@ -2822,6 +2858,55 @@ def test_browser_fallback_queue_skips_fetch_ok_extract_zero_sources() -> None:
         queue_path = out / "jobs-browser-fallback-queue.json"
         queue_rows = json.loads(queue_path.read_text(encoding="utf-8"))
         assert queue_rows == []
+
+
+def test_static_loader_disables_browser_fallback_after_environment_failure() -> None:
+    sources = [
+        {
+            "name": "Alpha Studio (Manual Website)",
+            "studio": "Alpha Studio",
+            "adapter": "static",
+            "pages": ["https://alpha.example/careers"],
+            "enabledByDefault": True,
+        },
+        {
+            "name": "Beta Studio (Manual Website)",
+            "studio": "Beta Studio",
+            "adapter": "static",
+            "pages": ["https://beta.example/careers"],
+            "enabledByDefault": True,
+        },
+    ]
+    browser_calls: list[str] = []
+    breaker = BrowserFallbackCircuitBreaker(cooldown_minutes=15)
+
+    def fake_try_playwright(url: str, timeout_s: int) -> tuple[str, str]:
+        browser_calls.append(url)
+        return "", "browser fallback unavailable (playwright is not installed)"
+
+    def failing_fetch_text(_url: str, _timeout: int) -> str:
+        raise RuntimeError("HTTP Error 403: forbidden")
+
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    jf.STUDIO_SOURCE_REGISTRY = sources
+    try:
+        with pytest.raises(AdapterValidationError):
+            jf.run_static_studio_pages_source(
+                fetch_text=failing_fetch_text,
+                timeout_s=5,
+                retries=0,
+                backoff_s=0.0,
+                source_state_rows={},
+                try_playwright=breaker.wrap(fake_try_playwright),
+                force_refresh_all=True,
+            )
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+    assert browser_calls == ["https://alpha.example/careers"]
+    state_row = breaker.to_state_row()
+    assert state_row["browserFallbackFailureCount"] == 1
+    assert "browserFallbackQuarantinedUntilAt" in state_row
 
 
 def test_run_scrapy_static_source_timeout_is_not_requeued() -> None:

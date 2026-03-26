@@ -337,10 +337,32 @@ def run_ashby_sources_source(
     )
 
 
+def run_bamboohr_sources_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
+    return _provider_api_adapter().run_bamboohr_sources_source(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+    )
+
+
 def run_personio_sources_source(
     *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
 ) -> list[RawJob]:
     return _provider_api_adapter().run_personio_sources_source(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+    )
+
+
+def run_workday_sources_source(
+    *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
+) -> list[RawJob]:
+    return _provider_api_adapter().run_workday_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
         retries=retries,

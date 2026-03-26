@@ -35,13 +35,35 @@ def try_fetch_with_playwright(url: str, timeout_s: int) -> tuple[str, str]:
         return "", str(exc)
 
 
+def is_browser_fallback_environment_error(error_text: str) -> bool:
+    text = str(error_text or "").lower()
+    if not text:
+        return False
+    tokens = (
+        "browser fallback unavailable",
+        "playwright is not installed",
+        "spawn eperm",
+        "permission denied",
+        "access is denied",
+        "operation not permitted",
+        "failed to launch browser",
+        "cannot launch browser",
+        "could not find browser",
+        "browser_type.launch",
+        "executable doesn't exist",
+        "executable does not exist",
+        "worker spawn blocked",
+    )
+    return any(token in text for token in tokens)
+
+
 def is_http_forbidden_error(exc: Exception) -> bool:
     return bool(re.search(r"\bHTTP Error 403\b", str(exc), flags=re.I))
 
 
 def normalize_error_code(error_text: str) -> str:
     text = str(error_text or "").lower()
-    if "browser fallback unavailable" in text or "playwright is not installed" in text:
+    if is_browser_fallback_environment_error(text):
         return "browser_fallback_unavailable"
     if "http error 404" in text:
         return "not_found"

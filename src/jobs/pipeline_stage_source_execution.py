@@ -18,11 +18,12 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 
+from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.canonicalize import CanonicalNormalizer
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.models import CanonicalJob
 from src.jobs.reporting import format_source_error
-from src.jobs.state import source_rows_fingerprint
+from src.jobs.state import set_browser_fallback_state, source_rows_fingerprint
 from src.jobs.text_utils import clean_text, norm_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
 from src.shared.utils import now_iso
@@ -102,6 +103,7 @@ class SourceExecutionStageConfig:
     started_at: str
     show_progress: bool
     force_refresh_all: bool
+    browser_fallback_cooldown_minutes: int
 
 
 def run_source_execution_stage(
@@ -126,6 +128,12 @@ def run_source_execution_stage(
 
     # Resolve optional Playwright fetch helper.
     _try_playwright = _best_effort_get_try_playwright()
+    browser_fallback_guard = BrowserFallbackCircuitBreaker.from_state(
+        source_state_rows, cooldown_minutes=config.browser_fallback_cooldown_minutes
+    )
+    guarded_try_playwright = (
+        browser_fallback_guard.wrap(_try_playwright) if _try_playwright is not None else None
+    )
 
     def execute_loader(
         name: str, loader: Callable[..., list[dict[str, Any]]]
@@ -178,8 +186,8 @@ def run_source_execution_stage(
             }
             if norm_text(report.get("adapter")) == "static":
                 loader_kwargs["static_detail_concurrency"] = config.static_detail_concurrency
-                if _try_playwright is not None:
-                    loader_kwargs["try_playwright"] = _try_playwright
+                if guarded_try_playwright is not None:
+                    loader_kwargs["try_playwright"] = guarded_try_playwright
 
             try:
                 signature = inspect.signature(loader)
@@ -567,6 +575,7 @@ def run_source_execution_stage(
     write_progress_report()
     write_task_state(force=True)
     run_stage()
+    set_browser_fallback_state(source_state_rows, browser_fallback_guard.to_state_row())
 
 
 __all__ = ["SourceExecutionStageConfig", "run_source_execution_stage"]

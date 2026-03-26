@@ -118,9 +118,11 @@ parse_pinpoint_jobs_payload = _parsers.parse_pinpoint_jobs_payload
 parse_epic_games_jobs_payload = _parsers.parse_epic_games_jobs_payload
 parse_ashby_jobs_from_html = _parsers.parse_ashby_jobs_from_html
 parse_breezy_jobs_html = _parsers.parse_breezy_jobs_html
+parse_bamboohr_jobs_html = _parsers.parse_bamboohr_jobs_html
 parse_jazzhr_jobs_html = _parsers.parse_jazzhr_jobs_html
 parse_personio_feed_xml = _parsers.parse_personio_feed_xml
 parse_wellfound_html = _parsers.parse_wellfound_html
+parse_workday_jobs_html = _parsers.parse_workday_jobs_html
 
 normalize_source_report_row = _reporting.normalize_source_report_row
 normalize_fetch_report_payload = _reporting.normalize_fetch_report_payload
@@ -146,9 +148,11 @@ run_workable_sources_source = _provider_api.run_workable_sources_source
 run_recruitee_sources_source = _provider_api.run_recruitee_sources_source
 run_pinpoint_sources_source = _provider_api.run_pinpoint_sources_source
 run_ashby_sources_source = _provider_api.run_ashby_sources_source
+run_bamboohr_sources_source = _provider_api.run_bamboohr_sources_source
 run_breezy_sources_source = _provider_api.run_breezy_sources_source
 run_jazzhr_sources_source = _provider_api.run_jazzhr_sources_source
 run_personio_sources_source = _provider_api.run_personio_sources_source
+run_workday_sources_source = _provider_api.run_workday_sources_source
 run_social_reddit_source = _social.run_social_reddit_source
 run_social_x_source = _social.run_social_x_source
 run_social_mastodon_source = _social.run_social_mastodon_source
@@ -313,6 +317,7 @@ __all__ = [
     "now_iso",
     "parse_args",
     "parse_ashby_jobs_from_html",
+    "parse_bamboohr_jobs_html",
     "parse_breezy_jobs_html",
     "parse_epic_games_jobs_payload",
     "parse_gamesindustry_html",
@@ -334,6 +339,7 @@ __all__ = [
     "parse_smartrecruiters_jobs_payload",
     "parse_teamtailor_listing_links",
     "parse_wellfound_html",
+    "parse_workday_jobs_html",
     "parse_workable_jobs_payload",
     "parse_workwithindies_html",
     "parse_x_payload",
@@ -344,6 +350,7 @@ __all__ = [
     "resolve_fetch_text_impl",
     "subprocess",
     "run_ashby_sources_source",
+    "run_bamboohr_sources_source",
     "run_breezy_sources_source",
     "run_8bitplay_source",
     "run_epic_games_careers_source",
@@ -355,6 +362,7 @@ __all__ = [
     "run_jazzhr_sources_source",
     "run_pinpoint_sources_source",
     "run_personio_sources_source",
+    "run_workday_sources_source",
     "run_pipeline",
     "run_gracklehq_source",
     "run_recruitee_sources_source",

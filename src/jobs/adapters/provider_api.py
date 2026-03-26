@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
+from src.jobs.adapters import provider_migration as _provider_migration
 from src.jobs.adapters import provider_personio as _provider_personio
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
@@ -408,4 +409,42 @@ def run_personio_sources_source(
         source_state_rows=source_state_rows,
         force_refresh_all=force_refresh_all,
         registry_entries_fn=registry_entries,
+    )
+
+
+def run_bamboohr_sources_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    force_refresh_all: bool = False,
+) -> list[RawJob]:
+    return _provider_migration.run_bamboohr_sources_source(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        source_state_rows=source_state_rows,
+        force_refresh_all=force_refresh_all,
+    )
+
+
+def run_workday_sources_source(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    force_refresh_all: bool = False,
+) -> list[RawJob]:
+    return _provider_migration.run_workday_sources_source(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        source_state_rows=source_state_rows,
+        force_refresh_all=force_refresh_all,
     )

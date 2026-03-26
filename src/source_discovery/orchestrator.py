@@ -21,6 +21,7 @@ import httpx
 
 import src.source_discovery as sd
 from src.contracts import SCHEMA_VERSION
+from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.state import read_source_state
 from src.source_registry import (
     URL_PATCH_MANIFEST_PATH as DEFAULT_URL_PATCH_MANIFEST_PATH,
@@ -331,9 +332,7 @@ def run_discovery(
     rejected = load_json_array(sd.REJECTED_PATH, [])
     prior_review_candidates = load_json_array(sd.DISCOVERY_CANDIDATES_PATH, [])
     prior_review_candidates_by_id = {
-        source_identity(row): dict(row)
-        for row in prior_review_candidates
-        if isinstance(row, dict)
+        source_identity(row): dict(row) for row in prior_review_candidates if isinstance(row, dict)
     }
     ranking_registry_rows = [
         *[dict(row) for row in active if isinstance(row, dict)],
@@ -910,9 +909,12 @@ def run_discovery(
     try:
         from src.bridge.source_check_http import try_fetch_with_playwright as _try_pw
 
-        try_playwright = _try_pw
+        _browser_fallback_guard = BrowserFallbackCircuitBreaker.from_state(
+            source_state_rows, cooldown_minutes=30
+        )
+        try_playwright = _browser_fallback_guard.wrap(_try_pw)
     except Exception:  # noqa: S110
-        pass
+        _browser_fallback_guard = None
     playwright_semaphore = asyncio.Semaphore(5) if try_playwright else None
 
     async def _run_probe_batch(
@@ -1188,13 +1190,13 @@ def run_discovery(
             prior_candidate=prior_review_candidates_by_id.get(source_identity(row)),
             now_iso=review_timestamp,
         )
-    queued_ids = {
-        source_identity(row) for row in queued_candidates if isinstance(row, dict)
-    }
+    queued_ids = {source_identity(row) for row in queued_candidates if isinstance(row, dict)}
     queued_candidates = [
         dict(row)
         for row in report_candidates
-        if isinstance(row, dict) and source_identity(row) in queued_ids and not bool(row.get("deferred"))
+        if isinstance(row, dict)
+        and source_identity(row) in queued_ids
+        and not bool(row.get("deferred"))
     ]
     for row in queued_candidates:
         queued_count_by_stage[str(row.get("discoveryStage") or "provider_pattern")] += 1

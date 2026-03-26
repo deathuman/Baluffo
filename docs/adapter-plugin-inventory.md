@@ -26,9 +26,11 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 | recruitee_sources | recruitee | provider_api (registry) | adapter: recruitee |
 | pinpoint_sources | pinpoint | provider_api (registry) | adapter: pinpoint |
 | ashby_sources | ashby | provider_api (registry) | adapter: ashby |
+| bamboohr_sources | bamboohr | provider_api (registry) | adapter: bamboohr |
 | breezy_sources | breezy | provider_api (registry) | adapter: breezy |
 | jazzhr_sources | jazzhr | provider_api (registry) | adapter: jazzhr |
 | personio_sources | personio | provider_api compatibility entrypoint; not yet registered in provider plugin registry | adapter: personio |
+| workday_sources | workday | provider_api (registry) | adapter: workday |
 | scrapy_static_sources | scrapy_static | static (Scrapy subprocess) | adapter: scrapy_static |
 | social_reddit | social | social (config-driven) | adapter: social, studio: reddit |
 | social_x | social | social (config-driven) | adapter: social, studio: x |
@@ -39,7 +41,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 
 **Health check:** After a run, open `data/jobs-fetch-report.json`. The `sources` array has one entry per attempted source with `name`, `status` (ok/error/excluded), `fetchedCount`, `keptCount`, `error`, and `durationMs`. Use `runtime.selectedSourceCount` and `summary.failedSources` / `summary.excludedSources` for a quick overview.
 
-**Troubleshooting:** To debug a failing source, find its entry in `sources` and check `status`, `error`, and `loss` (e.g. `canonicalDropReasons`). To run only specific sources: `python src/jobs_fetcher.py --only-sources google_sheets,remote_ok`. To force a full run ignoring circuit breaker: `--ignore-circuit-breaker`. To disable a source without code changes, add it to `EXCLUDED_DEFAULT_SOURCES` in `src/jobs_fetcher_registry.py` or remove it from the active registry (`data/source-registry-active.json`) for registry-driven sources.
+**Troubleshooting:** To debug a failing source, find its entry in `sources` and check `status`, `error`, and `loss` (e.g. `canonicalDropReasons`). To run only specific sources: `python src/jobs_fetcher.py --only-sources google_sheets,remote_ok`. To force a full run ignoring circuit breaker: `--ignore-circuit-breaker`. If Playwright/browser fallback is unhealthy, the fetcher will now short-circuit further browser attempts for a short cooldown instead of retrying on every static source. To disable a source without code changes, add it to `EXCLUDED_DEFAULT_SOURCES` in `src/jobs_fetcher_registry.py` or remove it from the active registry (`data/source-registry-active.json`) for registry-driven sources.
 
 ### Biggest / highest-churn candidates
 
@@ -60,7 +62,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
   - `teamtailor` (listing HTML + detail parsing)
   - `lever`, `smartrecruiters`, `workable` (similar registry-driven flow)
   - `recruitee`, `pinpoint` (registry-driven JSON feeds)
-  - `ashby`, `breezy`, `jazzhr`, `personio` (provider-specific HTML/XML board flows)
+  - `ashby`, `bamboohr`, `breezy`, `jazzhr`, `personio`, `workday` (provider-specific HTML/XML board flows and structured migration loaders; BambooHR/Workday share `src/jobs/adapters/provider_migration.py`)
 
 - **`src/jobs/adapters/community/__init__.py`**
   Community-board loaders now include:
@@ -153,7 +155,7 @@ When a studio’s jobs are already covered by a provider adapter (e.g. SmartRecr
 
 ### How to add new sources by family
 
-- **Provider API (Greenhouse, Lever, Recruitee, Pinpoint, Breezy, JazzHR, etc.):** Add the source to the runtime registry (`data/source-registry-active.json` or via Admin -> Sources). The fetcher loads registry entries by adapter type; ensure the entry has the required fields (e.g. `slug` for Greenhouse, `api_url` for Lever/Recruitee/Pinpoint, `board_url` for Ashby/Breezy/JazzHR, `feed_url` for Personio). No change to `DEFAULT_SOURCE_LOADER_NAMES` is needed once the provider family itself exists. Note: `personio_sources` is listed as a pipeline source name, but the adapter is still pending plugin registration in `src/jobs/adapters/plugins/provider_api/register.py`.
+- **Provider API (Greenhouse, Lever, Recruitee, Pinpoint, BambooHR, Workday, Breezy, JazzHR, etc.):** Add the source to the runtime registry (`data/source-registry-active.json` or via Admin -> Sources). The fetcher loads registry entries by adapter type; ensure the entry has the required fields (e.g. `slug` for Greenhouse, `api_url` for Lever/Recruitee/Pinpoint, `board_url` for Ashby/Breezy/JazzHR, `feed_url` for Personio, `pages` or `listing_url` for BambooHR/Workday migration sources). No change to `DEFAULT_SOURCE_LOADER_NAMES` is needed once the provider family itself exists. Note: `personio_sources` is listed as a pipeline source name, but the adapter is still pending plugin registration in `src/jobs/adapters/plugins/provider_api/register.py`.
 - **Static studio site:** (1) Add a static plugin if the site needs custom parsing (see Static plugins above). (2) Add a registry entry with `"adapter": "static"`, `pages` (listing URL(s)), and `company`/`name`. The pipeline will pick the plugin by host from the first page URL.
 - **New CSV/Google Sheet:** Add an entry to `GOOGLE_SHEETS_SOURCES` in `src/jobs/adapters/community/google_sheets.py` (or import from `src.jobs.adapters.community`) with `name`, `sheetId`, `gid`. Add the same `name` to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`.
 - **New community board / aggregator:** Add the parser and loader in `src/jobs/adapters/community/__init__.py`, export the parser through `src/jobs/parsers.py` and `src/jobs_fetcher.py`, then add the loader name to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`. Recent examples: `gamejobs`, `workwithindies`, `8bitplay`, `gracklehq`.
