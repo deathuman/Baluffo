@@ -191,7 +191,7 @@ See [`testing.md`](testing.md) and the verification matrix in [`architecture-ai-
 
 `npm run verify` includes the repo's local changed-files pre-commit gate, so it is the safest single command to run before pushing changes to `main`.
 Use `npm run lint:precommit:all` when you want the local full-repo sweep.
-Use `npm run lint:precommit:ci` when you want CI-parity lint coverage, including the pre-push hooks, while skipping generated `data/*` artifacts. The lint gate treats `ruff format` as check-only, so formatting drift is reported instead of auto-applied. The current `mypy` hook is intentionally scoped to `src/python_version_guard.py` and `src/pipeline_io.py` until the broader typed surface is cleaned up.
+Use `npm run lint:precommit:ci` when you want CI-parity lint coverage, including the pre-push hooks, while skipping generated `data/*` artifacts. The lint gate treats `ruff format` as check-only, so formatting drift is reported instead of auto-applied. The current `mypy` hook is intentionally scoped to `src/python_version_guard.py` and `src/pipeline_io.py` until the broader typed surface is cleaned up. Local runs assume `pre-commit` and `ruff` are installed in the active Python environment.
 
 ---
 

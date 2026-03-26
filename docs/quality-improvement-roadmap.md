@@ -304,7 +304,7 @@ The codebase now includes:
 
 ## Milestone 5 — Strategic Coverage Expansion
 
-**Status:** Ready for planning.
+**Status:** Implemented.
 
 **Window:** Week 7–10
 **Owner:** Coverage / source curator
@@ -313,32 +313,33 @@ The codebase now includes:
 ### Why This Comes Fifth
 
 Remaining work should be targeted, not broad. Current fetch shows EA and Nintendo already present as active static sources.
-Milestone 5 is now the next planning target, so the next pass should focus on curating the backlog and tightening the inclusion rubric before implementation starts.
+Milestone 5 is an evidence-gated expansion pass: subtract duplicates, suppressed rows, and M4-family carry-over first, then rank only true custom coverage opportunities.
 
 ### Deliverables
 
 | # | Deliverable | Description |
 |---|-------------|-------------|
 | 5.1 | Curated priority list | High-value custom career sites not yet covered |
-| 5.2 | Target classification | Categorize as: `structured adapter likely`, `custom scraper needed`, `low ROI / defer` |
+| 5.2 | Target classification | Categorize as: `lane_a_m4_followup`, `lane_b_custom`, `lane_c_asia_custom`, `lane_d_defer` |
 | 5.3 | Asia-targeted focus | Large publishers not well-covered, especially Asian-market targets where discovery shows evidence |
 | 5.4 | Source inclusion rubric | Every new source has documented inclusion criteria |
+| 5.5 | M5 backlog snapshot | Derived `data/m5-strategic-backlog.json` review artifact |
 
 ### KPIs
 
-- Add 10–15 high-value studios with non-zero output
+- Add 10–15 high-value studios with non-zero first-run output
 - ≥30% of newly added sources are headquartered outside Europe, as defined by studio HQ in source registry metadata
-- <20% of new sources enter long-term zero-kept bucket
+- <20% of new sources enter the long-term zero-kept bucket after 3 scheduled full pipeline runs
 
 ### Definition of "Long-Term Zero-Kept"
 
-A source enters the long-term zero-kept bucket if it records `keptCount == 0` for 3 consecutive scheduled runs after activation.
+A source enters the long-term zero-kept bucket if it records `keptCount == 0` for 3 consecutive scheduled full pipeline runs after activation.
 
 ### Exit Criteria
 
-- [ ] Every newly added source includes one documented justification: discovered candidate, known ATS match, publisher-priority target, or proven community demand
-- [ ] Every added source has a recorded classification: structured-adapter likely / custom scraper / low ROI
-- [ ] Every added source has first-run outcome recorded after activation
+- [x] Every newly added source includes one documented justification: discovered candidate, known ATS match, publisher-priority target, or proven community demand
+- [x] Every added source has a recorded classification in the frozen M5 lane enum
+- [x] Every added source has first-run outcome recorded after activation
 
 ---
 

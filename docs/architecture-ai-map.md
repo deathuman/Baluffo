@@ -276,6 +276,7 @@ Backend refactoring is directionally strong and materially narrower than the ear
 - **`data/source-registry-rejected.json`**: A list of job sources that have been rejected.
 - **`data/source-discovery-report.json`**: A report on the last run of the source discovery process.
 - **`data/source-discovery-candidates.json`**: A list of candidate job sources that have been discovered. See **docs/DATA_CONTRACT.md** §7 for the source discovery contract (stable APIs and report/candidates shape).
+- **`data/m5-strategic-backlog.json`**: A derived M5 review snapshot built from discovery output. Use it for milestone review and verification, not as the canonical discovery ledger.
 - **`data/local-user-data/profiles.json`**: A list of user profiles.
 - **`data/local-user-data/session.json`**: The current user session.
 - **`data/local-user-data/users/{uid}/saved-jobs.json`**: A list of jobs that a user has saved.

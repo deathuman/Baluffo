@@ -70,6 +70,7 @@ Saved job record fields:
 - Run `python src/source_discovery.py` (dynamic mode by default) to discover new candidate sources into:
   - `data/source-discovery-report.json`
   - `data/source-discovery-candidates.json`
+  - `data/m5-strategic-backlog.json` (derived M5 review snapshot)
   - `data/source-registry-pending.json` (report-only, no auto-enable)
 - Optional flags:
   - `--mode static` to probe only static seed list
@@ -86,6 +87,7 @@ Saved job record fields:
   - `GET /registry/pending`
   - `GET /registry/active`
   - `GET /sync/status`
+  - Local lint and release gates require `pre-commit` and `ruff` in the active Python environment; if they are missing, install them with `python -m pip install pre-commit ruff`.
   - `POST /registry/approve`, `POST /registry/reject`, `POST /registry/rollback`
   - `POST /sync/pull`, `POST /sync/push`
   - `POST /tasks/run-discovery`, `POST /tasks/run-fetcher`
