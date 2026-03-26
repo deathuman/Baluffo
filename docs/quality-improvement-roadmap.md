@@ -347,18 +347,19 @@ A source enters the long-term zero-kept bucket if it records `keptCount == 0` fo
 
 **Window:** Week 10–12
 **Owner:** Community ingestion maintainer
+**Status:** Implemented as a measured-experiment scaffold in commit `0cbe397`; pilot accounting and ops visibility are live, but the experiment outcome still depends on pilot-window data and manual review.
 
 ### Why This Comes Last
 
-Social had 3 sources, 3 kept, 2 zero-kept in latest run. Current config: Reddit disabled, X disabled, Mastodon enabled.
+Social had 3 sources, 3 kept, 2 zero-kept in the latest run. Current config: Reddit enabled with a curated 6-subreddit pilot, X disabled, Mastodon enabled.
 
 ### Deliverables
 
 | # | Deliverable | Description |
 |---|-------------|-------------|
-| 6.1 | Reddit pilot | Enable with small curated subreddit set |
+| 6.1 | Reddit pilot | Enable with the curated subreddit set and record pilot-window accounting |
 | 6.2 | Unique-value measurement | Track jobs found only via social and jobs not already on official boards |
-| 6.3 | Mastodon quality report | Measure whether it adds unique records vs noise |
+| 6.3 | Mastodon quality report | Measure whether it adds unique records vs noise via `socialSummary` and bridge ops health |
 | 6.4 | Defer larger channels | LinkedIn/Discord work deferred until core pipeline is healthier |
 
 ### KPIs
@@ -370,6 +371,7 @@ Social had 3 sources, 3 kept, 2 zero-kept in latest run. Current config: Reddit 
 ### Exit Criteria
 
 - [ ] Social proves incremental value or is explicitly deprioritized
+- [x] M6 social experiment reporting, review artifact generation, and bridge visibility are implemented
 
 ### Definition of "Explicitly Deprioritized"
 
