@@ -399,79 +399,83 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
     registry_adapter = adapter_name
     if adapter_name == "smartrecruiters":
         default_error = "missing company_id/api_url"
-        parse_payload = (
-            lambda source, payload, studio: _provider_parsers.parse_smartrecruiters_jobs_payload(
+        parse_payload = lambda source, payload, studio: (
+            _provider_parsers.parse_smartrecruiters_jobs_payload(
                 payload, clean_text(source.get("company_id")), fallback_company=studio
             )
         )
-        build_url = lambda source: clean_text(source.get("api_url")) or (
-            f"https://api.smartrecruiters.com/v1/companies/{clean_text(source.get('company_id'))}/postings"
-            if clean_text(source.get("company_id"))
-            else ""
+        build_url = lambda source: (
+            clean_text(source.get("api_url"))
+            or (
+                f"https://api.smartrecruiters.com/v1/companies/{clean_text(source.get('company_id'))}/postings"
+                if clean_text(source.get("company_id"))
+                else ""
+            )
         )
-        payload_count = (
-            lambda payload, parsed: len(payload.get("content", []))
-            if isinstance(payload, dict)
-            else len(parsed)
+        payload_count = lambda payload, parsed: (
+            len(payload.get("content", [])) if isinstance(payload, dict) else len(parsed)
         )
     elif adapter_name == "workable":
         default_error = "missing account/api_url"
-        parse_payload = (
-            lambda source, payload, studio: _provider_parsers.parse_workable_jobs_payload(
+        parse_payload = lambda source, payload, studio: (
+            _provider_parsers.parse_workable_jobs_payload(
                 payload, clean_text(source.get("account")), fallback_company=studio
             )
         )
-        build_url = lambda source: clean_text(source.get("api_url")) or (
-            f"https://apply.workable.com/api/v1/widget/accounts/{clean_text(source.get('account'))}?details=true"
-            if clean_text(source.get("account"))
-            else ""
+        build_url = lambda source: (
+            clean_text(source.get("api_url"))
+            or (
+                f"https://apply.workable.com/api/v1/widget/accounts/{clean_text(source.get('account'))}?details=true"
+                if clean_text(source.get("account"))
+                else ""
+            )
         )
-        payload_count = (
-            lambda payload, parsed: len(payload.get("jobs", []))
-            if isinstance(payload, dict)
-            else len(parsed)
+        payload_count = lambda payload, parsed: (
+            len(payload.get("jobs", [])) if isinstance(payload, dict) else len(parsed)
         )
     elif adapter_name == "recruitee":
         default_error = "missing subdomain/api_url"
-        parse_payload = (
-            lambda source, payload, studio: _provider_parsers.parse_recruitee_jobs_payload(
+        parse_payload = lambda source, payload, studio: (
+            _provider_parsers.parse_recruitee_jobs_payload(
                 payload, clean_text(source.get("subdomain")), fallback_company=studio
             )
         )
-        build_url = lambda source: clean_text(source.get("api_url")) or (
-            f"https://{clean_text(source.get('subdomain'))}/api/offers/"
-            if "." in clean_text(source.get("subdomain"))
-            else (
-                f"https://{clean_text(source.get('subdomain'))}.recruitee.com/api/offers/"
-                if clean_text(source.get("subdomain"))
-                else ""
+        build_url = lambda source: (
+            clean_text(source.get("api_url"))
+            or (
+                f"https://{clean_text(source.get('subdomain'))}/api/offers/"
+                if "." in clean_text(source.get("subdomain"))
+                else (
+                    f"https://{clean_text(source.get('subdomain'))}.recruitee.com/api/offers/"
+                    if clean_text(source.get("subdomain"))
+                    else ""
+                )
             )
         )
-        payload_count = (
-            lambda payload, parsed: len(payload.get("offers", []))
-            if isinstance(payload, dict)
-            else len(parsed)
+        payload_count = lambda payload, parsed: (
+            len(payload.get("offers", [])) if isinstance(payload, dict) else len(parsed)
         )
     elif adapter_name == "pinpoint":
         default_error = "missing subdomain/api_url"
-        parse_payload = (
-            lambda source, payload, studio: _provider_parsers.parse_pinpoint_jobs_payload(
+        parse_payload = lambda source, payload, studio: (
+            _provider_parsers.parse_pinpoint_jobs_payload(
                 payload, clean_text(source.get("subdomain")), fallback_company=studio
             )
         )
-        build_url = lambda source: clean_text(source.get("api_url")) or (
-            f"https://{clean_text(source.get('subdomain'))}/postings.json"
-            if "." in clean_text(source.get("subdomain"))
-            else (
-                f"https://{clean_text(source.get('subdomain'))}.pinpointhq.com/postings.json"
-                if clean_text(source.get("subdomain"))
-                else ""
+        build_url = lambda source: (
+            clean_text(source.get("api_url"))
+            or (
+                f"https://{clean_text(source.get('subdomain'))}/postings.json"
+                if "." in clean_text(source.get("subdomain"))
+                else (
+                    f"https://{clean_text(source.get('subdomain'))}.pinpointhq.com/postings.json"
+                    if clean_text(source.get("subdomain"))
+                    else ""
+                )
             )
         )
-        payload_count = (
-            lambda payload, parsed: len(payload.get("data", []))
-            if isinstance(payload, dict)
-            else len(parsed)
+        payload_count = lambda payload, parsed: (
+            len(payload.get("data", [])) if isinstance(payload, dict) else len(parsed)
         )
     else:
         # lever
@@ -479,21 +483,25 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
         parse_payload = lambda source, payload, studio: _provider_parsers.parse_lever_jobs_payload(
             payload, clean_text(source.get("account")), fallback_company=studio
         )
-        build_url = lambda source: clean_text(source.get("api_url")) or (
-            f"https://api.lever.co/v0/postings/{clean_text(source.get('account'))}?mode=json"
-            if clean_text(source.get("account"))
-            else ""
+        build_url = lambda source: (
+            clean_text(source.get("api_url"))
+            or (
+                f"https://api.lever.co/v0/postings/{clean_text(source.get('account'))}?mode=json"
+                if clean_text(source.get("account"))
+                else ""
+            )
         )
-        payload_count = (
-            lambda payload, parsed: len(payload) if isinstance(payload, list) else len(parsed)
+        payload_count = lambda payload, parsed: (
+            len(payload) if isinstance(payload, list) else len(parsed)
         )
 
     return SimpleAdapterPlugin(
         name=f"{adapter_name}_sources",
         family="provider_api",
         priority=50,
-        can_handle_fn=lambda ctx: ctx.family == "provider_api"
-        and ctx.adapter_key == f"{adapter_name}_sources",
+        can_handle_fn=lambda ctx: (
+            ctx.family == "provider_api" and ctx.adapter_key == f"{adapter_name}_sources"
+        ),
         run_fn=lambda **kwargs: _run_json_feed_sources(
             adapter_name=adapter_name,
             registry_adapter=registry_adapter,
@@ -645,8 +653,9 @@ def _html_board_plugin(adapter_name: str) -> SimpleAdapterPlugin:
         name=f"{adapter_name}_sources",
         family="provider_api",
         priority=55,
-        can_handle_fn=lambda ctx: ctx.family == "provider_api"
-        and ctx.adapter_key == f"{adapter_name}_sources",
+        can_handle_fn=lambda ctx: (
+            ctx.family == "provider_api" and ctx.adapter_key == f"{adapter_name}_sources"
+        ),
         run_fn=lambda **kwargs: _run_html_board_sources(
             adapter_name=adapter_name,
             registry_adapter=registry_adapter,
@@ -694,8 +703,9 @@ def ensure_registered() -> None:
             name="greenhouse_boards",
             family="provider_api",
             priority=10,
-            can_handle_fn=lambda ctx: ctx.family == "provider_api"
-            and ctx.adapter_key == "greenhouse_boards",
+            can_handle_fn=lambda ctx: (
+                ctx.family == "provider_api" and ctx.adapter_key == "greenhouse_boards"
+            ),
             run_fn=_run_greenhouse_boards,
         )
     )
@@ -704,8 +714,9 @@ def ensure_registered() -> None:
             name="teamtailor_sources",
             family="provider_api",
             priority=20,
-            can_handle_fn=lambda ctx: ctx.family == "provider_api"
-            and ctx.adapter_key == "teamtailor_sources",
+            can_handle_fn=lambda ctx: (
+                ctx.family == "provider_api" and ctx.adapter_key == "teamtailor_sources"
+            ),
             run_fn=_run_teamtailor_sources,
         )
     )
@@ -719,8 +730,9 @@ def ensure_registered() -> None:
             name="personio_sources",
             family="provider_api",
             priority=55,
-            can_handle_fn=lambda ctx: ctx.family == "provider_api"
-            and ctx.adapter_key == "personio_sources",
+            can_handle_fn=lambda ctx: (
+                ctx.family == "provider_api" and ctx.adapter_key == "personio_sources"
+            ),
             run_fn=_provider_personio.run_personio_sources_source,
         )
     )
@@ -729,8 +741,9 @@ def ensure_registered() -> None:
             name="bamboohr_sources",
             family="provider_api",
             priority=56,
-            can_handle_fn=lambda ctx: ctx.family == "provider_api"
-            and ctx.adapter_key == "bamboohr_sources",
+            can_handle_fn=lambda ctx: (
+                ctx.family == "provider_api" and ctx.adapter_key == "bamboohr_sources"
+            ),
             run_fn=_provider_migration.run_bamboohr_sources_source,
         )
     )
@@ -739,8 +752,9 @@ def ensure_registered() -> None:
             name="workday_sources",
             family="provider_api",
             priority=56,
-            can_handle_fn=lambda ctx: ctx.family == "provider_api"
-            and ctx.adapter_key == "workday_sources",
+            can_handle_fn=lambda ctx: (
+                ctx.family == "provider_api" and ctx.adapter_key == "workday_sources"
+            ),
             run_fn=_provider_migration.run_workday_sources_source,
         )
     )

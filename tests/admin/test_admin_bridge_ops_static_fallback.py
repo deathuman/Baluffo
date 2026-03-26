@@ -49,8 +49,8 @@ def test_trigger_source_check_static_fallback_returns_failure_when_no_jobs(admin
 
     original_fetch = admin_bridge.discovery.fetch_text_with_retry
     try:
-        admin_bridge.discovery.fetch_text_with_retry = (
-            lambda *_args, **_kwargs: "<html><body>No jobs</body></html>"
+        admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: (
+            "<html><body>No jobs</body></html>"
         )
         result = admin_bridge.trigger_source_check(source_id)
         assert result["started"]

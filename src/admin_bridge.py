@@ -246,8 +246,8 @@ def _get_task_launch_api() -> _task_launch_api.TaskLaunchApi:
             save_json_atomic=save_json_atomic,
             task_state_lock=OPS_STATE_LOCK,
             default_source_loaders=default_source_loaders,
-            failed_source_names_from_latest_report=lambda allowed: _failed_source_names_from_latest_report(
-                allowed_names=allowed
+            failed_source_names_from_latest_report=lambda allowed: (
+                _failed_source_names_from_latest_report(allowed_names=allowed)
             ),
             safe_int=_safe_int,
         ),
@@ -698,9 +698,10 @@ def _fetch_html_with_fallback_bound(url: str, timeout_s: int) -> tuple[str, str,
         timeout_s,
         fetch_text=lambda u, t: discovery.fetch_text_with_retry(u, t, adapter="static"),
         looks_like_challenge=_source_check_http.looks_like_browser_challenge_page,
-        has_extractable_job_data=lambda html,
-        page_url: _source_check_fetch.html_has_extractable_job_data(
-            html, page_url, html_extractor=_html_extractor
+        has_extractable_job_data=lambda html, page_url: (
+            _source_check_fetch.html_has_extractable_job_data(
+                html, page_url, html_extractor=_html_extractor
+            )
         ),
         try_playwright=_source_check_http.try_fetch_with_playwright,
         is_http_forbidden=_source_check_http.is_http_forbidden_error,

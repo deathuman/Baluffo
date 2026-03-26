@@ -407,8 +407,9 @@ def ensure_registered(*, social_config: dict[str, Any]) -> None:
             name="social_mastodon",
             family="social",
             priority=10,
-            can_handle_fn=lambda ctx: ctx.family == "social"
-            and ctx.adapter_key == "social_mastodon",
+            can_handle_fn=lambda ctx: (
+                ctx.family == "social" and ctx.adapter_key == "social_mastodon"
+            ),
             run_fn=_run_mastodon,
         )
     )

@@ -602,6 +602,34 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     location_quality_audit = (
         src.get("locationQualityAudit") if isinstance(src.get("locationQualityAudit"), dict) else {}
     )
+    social_summary_raw = (
+        src.get("socialSummary") if isinstance(src.get("socialSummary"), dict) else {}
+    )
+
+    def _float_or_zero(value: Any) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _normalize_social_channel_summary(payload: Any) -> dict[str, Any]:
+        src_channel = payload if isinstance(payload, dict) else {}
+        return {
+            "keptCount": _clamped_int(src_channel.get("keptCount"), 0, 0),
+            "uniqueKeptCount": _clamped_int(src_channel.get("uniqueKeptCount"), 0, 0),
+            "officialBoardOverlapCount": _clamped_int(
+                src_channel.get("officialBoardOverlapCount"), 0, 0
+            ),
+            "duplicateCount": _clamped_int(src_channel.get("duplicateCount"), 0, 0),
+            "duplicateRate": max(0.0, min(1.0, _float_or_zero(src_channel.get("duplicateRate")))),
+            "lowConfidenceDropped": _clamped_int(src_channel.get("lowConfidenceDropped"), 0, 0),
+        }
+
+    social_channels_raw = (
+        social_summary_raw.get("channels")
+        if isinstance(social_summary_raw.get("channels"), dict)
+        else {}
+    )
     return {
         "schemaVersion": SCHEMA_VERSION,
         "runId": clean_text(src.get("runId")),
@@ -609,6 +637,37 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "finishedAt": clean_text(src.get("finishedAt")),
         "runtime": normalize_runtime_payload(runtime, selected_source_count=len(source_rows)),
         "summary": dict(summary),
+        "socialSummary": {
+            "pilotWindowStartAt": clean_text(social_summary_raw.get("pilotWindowStartAt")),
+            "pilotWindowEndAt": clean_text(social_summary_raw.get("pilotWindowEndAt")),
+            "scheduledRunCount": _clamped_int(social_summary_raw.get("scheduledRunCount"), 0, 0),
+            "keptCount": _clamped_int(social_summary_raw.get("keptCount"), 0, 0),
+            "uniqueKeptCount": _clamped_int(social_summary_raw.get("uniqueKeptCount"), 0, 0),
+            "officialBoardOverlapCount": _clamped_int(
+                social_summary_raw.get("officialBoardOverlapCount"), 0, 0
+            ),
+            "duplicateCount": _clamped_int(social_summary_raw.get("duplicateCount"), 0, 0),
+            "duplicateRate": max(
+                0.0, min(1.0, _float_or_zero(social_summary_raw.get("duplicateRate")))
+            ),
+            "lowConfidenceDropped": _clamped_int(
+                social_summary_raw.get("lowConfidenceDropped"), 0, 0
+            ),
+            "sampleSize": _clamped_int(social_summary_raw.get("sampleSize"), 0, 0),
+            "reviewedCount": _clamped_int(social_summary_raw.get("reviewedCount"), 0, 0),
+            "falsePositiveCount": _clamped_int(social_summary_raw.get("falsePositiveCount"), 0, 0),
+            "falsePositiveRate": max(
+                0.0, min(1.0, _float_or_zero(social_summary_raw.get("falsePositiveRate")))
+            ),
+            "reviewArtifactPath": clean_text(social_summary_raw.get("reviewArtifactPath")),
+            "channels": {
+                clean_text(key): _normalize_social_channel_summary(value)
+                for key, value in social_channels_raw.items()
+                if clean_text(key)
+            },
+        }
+        if social_summary_raw
+        else {},
         "taskProgress": normalize_task_progress_payload(src.get("taskProgress")),
         "contaminationAudit": {
             "totalRows": _clamped_int(contamination_audit.get("totalRows"), 0, 0),

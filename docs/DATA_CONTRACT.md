@@ -202,3 +202,51 @@ Fetcher and discovery reports may include a shared `taskProgress` object for the
 - The domain layer is responsible for mapping `taskProgress` into the rendered progress view.
 - The shared progress renderer only renders the derived view model; it must not infer phases or ratios from raw report counters.
 - Raw report counters remain useful for details and backward-compatible fallbacks, but the primary loading-bar state comes from `taskProgress`.
+
+---
+
+## 9. Social experiment report contract
+
+The fetch report may include a top-level `socialSummary` block for the M6 social/community pilot.
+
+### Purpose
+
+This block is additive and exists so the jobs fetch report, bridge ops health, and manual review artifact can describe the same measured experiment.
+
+### Definitions
+
+- `official-board origin` means first-party company boards and structured ATS/company-page ingestion only.
+- `not official-board origin` means community sheets, aggregators, repost feeds, and social sources.
+- `uniqueKeptCount` is measured post-dedup on final canonical output rows.
+- `officialBoardOverlapCount` means a canonical job appears in both social and official-board origin paths.
+
+### Fetch report shape
+
+| Field | Type | Description |
+|---|---|---|
+| `pilotWindowStartAt` | `string` | Start of the measured pilot window. |
+| `pilotWindowEndAt` | `string` | End of the measured pilot window. |
+| `scheduledRunCount` | `number` | Number of scheduled fetch runs included in the pilot window. |
+| `keptCount` | `number` | Total social rows kept in the run window. |
+| `uniqueKeptCount` | `number` | Kept social jobs whose final canonical row is unique to social after dedup. |
+| `officialBoardOverlapCount` | `number` | Kept social jobs that also appear in official-board ingestion paths. |
+| `duplicateCount` | `number` | Kept social rows removed as duplicates. |
+| `duplicateRate` | `number` | `duplicateCount / keptCount` for the run window. |
+| `lowConfidenceDropped` | `number` | Social rows dropped because confidence was below threshold. |
+| `sampleSize` | `number` | Reviewed social sample size, or `0` when no review data exists. |
+| `reviewedCount` | `number` | Rows in the review artifact that have a true/false positive judgment. |
+| `falsePositiveCount` | `number` | Reviewed rows marked as false positive. |
+| `falsePositiveRate` | `number` | `falsePositiveCount / reviewedCount` for the reviewed sample. |
+| `reviewArtifactPath` | `string` | Path to `data/social-experiment-review.json` or the run-local equivalent. |
+| `channels` | `object` | Per-channel summaries for `reddit` and `mastodon`. |
+
+### Review artifact
+
+- The pipeline writes a deterministic candidate sample to `data/social-experiment-review.json`.
+- The sample is stable-sorted by canonical job id or dedup key, then truncated to the first 50 eligible social-kept rows.
+- Human review fills in `reviewDecision` and `reviewNotes` for the candidate rows.
+- If no review data exists yet, the report should emit `sampleSize = 0`, `reviewedCount = 0`, `falsePositiveCount = 0`, and `falsePositiveRate = 0`.
+
+### Bridge visibility
+
+The bridge ops health payload mirrors a compact `kpis.socialExperiment` view from the fetch report so operators can review the experiment without reading the raw report file.

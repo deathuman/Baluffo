@@ -199,6 +199,40 @@ def test_compute_ops_health_includes_social_alerts(admin_bridge_entrypoint_root)
             "startedAt": "2026-03-01T00:00:00+00:00",
             "finishedAt": "2026-03-01T00:10:00+00:00",
             "summary": {"outputCount": 20, "failedSources": 0, "sourceCount": 3},
+            "socialSummary": {
+                "pilotWindowStartAt": "2026-03-01T00:00:00+00:00",
+                "pilotWindowEndAt": "2026-03-01T00:10:00+00:00",
+                "scheduledRunCount": 1,
+                "keptCount": 2,
+                "uniqueKeptCount": 2,
+                "officialBoardOverlapCount": 0,
+                "duplicateCount": 0,
+                "duplicateRate": 0.0,
+                "lowConfidenceDropped": 0,
+                "sampleSize": 0,
+                "reviewedCount": 0,
+                "falsePositiveCount": 0,
+                "falsePositiveRate": 0.0,
+                "reviewArtifactPath": "data/social-experiment-review.json",
+                "channels": {
+                    "reddit": {
+                        "keptCount": 1,
+                        "uniqueKeptCount": 1,
+                        "officialBoardOverlapCount": 0,
+                        "duplicateCount": 0,
+                        "duplicateRate": 0.0,
+                        "lowConfidenceDropped": 0,
+                    },
+                    "mastodon": {
+                        "keptCount": 1,
+                        "uniqueKeptCount": 1,
+                        "officialBoardOverlapCount": 0,
+                        "duplicateCount": 0,
+                        "duplicateRate": 0.0,
+                        "lowConfidenceDropped": 0,
+                    },
+                },
+            },
             "sources": [
                 {
                     "name": "social_reddit",
@@ -225,10 +259,17 @@ def test_compute_ops_health_includes_social_alerts(admin_bridge_entrypoint_root)
         },
     )
     health = admin_bridge.compute_ops_health()
+    social_kpis = health.get("kpis", {}).get("socialExperiment", {})
+    assert int(social_kpis.get("keptCount") or 0) == 2
+    assert int(social_kpis.get("uniqueKeptCount") or 0) == 2
+    assert int(social_kpis.get("sampleSize") or 0) == 0
+    assert int(social_kpis.get("reviewedCount") or 0) == 0
+    assert float(social_kpis.get("falsePositiveRate") or 0) == 0.0
     ids = {str(row.get("id") or "") for row in health.get("alerts", [])}
     assert "social_sources_failing" in ids
     assert "social_zero_matches" in ids
     assert "social_low_confidence_spike" in ids
+    assert "social_false_positive_spike" not in ids
 
 
 def test_normalize_fetch_report_contract_sanitizes_minimal_payload(admin_bridge_entrypoint_root):

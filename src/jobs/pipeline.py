@@ -792,6 +792,52 @@ def run_pipeline(
         paths.browser_fallback_queue_path,
         json.dumps(browser_fallback_queue_rows, indent=2, ensure_ascii=False),
     )
+    social_review_path = paths.output_dir / reporting_pkg.SOCIAL_EXPERIMENT_REVIEW_FILENAME
+    social_review_candidates = reporting_pkg.build_social_experiment_review_sample(
+        deduped_payload_rows,
+        sample_size=reporting_pkg.SOCIAL_EXPERIMENT_SAMPLE_SIZE,
+    )
+    existing_social_review_payload: dict[str, Any] = {}
+    if social_review_path.exists():
+        try:
+            loaded_review = json.loads(social_review_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            loaded_review = {}
+        if isinstance(loaded_review, dict):
+            existing_social_review_payload = loaded_review
+    existing_review_rows = (
+        existing_social_review_payload.get("rows")
+        if isinstance(existing_social_review_payload.get("rows"), list)
+        else []
+    )
+    review_rows_by_key = {
+        clean_text(row.get("dedupKey")): row
+        for row in existing_review_rows
+        if isinstance(row, dict) and clean_text(row.get("dedupKey"))
+    }
+    merged_social_review_rows: list[dict[str, Any]] = []
+    for candidate in social_review_candidates:
+        key = clean_text(candidate.get("dedupKey"))
+        merged_candidate = dict(candidate)
+        previous = review_rows_by_key.get(key) or {}
+        decision = clean_text(previous.get("reviewDecision"))
+        notes = clean_text(previous.get("reviewNotes"))
+        if decision:
+            merged_candidate["reviewDecision"] = decision
+        if notes:
+            merged_candidate["reviewNotes"] = notes
+        merged_social_review_rows.append(merged_candidate)
+    social_review_payload = reporting_pkg.build_social_experiment_review_payload(
+        merged_social_review_rows,
+        generated_at=lifecycle_finished_at,
+        pilot_window_start_at=started_at,
+        pilot_window_end_at=lifecycle_finished_at,
+        review_artifact_path=str(social_review_path),
+    )
+    write_atomic_if_changed(
+        social_review_path,
+        json.dumps(social_review_payload, indent=2, ensure_ascii=False),
+    )
     timing_summary = build_runtime_timing_summary(
         source_reports,
         wall_clock_duration_ms=int((time.perf_counter() - run_started_mono) * 1000),
@@ -817,6 +863,14 @@ def run_pipeline(
             "startedAt": started_at,
             "finishedAt": lifecycle_finished_at,
             "runtime": runtime_payload,
+            "socialSummary": reporting_pkg.summarize_social_experiment(
+                source_reports,
+                deduped_payload_rows,
+                pilot_window_start_at=started_at,
+                pilot_window_end_at=lifecycle_finished_at,
+                review_payload=social_review_payload,
+                review_artifact_path=str(social_review_path),
+            ),
             "taskProgress": build_fetch_task_progress_payload(
                 phase_key="completed",
                 phase_label="Completed",

@@ -4,8 +4,15 @@
   "rejectForHirePosts": true,
   "lookbackMinutes": 30,
   "reddit": {
-    "enabled": false,
-    "subreddits": [],
+    "enabled": true,
+    "subreddits": [
+      "gamedev",
+      "gameDevClassifieds",
+      "gamedevjobs",
+      "INAT",
+      "gamejobs",
+      "indiegaming"
+    ],
     "maxPostsPerSubreddit": 25,
     "rssFallback": true,
     "htmlFallback": false,

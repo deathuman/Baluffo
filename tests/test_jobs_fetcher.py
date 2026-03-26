@@ -889,8 +889,8 @@ def test_deduplicate_jobs_uses_social_source_id_fallback() -> None:
 
 def test_deduplicate_jobs_merges_resolved_redirect_with_direct_job() -> None:
     redirect_target = "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-technical-director-level-design-m-f-nb-projet-non-annonce"
-    redirect_resolver = (
-        lambda url: redirect_target if "gracklehq.com/rd/372393" in str(url) else str(url)
+    redirect_resolver = lambda url: (
+        redirect_target if "gracklehq.com/rd/372393" in str(url) else str(url)
     )
     redirect_row = jf.canonicalize_job(
         {
@@ -989,8 +989,10 @@ def test_canonicalize_job_skips_redirect_resolution_for_gracklehq_source() -> No
         },
         source="gracklehq",
         fetched_at=jf.now_iso(),
-        resolve_redirect_url=lambda url: calls.append(str(url))
-        or "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-role",
+        resolve_redirect_url=lambda url: (
+            calls.append(str(url))
+            or "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-role"
+        ),
     )
 
     assert row is not None
@@ -1146,13 +1148,20 @@ def test_run_pipeline_social_sources_report_and_output() -> None:
         "rejectForHirePosts": True,
         "reddit": {
             "enabled": True,
-            "subreddits": ["gamedev"],
+            "subreddits": [
+                "gamedev",
+                "gameDevClassifieds",
+                "gamedevjobs",
+                "INAT",
+                "gamejobs",
+                "indiegaming",
+            ],
             "maxPostsPerSubreddit": 5,
             "rssFallback": True,
             "htmlFallback": False,
         },
         "x": {
-            "enabled": True,
+            "enabled": False,
             "queries": ["#gamedevjobs"],
             "maxPostsPerQuery": 5,
             "api": {"enabled": False, "endpoint": "", "bearerTokenEnv": "BALUFFO_X_BEARER_TOKEN"},
@@ -1168,9 +1177,6 @@ def test_run_pipeline_social_sources_report_and_output() -> None:
 
     def social_reddit_loader(**kwargs):
         return jf.run_social_reddit_source(**kwargs, social_config=social_cfg)
-
-    def social_x_loader(**kwargs):
-        return jf.run_social_x_source(**kwargs, social_config=social_cfg)
 
     def social_mastodon_loader(**kwargs):
         return jf.run_social_mastodon_source(**kwargs, social_config=social_cfg)
@@ -1193,15 +1199,6 @@ def test_run_pipeline_social_sources_report_and_output() -> None:
             ]
         }
     }
-    x_payload = {
-        "data": [
-            {
-                "id": "x1",
-                "text": "We are hiring an Environment Artist at Pixel Forge. Apply https://jobs.pixelforge.dev/ea",
-                "created_at": "2026-03-09T11:00:00Z",
-            }
-        ]
-    }
     mastodon_payload = [
         {
             "id": "m1",
@@ -1215,8 +1212,6 @@ def test_run_pipeline_social_sources_report_and_output() -> None:
     def fake_fetch(url: str, _: int) -> str:
         if "reddit.com/r/gamedev/new.json" in url:
             return json.dumps(reddit_payload)
-        if "example.local/x-search" in url:
-            return json.dumps(x_payload)
         if "mastodon.gamedev.place/api/v1/timelines/tag/gamedevjobs" in url:
             return json.dumps(mastodon_payload)
         raise RuntimeError(f"Unhandled URL in fake fetch: {url}")
@@ -1227,7 +1222,6 @@ def test_run_pipeline_social_sources_report_and_output() -> None:
             fetch_text=fake_fetch,
             source_loaders=[
                 ("social_reddit", social_reddit_loader),
-                ("social_x", social_x_loader),
                 ("social_mastodon", social_mastodon_loader),
             ],
             timeout_s=5,
@@ -1236,9 +1230,31 @@ def test_run_pipeline_social_sources_report_and_output() -> None:
         )
         sources = {row["name"]: row for row in report["sources"]}
         assert sources["social_reddit"]["status"] == "ok"
-        assert sources["social_x"]["status"] == "ok"
         assert sources["social_mastodon"]["status"] == "ok"
         assert sources["social_reddit"]["keptCount"] == 1
+        social_summary = report.get("socialSummary") or {}
+        expected_kept = sum(
+            int(row.get("keptCount") or 0)
+            for row in sources.values()
+            if str(row.get("name") or "").startswith("social_")
+        )
+        assert int(social_summary.get("keptCount") or 0) == expected_kept
+        assert int(social_summary.get("uniqueKeptCount") or 0) == expected_kept
+        assert int(social_summary.get("officialBoardOverlapCount") or 0) == 0
+        assert int(social_summary.get("duplicateCount") or 0) == 0
+        assert float(social_summary.get("duplicateRate") or 0) == 0.0
+        assert int(social_summary.get("sampleSize") or 0) == 0
+        assert int(social_summary.get("reviewedCount") or 0) == 0
+        assert int(social_summary.get("falsePositiveCount") or 0) == 0
+        assert float(social_summary.get("falsePositiveRate") or 0) == 0.0
+        channels = social_summary.get("channels") or {}
+        assert int((channels.get("reddit") or {}).get("keptCount") or 0) == 1
+        assert int((channels.get("mastodon") or {}).get("keptCount") or 0) == 0
+        review_path = Path(tmp) / "social-experiment-review.json"
+        assert review_path.exists()
+        review_payload = json.loads(review_path.read_text(encoding="utf-8"))
+        assert int(review_payload.get("candidateCount") or 0) == expected_kept
+        assert int(review_payload.get("sampleSize") or 0) == 0
         rows = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
         assert any(str(row.get("source") or "").startswith("social_") for row in rows)
 
@@ -1580,8 +1596,9 @@ def test_run_personio_sources_source_classifies_dead_marketing_redirect() -> Non
     with mock.patch("src.jobs.adapters.provider_api.registry_entries", return_value=source_rows):
         jf.SOURCE_DIAGNOSTICS.clear()
         rows = jf.run_personio_sources_source(
-            fetch_text=lambda _url,
-            _timeout: "<html><body><h1>HR und Lohnbuchhaltung endlich vereint</h1></body></html>",
+            fetch_text=lambda _url, _timeout: (
+                "<html><body><h1>HR und Lohnbuchhaltung endlich vereint</h1></body></html>"
+            ),
             timeout_s=5,
             retries=0,
             backoff_s=0,

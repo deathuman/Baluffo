@@ -475,10 +475,8 @@ class SyncService:
             set_sync_status=self._sync_state.set_sync_status,
             remove_active_sync_run=self._sync_state.remove_active_sync_run,
             remove_active_sync_thread=self._sync_state.remove_active_sync_thread,
-            prune_started_rows_for_type=lambda entry_type,
-            *,
-            finished_at: self._run_history.prune_started_rows_for_type(
-                entry_type, finished_at=finished_at
+            prune_started_rows_for_type=lambda entry_type, *, finished_at: (
+                self._run_history.prune_started_rows_for_type(entry_type, finished_at=finished_at)
             ),
             upsert_run_history=lambda entry: self._run_history.upsert(
                 entry, dedupe_fields=("type", "finishedAt")

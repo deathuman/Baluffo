@@ -190,6 +190,31 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(sources, list):
         sources = []
     normalized_sources: list[dict[str, Any]] = []
+    social_summary_raw = (
+        src.get("socialSummary") if isinstance(src.get("socialSummary"), dict) else {}
+    )
+
+    def _safe_float(value: Any) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _normalize_social_channel(payload: Any) -> dict[str, Any]:
+        src_channel = payload if isinstance(payload, dict) else {}
+        return {
+            "keptCount": safe_int(src_channel.get("keptCount"), 0, 0, 1_000_000),
+            "uniqueKeptCount": safe_int(src_channel.get("uniqueKeptCount"), 0, 0, 1_000_000),
+            "officialBoardOverlapCount": safe_int(
+                src_channel.get("officialBoardOverlapCount"), 0, 0, 1_000_000
+            ),
+            "duplicateCount": safe_int(src_channel.get("duplicateCount"), 0, 0, 1_000_000),
+            "duplicateRate": max(0.0, min(1.0, _safe_float(src_channel.get("duplicateRate")))),
+            "lowConfidenceDropped": safe_int(
+                src_channel.get("lowConfidenceDropped"), 0, 0, 1_000_000
+            ),
+        }
+
     for row in sources:
         if not isinstance(row, dict):
             continue
@@ -264,6 +289,45 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "runId": str(src.get("runId") or "").strip(),
         "startedAt": str(src.get("startedAt") or "").strip(),
         "finishedAt": str(src.get("finishedAt") or "").strip(),
+        "socialSummary": {
+            "pilotWindowStartAt": str(social_summary_raw.get("pilotWindowStartAt") or "").strip(),
+            "pilotWindowEndAt": str(social_summary_raw.get("pilotWindowEndAt") or "").strip(),
+            "scheduledRunCount": safe_int(
+                social_summary_raw.get("scheduledRunCount"), 0, 0, 1_000_000
+            ),
+            "keptCount": safe_int(social_summary_raw.get("keptCount"), 0, 0, 1_000_000),
+            "uniqueKeptCount": safe_int(social_summary_raw.get("uniqueKeptCount"), 0, 0, 1_000_000),
+            "officialBoardOverlapCount": safe_int(
+                social_summary_raw.get("officialBoardOverlapCount"), 0, 0, 1_000_000
+            ),
+            "duplicateCount": safe_int(social_summary_raw.get("duplicateCount"), 0, 0, 1_000_000),
+            "duplicateRate": max(
+                0.0, min(1.0, _safe_float(social_summary_raw.get("duplicateRate")))
+            ),
+            "lowConfidenceDropped": safe_int(
+                social_summary_raw.get("lowConfidenceDropped"), 0, 0, 1_000_000
+            ),
+            "sampleSize": safe_int(social_summary_raw.get("sampleSize"), 0, 0, 1_000_000),
+            "reviewedCount": safe_int(social_summary_raw.get("reviewedCount"), 0, 0, 1_000_000),
+            "falsePositiveCount": safe_int(
+                social_summary_raw.get("falsePositiveCount"), 0, 0, 1_000_000
+            ),
+            "falsePositiveRate": max(
+                0.0, min(1.0, _safe_float(social_summary_raw.get("falsePositiveRate")))
+            ),
+            "reviewArtifactPath": str(social_summary_raw.get("reviewArtifactPath") or "").strip(),
+            "channels": {
+                str(key).strip(): _normalize_social_channel(value)
+                for key, value in (
+                    social_summary_raw.get("channels")
+                    if isinstance(social_summary_raw.get("channels"), dict)
+                    else {}
+                ).items()
+                if str(key).strip()
+            },
+        }
+        if social_summary_raw
+        else {},
         "runtime": {
             **dict(runtime),
             "slowestSources": slowest_sources,

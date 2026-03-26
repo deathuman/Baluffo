@@ -220,10 +220,8 @@ def test_discovery_report_reconciles_stale_in_progress_run(tmp_path: Path) -> No
     api.report_is_stale_in_progress = lambda *_args, **_kwargs: True
     api.now_iso = lambda: "2026-03-08T10:05:00.000Z"
     api.save_json_atomic = lambda _path, payload: saved_reports.append(payload)
-    api.prune_started_rows_for_type = (
-        lambda run_type, *, finished_at="", keep_started_at="": pruned.append(
-            (run_type, finished_at or keep_started_at)
-        )
+    api.prune_started_rows_for_type = lambda run_type, *, finished_at="", keep_started_at="": (
+        pruned.append((run_type, finished_at or keep_started_at))
     )
     api.clear_task_state = lambda task_type: cleared.append(task_type)
     api.bridge_log = lambda _level, message, **_fields: bridge_logs.append(message)

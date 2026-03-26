@@ -14,6 +14,10 @@ OUTPUT_DROP_RATIO = 0.40
 SOCIAL_ZERO_MATCH_THRESHOLD = 2
 SOCIAL_FAILURE_THRESHOLD = 2
 SOCIAL_LOW_CONFIDENCE_SPIKE_THRESHOLD = 120
+SOCIAL_UNIQUE_VALUE_THRESHOLD = 0.10
+SOCIAL_DUPLICATE_RATE_THRESHOLD = 0.70
+SOCIAL_FALSE_POSITIVE_THRESHOLD = 0.05
+SOCIAL_FALSE_POSITIVE_SAMPLE_SIZE = 50
 
 
 def load_alert_state(
@@ -108,6 +112,13 @@ def median(values: list[float]) -> float:
     if len(ordered) % 2:
         return float(ordered[mid])
     return float((ordered[mid - 1] + ordered[mid]) / 2.0)
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def summarize_fetch_report(report: dict[str, Any]) -> dict[str, Any]:
@@ -384,6 +395,52 @@ def evaluate_alerts(
                 }
             )
 
+    social_summary = (
+        latest_fetch_report.get("socialSummary")
+        if isinstance(latest_fetch_report.get("socialSummary"), dict)
+        else {}
+    )
+    if social_summary:
+        kept_count = int(social_summary.get("keptCount") or 0)
+        unique_count = int(social_summary.get("uniqueKeptCount") or 0)
+        duplicate_rate = _safe_float(social_summary.get("duplicateRate"))
+        reviewed_count = int(social_summary.get("reviewedCount") or 0)
+        false_positive_rate = _safe_float(social_summary.get("falsePositiveRate"))
+        unique_share = (unique_count / kept_count) if kept_count > 0 else 0.0
+        if kept_count > 0 and unique_share < SOCIAL_UNIQUE_VALUE_THRESHOLD:
+            active_conditions.append(
+                {
+                    "id": "social_low_unique_value",
+                    "severity": "warning",
+                    "message": f"Social kept share is {unique_share:.0%} (threshold {SOCIAL_UNIQUE_VALUE_THRESHOLD:.0%}).",
+                    "value": round(unique_share, 4),
+                    "triggeredAt": now_iso(),
+                }
+            )
+        if kept_count > 0 and duplicate_rate > SOCIAL_DUPLICATE_RATE_THRESHOLD:
+            active_conditions.append(
+                {
+                    "id": "social_duplicate_rate_high",
+                    "severity": "warning",
+                    "message": f"Social duplicate rate is {duplicate_rate:.0%} (threshold {SOCIAL_DUPLICATE_RATE_THRESHOLD:.0%}).",
+                    "value": round(duplicate_rate, 4),
+                    "triggeredAt": now_iso(),
+                }
+            )
+        if (
+            reviewed_count >= SOCIAL_FALSE_POSITIVE_SAMPLE_SIZE
+            and false_positive_rate > SOCIAL_FALSE_POSITIVE_THRESHOLD
+        ):
+            active_conditions.append(
+                {
+                    "id": "social_false_positive_spike",
+                    "severity": "warning",
+                    "message": f"Manual social false-positive rate is {false_positive_rate:.0%} (threshold {SOCIAL_FALSE_POSITIVE_THRESHOLD:.0%}).",
+                    "value": round(false_positive_rate, 4),
+                    "triggeredAt": now_iso(),
+                }
+            )
+
     active_ids = {row["id"] for row in active_conditions}
     for key in list(acked.keys()):
         if key not in active_ids:
@@ -427,6 +484,11 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
 
     latest_run = history[-1] if history else {}
     severity = derive_ops_severity(alerts_meta["alerts"])
+    social_summary = (
+        latest_fetch_report.get("socialSummary")
+        if isinstance(latest_fetch_report.get("socialSummary"), dict)
+        else {}
+    )
 
     return {
         "service": "baluffo-bridge",
@@ -444,6 +506,42 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             "avgFetchDurationMs7d": int(metrics["avgDurationMs7d"]),
             "failedSourceRatioLatest": round(float(failed_ratio_latest), 4),
             "pendingApprovalsCount": len(state.get("pending") or []),
+            "socialExperiment": {
+                "pilotWindowStartAt": str(social_summary.get("pilotWindowStartAt") or ""),
+                "pilotWindowEndAt": str(social_summary.get("pilotWindowEndAt") or ""),
+                "scheduledRunCount": int(social_summary.get("scheduledRunCount") or 0),
+                "keptCount": int(social_summary.get("keptCount") or 0),
+                "uniqueKeptCount": int(social_summary.get("uniqueKeptCount") or 0),
+                "officialBoardOverlapCount": int(
+                    social_summary.get("officialBoardOverlapCount") or 0
+                ),
+                "duplicateCount": int(social_summary.get("duplicateCount") or 0),
+                "duplicateRate": round(_safe_float(social_summary.get("duplicateRate")), 4),
+                "lowConfidenceDropped": int(social_summary.get("lowConfidenceDropped") or 0),
+                "sampleSize": int(social_summary.get("sampleSize") or 0),
+                "reviewedCount": int(social_summary.get("reviewedCount") or 0),
+                "falsePositiveCount": int(social_summary.get("falsePositiveCount") or 0),
+                "falsePositiveRate": round(_safe_float(social_summary.get("falsePositiveRate")), 4),
+                "reviewArtifactPath": str(social_summary.get("reviewArtifactPath") or ""),
+                "channels": {
+                    str(key): {
+                        "keptCount": int((value or {}).get("keptCount") or 0),
+                        "uniqueKeptCount": int((value or {}).get("uniqueKeptCount") or 0),
+                        "officialBoardOverlapCount": int(
+                            (value or {}).get("officialBoardOverlapCount") or 0
+                        ),
+                        "duplicateCount": int((value or {}).get("duplicateCount") or 0),
+                        "duplicateRate": round(_safe_float((value or {}).get("duplicateRate")), 4),
+                        "lowConfidenceDropped": int((value or {}).get("lowConfidenceDropped") or 0),
+                    }
+                    for key, value in (
+                        social_summary.get("channels")
+                        if isinstance(social_summary.get("channels"), dict)
+                        else {}
+                    ).items()
+                    if str(key).strip()
+                },
+            },
             "lastRunResult": {
                 "type": str(latest_run.get("type") or ""),
                 "status": str(latest_run.get("status") or "unknown"),

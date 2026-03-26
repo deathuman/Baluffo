@@ -173,9 +173,9 @@ def test_resolve_chromium_browser_candidates_uses_registry_fallback() -> None:
         mock.patch.object(
             desktop_app,
             "resolve_registry_app_path",
-            side_effect=lambda name: "C:/Users/me/AppData/Local/Google/Chrome/chrome.exe"
-            if name == "chrome.exe"
-            else "",
+            side_effect=lambda name: (
+                "C:/Users/me/AppData/Local/Google/Chrome/chrome.exe" if name == "chrome.exe" else ""
+            ),
         ),
     ):
         candidates = desktop_app.resolve_chromium_browser_candidates()
