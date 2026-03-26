@@ -7,6 +7,7 @@ set "TEST_TMP=%REPO_ROOT%\.codex-tmp-tests"
 if not exist "%TEST_TMP%" mkdir "%TEST_TMP%"
 set "TMP=%TEST_TMP%"
 set "TEMP=%TEST_TMP%"
+set "PYTEST_BASETEMP=%TEST_TMP%\pytest-basetemp"
 set "PYTHON_CMD=python"
 
 %PYTHON_CMD% --version >nul 2>nul
@@ -20,5 +21,5 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b %ERRORLEVEL%
 )
 
-%PYTHON_CMD% -m pytest tests -q --color=no
+%PYTHON_CMD% -m pytest tests -q --color=no --basetemp="%PYTEST_BASETEMP%"
 exit /b %ERRORLEVEL%

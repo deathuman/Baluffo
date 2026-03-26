@@ -183,8 +183,13 @@ See [`testing.md`](testing.md) and the verification matrix in [`architecture-ai-
 | Full build | `npm run build` |
 | Full verification | `npm run verify` |
 | Python tests | `npm run test:py` |
+| Local pre-commit gate | `npm run lint:precommit` |
+| Full pre-commit sweep | `npm run lint:precommit:all` |
 | Frontend unit tests | `npm run test:unit` |
 | Frontend smoke tests | `npm run test:smoke` |
+
+`npm run verify` includes the repo's local changed-files pre-commit gate, so it is the safest single command to run before pushing changes to `main`.
+Use `npm run lint:precommit:all` when you want CI-parity lint coverage, including the pre-push hooks.
 
 ---
 

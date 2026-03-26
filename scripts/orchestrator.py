@@ -252,6 +252,11 @@ def verify(args: argparse.Namespace):
     run_dir = RUNS / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    # 0. Pre-commit gate
+    ok_precommit, _log_precommit = run_proc(
+        ["npm", "run", "lint:precommit:changed"], "PreCommit", allow_stream=True
+    )
+
     # Run build (might return a previous successful run_dir if skipped)
     ok, effective_build_run_dir = build(args, run_dir=run_dir, is_verify=True)
     if not ok:
@@ -289,17 +294,20 @@ def verify(args: argparse.Namespace):
             allow_stream=True,
         )
 
-    total_ok = ok_py and ok_node and ok_smoke
+    total_ok = ok_precommit and ok_py and ok_node and ok_smoke
     status = "success" if total_ok else "failure"
     summary = "Verification PASSED" if total_ok else "Verification FAILED"
 
+    precommit_status = "passed" if ok_precommit else "failed"
     py_status = "passed" if ok_py else "failed"
     node_status = "passed" if ok_node else "failed"
     artifacts = {
         "exe": f"{Path(effective_build_run_dir or run_dir).relative_to(ROOT)}/build/portable/Baluffo.exe",
         "smoke_report": "test/smoke/report.json",
+        "precommit_status": precommit_status,
         "py_tests_status": py_status,
         "node_tests_status": node_status,
+        "precommit_ok": precommit_status == "passed",
         "py_tests_ok": py_status == "passed",
         "node_tests_ok": node_status == "passed",
     }

@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.adapters import provider_parsers as _provider_parsers
+from src.jobs.adapters import provider_personio as _provider_personio
 from src.jobs.adapters.html_parsers import (
     parse_jobpostings_from_html,
     parse_teamtailor_listing_links,
@@ -712,6 +713,16 @@ def ensure_registered() -> None:
     default_registry.register(_json_feed_plugin("smartrecruiters"))
     default_registry.register(_json_feed_plugin("recruitee"))
     default_registry.register(_json_feed_plugin("pinpoint"))
+    default_registry.register(
+        SimpleAdapterPlugin(
+            name="personio_sources",
+            family="provider_api",
+            priority=55,
+            can_handle_fn=lambda ctx: ctx.family == "provider_api"
+            and ctx.adapter_key == "personio_sources",
+            run_fn=_provider_personio.run_personio_sources_source,
+        )
+    )
     default_registry.register(_html_board_plugin("breezy"))
     default_registry.register(_html_board_plugin("jazzhr"))
     default_registry.register(_html_board_plugin("ashby"))

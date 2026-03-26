@@ -28,7 +28,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 | ashby_sources | ashby | provider_api (registry) | adapter: ashby |
 | breezy_sources | breezy | provider_api (registry) | adapter: breezy |
 | jazzhr_sources | jazzhr | provider_api (registry) | adapter: jazzhr |
-| personio_sources | personio | provider_api (registry) | adapter: personio |
+| personio_sources | personio | provider_api compatibility entrypoint; not yet registered in provider plugin registry | adapter: personio |
 | scrapy_static_sources | scrapy_static | static (Scrapy subprocess) | adapter: scrapy_static |
 | social_reddit | social | social (config-driven) | adapter: social, studio: reddit |
 | social_x | social | social (config-driven) | adapter: social, studio: x |
@@ -153,7 +153,7 @@ When a studio’s jobs are already covered by a provider adapter (e.g. SmartRecr
 
 ### How to add new sources by family
 
-- **Provider API (Greenhouse, Lever, Recruitee, Pinpoint, Breezy, JazzHR, etc.):** Add the source to the runtime registry (`data/source-registry-active.json` or via Admin -> Sources). The fetcher loads registry entries by adapter type; ensure the entry has the required fields (e.g. `slug` for Greenhouse, `api_url` for Lever/Recruitee/Pinpoint, `board_url` for Ashby/Breezy/JazzHR, `feed_url` for Personio). No change to `DEFAULT_SOURCE_LOADER_NAMES` is needed once the provider family itself exists.
+- **Provider API (Greenhouse, Lever, Recruitee, Pinpoint, Breezy, JazzHR, etc.):** Add the source to the runtime registry (`data/source-registry-active.json` or via Admin -> Sources). The fetcher loads registry entries by adapter type; ensure the entry has the required fields (e.g. `slug` for Greenhouse, `api_url` for Lever/Recruitee/Pinpoint, `board_url` for Ashby/Breezy/JazzHR, `feed_url` for Personio). No change to `DEFAULT_SOURCE_LOADER_NAMES` is needed once the provider family itself exists. Note: `personio_sources` is listed as a pipeline source name, but the adapter is still pending plugin registration in `src/jobs/adapters/plugins/provider_api/register.py`.
 - **Static studio site:** (1) Add a static plugin if the site needs custom parsing (see Static plugins above). (2) Add a registry entry with `"adapter": "static"`, `pages` (listing URL(s)), and `company`/`name`. The pipeline will pick the plugin by host from the first page URL.
 - **New CSV/Google Sheet:** Add an entry to `GOOGLE_SHEETS_SOURCES` in `src/jobs/adapters/community/google_sheets.py` (or import from `src.jobs.adapters.community`) with `name`, `sheetId`, `gid`. Add the same `name` to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`.
 - **New community board / aggregator:** Add the parser and loader in `src/jobs/adapters/community/__init__.py`, export the parser through `src/jobs/parsers.py` and `src/jobs_fetcher.py`, then add the loader name to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`. Recent examples: `gamejobs`, `workwithindies`, `8bitplay`, `gracklehq`.

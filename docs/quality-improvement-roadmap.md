@@ -1,7 +1,7 @@
 # Baluffo Quality Improvement Roadmap
 
-> **Status:** Active — Q2 2026  
-> **Last updated:** 2026-03-25  
+> **Status:** Active — Q2 2026
+> **Last updated:** 2026-03-25
 > **North Star:** Increase useful live coverage without letting fetch cost, failure rate, or source noise scale faster than output quality.
 
 ---
@@ -57,7 +57,7 @@ From latest discovery report (2026-03-23):
 | Area | Metric | Issue |
 |------|--------|-------|
 | Static adapter | 541 sources, 1,496,789 ms, 443 errors, **463 zero-kept** | 85% failure/zero-yield rate |
-| Provider drift | workable: 289,481 ms, 0 kept; personio: 3 fetched, 0 kept; breezy/jazzhr: 1 source, 0 kept | "Healthy" in audit, broken in full run |
+| Provider drift | workable: 289,481 ms, 0 kept; personio: wired through provider plugin dispatch but seed-pending; breezy/jazzhr: 1 source, 0 kept | "Healthy" in audit, broken or incomplete in full run |
 | Discovery backlog | 89 queued, 21 deferred | Promotion pipeline not formalized |
 
 ---
@@ -76,8 +76,8 @@ From latest discovery report (2026-03-23):
 
 ## Milestone 1 — Source Health and Static Hardening
 
-**Window:** Week 1–2  
-**Owner:** Data ingestion maintainer  
+**Window:** Week 1–2
+**Owner:** Data ingestion maintainer
 **Support:** QA / test automation
 
 ### Why This Comes First
@@ -136,8 +136,8 @@ Full-run artifact (`data/jobs-fetch-report.json`, commit `1482d98`, 645 sources)
 
 ## Milestone 2 — Provider Drift Fixes
 
-**Window:** Week 2–3  
-**Owner:** Provider adapter maintainer  
+**Window:** Week 2–3
+**Owner:** Provider adapter maintainer
 **Support:** QA
 
 ### Why This Comes Next
@@ -149,11 +149,11 @@ Provider adapters appear "healthy" in audit but fail in full runs.
 | Adapter | Sources | Full-Run Status | keptCount | durationMs |
 |---------|---------|-----------------|-----------|------------|
 | workable | aggregated under `workable_sources` | error / zero-kept | 0 | ~289,000 ms |
-| personio | aggregated under `personio_sources` | not registered in `register.py` | — | — |
+| personio | aggregated under `personio_sources` | wired through `plugins/provider_api/register.py`, but seed-pending in live runs | 0 | negligible |
 | breezy | aggregated under `breezy_sources` | zero-kept | 0 | varies |
 | jazzhr | aggregated under `jazzhr_sources` | zero-kept | 0 | varies |
 
-**Key structural finding:** `personio` has a parser in `provider_parsers.py` but is **not registered** in `plugins/provider_api/register.py` and is therefore never executed in a real pipeline run.
+**Key structural finding:** `personio` already has legacy execution logic in `src/jobs/adapters/provider_api.py` plus XML parsing in `provider_parsers.py`, and it is now wired through `plugins/provider_api/register.py`, but the current live seeds are still seed-pending and keep nothing. Any future fix should continue to reuse the existing logic without introducing a circular import between `provider_api.py` and the plugin registry.
 
 Meanwhile structured adapters (greenhouse, lever, ashby, smartrecruiters, recruitee, pinpoint) produce clean non-zero output.
 
@@ -177,7 +177,7 @@ Meanwhile structured adapters (greenhouse, lever, ashby, smartrecruiters, recrui
 ### KPIs
 
 - workable returns at least one healthy non-zero source in full run
-- personio yields non-zero kept count in full run
+- personio is wired through provider plugin dispatch and explicitly marked seed-pending until live seeds produce kept jobs
 - breezy and jazzhr each have ≥3 validated seeds or are explicitly deprioritized
 
 ### Exit Criteria
@@ -189,8 +189,8 @@ Meanwhile structured adapters (greenhouse, lever, ashby, smartrecruiters, recrui
 
 ## Milestone 3 — Discovery Promotion Pipeline
 
-**Window:** Week 3–5  
-**Owner:** Discovery maintainer  
+**Window:** Week 3–5
+**Owner:** Discovery maintainer
 **Support:** Data ingestion maintainer
 
 ### Why This Comes Third
@@ -231,8 +231,8 @@ Discovery produces a backlog but promotion is ad hoc:
 
 ## Milestone 4 — Add Next Structured Adapters
 
-**Window:** Week 5–7  
-**Owner:** Provider adapter maintainer  
+**Window:** Week 5–7
+**Owner:** Provider adapter maintainer
 **Support:** Discovery maintainer
 
 ### Why This Comes Fourth
@@ -285,8 +285,8 @@ For this milestone, "measurably cleaner and faster" means:
 
 ## Milestone 5 — Strategic Coverage Expansion
 
-**Window:** Week 7–10  
-**Owner:** Coverage / source curator  
+**Window:** Week 7–10
+**Owner:** Coverage / source curator
 **Support:** Discovery maintainer
 
 ### Why This Comes Fifth
@@ -322,7 +322,7 @@ A source enters the long-term zero-kept bucket if it records `keptCount == 0` fo
 
 ## Milestone 6 — Social/Community as Measured Experiment
 
-**Window:** Week 10–12  
+**Window:** Week 10–12
 **Owner:** Community ingestion maintainer
 
 ### Why This Comes Last

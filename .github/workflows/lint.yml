@@ -46,5 +46,5 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pre-commit-
 
-      - name: Run pre-commit
-        run: pre-commit run --all-files --show-diff-on-failure --color=always
+      - name: Run pre-commit guardrails
+        run: npm run lint:precommit:all

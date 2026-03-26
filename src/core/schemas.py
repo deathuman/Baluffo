@@ -87,8 +87,10 @@ class ManifestArtifactsSchema(BaseModel):
     exe: str = ""
     ship: str = ""
     smoke_report: str = ""
+    precommit_status: Literal["not_run", "passed", "failed"] = "not_run"
     py_tests_status: Literal["not_run", "passed", "failed"] = "not_run"
     node_tests_status: Literal["not_run", "passed", "failed"] = "not_run"
+    precommit_ok: bool = False
     py_tests_ok: bool = False
     node_tests_ok: bool = False
 

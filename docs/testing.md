@@ -14,6 +14,8 @@ Run the Python test suite:
 npm run test:py
 ```
 
+This wrapper now uses a repo-local pytest basetemp so Windows temp-root ACL issues do not interfere with the suite.
+
 **Quick local runs (exclude slow tests):** To skip long-running tests (e.g. timeout/retry tests) and finish faster:
 
 ```bash
@@ -47,6 +49,8 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Goal | Command |
 |------|---------|
 | Full suite | `npm run test:py` |
+| Local pre-commit gate | `npm run lint:precommit` |
+| Full pre-commit sweep | `npm run lint:precommit:all` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
 | Exclude slow | `python -m pytest tests -q -m "not slow" --color=no` |
@@ -101,7 +105,7 @@ Baluffo uses multiple test layers:
 - **Python tests (`pytest`)**: backend, bridge, pipeline, packaging-adjacent logic
 - **Frontend unit tests (`node --test`)**: fast JavaScript unit coverage
 - **Frontend smoke tests (`Playwright`)**: browser-level behavior checks
-- **Full verification (`npm run verify`)**: broader end-to-end confidence
+- **Full verification (`npm run verify`)**: broader end-to-end confidence, including the local changed-files pre-commit gate
 
 ## Coverage
 
@@ -120,7 +124,11 @@ python -m pytest tests -q -m "not slow" --cov=src --cov-report=term-missing --co
 ## Which command should I run?
 
 - Small Python logic change: `npm run test:py`
+- Before pushing or merging: `npm run lint:precommit` or `npm run verify`
+- When you want repo-wide lint parity: `npm run lint:precommit:all`
 - Python logic change with coverage review: `npm run test:py:cov`
 - JavaScript/frontend unit change: `npm run test:unit`
 - Browser or page-flow change: `npm run test:smoke`
 - Broad or risky change: `npm run verify`
+
+The local pre-commit gate checks only changed and untracked files, while the GitHub lint workflow and `npm run lint:precommit:all` exercise the full guardrail set. Local runs need `pre-commit` and `mypy` available in the active Python environment.

@@ -56,21 +56,30 @@ def test_verify_manifest_marks_passed_test_lanes() -> None:
 
         with (
             mock.patch.object(orchestrator, "build", return_value=(True, run_dir)),
-            mock.patch.object(
-                orchestrator,
-                "run_proc",
-                side_effect=[(True, "py"), (True, "node"), (True, "smoke")],
-            ),
+            mock.patch.object(orchestrator, "run_proc") as run_proc_mock,
             mock.patch.object(orchestrator, "sync_latest"),
             mock.patch.object(orchestrator, "rotate_history"),
             mock.patch.object(orchestrator, "get_src_hash", return_value="abc123"),
         ):
+            run_proc_mock.side_effect = [
+                (True, "precommit"),
+                (True, "py"),
+                (True, "node"),
+                (True, "smoke"),
+            ]
             orchestrator.verify(args)
 
+        assert run_proc_mock.call_args_list[0].args[0] == [
+            "npm",
+            "run",
+            "lint:precommit:changed",
+        ]
         manifest = json.loads(orchestrator.MANIFEST_PATH.read_text(encoding="utf-8"))
         artifacts = manifest["artifacts"]
         assert artifacts["py_tests_status"] == "passed"
         assert artifacts["node_tests_status"] == "passed"
+        assert artifacts["precommit_status"] == "passed"
+        assert artifacts["precommit_ok"] is True
         assert artifacts["py_tests_ok"] is True
         assert artifacts["node_tests_ok"] is True
 
@@ -87,20 +96,29 @@ def test_verify_manifest_marks_failed_test_lanes() -> None:
 
         with (
             mock.patch.object(orchestrator, "build", return_value=(True, run_dir)),
-            mock.patch.object(
-                orchestrator,
-                "run_proc",
-                side_effect=[(False, "py"), (True, "node"), (True, "smoke")],
-            ),
+            mock.patch.object(orchestrator, "run_proc") as run_proc_mock,
             mock.patch.object(orchestrator, "sync_latest"),
             mock.patch.object(orchestrator, "rotate_history"),
             mock.patch.object(orchestrator, "get_src_hash", return_value="abc123"),
         ):
+            run_proc_mock.side_effect = [
+                (True, "precommit"),
+                (False, "py"),
+                (True, "node"),
+                (True, "smoke"),
+            ]
             orchestrator.verify(args)
 
+        assert run_proc_mock.call_args_list[0].args[0] == [
+            "npm",
+            "run",
+            "lint:precommit:changed",
+        ]
         manifest = json.loads(orchestrator.MANIFEST_PATH.read_text(encoding="utf-8"))
         artifacts = manifest["artifacts"]
         assert artifacts["py_tests_status"] == "failed"
         assert artifacts["node_tests_status"] == "passed"
+        assert artifacts["precommit_status"] == "passed"
+        assert artifacts["precommit_ok"] is True
         assert artifacts["py_tests_ok"] is False
         assert artifacts["node_tests_ok"] is True

@@ -25,3 +25,29 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
         assert forbidden_command not in workflow_text, (
             f"{workflow_path.name} should route release-gate test lanes through their canonical npm scripts instead of duplicating raw commands."
         )
+
+
+def test_lint_workflow_uses_full_precommit_entrypoint() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow_path = root / ".github" / "workflows" / "lint.yml"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+
+    assert "npm run lint:precommit:all" in workflow_text, (
+        f"{workflow_path.name} should use the full pre-commit npm entrypoint."
+    )
+    assert "pre-commit run --all-files" not in workflow_text, (
+        f"{workflow_path.name} should not embed the raw full-repo pre-commit command."
+    )
+
+
+def test_lint_workflow_uses_split_precommit_entrypoints() -> None:
+    root = Path(__file__).resolve().parents[1]
+    workflow_path = root / ".github" / "workflows" / "lint.yml"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+
+    assert "npm run lint:precommit:all" in workflow_text, (
+        f"{workflow_path.name} should run the full pre-commit sweep via the dedicated npm script."
+    )
+    assert "pre-commit run --all-files" not in workflow_text, (
+        f"{workflow_path.name} should route linting through the shared npm entrypoint instead of duplicating the raw command."
+    )

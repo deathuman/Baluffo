@@ -1,21 +1,21 @@
 # Milestone 2 — Provider Drift Fixes
 
-> **Status:** Planning  
-> **Window:** Week 2–3 (Q2 2026)  
+> **Status:** Planning
+> **Window:** Week 2–3 (Q2 2026)
 > **Builds on:** M1 (taxonomy + health scoring, verified 2026-03-25)
 
 ---
 
 ## Problem Statement
 
-Four provider adapters produce zero kept output in every full run despite appearing to work in targeted audit runs. One adapter (`personio`) is not even registered in the pipeline and never executes. This wastes runtime, inflates error counts, and silently leaves studios uncovered.
+Four provider adapters produce zero kept output in every full run despite appearing to work in targeted audit runs. One adapter (`personio`) is registered through the plugin framework but is still seed-pending, so it dispatches without producing kept jobs from the current live seeds. This wastes runtime, inflates error counts, and silently leaves studios uncovered.
 
 ### Adapter Drift Summary (2026-03-25 full run, 645 sources, commit `1482d98`)
 
 | Adapter | Plugin type | Registration | Full-run keptCount | Diagnosis |
 |---------|-------------|--------------|-------------------|-----------|
 | `workable` | JSON feed | ✅ registered | 0 | Fetches payload but parser returns empty or all filtered |
-| `personio` | XML feed (legacy runner) | ❌ **not wired into plugin framework** | — (never runs via plugin dispatch) | `run_personio_sources_source` exists fully in `provider_api.py` with XML parsing, rate-limit logic, and `registry_entries("personio")` — but not registered in `plugins/provider_api/register.py`, so the plugin dispatcher never calls it. Wire up the existing runner; do not rewrite it. |
+| `personio` | XML feed (legacy runner) | ✅ **wired through plugin framework; seed-pending** | 0 in live targeted run | `run_personio_sources_source` now runs through the plugin registry via shared helper logic, but the current live seeds still keep nothing. Reuse the existing logic, avoid circular imports, and record the source as seed-pending until registry seeds are refreshed. |
 | `breezy` | HTML board | ✅ registered | 0 | HTML parser returns empty for all seeds |
 | `jazzhr` | HTML board | ✅ registered | 0 | HTML parser returns empty for all seeds |
 
@@ -29,7 +29,7 @@ Four provider adapters produce zero kept output in every full run despite appear
 
 1. Diagnose the root cause per adapter (seed invalidity vs parser bug vs API drift).
 2. Fix or suppress each broken adapter with a testable outcome.
-3. Wire `personio_sources` into the plugin framework using the existing runner.
+3. Wire `personio_sources` into the plugin framework using the existing runner logic.
 4. Produce one targeted verification artifact per fixed adapter.
 5. Update `data/jobs-fetch-report.json` after fixes if a meaningful full run is feasible.
 
@@ -71,28 +71,38 @@ Four provider adapters produce zero kept output in every full run despite appear
 
 ---
 
-### 2.3 — Personio: wire up existing runner into plugin framework
+### 2.3 — Personio: wire up existing logic into the plugin framework safely
 
-**The full Personio runner already exists** in `src/jobs/adapters/provider_api.py` as `run_personio_sources_source`. It:
-- reads seeds from `registry_entries("personio")` — entries with `"adapter": "personio"` in `src/jobs/common/registry_defaults.py`
-- fetches each source's `feed_url` (XML format: `https://<token>.jobs.personio.de/xml`)
-- parses with `parse_personio_feed_xml` from `src/jobs/parsers.py`
-- includes rate-limit detection and cooldown skipping
+**The full Personio logic already exists** in the repo:
 
-The only missing piece is that `run_personio_sources_source` is **not registered in `plugins/provider_api/register.py`**, so the plugin dispatcher never calls it.
+- `run_personio_sources_source` in `src/jobs/adapters/provider_api.py`
+- `parse_personio_feed_xml` in `src/jobs/parsers.py`
+- `registry_entries("personio")` using `feed_url` XML seeds from `src/jobs/common/registry_defaults.py`
+- rate-limit detection and cooldown skipping in the legacy runner
+
+The only missing piece is that `personio_sources` is **not registered in `plugins/provider_api/register.py`**, so the plugin dispatcher never calls it.
+
+**Important implementation constraint:**
+Do **not** make `plugins/provider_api/register.py` call back into `provider_api.py` in a way that creates a circular import. `provider_api.py` already imports and dispatches through the plugin registry.
+
+**Safe implementation options (pick one):**
+
+1. **Extract shared Personio execution logic** into a lower-level helper module that both the legacy compatibility entrypoint and the plugin layer can call.
+2. **Implement a plugin-native Personio runner** inside `plugins/provider_api/register.py` using the existing XML parser, registry shape, and cooldown behavior as the source of truth.
 
 **Steps:**
-1. Add a `SimpleAdapterPlugin` in `register.py` that routes `personio_sources` to `_dispatch_provider_api("personio_sources", ...)` — following the same pattern as `run_breezy_sources_source` or `run_jazzhr_sources_source` in `provider_api.py`.
-2. Register it in `ensure_registered()` with the same priority band as the other HTML/XML adapters.
-3. Confirm seed entries exist: open `src/jobs/common/registry_defaults.py` and check for entries with `"adapter": "personio"`. If none exist, add 2–3 known live Personio studio URLs in the format `{"adapter": "personio", "feed_url": "https://<token>.jobs.personio.de/xml", ...}`.
+
+1. Confirm seed entries exist in `src/jobs/common/registry_defaults.py` with `"adapter": "personio"` and XML `feed_url` values like `https://<token>.jobs.personio.de/xml`.
+2. Choose one of the safe implementation options above; do **not** introduce a circular import.
+3. Register `personio_sources` in `ensure_registered()` with the same priority band as the other HTML/XML adapters.
 4. Validate that at least one seed URL resolves and returns parseable XML before the first run.
 5. Test with `--only-sources personio_sources --force-refresh-all`.
 
-**Do not rewrite the parser or the runner.** `parse_personio_feed_xml` and `run_personio_sources_source` are complete.
+**Do not rewrite the XML parser unless the live payload proves it is broken.** Reuse `parse_personio_feed_xml` and the existing cooldown behavior.
 
-**If no valid seeds exist:** register the plugin, note it as seed-pending in the roadmap.
+**If no valid seeds exist:** register the plugin path and note it as seed-pending in the roadmap.
 
-**Exit:** `personio_sources` dispatches through `register.py`; either returns `keptCount >= 1` in a targeted run or is explicitly marked seed-pending.
+**Exit:** `personio_sources` dispatches through the plugin framework without circular-import risk; either returns `keptCount >= 1` in a targeted run or is explicitly marked seed-pending.
 
 ---
 
@@ -152,7 +162,7 @@ Execute strictly in this order to avoid cross-contamination:
 ```
 2.1 → parity diff (read-only, safe first)
 2.2 → workable fix (highest ROI, already registered)
-2.3 → personio registration + seeds
+2.3 → personio registration
 2.4 → breezy fix
 2.5 → jazzhr fix
 2.6 → smoke tests per fixed adapter
@@ -163,7 +173,7 @@ Execute strictly in this order to avoid cross-contamination:
 ## Exit Criteria
 
 - [ ] `workable_sources` returns non-zero kept in a targeted run
-- [ ] `personio_sources` dispatches through `register.py` using the existing `run_personio_sources_source` runner; either yields in a targeted run or explicitly marked seed-pending
+- [ ] `personio_sources` dispatches through the plugin framework using existing Personio logic without circular-import risk; either yields in a targeted run or is explicitly marked seed-pending
 - [ ] At least one of `breezy_sources` / `jazzhr_sources` returns non-zero kept in a targeted run; the other is either fixed or explicitly quarantined with rationale in the commit message
 - [ ] No adapter is judged healthy based only on audit output
 - [ ] Smoke tests for fixed adapters land in `tests/test_provider_adapters.py`
@@ -174,7 +184,7 @@ Execute strictly in this order to avoid cross-contamination:
 ## KPIs
 
 - `workable` keptCount ≥ 1 in a targeted run
-- `personio` dispatches via plugin framework using existing runner; yielding or seed-pending
+- `personio` dispatches via plugin framework using existing logic; yielding or seed-pending
 - At least one of `breezy` / `jazzhr` keptCount ≥ 1 in a targeted run
 - Total provider adapter error rate reduced vs M1 baseline
 
@@ -185,7 +195,8 @@ Execute strictly in this order to avoid cross-contamination:
 | File | Change |
 |------|--------|
 | `src/jobs/adapters/provider_parsers.py` | Parser fixes (workable, breezy, jazzhr) if parser drift is confirmed |
-| `src/jobs/adapters/plugins/provider_api/register.py` | Add personio plugin wiring; fix workable `build_url` if needed |
+| `src/jobs/adapters/plugins/provider_api/register.py` | Add personio plugin wiring or plugin-native runner; fix workable `build_url` if needed |
+| `src/jobs/adapters/provider_api.py` or a new lower-level helper module | Optional extraction of shared Personio execution logic to avoid circular imports |
 | `src/jobs/common/registry_defaults.py` | Seed cleanup / updates for workable, breezy, jazzhr, personio |
 | `tests/test_provider_adapters.py` (new) | Per-adapter parser smoke fixtures |
 | `scripts/audit_diff.py` (new, optional) | Artifact-level parity reporter — keep in `scripts/` |
@@ -206,6 +217,7 @@ Execute strictly in this order to avoid cross-contamination:
 ## Related Files
 
 - [`src/jobs/adapters/plugins/provider_api/register.py`](../src/jobs/adapters/plugins/provider_api/register.py)
+- [`src/jobs/adapters/provider_api.py`](../src/jobs/adapters/provider_api.py)
 - [`src/jobs/adapters/provider_parsers.py`](../src/jobs/adapters/provider_parsers.py)
 - [`docs/quality-improvement-roadmap.md`](quality-improvement-roadmap.md)
 - [`docs/adapter-plugin-inventory.md`](adapter-plugin-inventory.md)
