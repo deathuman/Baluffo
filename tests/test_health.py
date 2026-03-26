@@ -4,10 +4,10 @@ import pytest
 
 from src.jobs.common.health import (
     calculate_health_score,
-    get_top_failing_sources,
-    get_top_zero_kept_sources,
-    get_top_slow_sources,
     get_quarantined_sources,
+    get_top_failing_sources,
+    get_top_slow_sources,
+    get_top_zero_kept_sources,
 )
 
 
@@ -110,13 +110,17 @@ class TestGetQuarantinedSources:
         assert result == []
 
     def test_quarantined_by_failures(self):
-        state = {"source1": {"quarantinedUntilAt": "2027-01-01T00:00:00+00:00", "consecutiveFailures": 3}}
+        state = {
+            "source1": {"quarantinedUntilAt": "2027-01-01T00:00:00+00:00", "consecutiveFailures": 3}
+        }
         result = get_quarantined_sources(state)
         assert len(result) == 1
         assert result[0]["reason"] == "consecutive_failures"
 
     def test_quarantined_by_zero_kept(self):
-        state = {"source1": {"quarantinedUntilAt": "2027-01-01T00:00:00+00:00", "consecutiveZeroKept": 3}}
+        state = {
+            "source1": {"quarantinedUntilAt": "2027-01-01T00:00:00+00:00", "consecutiveZeroKept": 3}
+        }
         result = get_quarantined_sources(state)
         assert len(result) == 1
         assert result[0]["reason"] == "consecutive_zero_kept"

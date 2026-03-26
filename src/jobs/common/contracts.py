@@ -628,7 +628,9 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "sources": [
             normalize_source_report_row(row) for row in source_rows if isinstance(row, dict)
         ],
-        "healthSummary": dict(src.get("healthSummary")) if isinstance(src.get("healthSummary"), dict) else {},
+        "healthSummary": dict(src.get("healthSummary"))
+        if isinstance(src.get("healthSummary"), dict)
+        else {},
         "outputs": {
             "json": clean_text(outputs.get("json")),
             "csv": clean_text(outputs.get("csv")),

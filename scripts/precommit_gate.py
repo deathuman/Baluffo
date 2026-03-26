@@ -4,12 +4,23 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
+
+
+def _default_pre_commit_home() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / "pre-commit"
+    return Path.home() / "AppData" / "Local" / "pre-commit"
+
+
+PRE_COMMIT_HOME = _default_pre_commit_home()
 EXCLUDED_ROOT_PREFIXES = (
     ".codex-tmp-tests",
     ".pytest",
@@ -24,13 +35,33 @@ EXCLUDED_ROOT_PREFIXES = (
 
 def _git_lines(*args: str) -> list[str]:
     completed = subprocess.run(
-        ["git", *args],
+        ["git", "-C", str(ROOT), *args],
         cwd=ROOT,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip()
+        stdout = completed.stdout.strip()
+        details = stderr or stdout or "no git output"
+        raise RuntimeError(
+            f"git {' '.join(args)} failed with exit code {completed.returncode}: {details}"
+        )
     return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _top_level_component(rel_path: str) -> str:
+    parts = Path(rel_path).parts
+    return parts[0] if parts else rel_path
+
+
+def _is_excluded_root(rel_path: str, extra_roots: tuple[str, ...] = ()) -> bool:
+    root_name = _top_level_component(rel_path)
+    if any(root_name.startswith(prefix) for prefix in EXCLUDED_ROOT_PREFIXES):
+        return True
+    normalized_roots = tuple(prefix.strip().strip("/\\") for prefix in extra_roots)
+    return any(root_name == prefix for prefix in normalized_roots if prefix)
 
 
 def collect_changed_files() -> list[str]:
@@ -46,14 +77,26 @@ def collect_changed_files() -> list[str]:
         for rel_path in _git_lines(*query):
             if rel_path in seen:
                 continue
-            root_name = Path(rel_path).parts[0] if Path(rel_path).parts else rel_path
-            if any(root_name.startswith(prefix) for prefix in EXCLUDED_ROOT_PREFIXES):
+            if _is_excluded_root(rel_path):
                 continue
             abs_path = ROOT / rel_path
             if not abs_path.exists() or abs_path.is_dir():
                 continue
             seen.add(rel_path)
             files.append(rel_path)
+    return files
+
+
+def collect_repo_files(exclude_roots: tuple[str, ...] = ()) -> list[str]:
+    """Return tracked repository files, optionally excluding selected top-level roots."""
+    files: list[str] = []
+    for rel_path in _git_lines("ls-files"):
+        if _is_excluded_root(rel_path, exclude_roots):
+            continue
+        abs_path = ROOT / rel_path
+        if not abs_path.exists() or abs_path.is_dir():
+            continue
+        files.append(rel_path)
     return files
 
 
@@ -69,7 +112,10 @@ def _precommit_base_command() -> list[str]:
 
 
 def _run_precommit_command(command: list[str]) -> int:
-    completed = subprocess.run(command, cwd=ROOT)
+    env = os.environ.copy()
+    pre_commit_home = Path(env.setdefault("PRE_COMMIT_HOME", str(PRE_COMMIT_HOME)))
+    pre_commit_home.mkdir(parents=True, exist_ok=True)
+    completed = subprocess.run(command, cwd=ROOT, env=env)
     return completed.returncode
 
 
@@ -77,10 +123,11 @@ def build_changed_command(files: list[str]) -> list[str]:
     return [*_precommit_base_command(), "--files", *files]
 
 
-def build_all_commands() -> list[list[str]]:
+def build_all_commands(files: list[str] | None = None) -> list[list[str]]:
+    file_args = ["--files", *files] if files else ["--all-files"]
     return [
-        [*_precommit_base_command(), "--all-files"],
-        [*_precommit_base_command(), "--hook-stage", "pre-push", "--all-files"],
+        [*_precommit_base_command(), *file_args],
+        [*_precommit_base_command(), "--hook-stage", "pre-push", *file_args],
     ]
 
 
@@ -92,8 +139,12 @@ def run_changed() -> int:
     return _run_precommit_command(build_changed_command(files))
 
 
-def run_all() -> int:
-    for command in build_all_commands():
+def run_all(exclude_roots: tuple[str, ...] = ()) -> int:
+    files = collect_repo_files(exclude_roots) if exclude_roots else None
+    if files is not None and not files:
+        print("No tracked files found for pre-commit; skipping.")
+        return 0
+    for command in build_all_commands(files):
         return_code = _run_precommit_command(command)
         if return_code != 0:
             return return_code
@@ -108,10 +159,16 @@ def main() -> int:
         default="changed",
         help="Run only changed files or the full repository guardrail set.",
     )
+    parser.add_argument(
+        "--exclude-root",
+        action="append",
+        default=[],
+        help="Exclude tracked files whose top-level path matches the given repo root.",
+    )
     args = parser.parse_args()
 
     if args.mode == "all":
-        return run_all()
+        return run_all(tuple(args.exclude_root))
     return run_changed()
 
 

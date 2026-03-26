@@ -51,6 +51,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Full suite | `npm run test:py` |
 | Local pre-commit gate | `npm run lint:precommit` |
 | Full pre-commit sweep | `npm run lint:precommit:all` |
+| CI pre-commit sweep | `npm run lint:precommit:ci` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
 | Exclude slow | `python -m pytest tests -q -m "not slow" --color=no` |
@@ -126,9 +127,10 @@ python -m pytest tests -q -m "not slow" --cov=src --cov-report=term-missing --co
 - Small Python logic change: `npm run test:py`
 - Before pushing or merging: `npm run lint:precommit` or `npm run verify`
 - When you want repo-wide lint parity: `npm run lint:precommit:all`
+- When you want the CI-style sweep that skips generated `data/*` artifacts: `npm run lint:precommit:ci`
 - Python logic change with coverage review: `npm run test:py:cov`
 - JavaScript/frontend unit change: `npm run test:unit`
 - Browser or page-flow change: `npm run test:smoke`
 - Broad or risky change: `npm run verify`
 
-The local pre-commit gate checks only changed and untracked files, while the GitHub lint workflow and `npm run lint:precommit:all` exercise the full guardrail set. Local runs need `pre-commit` and `mypy` available in the active Python environment.
+The local pre-commit gate checks only changed and untracked files. The GitHub lint workflow uses `npm run lint:precommit:ci`, which runs the full guardrail set but skips generated `data/*` artifacts. The current `mypy` hook is intentionally scoped to `src/python_version_guard.py` and `src/pipeline_io.py` until the broader typed surface is cleaned up. Local runs need `pre-commit` and `mypy` available in the active Python environment.

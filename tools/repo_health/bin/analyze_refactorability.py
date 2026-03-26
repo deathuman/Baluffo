@@ -20,7 +20,6 @@ from typing import Any, Optional
 
 import yaml
 
-
 COMPOSITION_ROOTS = [
     "src.jobs",
     "src.admin_bridge",
@@ -189,18 +188,20 @@ class RefactorabilityAnalyzer:
                 pattern = rf"^from\s+{re.escape(root)}\b|^import\s+{re.escape(root)}\b"
                 matches = re.findall(pattern, content, re.MULTILINE)
                 if matches:
-                    violations.append({
-                        "file": str(file_path.relative_to(self.root)),
-                        "offending_import": root,
-                        "why_risky": f"Leaf code should not import broad composition root '{root}'",
-                        "suggested_import": self._suggest_leaf_import(root),
-                    })
+                    violations.append(
+                        {
+                            "file": str(file_path.relative_to(self.root)),
+                            "offending_import": root,
+                            "why_risky": f"Leaf code should not import broad composition root '{root}'",
+                            "suggested_import": self._suggest_leaf_import(root),
+                        }
+                    )
         except (OSError, UnicodeDecodeError):
             pass
 
         return violations
 
-    def _suggest_leaf_import(self, root: str) -> Optional[str]:
+    def _suggest_leaf_import(self, root: str) -> str | None:
         """Suggest a lower-level import target."""
         suggestions = {
             "src.jobs": "src/jobs/common/, src/jobs/adapters/plugins/, or direct module",
@@ -235,12 +236,14 @@ class RefactorabilityAnalyzer:
                     reasons.append("runtime-hotspot")
 
                 if reasons:
-                    hotspots.append({
-                        "file": str(py_file.relative_to(self.root)),
-                        "loc": loc,
-                        "reasons": reasons,
-                        "hotspot_score": self._calculate_hotspot_score(loc, reasons),
-                    })
+                    hotspots.append(
+                        {
+                            "file": str(py_file.relative_to(self.root)),
+                            "loc": loc,
+                            "reasons": reasons,
+                            "hotspot_score": self._calculate_hotspot_score(loc, reasons),
+                        }
+                    )
             except (OSError, UnicodeDecodeError):
                 continue
 
@@ -281,19 +284,23 @@ class RefactorabilityAnalyzer:
                 import_count = len(re.findall(r"^from\s+|^import\s+", content, re.MULTILINE))
 
                 if import_count > 20:
-                    locality_issues.append({
-                        "file": str(py_file.relative_to(self.root)),
-                        "imports": import_count,
-                        "locality": "low",
-                        "reason": f"Imports {import_count} modules - likely crosses many subsystems",
-                    })
+                    locality_issues.append(
+                        {
+                            "file": str(py_file.relative_to(self.root)),
+                            "imports": import_count,
+                            "locality": "low",
+                            "reason": f"Imports {import_count} modules - likely crosses many subsystems",
+                        }
+                    )
                 elif import_count > 12:
-                    locality_issues.append({
-                        "file": str(py_file.relative_to(self.root)),
-                        "imports": import_count,
-                        "locality": "medium",
-                        "reason": f"Imports {import_count} modules - moderate subsystem coupling",
-                    })
+                    locality_issues.append(
+                        {
+                            "file": str(py_file.relative_to(self.root)),
+                            "imports": import_count,
+                            "locality": "medium",
+                            "reason": f"Imports {import_count} modules - moderate subsystem coupling",
+                        }
+                    )
             except (OSError, UnicodeDecodeError):
                 continue
 
@@ -396,7 +403,11 @@ class RefactorabilityAnalyzer:
         return {
             "files": list(files_with_config.keys())[:15],
             "count": len(files_with_config),
-            "confidence": "low" if len(files_with_config) < 3 else "medium" if len(files_with_config) < 6 else "high",
+            "confidence": "low"
+            if len(files_with_config) < 3
+            else "medium"
+            if len(files_with_config) < 6
+            else "high",
             "score": score,
         }
 
@@ -500,60 +511,67 @@ class RefactorabilityAnalyzer:
         bv = self.results.get("boundary_violations", {})
         if bv.get("count", 0) > 0:
             for v in bv.get("violations", [])[:3]:
-                recommendations.append({
-                    "priority": "high",
-                    "action": "fix_boundary_violation",
-                    "target": v["file"],
-                    "recommendation": f"Replace broad import '{v['offending_import']}' with narrower import",
-                })
+                recommendations.append(
+                    {
+                        "priority": "high",
+                        "action": "fix_boundary_violation",
+                        "target": v["file"],
+                        "recommendation": f"Replace broad import '{v['offending_import']}' with narrower import",
+                    }
+                )
 
         hs = self.results.get("hotspots", {})
         if hs.get("count", 0) > 0:
             for h in hs.get("hotspots", [])[:3]:
-                recommendations.append({
-                    "priority": "medium",
-                    "action": "split_hotspot",
-                    "target": h["file"],
-                    "recommendation": f"Split oversized file ({h['loc']} LOC) by responsibility",
-                })
+                recommendations.append(
+                    {
+                        "priority": "medium",
+                        "action": "split_hotspot",
+                        "target": h["file"],
+                        "recommendation": f"Split oversized file ({h['loc']} LOC) by responsibility",
+                    }
+                )
 
         cd = self.results.get("canonical_docs", {})
         if cd.get("missing"):
             for doc in cd.get("missing", [])[:2]:
-                recommendations.append({
-                    "priority": "medium",
-                    "action": "add_canonical_doc",
-                    "target": doc,
-                    "recommendation": f"Add missing canonical doc: {doc}",
-                })
+                recommendations.append(
+                    {
+                        "priority": "medium",
+                        "action": "add_canonical_doc",
+                        "target": doc,
+                        "recommendation": f"Add missing canonical doc: {doc}",
+                    }
+                )
 
         ct = self.results.get("contracts", {})
         if ct.get("missing"):
-            recommendations.append({
-                "priority": "medium",
-                "action": "document_contract",
-                "target": ct["missing"][0] if ct["missing"] else None,
-                "recommendation": f"Add contract doc for under-documented subsystem",
-            })
+            recommendations.append(
+                {
+                    "priority": "medium",
+                    "action": "document_contract",
+                    "target": ct["missing"][0] if ct["missing"] else None,
+                    "recommendation": "Add contract doc for under-documented subsystem",
+                }
+            )
 
         tr = self.results.get("test_routing", {})
         if not tr.get("guidance_present"):
-            recommendations.append({
-                "priority": "medium",
-                "action": "improve_test_routing",
-                "target": "docs/testing.md",
-                "recommendation": "Add test routing guidance to testing docs",
-            })
+            recommendations.append(
+                {
+                    "priority": "medium",
+                    "action": "improve_test_routing",
+                    "target": "docs/testing.md",
+                    "recommendation": "Add test routing guidance to testing docs",
+                }
+            )
 
         self.results["recommendations"] = recommendations[:10]
 
-        self.results["top_hotspots"] = [
-            h["file"] for h in hs.get("hotspots", [])[:5]
-        ]
+        self.results["top_hotspots"] = [h["file"] for h in hs.get("hotspots", [])[:5]]
 
         self.results["top_violations"] = [
-            f"{v['file']}: {v['offending_import']}"
-            for v in bv.get("violations", [])[:5]
+            f"{v['file']}: {v['offending_import']}" for v in bv.get("violations", [])[:5]
         ]
 
 
@@ -561,9 +579,7 @@ def main() -> int:
     """Main entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Analyze AI refactorability of Baluffo"
-    )
+    parser = argparse.ArgumentParser(description="Analyze AI refactorability of Baluffo")
     parser.add_argument(
         "path",
         nargs="?",
@@ -571,7 +587,8 @@ def main() -> int:
         help="Repository path (default: current directory)",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         help="Output JSON file",
     )
 
@@ -589,12 +606,14 @@ def main() -> int:
         else:
             print(json_output)
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"AI Refactorability Score: {results['overall_score']}%")
         print(f"Level: {results['level']}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
-        print(f"\nTop Boundary Violations: {len(results.get('boundary_violations', {}).get('violations', []))}")
+        print(
+            f"\nTop Boundary Violations: {len(results.get('boundary_violations', {}).get('violations', []))}"
+        )
         for v in results.get("top_violations", [])[:3]:
             print(f"  - {v}")
 
@@ -602,11 +621,11 @@ def main() -> int:
         for h in results.get("top_hotspots", [])[:3]:
             print(f"  - {h}")
 
-        print(f"\nTop Recommendations:")
+        print("\nTop Recommendations:")
         for r in results.get("recommendations", [])[:3]:
             print(f"  [{r['priority']}] {r['recommendation']}")
 
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         return 0
 

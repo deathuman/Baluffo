@@ -873,6 +873,7 @@ def run_pipeline(
         "quarantinedSources": health_module.get_quarantined_sources(source_state_rows),
     }
     import sys
+
     print(f"DEBUG: healthSummary in input: {'healthSummary' in report_payload}", file=sys.stderr)
     print(f"DEBUG: report_payload keys: {list(report_payload.keys())}", file=sys.stderr)
     write_text_if_changed(

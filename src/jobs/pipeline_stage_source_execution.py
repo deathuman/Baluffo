@@ -434,7 +434,12 @@ def run_source_execution_stage(
 
         report["durationMs"] = int((time.perf_counter() - source_started) * 1000)
 
-        from src.jobs.common.taxonomy import ClassificationContext, map_error_to_failure_bucket, classify_zero_kept
+        from src.jobs.common.taxonomy import (
+            ClassificationContext,
+            classify_zero_kept,
+            map_error_to_failure_bucket,
+        )
+
         cls_context = ClassificationContext(
             status=str(report.get("status") or ""),
             error=str(report.get("error") or ""),
@@ -506,7 +511,12 @@ def run_source_execution_stage(
                 },
             },
         }
-        from src.jobs.common.taxonomy import ClassificationContext, map_error_to_failure_bucket, classify_zero_kept
+        from src.jobs.common.taxonomy import (
+            ClassificationContext,
+            classify_zero_kept,
+            map_error_to_failure_bucket,
+        )
+
         cls_context = ClassificationContext(
             status="error",
             error=report["error"],

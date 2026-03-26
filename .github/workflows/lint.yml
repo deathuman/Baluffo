@@ -47,4 +47,4 @@ jobs:
             ${{ runner.os }}-pre-commit-
 
       - name: Run pre-commit guardrails
-        run: npm run lint:precommit:all
+        run: npm run lint:precommit:ci

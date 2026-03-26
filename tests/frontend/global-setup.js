@@ -18,7 +18,7 @@ let bridgeProcess = null;
 
 async function startBridge() {
   console.log("[bridge] Starting admin bridge...");
-  
+
   return new Promise((resolve, reject) => {
     const args = [
       "src/admin_bridge.py",
@@ -26,14 +26,14 @@ async function startBridge() {
       "--host", "127.0.0.1",
       "--data-dir", "data"
     ];
-    
+
     bridgeProcess = spawn(playwrightPython, args, {
       stdio: "pipe",
       detached: false
     });
-    
+
     let started = false;
-    
+
     bridgeProcess.stdout.on("data", (data) => {
       const output = data.toString();
       console.log(`[bridge] ${output}`);
@@ -42,16 +42,16 @@ async function startBridge() {
         setTimeout(resolve, 2000);
       }
     });
-    
+
     bridgeProcess.stderr.on("data", (data) => {
       const output = data.toString();
       console.log(`[bridge] ${output}`);
     });
-    
+
     bridgeProcess.on("error", (err) => {
       console.error(`[bridge] Error: ${err.message}`);
     });
-    
+
     setTimeout(() => {
       if (!started) {
         console.log("[bridge] Started admin bridge (timeout)");

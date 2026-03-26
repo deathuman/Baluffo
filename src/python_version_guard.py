@@ -20,7 +20,7 @@ def _version_text(info: Sequence[int]) -> str:
 
 
 def is_required_python(version_info: Sequence[int] | None = None) -> bool:
-    info = version_info if version_info is not None else sys.version_info
+    info = tuple(version_info) if version_info is not None else tuple(sys.version_info[:3])
     return (int(info[0]), int(info[1])) >= MIN_VERSION
 
 
@@ -29,7 +29,7 @@ def ensure_required_python(
     executable: str | None = None,
     version_info: Sequence[int] | None = None,
 ) -> None:
-    info = version_info if version_info is not None else sys.version_info
+    info = tuple(version_info) if version_info is not None else tuple(sys.version_info[:3])
     if is_required_python(info):
         return
     current = _version_text(info)

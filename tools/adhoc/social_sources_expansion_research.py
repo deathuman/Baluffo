@@ -29,56 +29,6 @@ class SocialSourcesExpansionResearcher:
         """Research additional high-quality Reddit subreddits for game development jobs."""
         print("🔍 Researching Reddit subreddit expansion...")
 
-        # High-priority game development subreddits
-        high_priority_subreddits = [
-            {
-                "name": "gamedevjobs",
-                "reason": "Primary game development job subreddit",
-                "estimated_activity": "High",
-                "confidence": 0.95,
-                "current_status": "Already included",
-            },
-            {
-                "name": "indiegames",
-                "reason": "Indie game development community with job postings",
-                "estimated_activity": "Medium",
-                "confidence": 0.85,
-                "current_status": "Already included",
-            },
-            {
-                "name": "gamedev",
-                "reason": "Main game development subreddit",
-                "estimated_activity": "Very High",
-                "confidence": 0.98,
-                "current_status": "Already included",
-            },
-        ]
-
-        # Additional high-quality subreddits to consider
-        additional_subreddits = [
-            {
-                "name": "gameDevClassifieds",
-                "reason": "Dedicated game dev classifieds",
-                "estimated_activity": "Medium",
-                "confidence": 0.90,
-                "current_status": "Already included",
-            },
-            {
-                "name": "INAT",
-                "reason": "Indie game dev community",
-                "estimated_activity": "Medium",
-                "confidence": 0.80,
-                "current_status": "Already included",
-            },
-            {
-                "name": "gamejobs",
-                "reason": "Game industry job postings",
-                "estimated_activity": "Medium",
-                "confidence": 0.85,
-                "current_status": "Already included",
-            },
-        ]
-
         # New subreddits for potential addition
         new_subreddits = [
             {
@@ -142,16 +92,6 @@ class SocialSourcesExpansionResearcher:
     def research_x_expansion(self) -> list[dict[str, Any]]:
         """Research additional effective X (Twitter) search queries."""
         print("🐦 Researching X (Twitter) query expansion...")
-
-        # Current queries
-        current_queries = [
-            "#gamedevjobs",
-            "#gamejobs",
-            '"game designer" "we\'re hiring"',
-            '"gamedev" "hiring"',
-            "#indiegamejobs",
-            "#gamedevhire",
-        ]
 
         # Additional query categories to explore
         additional_queries = [

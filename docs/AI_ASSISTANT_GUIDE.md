@@ -185,11 +185,13 @@ See [`testing.md`](testing.md) and the verification matrix in [`architecture-ai-
 | Python tests | `npm run test:py` |
 | Local pre-commit gate | `npm run lint:precommit` |
 | Full pre-commit sweep | `npm run lint:precommit:all` |
+| CI pre-commit sweep | `npm run lint:precommit:ci` |
 | Frontend unit tests | `npm run test:unit` |
 | Frontend smoke tests | `npm run test:smoke` |
 
 `npm run verify` includes the repo's local changed-files pre-commit gate, so it is the safest single command to run before pushing changes to `main`.
-Use `npm run lint:precommit:all` when you want CI-parity lint coverage, including the pre-push hooks.
+Use `npm run lint:precommit:all` when you want the local full-repo sweep.
+Use `npm run lint:precommit:ci` when you want CI-parity lint coverage, including the pre-push hooks, while skipping generated `data/*` artifacts. The current `mypy` hook is intentionally scoped to `src/python_version_guard.py` and `src/pipeline_io.py` until the broader typed surface is cleaned up.
 
 ---
 

@@ -17,7 +17,7 @@ def read_existing_output(
     json_path: Path,
     fetched_at: str,
     *,
-    canonicalize_job: Callable[[dict[str, Any], str, str], dict[str, Any] | None],
+    canonicalize_job: Callable[..., dict[str, Any] | None],
     clean_text: Callable[[Any], str],
 ) -> list[RawJob]:
     if not json_path.exists():

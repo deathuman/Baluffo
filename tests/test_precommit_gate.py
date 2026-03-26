@@ -36,6 +36,25 @@ def test_collect_changed_files_includes_changed_and_untracked_files(tmp_path, mo
     ]
 
 
+def test_collect_repo_files_excludes_requested_roots(tmp_path, monkeypatch) -> None:
+    files = ["data/jobs-fetch-report.json", "docs/readme.md", "src/app.py"]
+
+    def fake_git_lines(*args: str) -> list[str]:
+        if args == ("ls-files",):
+            return files
+        raise AssertionError(f"Unexpected git query: {args}")
+
+    monkeypatch.setattr(precommit_gate, "ROOT", tmp_path)
+    monkeypatch.setattr(precommit_gate, "_git_lines", fake_git_lines)
+
+    for rel_path in files:
+        path = tmp_path / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x", encoding="utf-8")
+
+    assert precommit_gate.collect_repo_files(("data",)) == ["docs/readme.md", "src/app.py"]
+
+
 def test_run_all_executes_precommit_and_prepush_commands(monkeypatch) -> None:
     commands: list[list[str]] = []
 
@@ -66,6 +85,72 @@ def test_run_all_executes_precommit_and_prepush_commands(monkeypatch) -> None:
             "--hook-stage",
             "pre-push",
             "--all-files",
+        ],
+    ]
+
+
+def test_run_precommit_command_sets_repo_local_cache(tmp_path, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], cwd=None, env=None):  # type: ignore[no-untyped-def]
+        captured["command"] = command
+        captured["cwd"] = cwd
+        captured["env"] = env
+
+        class Result:
+            returncode = 0
+
+        return Result()
+
+    monkeypatch.setattr(precommit_gate, "PRE_COMMIT_HOME", tmp_path / "precommit-home")
+    monkeypatch.setattr(precommit_gate.subprocess, "run", fake_run)
+
+    assert precommit_gate._run_precommit_command(["python", "-m", "pre_commit", "run"]) == 0
+    assert captured["command"] == ["python", "-m", "pre_commit", "run"]
+    assert captured["cwd"] == precommit_gate.ROOT
+    assert captured["env"]["PRE_COMMIT_HOME"] == str(tmp_path / "precommit-home")
+    assert (tmp_path / "precommit-home").exists()
+
+
+def test_run_all_with_exclusions_uses_filtered_repo_files(monkeypatch) -> None:
+    commands: list[list[str]] = []
+
+    def fake_collect_repo_files(exclude_roots: tuple[str, ...] = ()) -> list[str]:
+        assert exclude_roots == ("data",)
+        return ["docs/readme.md", "src/app.py"]
+
+    def fake_run(command: list[str]) -> int:
+        commands.append(command)
+        return 0
+
+    monkeypatch.setattr(precommit_gate, "collect_repo_files", fake_collect_repo_files)
+    monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
+
+    assert precommit_gate.run_all(("data",)) == 0
+    assert commands == [
+        [
+            precommit_gate.PYTHON,
+            "-m",
+            "pre_commit",
+            "run",
+            "--show-diff-on-failure",
+            "--color=always",
+            "--files",
+            "docs/readme.md",
+            "src/app.py",
+        ],
+        [
+            precommit_gate.PYTHON,
+            "-m",
+            "pre_commit",
+            "run",
+            "--show-diff-on-failure",
+            "--color=always",
+            "--hook-stage",
+            "pre-push",
+            "--files",
+            "docs/readme.md",
+            "src/app.py",
         ],
     ]
 

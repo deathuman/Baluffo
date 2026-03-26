@@ -246,7 +246,6 @@ def apply_optimizations(
     for opt in recommendations.get("rate_limit_optimizations", []):
         platform = opt["platform"]
         if platform == "reddit" and "reddit" in optimized_config:
-            current_delay = optimized_config["reddit"].get("rateLimitDelay", 2.0)
             if "Increase to" in opt["recommended"]:
                 new_delay = float(opt["recommended"].split("to ")[1].replace("s", ""))
                 optimized_config["reddit"]["rateLimitDelay"] = new_delay
@@ -254,12 +253,10 @@ def apply_optimizations(
                 new_delay = float(opt["recommended"].split("to ")[1].replace("s", ""))
                 optimized_config["reddit"]["rateLimitDelay"] = new_delay
         elif platform == "x" and "x" in optimized_config:
-            current_timeout = optimized_config["x"].get("timeoutSeconds", 15)
             if "Increase to" in opt["recommended"]:
                 new_timeout = int(opt["recommended"].split("to ")[1].replace("s", ""))
                 optimized_config["x"]["timeoutSeconds"] = new_timeout
         elif platform == "mastodon" and "mastodon" in optimized_config:
-            current_retries = optimized_config["mastodon"].get("retries", 2)
             if "Increase to" in opt["recommended"]:
                 new_retries = int(opt["recommended"].split("to ")[1])
                 optimized_config["mastodon"]["retries"] = new_retries
@@ -436,7 +433,7 @@ def main():
 
     # Generate optimization recommendations
     print("📊 Analyzing performance data...")
-    recommendations = generate_optimizations_recommendations(current_config, performance_data)
+    recommendations = generate_optimization_recommendations(current_config, performance_data)
 
     # Apply optimizations
     print("⚙️ Applying optimizations...")

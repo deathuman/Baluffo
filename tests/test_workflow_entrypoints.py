@@ -32,8 +32,8 @@ def test_lint_workflow_uses_full_precommit_entrypoint() -> None:
     workflow_path = root / ".github" / "workflows" / "lint.yml"
     workflow_text = workflow_path.read_text(encoding="utf-8")
 
-    assert "npm run lint:precommit:all" in workflow_text, (
-        f"{workflow_path.name} should use the full pre-commit npm entrypoint."
+    assert "npm run lint:precommit:ci" in workflow_text, (
+        f"{workflow_path.name} should use the CI pre-commit npm entrypoint."
     )
     assert "pre-commit run --all-files" not in workflow_text, (
         f"{workflow_path.name} should not embed the raw full-repo pre-commit command."
@@ -44,10 +44,12 @@ def test_lint_workflow_uses_split_precommit_entrypoints() -> None:
     root = Path(__file__).resolve().parents[1]
     workflow_path = root / ".github" / "workflows" / "lint.yml"
     workflow_text = workflow_path.read_text(encoding="utf-8")
+    package_path = root / "package.json"
+    package_text = package_path.read_text(encoding="utf-8")
 
-    assert "npm run lint:precommit:all" in workflow_text, (
-        f"{workflow_path.name} should run the full pre-commit sweep via the dedicated npm script."
+    assert "lint:precommit:ci" in workflow_text, (
+        f"{workflow_path.name} should run the CI pre-commit entrypoint."
     )
-    assert "pre-commit run --all-files" not in workflow_text, (
-        f"{workflow_path.name} should route linting through the shared npm entrypoint instead of duplicating the raw command."
+    assert "--exclude-root data" in package_text, (
+        f"{package_path.name} should route the CI pre-commit entrypoint through the data exclusion."
     )

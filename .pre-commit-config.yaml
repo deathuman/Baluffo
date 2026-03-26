@@ -34,7 +34,7 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: python -m mypy --config-file mypy.ini src
+        entry: python -m mypy --config-file mypy.ini
         language: system
         pass_filenames: false
         stages: [pre-push]

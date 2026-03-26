@@ -100,7 +100,11 @@ def normalize_source_state_payload(
             }
             raw_latencies = raw_entry.get("recentLatencies")
             if isinstance(raw_latencies, list):
-                clean_latencies = [_clamped_int(x, 0, 2**31 - 1) for x in raw_latencies if isinstance(x, (int, float))]
+                clean_latencies = [
+                    _clamped_int(x, 0, 2**31 - 1)
+                    for x in raw_latencies
+                    if isinstance(x, (int, float))
+                ]
                 if clean_latencies:
                     entry["recentLatencies"] = clean_latencies
             raw_stage_timings = (

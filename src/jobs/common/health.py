@@ -1,7 +1,7 @@
 """Source health scoring utilities."""
 
 from dataclasses import dataclass
-
+from datetime import UTC
 
 DEFAULT_HEALTH_WINDOW_SIZE = 5
 
@@ -148,7 +148,7 @@ def get_quarantined_sources(
     """
     from datetime import datetime, timezone
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     quarantined = []
     for name, state in source_states.items():
         quarantined_until = state.get("quarantinedUntilAt")
@@ -159,13 +159,15 @@ def get_quarantined_sources(
                     reason = "consecutive_failures"
                     if state.get("consecutiveZeroKept", 0) >= 3:
                         reason = "consecutive_zero_kept"
-                    quarantined.append({
-                        "name": name,
-                        "quarantinedUntilAt": quarantined_until,
-                        "reason": reason,
-                        "consecutiveFailures": state.get("consecutiveFailures", 0),
-                        "consecutiveZeroKept": state.get("consecutiveZeroKept", 0),
-                    })
+                    quarantined.append(
+                        {
+                            "name": name,
+                            "quarantinedUntilAt": quarantined_until,
+                            "reason": reason,
+                            "consecutiveFailures": state.get("consecutiveFailures", 0),
+                            "consecutiveZeroKept": state.get("consecutiveZeroKept", 0),
+                        }
+                    )
             except Exception:
                 pass
     return quarantined
