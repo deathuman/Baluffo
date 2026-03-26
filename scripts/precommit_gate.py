@@ -22,14 +22,18 @@ def _default_pre_commit_home() -> Path:
 
 PRE_COMMIT_HOME = _default_pre_commit_home()
 EXCLUDED_ROOT_PREFIXES = (
+    ".codex-tmp-",
+    ".pre-commit-home",
     ".codex-tmp-tests",
     ".pytest",
     ".mypy_cache",
     ".ruff_cache",
     ".venv",
+    "pytest-cache-files-",
     "_out",
     "build",
     "dist",
+    "tmp",
 )
 
 

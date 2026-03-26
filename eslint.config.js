@@ -3,10 +3,14 @@ import js from "@eslint/js";
 export default [
   {
     ignores: [
+      ".codex-tmp-*/**",
+      ".pre-commit-home*/**",
       "node_modules/**",
       "data/**",
       "docs/**",
       "playwright-report/**",
+      "pytest-cache-files-*/**",
+      "tmp*/**",
       "test-results/**",
     ],
   },
