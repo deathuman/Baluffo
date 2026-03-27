@@ -5,21 +5,21 @@
   "finishedAt": "",
   "summary": {
     "queued": 0,
-    "running": 295,
-    "ok": 113,
-    "error": 229
+    "running": 286,
+    "ok": 115,
+    "error": 236
   },
   "taskProgress": {
     "active": true,
     "phaseKey": "executing_sources",
     "phaseLabel": "Executing sources",
     "mode": "determinate",
-    "ratio": 0.4758241758241758,
+    "ratio": 0.48571428571428565,
     "counts": {
       "totalTasks": 637,
       "queuedTasks": 0,
-      "runningTasks": 295,
-      "completedTasks": 342,
+      "runningTasks": 286,
+      "completedTasks": 351,
       "resolvedSources": 0,
       "outputCount": 0,
       "failedSources": 0,
@@ -2045,12 +2045,12 @@
     },
     {
       "name": "static_source::static:listing_url:https://careers.playstation.com/#listings",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-27T13:10:26.369717+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:13:33.740406+00:00",
-      "error": ""
+      "finishedAt": "2026-03-27T13:25:56.039764+00:00",
+      "durationMs": 428848,
+      "heartbeatAt": "2026-03-27T13:25:56.039764+00:00",
+      "error": "static_source::static:listing_url:https://careers.playstation.com/#listings: static:PlayStation (Sheet):https://careers.playstation.com/brazilian-portuguese-associate-qa-tester-language-development-support-contingent-remote/job/5814308004: Network error for https://careers.playstation.com/brazilian-portuguese-associate-qa-tester-language-development-support-contingent-remote/job/5814308004: ; static:PlayStation (Sheet):https://careers.playstation.com/latin-american-spanish-associate-quality-assurance-tester-language-development-support-contingent-remote/job/5831577004: Network error for https://careers.playstation.com/latin-american-spanish-associate-quality-assurance-tester-language-development-support-contingent-remote/job/5831577004: ; static:PlayStation (Sheet):https://careers.playstation.com/mandarin-chinese-associate-qa-tester-language-development-support-contingent-remote/job/5811967004: Network error for https://careers.playstation.com/mandarin-chinese-associate-qa-tester-language-development-support-contingent-remote/job/5811967004: ; static:PlayStation (Sheet):https://careers.playstation.com/audio-director/job/5777734004: Network error for https://careers.playstation.com/audio-director/job/5777734004: ; static:PlayStation (Sheet):https://careers.playstation.com/associate-campaign-manager-12m-ftc/job/5817576004: Network error for https://careers.playstation.com/associate-campaign-manager-12m-ftc/job/5817576004: ; static:PlayStation (Sheet):https://careers.playstation.com/audio-programmer/job/5824107004: Network error for https://careers.playstation.com/audio-programmer/job/5824107004: ; static:PlayStation (Sheet):https://careers.playstation.com/audio-test-analyst/job/5531221004: Network error for https://careers.playstation.com/audio-test-analyst/job/5531221004: ; static:PlayStation (Sheet):https://careers.playstation.com/autotest-programmer-intern/job/5792268004: Network error for https://careers.playstation.com/autotest-programmer-intern/job/5792268004: ; static:PlayStation (Sheet):https://careers.playstation.com/business-analyst-supply-chain-contract/job/5820760004: Network error for https://careers.playstation.com/business-analyst-supply-chain-contract/job/5820760004: ; static:PlayStation (Sheet):https://careers.playstation.com/business-development-manager-playstation-plus/job/5787449004: Network error for https://careers.playstation.com/business-development-manager-playstation-plus/job/5787449004: ; static:PlayStation (Sheet):https://careers.playstation.com/business-insight-manager/job/5825735004: Network error for https://careers.playstation.com/business-insight-manager/job/5825735004: ; static:PlayStation (Sheet):https://careers.playstation.com/cg-artist-cgアーティスト/job/5618098004: Network error for https://careers.playstation.com/cg-artist-cgアーティスト/job/5618098004: ; static:PlayStation (Sheet):https://careers.playstation.com/cg-アーティスト-アルバイト/job/5671085004: Network error for https://careers.playstation.com/cg-アーティスト-アルバイト/job/5671085004: ; static:PlayStation (Sheet):https://careers.playstation.com/crm-business-analyst/job/5824446004: Network error for https://careers.playstation.com/crm-business-analyst/job/5824446004: ; static:PlayStation (Sheet):https://careers.playstation.com/campaign-marketing-manager/job/5637903004: Network error for https://careers.playstation.com/campaign-marketing-manager/job/5637903004: ; static:PlayStation (Sheet):https://careers.playstation.com/change-go-to-market-manager-digital-commerce/job/5662445004: Network error for https://careers.playstation.com/change-go-to-market-manager-digital-commerce/job/5662445004: ; static:PlayStation (Sheet):https://careers.playstation.com/change-manager-people-culture/job/5812699004: Network error for https://careers.playstation.com/change-manager-people-culture/job/5812699004: ; static:PlayStation (Sheet):https://careers.playstation.com/character-artist-6-month-contract/job/5819164004: Network error for https://careers.playstation.com/character-artist-6-month-contract/job/5819164004: ; static:PlayStation (Sheet):https://careers.playstation.com/chef-de-projet-design-project-lead-design/job/5816831004: Network error for https://careers.playstation.com/chef-de-projet-design-project-lead-design/job/5816831004: ; static:PlayStation (Sheet):https://careers.playstation.com/cinematic-technical-animator/job/5778235004: Network error for https://careers.playstation.com/cinematic-technical-animator/job/5778235004: ; static:PlayStation (Sheet):https://careers.playstation.com/corporate-counsel-ip-enforcement/job/5674533004: Network error for https://careers.playstation.com/corporate-counsel-ip-enforcement/job/5674533004: ; static:PlayStation (Sheet):https://careers.playstation.com/corporate-counsel-product-counseling-privacy-online-safety/job/5501903004: Network error for https://careers.playstation.com/corporate-counsel-product-counseling-privacy-online-safety/job/5501903004: ; static:PlayStation (Sheet):https://careers.playstation.com/data-center-operations-engineer/job/5829868004: Network error for https://careers.playstation.com/data-center-operations-engineer/job/5829868004: ; static:PlayStation (Sheet):https://careers.playstation.com/data-center-operations-engineer/job/5835442004: Network error for https://careers.playstation.com/data-center-operations-engineer/job/5835442004: ; static:PlayStation (Sheet):https://careers.playstation.com/data-engineer-12-month-fixed-term-contract/job/5823360004: Network error for https://careers.playstation.com/data-engineer-12-month-fixed-term-contract/job/5823360004: ; static:PlayStation (Sheet):https://careers.playstation.com/data-science-manager-experimentation-innovation-research/job/5592965004: Network error for https://careers.playstation.com/data-science-manager-experimentation-innovation-research/job/5592965004: ; static:PlayStation (Sheet):https://careers.playstation.com/data-scientist-clv-next-best-action/job/5556342004: Network error for https://careers.playstation.com/data-scientist-clv-next-best-action/job/5556342004: ; static:PlayStation (Sheet):https://careers.playstation.com/deep-learning-engineer-for-game-technology/job/5831515004: Network error for https://careers.playstation.com/deep-learning-engineer-for-game-technology/job/5831515004: ; static:PlayStation (Sheet):https://careers.playstation.com/development-strategy-and-support-director/job/5792767004: Network error for https://careers.playstation.com/development-strategy-and-support-director/job/5792767004: ; static:PlayStation (Sheet):https://careers.playstation.com/development-strategy-and-support-director/job/5792765004: Network error for https://careers.playstation.com/development-strategy-and-support-director/job/5792765004: ; static:PlayStation (Sheet):https://careers.playstation.com/director-litigation-competition-regulatory-affairs-emea/job/5774532004: Network error for https://careers.playstation.com/director-litigation-competition-regulatory-affairs-emea/job/5774532004: ; static:PlayStation (Sheet):https://careers.playstation.com/director-of-product-management/job/5733063004: Network error for https://careers.playstation.com/director-of-product-management/job/5733063004: ; static:PlayStation (Sheet):https://careers.playstation.com/director-ad-operations-technology/job/5780261004: Network error for https://careers.playstation.com/director-ad-operations-technology/job/5780261004: ; static:PlayStation (Sheet):https://careers.playstation.com/director-it-technical-support/job/5809661004: Network error for https://careers.playstation.com/director-it-technical-support/job/5809661004: ; static:PlayStation (Sheet):https://careers.playstation.com/director-business-planning-operations/job/5791038004: Network error for https://careers.playstation.com/director-business-planning-operations/job/5791038004: ; static:PlayStation (Sheet):https://careers.playstation.com/director-system-software-and-firmware-engineering/job/5778455004: Network error for https://careers.playstation.com/director-system-software-and-firmware-engineering/job/5778455004: ; static:PlayStation (Sheet):https://careers.playstation.com/editorial-manager-playstation-store-japan-focused/job/5781399004: Network error for https://careers.playstation.com/editorial-manager-playstation-store-japan-focused/job/5781399004: ; static:PlayStation (Sheet):https://careers.playstation.com/employee-relations-partner/job/5752901004: Network error for https://careers.playstation.com/employee-relations-partner/job/5752901004: ; static:PlayStation (Sheet):https://careers.playstation.com/editorial-manager-playstation-store/job/5813313004: Network error for https://careers.playstation.com/editorial-manager-playstation-store/job/5813313004: ; static:PlayStation (Sheet):https://careers.playstation.com/environmental-product-compliance-manager/job/5810401004: Network error for https://careers.playstation.com/environmental-product-compliance-manager/job/5810401004: ; static:PlayStation (Sheet):https://careers.playstation.com/executive-assistant-people-and-places-contract/job/5803602004: Network error for https://careers.playstation.com/executive-assistant-people-and-places-contract/job/5803602004: ; static:PlayStation (Sheet):https://careers.playstation.com/engineering-manager/job/5836848004: Network error for https://careers.playstation.com/engineering-manager/job/5836848004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/naughtydog/jobs/5814308004: Network error for https://job-boards.greenhouse.io/naughtydog/jobs/5814308004: ; static:PlayStation (Sheet):https://careers.playstation.com/3dエンバイロメントアーティスト-3d-environmental-artist-team-asobi/job/5524462004: Network error for https://careers.playstation.com/3dエンバイロメントアーティスト-3d-environmental-artist-team-asobi/job/5524462004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/naughtydog/jobs/5831577004: Network error for https://job-boards.greenhouse.io/naughtydog/jobs/5831577004: ; static:PlayStation (Sheet):https://careers.playstation.com/artiste-lighting-senior-contrat-d-un-an/job/5834853004: Network error for https://careers.playstation.com/artiste-lighting-senior-contrat-d-un-an/job/5834853004: ; static:PlayStation (Sheet):https://careers.playstation.com/fraud-strategist-quantitative/job/5808174004: Network error for https://careers.playstation.com/fraud-strategist-quantitative/job/5808174004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/naughtydog/jobs/5831625004: Network error for https://job-boards.greenhouse.io/naughtydog/jobs/5831625004: ; static:PlayStation (Sheet):https://careers.playstation.com/traditional-chinese-associate-qa-tester-language-development-support-contingent-remote/job/5831625004: Network error for https://careers.playstation.com/traditional-chinese-associate-qa-tester-language-development-support-contingent-remote/job/5831625004: ; static:PlayStation (Sheet):https://careers.playstation.com/programmeur-euse-i-a-senior/job/5832237004: Network error for https://careers.playstation.com/programmeur-euse-i-a-senior/job/5832237004: ; static:PlayStation (Sheet):https://careers.playstation.com/programmeur-euse-i-a-senior-ai-programmer/job/5832235004: Network error for https://careers.playstation.com/programmeur-euse-i-a-senior-ai-programmer/job/5832235004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/naughtydog/jobs/5811967004: Network error for https://job-boards.greenhouse.io/naughtydog/jobs/5811967004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/haven/jobs/5832237004: Network error for https://job-boards.greenhouse.io/haven/jobs/5832237004: ; static:PlayStation (Sheet):https://careers.playstation.com/artiste-de-personnages-contrat-de-six-mois-character-artist-6-month-contract/job/5819166004: Network error for https://careers.playstation.com/artiste-de-personnages-contrat-de-six-mois-character-artist-6-month-contract/job/5819166004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5824107004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5824107004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5777734004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5777734004: ; static:PlayStation (Sheet):https://careers.playstation.com/ai-staff-devex-engineer/job/5592075004: Network error for https://careers.playstation.com/ai-staff-devex-engineer/job/5592075004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5592075004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5592075004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5820760004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5820760004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5792268004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5792268004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5825735004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5825735004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/pdi/jobs/5618098004: Network error for https://job-boards.greenhouse.io/pdi/jobs/5618098004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5824446004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5824446004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/pdi/jobs/5671085004: Network error for https://job-boards.greenhouse.io/pdi/jobs/5671085004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5637903004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5637903004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5662445004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5662445004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5812699004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5812699004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5819164004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5819164004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/haven/jobs/5816831004: Network error for https://job-boards.greenhouse.io/haven/jobs/5816831004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/guerrilla-games/jobs/5778235004: Network error for https://job-boards.greenhouse.io/guerrilla-games/jobs/5778235004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5674533004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5674533004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/siei/jobs/5501903004: Network error for https://job-boards.greenhouse.io/siei/jobs/5501903004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5829868004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5829868004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5835442004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5835442004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5823360004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5823360004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5592965004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5592965004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5556342004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5556342004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5831515004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5831515004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5792767004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5792767004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5792765004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5792765004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5774532004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5774532004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/guerrilla-games/jobs/5733063004: Network error for https://job-boards.greenhouse.io/guerrilla-games/jobs/5733063004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5780261004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5780261004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5791038004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5791038004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5809661004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5809661004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5778455004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5778455004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/siei/jobs/5813313004: Network error for https://job-boards.greenhouse.io/siei/jobs/5813313004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5781399004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5781399004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5752901004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5752901004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5836848004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5836848004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5810401004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5810401004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5803602004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5803602004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5808174004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5808174004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/haven/jobs/5819166004: Network error for https://job-boards.greenhouse.io/haven/jobs/5819166004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5817576004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5817576004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5832235004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5832235004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5531221004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5531221004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/haven/jobs/5834853004: Network error for https://job-boards.greenhouse.io/haven/jobs/5834853004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/siei/jobs/5524462004: Network error for https://job-boards.greenhouse.io/siei/jobs/5524462004: ; static:PlayStation (Sheet):https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5787449004: Network error for https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal/jobs/5787449004: ; static:PlayStation (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://careers.highmoonstudios.com/search-results",
@@ -3125,75 +3125,75 @@
     },
     {
       "name": "static_source::static:listing_url:https://www.glowmade.com/jobs/",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-27T13:10:26.835238+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:20:17.955227+00:00",
-      "error": ""
+      "finishedAt": "2026-03-27T13:26:00.211168+00:00",
+      "durationMs": 24921,
+      "heartbeatAt": "2026-03-27T13:26:00.211168+00:00",
+      "error": "static_source::static:listing_url:https://www.glowmade.com/jobs/: static:Glowmade (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://www.gearboxsoftware.com/careers/#career_opportunities",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-27T13:10:26.844732+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:20:20.211577+00:00",
-      "error": ""
+      "finishedAt": "2026-03-27T13:26:09.114411+00:00",
+      "durationMs": 25800,
+      "heartbeatAt": "2026-03-27T13:26:09.114411+00:00",
+      "error": "static_source::static:listing_url:https://www.gearboxsoftware.com/careers/#career_opportunities: static:Gearbox Entertainment (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://www.gaijinent.com/job",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-27T13:10:26.851239+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:20:21.453909+00:00",
-      "error": ""
+      "finishedAt": "2026-03-27T13:26:30.135571+00:00",
+      "durationMs": 39319,
+      "heartbeatAt": "2026-03-27T13:26:30.135571+00:00",
+      "error": "static_source::static:listing_url:https://www.gaijinent.com/job: static:Gaijin Entertainment (Sheet):https://www.gaijinent.com/job/Privacy-Compliance-Lead: Network error for https://www.gaijinent.com/job/Privacy-Compliance-Lead:; static_source::static:listing_url:https://www.gaijinent.com/job: static:Gaijin Entertainment (Sheet):https://www.gaijinent.com/job/pr-manager: Network error for https://www.gaijinent.com/job/pr-manager:"
     },
     {
       "name": "static_source::static:listing_url:https://www.fibergames.com.tr/en/",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-27T13:10:26.855236+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:20:21.561996+00:00",
-      "error": ""
+      "finishedAt": "2026-03-27T13:26:04.643498+00:00",
+      "durationMs": 22812,
+      "heartbeatAt": "2026-03-27T13:26:04.643498+00:00",
+      "error": "static_source::static:listing_url:https://www.fibergames.com.tr/en/: static:Fiber Games (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://falcongames.com.vn/career/",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-27T13:10:26.859146+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:20:25.732924+00:00",
-      "error": ""
+      "finishedAt": "2026-03-27T13:26:13.377140+00:00",
+      "durationMs": 24500,
+      "heartbeatAt": "2026-03-27T13:26:13.377140+00:00",
+      "error": "static_source::static:listing_url:https://falcongames.com.vn/career/: static:Falcon Game Studio (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://demiurgestudios.com/job-openings/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-27T13:10:26.861936+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:20:27.048680+00:00",
-      "error": ""
+      "finishedAt": "2026-03-27T13:26:17.548623+00:00",
+      "durationMs": 23681,
+      "heartbeatAt": "2026-03-27T13:26:17.548623+00:00",
+      "error": "static_source::static:listing_url:https://demiurgestudios.com/job-openings/: static:Demiurge Studios (Sheet):https://demiurgestudios.com/job-openings/: Network error for https://demiurgestudios.com/job-openings/: Server disconnected without sending a response."
     },
     {
       "name": "static_source::static:listing_url:https://chimera-entertainment.jobs.personio.com/",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-27T13:10:26.865394+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:20:31.246206+00:00",
-      "error": ""
+      "finishedAt": "2026-03-27T13:26:21.831074+00:00",
+      "durationMs": 22152,
+      "heartbeatAt": "2026-03-27T13:26:21.831074+00:00",
+      "error": "static_source::static:listing_url:https://chimera-entertainment.jobs.personio.com/: static:Chimera Entertainment (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://www.blueislestudios.ca/jobs",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-27T13:10:26.869113+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:20:33.178848+00:00",
-      "error": ""
+      "finishedAt": "2026-03-27T13:26:26.001387+00:00",
+      "durationMs": 26364,
+      "heartbeatAt": "2026-03-27T13:26:26.001387+00:00",
+      "error": "static_source::static:listing_url:https://www.blueislestudios.ca/jobs: static:Blue Isle studios (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://bigmoxigames.com/careers",
@@ -4767,7 +4767,7 @@
       "startedAt": "2026-03-27T13:10:27.514033+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.514033+00:00",
+      "heartbeatAt": "2026-03-27T13:25:57.732398+00:00",
       "error": ""
     },
     {
@@ -4776,7 +4776,7 @@
       "startedAt": "2026-03-27T13:10:27.517386+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.517386+00:00",
+      "heartbeatAt": "2026-03-27T13:25:58.253352+00:00",
       "error": ""
     },
     {
@@ -4785,7 +4785,7 @@
       "startedAt": "2026-03-27T13:10:27.520424+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.520424+00:00",
+      "heartbeatAt": "2026-03-27T13:26:01.602761+00:00",
       "error": ""
     },
     {
@@ -4794,7 +4794,7 @@
       "startedAt": "2026-03-27T13:10:27.522933+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.522933+00:00",
+      "heartbeatAt": "2026-03-27T13:26:03.643021+00:00",
       "error": ""
     },
     {
@@ -4803,7 +4803,7 @@
       "startedAt": "2026-03-27T13:10:27.525989+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.525989+00:00",
+      "heartbeatAt": "2026-03-27T13:26:03.888824+00:00",
       "error": ""
     },
     {
@@ -4812,7 +4812,7 @@
       "startedAt": "2026-03-27T13:10:27.528466+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.528466+00:00",
+      "heartbeatAt": "2026-03-27T13:26:06.227794+00:00",
       "error": ""
     },
     {
@@ -4821,7 +4821,7 @@
       "startedAt": "2026-03-27T13:10:27.533059+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.533059+00:00",
+      "heartbeatAt": "2026-03-27T13:26:07.042999+00:00",
       "error": ""
     },
     {
@@ -4830,7 +4830,7 @@
       "startedAt": "2026-03-27T13:10:27.536133+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.536133+00:00",
+      "heartbeatAt": "2026-03-27T13:26:07.458168+00:00",
       "error": ""
     },
     {
@@ -4839,7 +4839,7 @@
       "startedAt": "2026-03-27T13:10:27.539407+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.539407+00:00",
+      "heartbeatAt": "2026-03-27T13:26:08.719599+00:00",
       "error": ""
     },
     {
@@ -4848,7 +4848,7 @@
       "startedAt": "2026-03-27T13:10:27.542535+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.542535+00:00",
+      "heartbeatAt": "2026-03-27T13:26:11.122343+00:00",
       "error": ""
     },
     {
@@ -4857,7 +4857,7 @@
       "startedAt": "2026-03-27T13:10:27.546355+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.546355+00:00",
+      "heartbeatAt": "2026-03-27T13:26:14.256747+00:00",
       "error": ""
     },
     {
@@ -4866,7 +4866,7 @@
       "startedAt": "2026-03-27T13:10:27.549630+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.549630+00:00",
+      "heartbeatAt": "2026-03-27T13:26:14.319699+00:00",
       "error": ""
     },
     {
@@ -4875,7 +4875,7 @@
       "startedAt": "2026-03-27T13:10:27.552715+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.552715+00:00",
+      "heartbeatAt": "2026-03-27T13:26:14.365974+00:00",
       "error": ""
     },
     {
@@ -4884,7 +4884,7 @@
       "startedAt": "2026-03-27T13:10:27.556553+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.556553+00:00",
+      "heartbeatAt": "2026-03-27T13:26:15.337515+00:00",
       "error": ""
     },
     {
@@ -4893,7 +4893,7 @@
       "startedAt": "2026-03-27T13:10:27.560208+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.560208+00:00",
+      "heartbeatAt": "2026-03-27T13:26:17.521230+00:00",
       "error": ""
     },
     {
@@ -4902,7 +4902,7 @@
       "startedAt": "2026-03-27T13:10:27.563003+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.563003+00:00",
+      "heartbeatAt": "2026-03-27T13:26:21.385245+00:00",
       "error": ""
     },
     {
@@ -4911,7 +4911,7 @@
       "startedAt": "2026-03-27T13:10:27.565680+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.565680+00:00",
+      "heartbeatAt": "2026-03-27T13:26:21.401071+00:00",
       "error": ""
     },
     {
@@ -4920,7 +4920,7 @@
       "startedAt": "2026-03-27T13:10:27.568566+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.568566+00:00",
+      "heartbeatAt": "2026-03-27T13:26:24.840168+00:00",
       "error": ""
     },
     {
@@ -4929,7 +4929,7 @@
       "startedAt": "2026-03-27T13:10:27.571862+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.571862+00:00",
+      "heartbeatAt": "2026-03-27T13:26:25.194957+00:00",
       "error": ""
     },
     {
@@ -4938,7 +4938,7 @@
       "startedAt": "2026-03-27T13:10:27.574611+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.574611+00:00",
+      "heartbeatAt": "2026-03-27T13:26:25.241299+00:00",
       "error": ""
     },
     {
@@ -4947,7 +4947,7 @@
       "startedAt": "2026-03-27T13:10:27.577704+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.577704+00:00",
+      "heartbeatAt": "2026-03-27T13:26:27.584282+00:00",
       "error": ""
     },
     {
@@ -4956,7 +4956,7 @@
       "startedAt": "2026-03-27T13:10:27.580844+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.580844+00:00",
+      "heartbeatAt": "2026-03-27T13:26:30.415499+00:00",
       "error": ""
     },
     {
@@ -4965,7 +4965,7 @@
       "startedAt": "2026-03-27T13:10:27.586180+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.586180+00:00",
+      "heartbeatAt": "2026-03-27T13:26:31.034252+00:00",
       "error": ""
     },
     {
@@ -4974,7 +4974,7 @@
       "startedAt": "2026-03-27T13:10:27.588773+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.588773+00:00",
+      "heartbeatAt": "2026-03-27T13:26:32.681962+00:00",
       "error": ""
     },
     {
@@ -4983,7 +4983,7 @@
       "startedAt": "2026-03-27T13:10:27.592148+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.592148+00:00",
+      "heartbeatAt": "2026-03-27T13:26:33.124573+00:00",
       "error": ""
     },
     {
@@ -4992,7 +4992,7 @@
       "startedAt": "2026-03-27T13:10:27.594922+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.594922+00:00",
+      "heartbeatAt": "2026-03-27T13:26:33.175368+00:00",
       "error": ""
     },
     {
@@ -5001,7 +5001,7 @@
       "startedAt": "2026-03-27T13:10:27.597863+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-27T13:10:27.597863+00:00",
+      "heartbeatAt": "2026-03-27T13:26:33.205707+00:00",
       "error": ""
     },
     {
