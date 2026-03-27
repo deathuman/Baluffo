@@ -199,7 +199,7 @@ To minimize token consumption and exploration overhead, AI agents MUST favor the
 
 ### 1. Zero-Waste Search & Exploration
 - **Mandatory `ripgrep`**: Use `rg` for all cross-file queries. Do NOT use recursive `list_dir` or sequential `grep` on large directories.
-- **Manifest-First**: Check `_out/LATEST_MANIFEST.json` and `task.md` BEFORE exploring the filesystem. This HUB provides a machine-readable summary of the last build, including hash state and artifact locations.
+- **Manifest-First**: Check `_out/LATEST_MANIFEST.json` BEFORE exploring the filesystem. This HUB provides a machine-readable summary of the last build, including hash state and artifact locations.
 - **Fixed Targets**: Use `_out/latest/` to inspect recent build logs, screenshots, or packaged artifacts without searching timestamped folders.
 - **Registry Over Code**: Use `frontend/shared/ui/selectors.js` as the source of truth for ALL UI element handles. Do NOT guess class names or IDs.
 
