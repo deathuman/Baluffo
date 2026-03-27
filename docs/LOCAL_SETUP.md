@@ -47,7 +47,7 @@ Saved job record fields:
   run `npm run build:frontend-runtime-config` before testing or packaging browser pages.
 
 ## Future migration note
-`local-data-client.js` intentionally keeps a compatibility boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
+`local-data-client.js` intentionally keeps a stable abstraction boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
 
 ## Unified jobs feed generation
 - Run `python src/jobs_fetcher.py` to aggregate listings into:

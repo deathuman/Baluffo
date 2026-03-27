@@ -40,7 +40,7 @@ State the exact problem being solved in one paragraph.
 - Runtime behavior touched:
 - Persisted state touched:
 - Packaging or desktop behavior touched:
-- Backward-compatibility concern:
+- Compatibility concern:
 - Rollback trigger:
 
 ## AI Accessibility Impact
@@ -48,7 +48,7 @@ State the exact problem being solved in one paragraph.
 - Source-of-truth file after refactor:
 - Expected search path for future edits:
 - Docs or registry to update:
-- Any compatibility seam being kept temporarily:
+- Any transitional seam being kept temporarily:
 
 ## Implementation Shape
 

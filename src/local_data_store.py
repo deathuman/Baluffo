@@ -918,10 +918,8 @@ class LocalDataStore:
             }
             return {"users": users, "totals": totals}
 
-    def wipe_account_admin(self, admin_pin_or_uid: str, uid: str | None = None) -> None:
-        # Backward-compatible signature: older callers still pass (admin_pin, uid),
-        # while current bridge code passes only the uid.
-        target_uid = str(uid if uid is not None else admin_pin_or_uid or "").strip()
+    def wipe_account_admin(self, uid: str) -> None:
+        target_uid = str(uid or "").strip()
         if not target_uid:
             raise ValueError("Missing account id.")
         with LOCK:

@@ -40,17 +40,13 @@ def test_pick_canonical_listing_url_returns_shortest_listing_like() -> None:
     assert got == main
 
 
-def test_pick_canonical_listing_url_fallback_when_all_excluded() -> None:
-    """When all pages are excluded, returns first page (backward compatible)."""
-    profile = {"exclude_listing_path_tokens": ["/careers"]}
-    # Mock: we need a domain that has exclusions covering everything. Use a list where all have /our-offices.
+def test_pick_canonical_listing_url_returns_none_when_all_excluded() -> None:
+    """When all pages are excluded, no canonical listing URL should be chosen."""
     pages = [
         "https://supercell.com/en/careers/our-offices/",
         "https://supercell.com/en/careers/joining-supercell/",
     ]
-    # supercell profile excludes both; so listing_like is [] and we fall back to first.
-    got = pick_canonical_listing_url(pages)
-    assert got == pages[0]
+    assert pick_canonical_listing_url(pages) is None
 
 
 def test_pick_canonical_listing_url_empty_returns_none() -> None:

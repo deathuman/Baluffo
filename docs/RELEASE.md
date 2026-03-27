@@ -30,7 +30,7 @@ Every release must track these versions explicitly:
 Compatibility rules:
 
 - Patch and minor upgrades are allowed by default if checksum/signature validation, startup health checks, and declared migrations pass.
-- Major upgrades require explicit compatibility sign-off, a documented migration plan, rollback criteria, and a successful staging rehearsal.
+- Major upgrades require explicit migration sign-off, a documented migration plan, rollback criteria, and a successful staging rehearsal.
 - Downgrades are blocked by default and only allowed when `rollback_allowed=true`, the target version passes health checks, and the data rollback path has been validated.
 
 Updater and manifest rules:

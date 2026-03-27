@@ -142,24 +142,6 @@ def test_static_adapter_uses_jobs_fetcher_diagnostics_patch_surface() -> None:
         jf.STUDIO_SOURCE_REGISTRY = previous
 
 
-def test_package_modules_do_not_import_legacy_impl(repo_root: Path) -> None:
-    package_root = repo_root / "src" / "jobs"
-    targets = [
-        package_root / "canonicalize.py",
-        package_root / "dedup.py",
-        package_root / "parsers.py",
-        package_root / "registry.py",
-        package_root / "reporting.py",
-        package_root / "state.py",
-        package_root / "transport.py",
-        package_root / "pipeline.py",
-    ]
-    for target in targets:
-        text = target.read_text(encoding="utf-8")
-        assert "from src.jobs import legacy_impl" not in text, str(target)
-        assert "import src.jobs.legacy_impl" not in text, str(target)
-
-
 def test_pipeline_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "pipeline.py"
     text = target.read_text(encoding="utf-8")
@@ -220,27 +202,6 @@ def test_jobs_modules_avoid_new_broad_common_barrel_imports(repo_root: Path) -> 
             assert snippet not in text, str(target)
 
 
-def test_jobs_common_declares_curated_compatibility_surface(repo_root: Path) -> None:
-    target = repo_root / "src" / "jobs" / "common" / "__init__.py"
-    text = target.read_text(encoding="utf-8")
-    assert "PREFERRED_IMPORT_SURFACES =" in text
-    assert "CURATED_COMPAT_EXPORTS =" in text
-    assert "Legacy compatibility wrappers and re-exports live below this point." in text
-    curated_section = text.split("CURATED_COMPAT_EXPORTS =", 1)[1].split("__all__ =", 1)[0]
-    assert '"STUDIO_SOURCE_REGISTRY"' in curated_section
-    assert '"load_social_config"' in curated_section
-    assert '"fetch_with_retries"' in curated_section
-    assert '"DEFAULT_CANONICAL_STRICT_URL"' not in curated_section
-    assert '"SOURCE_APPROVAL_STATE_PATH"' not in curated_section
-    assert '"TARGET_PROFESSIONS"' not in curated_section
-    assert '"SOCIAL_SOURCE_NAMES"' not in curated_section
-    assert '"DEFAULT_STUDIO_SOURCE_REGISTRY"' not in curated_section
-    assert '"load_studio_source_registry"' not in curated_section
-    assert '"DEFAULT_SOCIAL_CONFIG"' not in curated_section
-    assert '"is_supported_redirect_url"' not in curated_section
-    assert '"resolve_supported_redirect_url"' not in curated_section
-
-
 def test_jobs_common_migrated_modules_keep_direct_owning_imports(repo_root: Path) -> None:
     social_adapter = (repo_root / "src" / "jobs" / "adapters" / "social.py").read_text(
         encoding="utf-8"
@@ -259,19 +220,3 @@ def test_jobs_common_migrated_modules_keep_direct_owning_imports(repo_root: Path
     )
     assert "registry_entries as common_registry_entries" in registry_module
     assert "from src.jobs.common.diagnostics import set_source_diagnostics" in static_adapter
-
-
-def test_jobs_fetcher_exposes_curated_package_surface() -> None:
-    assert callable(jf.run_pipeline)
-    assert callable(jf.parse_args)
-    assert callable(jf.main)
-    assert callable(jf.default_source_loaders)
-    assert callable(jf.set_source_diagnostics)
-    assert callable(jf.build_redirect_resolver)
-    assert callable(jf.parse_google_sheets_csv)
-    assert callable(jf.canonicalize_job)
-    assert callable(jf.deduplicate_jobs)
-    assert isinstance(jf.__all__, list)
-    assert "run_pipeline" in jf.__all__
-    assert "default_source_loaders" in jf.__all__
-    assert "set_source_diagnostics" in jf.__all__

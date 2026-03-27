@@ -1,6 +1,12 @@
 from unittest import mock
 
 from src import jobs_fetcher
+from src.jobs import canonicalize as jobs_canonicalize
+from src.jobs import dedup as jobs_dedup
+
+
+jobs_fetcher.canonicalize_job = jobs_canonicalize.canonicalize_job
+jobs_fetcher.deduplicate_jobs = jobs_dedup.deduplicate_jobs
 
 
 def test_pipeline_output_contract_preserves_camelcase_schema() -> None:
@@ -26,7 +32,7 @@ def test_pipeline_output_contract_preserves_camelcase_schema() -> None:
 
     merged, _stats = jobs_fetcher.deduplicate_jobs([payload])
     assert len(merged) == 1
-    row = merged[0]
+    row = merged[0].to_dict()
 
     expected_keys = {
         "title",

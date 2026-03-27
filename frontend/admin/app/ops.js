@@ -29,12 +29,15 @@ export function createAdminOpsController({
   adminActions,
   escapeHtml,
   onBridgeStatusChange,
-  onLiveFetchDetected,
-  onLiveDiscoveryDetected,
   bridgeStatusPollIntervalMs,
   idlePollIntervalMs
 }) {
   let lastBridgeStatus = "checking";
+
+  function maybeUnrefTimer(timer) {
+    timer?.unref?.();
+    return timer;
+  }
 
   function setOpsPlaceholders(message = "Operations health unavailable.") {
     if (refs.adminSyncStatusEl) {
@@ -64,9 +67,9 @@ export function createAdminOpsController({
   function scheduleOpsHealthPolling(delayMs) {
     stopOpsHealthPolling();
     const waitMs = Math.max(600, Number(delayMs) || 10000);
-    state.opsHealthPollTimer = setTimeout(() => {
+    state.opsHealthPollTimer = maybeUnrefTimer(setTimeout(() => {
       loadOpsHealthData({ fromPoll: true }).catch(() => {});
-    }, waitMs);
+    }, waitMs));
   }
 
   async function loadOpsHealthData(options = {}) {
@@ -117,18 +120,6 @@ export function createAdminOpsController({
       setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
       setBusyFlag("liveSyncRunning", liveTypes.has("sync"));
       setBusyFlag("livePipelineRunning", liveTypes.has("pipeline"));
-      if (liveTypes.has("fetch") && !state.adminBusyState.fetcherWatch) {
-        const activeFetchRun = liveTaskRows.find(
-          row => String(row?.taskType || row?.type || "").toLowerCase() === "fetch"
-        ) || null;
-        onLiveFetchDetected?.(activeFetchRun);
-      }
-      if (liveTypes.has("discovery") && !state.adminBusyState.discoveryWatch) {
-        const activeDiscoveryRun = liveTaskRows.find(
-          row => String(row?.taskType || row?.type || "").toLowerCase() === "discovery"
-        ) || null;
-        onLiveDiscoveryDetected?.(activeDiscoveryRun);
-      }
 
       renderAdminOpsAlerts(refs.adminOpsAlertsEl, health?.alerts || [], {
         onAck: async alertId => {
@@ -181,9 +172,9 @@ export function createAdminOpsController({
   function startBridgeStatusWatch() {
     stopBridgeStatusWatch();
     pollBridgeStatus({ forceChecking: true }).catch(() => {});
-    state.bridgeStatusPollTimer = setInterval(() => {
+    state.bridgeStatusPollTimer = maybeUnrefTimer(setInterval(() => {
       pollBridgeStatus().catch(() => {});
-    }, bridgeStatusPollIntervalMs);
+    }, bridgeStatusPollIntervalMs));
   }
 
   function stopBridgeStatusWatch() {

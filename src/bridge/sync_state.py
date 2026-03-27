@@ -178,7 +178,6 @@ class SyncState:
             runtime_state = {**dict(SYNC_STATUS), **self.load_sync_runtime_state()}
         return runtime_state
 
-    # Static methods for backward compatibility with global state access
     @staticmethod
     def get_active_sync_runs() -> set[str]:
         """Get copy of active sync runs set."""
@@ -216,48 +215,6 @@ class SyncState:
             ACTIVE_SYNC_THREADS.pop(str(run_id), None)
 
 
-# Module-level convenience functions for backward compatibility
-# These work with the default SyncState instance
-
-_default_sync_state: SyncState | None = None
-
-
-def get_default_sync_state() -> SyncState:
-    """Get or create the default SyncState instance."""
-    global _default_sync_state
-    if _default_sync_state is None:
-        _default_sync_state = SyncState()
-    return _default_sync_state
-
-
-def load_sync_runtime_state() -> dict[str, Any]:
-    """Load sync runtime state using default paths (backward compatibility)."""
-    return get_default_sync_state().load_sync_runtime_state()
-
-
-def save_sync_runtime_state(payload: dict[str, Any]) -> dict[str, Any]:
-    """Save sync runtime state using default paths (backward compatibility)."""
-    return get_default_sync_state().save_sync_runtime_state(payload)
-
-
-def set_sync_status(
-    *,
-    action: str = "",
-    result: str = "",
-    error: str = "",
-    pulled: bool = False,
-    pushed: bool = False,
-) -> None:
-    """Set sync status using default state (backward compatibility)."""
-    get_default_sync_state().set_sync_status(
-        action=action,
-        result=result,
-        error=error,
-        pulled=pulled,
-        pushed=pushed,
-    )
-
-
 __all__ = [
     # State variables
     "SYNC_STATE_LOCK",
@@ -275,9 +232,4 @@ __all__ = [
     "now_iso",
     # Class
     "SyncState",
-    # Backward-compatible functions
-    "get_default_sync_state",
-    "load_sync_runtime_state",
-    "save_sync_runtime_state",
-    "set_sync_status",
 ]

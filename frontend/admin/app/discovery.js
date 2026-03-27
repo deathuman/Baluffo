@@ -54,6 +54,11 @@ export function createAdminDiscoveryController({
   scheduleOpsHealthPolling,
   _loadDiscoveryData
 }) {
+  function maybeUnrefTimer(timer) {
+    timer?.unref?.();
+    return timer;
+  }
+
   function populateDiscoveryConfigForm(savedConfig = {}, { force = false } = {}) {
     if (!refs.adminDiscoveryAutoApproveToggleEl) return;
     if (state.discoveryConfigDirty && !force) return;
@@ -98,17 +103,7 @@ export function createAdminDiscoveryController({
   }
 
   function setDiscoveryProgress(view) {
-    // Validate DOM elements before attempting to update progress
-    if (!refs.adminDiscoveryProgressEl) {
-      console.warn("[Admin Discovery] Progress root element not available");
-      return;
-    }
-    if (!refs.adminDiscoveryProgressBarEl) {
-      console.warn("[Admin Discovery] Progress bar element not available");
-      return;
-    }
-    if (!refs.adminDiscoveryProgressLabelEl) {
-      console.warn("[Admin Discovery] Progress label element not available");
+    if (!refs.adminDiscoveryProgressEl || !refs.adminDiscoveryProgressBarEl || !refs.adminDiscoveryProgressLabelEl) {
       return;
     }
 
@@ -413,7 +408,6 @@ export function createAdminDiscoveryController({
     if (optimisticStartedAtMs > 0) {
       state.discoveryLaunchAtMs = optimisticStartedAtMs;
     }
-    state.discoveryCompletionPollDeadline = state.discoveryLaunchAtMs + state.discoveryReportPollTimeoutMs;
     state.discoveryLogRemoteOffset = 0;
     state.discoveryLiveProgressState = {
       phaseLabel: "",
@@ -442,23 +436,16 @@ export function createAdminDiscoveryController({
   }
 
   function scheduleDiscoveryCompletionPoll(delayMs) {
-    state.discoveryCompletionPollTimer = setTimeout(() => {
+    state.discoveryCompletionPollTimer = maybeUnrefTimer(setTimeout(() => {
       pollDiscoveryCompletion().catch(err => {
         logAdminError("Discovery completion poll failed", err);
         scheduleDiscoveryCompletionPoll(state.discoveryReportPollIntervalMs);
       });
-    }, delayMs);
+    }, delayMs));
   }
 
   async function pollDiscoveryCompletion() {
     const now = Date.now();
-    if (now >= state.discoveryCompletionPollDeadline) {
-      appendDiscoveryLog("Could not confirm discovery completion from report within timeout window.", "warn");
-      clearOptimisticDiscoveryRun();
-      setBusyFlag("liveDiscoveryRunning", false);
-      stopDiscoveryCompletionWatch();
-      return;
-    }
 
     const [report] = await Promise.all([
       getBridge("/discovery/report"),

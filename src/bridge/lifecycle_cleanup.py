@@ -56,7 +56,6 @@ def _normalize_history_duration(row: dict[str, Any]) -> dict[str, Any]:
 def reset_admin_task_lifecycle(data_dir: Path) -> dict[str, Any]:
     root = Path(data_dir).resolve()
     history_path = root / "admin-run-history.json"
-    legacy_path = root / "admin-run-history.legacy-pre-runid.json"
     task_state_path = root / "admin-task-state.json"
     fetch_report_path = root / "jobs-fetch-report.json"
     fetch_tasks_path = root / "jobs-fetch-tasks.json"
@@ -65,11 +64,8 @@ def reset_admin_task_lifecycle(data_dir: Path) -> dict[str, Any]:
     pending_path = root / "source-registry-pending.json"
 
     history_rows = [_normalize_history_duration(row) for row in _load_history(history_path)]
-    legacy_rows = [row for row in history_rows if not str(row.get("runId") or "").strip()]
     next_history = [row for row in history_rows if str(row.get("runId") or "").strip()]
 
-    if legacy_rows:
-        _write_json(legacy_path, legacy_rows)
     _write_json(history_path, next_history)
     _write_json(task_state_path, {})
     _write_json(
@@ -162,8 +158,6 @@ def reset_admin_task_lifecycle(data_dir: Path) -> dict[str, Any]:
         "ok": True,
         "dataDir": str(root),
         "keptHistoryRows": len(next_history),
-        "archivedLegacyRows": len(legacy_rows),
-        "archivedLegacyPath": str(legacy_path) if legacy_rows else "",
     }
 
 

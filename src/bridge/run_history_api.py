@@ -218,7 +218,6 @@ def _row_score(row: dict[str, Any]) -> tuple[int, int, int]:
 
 def _collapse_duplicate_history_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     run_id_rows: dict[tuple[str, str], dict[str, Any]] = {}
-    legacy_rows: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -227,7 +226,6 @@ def _collapse_duplicate_history_rows(rows: list[dict[str, Any]]) -> list[dict[st
             continue
         run_id = str(row.get("runId") or "").strip()
         if not run_id:
-            legacy_rows.append(dict(row))
             continue
         key = (row_type, run_id)
         existing = run_id_rows.get(key)
@@ -237,7 +235,7 @@ def _collapse_duplicate_history_rows(rows: list[dict[str, Any]]) -> list[dict[st
             merged["runId"] = run_id
             merged["id"] = str(merged.get("id") or run_id)
             run_id_rows[key] = merged
-    combined = [*legacy_rows, *run_id_rows.values()]
+    combined = list(run_id_rows.values())
     combined.sort(key=lambda item: str(item.get("finishedAt") or item.get("startedAt") or ""))
     return combined
 

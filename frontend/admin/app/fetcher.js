@@ -65,7 +65,6 @@ export function createAdminFetcherController({
   loadOpsHealthData,
   _startOpsHealthPolling,
   fetchReportPollIntervalMs,
-  fetchReportPollTimeoutMs,
   jobsAutoRefreshSignalKey,
   jobsFetcherCommand,
   jobsFetcherTaskLabel,
@@ -73,6 +72,11 @@ export function createAdminFetcherController({
   createLogEvent,
   appendLogRow
 }) {
+  function maybeUnrefTimer(timer) {
+    timer?.unref?.();
+    return timer;
+  }
+
   function formatDurationCompact(ms) {
     const value = Math.max(0, Number(ms) || 0);
     if (value < 1000) return `${value}ms`;
@@ -83,17 +87,7 @@ export function createAdminFetcherController({
   }
 
   function setFetcherProgress(view) {
-    // Validate DOM elements before attempting to update progress
-    if (!refs.adminFetcherProgressEl) {
-      console.warn("[Admin Fetcher] Progress root element not available");
-      return;
-    }
-    if (!refs.adminFetcherProgressBarEl) {
-      console.warn("[Admin Fetcher] Progress bar element not available");
-      return;
-    }
-    if (!refs.adminFetcherProgressLabelEl) {
-      console.warn("[Admin Fetcher] Progress label element not available");
+    if (!refs.adminFetcherProgressEl || !refs.adminFetcherProgressBarEl || !refs.adminFetcherProgressLabelEl) {
       return;
     }
 
@@ -248,13 +242,13 @@ export function createAdminFetcherController({
 
   function scheduleFetcherLogPoll(delayMs) {
     stopFetcherLogPolling();
-    state.fetcherLogPollTimer = setTimeout(() => {
+    state.fetcherLogPollTimer = maybeUnrefTimer(setTimeout(() => {
       loadFetcherLogChunk().catch(() => null).finally(() => {
         if (state.adminBusyState.fetcherWatch) {
           scheduleFetcherLogPoll(delayMs);
         }
       });
-    }, Math.max(250, Number(delayMs) || 900));
+    }, Math.max(250, Number(delayMs) || 900)));
   }
 
   function _formatFetcherRuntimeOptions(report) {
@@ -592,7 +586,6 @@ export function createAdminFetcherController({
     if (optimisticStartedAtMs > 0) {
       state.fetcherLaunchAtMs = optimisticStartedAtMs;
     }
-    state.fetcherCompletionPollDeadline = state.fetcherLaunchAtMs + fetchReportPollTimeoutMs;
     state.fetcherLogRemoteOffset = 0;
     state.fetcherLiveProgressState = {
       summarySignature: "",
@@ -623,23 +616,16 @@ export function createAdminFetcherController({
   }
 
   function scheduleFetcherCompletionPoll(delayMs) {
-    state.fetcherCompletionPollTimer = setTimeout(() => {
+    state.fetcherCompletionPollTimer = maybeUnrefTimer(setTimeout(() => {
       pollFetcherCompletion().catch(err => {
         logAdminError("Fetcher completion poll failed", err);
         scheduleFetcherCompletionPoll(fetchReportPollIntervalMs);
       });
-    }, delayMs);
+    }, delayMs));
   }
 
   async function pollFetcherCompletion() {
     const now = Date.now();
-    if (now >= state.fetcherCompletionPollDeadline) {
-      appendFetcherLog("Could not confirm completion from report within timeout window.", "warn");
-      setBusyFlag("liveFetchRunning", false);
-      clearOptimisticFetchRun();
-      stopFetcherCompletionWatch();
-      return;
-    }
 
     const report = await fetchJobsFetchReportJson();
 

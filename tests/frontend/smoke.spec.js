@@ -32,7 +32,7 @@ async function cancelSignIn(page) {
   await expect(page.locator("#local-auth-name-input")).toBeHidden();
 }
 
-test("index compatibility entry redirects to jobs", async ({ page }) => {
+test("index entry redirects to jobs", async ({ page }) => {
   await page.goto("/index.html");
   await page.waitForURL("**/jobs.html");
   await expect(page.locator("#jobs-list")).toBeVisible();

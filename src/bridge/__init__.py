@@ -25,12 +25,8 @@ from src.bridge.sync_state import (
     SYNC_STATE_LOCK,
     SYNC_STATUS,
     SyncState,
-    get_default_sync_state,
-    load_sync_runtime_state,
     now_iso,
     now_utc,
-    save_sync_runtime_state,
-    set_sync_status,
 )
 
 __all__ = [
@@ -43,10 +39,6 @@ __all__ = [
     "SYNC_CONFIG",
     # State class and functions
     "SyncState",
-    "get_default_sync_state",
-    "load_sync_runtime_state",
-    "save_sync_runtime_state",
-    "set_sync_status",
     # Datetime utilities
     "now_iso",
     "now_utc",

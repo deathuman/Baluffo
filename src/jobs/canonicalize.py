@@ -361,14 +361,6 @@ def canonicalize_google_sheets_rows(
     )
 
 
-def canonical_job_to_legacy_dict(job: CanonicalJob) -> dict[str, Any]:
-    return job.to_dict()
-
-
-def canonical_jobs_to_legacy_dicts(rows: Sequence[CanonicalJob]) -> list[dict[str, Any]]:
-    return [row.to_dict() for row in rows]
-
-
 class CanonicalNormalizer(JobProcessor):
     """Structural normalizer implementing the JobProcessor protocol."""
 

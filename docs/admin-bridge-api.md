@@ -112,7 +112,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
   - `pipeline`: bridge pipeline runtime state
 - GET routes are read-only for lifecycle state. Loading `/discovery/report`, `/ops/history`, `/ops/task-state`, or `/ops/fetch-report` must not auto-finish or prune tasks.
 - `data/admin-run-history.json` is a derived summary surface. It records starts and completions, but it is not the source of truth for liveness.
-- To reset lifecycle/debug artifacts after this migration or before a clean debugging session, run:
+- To reset current lifecycle/debug artifacts before a clean debugging session, run:
   - `python scripts/reset_admin_task_lifecycle.py --data-dir data`
 
 - Bridge-started fetch runs enable social by default unless the request payload explicitly sets `socialEnabled: false`.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compatibility wrapper for the refactored jobs pipeline package."""
+"""CLI entrypoint for the refactored jobs pipeline package."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from pathlib import Path
 
 try:
     from src.jobs import common as _common
-    from src.jobs import dedup as _dedup
     from src.jobs import parsers as _parsers
     from src.jobs import pipeline as _pipeline
     from src.jobs import registry as _registry
@@ -27,7 +26,6 @@ except ModuleNotFoundError:
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
     from src.jobs import common as _common
-    from src.jobs import dedup as _dedup
     from src.jobs import parsers as _parsers
     from src.jobs import pipeline as _pipeline
     from src.jobs import registry as _registry
@@ -38,7 +36,6 @@ except ModuleNotFoundError:
     from src.jobs.adapters import provider_api as _provider_api
     from src.jobs.adapters import social as _social
     from src.jobs.adapters import static as _static
-from src.jobs import canonicalize as _canonicalize
 from src.jobs.canonicalize import (
     LIGHTWEIGHT_OUTPUT_FIELDS,
     OPTIONAL_FIELDS,
@@ -62,19 +59,7 @@ from src.jobs.registry import (
 
 
 def run_pipeline(*args, **kwargs):
-    """Compatibility wrapper that keeps redirect stats testable.
-
-    Older tests patch `jobs_fetcher.build_redirect_resolver` to inject a fake
-    resolver and assert on `redirect_candidates` / `redirect_resolved` stats
-    inside the fetch report. After the refactor to `src.jobs.pipeline`, the
-    pipeline module started using its own `build_redirect_resolver` binding,
-    which bypassed that patch.
-
-    To preserve the external contract, we temporarily route the pipeline's
-    `build_redirect_resolver` through this module-level function, so that
-    tests (and callers) can continue to override it via
-    `patch.object(jobs_fetcher, "build_redirect_resolver", ...)`.
-    """
+    """Run the jobs pipeline with the current module-level resolver hook."""
     previous = getattr(_pipeline, "build_redirect_resolver", None)
     try:
         _pipeline.build_redirect_resolver = build_redirect_resolver  # type: ignore[assignment]
@@ -214,10 +199,6 @@ def registry_entries(
     )
 
 
-def _legacy_row(value):
-    return value.to_dict() if hasattr(value, "to_dict") else value
-
-
 def build_redirect_resolver(*args, **kwargs):
     previous_httpx = _transport.httpx
     _transport.httpx = httpx
@@ -232,26 +213,6 @@ def maybe_fetch_kojima_job_listing_html(*args, **kwargs):
 
     _html_parsers.urlopen = urlopen
     return _html_parsers.maybe_fetch_kojima_job_listing_html(*args, **kwargs)
-
-
-def canonicalize_job(*args, **kwargs):
-    job = _common.canonicalize_job(*args, **kwargs)
-    return _legacy_row(job) if job is not None else None
-
-
-def canonicalize_job_with_reason(*args, **kwargs):
-    job, reason = _common.canonicalize_job_with_reason(*args, **kwargs)
-    return (_legacy_row(job) if job is not None else None), reason
-
-
-def canonicalize_google_sheets_rows(*args, **kwargs):
-    rows, drop_reasons, stats = _canonicalize.canonicalize_google_sheets_rows(*args, **kwargs)
-    return [_legacy_row(row) for row in rows], drop_reasons, stats
-
-
-def deduplicate_jobs(*args, **kwargs):
-    rows, stats = _dedup.deduplicate_jobs(*args, **kwargs)
-    return [_legacy_row(row) for row in rows], stats
 
 
 __all__ = [
@@ -291,12 +252,8 @@ __all__ = [
     "STUDIO_SOURCE_REGISTRY",
     "UNKNOWN_COMPANY_LABEL",
     "build_redirect_resolver",
-    "canonicalize_google_sheets_rows",
-    "canonicalize_job",
-    "canonicalize_job_with_reason",
     "clean_text",
     "datetime",
-    "deduplicate_jobs",
     "default_fetch_text",
     "default_source_loaders",
     "env_flag",

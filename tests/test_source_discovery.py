@@ -155,105 +155,115 @@ def test_adapter_queue_caps_use_updated_provider_growth_defaults() -> None:
     }
 
 
-def test_apply_queue_balancing_prefers_provider_candidates_over_static_in_bounded_runs() -> None:
-    candidates = [
+def test_apply_queue_balancing_covers_provider_bias_and_google_sheet_cap_bypass() -> None:
+    cases = [
         {
-            "name": "Static A",
-            "studio": "Static A",
-            "adapter": "static",
-            "score": 99,
-            "evidenceScore": 99,
-            "jobsFound": 5,
-            "pages": ["https://static-a.example/jobs"],
+            "name": "provider bias in bounded runs",
+            "candidates": [
+                {
+                    "name": "Static A",
+                    "studio": "Static A",
+                    "adapter": "static",
+                    "score": 99,
+                    "evidenceScore": 99,
+                    "jobsFound": 5,
+                    "pages": ["https://static-a.example/jobs"],
+                },
+                {
+                    "name": "Static B",
+                    "studio": "Static B",
+                    "adapter": "static",
+                    "score": 98,
+                    "evidenceScore": 98,
+                    "jobsFound": 5,
+                    "pages": ["https://static-b.example/jobs"],
+                },
+                {
+                    "name": "Greenhouse A",
+                    "studio": "Greenhouse A",
+                    "adapter": "greenhouse",
+                    "score": 80,
+                    "evidenceScore": 80,
+                    "jobsFound": 4,
+                    "api_url": "https://boards-api.greenhouse.io/v1/boards/a/jobs?content=true",
+                },
+                {
+                    "name": "Lever A",
+                    "studio": "Lever A",
+                    "adapter": "lever",
+                    "score": 79,
+                    "evidenceScore": 79,
+                    "jobsFound": 4,
+                    "api_url": "https://api.lever.co/v0/postings/a?mode=json",
+                },
+                {
+                    "name": "Ashby A",
+                    "studio": "Ashby A",
+                    "adapter": "ashby",
+                    "score": 78,
+                    "evidenceScore": 78,
+                    "jobsFound": 4,
+                    "board_url": "https://jobs.ashbyhq.com/a",
+                },
+                {
+                    "name": "SmartRecruiters A",
+                    "studio": "SmartRecruiters A",
+                    "adapter": "smartrecruiters",
+                    "score": 77,
+                    "evidenceScore": 77,
+                    "jobsFound": 4,
+                    "api_url": "https://api.smartrecruiters.com/v1/companies/A/postings",
+                },
+            ],
+            "top_n": 4,
+            "expected_queued": ["greenhouse", "lever", "ashby", "smartrecruiters"],
+            "expected_static_queued": 0,
+            "expected_static_deferred": 2,
+            "expected_static_healthy_deferred": 2,
+            "expected_deferred_count": 2,
+            "expected_provider_target": 2,
         },
         {
-            "name": "Static B",
-            "studio": "Static B",
-            "adapter": "static",
-            "score": 98,
-            "evidenceScore": 98,
-            "jobsFound": 5,
-            "pages": ["https://static-b.example/jobs"],
-        },
-        {
-            "name": "Greenhouse A",
-            "studio": "Greenhouse A",
-            "adapter": "greenhouse",
-            "score": 80,
-            "evidenceScore": 80,
-            "jobsFound": 4,
-            "api_url": "https://boards-api.greenhouse.io/v1/boards/a/jobs?content=true",
-        },
-        {
-            "name": "Lever A",
-            "studio": "Lever A",
-            "adapter": "lever",
-            "score": 79,
-            "evidenceScore": 79,
-            "jobsFound": 4,
-            "api_url": "https://api.lever.co/v0/postings/a?mode=json",
-        },
-        {
-            "name": "Ashby A",
-            "studio": "Ashby A",
-            "adapter": "ashby",
-            "score": 78,
-            "evidenceScore": 78,
-            "jobsFound": 4,
-            "board_url": "https://jobs.ashbyhq.com/a",
-        },
-        {
-            "name": "SmartRecruiters A",
-            "studio": "SmartRecruiters A",
-            "adapter": "smartrecruiters",
-            "score": 77,
-            "evidenceScore": 77,
-            "jobsFound": 4,
-            "api_url": "https://api.smartrecruiters.com/v1/companies/A/postings",
+            "name": "google sheet cap bypass",
+            "candidates": [
+                {
+                    "name": f"Sheet Static {index}",
+                    "studio": f"Sheet Static {index}",
+                    "adapter": "static",
+                    "score": 90 - index,
+                    "evidenceScore": 70,
+                    "jobsFound": 2,
+                    "pages": [f"https://sheet-{index}.example/jobs"],
+                    "discoveryStage": "sheet_directory",
+                    "sourceDirectory": "game_studios_sheet",
+                    "careersUrl": f"https://sheet-{index}.example/jobs",
+                    "sourceDirectoryEntryUrl": f"https://sheet-{index}.example/jobs",
+                }
+                for index in range(10)
+            ],
+            "top_n": 0,
+            "expected_len": 10,
+            "expected_static_queued": 10,
+            "expected_static_deferred": 0,
+            "expected_static_healthy_deferred": 0,
         },
     ]
 
-    queued, report_rows, stats = sd.apply_queue_balancing(candidates, top_n=4)
-    assert [str(row.get("adapter") or "") for row in queued] == [
-        "greenhouse",
-        "lever",
-        "ashby",
-        "smartrecruiters",
-    ]
-    assert int((stats.get("queuedByAdapter") or {}).get("static") or 0) == 0
-    assert int((stats.get("deferredByAdapter") or {}).get("static") or 0) == 2
-    assert int((stats.get("healthyButDeferredByAdapter") or {}).get("static") or 0) == 2
-    assert len([row for row in report_rows if bool(row.get("deferred"))]) == 2
-    assert int(stats.get("providerTarget") or 0) == 2
-
-
-def test_apply_queue_balancing_does_not_adapter_cap_google_sheet_candidates() -> None:
-    candidates = []
-    for index in range(10):
-        candidates.append(
-            {
-                "name": f"Sheet Static {index}",
-                "studio": f"Sheet Static {index}",
-                "adapter": "static",
-                "score": 90 - index,
-                "evidenceScore": 70,
-                "jobsFound": 2,
-                "pages": [f"https://sheet-{index}.example/jobs"],
-                "discoveryStage": "sheet_directory",
-                "sourceDirectory": "game_studios_sheet",
-                "careersUrl": f"https://sheet-{index}.example/jobs",
-                "sourceDirectoryEntryUrl": f"https://sheet-{index}.example/jobs",
-            }
-        )
-
-    queued, report_rows, stats = sd.apply_queue_balancing(candidates, top_n=0)
-
-    assert len(queued) == 10
-    assert len([row for row in report_rows if bool(row.get("deferred"))]) == 0
-    assert int((stats.get("queuedByAdapter") or {}).get("static") or 0) == 10
-    assert int((stats.get("deferredByAdapter") or {}).get("static") or 0) == 0
-    assert int((stats.get("healthyButDeferredByAdapter") or {}).get("static") or 0) == 0
-    assert "adapter_cap" not in (stats.get("deferredReasons") or {})
+    for case in cases:
+        queued, report_rows, stats = sd.apply_queue_balancing(case["candidates"], top_n=case["top_n"])
+        if "expected_queued" in case:
+            assert [str(row.get("adapter") or "") for row in queued] == case["expected_queued"], case["name"]
+        if "expected_len" in case:
+            assert len(queued) == case["expected_len"], case["name"]
+        assert int((stats.get("queuedByAdapter") or {}).get("static") or 0) == case["expected_static_queued"], case["name"]
+        assert int((stats.get("deferredByAdapter") or {}).get("static") or 0) == case["expected_static_deferred"], case["name"]
+        assert int((stats.get("healthyButDeferredByAdapter") or {}).get("static") or 0) == case["expected_static_healthy_deferred"], case["name"]
+        if "expected_deferred_count" in case:
+            assert len([row for row in report_rows if bool(row.get("deferred"))]) == case["expected_deferred_count"], case["name"]
+            assert int(stats.get("providerTarget") or 0) == case["expected_provider_target"], case["name"]
+        else:
+            assert len([row for row in report_rows if bool(row.get("deferred"))]) == 0, case["name"]
+            assert "adapter_cap" not in (stats.get("deferredReasons") or {}), case["name"]
 
 
 def test_apply_sheet_directory_static_probe_cap_bypasses_cap_for_uncapped_mode() -> None:
@@ -1350,63 +1360,113 @@ def test_run_discovery_emits_phase_logs_for_candidate_generation() -> None:
             sd.STUDIO_SEEDS = prev_seeds
 
 
-def test_run_discovery_skips_duplicate_endpoint_fingerprints() -> None:
-    with workspace_tmpdir("source-discovery") as root:
-        prev_paths = (
-            sd.ACTIVE_PATH,
-            sd.PENDING_PATH,
-            sd.REJECTED_PATH,
-            sd.DISCOVERY_CANDIDATES_PATH,
-            sd.DISCOVERY_REPORT_PATH,
-            sd.URL_PATCH_MANIFEST_PATH,
-        )
-        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
-        prev_seeds = list(sd.STUDIO_SEEDS)
-        try:
-            sd.ACTIVE_PATH = root / "active.json"
-            sd.PENDING_PATH = root / "pending.json"
-            sd.REJECTED_PATH = root / "rejected.json"
-            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
-            sd.DISCOVERY_REPORT_PATH = root / "report.json"
-            sd.STUDIO_SEEDS = []
-            sd.STATIC_DISCOVERY_CANDIDATES = [
+def test_run_discovery_deduplicates_duplicate_endpoints_and_stale_pending_rows() -> None:
+    cases = [
+        {
+            "name": "duplicate endpoint fingerprints",
+            "kind": "run_discovery",
+            "setup": {
+                "static": [
+                    {
+                        "name": "Demo Lever A",
+                        "studio": "Demo",
+                        "adapter": "lever",
+                        "account": "demo",
+                        "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
+                    },
+                    {
+                        "name": "Demo Lever A Duplicate",
+                        "studio": "Demo",
+                        "adapter": "lever",
+                        "account": "demo2",
+                        "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
+                        "discoveryMethod": "pattern",
+                    },
+                ],
+                "fetcher": lambda *_: json.dumps([{"id": 1}]),
+            },
+            "expected_queued": 1,
+            "expected_skipped": 1,
+            "expected_duplicate_reasons": True,
+        },
+        {
+            "name": "stale pending duplicate",
+            "kind": "unique_sources",
+            "rows": [
                 {
-                    "name": "Demo Lever A",
-                    "studio": "Demo",
-                    "adapter": "lever",
-                    "account": "demo",
-                    "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
+                    "name": "Fresh Board",
+                    "studio": "Fresh Board",
+                    "adapter": "greenhouse",
+                    "slug": "fresh-board",
+                    "jobsFound": 3,
+                    "sampleCount": 3,
+                    "lastProbedAt": "2026-03-23T00:00:00Z",
                 },
                 {
-                    "name": "Demo Lever A Duplicate",
-                    "studio": "Demo",
-                    "adapter": "lever",
-                    "account": "demo2",
-                    "api_url": "https://api.lever.co/v0/postings/demo?mode=json",
-                    "discoveryMethod": "pattern",
+                    "name": "Fresh Board",
+                    "studio": "Fresh Board",
+                    "adapter": "greenhouse",
+                    "slug": "fresh-board",
+                    "jobsFound": 0,
+                    "sampleCount": 0,
+                    "lastProbedAt": "2026-03-20T00:00:00Z",
                 },
-            ]
-            report = sd.run_discovery(
-                timeout_s=5,
-                top_n=0,
-                mode="dynamic",
-                include_web_search=False,
-                fetcher=lambda *_: json.dumps([{"id": 1}]),
-            )
-            assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
-            assert int(report["summary"].get("skippedDuplicateCount") or 0) == 1
-            assert "duplicateReasons" in report["summary"]
-        finally:
-            (
-                sd.ACTIVE_PATH,
-                sd.PENDING_PATH,
-                sd.REJECTED_PATH,
-                sd.DISCOVERY_CANDIDATES_PATH,
-                sd.DISCOVERY_REPORT_PATH,
-                sd.URL_PATCH_MANIFEST_PATH,
-            ) = prev_paths
-            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
-            sd.STUDIO_SEEDS = prev_seeds
+            ],
+            "expected_len": 1,
+            "expected_id": "greenhouse:slug:fresh-board",
+            "expected_jobs_found": 3,
+            "expected_sample_count": 3,
+        },
+    ]
+
+    for case in cases:
+        if case["kind"] == "run_discovery":
+            with workspace_tmpdir("source-discovery") as root:
+                prev_paths = (
+                    sd.ACTIVE_PATH,
+                    sd.PENDING_PATH,
+                    sd.REJECTED_PATH,
+                    sd.DISCOVERY_CANDIDATES_PATH,
+                    sd.DISCOVERY_REPORT_PATH,
+                    sd.URL_PATCH_MANIFEST_PATH,
+                )
+                prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+                prev_seeds = list(sd.STUDIO_SEEDS)
+                try:
+                    sd.ACTIVE_PATH = root / "active.json"
+                    sd.PENDING_PATH = root / "pending.json"
+                    sd.REJECTED_PATH = root / "rejected.json"
+                    sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+                    sd.DISCOVERY_REPORT_PATH = root / "report.json"
+                    sd.STUDIO_SEEDS = []
+                    sd.STATIC_DISCOVERY_CANDIDATES = case["setup"]["static"]
+                    report = sd.run_discovery(
+                        timeout_s=5,
+                        top_n=0,
+                        mode="dynamic",
+                        include_web_search=False,
+                        fetcher=case["setup"]["fetcher"],
+                    )
+                    assert int(report["summary"].get("queuedCandidateCount") or 0) == case["expected_queued"], case["name"]
+                    assert int(report["summary"].get("skippedDuplicateCount") or 0) == case["expected_skipped"], case["name"]
+                    assert ("duplicateReasons" in report["summary"]) == case["expected_duplicate_reasons"], case["name"]
+                finally:
+                    (
+                        sd.ACTIVE_PATH,
+                        sd.PENDING_PATH,
+                        sd.REJECTED_PATH,
+                        sd.DISCOVERY_CANDIDATES_PATH,
+                        sd.DISCOVERY_REPORT_PATH,
+                        sd.URL_PATCH_MANIFEST_PATH,
+                    ) = prev_paths
+                    sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+                    sd.STUDIO_SEEDS = prev_seeds
+        else:
+            merged = sr.unique_sources(case["rows"])
+            assert len(merged) == case["expected_len"], case["name"]
+            assert merged[0]["id"] == case["expected_id"], case["name"]
+            assert int(merged[0]["jobsFound"] or 0) == case["expected_jobs_found"], case["name"]
+            assert int(merged[0]["sampleCount"] or 0) == case["expected_sample_count"], case["name"]
 
 
 def test_run_discovery_balances_queue_with_deferrals() -> None:
@@ -1849,7 +1909,7 @@ def test_parse_args_supports_manual_gamesmap_mode() -> None:
     assert int(args.gamesmap_max_detail_pages or 0) == 25
 
 
-def test_run_discovery_auto_approves_healthy_pending_rows() -> None:
+def test_run_discovery_leaves_pending_only_rows_unapproved() -> None:
     with workspace_tmpdir("source-discovery-auto-approval") as root:
         prev_paths = (
             sd.ACTIVE_PATH,
@@ -1938,23 +1998,20 @@ def test_run_discovery_auto_approves_healthy_pending_rows() -> None:
                 fetcher=lambda *args, **kwargs: "",
             )
 
-            assert int((report.get("summary") or {}).get("approvedCandidateCount") or 0) == 1
-            assert int((report.get("summary") or {}).get("liveCandidateCount") or 0) == 1
+            assert int((report.get("summary") or {}).get("approvedCandidateCount") or 0) == 0
+            assert int((report.get("summary") or {}).get("liveCandidateCount") or 0) == 0
             assert (
                 int(
                     (((report.get("runtime") or {}).get("autoApproval") or {}).get("approvedCount"))
                     or 0
                 )
-                == 1
+                == 0
             )
             active = json.loads(sd.ACTIVE_PATH.read_text(encoding="utf-8"))
             pending = json.loads(sd.PENDING_PATH.read_text(encoding="utf-8"))
-            approval_state = json.loads(
-                (root / "source-approval-state.json").read_text(encoding="utf-8")
-            )
-            assert [row["id"] for row in active] == ["pending-ok"]
-            assert pending == []
-            assert int(approval_state["approvedSinceLastRun"]) == 1
+            assert active == []
+            assert [row["id"] for row in pending] == ["pending-ok"]
+            assert not (root / "source-approval-state.json").exists()
         finally:
             (
                 sd.ACTIVE_PATH,
@@ -2330,34 +2387,6 @@ def test_run_discovery_refreshes_url_patches_and_reprobes_candidate() -> None:
             ) = prev_paths
             sd.STATIC_DISCOVERY_CANDIDATES = prev_static
             sd.STUDIO_SEEDS = prev_seeds
-
-
-def test_run_discovery_prefers_fresh_queued_candidate_over_stale_pending_duplicate() -> None:
-    stale_pending = {
-        "name": "Fresh Board",
-        "studio": "Fresh Board",
-        "adapter": "greenhouse",
-        "slug": "fresh-board",
-        "jobsFound": 0,
-        "sampleCount": 0,
-        "lastProbedAt": "2026-03-20T00:00:00Z",
-    }
-    fresh_queued = {
-        "name": "Fresh Board",
-        "studio": "Fresh Board",
-        "adapter": "greenhouse",
-        "slug": "fresh-board",
-        "jobsFound": 3,
-        "sampleCount": 3,
-        "lastProbedAt": "2026-03-23T00:00:00Z",
-    }
-
-    merged = sr.unique_sources([fresh_queued, stale_pending])
-
-    assert len(merged) == 1
-    assert merged[0]["id"] == "greenhouse:slug:fresh-board"
-    assert int(merged[0]["jobsFound"] or 0) == 3
-    assert int(merged[0]["sampleCount"] or 0) == 3
 
 
 def test_run_discovery_persists_deferred_candidates_in_candidates_file() -> None:

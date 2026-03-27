@@ -32,7 +32,7 @@ admin bridge (local HTTP API): src/admin_bridge.py
       -> discovery_service.py: DiscoveryService for discovery task + auto-sync watch
       -> pipeline_service.py: PipelineService for jobs pipeline task + status
       -> routes/: HTTP route handlers (GET/POST)
-  -> remaining: server startup/wiring + some legacy compatibility wrappers
+  -> remaining: server startup/wiring + thin bridge wrappers
 jobs feed + discovery/sync scripts: src/jobs_fetcher.py, src/source_discovery.py, src/source_sync.py
   -> source discovery: `import src.source_discovery` loads the package (src/source_discovery/);
       CLI and full run_discovery still delegate to the legacy script (source_discovery.py) via orchestrator.
@@ -145,7 +145,7 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
 
 - **`sync_task_flow.py`**: Shared sync-task worker flow
   - keeps pull/push run-history/status/logging assembly in one place
-  - used by both `src.admin_bridge` compatibility wrappers and `SyncService`
+  - used by both `src.admin_bridge` wrappers and `SyncService`
 
 - **`registry_sync_flow.py`**: Registry auto-sync persistence/start flow
   - `trigger_registry_auto_sync()`, `persist_registry_and_sync()`
@@ -221,9 +221,9 @@ Responsibilities still in `admin_bridge.py` and where they are used:
 | **Registry (wrappers)** | `ensure_active_registry`, `normalize_state`, `load_state`, `summarize_state`, `persist_state`, `persist_state_and_auto_sync`, `move_entries` | `bridge/routes/get_routes.py` (state, registry), `post_routes.py` (move, persist) |
 | **Source/registry helpers** | Implementation in `bridge/source_helpers.py`. admin_bridge imports and uses for POST add manual source and registry flows. | POST add manual source, registry flows |
 | **Source-check (fetch/HTML)** | Implementation in `bridge/source_checker.py` and `bridge/source_check_http.py`. admin_bridge still provides `_fetch_html_with_fallback`, `_html_has_extractable_job_data`, `_fetch_static_page_with_alternates` (wrappers that call bridge and discovery), and `check_static_source` / `trigger_source_check` that delegate to bridge. | `post_routes.py` (`trigger_source_check`); `check_static_source` |
-| **Run history / task state** | Implementation in `bridge/task_history.py` (TaskHistoryManager), `bridge/run_history_api.py` (runId-based lifecycle projection), and `bridge/lifecycle_cleanup.py` (one-time cleanup/reset). admin_bridge keeps `_get_task_history_manager()` plus thin wrappers that delegate to bridge modules. | Routes (ops, run history), explicit maintenance/reset, task launch/completion surfaces |
+| **Run history / task state** | Implementation in `bridge/task_history.py` (TaskHistoryManager), `bridge/run_history_api.py` (runId-based lifecycle projection), and `bridge/lifecycle_cleanup.py` (current lifecycle reset). admin_bridge keeps `_get_task_history_manager()` plus thin wrappers that delegate to bridge modules. | Routes (ops, run history), explicit maintenance/reset, task launch/completion surfaces |
 | **Alerts / schedule** | Implementation in `bridge/ops_health.py`, with `src/bridge/ops_api.py` owning the dependency assembly and delegating alert/schedule helpers through stable `admin_bridge.py` wrappers. | Ops health, fetcher metrics |
-| **Ops / health / reports** | Report normalization in `bridge/report_normalizer.py`; orchestration for failed-source filtering, history reconciliation, ops health, and fetcher metrics now lives in `bridge/ops_api.py`, with `admin_bridge.py` exposing thin compatibility wrappers. | GET `/ops/health`, `/ops/summary`, report normalization for routes |
+| **Ops / health / reports** | Report normalization in `bridge/report_normalizer.py`; orchestration for failed-source filtering, history reconciliation, ops health, and fetcher metrics now lives in `bridge/ops_api.py`, with `admin_bridge.py` exposing thin wrappers. | GET `/ops/health`, `/ops/summary`, report normalization for routes |
 | **Sync status (wrappers)** | `_set_sync_status`, `get_sync_status_payload`, `sync_pull_sources`, `sync_push_sources`, `startup_sync_pull`, `sync_task_running`, `wait_for_sync_tasks`, `_sync_guard`, `_mark_discovery_sync_finished` | POST sync routes, startup, discovery completion |
 | **Fetcher / discovery run** | `build_fetcher_args_from_payload`, `run_background_script` | POST trigger fetch, trigger discovery |
 | **Desktop / session** | `mark_desktop_session_activity`, `parse_iso` | Handler (activity), run history parsing |
@@ -240,7 +240,7 @@ Lifecycle ownership guardrail:
   - discovery: `source-discovery-report.json`, matching `admin-task-state.json`
   - sync: `SyncState`
   - pipeline: pipeline runtime state
-- To reset legacy lifecycle artifacts after this migration, use `python scripts/reset_admin_task_lifecycle.py --data-dir data`.
+- To reset current lifecycle artifacts after this migration, use `python scripts/reset_admin_task_lifecycle.py --data-dir data`.
 
 Further shrinkage: extract to bridge modules with injected deps; keep `api.xxx` callable in admin_bridge if routes need it (thin wrappers that delegate).
 
@@ -251,18 +251,18 @@ Backend refactoring is directionally strong and materially narrower than the ear
 
 - `src.admin_bridge` remains the composition root and CLI entrypoint, but mutable server-adjacent state should live in `src/bridge/server/runtime_state.py` or `src/bridge/sync_state.py`.
 - `src.admin_bridge` should keep sync and registry behavior as thin wrappers over `src/bridge/*` modules; do not add new business-logic helper clusters there.
-- `src/jobs/adapters/_runtime.py` keeps `_runtime.facade()` as a legacy compatibility boundary; do not spread it to new jobs modules.
-- `src/jobs/common/__init__.py` is now a curated compatibility surface for the `src.jobs_fetcher` facade; new package-internal code should prefer direct `src/jobs/common/*` submodule imports.
-- `frontend/local-data/services.js` may keep `window.JobAppLocalData` as the compatibility boundary until the local-data runtime is fully formalized.
+- `src/jobs/adapters/_runtime.py` keeps `_runtime.facade()` as a transitional boundary; do not spread it to new jobs modules.
+- `src/jobs/common/__init__.py` is now a shared barrel for the `src.jobs_fetcher` facade; new package-internal code should prefer direct `src/jobs/common/*` submodule imports.
+- `frontend/local-data/services.js` may keep `window.JobAppLocalData` as an intentional abstraction boundary until the local-data runtime is fully formalized.
 
 **Deliberately not done:** `jobs/validation.py` and `bridge/contracts.py` (intent satisfied by normalizers/text_utils/state).
 
 **Follow-up / optional work**
 - **Scrapy phase 2 (pipelines):** Moving validation and dedupe into a Scrapy pipeline is a larger refactor (spider would yield Items; pipeline would write into the runner’s container or a shared store). Deferred; when needed, treat it as a separate plan so contract and tests stay clear.
 - **Generic static plugin (P3.3):** If the inline fallback in `src/jobs/adapters/static.py` grows again, consider turning it into a low-priority "generic_static" plugin so static.py is mostly dispatch + scrapy.
-- **Jobs common compatibility surface:** `src/jobs/common/__init__.py` is still broad and re-export heavy; prefer reducing that surface before adding more helper modules elsewhere.
+- **Jobs common barrel:** `src/jobs/common/__init__.py` is still broad and re-export heavy; prefer reducing that surface before adding more helper modules elsewhere.
 - **State→DOM helper (P4.4):** Optional; apply when 2–3+ "subscribe to state key then set element" patterns appear. Not needed yet (status is fetch/event then setStatusText, not state-key subscription).
-- **html_parsers extraction:** Done. Implementation lives in `jobs/adapters/html_parsers.py`; re-exported via `jobs/parsers` and `jobs/common` for backward compatibility.
+- **html_parsers extraction:** Done. Implementation lives in `jobs/adapters/html_parsers.py`; re-exported via `jobs/parsers` and `jobs/common` for the current facade surface.
 - **Further admin_bridge shrinkage:** Latest follow-up completed the source-check, task-launch, and ops/report extractions. Remaining work should stay focused on narrow wiring seams, not broad file movement.
 - **Pydantic integration:** GET saved-jobs validates each row with SavedJobSchema (lenient: invalid rows skipped, logged). Other endpoints use Pydantic only where contract shape clearly matters; response models deferred. CanonicalJob and frontend contract unchanged.
 

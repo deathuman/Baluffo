@@ -19,8 +19,7 @@ export function createAdminBusyState() {
 }
 
 export function createAdminRuntimeState({
-  discoveryReportPollIntervalMs,
-  discoveryReportPollTimeoutMs
+  discoveryReportPollIntervalMs
 }) {
   return {
     activeSourceFilter: "all",
@@ -34,13 +33,11 @@ export function createAdminRuntimeState({
     opsHealthPollTimer: null,
     fetcherCompletionPollTimer: null,
     fetcherLogPollTimer: null,
-    fetcherCompletionPollDeadline: 0,
     fetcherLaunchAtMs: 0,
     fetcherLiveProgressState: null,
     fetchOptimisticRun: null,
     fetcherLogRemoteOffset: 0,
     discoveryCompletionPollTimer: null,
-    discoveryCompletionPollDeadline: 0,
     discoveryLaunchAtMs: 0,
     discoveryLiveProgressState: null,
     discoveryOptimisticRun: null,
@@ -50,7 +47,6 @@ export function createAdminRuntimeState({
     discoveryLogPreferredOpen: true,
     adminInteractiveMetricSent: false,
     discoveryReportPollIntervalMs,
-    discoveryReportPollTimeoutMs,
     adminBusyState: createAdminBusyState()
   };
 }

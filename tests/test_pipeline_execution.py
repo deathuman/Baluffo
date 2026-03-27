@@ -23,6 +23,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.bridge.pipeline_service import PipelineRuntime, PipelineService
 
 
@@ -54,6 +56,45 @@ def make_parse_iso():
             return None
 
     return parse_iso
+
+
+def _pipeline_status_payload(
+    *,
+    active: bool,
+    run_id: str,
+    stage: str,
+    current_step: int,
+    total_steps: int,
+    percent: int,
+    label: str,
+    started_at: str,
+    finished_at: str,
+    updates_found: bool,
+    refresh_recommended: bool,
+    baseline_output_count: int,
+    final_output_count: int,
+    jobs_page_loaded_count: int,
+) -> dict[str, object]:
+    return {
+        "active": active,
+        "runId": run_id,
+        "stage": stage,
+        "progress": {
+            "currentStep": current_step,
+            "totalSteps": total_steps,
+            "percent": percent,
+            "label": label,
+        },
+        "startedAt": started_at,
+        "finishedAt": finished_at,
+        "error": "",
+        "updatesFound": updates_found,
+        "refreshRecommended": refresh_recommended,
+        "baselineOutputCount": baseline_output_count,
+        "finalOutputCount": final_output_count,
+        "jobsPageLoadedCount": jobs_page_loaded_count,
+        "appVersion": "1.0.0",
+    }
 
 
 class TestPipelineServiceStages:
@@ -227,127 +268,83 @@ class TestPipelineServiceStages:
         assert result["runId"] == "existing-pipeline-123"
 
 
-class TestPipelineStatusEndpoint:
-    """Tests for pipeline status endpoint accuracy."""
+@pytest.mark.parametrize(
+    "payload, expected",
+    [
+        (
+            _pipeline_status_payload(
+                active=True,
+                run_id="test-pipeline-123",
+                stage="fetch",
+                current_step=2,
+                total_steps=3,
+                percent=66,
+                label="Running fetch...",
+                started_at="2026-03-22T12:00:00Z",
+                finished_at="",
+                updates_found=False,
+                refresh_recommended=False,
+                baseline_output_count=10,
+                final_output_count=5,
+                jobs_page_loaded_count=8,
+            ),
+            {"active": True, "stage": "fetch", "percent": 66, "finalOutputCount": 5},
+        ),
+        (
+            _pipeline_status_payload(
+                active=False,
+                run_id="test-pipeline-123",
+                stage="completed",
+                current_step=3,
+                total_steps=3,
+                percent=100,
+                label="Pipeline completed",
+                started_at="2026-03-22T12:00:00Z",
+                finished_at="2026-03-22T12:05:00Z",
+                updates_found=True,
+                refresh_recommended=True,
+                baseline_output_count=10,
+                final_output_count=15,
+                jobs_page_loaded_count=8,
+            ),
+            {"active": False, "stage": "completed", "percent": 100, "finalOutputCount": 15},
+        ),
+    ],
+)
+def test_status_endpoint_returns_current_state(payload, expected, tmp_path: Path) -> None:
+    """Test /tasks/run-jobs-pipeline-status returns accurate state."""
+    from src.bridge.routes import get_routes
 
-    def test_status_endpoint_returns_current_state(self, tmp_path: Path) -> None:
-        """Test /tasks/run-jobs-pipeline-status returns accurate state."""
-        # This tests the bridge route handler
-        from src.bridge.routes import get_routes
+    class FakeHandler:
+        def __init__(self):
+            self.sent = []
 
-        status: dict[str, Any] = {
-            "active": True,
-            "runId": "test-pipeline-123",
-            "stage": "fetch",
-            "progress": {
-                "currentStep": 2,
-                "totalSteps": 3,
-                "percent": 66,
-                "label": "Running fetch...",
-            },
-            "startedAt": "2026-03-22T12:00:00Z",
-            "finishedAt": "",
-            "error": "",
-            "updatesFound": False,
-            "refreshRecommended": False,
-            "baselineOutputCount": 10,
-            "finalOutputCount": 5,
-            "jobsPageLoadedCount": 8,
-        }
+        def _send_json(self, payload, status=200):
+            self.sent.append({"status": status, "payload": payload})
 
-        class FakeHandler:
-            def __init__(self):
-                self.sent = []
+    class FakeApi:
+        def get_jobs_pipeline_status_payload(self):
+            return payload
 
-            def _send_json(self, payload, status=200):
-                self.sent.append({"status": status, "payload": payload})
+    handler = FakeHandler()
+    api = FakeApi()
 
-        class FakeApi:
-            def get_jobs_pipeline_status_payload(self):
-                return {
-                    "active": status["active"],
-                    "runId": status["runId"],
-                    "stage": status["stage"],
-                    "progress": status["progress"],
-                    "startedAt": status["startedAt"],
-                    "finishedAt": status["finishedAt"],
-                    "error": status["error"],
-                    "updatesFound": status["updatesFound"],
-                    "refreshRecommended": status["refreshRecommended"],
-                    "baselineOutputCount": status["baselineOutputCount"],
-                    "finalOutputCount": status["finalOutputCount"],
-                    "jobsPageLoadedCount": status["jobsPageLoadedCount"],
-                    "appVersion": "1.0.0",
-                }
+    result = get_routes.handle_get(handler, api=api, path="/tasks/run-jobs-pipeline-status", query={})
 
-        handler = FakeHandler()
-        api = FakeApi()
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
 
-        result = get_routes.handle_get(
-            handler, api=api, path="/tasks/run-jobs-pipeline-status", query={}
-        )
-
-        assert result is True
-        assert handler.sent[-1]["status"] == 200
-
-        payload = handler.sent[-1]["payload"]
-        assert payload["active"] is True
-        assert payload["runId"] == "test-pipeline-123"
-        assert payload["stage"] == "fetch"
+    payload = handler.sent[-1]["payload"]
+    assert payload["active"] is expected["active"]
+    assert payload["runId"] == "test-pipeline-123"
+    assert payload["stage"] == expected["stage"]
+    assert payload["progress"]["percent"] == expected["percent"]
+    assert payload["progress"]["totalSteps"] == 3
+    assert payload["baselineOutputCount"] == 10
+    assert payload["finalOutputCount"] == expected["finalOutputCount"]
+    if payload["active"]:
         assert payload["progress"]["currentStep"] == 2
-        assert payload["progress"]["totalSteps"] == 3
-        assert payload["baselineOutputCount"] == 10
-        assert payload["finalOutputCount"] == 5
-
-    def test_status_endpoint_completed_state(self, tmp_path: Path) -> None:
-        """Test /tasks/run-jobs-pipeline-status returns correct state when completed."""
-
-        class FakeHandler:
-            def __init__(self):
-                self.sent = []
-
-            def _send_json(self, payload, status=200):
-                self.sent.append({"status": status, "payload": payload})
-
-        class FakeApi:
-            def get_jobs_pipeline_status_payload(self):
-                return {
-                    "active": False,
-                    "runId": "test-pipeline-123",
-                    "stage": "completed",
-                    "progress": {
-                        "currentStep": 3,
-                        "totalSteps": 3,
-                        "percent": 100,
-                        "label": "Pipeline completed",
-                    },
-                    "startedAt": "2026-03-22T12:00:00Z",
-                    "finishedAt": "2026-03-22T12:05:00Z",
-                    "error": "",
-                    "updatesFound": True,
-                    "refreshRecommended": True,
-                    "baselineOutputCount": 10,
-                    "finalOutputCount": 15,
-                    "jobsPageLoadedCount": 8,
-                    "appVersion": "1.0.0",
-                }
-
-        handler = FakeHandler()
-        api = FakeApi()
-
-        from src.bridge.routes import get_routes
-
-        result = get_routes.handle_get(
-            handler, api=api, path="/tasks/run-jobs-pipeline-status", query={}
-        )
-
-        assert result is True
-        payload = handler.sent[-1]["payload"]
-
-        # Verify completion state
-        assert payload["active"] is False
-        assert payload["stage"] == "completed"
-        assert payload["progress"]["percent"] == 100
+    else:
         assert payload["updatesFound"] is True
         assert payload["refreshRecommended"] is True
 
@@ -387,6 +384,7 @@ class TestAdminPanelTaskDisplay:
             now_iso=lambda: "2026-03-22T12:10:00Z",
             desktop_mode=True,
             desktop_last_activity_at="2026-03-22T12:10:00Z",
+            owner_state={},
             load_alert_state_fn=lambda: {},
             save_alert_state_fn=lambda x: None,
             parse_schedule_metadata_fn=lambda: {
@@ -640,70 +638,52 @@ class TestPipelineMetricsTimestamps:
         assert status["finalOutputCount"] == 30
 
 
-class TestPipelineFrontendIntegration:
-    """Tests for pipeline integration with frontend."""
+def test_pipeline_status_matches_frontend_contract(tmp_path: Path) -> None:
+    """Test pipeline status payload matches frontend expectations."""
+    from src.bridge.routes import get_routes
 
-    def test_pipeline_status_matches_frontend_contract(self, tmp_path: Path) -> None:
-        """Test pipeline status payload matches frontend expectations."""
-        from src.bridge.routes import get_routes
+    class FakeHandler:
+        def __init__(self):
+            self.sent = []
 
-        class FakeHandler:
-            def __init__(self):
-                self.sent = []
+        def _send_json(self, payload, status=200):
+            self.sent.append({"status": status, "payload": payload})
 
-            def _send_json(self, payload, status=200):
-                self.sent.append({"status": status, "payload": payload})
+    class FakeApi:
+        def get_jobs_pipeline_status_payload(self):
+            return _pipeline_status_payload(
+                active=False,
+                run_id="pipeline-abc123",
+                stage="completed",
+                current_step=3,
+                total_steps=3,
+                percent=100,
+                label="Pipeline completed",
+                started_at="2026-03-22T12:00:00Z",
+                finished_at="2026-03-22T12:05:00Z",
+                updates_found=True,
+                refresh_recommended=True,
+                baseline_output_count=100,
+                final_output_count=150,
+                jobs_page_loaded_count=95,
+            )
 
-        class FakeApi:
-            def get_jobs_pipeline_status_payload(self):
-                # Full status payload as would be returned to frontend
-                return {
-                    "active": False,
-                    "runId": "pipeline-abc123",
-                    "stage": "completed",
-                    "progress": {
-                        "currentStep": 3,
-                        "totalSteps": 3,
-                        "percent": 100,
-                        "label": "Pipeline completed",
-                    },
-                    "startedAt": "2026-03-22T12:00:00Z",
-                    "finishedAt": "2026-03-22T12:05:00Z",
-                    "error": "",
-                    "updatesFound": True,
-                    "refreshRecommended": True,
-                    "baselineOutputCount": 100,
-                    "finalOutputCount": 150,
-                    "jobsPageLoadedCount": 95,
-                    "appVersion": "1.0.0",
-                }
+    handler = FakeHandler()
+    api = FakeApi()
 
-        handler = FakeHandler()
-        api = FakeApi()
+    result = get_routes.handle_get(handler, api=api, path="/tasks/run-jobs-pipeline-status", query={})
 
-        result = get_routes.handle_get(
-            handler, api=api, path="/tasks/run-jobs-pipeline-status", query={}
-        )
+    assert result is True
+    payload = handler.sent[-1]["payload"]
 
-        assert result is True
-        payload = handler.sent[-1]["payload"]
-
-        # Verify all fields needed by frontend
-        # frontend/jobs/app/pipeline.js expects:
-        assert "active" in payload
-        assert "runId" in payload
-        assert "stage" in payload
-        assert "progress" in payload
-        assert "startedAt" in payload
-
-        # verify progress has needed fields
-        progress = payload["progress"]
-        assert "currentStep" in progress
-        assert "totalSteps" in progress
-        assert "percent" in progress
-        assert "label" in progress
-
-        # verify display-related fields
-        assert "updatesFound" in payload
-        assert "refreshRecommended" in payload
-        assert "appVersion" in payload
+    assert payload["active"] is False
+    assert payload["runId"] == "pipeline-abc123"
+    assert payload["stage"] == "completed"
+    assert payload["progress"]["percent"] == 100
+    assert payload["progress"]["currentStep"] == 3
+    assert payload["progress"]["totalSteps"] == 3
+    assert "appVersion" in payload
+    assert payload["baselineOutputCount"] == 100
+    assert payload["finalOutputCount"] == 150
+    assert payload["updatesFound"] is True
+    assert payload["refreshRecommended"] is True

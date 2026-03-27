@@ -141,7 +141,7 @@ read_approved_since_last_run = _common_sources.read_approved_since_last_run
 load_studio_source_registry = _common_sources.load_studio_source_registry
 STUDIO_SOURCE_REGISTRY = load_studio_source_registry(DEFAULT_STUDIO_SOURCE_REGISTRY)
 
-# Heuristics/scoring moved to src.jobs.common.heuristics; re-exported for backward compat.
+# Heuristics/scoring helpers remain available from the common barrel.
 classify_company_type = _common_heuristics.classify_company_type
 map_profession = _common_heuristics.map_profession
 is_untrustworthy_company_label = _common_heuristics.is_untrustworthy_company_label
@@ -163,32 +163,7 @@ PREFERRED_IMPORT_SURFACES = [
     "fetch",
 ]
 
-CURATED_COMPAT_EXPORTS = [
-    "DEFAULT_TIMEOUT_S",
-    "DEFAULT_RETRIES",
-    "DEFAULT_BACKOFF_S",
-    "DEFAULT_FETCH_STRATEGY",
-    "DEFAULT_ADAPTER_HTTP_CONCURRENCY",
-    "DEFAULT_OUTPUT_DIR",
-    "DEFAULT_SOCIAL_CONFIG_PATH",
-    "DEFAULT_SOCIAL_LOOKBACK_MINUTES",
-    "DEFAULT_SOCIAL_MIN_CONFIDENCE",
-    "DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE",
-    "DEFAULT_STATIC_DETAIL_CONCURRENCY",
-    "DEFAULT_SCRAPY_VALIDATION_STRICT",
-    "SOURCE_REGISTRY_ACTIVE_PATH",
-    "SOURCE_REGISTRY_PENDING_PATH",
-    "STUDIO_SOURCE_REGISTRY",
-    "load_registry_from_file",
-    "read_approved_since_last_run",
-    "load_social_config",
-    "normalize_url",
-    "fingerprint_url",
-    "fetch_with_retries",
-    "registry_entries",
-]
-
-__all__ = [*PREFERRED_IMPORT_SURFACES, *CURATED_COMPAT_EXPORTS]
+__all__ = [*PREFERRED_IMPORT_SURFACES]
 
 
 from src.jobs.common import registry as _common_registry
@@ -272,18 +247,6 @@ class PooledRedirectResolver:
         )
 
 
-def build_redirect_resolver(
-    *,
-    timeout_s: int = DEFAULT_TIMEOUT_S,
-    max_connections: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
-) -> PooledRedirectResolver:
-    from src.jobs import transport as transport_pkg
-
-    return transport_pkg.build_redirect_resolver(
-        timeout_s=timeout_s, max_connections=max_connections
-    )
-
-
 def normalize_contract_type(contract_text: Any, title: Any = "") -> str:
     return parsing.normalize_contract_type(contract_text, title)
 
@@ -308,9 +271,7 @@ def parse_remote_ok_payload(payload: Any) -> list[RawJob]:
     return parsing.parse_remote_ok_payload(payload, looks_like_game_job=looks_like_game_job)
 
 
-# Legacy compatibility wrappers and re-exports live below this point.
-# Keep them stable for the jobs_fetcher facade, but prefer the submodules above
-# for new package-internal imports.
+# Shared adapter and helper re-exports live below this point.
 
 # HTML/listing parsers moved to src.jobs.adapters.html_parsers; re-exported for backward compat.
 extract_json_ld_blocks = _html_parsers.extract_json_ld_blocks
@@ -385,46 +346,6 @@ from src.jobs.common.legacy_runners import (
 )
 
 
-def canonicalize_job_with_reason(
-    raw: Any,
-    *,
-    source: str,
-    fetched_at: str,
-    resolve_redirect_url: Callable[[str], str] | None = None,
-    resolved_job_link: Any = None,
-) -> tuple[RawJob | None, str]:
-    from src.jobs import canonicalize as canonicalize_pkg
-
-    normalized, reason = canonicalize_pkg.canonicalize_job_with_reason(
-        raw,
-        source=source,
-        fetched_at=fetched_at,
-        resolve_redirect_url=resolve_redirect_url,
-        resolved_job_link=resolved_job_link,
-    )
-    return (normalized.to_dict() if normalized is not None else None), reason
-
-
-def canonicalize_job(
-    raw: RawJob,
-    *,
-    source: str,
-    fetched_at: str,
-    resolve_redirect_url: Callable[[str], str] | None = None,
-    resolved_job_link: Any = None,
-) -> RawJob | None:
-    from src.jobs import canonicalize as canonicalize_pkg
-
-    normalized = canonicalize_pkg.canonicalize_job(
-        raw,
-        source=source,
-        fetched_at=fetched_at,
-        resolve_redirect_url=resolve_redirect_url,
-        resolved_job_link=resolved_job_link,
-    )
-    return normalized.to_dict() if normalized is not None else None
-
-
 def compute_quality_score(job: RawJob) -> int:
     return _common_heuristics.compute_quality_score(job)
 
@@ -491,15 +412,6 @@ def merge_records(existing: RawJob, candidate: RawJob) -> RawJob:
         dedup_pkg.CanonicalJob.from_mapping(existing),
         dedup_pkg.CanonicalJob.from_mapping(candidate),
     ).to_dict()
-
-
-def deduplicate_jobs(rows: Sequence[RawJob]) -> tuple[list[RawJob], dict[str, int]]:
-    from src.jobs import dedup as dedup_pkg
-
-    merged_rows, stats = dedup_pkg.deduplicate_jobs(
-        [dedup_pkg.CanonicalJob.from_mapping(row) for row in rows]
-    )
-    return [row.to_dict() for row in merged_rows], stats
 
 
 def default_source_loaders(

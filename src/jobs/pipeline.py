@@ -123,10 +123,6 @@ append_excluded_default_sources = state_pkg.append_excluded_default_sources
 update_source_state_rows = state_pkg.update_source_state_rows
 
 
-def _rows_to_legacy_dicts(rows: list[CanonicalJob]) -> list[dict[str, Any]]:
-    return [row.to_dict() if isinstance(row, CanonicalJob) else dict(row) for row in rows]
-
-
 def _apply_final_location_quality_guardrail(rows: list[dict[str, Any]]) -> dict[str, Any]:
     field_counts: Counter[str] = Counter()
     reason_counts: Counter[str] = Counter()
@@ -738,7 +734,7 @@ def run_pipeline(
     )
 
     dedup_stats["outputCount"] = len(deduped_rows)
-    deduped_payload_rows = _rows_to_legacy_dicts(deduped_rows)
+    deduped_payload_rows = [row.to_dict() for row in deduped_rows]
     location_quality_audit = _apply_final_location_quality_guardrail(deduped_payload_rows)
     contamination_report = build_public_text_quality_report(deduped_payload_rows)
     contamination_rows = int(contamination_report.get("contaminatedRows") or 0)

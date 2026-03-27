@@ -161,7 +161,7 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
             is True
         )
 
-        store.wipe_account_admin("1234", uid)
+        store.wipe_account_admin(uid)
         recreated = store.sign_in("BackupRoundtrip")
         uid_after = str(recreated["uid"])
         result = store.import_profile_data(uid_after, payload_with_files)

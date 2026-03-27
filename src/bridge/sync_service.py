@@ -189,7 +189,6 @@ class SyncService:
         global SYNC_CONFIG
         with SYNC_CONFIG_LOCK:
             self._sync_config = self._resolve_effective_sync_config()
-            # Update global for backward compatibility
             import src.bridge.sync_state as state_module
 
             state_module.SYNC_CONFIG = self._sync_config

@@ -33,10 +33,6 @@ WriteTaskStateFunc = Callable[..., None]
 WriteProgressReportFunc = Callable[[], None]
 
 
-def _rows_to_legacy_dicts(rows: list[CanonicalJob]) -> list[dict[str, Any]]:
-    return [row.to_dict() if isinstance(row, CanonicalJob) else dict(row) for row in rows]  # type: ignore[arg-type]
-
-
 def _best_effort_get_try_playwright() -> Callable[[str, int], tuple[str, str]] | None:
     try:
         from src.bridge.source_check_http import try_fetch_with_playwright
@@ -247,7 +243,7 @@ def run_source_execution_stage(
                 "invalid_payload": int(drop_reasons.get("invalid_payload", 0)),
             }
 
-            current_fingerprint = source_rows_fingerprint(_rows_to_legacy_dicts(canonical_batch))
+            current_fingerprint = source_rows_fingerprint([row.to_dict() for row in canonical_batch])
             previous_fingerprint = clean_text(
                 (source_state_rows.get(name) or {}).get("lastFingerprint")
             )

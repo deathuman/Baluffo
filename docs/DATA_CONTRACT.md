@@ -104,7 +104,7 @@ The orchestrator generates a machine-readable HUD in `_out/LATEST_MANIFEST.json`
 }
 ```
 
-`py_tests_ok` and `node_tests_ok` remain compatibility booleans. New code and AI agents should prefer `py_tests_status` and `node_tests_status` when present so `not_run` is distinguishable from `failed`.
+`py_tests_ok` and `node_tests_ok` remain legacy HUD booleans. New code and AI agents should prefer `py_tests_status` and `node_tests_status` when present so `not_run` is distinguishable from `failed`.
 
 ---
 
@@ -203,7 +203,7 @@ Fetcher and discovery reports may include a shared `taskProgress` object for the
 - Controllers consume `taskProgress` and pass raw report state plus optional log-derived phase hints into the domain layer.
 - The domain layer is responsible for mapping `taskProgress` into the rendered progress view.
 - The shared progress renderer only renders the derived view model; it must not infer phases or ratios from raw report counters.
-- Raw report counters remain useful for details and backward-compatible fallbacks, but the primary loading-bar state comes from `taskProgress`.
+- Raw report counters remain useful for details, but the primary loading-bar state comes from `taskProgress`.
 
 ### Lifecycle identity contract
 
@@ -224,7 +224,7 @@ Fetcher and discovery reports may include a shared `taskProgress` object for the
 
 - For a clean post-migration debug baseline, use:
   - `python scripts/reset_admin_task_lifecycle.py --data-dir data`
-- This command resets only lifecycle/debug artifacts and archives legacy `admin-run-history.json` rows that do not have `runId`.
+- This command resets only current lifecycle/debug artifacts and keeps `admin-run-history.json` in the current runId-only shape.
 
 ---
 

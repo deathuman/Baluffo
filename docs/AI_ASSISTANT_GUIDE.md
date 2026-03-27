@@ -50,7 +50,7 @@ Do **not** load many docs by default. Start narrow and pull in task-specific ref
   - `src/jobs/common/contracts.py`
   - related tests
   - relevant docs in `docs/`
-- **Some files are compatibility or transitional boundaries**. Do not "clean up" by moving logic blindly without checking [`architecture-ai-map.md`](architecture-ai-map.md).
+- **Some files are transitional boundaries**. Do not "clean up" by moving logic blindly without checking [`architecture-ai-map.md`](architecture-ai-map.md).
 - **Never guess UI selectors** — always use `frontend/shared/ui/selectors.js` as the source of truth for all UI element handles.
 - **Build/packaging scripts must NOT import composition roots** — avoid importing `src.jobs`, `src.admin_bridge`, or other top-level re-export modules from build scripts. Use leaf modules like `src/bridge/*`, `src/core/*`, or direct data-file reads instead.
 - **Don't assume endpoint payloads** — always check [`docs/admin-bridge-api.md`](admin-bridge-api.md) first before making assumptions about bridge API structures.
@@ -135,7 +135,7 @@ Start in:
 Prefer **wiring-only** changes unless the task specifically requires otherwise:
 
 - `src/admin_bridge.py`
-- compatibility surfaces called out in [`architecture-ai-map.md`](architecture-ai-map.md)
+- transitional boundaries called out in [`architecture-ai-map.md`](architecture-ai-map.md)
 - broad page runtime files like `frontend/jobs/app/runtime.js` unless the task is truly orchestration-level
 
 Before editing a large orchestration file, check whether the behavior already belongs in a smaller helper/service module.

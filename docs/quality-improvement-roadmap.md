@@ -38,7 +38,7 @@ Before Milestone 1 starts, record a frozen baseline snapshot from the latest suc
 - Prefer additive fields over renames or removals.
 - Do not change stable `src/source_discovery` APIs unless the task explicitly calls for a contract or interface update.
 - Any schema-affecting change must update documentation and tests in the same commit.
-- Preserve backward compatibility for scheduled fetches and admin reporting.
+- Preserve scheduled fetch and admin reporting behavior while making changes.
 - Any migration from static/custom to structured must keep rollback behavior until 3 consecutive healthy runs are observed.
 
 ---
@@ -294,7 +294,7 @@ For this milestone, "measurably cleaner and faster" means:
 **Implemented, verified, and pushed â€” 2026-03-26.**
 
 The codebase now includes:
-- BambooHR and Workday provider loaders in the provider plugin registry and fetcher compatibility surface
+- BambooHR and Workday provider loaders in the provider plugin registry and fetcher surface
 - host-pattern static suppression for BambooHR and Workday migration targets
 - structured-migration shadow mode fields in source state
 - fixture-backed tests for parser, plugin, registry, and shadow-mode promotion coverage

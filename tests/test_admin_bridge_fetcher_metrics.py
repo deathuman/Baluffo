@@ -32,11 +32,6 @@ def test_compute_fetcher_metrics_uses_history_window() -> None:
         admin_bridge._get_ops_api = original_get_ops_api
 
 
-def test_sync_status_payload_includes_app_version() -> None:
-    payload = admin_bridge.get_sync_status_payload()
-    assert payload.get("appVersion") == APP_VERSION
-
-
 def test_jobs_pipeline_status_payload_includes_app_version() -> None:
     payload = admin_bridge.get_jobs_pipeline_status_payload()
     assert payload.get("appVersion") == APP_VERSION

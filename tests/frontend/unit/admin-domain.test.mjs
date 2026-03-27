@@ -197,81 +197,100 @@ test("admin domain derives adaptive ops polling interval", () => {
   assert.equal(getOpsPollIntervalMs(false), 10000);
 });
 
-test("admin domain does not synthesize optimistic discovery rows", () => {
-  const baseModel = normalizeOpsRuns([
-    { id: "f1", type: "fetch", status: "started", startedAt: "2026-03-08T10:00:00.000Z", finishedAt: "", durationMs: 0 }
-  ], Date.parse("2026-03-08T10:01:00.000Z"));
+test("admin domain keeps discovery optimistic helpers as no-ops", () => {
+  const cases = [
+    {
+      label: "active fetch history",
+      baseRows: [
+        { id: "f1", type: "fetch", status: "started", startedAt: "2026-03-08T10:00:00.000Z", finishedAt: "", durationMs: 0 }
+      ],
+      nowMs: Date.parse("2026-03-08T10:01:00.000Z")
+    },
+    {
+      label: "staged discovery history",
+      baseRows: [
+        { id: "d1", type: "discovery", status: "started", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "", durationMs: 0 }
+      ],
+      nowMs: Date.parse("2026-03-08T10:01:00.000Z")
+    },
+    {
+      label: "completed discovery history",
+      baseRows: [
+        {
+          id: "d1",
+          type: "discovery",
+          status: "ok",
+          startedAt: "2026-03-08T10:00:30.000Z",
+          finishedAt: "2026-03-08T10:01:20.000Z",
+          durationMs: 50000
+        }
+      ],
+      nowMs: Date.parse("2026-03-08T10:01:30.000Z")
+    }
+  ];
 
-  const model = applyOptimisticDiscoveryRun(baseModel, {
-    runId: "disc_1",
-    startedAt: "2026-03-08T10:00:30.000Z"
-  }, Date.parse("2026-03-08T10:01:00.000Z"));
+  for (const { label, baseRows, nowMs } of cases) {
+    const baseModel = normalizeOpsRuns(baseRows, nowMs);
+    const model = applyOptimisticDiscoveryRun(
+      baseModel,
+      {
+        runId: "disc_1",
+        startedAt: "2026-03-08T10:00:30.000Z"
+      },
+      nowMs
+    );
 
-  assert.equal(model.currentRows.length, baseModel.currentRows.length);
-  assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length);
-  assert.equal(model.olderCompletedRows.length, baseModel.olderCompletedRows.length);
-  assert.equal(model.hasLiveRuns, baseModel.hasLiveRuns);
-  assert.deepEqual(model.liveTypes, baseModel.liveTypes);
-  assert.ok(!model.currentRows.some(row => row.optimistic === true));
+    assert.equal(model.currentRows.length, baseModel.currentRows.length, label);
+    assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length, label);
+    assert.equal(model.olderCompletedRows.length, baseModel.olderCompletedRows.length, label);
+    assert.equal(model.hasLiveRuns, baseModel.hasLiveRuns, label);
+    assert.deepEqual(model.liveTypes, baseModel.liveTypes, label);
+    assert.ok(!model.currentRows.some(row => row.optimistic === true), label);
+  }
 });
 
-test("admin domain leaves discovery rows untouched when asked for optimism", () => {
-  const baseModel = normalizeOpsRuns([
-    { id: "d1", type: "discovery", status: "started", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "", durationMs: 0 }
-  ], Date.parse("2026-03-08T10:01:00.000Z"));
+test("admin domain keeps fetch optimistic helpers as no-ops", () => {
+  const cases = [
+    {
+      label: "empty fetch history",
+      baseRows: [],
+      nowMs: Date.parse("2026-03-08T10:01:00.000Z")
+    },
+    {
+      label: "completed fetch history",
+      baseRows: [
+        {
+          id: "f1",
+          runId: "fetch_1",
+          type: "fetch",
+          status: "warning",
+          startedAt: "2026-03-08T10:00:30.000Z",
+          finishedAt: "2026-03-08T10:01:20.000Z",
+          durationMs: 50000
+        }
+      ],
+      nowMs: Date.parse("2026-03-08T10:01:30.000Z")
+    }
+  ];
 
-  const model = applyOptimisticDiscoveryRun(baseModel, {
-    runId: "disc_1",
-    startedAt: "2026-03-08T10:00:30.000Z"
-  }, Date.parse("2026-03-08T10:01:00.000Z"));
+  for (const { label, baseRows, nowMs } of cases) {
+    const baseModel = normalizeOpsRuns(baseRows, nowMs);
+    const model = applyOptimisticFetchRun(
+      baseModel,
+      {
+        runId: "fetch_1",
+        startedAt: "2026-03-08T10:00:30.000Z"
+      },
+      nowMs
+    );
 
-  assert.equal(model.currentRows.length, baseModel.currentRows.length);
-  assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length);
-  assert.equal(model.visibleCompletedRows.length, 0);
-});
-
-test("admin domain leaves completed discovery history untouched", () => {
-  const baseModel = normalizeOpsRuns([
-    { id: "d1", type: "discovery", status: "ok", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 }
-  ], Date.parse("2026-03-08T10:01:30.000Z"));
-
-  const model = applyOptimisticDiscoveryRun(baseModel, {
-    runId: "disc_1",
-    startedAt: "2026-03-08T10:00:30.000Z"
-  }, Date.parse("2026-03-08T10:01:30.000Z"));
-
-  assert.equal(model.currentRows.length, baseModel.currentRows.length);
-  assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length);
-});
-
-test("admin domain does not synthesize optimistic fetch rows", () => {
-  const baseModel = normalizeOpsRuns([], Date.parse("2026-03-08T10:01:00.000Z"));
-
-  const model = applyOptimisticFetchRun(baseModel, {
-    runId: "fetch_1",
-    startedAt: "2026-03-08T10:00:30.000Z"
-  }, Date.parse("2026-03-08T10:01:00.000Z"));
-
-  assert.equal(model.currentRows.length, baseModel.currentRows.length);
-  assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length);
-  assert.equal(model.olderCompletedRows.length, baseModel.olderCompletedRows.length);
-  assert.equal(model.hasLiveRuns, baseModel.hasLiveRuns);
-  assert.deepEqual(model.liveTypes, baseModel.liveTypes);
-  assert.ok(!model.currentRows.some(row => row.optimistic === true));
-});
-
-test("admin domain leaves completed fetch history untouched", () => {
-  const baseModel = normalizeOpsRuns([
-    { id: "f1", runId: "fetch_1", type: "fetch", status: "warning", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 }
-  ], Date.parse("2026-03-08T10:01:30.000Z"));
-
-  const model = applyOptimisticFetchRun(baseModel, {
-    runId: "fetch_1",
-    startedAt: "2026-03-08T10:00:30.000Z"
-  }, Date.parse("2026-03-08T10:01:30.000Z"));
-
-  assert.equal(model.currentRows.length, baseModel.currentRows.length);
-  assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length);
+    assert.equal(model.currentRows.length, baseModel.currentRows.length, label);
+    assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length, label);
+    assert.equal(model.olderCompletedRows.length, baseModel.olderCompletedRows.length, label);
+    assert.equal(model.hasLiveRuns, baseModel.hasLiveRuns, label);
+    assert.deepEqual(model.liveTypes, baseModel.liveTypes, label);
+    assert.ok(!model.currentRows.some(row => row.optimistic === true), label);
+  }
 });
 
 test("admin domain derives current runs from task state and completed runs from history", () => {
@@ -390,17 +409,6 @@ test("admin domain drops stale fetch task state when history already has the com
   assert.equal(model.currentRows.length, 1);
   assert.equal(model.visibleCompletedRows.length, 1);
   assert.equal(model.visibleCompletedRows[0].type, "fetch");
-});
-
-test("admin domain collapses legacy duplicate completed fetch rows without run ids", () => {
-  const model = normalizeOpsRuns([
-    { id: "f1", type: "fetch", status: "warning", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 },
-    { id: "f2", type: "fetch", status: "warning", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 },
-    { id: "d1", type: "discovery", status: "ok", startedAt: "2026-03-08T09:00:30.000Z", finishedAt: "2026-03-08T09:01:20.000Z", durationMs: 50000 }
-  ], Date.parse("2026-03-08T10:01:30.000Z"));
-
-  assert.equal(model.currentRows.length, 0);
-  assert.equal(model.visibleCompletedRows.filter(row => row.type === "fetch").length, 1);
 });
 
 test("admin domain derives determinate fetcher progress when total sources are known", () => {
@@ -616,39 +624,6 @@ test("admin domain uses probe totals instead of found endpoints for discovery pr
   assert.equal(view.determinate, true);
   assert.equal(view.ratio, 0.6);
   assert.match(view.label, /probed 0\/120/i);
-});
-
-test("admin domain prefers shared discovery task progress contract over legacy summary inference", () => {
-  const view = deriveDiscoveryProgressModel({
-    summary: {
-      phaseLabel: "Initializing scan",
-      foundEndpointCount: 785,
-      probedCandidateCount: 0,
-      queuedCandidateCount: 0
-    },
-    taskProgress: {
-      active: true,
-      phaseKey: "probing_candidates",
-      phaseLabel: "Probing candidates",
-      mode: "determinate",
-      ratio: 0.25,
-      counts: {
-        foundEndpoints: 785,
-        probedCandidates: 30,
-        probeTotal: 120,
-        queuedCandidates: 4,
-        deferredCandidates: 2,
-        failedProbes: 1
-      }
-    }
-  }, { running: true, phaseHint: "Scanning known careers pages" });
-
-  assert.equal(view.active, true);
-  assert.equal(view.determinate, true);
-  assert.ok(Math.abs(view.ratio - 0.68) < 1e-9);
-  assert.match(view.label, /Probing candidates/i);
-  assert.match(view.label, /probed 30\/120/i);
-  assert.doesNotMatch(view.label, /Scanning known careers pages/i);
 });
 
 test("admin domain lets live discovery phase hints override a stale starting task progress shell", () => {

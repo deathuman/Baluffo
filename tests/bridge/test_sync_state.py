@@ -24,7 +24,6 @@ def test_sync_state_persists_runtime_status_fields() -> None:
         assert after["lastError"] == ""
         assert after["lastPullAt"]
 
-        # Also updates module-level status for backward compatibility.
         assert str(SYNC_STATUS.get("lastAction") or "") == "pull"
 
         runtime_path = data_dir / "source-sync-runtime.json"

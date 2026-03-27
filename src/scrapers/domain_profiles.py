@@ -197,13 +197,12 @@ def pick_canonical_listing_url(pages: list[str]) -> str | None:
         p for p in pages if _clean_text(p) and is_likely_listing_url(_clean_text(p), profile)
     ]
     if not listing_like:
-        chosen = first
-    else:
+        return None
 
-        def path_len(u: str) -> int:
-            return len(_clean_text(urlparse(u).path))
+    def path_len(u: str) -> int:
+        return len(_clean_text(urlparse(u).path))
 
-        chosen = min(listing_like, key=path_len)
+    chosen = min(listing_like, key=path_len)
     # If profile says the real listing is at a different path (e.g. Activision /search-results), use it.
     canonical_path = _clean_text(profile.get("canonical_listing_path"))
     if canonical_path and canonical_path.startswith("/"):

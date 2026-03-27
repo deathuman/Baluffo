@@ -286,14 +286,6 @@ def test_acquire_instance_lock_reclaims_stale_lock() -> None:
         desktop_app.release_instance_lock(lock)
 
 
-def test_read_instance_lock_payload_rejects_legacy_pid_format() -> None:
-    with workspace_tmpdir("desktop-app") as tmp:
-        lock_path = Path(tmp) / "desktop-instance.lock"
-        lock_path.write_text("445566", encoding="utf-8")
-        payload = desktop_app._read_instance_lock_payload(lock_path)
-        assert payload == {}
-
-
 def test_diagnose_instance_conflict_reclaims_stale_owner() -> None:
     with workspace_tmpdir("desktop-app") as tmp:
         root = Path(tmp) / "session-root"

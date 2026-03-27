@@ -348,12 +348,6 @@ function composeControllers() {
     adminDispatch,
     adminActions: ADMIN_ACTIONS,
     escapeHtml,
-    onLiveFetchDetected: runMeta => {
-      fetcherController?.attachToActiveFetchRun(runMeta);
-    },
-    onLiveDiscoveryDetected: runMeta => {
-      discoveryController?.attachToActiveDiscoveryRun(runMeta);
-    },
     onBridgeStatusChange: status => {
       if (status === "online") {
         registryController?.loadDiscoveryData().catch(() => {});

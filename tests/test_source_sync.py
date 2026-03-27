@@ -52,42 +52,6 @@ class _Recorder:
         return item
 
 
-def test_config_status_reports_misconfigured_when_packaged_config_missing(source_sync_test_root):
-    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-    status = sync.config_status(cfg)
-    assert status["enabled"]
-    assert not status["ready"]
-    assert status["state"] == "misconfigured"
-    assert "packaged_github_app_config" in status["missing"]
-
-
-def test_config_status_reports_disabled_when_locally_disabled(source_sync_test_root):
-    source_sync_test_root.write_packaged_config()
-    cfg = sync.resolve_sync_config(settings={"enabled": False}, env=source_sync_test_root.env)
-    status = sync.config_status(cfg)
-    assert not status["enabled"]
-    assert not status["ready"]
-    assert status["state"] == "disabled"
-
-
-def test_config_status_uses_root_feature_gate_default_when_saved_override_missing(
-    source_sync_test_root,
-):
-    source_sync_test_root.write_packaged_config()
-    original_security = dict(sync._SECURITY_DEFAULTS)  # noqa: SLF001
-    original_sync = dict(sync._SYNC_DEFAULTS)  # noqa: SLF001
-    try:
-        sync._SECURITY_DEFAULTS["github_app_enabled_default"] = False  # noqa: SLF001
-        sync._SYNC_DEFAULTS["local_enabled_default"] = True  # noqa: SLF001
-        cfg = sync.resolve_sync_config(settings={}, env=source_sync_test_root.env)
-    finally:
-        sync._SECURITY_DEFAULTS = original_security  # type: ignore[assignment] # noqa: SLF001
-        sync._SYNC_DEFAULTS = original_sync  # type: ignore[assignment] # noqa: SLF001
-    status = sync.config_status(cfg)
-    assert not status["enabled"]
-    assert status["state"] == "disabled"
-
-
 def test_encrypt_and_decrypt_private_key_round_trip():
     salt_b64 = sync._base64url_encode(b"unit-test-salt-123")  # noqa: SLF001
     private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
@@ -120,111 +84,149 @@ def test_passphrase_encrypt_and_decrypt_private_key_round_trip():
     assert decrypted == private_key
 
 
-def test_config_status_reports_misconfigured_when_passphrase_missing(source_sync_test_root):
-    salt_b64 = sync._base64url_encode(b"unit-test-salt-789")  # noqa: SLF001
+def test_config_status_covers_supported_states(source_sync_test_root):
+    salt_passphrase = sync._base64url_encode(b"unit-test-salt-789")  # noqa: SLF001
+    salt_embedded = sync._base64url_encode(b"unit-test-salt-013")  # noqa: SLF001
     private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
-    encrypted = sync.encrypt_private_key_pem_with_passphrase(
+    passphrase_encrypted = sync.encrypt_private_key_pem_with_passphrase(
         private_key,
-        salt_b64=salt_b64,
+        salt_b64=salt_passphrase,
         app_id="123456",
         installation_id="999999",
         passphrase="shared-secret",
     )
-    source_sync_test_root.write_packaged_config(
-        {
-            "keyDerivation": "passphrase",
-            "keySalt": salt_b64,
-            "privateKeyPemEnc": encrypted,
-            "privateKeyPem": "",
-        }
-    )
-    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-    status = sync.config_status(cfg)
-    assert not status["ready"]
-    assert status["state"] == "misconfigured"
-    assert "privateKeyPemEnc" in status["missing"]
-    assert sync.PACKAGED_SYNC_PASSPHRASE_ENV in status["message"]
-
-
-def test_config_status_ready_when_passphrase_is_provided(source_sync_test_root):
-    salt_b64 = sync._base64url_encode(b"unit-test-salt-012")  # noqa: SLF001
-    private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
-    encrypted = sync.encrypt_private_key_pem_with_passphrase(
+    embedded_passphrase = sync.build_embedded_passphrase(hint="embedded-hint-01", version="v1")
+    embedded_encrypted = sync.encrypt_private_key_pem_with_passphrase(
         private_key,
-        salt_b64=salt_b64,
+        salt_b64=salt_embedded,
         app_id="123456",
         installation_id="999999",
-        passphrase="shared-secret",
+        passphrase=embedded_passphrase,
     )
-    source_sync_test_root.write_packaged_config(
+
+    cases = [
         {
-            "keyDerivation": "passphrase",
-            "keySalt": salt_b64,
-            "privateKeyPemEnc": encrypted,
-            "privateKeyPem": "",
-        }
-    )
-    env = dict(source_sync_test_root.env)
-    env[sync.PACKAGED_SYNC_PASSPHRASE_ENV] = "shared-secret"
-    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=env)
-    status = sync.config_status(cfg)
-    assert status["ready"]
-    assert status["state"] == "ready"
-
-
-def test_config_status_ready_for_embedded_derivation(source_sync_test_root):
-    salt_b64 = sync._base64url_encode(b"unit-test-salt-013")  # noqa: SLF001
-    hint = "embedded-hint-01"
-    version = "v1"
-    private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
-    passphrase = sync.build_embedded_passphrase(hint=hint, version=version)
-    encrypted = sync.encrypt_private_key_pem_with_passphrase(
-        private_key,
-        salt_b64=salt_b64,
-        app_id="123456",
-        installation_id="999999",
-        passphrase=passphrase,
-    )
-    source_sync_test_root.write_packaged_config(
+            "name": "packaged config missing",
+            "settings": {"enabled": True},
+            "packaged_config": None,
+            "expected": {
+                "enabled": True,
+                "ready": False,
+                "state": "misconfigured",
+                "missing_contains": "packaged_github_app_config",
+            },
+        },
         {
-            "keyDerivation": "embedded",
-            "embeddedKeyHint": hint,
-            "embeddedKeyVersion": version,
-            "keySalt": salt_b64,
-            "privateKeyPemEnc": encrypted,
-            "privateKeyPem": "",
-        }
-    )
-    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-    status = sync.config_status(cfg)
-    assert status["ready"]
-    assert status["state"] == "ready"
-
-
-def test_allowlist_mismatch_marks_misconfigured(source_sync_test_root):
-    source_sync_test_root.write_packaged_config(
+            "name": "locally disabled",
+            "settings": {"enabled": False},
+            "packaged_config": "__default__",
+            "expected": {"enabled": False, "ready": False, "state": "disabled"},
+        },
         {
-            "allowedRepo": "other/repo",
-            "allowedBranch": "main",
-            "allowedPathPrefix": "baluffo/source-sync.json",
-        }
-    )
-    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-    status = sync.config_status(cfg)
-    assert not status["ready"]
-    assert status["state"] == "misconfigured"
-    assert "allowlist" in status["missing"]
+            "name": "root feature gate default",
+            "settings": {},
+            "packaged_config": "__default__",
+            "patch_defaults": True,
+            "expected": {"enabled": False, "ready": False, "state": "disabled"},
+        },
+        {
+            "name": "passphrase missing",
+            "settings": {"enabled": True},
+            "packaged_config": {
+                "keyDerivation": "passphrase",
+                "keySalt": salt_passphrase,
+                "privateKeyPemEnc": passphrase_encrypted,
+                "privateKeyPem": "",
+            },
+            "expected": {
+                "ready": False,
+                "state": "misconfigured",
+                "missing_contains": "privateKeyPemEnc",
+                "message_contains": sync.PACKAGED_SYNC_PASSPHRASE_ENV,
+            },
+        },
+        {
+            "name": "passphrase provided",
+            "settings": {"enabled": True},
+            "packaged_config": {
+                "keyDerivation": "passphrase",
+                "keySalt": salt_passphrase,
+                "privateKeyPemEnc": passphrase_encrypted,
+                "privateKeyPem": "",
+            },
+            "env": {sync.PACKAGED_SYNC_PASSPHRASE_ENV: "shared-secret"},
+            "expected": {"ready": True, "state": "ready"},
+        },
+        {
+            "name": "embedded derivation ready",
+            "settings": {"enabled": True},
+            "packaged_config": {
+                "keyDerivation": "embedded",
+                "embeddedKeyHint": "embedded-hint-01",
+                "embeddedKeyVersion": "v1",
+                "keySalt": salt_embedded,
+                "privateKeyPemEnc": embedded_encrypted,
+                "privateKeyPem": "",
+            },
+            "expected": {"ready": True, "state": "ready"},
+        },
+        {
+            "name": "allowlist mismatch",
+            "settings": {"enabled": True},
+            "packaged_config": {
+                "allowedRepo": "other/repo",
+                "allowedBranch": "main",
+                "allowedPathPrefix": "baluffo/source-sync.json",
+            },
+            "expected": {
+                "ready": False,
+                "state": "misconfigured",
+                "missing_contains": "allowlist",
+            },
+        },
+        {
+            "name": "sync disable env",
+            "settings": {"enabled": True},
+            "packaged_config": "__default__",
+            "env": {sync.SYNC_DISABLE_ENV: "1"},
+            "expected": {
+                "ready": False,
+                "state": "disabled",
+                "message_contains": sync.SYNC_DISABLE_ENV,
+            },
+        },
+    ]
 
-
-def test_sync_disable_env_forces_disabled_state(source_sync_test_root):
-    source_sync_test_root.write_packaged_config()
-    env = dict(source_sync_test_root.env)
-    env[sync.SYNC_DISABLE_ENV] = "1"
-    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=env)
-    status = sync.config_status(cfg)
-    assert not status["ready"]
-    assert status["state"] == "disabled"
-    assert sync.SYNC_DISABLE_ENV in status["message"]
+    original_security = dict(sync._SECURITY_DEFAULTS)  # noqa: SLF001
+    original_sync = dict(sync._SYNC_DEFAULTS)  # noqa: SLF001
+    try:
+        for case in cases:
+            if source_sync_test_root.config_path.exists():
+                source_sync_test_root.config_path.unlink()
+            if case.get("packaged_config") == "__default__":
+                source_sync_test_root.write_packaged_config()
+            elif case.get("packaged_config") is not None:
+                source_sync_test_root.write_packaged_config(case["packaged_config"])
+            if case.get("patch_defaults"):
+                sync._SECURITY_DEFAULTS["github_app_enabled_default"] = False  # noqa: SLF001
+                sync._SYNC_DEFAULTS["local_enabled_default"] = True  # noqa: SLF001
+            env = dict(source_sync_test_root.env)
+            env.update(case.get("env", {}))
+            cfg = sync.resolve_sync_config(settings=case["settings"], env=env)
+            status = sync.config_status(cfg)
+            expected = case["expected"]
+            assert status["enabled"] == expected.get("enabled", status["enabled"]), case["name"]
+            assert status["ready"] == expected["ready"], case["name"]
+            assert status["state"] == expected["state"], case["name"]
+            if "missing_contains" in expected:
+                assert expected["missing_contains"] in status["missing"], case["name"]
+            if "message_contains" in expected:
+                assert expected["message_contains"] in status["message"], case["name"]
+            if expected["state"] == "ready":
+                assert status["ready"], case["name"]
+    finally:
+        sync._SECURITY_DEFAULTS = original_security  # type: ignore[assignment] # noqa: SLF001
+        sync._SYNC_DEFAULTS = original_sync  # type: ignore[assignment] # noqa: SLF001
 
 
 def test_build_app_jwt_has_rs256_shape(source_sync_test_root):

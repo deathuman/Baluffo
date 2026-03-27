@@ -569,7 +569,7 @@ def test_build_fetcher_args_uncapped_bypasses_admin_caps_and_keeps_social(
     assert "--social-enabled" in args
 
 
-def test_sync_history_from_reports_does_not_prune_unfinished_fetch_without_run_id(
+def test_sync_history_from_reports_discards_unfinished_fetch_without_run_id(
     admin_bridge_entrypoint_root,
 ):
     old_started = "2026-03-01T00:00:00+00:00"
@@ -598,8 +598,7 @@ def test_sync_history_from_reports_does_not_prune_unfinished_fetch_without_run_i
     old_ts = 1_700_000_000
     os.utime(admin_bridge.JOBS_FETCH_REPORT_PATH, (old_ts, old_ts))
     rows = admin_bridge.sync_history_from_reports()
-    started_rows = [row for row in rows if str(row.get("status") or "").lower() == "started"]
-    assert len(started_rows) == 1
+    assert rows == []
     report = admin_bridge.load_json_object(admin_bridge.JOBS_FETCH_REPORT_PATH, {})
     assert str(report.get("finishedAt") or "") == ""
 
@@ -820,16 +819,18 @@ def test_sync_history_from_reports_merges_fetch_launcher_and_report_rows_by_run_
     assert str(matching[0].get("finishedAt") or "") == finished_at
 
 
-def test_sync_history_from_reports_leaves_legacy_fetch_duplicates_untouched(
+def test_sync_history_from_reports_collapses_duplicate_run_id_rows(
     admin_bridge_entrypoint_root,
 ):
     started_at = "2026-03-01T00:00:00+00:00"
     finished_at = "2026-03-01T00:03:00+00:00"
+    run_id = "run_a"
     admin_bridge.save_json_atomic(
         admin_bridge.OPS_HISTORY_PATH,
         [
             {
-                "id": "run_a",
+                "id": run_id,
+                "runId": run_id,
                 "type": "fetch",
                 "status": "warning",
                 "startedAt": started_at,
@@ -839,6 +840,7 @@ def test_sync_history_from_reports_leaves_legacy_fetch_duplicates_untouched(
             },
             {
                 "id": "run_b",
+                "runId": run_id,
                 "type": "fetch",
                 "status": "warning",
                 "startedAt": started_at,
@@ -851,6 +853,7 @@ def test_sync_history_from_reports_leaves_legacy_fetch_duplicates_untouched(
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
         {
+            "runId": run_id,
             "startedAt": started_at,
             "finishedAt": finished_at,
             "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 5},
@@ -866,10 +869,11 @@ def test_sync_history_from_reports_leaves_legacy_fetch_duplicates_untouched(
         and str(row.get("startedAt") or "") == started_at
         and str(row.get("finishedAt") or "") == finished_at
     ]
-    assert len(matching) == 2
+    assert len(matching) == 1
+    assert str(matching[0].get("runId") or "") == run_id
 
 
-def test_sync_history_from_reports_projects_run_id_row_without_rewriting_legacy_row(
+def test_sync_history_from_reports_projects_run_id_row_only(
     admin_bridge_entrypoint_root,
 ):
     run_id = "fetch_enrich_1"
@@ -905,12 +909,12 @@ def test_sync_history_from_reports_projects_run_id_row_without_rewriting_legacy_
         for row in rows
         if str(row.get("type") or "") == "fetch" and str(row.get("startedAt") or "") == started_at
     ]
-    assert len(matching) == 2
-    assert any(str(row.get("runId") or "") == run_id for row in matching)
-    assert any(not str(row.get("runId") or "").strip() for row in matching)
+    assert len(matching) == 1
+    assert str(matching[0].get("runId") or "") == run_id
+    assert str(matching[0].get("status") or "").lower() == "started"
 
 
-def test_sync_history_from_reports_marks_run_id_row_orphaned_without_merging_legacy_rows(
+def test_sync_history_from_reports_discards_rows_without_run_id(
     admin_bridge_entrypoint_root,
 ):
     run_id = "fetch_stale_1"
@@ -958,14 +962,14 @@ def test_sync_history_from_reports_marks_run_id_row_orphaned_without_merging_leg
         for row in rows
         if str(row.get("type") or "") == "fetch" and str(row.get("startedAt") or "") == started_at
     ]
-    assert len(matching) == 2
-    run_id_row = next(row for row in matching if str(row.get("runId") or "") == run_id)
-    assert str(run_id_row.get("status") or "").lower() == "error"
+    assert len(matching) == 1
+    assert str(matching[0].get("runId") or "") == run_id
+    assert str(matching[0].get("status") or "").lower() == "error"
     assert (
-        str((run_id_row.get("summary") or {}).get("error") or "")
+        str((matching[0].get("summary") or {}).get("error") or "")
         == "owner_inactive_without_terminal_report"
     )
-    assert any(not str(row.get("runId") or "").strip() for row in matching)
+    assert all(str(row.get("runId") or "").strip() for row in rows)
 
 
 def test_start_fetcher_task_registers_history_before_report_can_duplicate(

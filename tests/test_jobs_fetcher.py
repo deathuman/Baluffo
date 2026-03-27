@@ -13,6 +13,8 @@ from src import jobs_fetcher as jf
 from src import jobs_fetcher_registry as jfr
 from src.exceptions import AdapterValidationError
 from src.jobs import common as jobs_common
+from src.jobs import canonicalize as jobs_canonicalize
+from src.jobs import dedup as jobs_dedup
 from src.jobs.adapters import _runtime as runtime_resolver
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
@@ -24,6 +26,11 @@ from src.scrapers import runner as scrapy_runner
 from tests.helpers.temp_paths import workspace_tmpdir
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
+jf.canonicalize_job = jobs_canonicalize.canonicalize_job
+jf.canonicalize_job_with_reason = jobs_canonicalize.canonicalize_job_with_reason
+jf.canonicalize_google_sheets_rows = jobs_canonicalize.canonicalize_google_sheets_rows
+jf.deduplicate_jobs = jobs_dedup.deduplicate_jobs
 
 
 def _fixture(name: str) -> str:
@@ -263,7 +270,7 @@ def test_canonicalize_job_with_reason_preserves_known_bad_company_labels_as_unkn
         fetched_at="2026-03-13T10:00:00Z",
     )
     assert normalized is not None
-    assert normalized["company"] == jf.UNKNOWN_COMPANY_LABEL
+    assert normalized.company == jf.UNKNOWN_COMPANY_LABEL
     assert reason == ""
 
 
@@ -731,245 +738,297 @@ def test_fingerprint_url_keeps_language_query_significant_for_non_personio_urls(
     assert normalize_url(with_lang) == with_lang
 
 
-def test_deduplicate_jobs_enriches_unknown_company_from_shared_gracklehq_redirect() -> None:
-    unk_row = {
-        "id": "",
-        "title": "Senior Environment Artist",
-        "company": "Unknown company",
-        "city": "Remote",
-        "country": "Remote",
-        "workType": "",
-        "contractType": "",
-        "jobLink": "https://www.smartrecruiters.com/CDPROJEKTRED/744000112115839",
-        "sector": "Game",
-        "source": "google_sheets",
-        "sourceJobId": "sheet-5",
-        "fetchedAt": jf.now_iso(),
-        "postedAt": "2026-03-09T10:00:00Z",
-        "status": "active",
-        "sourceBundle": [
-            {
-                "source": "google_sheets",
-                "jobLink": "https://gracklehq.com/rd/373481",
-                "postedAt": "2026-03-09T10:00:00Z",
-            }
-        ],
-    }
-    known_row = {
-        "id": "",
-        "title": "Senior Environment Artist",
-        "company": "CD PROJEKT RED",
-        "city": "Remote",
-        "country": "Remote",
-        "workType": "",
-        "contractType": "",
-        "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693",
-        "sector": "Game",
-        "source": "smartrecruiters_sources",
-        "sourceJobId": "smartrecruiters:CDPROJEKTRED:744000098332693",
-        "fetchedAt": jf.now_iso(),
-        "postedAt": "2026-03-09T10:00:00Z",
-        "status": "active",
-        "sourceBundle": [
-            {
-                "source": "google_sheets",
-                "jobLink": "https://gracklehq.com/rd/373481",
-                "postedAt": "2026-03-09T10:00:00Z",
-            },
-            {
-                "source": "smartrecruiters_sources",
-                "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693",
-                "postedAt": "2026-03-09T10:00:00Z",
-            },
-        ],
-    }
-    rows, stats = jf.deduplicate_jobs([unk_row, known_row])
-    assert stats["outputCount"] == 2
-    companies = {r.get("company") or "" for r in rows}
-    assert companies == {"CD PROJEKT RED"}
-
-
-def test_deduplicate_jobs_does_not_overwrite_known_company_from_shared_gracklehq_redirect() -> None:
-    first_known = {
-        "id": "",
-        "title": "Senior Environment Artist",
-        "company": "Known Studio A",
-        "city": "Remote",
-        "country": "Remote",
-        "workType": "",
-        "contractType": "",
-        "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000112115839",
-        "sector": "Game",
-        "source": "google_sheets",
-        "sourceJobId": "sheet-5",
-        "fetchedAt": jf.now_iso(),
-        "postedAt": "2026-03-09T10:00:00Z",
-        "status": "active",
-        "sourceBundle": [
-            {
-                "source": "google_sheets",
-                "jobLink": "https://gracklehq.com/rd/373481",
-                "postedAt": "2026-03-09T10:00:00Z",
-            }
-        ],
-    }
-    second_known = {
-        "id": "",
-        "title": "Senior Environment Artist",
-        "company": "Known Studio B",
-        "city": "Remote",
-        "country": "Remote",
-        "workType": "",
-        "contractType": "",
-        "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693",
-        "sector": "Game",
-        "source": "smartrecruiters_sources",
-        "sourceJobId": "smartrecruiters:CDPROJEKTRED:744000098332693",
-        "fetchedAt": jf.now_iso(),
-        "postedAt": "2026-03-09T10:00:00Z",
-        "status": "active",
-        "sourceBundle": [
-            {
-                "source": "google_sheets",
-                "jobLink": "https://gracklehq.com/rd/373481",
-                "postedAt": "2026-03-09T10:00:00Z",
-            },
-            {
-                "source": "smartrecruiters_sources",
-                "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693",
-                "postedAt": "2026-03-09T10:00:00Z",
-            },
-        ],
-    }
-    rows, stats = jf.deduplicate_jobs([first_known, second_known])
-    assert stats["outputCount"] == 2
-    companies = {r.get("company") or "" for r in rows}
-    assert companies == {"Known Studio A", "Known Studio B"}
-
-
-def test_deduplicate_jobs_uses_social_source_id_fallback() -> None:
-    row_a = {
-        "id": "",
-        "title": "Technical Artist",
-        "company": "Nebula Games",
-        "city": "",
-        "country": "Unknown",
-        "workType": "",
-        "contractType": "Unknown",
-        "jobLink": "",
-        "sector": "Game",
-        "profession": "technical-artist",
-        "companyType": "Game",
-        "description": "Technical Artist at Nebula Games",
-        "source": "social_reddit",
-        "sourceJobId": "reddit:gamedev:abc",
-        "fetchedAt": "2026-03-09T11:00:00Z",
-        "postedAt": "2026-03-09T10:00:00Z",
-        "status": "active",
-        "sourceBundleCount": 1,
-        "sourceBundle": [
-            {
-                "source": "social_reddit",
-                "sourceJobId": "reddit:gamedev:abc",
-                "jobLink": "",
-                "postedAt": "",
-                "adapter": "social",
-                "studio": "gamedev",
-            }
-        ],
-        "adapter": "social",
-        "studio": "reddit/gamedev",
-    }
-    row_b = dict(row_a)
-    row_b["jobLink"] = "https://www.reddit.com/r/gamedev/comments/abc"
-    deduped, stats = jf.deduplicate_jobs([row_a, row_b])
-    assert len(deduped) == 1
-    assert stats["mergedCount"] == 1
-
-
-def test_deduplicate_jobs_merges_resolved_redirect_with_direct_job() -> None:
-    redirect_target = "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-technical-director-level-design-m-f-nb-projet-non-annonce"
-    redirect_resolver = lambda url: (
-        redirect_target if "gracklehq.com/rd/372393" in str(url) else str(url)
+def test_deduplicate_jobs_covers_redirect_and_identity_rules() -> None:
+    now_iso = jf.now_iso()
+    redirect_target = (
+        "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-technical-director-level-design-m-f-nb-projet-non-annonce"
     )
-    redirect_row = jf.canonicalize_job(
+    cases = [
         {
-            "title": "Technical Director Level Design - M/F/NB - unannounced project",
-            "company": jf.UNKNOWN_COMPANY_LABEL,
-            "city": "Montpellier",
-            "country": "France",
-            "workType": "Onsite",
-            "contractType": "Unknown",
-            "jobLink": "https://gracklehq.com/rd/372393",
-            "sector": "Game",
-            "sourceJobId": "sheet-12396",
+            "name": "unknown company enrichment",
+            "rows": [
+                {
+                    "id": "",
+                    "title": "Senior Environment Artist",
+                    "company": "Unknown company",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "",
+                    "contractType": "",
+                    "jobLink": "https://www.smartrecruiters.com/CDPROJEKTRED/744000112115839",
+                    "sector": "Game",
+                    "source": "google_sheets",
+                    "sourceJobId": "sheet-5",
+                    "fetchedAt": now_iso,
+                    "postedAt": "2026-03-09T10:00:00Z",
+                    "status": "active",
+                    "sourceBundle": [
+                        {
+                            "source": "google_sheets",
+                            "jobLink": "https://gracklehq.com/rd/373481",
+                            "postedAt": "2026-03-09T10:00:00Z",
+                        }
+                    ],
+                },
+                {
+                    "id": "",
+                    "title": "Senior Environment Artist",
+                    "company": "CD PROJEKT RED",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "",
+                    "contractType": "",
+                    "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693",
+                    "sector": "Game",
+                    "source": "smartrecruiters_sources",
+                    "sourceJobId": "smartrecruiters:CDPROJEKTRED:744000098332693",
+                    "fetchedAt": now_iso,
+                    "postedAt": "2026-03-09T10:00:00Z",
+                    "status": "active",
+                    "sourceBundle": [
+                        {
+                            "source": "google_sheets",
+                            "jobLink": "https://gracklehq.com/rd/373481",
+                            "postedAt": "2026-03-09T10:00:00Z",
+                        },
+                        {
+                            "source": "smartrecruiters_sources",
+                            "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693",
+                            "postedAt": "2026-03-09T10:00:00Z",
+                        },
+                    ],
+                },
+            ],
+            "outputCount": 2,
+            "companies": {"CD PROJEKT RED"},
         },
-        source="google_sheets",
-        fetched_at=jf.now_iso(),
-        resolve_redirect_url=redirect_resolver,
-    )
-    direct_row = jf.canonicalize_job(
         {
-            "title": "Technical Director Level Design - M/F/NB - unannounced project",
+            "name": "known company preservation",
+            "rows": [
+                {
+                    "id": "",
+                    "title": "Senior Environment Artist",
+                    "company": "Known Studio A",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "",
+                    "contractType": "",
+                    "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000112115839",
+                    "sector": "Game",
+                    "source": "google_sheets",
+                    "sourceJobId": "sheet-5",
+                    "fetchedAt": now_iso,
+                    "postedAt": "2026-03-09T10:00:00Z",
+                    "status": "active",
+                    "sourceBundle": [
+                        {
+                            "source": "google_sheets",
+                            "jobLink": "https://gracklehq.com/rd/373481",
+                            "postedAt": "2026-03-09T10:00:00Z",
+                        }
+                    ],
+                },
+                {
+                    "id": "",
+                    "title": "Senior Environment Artist",
+                    "company": "Known Studio B",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "",
+                    "contractType": "",
+                    "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693",
+                    "sector": "Game",
+                    "source": "smartrecruiters_sources",
+                    "sourceJobId": "smartrecruiters:CDPROJEKTRED:744000098332693",
+                    "fetchedAt": now_iso,
+                    "postedAt": "2026-03-09T10:00:00Z",
+                    "status": "active",
+                    "sourceBundle": [
+                        {
+                            "source": "google_sheets",
+                            "jobLink": "https://gracklehq.com/rd/373481",
+                            "postedAt": "2026-03-09T10:00:00Z",
+                        },
+                        {
+                            "source": "smartrecruiters_sources",
+                            "jobLink": "https://jobs.smartrecruiters.com/CDPROJEKTRED/744000098332693",
+                            "postedAt": "2026-03-09T10:00:00Z",
+                        },
+                    ],
+                },
+            ],
+            "outputCount": 2,
+            "companies": {"Known Studio A", "Known Studio B"},
+        },
+        {
+            "name": "social source id fallback",
+            "rows": [
+                {
+                    "id": "",
+                    "title": "Technical Artist",
+                    "company": "Nebula Games",
+                    "city": "",
+                    "country": "Unknown",
+                    "workType": "",
+                    "contractType": "Unknown",
+                    "jobLink": "",
+                    "sector": "Game",
+                    "profession": "technical-artist",
+                    "companyType": "Game",
+                    "description": "Technical Artist at Nebula Games",
+                    "source": "social_reddit",
+                    "sourceJobId": "reddit:gamedev:abc",
+                    "fetchedAt": "2026-03-09T11:00:00Z",
+                    "postedAt": "2026-03-09T10:00:00Z",
+                    "status": "active",
+                    "sourceBundleCount": 1,
+                    "sourceBundle": [
+                        {
+                            "source": "social_reddit",
+                            "sourceJobId": "reddit:gamedev:abc",
+                            "jobLink": "",
+                            "postedAt": "",
+                            "adapter": "social",
+                            "studio": "gamedev",
+                        }
+                    ],
+                    "adapter": "social",
+                    "studio": "reddit/gamedev",
+                },
+                {
+                    "id": "",
+                    "title": "Technical Artist",
+                    "company": "Nebula Games",
+                    "city": "",
+                    "country": "Unknown",
+                    "workType": "",
+                    "contractType": "Unknown",
+                    "jobLink": "https://www.reddit.com/r/gamedev/comments/abc",
+                    "sector": "Game",
+                    "profession": "technical-artist",
+                    "companyType": "Game",
+                    "description": "Technical Artist at Nebula Games",
+                    "source": "social_reddit",
+                    "sourceJobId": "reddit:gamedev:abc",
+                    "fetchedAt": "2026-03-09T11:00:00Z",
+                    "postedAt": "2026-03-09T10:00:00Z",
+                    "status": "active",
+                    "sourceBundleCount": 1,
+                    "sourceBundle": [
+                        {
+                            "source": "social_reddit",
+                            "sourceJobId": "reddit:gamedev:abc",
+                            "jobLink": "",
+                            "postedAt": "",
+                            "adapter": "social",
+                            "studio": "gamedev",
+                        }
+                    ],
+                    "adapter": "social",
+                    "studio": "reddit/gamedev",
+                },
+            ],
+            "outputCount": 1,
+            "mergedCount": 1,
+        },
+        {
+            "name": "resolved redirect merge",
+            "rows": [
+                jf.canonicalize_job(
+                    {
+                        "title": "Technical Director Level Design - M/F/NB - unannounced project",
+                        "company": jf.UNKNOWN_COMPANY_LABEL,
+                        "city": "Montpellier",
+                        "country": "France",
+                        "workType": "Onsite",
+                        "contractType": "Unknown",
+                        "jobLink": "https://gracklehq.com/rd/372393",
+                        "sector": "Game",
+                        "sourceJobId": "sheet-12396",
+                    },
+                    source="google_sheets",
+                    fetched_at=now_iso,
+                    resolve_redirect_url=lambda url: (
+                        redirect_target if "gracklehq.com/rd/372393" in str(url) else str(url)
+                    ),
+                ),
+                jf.canonicalize_job(
+                    {
+                        "title": "Technical Director Level Design - M/F/NB - unannounced project",
+                        "company": "Ubisoft",
+                        "city": "Montpellier",
+                        "country": "France",
+                        "workType": "Onsite",
+                        "contractType": "Unknown",
+                        "jobLink": redirect_target,
+                        "sector": "Game",
+                        "sourceJobId": "sheet-12551",
+                    },
+                    source="google_sheets",
+                    fetched_at=now_iso,
+                ),
+            ],
+            "outputCount": 1,
+            "mergedByPrimaryUrl": 1,
             "company": "Ubisoft",
-            "city": "Montpellier",
-            "country": "France",
-            "workType": "Onsite",
-            "contractType": "Unknown",
             "jobLink": redirect_target,
-            "sector": "Game",
-            "sourceJobId": "sheet-12551",
+            "sourceBundleCount": 2,
         },
-        source="google_sheets",
-        fetched_at=jf.now_iso(),
-    )
-    assert redirect_row is not None
-    assert direct_row is not None
-    rows, stats = jf.deduplicate_jobs([redirect_row, direct_row])
-    assert stats["outputCount"] == 1
-    assert int(stats.get("mergedByPrimaryUrl") or 0) == 1
-    assert rows[0]["company"] == "Ubisoft"
-    assert rows[0]["jobLink"] == redirect_target
-    assert int(rows[0].get("sourceBundleCount") or 0) == 2
-
-
-def test_deduplicate_jobs_keeps_unresolved_redirect_separate() -> None:
-    redirect_row = jf.canonicalize_job(
         {
-            "title": "Technical Director Level Design - M/F/NB - unannounced project",
-            "company": jf.UNKNOWN_COMPANY_LABEL,
-            "city": "Montpellier",
-            "country": "France",
-            "workType": "Onsite",
-            "contractType": "Unknown",
-            "jobLink": "https://gracklehq.com/rd/372393",
-            "sector": "Game",
-            "sourceJobId": "sheet-12396",
+            "name": "unresolved redirect separation",
+            "rows": [
+                jf.canonicalize_job(
+                    {
+                        "title": "Technical Director Level Design - M/F/NB - unannounced project",
+                        "company": jf.UNKNOWN_COMPANY_LABEL,
+                        "city": "Montpellier",
+                        "country": "France",
+                        "workType": "Onsite",
+                        "contractType": "Unknown",
+                        "jobLink": "https://gracklehq.com/rd/372393",
+                        "sector": "Game",
+                        "sourceJobId": "sheet-12396",
+                    },
+                    source="google_sheets",
+                    fetched_at=now_iso,
+                    resolve_redirect_url=lambda url: str(url),
+                ),
+                jf.canonicalize_job(
+                    {
+                        "title": "Technical Director Level Design - M/F/NB - unannounced project",
+                        "company": "Ubisoft",
+                        "city": "Montpellier",
+                        "country": "France",
+                        "workType": "Onsite",
+                        "contractType": "Unknown",
+                        "jobLink": redirect_target,
+                        "sector": "Game",
+                        "sourceJobId": "sheet-12551",
+                    },
+                    source="google_sheets",
+                    fetched_at=now_iso,
+                ),
+            ],
+            "outputCount": 2,
+            "mergedByPrimaryUrl": 0,
         },
-        source="google_sheets",
-        fetched_at=jf.now_iso(),
-        resolve_redirect_url=lambda url: str(url),
-    )
-    direct_row = jf.canonicalize_job(
-        {
-            "title": "Technical Director Level Design - M/F/NB - unannounced project",
-            "company": "Ubisoft",
-            "city": "Montpellier",
-            "country": "France",
-            "workType": "Onsite",
-            "contractType": "Unknown",
-            "jobLink": "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-technical-director-level-design-m-f-nb-projet-non-annonce",
-            "sector": "Game",
-            "sourceJobId": "sheet-12551",
-        },
-        source="google_sheets",
-        fetched_at=jf.now_iso(),
-    )
-    assert redirect_row is not None
-    assert direct_row is not None
-    rows, stats = jf.deduplicate_jobs([redirect_row, direct_row])
-    assert stats["outputCount"] == 2
-    assert int(stats.get("mergedByPrimaryUrl") or 0) == 0
+    ]
+
+    for case in cases:
+        rows, stats = jf.deduplicate_jobs([row for row in case["rows"] if row is not None])
+        assert int(stats.get("outputCount") or 0) == case["outputCount"], case["name"]
+        if "companies" in case:
+            assert {r.company for r in rows} == case["companies"], case["name"]
+        if "mergedCount" in case:
+            assert int(stats.get("mergedCount") or 0) == case["mergedCount"], case["name"]
+        if "mergedByPrimaryUrl" in case:
+            assert int(stats.get("mergedByPrimaryUrl") or 0) == case["mergedByPrimaryUrl"], case["name"]
+        if "company" in case:
+            assert rows[0].company == case["company"], case["name"]
+        if "jobLink" in case:
+            assert rows[0].jobLink == case["jobLink"], case["name"]
+        if "sourceBundleCount" in case:
+            assert rows[0].sourceBundleCount == case["sourceBundleCount"], case["name"]
 
 
 def test_canonicalize_job_skips_redirect_resolution_for_gracklehq_source() -> None:
@@ -996,7 +1055,7 @@ def test_canonicalize_job_skips_redirect_resolution_for_gracklehq_source() -> No
     )
 
     assert row is not None
-    assert row["jobLink"] == "https://gracklehq.com/rd/372393"
+    assert row.jobLink == "https://gracklehq.com/rd/372393"
     assert calls == []
 
 
@@ -1095,7 +1154,7 @@ def test_canonicalize_google_sheets_rows_uses_redirect_cache_once_for_duplicates
     assert stats["redirect_candidates"] == 2
     assert stats["redirect_resolved"] == 2
     assert stats["redirect_cache_hits"] == 1
-    assert all("smartrecruiters.com" in row["jobLink"] for row in canonical_rows)
+    assert all("smartrecruiters.com" in row.jobLink for row in canonical_rows)
 
 
 def test_canonicalize_google_sheets_rows_falls_back_when_redirect_resolution_fails() -> None:
@@ -1129,7 +1188,7 @@ def test_canonicalize_google_sheets_rows_falls_back_when_redirect_resolution_fai
     )
     assert len(canonical_rows) == 1
     assert not drop_reasons
-    assert canonical_rows[0]["jobLink"] == "https://gracklehq.com/rd/999999"
+    assert canonical_rows[0].jobLink == "https://gracklehq.com/rd/999999"
     assert stats["redirect_resolved"] == 0
 
 
@@ -3152,8 +3211,8 @@ def test_compute_focus_score_prioritizes_target_nl_and_remote() -> None:
     assert ta_nl
     assert ta_remote
     assert non_target
-    assert ta_nl["focusScore"] > ta_remote["focusScore"]
-    assert ta_remote["focusScore"] > non_target["focusScore"]
+    assert ta_nl.focusScore > ta_remote.focusScore
+    assert ta_remote.focusScore > non_target.focusScore
 
 
 def test_dedup_primary_key_prefers_richer_latest_record() -> None:
@@ -3195,8 +3254,8 @@ def test_dedup_primary_key_prefers_richer_latest_record() -> None:
     assert int(stats.get("mergedByPrimaryUrl") or 0) == 1
     assert int(stats.get("mergedBySecondaryKey") or 0) == 0
     assert int(stats.get("mergedBySocialKey") or 0) == 0
-    assert rows[0]["sourceJobId"] == "r-2"
-    assert rows[0]["dedupKey"].startswith("url:")
+    assert rows[0].sourceJobId == "r-2"
+    assert rows[0].dedupKey.startswith("url:")
 
 
 def test_canonicalize_job_rejects_linkless_rows_before_dedup() -> None:

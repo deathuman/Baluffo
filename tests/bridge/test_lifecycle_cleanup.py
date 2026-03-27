@@ -4,7 +4,7 @@ from pathlib import Path
 from src.bridge.lifecycle_cleanup import reset_admin_task_lifecycle
 
 
-def test_reset_admin_task_lifecycle_resets_runtime_artifacts_and_archives_legacy_rows(
+def test_reset_admin_task_lifecycle_resets_runtime_artifacts_and_keeps_runid_history_only(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "admin-run-history.json").write_text(
@@ -46,16 +46,12 @@ def test_reset_admin_task_lifecycle_resets_runtime_artifacts_and_archives_legacy
     result = reset_admin_task_lifecycle(tmp_path)
 
     assert result["ok"] is True
-    assert int(result["archivedLegacyRows"] or 0) == 1
+    assert int(result["keptHistoryRows"] or 0) == 1
     history = json.loads((tmp_path / "admin-run-history.json").read_text(encoding="utf-8"))
     assert len(history) == 1
     assert str(history[0].get("runId") or "") == "fetch_1"
     assert int(history[0].get("durationMs") or 0) == 300000
-    archived = json.loads(
-        (tmp_path / "admin-run-history.legacy-pre-runid.json").read_text(encoding="utf-8")
-    )
-    assert len(archived) == 1
-    assert str(archived[0].get("id") or "") == "legacy_1"
+    assert not (tmp_path / "admin-run-history.legacy-pre-runid.json").exists()
     task_state = json.loads((tmp_path / "admin-task-state.json").read_text(encoding="utf-8"))
     assert task_state == {}
     fetch_report = json.loads((tmp_path / "jobs-fetch-report.json").read_text(encoding="utf-8"))
