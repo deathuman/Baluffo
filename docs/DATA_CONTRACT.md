@@ -172,7 +172,9 @@ Do not change signatures or remove without a dedicated plan:
 ### Data contracts
 
 - **source-discovery-report.json** and **source-discovery-candidates.json** must remain shape-compatible.
+- **source-discovery-report.json** now includes top-level `runId` for lifecycle ownership. The same `runId` must also appear in the matching `data/admin-task-state.json` discovery entry while the task is active.
 - **Report summary** must retain: counts, stage maps (`generatedCountByStage`, `survivedDedupeCountByStage`, `probedCountByStage`, `queuedCountByStage`), `lossAccounting`, `adapterCounts`, `methodCounts`.
+- **Runtime lifecycle metadata:** discovery runtime may include `runtime.lifecycle.owner` and `runtime.lifecycle.heartbeatAt`. These fields are additive and used by the bridge to project Current Runs without mutating the report.
 - **Candidates file semantics:** `data/source-discovery-candidates.json` is the persisted discovery review queue. It may contain both queued candidates and deferred review rows; consumers must use `deferred` / `deferReason` instead of assuming every row is queue-ready.
 - **M5 review snapshot:** `data/m5-strategic-backlog.json` is a derived review artifact built from discovery output. It is additive and must not replace `data/source-discovery-candidates.json` as the canonical discovery ledger.
 - **Additive candidate metadata** may include lifecycle and ranking fields such as `candidateState`, `rankScore`, `rankReasons`, `promotionLane`, `approvedAt`, `approvedBy`, `liveAt`, `quarantinedAt`, `quarantineReason`, `deferCount`, `firstDeferredAt`, and `lastDeferredAt`.
@@ -202,6 +204,27 @@ Fetcher and discovery reports may include a shared `taskProgress` object for the
 - The domain layer is responsible for mapping `taskProgress` into the rendered progress view.
 - The shared progress renderer only renders the derived view model; it must not infer phases or ratios from raw report counters.
 - Raw report counters remain useful for details and backward-compatible fallbacks, but the primary loading-bar state comes from `taskProgress`.
+
+### Lifecycle identity contract
+
+- `runId` is the only lifecycle identity for long-running admin tasks.
+- Fetch lifecycle surfaces:
+  - `data/jobs-fetch-report.json`
+  - `data/jobs-fetch-tasks.json`
+  - `data/admin-task-state.json` entry `fetch`
+- Discovery lifecycle surfaces:
+  - `data/source-discovery-report.json`
+  - `data/admin-task-state.json` entry `discovery`
+- `data/admin-run-history.json` is a derived history surface keyed by `runId`. It is not authoritative for whether a run is still active.
+- `data/jobs-fetch-tasks.json` now carries top-level `runId`, `startedAt`, `finishedAt`, and `heartbeatAt`.
+- Fetch report runtime may include `runtime.lifecycle.owner` and `runtime.lifecycle.heartbeatAt`.
+- Any new task-lifecycle artifact must preserve `runId` end to end instead of relying on timestamps.
+
+### Lifecycle cleanup
+
+- For a clean post-migration debug baseline, use:
+  - `python scripts/reset_admin_task_lifecycle.py --data-dir data`
+- This command resets only lifecycle/debug artifacts and archives legacy `admin-run-history.json` rows that do not have `runId`.
 
 ---
 

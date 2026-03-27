@@ -83,6 +83,7 @@ from src.shared.utils import now_iso, now_utc
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
 OPS_ALERT_STATE_PATH = ROOT / "data" / "admin-alert-state.json"
 JOBS_FETCH_REPORT_PATH = ROOT / "data" / "jobs-fetch-report.json"
+JOBS_FETCH_TASKS_PATH = ROOT / "data" / "jobs-fetch-tasks.json"
 TASKS_CONFIG_PATH = ROOT / ".vscode" / "tasks.json"
 TASK_STATE_PATH = ROOT / "data" / "admin-task-state.json"
 DISCOVERY_LOG_PATH = ROOT / "data" / "source-discovery.log"
@@ -259,6 +260,7 @@ def _get_ops_api() -> _ops_api.OpsApi:
         paths=_ops_api.OpsPaths(
             ops_alert_state=OPS_ALERT_STATE_PATH,
             jobs_fetch_report=JOBS_FETCH_REPORT_PATH,
+            jobs_fetch_tasks=JOBS_FETCH_TASKS_PATH,
             discovery_report=DISCOVERY_REPORT_PATH,
             task_state=TASK_STATE_PATH,
         ),
@@ -397,6 +399,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
         OPS_HISTORY_PATH, \
         OPS_ALERT_STATE_PATH, \
         JOBS_FETCH_REPORT_PATH, \
+        JOBS_FETCH_TASKS_PATH, \
         TASK_STATE_PATH, \
         DISCOVERY_LOG_PATH, \
         FETCHER_LOG_PATH
@@ -417,6 +420,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     OPS_HISTORY_PATH = data_dir / "admin-run-history.json"
     OPS_ALERT_STATE_PATH = data_dir / "admin-alert-state.json"
     JOBS_FETCH_REPORT_PATH = data_dir / "jobs-fetch-report.json"
+    JOBS_FETCH_TASKS_PATH = data_dir / "jobs-fetch-tasks.json"
     TASK_STATE_PATH = data_dir / "admin-task-state.json"
     _TASK_HISTORY_MANAGER = None  # force new manager with updated paths
     DISCOVERY_LOG_PATH = data_dir / "source-discovery.log"
@@ -493,6 +497,7 @@ def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
         compute_ops_health=compute_ops_health,
         compute_fetcher_metrics=compute_fetcher_metrics,
         sync_history_from_reports=sync_history_from_reports,
+        get_projected_run_history=_get_ops_api().get_projected_run_history,
         get_current_task_state_payload=_get_ops_api().get_current_task_state_payload,
         load_alert_state=load_alert_state,
         save_alert_state=save_alert_state,
@@ -924,6 +929,10 @@ def sync_history_from_reports() -> list[dict[str, Any]]:
     return _get_ops_api().sync_history_from_reports()
 
 
+def get_projected_run_history() -> _run_history_api.LifecycleProjection:
+    return _get_ops_api().get_projected_run_history()
+
+
 def compute_ops_health() -> dict[str, Any]:
     return _get_ops_api().compute_ops_health()
 
@@ -989,7 +998,9 @@ def sync_task_running() -> bool:
                 summarize_fetch_report=summarize_fetch_report,
                 summarize_discovery_report=summarize_discovery_report,
                 jobs_fetch_report_path=JOBS_FETCH_REPORT_PATH,
+                jobs_fetch_tasks_path=JOBS_FETCH_TASKS_PATH,
                 discovery_report_path=DISCOVERY_REPORT_PATH,
+                task_state_path=TASK_STATE_PATH,
                 get_active_sync_runs=SyncState.get_active_sync_runs,
                 parse_iso=parse_iso,
                 now_iso=now_iso,
@@ -1043,7 +1054,7 @@ def _run_sync_task_worker(
             entry_type, finished_at=finished_at
         ),
         upsert_run_history=lambda entry: upsert_run_history(
-            entry, dedupe_fields=("type", "finishedAt")
+            entry, dedupe_fields=("type", "runId")
         ),
         bridge_log=bridge_log,
     )
@@ -1160,7 +1171,12 @@ def start_fetcher_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
                 "schemaVersion": SCHEMA_VERSION,
                 "startedAt": started_at,
                 "finishedAt": "",
-                "runtime": {},
+                "runtime": {
+                    "lifecycle": {
+                        "owner": "fetch_report",
+                        "heartbeatAt": started_at,
+                    }
+                },
                 "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
                 "sources": [],
                 "outputs": {"report": str(JOBS_FETCH_REPORT_PATH)},

@@ -38,7 +38,7 @@ class DiscoveryDeps:
     bridge_log: Callable[[str, str], None] | Callable[..., None]
     load_json_object: Callable[[Any, Any], Any]
     save_json_atomic: Callable[[Any, Any], None]
-    run_background_script: Callable[[str, list[str] | None], int]
+    run_background_script: Callable[..., int]
     append_run_history: Callable[[dict[str, Any]], dict[str, Any]]
     normalize_discovery_report_contract: Callable[[dict[str, Any]], dict[str, Any]]
     load_state: Callable[[], dict[str, list[dict[str, Any]]]]
@@ -283,6 +283,7 @@ class DiscoveryService:
             self._paths.report,
             {
                 "schemaVersion": self._schema_version_int(),
+                "runId": run_id,
                 "mode": "dynamic",
                 "startedAt": started_at,
                 "finishedAt": "",
@@ -303,6 +304,10 @@ class DiscoveryService:
                     "pending": str(self._paths.pending),
                 },
                 "runtime": {
+                    "lifecycle": {
+                        "owner": "discovery_report",
+                        "heartbeatAt": started_at,
+                    },
                     "autoApproval": {
                         "enabled": bool(
                             self.get_saved_discovery_config_payload().get(
@@ -324,6 +329,7 @@ class DiscoveryService:
         self._deps.append_run_history(
             {
                 "id": run_id,
+                "runId": run_id,
                 "type": "discovery",
                 "status": "started",
                 "startedAt": started_at,
@@ -339,12 +345,20 @@ class DiscoveryService:
             preset = "default"
             spawn_args.extend(["--preset", "default"])
         try:
-            pid = self._deps.run_background_script("source_discovery.py", spawn_args)
+            pid = self._deps.run_background_script(
+                "source_discovery.py",
+                spawn_args,
+                extra_env={
+                    "BALUFFO_DISCOVERY_RUN_ID": run_id,
+                    "BALUFFO_DISCOVERY_STARTED_AT": started_at,
+                },
+            )
         except Exception as exc:  # noqa: BLE001
             self._deps.save_json_atomic(
                 self._paths.report,
                 {
                     "schemaVersion": self._schema_version_int(),
+                    "runId": run_id,
                     "mode": "dynamic",
                     "startedAt": started_at,
                     "finishedAt": self._deps.now_iso(),
@@ -370,6 +384,10 @@ class DiscoveryService:
                         "pending": str(self._paths.pending),
                     },
                     "runtime": {
+                        "lifecycle": {
+                            "owner": "discovery_report",
+                            "heartbeatAt": self._deps.now_iso(),
+                        },
                         "autoApproval": {
                             "enabled": bool(
                                 self.get_saved_discovery_config_payload().get(

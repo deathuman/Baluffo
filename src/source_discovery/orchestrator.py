@@ -12,6 +12,7 @@ Phases:
 
 import argparse
 import asyncio
+import os
 import time
 from collections import Counter
 from typing import Any
@@ -313,9 +314,12 @@ def run_discovery(
     mode: str = "dynamic",
     include_web_search: bool = True,
     discovery_config: dict[str, Any] | None = None,
+    run_id: str = "",
+    started_at_override: str = "",
     fetcher=fetch_text,
 ) -> dict[str, Any]:
-    started_at = sd.now_iso()
+    started_at = str(started_at_override or sd.now_iso()).strip()
+    run_id = str(run_id or "").strip()
     run_started_mono = time.perf_counter()
     effective_config = (
         discovery_config if isinstance(discovery_config, dict) else sd.load_discovery_config()
@@ -446,11 +450,18 @@ def run_discovery(
             sd.DISCOVERY_REPORT_PATH,
             {
                 "schemaVersion": SCHEMA_VERSION,
+                "runId": run_id,
                 "mode": mode,
                 "startedAt": started_at,
                 "finishedAt": "",
                 "summary": summary,
-                "runtime": runtime_payload,
+                "runtime": {
+                    **dict(runtime_payload),
+                    "lifecycle": {
+                        "owner": "discovery_report",
+                        "heartbeatAt": sd.now_iso(),
+                    },
+                },
                 "taskProgress": task_progress,
                 "candidates": current_candidates,
                 "failures": failures,
@@ -1279,18 +1290,25 @@ def run_discovery(
 
     report = {
         "schemaVersion": SCHEMA_VERSION,
+        "runId": run_id,
         "mode": mode,
         "startedAt": started_at,
         "finishedAt": sd.now_iso(),
         "summary": summary,
-        "runtime": _build_discovery_runtime_payload(
+        "runtime": {
+            **_build_discovery_runtime_payload(
             total_duration_ms=max(0, int((time.perf_counter() - run_started_mono) * 1000)),
             stage_timings_ms=stage_timings_ms,
             adapter_runtime=adapter_runtime,
             preset=preset_name,
             top_cap_bypassed=top_cap_bypassed,
             sheet_static_probe_cap_bypassed=sheet_static_probe_cap_bypassed,
-        ),
+            ),
+            "lifecycle": {
+                "owner": "discovery_report",
+                "heartbeatAt": sd.now_iso(),
+            },
+        },
         "taskProgress": task_progress,
         "candidates": report_candidates,
         "failures": failures,
@@ -1329,6 +1347,8 @@ def run_discovery(
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    env_run_id = str(os.environ.get("BALUFFO_DISCOVERY_RUN_ID") or "").strip()
+    env_started_at = str(os.environ.get("BALUFFO_DISCOVERY_STARTED_AT") or "").strip()
     discovery_config = sd.load_discovery_config()
     if bool(getattr(args, "gamesmap_website_only_fallback", False)):
         gamesmap_cfg = dict(discovery_config.get("gamesmap") or {})
@@ -1358,6 +1378,8 @@ def main(argv: list[str] | None = None) -> int:
         mode=str(args.mode),
         include_web_search=not bool(args.no_web_search),
         discovery_config=discovery_config,
+        run_id=env_run_id,
+        started_at_override=env_started_at,
     )
     sd.emit_log(
         "Source discovery completed. "

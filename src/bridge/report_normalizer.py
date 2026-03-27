@@ -417,7 +417,33 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     if finished_at:
         normalized["taskProgress"] = _derive_fetch_task_progress(normalized, normalized["summary"])
     elif not normalized["taskProgress"].get("phaseKey"):
-        normalized["taskProgress"] = _derive_fetch_task_progress(normalized, normalized["summary"])
+        has_progress_evidence = bool(
+            normalized["runId"]
+            or normalized["startedAt"]
+            or normalized["sources"]
+            or any(
+                safe_int(summary_value, 0, 0, 1_000_000_000) > 0
+                for summary_value in normalized["summary"].values()
+            )
+            or normalized["runtime"].get("heartbeatAt")
+        )
+        if has_progress_evidence:
+            normalized["taskProgress"] = _derive_fetch_task_progress(normalized, normalized["summary"])
+        else:
+            normalized["taskProgress"] = {
+                "active": False,
+                "phaseKey": "",
+                "phaseLabel": "",
+                "mode": "indeterminate",
+                "ratio": 0.0,
+                "counts": {
+                    "resolvedSources": 0,
+                    "sourceCount": 0,
+                    "outputCount": 0,
+                    "failedSources": 0,
+                    "excludedSources": 0,
+                },
+            }
     return normalized
 
 
@@ -451,6 +477,7 @@ def normalize_discovery_report_contract(payload: dict[str, Any]) -> dict[str, An
     )
     normalized = {
         "schemaVersion": safe_schema_version(src.get("schemaVersion")),
+        "runId": str(src.get("runId") or "").strip(),
         "mode": str(src.get("mode") or "").strip(),
         "startedAt": str(src.get("startedAt") or "").strip(),
         "finishedAt": str(src.get("finishedAt") or "").strip(),

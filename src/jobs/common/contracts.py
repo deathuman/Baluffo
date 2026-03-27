@@ -13,6 +13,7 @@ def normalize_runtime_payload(
     runtime: dict[str, Any], *, selected_source_count: int
 ) -> dict[str, Any]:
     src = runtime if isinstance(runtime, dict) else {}
+    lifecycle = src.get("lifecycle") if isinstance(src.get("lifecycle"), dict) else {}
     payload = {
         "selectedSourceCount": _clamped_int(
             src.get("selectedSourceCount"), selected_source_count, 0
@@ -47,6 +48,11 @@ def normalize_runtime_payload(
         "scrapyValidationStrict": bool(src.get("scrapyValidationStrict")),
         "canonicalStrictUrl": bool(src.get("canonicalStrictUrl")),
     }
+    if lifecycle:
+        payload["lifecycle"] = {
+            "owner": clean_text(lifecycle.get("owner")),
+            "heartbeatAt": clean_text(lifecycle.get("heartbeatAt")),
+        }
     slowest_sources_raw = (
         src.get("slowestSources") if isinstance(src.get("slowestSources"), list) else []
     )
@@ -573,6 +579,7 @@ def normalize_task_state_payload(
         "runId": clean_text(src.get("runId")) or clean_text(run_id),
         "startedAt": clean_text(src.get("startedAt")) or clean_text(started_at),
         "finishedAt": clean_text(src.get("finishedAt")) or clean_text(finished_at),
+        "heartbeatAt": clean_text(src.get("heartbeatAt")),
         "summary": {
             "queued": _clamped_int(summary.get("queued"), 0, 0),
             "running": _clamped_int(summary.get("running"), 0, 0),

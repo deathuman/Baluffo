@@ -295,6 +295,16 @@ def test_normalize_fetch_report_contract_sanitizes_minimal_payload(admin_bridge_
     assert int(row.get("durationMs") or 0) == 17
 
 
+def test_normalize_fetch_report_contract_keeps_blank_report_inactive(
+    admin_bridge_entrypoint_root,
+):
+    payload = admin_bridge.normalize_fetch_report_contract({})
+    task_progress = payload.get("taskProgress") or {}
+    assert task_progress["active"] is False
+    assert str(task_progress.get("phaseKey") or "") == ""
+    assert str(task_progress.get("phaseLabel") or "") == ""
+
+
 def test_normalize_fetch_report_contract_parses_stringified_detail_rows(
     admin_bridge_entrypoint_root,
 ):
@@ -521,7 +531,7 @@ def test_build_fetcher_args_uncapped_bypasses_admin_caps_and_keeps_social(
     assert "--social-enabled" in args
 
 
-def test_sync_history_from_reports_prunes_stale_started_rows_when_report_stuck(
+def test_sync_history_from_reports_does_not_prune_unfinished_fetch_without_run_id(
     admin_bridge_entrypoint_root,
 ):
     old_started = "2026-03-01T00:00:00+00:00"
@@ -551,10 +561,12 @@ def test_sync_history_from_reports_prunes_stale_started_rows_when_report_stuck(
     os.utime(admin_bridge.JOBS_FETCH_REPORT_PATH, (old_ts, old_ts))
     rows = admin_bridge.sync_history_from_reports()
     started_rows = [row for row in rows if str(row.get("status") or "").lower() == "started"]
-    assert started_rows == []
+    assert len(started_rows) == 1
+    report = admin_bridge.load_json_object(admin_bridge.JOBS_FETCH_REPORT_PATH, {})
+    assert str(report.get("finishedAt") or "") == ""
 
 
-def test_sync_history_from_reports_marks_stale_discovery_report_finished(
+def test_sync_history_from_reports_does_not_finish_discovery_from_read_side(
     admin_bridge_entrypoint_root,
 ):
     old_started = "2026-03-01T00:00:00+00:00"
@@ -579,8 +591,7 @@ def test_sync_history_from_reports_marks_stale_discovery_report_finished(
     admin_bridge.sync_history_from_reports()
 
     report = admin_bridge.load_json_object(admin_bridge.DISCOVERY_REPORT_PATH, {})
-    assert str(report.get("finishedAt") or "").strip()
-    assert str((report.get("summary") or {}).get("error") or "") == "stale_started_run_pruned"
+    assert str(report.get("finishedAt") or "").strip() == ""
 
 
 def test_infer_studio_name_from_host_skips_www_and_splits_studio_token(
@@ -677,6 +688,39 @@ def test_run_background_script_uses_unbuffered_python_for_live_logs(admin_bridge
     assert kwargs["stdout"] is kwargs["stderr"]
 
 
+def test_run_background_script_persists_run_id_in_task_state(admin_bridge_entrypoint_root):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=True,
+        desktop_mode=False,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    fake_proc = type("FakeProc", (), {"pid": 24680})()
+    with (
+        mock.patch.object(admin_bridge.sys, "frozen", False, create=True),
+        mock.patch.object(admin_bridge.sys, "executable", "C:/Python313/python.exe"),
+        mock.patch.object(admin_bridge.subprocess, "Popen", return_value=fake_proc),
+    ):
+        admin_bridge.run_background_script(
+            "jobs_fetcher.py",
+            [],
+            extra_env={
+                "BALUFFO_FETCH_RUN_ID": "fetch_state_1",
+                "BALUFFO_FETCH_STARTED_AT": "2026-03-27T14:00:00+00:00",
+            },
+        )
+    task_state = admin_bridge.load_json_object(admin_bridge.TASK_STATE_PATH, {})
+    fetch_state = task_state.get("fetch") or {}
+    assert str(fetch_state.get("runId") or "") == "fetch_state_1"
+    assert str(fetch_state.get("taskType") or "") == "fetch"
+    assert str(fetch_state.get("startedAt") or "") == "2026-03-27T14:00:00+00:00"
+
+
 def test_start_fetcher_task_writes_report_shell_with_run_id(admin_bridge_entrypoint_root):
     with mock.patch.object(admin_bridge, "run_background_script", return_value=24680):
         result = admin_bridge.start_fetcher_task({})
@@ -738,7 +782,7 @@ def test_sync_history_from_reports_merges_fetch_launcher_and_report_rows_by_run_
     assert str(matching[0].get("finishedAt") or "") == finished_at
 
 
-def test_sync_history_from_reports_collapses_legacy_fetch_duplicates_by_timestamps(
+def test_sync_history_from_reports_leaves_legacy_fetch_duplicates_untouched(
     admin_bridge_entrypoint_root,
 ):
     started_at = "2026-03-01T00:00:00+00:00"
@@ -784,10 +828,10 @@ def test_sync_history_from_reports_collapses_legacy_fetch_duplicates_by_timestam
         and str(row.get("startedAt") or "") == started_at
         and str(row.get("finishedAt") or "") == finished_at
     ]
-    assert len(matching) == 1
+    assert len(matching) == 2
 
 
-def test_sync_history_from_reports_enriches_legacy_fetch_row_with_run_id(
+def test_sync_history_from_reports_projects_run_id_row_without_rewriting_legacy_row(
     admin_bridge_entrypoint_root,
 ):
     run_id = "fetch_enrich_1"
@@ -823,11 +867,12 @@ def test_sync_history_from_reports_enriches_legacy_fetch_row_with_run_id(
         for row in rows
         if str(row.get("type") or "") == "fetch" and str(row.get("startedAt") or "") == started_at
     ]
-    assert len(matching) == 1
-    assert str(matching[0].get("runId") or "") == run_id
+    assert len(matching) == 2
+    assert any(str(row.get("runId") or "") == run_id for row in matching)
+    assert any(not str(row.get("runId") or "").strip() for row in matching)
 
 
-def test_sync_history_from_reports_collapses_mixed_fetch_duplicates_to_single_stale_error(
+def test_sync_history_from_reports_marks_run_id_row_orphaned_without_merging_legacy_rows(
     admin_bridge_entrypoint_root,
 ):
     run_id = "fetch_stale_1"
@@ -875,10 +920,14 @@ def test_sync_history_from_reports_collapses_mixed_fetch_duplicates_to_single_st
         for row in rows
         if str(row.get("type") or "") == "fetch" and str(row.get("startedAt") or "") == started_at
     ]
-    assert len(matching) == 1
-    assert str(matching[0].get("status") or "").lower() == "error"
-    assert str((matching[0].get("summary") or {}).get("error") or "") == "stale_started_run_pruned"
-    assert str(matching[0].get("runId") or "") == run_id
+    assert len(matching) == 2
+    run_id_row = next(row for row in matching if str(row.get("runId") or "") == run_id)
+    assert str(run_id_row.get("status") or "").lower() == "error"
+    assert (
+        str((run_id_row.get("summary") or {}).get("error") or "")
+        == "owner_inactive_without_terminal_report"
+    )
+    assert any(not str(row.get("runId") or "").strip() for row in matching)
 
 
 def test_start_fetcher_task_registers_history_before_report_can_duplicate(
@@ -917,8 +966,22 @@ def test_get_current_task_state_payload_projects_active_tasks(admin_bridge_entry
     admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
-            "fetch": {"pid": 111, "script": "jobs_fetcher.py", "startedAt": started_at},
-            "discovery": {"pid": 222, "script": "source_discovery.py", "startedAt": started_at},
+            "fetch": {
+                "runId": "fetch_1",
+                "taskType": "fetch",
+                "pid": 111,
+                "script": "jobs_fetcher.py",
+                "status": "running",
+                "startedAt": started_at,
+            },
+            "discovery": {
+                "runId": "discovery_1",
+                "taskType": "discovery",
+                "pid": 222,
+                "script": "source_discovery.py",
+                "status": "running",
+                "startedAt": started_at,
+            },
         },
     )
     admin_bridge.save_json_atomic(
@@ -1015,3 +1078,76 @@ def test_get_current_task_state_payload_projects_active_tasks(admin_bridge_entry
                 "progress": {"currentStep": 0, "totalSteps": 3, "percent": 0, "label": "Idle"},
             }
         )
+
+
+def test_get_current_task_state_payload_prefers_active_fetch_owner_over_finished_history(
+    admin_bridge_entrypoint_root,
+):
+    started_at = admin_bridge.now_iso()
+    run_id = "fetch_live_1"
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "fetch": {
+                "runId": run_id,
+                "taskType": "fetch",
+                "pid": 111,
+                "script": "jobs_fetcher.py",
+                "status": "running",
+                "startedAt": started_at,
+            }
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "runId": run_id,
+            "startedAt": started_at,
+            "finishedAt": "",
+            "runtime": {"lifecycle": {"owner": "fetch_report", "heartbeatAt": started_at}},
+            "taskProgress": {
+                "active": True,
+                "phaseKey": "executing_sources",
+                "phaseLabel": "Executing sources",
+                "mode": "determinate",
+                "ratio": 0.5,
+                "counts": {"resolvedSources": 5, "sourceCount": 10},
+            },
+            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+            "sources": [],
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_TASKS_PATH,
+        {
+            "runId": run_id,
+            "startedAt": started_at,
+            "finishedAt": "",
+            "heartbeatAt": started_at,
+            "taskProgress": {"active": True},
+            "summary": {"queued": 0, "running": 1, "ok": 0, "error": 0},
+            "tasks": [],
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.OPS_HISTORY_PATH,
+        [
+            {
+                "id": run_id,
+                "runId": run_id,
+                "type": "fetch",
+                "status": "warning",
+                "startedAt": started_at,
+                "finishedAt": admin_bridge.now_iso(),
+                "durationMs": 123,
+                "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+            }
+        ],
+    )
+
+    payload = admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG).get_current_task_state_payload()
+    fetch_row = next(row for row in (payload.get("tasks") or []) if row.get("taskType") == "fetch")
+    assert fetch_row["active"] is True
+    assert str(fetch_row.get("runId") or "") == run_id
+    diagnostics = payload.get("diagnostics") or []
+    assert any(str(item.get("code") or "") == "history_finished_while_owner_active" for item in diagnostics)

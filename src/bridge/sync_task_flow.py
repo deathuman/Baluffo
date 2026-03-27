@@ -95,6 +95,7 @@ def run_sync_task_worker(
     upsert_run_history(
         {
             "id": run_id,
+            "runId": run_id,
             "type": "sync",
             "status": status,
             "startedAt": started_at,

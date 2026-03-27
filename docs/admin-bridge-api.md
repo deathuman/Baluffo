@@ -103,6 +103,18 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 
 ## Notes
 
+- Long-running admin tasks are now **runId-owned**. `runId` is the only lifecycle identity for fetch, discovery, sync, and pipeline rows. Timestamp-only matching is not part of the runtime lifecycle model anymore.
+- Current Runs and `/ops/history` are projected from task owners, not from `admin-run-history.json` alone.
+- Authoritative owners by task type:
+  - `fetch`: `data/jobs-fetch-report.json`, `data/jobs-fetch-tasks.json`, and the matching `data/admin-task-state.json` entry
+  - `discovery`: `data/source-discovery-report.json` and the matching `data/admin-task-state.json` entry
+  - `sync`: `SyncState` in the bridge runtime
+  - `pipeline`: bridge pipeline runtime state
+- GET routes are read-only for lifecycle state. Loading `/discovery/report`, `/ops/history`, `/ops/task-state`, or `/ops/fetch-report` must not auto-finish or prune tasks.
+- `data/admin-run-history.json` is a derived summary surface. It records starts and completions, but it is not the source of truth for liveness.
+- To reset lifecycle/debug artifacts after this migration or before a clean debugging session, run:
+  - `python scripts/reset_admin_task_lifecycle.py --data-dir data`
+
 - Bridge-started fetch runs enable social by default unless the request payload explicitly sets `socialEnabled: false`.
 - `uncapped` is an explicit aggressive admin preset. It is distinct from `force_full`.
 - `/discovery/log` is designed for live tailing via byte offsets, and the Admin UI now re-attaches to active discovery runs after page refresh.

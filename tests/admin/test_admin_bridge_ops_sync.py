@@ -112,7 +112,7 @@ def test_start_sync_task_creates_started_history_row(admin_bridge_ops_root):
         admin_bridge.threading.Thread = original_thread_cls
 
 
-def test_sync_history_prunes_stale_started_rows_without_live_worker(admin_bridge_ops_root):
+def test_sync_history_leaves_sync_started_row_until_explicit_completion(admin_bridge_ops_root):
     admin_bridge.append_run_history(
         {
             "id": "sync_stale_1",
@@ -125,7 +125,7 @@ def test_sync_history_prunes_stale_started_rows_without_live_worker(admin_bridge
         }
     )
     rows = admin_bridge.sync_history_from_reports()
-    assert not any(str(row.get("id") or "") == "sync_stale_1" for row in rows)
+    assert any(str(row.get("id") or "") == "sync_stale_1" for row in rows)
 
 
 def test_sync_worker_writes_completed_row_with_summary(admin_bridge_ops_root):

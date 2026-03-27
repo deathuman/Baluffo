@@ -187,7 +187,7 @@ def test_discovery_report_missing_file(tmp_path: Path) -> None:
     assert result is True
 
 
-def test_discovery_report_reconciles_stale_in_progress_run(tmp_path: Path) -> None:
+def test_discovery_report_route_is_read_only_for_unfinished_runs(tmp_path: Path) -> None:
     store = _FakeDesktopLocalDataStore()
     api = _make_api(tmp_path, store)
     saved_reports: list[dict[str, Any]] = []
@@ -217,7 +217,6 @@ def test_discovery_report_reconciles_stale_in_progress_run(tmp_path: Path) -> No
 
     api.load_json_object = lambda _path, default=None: raw_report
     api.normalize_discovery_report_contract = lambda payload: payload
-    api.report_is_stale_in_progress = lambda *_args, **_kwargs: True
     api.now_iso = lambda: "2026-03-08T10:05:00.000Z"
     api.save_json_atomic = lambda _path, payload: saved_reports.append(payload)
     api.prune_started_rows_for_type = lambda run_type, *, finished_at="", keep_started_at="": (
@@ -232,12 +231,12 @@ def test_discovery_report_reconciles_stale_in_progress_run(tmp_path: Path) -> No
     assert result is True
     payload = handler.bytes_sent[-1]
     report = json.loads(payload["body"].decode("utf-8"))
-    assert report["finishedAt"] == "2026-03-08T10:05:00.000Z"
+    assert report["finishedAt"] == ""
     assert report["summary"]["phaseLabel"] == "Probing 124 candidate(s)"
-    assert saved_reports[-1]["finishedAt"] == "2026-03-08T10:05:00.000Z"
-    assert pruned == [("discovery", "2026-03-08T10:05:00.000Z")]
-    assert cleared == ["discovery"]
-    assert "discovery_report_reconciled" in bridge_logs
+    assert saved_reports == []
+    assert pruned == []
+    assert cleared == []
+    assert "discovery_report_reconciled" not in bridge_logs
 
 
 def test_session_with_user(tmp_path: Path) -> None:

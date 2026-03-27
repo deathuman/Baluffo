@@ -515,6 +515,7 @@ class SyncService:
         self._run_history.append(
             {
                 "id": run_id,
+                "runId": run_id,
                 "type": "sync",
                 "status": "started",
                 "startedAt": started_at,

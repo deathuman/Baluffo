@@ -117,6 +117,7 @@ class PipelineService:
                 self._upsert_run_history(
                     {
                         "id": run_id,
+                        "runId": run_id,
                         "type": "pipeline",
                         "status": "error" if status == "error" else "ok",
                         "startedAt": started_at,
@@ -242,6 +243,7 @@ class PipelineService:
             self._append_run_history(
                 {
                     "id": run_id,
+                    "runId": run_id,
                     "type": "pipeline",
                     "status": "started",
                     "startedAt": started_at,

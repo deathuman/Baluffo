@@ -160,15 +160,15 @@ Extracted from `admin_bridge.py` to reduce God Object complexity:
   - `compute_health()`, `filter_alerts()`, `check_schedule()`
 
 - **`ops_api.py`**: Ops/report orchestration
-  - `failed_source_names_from_latest_report()`, `sync_history_from_reports()`, `compute_ops_health()`, `compute_fetcher_metrics()`
+  - `failed_source_names_from_latest_report()`, `get_projected_run_history()`, `sync_history_from_reports()`, `compute_ops_health()`, `compute_fetcher_metrics()`
   - keeps report/history/ops assembly out of `admin_bridge.py`
 
 - **`task_history.py`**: Run history and task-state persistence
   - `TaskHistoryManager` (load/save/append/upsert run_history, prune_started_rows_for_type, clear_task_state)
 
 - **`run_history_api.py`**: Run history helpers
-  - `load_saved_run_history()`, `append_run_history_entry()`, `upsert_run_history_entry()`
-  - `task_running_from_state()`, `report_is_stale_in_progress()`
+  - runId-based lifecycle projection for fetch/discovery
+  - `task_running_from_state()`, `project_run_history()`, `sync_history_from_reports()`
 
 - **`source_checker.py`**: Static source validation (check_static_source and helpers); used by admin bridge for source testing/validation.
 
@@ -216,7 +216,7 @@ Responsibilities still in `admin_bridge.py` and where they are used:
 | **Registry (wrappers)** | `ensure_active_registry`, `normalize_state`, `load_state`, `summarize_state`, `persist_state`, `persist_state_and_auto_sync`, `move_entries` | `bridge/routes/get_routes.py` (state, registry), `post_routes.py` (move, persist) |
 | **Source/registry helpers** | Implementation in `bridge/source_helpers.py`. admin_bridge imports and uses for POST add manual source and registry flows. | POST add manual source, registry flows |
 | **Source-check (fetch/HTML)** | Implementation in `bridge/source_checker.py` and `bridge/source_check_http.py`. admin_bridge still provides `_fetch_html_with_fallback`, `_html_has_extractable_job_data`, `_fetch_static_page_with_alternates` (wrappers that call bridge and discovery), and `check_static_source` / `trigger_source_check` that delegate to bridge. | `post_routes.py` (`trigger_source_check`); `check_static_source` |
-| **Run history / task state** | Implementation in `bridge/task_history.py` (TaskHistoryManager) and `bridge/run_history_api.py` (load/save/append/upsert/prune/clear, task_running_from_state, report_is_stale_in_progress). admin_bridge keeps `_get_task_history_manager()` and thin wrappers that delegate to run_history_api. | Routes (ops, run history), handler (task state), discovery/sync finish paths |
+| **Run history / task state** | Implementation in `bridge/task_history.py` (TaskHistoryManager), `bridge/run_history_api.py` (runId-based lifecycle projection), and `bridge/lifecycle_cleanup.py` (one-time cleanup/reset). admin_bridge keeps `_get_task_history_manager()` plus thin wrappers that delegate to bridge modules. | Routes (ops, run history), explicit maintenance/reset, task launch/completion surfaces |
 | **Alerts / schedule** | Implementation in `bridge/ops_health.py`, with `src/bridge/ops_api.py` owning the dependency assembly and delegating alert/schedule helpers through stable `admin_bridge.py` wrappers. | Ops health, fetcher metrics |
 | **Ops / health / reports** | Report normalization in `bridge/report_normalizer.py`; orchestration for failed-source filtering, history reconciliation, ops health, and fetcher metrics now lives in `bridge/ops_api.py`, with `admin_bridge.py` exposing thin compatibility wrappers. | GET `/ops/health`, `/ops/summary`, report normalization for routes |
 | **Sync status (wrappers)** | `_set_sync_status`, `get_sync_status_payload`, `sync_pull_sources`, `sync_push_sources`, `startup_sync_pull`, `sync_task_running`, `wait_for_sync_tasks`, `_sync_guard`, `_mark_discovery_sync_finished` | POST sync routes, startup, discovery completion |
@@ -225,6 +225,17 @@ Responsibilities still in `admin_bridge.py` and where they are used:
 | **Route dispatch** | Request handler class `do_GET` / `do_POST` calling `get_routes.handle_get`, `post_routes.handle_post` | Incoming HTTP |
 
 Guardrail: changes to long-running admin task flows should verify launch, busy-state locking, and log polling/reattachment together, because those behaviors are coupled across routes, bridge services, and frontend runtime code.
+
+Lifecycle ownership guardrail:
+- `runId` is the only task identity for long-running admin work.
+- `admin-run-history.json` is a projection, not an owner.
+- GET routes must not mutate lifecycle state.
+- Authoritative owners:
+  - fetch: `jobs-fetch-report.json`, `jobs-fetch-tasks.json`, matching `admin-task-state.json`
+  - discovery: `source-discovery-report.json`, matching `admin-task-state.json`
+  - sync: `SyncState`
+  - pipeline: pipeline runtime state
+- To reset legacy lifecycle artifacts after this migration, use `python scripts/reset_admin_task_lifecycle.py --data-dir data`.
 
 Further shrinkage: extract to bridge modules with injected deps; keep `api.xxx` callable in admin_bridge if routes need it (thin wrappers that delegate).
 
@@ -271,6 +282,8 @@ Backend refactoring is directionally strong and materially narrower than the ear
 - **`data/jobs-unified.json`**: The main aggregated jobs feed. This is the primary data source for the Jobs UI.
 - **`data/jobs-unified.csv`**: A CSV version of the aggregated jobs feed.
 - **`data/jobs-fetch-report.json`**: A report on the last run of the jobs fetcher, including which sources were successful and which failed.
+- **`data/jobs-fetch-tasks.json`**: Fetch task execution state, including `runId`, progress counters, and heartbeat information used for Current Runs projection.
+- **`data/admin-task-state.json`**: Bridge launch-state for child tasks; fetch/discovery entries now carry `runId`, `taskType`, `pid`, `status`, and `startedAt`.
 - **`data/source-registry-active.json`**: A list of the active job sources that the fetcher will use.
 - **`data/source-registry-pending.json`**: A list of new job sources that have been discovered but not yet approved.
 - **`data/source-registry-rejected.json`**: A list of job sources that have been rejected.

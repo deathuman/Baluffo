@@ -862,7 +862,13 @@ def run_pipeline(
             "runId": run_id,
             "startedAt": started_at,
             "finishedAt": lifecycle_finished_at,
-            "runtime": runtime_payload,
+            "runtime": {
+                **dict(runtime_payload),
+                "lifecycle": {
+                    "owner": "fetch_report",
+                    "heartbeatAt": lifecycle_finished_at,
+                },
+            },
             "socialSummary": reporting_pkg.summarize_social_experiment(
                 source_reports,
                 deduped_payload_rows,

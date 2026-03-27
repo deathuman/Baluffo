@@ -88,6 +88,8 @@ class TaskLaunchApi:
         task_type = (
             "discovery" if "discovery" in script else ("fetch" if "fetcher" in script else script)
         )
+        task_run_id = ""
+        task_started_at = self._deps.now_iso()
         child_env = os.environ.copy()
         child_env["BALUFFO_DATA_DIR"] = str(self._runtime.data_dir)
         child_env["PYTHONUNBUFFERED"] = "1"
@@ -95,6 +97,17 @@ class TaskLaunchApi:
             for key, value in extra_env.items():
                 if key:
                     child_env[str(key)] = str(value)
+            if task_type == "fetch":
+                task_run_id = str(extra_env.get("BALUFFO_FETCH_RUN_ID") or "").strip()
+                task_started_at = (
+                    str(extra_env.get("BALUFFO_FETCH_STARTED_AT") or "").strip() or task_started_at
+                )
+            elif task_type == "discovery":
+                task_run_id = str(extra_env.get("BALUFFO_DISCOVERY_RUN_ID") or "").strip()
+                task_started_at = (
+                    str(extra_env.get("BALUFFO_DISCOVERY_STARTED_AT") or "").strip()
+                    or task_started_at
+                )
         if task_type == "discovery":
             child_env["BALUFFO_DISCOVERY_LOG_PATH"] = str(self._paths.discovery_log)
         elif task_type == "fetch":
@@ -132,9 +145,12 @@ class TaskLaunchApi:
         with self._deps.task_state_lock:
             state = self._deps.load_json_object(self._paths.task_state, {})
             state[str(task_type)] = {
+                "runId": task_run_id,
+                "taskType": str(task_type),
                 "pid": int(proc.pid),
                 "script": str(script_name),
-                "startedAt": self._deps.now_iso(),
+                "status": "running",
+                "startedAt": task_started_at,
             }
             self._deps.save_json_atomic(self._paths.task_state, state)
         self._deps.bridge_log(

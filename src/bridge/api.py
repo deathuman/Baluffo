@@ -147,6 +147,7 @@ class BridgeApi:
     compute_ops_health: Callable[[], dict[str, Any]] = lambda: {"ok": True}  # type: ignore[assignment]
     compute_fetcher_metrics: Callable[..., dict[str, Any]] = lambda **_kw: {"ok": True}  # type: ignore[assignment]
     sync_history_from_reports: Callable[[], list[dict[str, Any]]] = lambda: []  # type: ignore[assignment]
+    get_projected_run_history: Callable[[], Any] = lambda: {"rows": []}  # type: ignore[assignment]
     get_current_task_state_payload: Callable[[], dict[str, Any]] = lambda: {"tasks": [], "count": 0}  # type: ignore[assignment]
 
     # Sync-specific helpers used by routes.

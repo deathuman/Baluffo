@@ -150,7 +150,13 @@ def write_progress_report(
             "runId": run_id,
             "startedAt": started_at,
             "finishedAt": "",
-            "runtime": runtime_payload,
+            "runtime": {
+                **dict(runtime_payload),
+                "lifecycle": {
+                    "owner": "fetch_report",
+                    "heartbeatAt": now_iso(),
+                },
+            },
             "taskProgress": build_fetch_task_progress_payload(
                 phase_key=phase_key,
                 phase_label=phase_label,
@@ -217,6 +223,7 @@ def make_task_state_writer(
                 "runId": run_id,
                 "startedAt": started_at,
                 "finishedAt": finished_at,
+                "heartbeatAt": now_iso(),
                 "summary": {
                     "queued": sum(1 for row in rows_snapshot if row.get("status") == "queued"),
                     "running": sum(1 for row in rows_snapshot if row.get("status") == "running"),

@@ -7,10 +7,15 @@ from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, Discover
 
 
 def test_trigger_discovery_task_uncapped_uses_explicit_uncapped_args(tmp_path: Path) -> None:
-    calls: list[tuple[str, list[str] | None]] = []
+    calls: list[tuple[str, list[str] | None, dict[str, str] | None]] = []
 
-    def run_background_script(script_name: str, args: list[str] | None = None) -> int:
-        calls.append((script_name, list(args or [])))
+    def run_background_script(
+        script_name: str,
+        args: list[str] | None = None,
+        *,
+        extra_env: dict[str, str] | None = None,
+    ) -> int:
+        calls.append((script_name, list(args or []), dict(extra_env or {})))
         return 123
 
     service = DiscoveryService(
@@ -53,7 +58,14 @@ def test_trigger_discovery_task_uncapped_uses_explicit_uncapped_args(tmp_path: P
     assert result["preset"] == "uncapped"
     assert result["args"] == ["--mode", "dynamic", "--top", "0", "--preset", "uncapped"]
     assert calls == [
-        ("source_discovery.py", ["--mode", "dynamic", "--top", "0", "--preset", "uncapped"])
+        (
+            "source_discovery.py",
+            ["--mode", "dynamic", "--top", "0", "--preset", "uncapped"],
+            {
+                "BALUFFO_DISCOVERY_RUN_ID": str(result.get("runId") or ""),
+                "BALUFFO_DISCOVERY_STARTED_AT": "2026-03-20T12:00:00Z",
+            },
+        )
     ]
 
 
@@ -84,7 +96,7 @@ def test_trigger_discovery_task_logs_launch_start_and_persists_shell(tmp_path: P
             bridge_log=bridge_log,
             load_json_object=lambda path, default: default,
             save_json_atomic=save_json_atomic,
-            run_background_script=lambda script_name, args=None: 456,
+            run_background_script=lambda script_name, args=None, **kwargs: 456,
             append_run_history=lambda payload: payload,
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {"active": [], "pending": [], "rejected": []},
@@ -104,8 +116,10 @@ def test_trigger_discovery_task_logs_launch_start_and_persists_shell(tmp_path: P
     report = json.loads((tmp_path / "source-discovery-report.json").read_text(encoding="utf-8"))
     assert status_code == 200
     assert result["started"] is True
+    assert report["runId"] == str(result.get("runId") or "")
     assert report["startedAt"] == "2026-03-20T12:00:00Z"
     assert report["finishedAt"] == ""
+    assert report["runtime"]["lifecycle"]["owner"] == "discovery_report"
     assert any(message == "discovery_launch_started" for message, _fields in calls)
 
 
@@ -128,7 +142,7 @@ def test_discovery_settings_default_to_auto_approve_enabled(tmp_path: Path) -> N
             bridge_log=lambda *args, **kwargs: None,
             load_json_object=lambda path, default: default,
             save_json_atomic=lambda path, payload: None,
-            run_background_script=lambda script_name, args=None: 1,
+            run_background_script=lambda script_name, args=None, **kwargs: 1,
             append_run_history=lambda payload: payload,
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {"active": [], "pending": [], "rejected": []},
@@ -173,7 +187,7 @@ def test_update_discovery_settings_persists_normalized_bool(tmp_path: Path) -> N
             bridge_log=lambda *args, **kwargs: None,
             load_json_object=load_json_object,
             save_json_atomic=save_json_atomic,
-            run_background_script=lambda script_name, args=None: 1,
+            run_background_script=lambda script_name, args=None, **kwargs: 1,
             append_run_history=lambda payload: payload,
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {"active": [], "pending": [], "rejected": []},
@@ -293,7 +307,7 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
             bridge_log=lambda _level, message, **_fields: bridge_events.append(message),
             load_json_object=load_json_object,
             save_json_atomic=save_json_atomic,
-            run_background_script=lambda script_name, args=None: 1,
+            run_background_script=lambda script_name, args=None, **kwargs: 1,
             append_run_history=lambda payload: payload,
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {
@@ -397,7 +411,7 @@ def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> 
             save_json_atomic=lambda path, payload: Path(path).write_text(
                 json.dumps(payload), encoding="utf-8"
             ),
-            run_background_script=lambda script_name, args=None: 1,
+            run_background_script=lambda script_name, args=None, **kwargs: 1,
             append_run_history=lambda payload: payload,
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {

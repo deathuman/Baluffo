@@ -21,6 +21,7 @@ from src.bridge import run_history_api as _run_history_api
 class OpsPaths:
     ops_alert_state: Path
     jobs_fetch_report: Path
+    jobs_fetch_tasks: Path
     discovery_report: Path
     task_state: Path
 
@@ -137,7 +138,38 @@ class OpsApi:
                 summarize_fetch_report=self.summarize_fetch_report,
                 summarize_discovery_report=self.summarize_discovery_report,
                 jobs_fetch_report_path=self._paths.jobs_fetch_report,
+                jobs_fetch_tasks_path=self._paths.jobs_fetch_tasks,
                 discovery_report_path=self._paths.discovery_report,
+                task_state_path=self._paths.task_state,
+                get_active_sync_runs=self._deps.get_active_sync_runs,
+                parse_iso=self._deps.parse_iso,
+                now_iso=self._deps.now_iso,
+                now_utc=self._deps.now_utc,
+            )
+        )
+
+    def get_projected_run_history(self) -> _run_history_api.LifecycleProjection:
+        return _run_history_api.project_run_history(
+            _run_history_api.SyncHistoryDeps(
+                ops_state_lock=self._deps.ops_state_lock,
+                load_run_history=self._deps.load_run_history,
+                save_run_history=self._deps.save_run_history,
+                save_json_atomic=self._deps.save_json_atomic,
+                prune_started_rows_for_type=self._deps.prune_started_rows_for_type,
+                clear_task_state=self._deps.clear_task_state,
+                clear_task_state_locked=self._deps.clear_task_state_locked,
+                upsert_run_history=self._deps.upsert_run_history,
+                task_running_from_state=self._deps.task_running_from_state,
+                report_is_stale_in_progress=self._deps.report_is_stale_in_progress,
+                load_json_object=self._deps.load_json_object,
+                normalize_fetch_report_contract=self._deps.normalize_fetch_report_contract,
+                normalize_discovery_report_contract=self._deps.normalize_discovery_report_contract,
+                summarize_fetch_report=self.summarize_fetch_report,
+                summarize_discovery_report=self.summarize_discovery_report,
+                jobs_fetch_report_path=self._paths.jobs_fetch_report,
+                jobs_fetch_tasks_path=self._paths.jobs_fetch_tasks,
+                discovery_report_path=self._paths.discovery_report,
+                task_state_path=self._paths.task_state,
                 get_active_sync_runs=self._deps.get_active_sync_runs,
                 parse_iso=self._deps.parse_iso,
                 now_iso=self._deps.now_iso,
@@ -147,7 +179,7 @@ class OpsApi:
 
     def build_ops_health_deps(self) -> OpsHealthDeps:
         return OpsHealthDeps(
-            get_history=self.sync_history_from_reports,
+            get_history=lambda: self.get_projected_run_history().rows,
             get_fetch_report=lambda: self._deps.normalize_fetch_report_contract(
                 self._deps.load_json_object(self._paths.jobs_fetch_report, {})
             ),
@@ -213,8 +245,8 @@ class OpsApi:
         raw_state = self._deps.load_json_object(self._paths.task_state, {})
         task_state = raw_state if isinstance(raw_state, dict) else {}
         tasks: list[dict[str, Any]] = []
-
-        history = self.sync_history_from_reports()
+        projection = self.get_projected_run_history()
+        history = projection.rows
         history_by_type: dict[str, list[dict[str, Any]]] = {}
         for row in history:
             if not isinstance(row, dict):
@@ -235,28 +267,35 @@ class OpsApi:
         fetch_report = self._deps.normalize_fetch_report_contract(
             self._deps.load_json_object(self._paths.jobs_fetch_report, {})
         )
-        fetch_active = self._deps.task_running_from_state("fetch") or (
-            isinstance(fetch_report, dict)
-            and str(fetch_report.get("startedAt") or "").strip()
-            and not str(fetch_report.get("finishedAt") or "").strip()
-        )
+        fetch_snapshot = projection.child_tasks.get("fetch")
+        fetch_active = bool(fetch_snapshot and fetch_snapshot.active)
         append_if_active(
             "fetch",
             {
                 "taskType": "fetch",
                 "type": "fetch",
-                "runId": str(fetch_report.get("runId") or fetch_state.get("runId") or "").strip(),
+                "runId": str(
+                    (fetch_snapshot.run_id if fetch_snapshot else "")
+                    or fetch_report.get("runId")
+                    or fetch_state.get("runId")
+                    or ""
+                ).strip(),
                 "active": bool(fetch_active),
                 "startedAt": str(
-                    fetch_report.get("startedAt") or fetch_state.get("startedAt") or ""
+                    (fetch_snapshot.started_at if fetch_snapshot else "")
+                    or fetch_report.get("startedAt")
+                    or fetch_state.get("startedAt")
+                    or ""
                 ).strip(),
-                "finishedAt": str(fetch_report.get("finishedAt") or "").strip(),
+                "finishedAt": str((fetch_snapshot.finished_at if fetch_snapshot else "") or "").strip(),
                 "status": "running"
                 if fetch_active
                 else str(fetch_report.get("status") or "").strip().lower(),
-                "taskProgress": self._coerce_task_progress(fetch_report.get("taskProgress")),
-                "summary": dict(fetch_report.get("summary") or {}),
-                "outputs": dict(fetch_report.get("outputs") or {}),
+                "taskProgress": self._coerce_task_progress(
+                    (fetch_snapshot.task_progress if fetch_snapshot else fetch_report.get("taskProgress"))
+                ),
+                "summary": dict((fetch_snapshot.summary if fetch_snapshot else fetch_report.get("summary")) or {}),
+                "outputs": dict((fetch_snapshot.outputs if fetch_snapshot else fetch_report.get("outputs")) or {}),
             },
         )
 
@@ -266,28 +305,45 @@ class OpsApi:
         discovery_report = self._deps.normalize_discovery_report_contract(
             self._deps.load_json_object(self._paths.discovery_report, {})
         )
-        discovery_active = self._deps.task_running_from_state("discovery") or (
-            isinstance(discovery_report, dict)
-            and str(discovery_report.get("startedAt") or "").strip()
-            and not str(discovery_report.get("finishedAt") or "").strip()
-        )
+        discovery_snapshot = projection.child_tasks.get("discovery")
+        discovery_active = bool(discovery_snapshot and discovery_snapshot.active)
         append_if_active(
             "discovery",
             {
                 "taskType": "discovery",
                 "type": "discovery",
                 "runId": str(
-                    discovery_report.get("runId") or discovery_state.get("runId") or ""
+                    (discovery_snapshot.run_id if discovery_snapshot else "")
+                    or discovery_report.get("runId")
+                    or discovery_state.get("runId")
+                    or ""
                 ).strip(),
                 "active": bool(discovery_active),
                 "startedAt": str(
-                    discovery_report.get("startedAt") or discovery_state.get("startedAt") or ""
+                    (discovery_snapshot.started_at if discovery_snapshot else "")
+                    or discovery_report.get("startedAt")
+                    or discovery_state.get("startedAt")
+                    or ""
                 ).strip(),
-                "finishedAt": str(discovery_report.get("finishedAt") or "").strip(),
+                "finishedAt": str(
+                    (discovery_snapshot.finished_at if discovery_snapshot else "") or ""
+                ).strip(),
                 "status": "running" if discovery_active else "",
-                "taskProgress": self._coerce_task_progress(discovery_report.get("taskProgress")),
-                "summary": dict(discovery_report.get("summary") or {}),
-                "outputs": {"report": str(self._paths.discovery_report)},
+                "taskProgress": self._coerce_task_progress(
+                    (
+                        discovery_snapshot.task_progress
+                        if discovery_snapshot
+                        else discovery_report.get("taskProgress")
+                    )
+                ),
+                "summary": dict(
+                    (discovery_snapshot.summary if discovery_snapshot else discovery_report.get("summary"))
+                    or {}
+                ),
+                "outputs": dict(
+                    (discovery_snapshot.outputs if discovery_snapshot else {"report": str(self._paths.discovery_report)})
+                    or {}
+                ),
             },
         )
 
@@ -370,13 +426,14 @@ class OpsApi:
         return {
             "tasks": final_tasks,
             "count": len(final_tasks),
+            "diagnostics": list(projection.diagnostics),
         }
 
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]:
         latest_fetch_report = self._deps.normalize_fetch_report_contract(
             self._deps.load_json_object(self._paths.jobs_fetch_report, {})
         )
-        history = self.sync_history_from_reports()
+        history = self.get_projected_run_history().rows
         return fetcher_metrics_module.build_metrics(
             latest_fetch_report,
             history,
