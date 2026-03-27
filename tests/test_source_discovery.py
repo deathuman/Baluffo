@@ -2694,7 +2694,23 @@ def test_build_m5_strategic_backlog_applies_frozen_lanes_and_identity_rules() ->
             "Custom Studio": {
                 "lastStatus": "ok",
                 "lastKeptCount": 4,
-            }
+            },
+            "Wolcen Studios": {
+                "structuredMigrationBaselineCapturedAt": "2026-03-26T09:00:00Z",
+                "structuredMigrationBaselineDurationMs": 9100,
+                "structuredMigrationBaselineStatus": "error",
+                "structuredMigrationBaselineError": "static timeout",
+                "structuredMigrationBaselineFailureBucket": "static_listing",
+                "structuredMigrationBaselineKeptCount": 1,
+                "lastDurationMs": 5400,
+                "lastStatus": "ok",
+                "lastError": "",
+                "lastFailureBucket": "structured_listing",
+                "lastKeptCount": 2,
+                "structuredMigrationShadowRunCount": 4,
+                "structuredMigrationHealthyRunCount": 3,
+                "structuredMigrationPromotedAt": "2026-03-26T10:00:00Z",
+            },
         },
     )
 
@@ -2732,6 +2748,33 @@ def test_build_m5_strategic_backlog_applies_frozen_lanes_and_identity_rules() ->
     assert workday_row["coverageLane"] == "lane_a_m4_followup"
     assert workday_row["exclusionStatus"] == "excluded"
     assert workday_row["exclusionReason"] == "m4_family_followup"
+    assert workday_row["migrationComparison"] == {
+        "before": {
+            "durationMs": 9100,
+            "status": "error",
+            "error": "static timeout",
+            "failureBucket": "static_listing",
+            "keptCount": 1,
+        },
+        "after": {
+            "durationMs": 5400,
+            "status": "ok",
+            "error": "",
+            "failureBucket": "structured_listing",
+            "keptCount": 2,
+        },
+        "runtimeDeltaMs": -3700,
+        "keptCountDelta": 1,
+        "shadowRunCount": 4,
+        "healthyRunCount": 3,
+        "promotedAt": "2026-03-26T10:00:00Z",
+        "demotedAt": "",
+        "rollbackChecklist": [
+            "Re-enable the static twin in the registry.",
+            "Keep structured shadow mode until 3 consecutive healthy runs complete.",
+            "Demote the structured source if kept count drops to zero or duplicate rate regresses.",
+        ],
+    }
 
     blocked_row = backlog[3]
     assert blocked_row["exclusionStatus"] == "excluded"

@@ -219,11 +219,15 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
                 "candidates": [
                     {
                         "id": "pending-ok",
-                        "adapter": "static",
+                        "adapter": "greenhouse",
                         "name": "Healthy Pending",
                         "deferred": False,
-                        "jobsFound": 0,
-                        "sampleCount": 0,
+                        "jobsFound": 3,
+                        "sampleCount": 3,
+                        "confidence": "high",
+                        "rankScore": 84,
+                        "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
+                        "promotionLane": "structured_batch",
                     }
                 ],
             }
@@ -243,10 +247,14 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
         "pending": [
             {
                 "id": "pending-ok",
-                "adapter": "static",
+                "adapter": "greenhouse",
                 "name": "Healthy Pending",
-                "jobsFound": 0,
-                "sampleCount": 0,
+                "jobsFound": 3,
+                "sampleCount": 3,
+                "confidence": "high",
+                "rankScore": 84,
+                "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
+                "promotionLane": "structured_batch",
             },
             {
                 "id": "pending-zero",
@@ -332,6 +340,7 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     assert state["active"][1]["approvedBy"] == "discovery_auto_approve"
     assert state["active"][1]["approvedAt"] == "2026-03-20T12:06:00Z"
     assert state["active"][1]["liveAt"] == "2026-03-20T12:06:00Z"
+    assert state["active"][1]["promotionReason"] == "structured_batch_family"
     approval_state = json.loads(approval_state_path.read_text(encoding="utf-8"))
     assert int(approval_state["approvedSinceLastRun"]) == 1
     saved_report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -344,6 +353,7 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     )
     assert int((saved_report.get("summary") or {}).get("approvedCandidateCount") or 0) == 1
     assert int((saved_report.get("summary") or {}).get("liveCandidateCount") or 0) == 1
+    assert (saved_report.get("candidates") or [])[0]["promotionReason"] == "structured_batch_family"
     assert sync_calls == ["discovery_completed"]
     assert marked == ["2026-03-20T12:05:00Z"]
     assert "discovery_auto_approval_completed" in bridge_events

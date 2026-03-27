@@ -76,24 +76,36 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
             "pending": [
                 {
                     "id": "pending-ok",
-                    "adapter": "static",
+                    "adapter": "greenhouse",
                     "name": "Healthy Pending",
                     "jobsFound": 3,
+                    "confidence": "high",
+                    "rankScore": 84,
+                    "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
+                    "promotionLane": "structured_batch",
                     "status": "healthy",
                 },
                 {
-                    "id": "pending-zero",
+                    "id": "pending-static",
                     "adapter": "static",
-                    "name": "Empty Pending",
-                    "jobsFound": 0,
+                    "name": "Static Pending",
+                    "jobsFound": 3,
                     "status": "healthy",
+                    "confidence": "high",
+                    "rankScore": 82,
+                    "rankReasons": ["live_jobs_detected"],
+                    "promotionLane": "manual_review",
                 },
                 {
-                    "id": "pending-error",
-                    "adapter": "static",
-                    "name": "Errored Pending",
+                    "id": "pending-bamboo",
+                    "adapter": "bamboohr",
+                    "name": "Bamboo Pending",
                     "jobsFound": 2,
-                    "lastProbeError": "boom",
+                    "status": "healthy",
+                    "confidence": "medium",
+                    "rankScore": 79,
+                    "rankReasons": ["structured_family", "jobs_found_bonus"],
+                    "promotionLane": "manual_review",
                 },
             ],
             "rejected": [],
@@ -108,10 +120,34 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
             "candidates": [
                 {
                     "id": "pending-ok",
-                    "adapter": "static",
+                    "adapter": "greenhouse",
                     "name": "Healthy Pending",
                     "jobsFound": 3,
+                    "confidence": "high",
+                    "rankScore": 84,
+                    "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
+                    "promotionLane": "structured_batch",
                     "status": "healthy",
+                },
+                {
+                    "id": "pending-static",
+                    "adapter": "static",
+                    "name": "Static Pending",
+                    "jobsFound": 3,
+                    "confidence": "high",
+                    "rankScore": 82,
+                    "rankReasons": ["live_jobs_detected"],
+                    "promotionLane": "manual_review",
+                },
+                {
+                    "id": "pending-bamboo",
+                    "adapter": "bamboohr",
+                    "name": "Bamboo Pending",
+                    "jobsFound": 2,
+                    "confidence": "medium",
+                    "rankScore": 79,
+                    "rankReasons": ["structured_family", "jobs_found_bonus"],
+                    "promotionLane": "manual_review",
                 },
             ],
         }
@@ -126,13 +162,19 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
 
         assert approved == 1
         assert [row["id"] for row in next_state["active"]] == ["active-1", "pending-ok"]
-        assert [row["id"] for row in next_state["pending"]] == ["pending-zero", "pending-error"]
+        assert [row["id"] for row in next_state["pending"]] == [
+            "pending-static",
+            "pending-bamboo",
+        ]
         assert report["summary"]["approvedCandidateCount"] == 1
         assert report["summary"]["liveCandidateCount"] == 1
         assert report["runtime"]["autoApproval"] == {"enabled": True, "approvedCount": 1}
         assert report["candidates"][0]["candidateState"] == "live"
         assert report["candidates"][0]["approvedBy"] == "discovery_auto_approve"
         assert report["candidates"][0]["liveAt"] == "2026-03-20T12:06:00Z"
+        assert report["candidates"][0]["promotionReason"] == "structured_batch_family"
+        assert report["candidates"][1]["promotionReason"] == "manual_review_only"
+        assert report["candidates"][2]["promotionReason"] == "structured_family_gate"
         assert json.loads(approval_path.read_text(encoding="utf-8")) == {"approvedSinceLastRun": 1}
 
         repeat_state, repeat_approved = sr.apply_discovery_auto_approval(

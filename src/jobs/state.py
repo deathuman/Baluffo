@@ -106,6 +106,24 @@ def normalize_source_state_payload(
                 "structuredMigrationTargetAdapter": clean_text(
                     raw_entry.get("structuredMigrationTargetAdapter")
                 ),
+                "structuredMigrationBaselineCapturedAt": clean_text(
+                    raw_entry.get("structuredMigrationBaselineCapturedAt")
+                ),
+                "structuredMigrationBaselineDurationMs": _clamped_int(
+                    raw_entry.get("structuredMigrationBaselineDurationMs"), 0, 0
+                ),
+                "structuredMigrationBaselineStatus": clean_text(
+                    raw_entry.get("structuredMigrationBaselineStatus")
+                ),
+                "structuredMigrationBaselineError": clean_text(
+                    raw_entry.get("structuredMigrationBaselineError")
+                ),
+                "structuredMigrationBaselineFailureBucket": clean_text(
+                    raw_entry.get("structuredMigrationBaselineFailureBucket")
+                ),
+                "structuredMigrationBaselineKeptCount": _clamped_int(
+                    raw_entry.get("structuredMigrationBaselineKeptCount"), 0, 0
+                ),
                 "structuredMigrationShadowRunCount": _clamped_int(
                     raw_entry.get("structuredMigrationShadowRunCount"), 0, 0
                 ),
@@ -634,6 +652,11 @@ def update_source_state_rows(
     def _apply_report_to_entry(name: str, report: dict[str, Any]) -> None:
         nonlocal source_state_rows
         entry = dict(source_state_rows.get(name) or {})
+        prior_last_duration_ms = int(entry.get("lastDurationMs") or 0)
+        prior_last_status = clean_text(entry.get("lastStatus"))
+        prior_last_error = clean_text(entry.get("lastError"))
+        prior_last_failure_bucket = clean_text(entry.get("lastFailureBucket"))
+        prior_last_kept_count = int(entry.get("lastKeptCount") or 0)
         entry["lastRunAt"] = finished_at
         entry["lastCheckedAt"] = finished_at
         entry["lastStatus"] = clean_text(report.get("status"))
@@ -769,6 +792,13 @@ def update_source_state_rows(
         adapter = clean_text(report.get("adapter"))
         if adapter in {"bamboohr", "workday"} and entry["lastStatus"] != "excluded":
             entry["structuredMigrationTargetAdapter"] = adapter
+            if not clean_text(entry.get("structuredMigrationBaselineCapturedAt")):
+                entry["structuredMigrationBaselineCapturedAt"] = finished_at
+                entry["structuredMigrationBaselineDurationMs"] = prior_last_duration_ms
+                entry["structuredMigrationBaselineStatus"] = prior_last_status
+                entry["structuredMigrationBaselineError"] = prior_last_error
+                entry["structuredMigrationBaselineFailureBucket"] = prior_last_failure_bucket
+                entry["structuredMigrationBaselineKeptCount"] = prior_last_kept_count
             entry["structuredMigrationShadowRunCount"] = (
                 int(entry.get("structuredMigrationShadowRunCount") or 0) + 1
             )

@@ -26,6 +26,11 @@ DISCOVERY_CANDIDATES_PATH = DATA_DIR / "source-discovery-candidates.json"
 M5_STRATEGIC_BACKLOG_PATH = DATA_DIR / "m5-strategic-backlog.json"
 URL_PATCH_MANIFEST_PATH = DATA_DIR / "url-patch-manifest.json"
 APPROVAL_STATE_PATH = DATA_DIR / "source-approval-state.json"
+AUTO_APPROVAL_STRONG_ADAPTERS = frozenset({"greenhouse", "lever", "ashby"})
+AUTO_APPROVAL_SECONDARY_ADAPTERS = frozenset({"bamboohr", "workday"})
+AUTO_APPROVAL_ALLOWED_REASONS = frozenset(
+    {"structured_batch_family", "structured_family_high_confidence"}
+)
 
 
 def ensure_data_dir() -> None:
@@ -207,7 +212,7 @@ def _queued_report_candidate_ids(report: dict[str, Any]) -> set[str]:
 
 
 def _stamp_live_transition(
-    row: dict[str, Any], *, approved_by: str, approved_at: str
+    row: dict[str, Any], *, approved_by: str, approved_at: str, promotion_reason: str = ""
 ) -> dict[str, Any]:
     updated = dict(row)
     updated["enabledByDefault"] = True
@@ -217,7 +222,49 @@ def _stamp_live_transition(
     updated["liveAt"] = str(updated.get("liveAt") or approved_at)
     updated["quarantinedAt"] = ""
     updated["quarantineReason"] = ""
+    if promotion_reason:
+        updated["promotionReason"] = str(promotion_reason)
     return updated
+
+
+def _promotion_reason_for_candidate(row: dict[str, Any]) -> str:
+    adapter = str(row.get("adapter") or "").strip().lower()
+    confidence = str(row.get("confidence") or "").strip().lower()
+    promotion_lane = str(row.get("promotionLane") or "").strip().lower()
+    rank_score = max(0, int(row.get("rankScore") or row.get("score") or 0))
+    jobs_found = max(0, int(row.get("jobsFound") or row.get("sampleCount") or 0))
+    rank_reasons = {
+        str(item or "").strip()
+        for item in (row.get("rankReasons") or row.get("reasons") or [])
+        if str(item or "").strip()
+    }
+
+    if bool(row.get("deferred")):
+        return "deferred_candidate"
+
+    if adapter in AUTO_APPROVAL_STRONG_ADAPTERS:
+        if (
+            promotion_lane == "structured_batch"
+            and confidence in {"high", "medium"}
+            and rank_score >= 60
+            and jobs_found > 0
+            and "structured_batch_family" in rank_reasons
+        ):
+            return "structured_batch_family"
+        return "structured_batch_gate"
+
+    if adapter in AUTO_APPROVAL_SECONDARY_ADAPTERS:
+        if (
+            confidence == "high"
+            and rank_score >= 75
+            and jobs_found > 0
+            and "structured_family" in rank_reasons
+            and ("jobs_found_bonus" in rank_reasons or "evidence_rank_bonus" in rank_reasons)
+        ):
+            return "structured_family_high_confidence"
+        return "structured_family_gate"
+
+    return "manual_review_only"
 
 
 def apply_discovery_auto_approval(
@@ -240,6 +287,14 @@ def apply_discovery_auto_approval(
         runtime.get("autoApproval") if isinstance(runtime.get("autoApproval"), dict) else {}
     )
     queued_ids = _queued_report_candidate_ids(report)
+    report_candidates = (
+        report.get("candidates") if isinstance(report.get("candidates"), list) else []
+    )
+    report_candidates_by_id = {
+        source_identity(row): row
+        for row in report_candidates
+        if isinstance(row, dict) and source_identity(row)
+    }
     approved_at = str(now_iso_fn() if callable(now_iso_fn) else now_iso())
     moved: list[dict[str, Any]] = []
     remaining: list[dict[str, Any]] = []
@@ -247,10 +302,15 @@ def apply_discovery_auto_approval(
     if auto_approve_enabled:
         for row in normalized_state["pending"]:
             row_id = source_identity(row)
-            if row_id in queued_ids or _pending_row_is_auto_approvable(row):
+            report_row = report_candidates_by_id.get(row_id)
+            promotion_reason = _promotion_reason_for_candidate(dict(report_row or row))
+            if row_id in queued_ids and promotion_reason in AUTO_APPROVAL_ALLOWED_REASONS:
                 moved.append(
                     _stamp_live_transition(
-                        row, approved_by="discovery_auto_approve", approved_at=approved_at
+                        row,
+                        approved_by="discovery_auto_approve",
+                        approved_at=approved_at,
+                        promotion_reason=promotion_reason,
                     )
                 )
             else:
@@ -275,18 +335,30 @@ def apply_discovery_auto_approval(
     runtime["autoApproval"] = runtime_auto
     report["runtime"] = runtime
 
-    candidates = report.get("candidates") if isinstance(report.get("candidates"), list) else []
-    if candidates:
-        report["candidates"] = [
-            _stamp_live_transition(
-                row, approved_by="discovery_auto_approve", approved_at=approved_at
-            )
-            if isinstance(row, dict)
-            and not bool(row.get("deferred"))
-            and source_identity(row) in queued_ids
-            else row
-            for row in candidates
-        ]
+    if report_candidates:
+        next_candidates: list[dict[str, Any]] = []
+        for row in report_candidates:
+            if not isinstance(row, dict):
+                next_candidates.append(row)
+                continue
+            row_id = source_identity(row)
+            promotion_reason = _promotion_reason_for_candidate(row)
+            updated_row = dict(row)
+            if promotion_reason:
+                updated_row["promotionReason"] = promotion_reason
+            if (
+                not bool(updated_row.get("deferred"))
+                and row_id in queued_ids
+                and promotion_reason in AUTO_APPROVAL_ALLOWED_REASONS
+            ):
+                updated_row = _stamp_live_transition(
+                    updated_row,
+                    approved_by="discovery_auto_approve",
+                    approved_at=approved_at,
+                    promotion_reason=promotion_reason,
+                )
+            next_candidates.append(updated_row)
+        report["candidates"] = next_candidates
 
     if auto_approve_enabled and moved:
         approval_state = load_json_object(approval_state_path, {"approvedSinceLastRun": 0})

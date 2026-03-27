@@ -10,11 +10,13 @@ def _structured_report(
     status: str,
     kept_count: int,
     duplicate_rate: float,
+    duration_ms: int = 0,
 ) -> dict[str, object]:
     return {
         "name": name,
         "adapter": adapter,
         "status": status,
+        "durationMs": duration_ms,
         "fetchedCount": kept_count,
         "keptCount": kept_count,
         "duplicateRate": duplicate_rate,
@@ -28,7 +30,15 @@ def test_structured_migration_promotes_after_three_healthy_runs_and_demotes_on_r
         "name": source_name,
         "pages": ["https://wolcenstudios.bamboohr.com/jobs/"],
     }
-    state_rows: dict[str, dict[str, object]] = {}
+    state_rows: dict[str, dict[str, object]] = {
+        source_name: {
+            "lastDurationMs": 6200,
+            "lastStatus": "ok",
+            "lastError": "",
+            "lastFailureBucket": "static_listing",
+            "lastKeptCount": 1,
+        }
+    }
 
     for idx in range(3):
         state_rows = jobs_state.update_source_state_rows(
@@ -40,6 +50,7 @@ def test_structured_migration_promotes_after_three_healthy_runs_and_demotes_on_r
                     status="ok",
                     kept_count=2,
                     duplicate_rate=0.0,
+                    duration_ms=5400 - (idx * 200),
                 )
             ],
             canonical_rows=[],
@@ -49,6 +60,12 @@ def test_structured_migration_promotes_after_three_healthy_runs_and_demotes_on_r
         )
 
     promoted = state_rows[source_name]
+    assert promoted["structuredMigrationBaselineCapturedAt"] == "2026-03-26T10:00:00Z"
+    assert promoted["structuredMigrationBaselineDurationMs"] == 6200
+    assert promoted["structuredMigrationBaselineStatus"] == "ok"
+    assert promoted["structuredMigrationBaselineError"] == ""
+    assert promoted["structuredMigrationBaselineFailureBucket"] == "static_listing"
+    assert promoted["structuredMigrationBaselineKeptCount"] == 1
     assert promoted["structuredMigrationTargetAdapter"] == "bamboohr"
     assert promoted["structuredMigrationShadowRunCount"] == 3
     assert promoted["structuredMigrationHealthyRunCount"] == 3
@@ -66,6 +83,7 @@ def test_structured_migration_promotes_after_three_healthy_runs_and_demotes_on_r
                 status="ok",
                 kept_count=0,
                 duplicate_rate=0.5,
+                duration_ms=6100,
             )
         ],
         canonical_rows=[],

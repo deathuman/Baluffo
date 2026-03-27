@@ -12,6 +12,11 @@ from .io_runtime import endpoint_url
 from .scoring import unique_string_list
 
 M5_ALLOWED_M4_FAMILIES = {"bamboohr", "workday", "breezy"}
+M5_STRUCTURED_MIGRATION_ROLLBACK_CHECKLIST = (
+    "Re-enable the static twin in the registry.",
+    "Keep structured shadow mode until 3 consecutive healthy runs complete.",
+    "Demote the structured source if kept count drops to zero or duplicate rate regresses.",
+)
 M5_COVERAGE_LANES = {
     "lane_a_m4_followup",
     "lane_b_custom",
@@ -464,6 +469,72 @@ def _m5_first_run_outcome(
     return "defer_after_trial"
 
 
+def _m5_structured_migration_comparison(
+    row: dict[str, Any], *, state_entry: dict[str, Any]
+) -> dict[str, Any]:
+    adapter = str(row.get("adapter") or "").strip().lower()
+    if adapter not in M5_ALLOWED_M4_FAMILIES:
+        return {}
+
+    before_duration_ms = int(state_entry.get("structuredMigrationBaselineDurationMs") or 0)
+    before_status = str(state_entry.get("structuredMigrationBaselineStatus") or "").strip()
+    before_error = str(state_entry.get("structuredMigrationBaselineError") or "").strip()
+    before_failure_bucket = str(
+        state_entry.get("structuredMigrationBaselineFailureBucket") or ""
+    ).strip()
+    before_kept_count = int(state_entry.get("structuredMigrationBaselineKeptCount") or 0)
+
+    after_duration_ms = int(state_entry.get("lastDurationMs") or 0)
+    after_status = str(state_entry.get("lastStatus") or "").strip()
+    after_error = str(state_entry.get("lastError") or "").strip()
+    after_failure_bucket = str(state_entry.get("lastFailureBucket") or "").strip()
+    after_kept_count = int(state_entry.get("lastKeptCount") or 0)
+
+    comparison = {
+        "before": {
+            "durationMs": before_duration_ms,
+            "status": before_status,
+            "error": before_error,
+            "failureBucket": before_failure_bucket,
+            "keptCount": before_kept_count,
+        },
+        "after": {
+            "durationMs": after_duration_ms,
+            "status": after_status,
+            "error": after_error,
+            "failureBucket": after_failure_bucket,
+            "keptCount": after_kept_count,
+        },
+        "runtimeDeltaMs": after_duration_ms - before_duration_ms,
+        "keptCountDelta": after_kept_count - before_kept_count,
+        "shadowRunCount": int(state_entry.get("structuredMigrationShadowRunCount") or 0),
+        "healthyRunCount": int(state_entry.get("structuredMigrationHealthyRunCount") or 0),
+        "promotedAt": str(state_entry.get("structuredMigrationPromotedAt") or "").strip(),
+        "demotedAt": str(state_entry.get("structuredMigrationDemotedAt") or "").strip(),
+        "rollbackChecklist": list(M5_STRUCTURED_MIGRATION_ROLLBACK_CHECKLIST),
+    }
+    if not any(
+        [
+            comparison["before"]["durationMs"],
+            comparison["after"]["durationMs"],
+            comparison["before"]["status"],
+            comparison["after"]["status"],
+            comparison["before"]["error"],
+            comparison["after"]["error"],
+            comparison["before"]["failureBucket"],
+            comparison["after"]["failureBucket"],
+            comparison["before"]["keptCount"],
+            comparison["after"]["keptCount"],
+            comparison["shadowRunCount"],
+            comparison["healthyRunCount"],
+            comparison["promotedAt"],
+            comparison["demotedAt"],
+        ]
+    ):
+        return {}
+    return comparison
+
+
 def build_m5_strategic_backlog(
     *,
     report_candidates: list[dict[str, Any]],
@@ -606,6 +677,7 @@ def build_m5_strategic_backlog(
             state_entry=state_entry,
             kept_count=kept_count,
         )
+        migration_comparison = _m5_structured_migration_comparison(row, state_entry=state_entry)
         backlog_rows.append(
             {
                 "candidateIdentityKey": identity_key,
@@ -630,6 +702,7 @@ def build_m5_strategic_backlog(
                 "region": region,
                 "firstRunOutcome": first_run_outcome,
                 "firstRunKeptCount": kept_count,
+                "migrationComparison": migration_comparison,
                 "ownerMilestone": "M5",
             }
         )
