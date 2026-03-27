@@ -26,10 +26,12 @@ from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.state import read_source_state
 from src.source_registry import (
     APPROVAL_STATE_PATH as DEFAULT_APPROVAL_STATE_PATH,
+)
+from src.source_registry import (
     URL_PATCH_MANIFEST_PATH as DEFAULT_URL_PATCH_MANIFEST_PATH,
 )
-from src.source_registry import apply_discovery_auto_approval
 from src.source_registry import (
+    apply_discovery_auto_approval,
     load_json_array,
     save_json_atomic,
     source_identity,
@@ -1297,12 +1299,12 @@ def run_discovery(
         "summary": summary,
         "runtime": {
             **_build_discovery_runtime_payload(
-            total_duration_ms=max(0, int((time.perf_counter() - run_started_mono) * 1000)),
-            stage_timings_ms=stage_timings_ms,
-            adapter_runtime=adapter_runtime,
-            preset=preset_name,
-            top_cap_bypassed=top_cap_bypassed,
-            sheet_static_probe_cap_bypassed=sheet_static_probe_cap_bypassed,
+                total_duration_ms=max(0, int((time.perf_counter() - run_started_mono) * 1000)),
+                stage_timings_ms=stage_timings_ms,
+                adapter_runtime=adapter_runtime,
+                preset=preset_name,
+                top_cap_bypassed=top_cap_bypassed,
+                sheet_static_probe_cap_bypassed=sheet_static_probe_cap_bypassed,
             ),
             "lifecycle": {
                 "owner": "discovery_report",
@@ -1325,7 +1327,11 @@ def run_discovery(
     }
     report["runtime"]["urlPatchStats"] = dict(url_patch_stats)
     report["runtime"]["urlPatchRecoveredCount"] = int(recovered_count)
-    state = {"active": active, "pending": [*queued_candidates, *pending_existing], "rejected": rejected}
+    state = {
+        "active": active,
+        "pending": [*queued_candidates, *pending_existing],
+        "rejected": rejected,
+    }
     auto_approve_enabled = bool(effective_config.get("autoApproveHealthyPendingOnComplete", True))
     state, auto_approved = apply_discovery_auto_approval(
         state,

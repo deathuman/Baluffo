@@ -1940,10 +1940,13 @@ def test_run_discovery_auto_approves_healthy_pending_rows() -> None:
 
             assert int((report.get("summary") or {}).get("approvedCandidateCount") or 0) == 1
             assert int((report.get("summary") or {}).get("liveCandidateCount") or 0) == 1
-            assert int(
-                (((report.get("runtime") or {}).get("autoApproval") or {}).get("approvedCount"))
-                or 0
-            ) == 1
+            assert (
+                int(
+                    (((report.get("runtime") or {}).get("autoApproval") or {}).get("approvedCount"))
+                    or 0
+                )
+                == 1
+            )
             active = json.loads(sd.ACTIVE_PATH.read_text(encoding="utf-8"))
             pending = json.loads(sd.PENDING_PATH.read_text(encoding="utf-8"))
             approval_state = json.loads(

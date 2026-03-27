@@ -270,9 +270,7 @@ def apply_discovery_auto_approval(
 
     runtime_auto = dict(runtime_auto)
     runtime_auto["enabled"] = bool(auto_approve_enabled)
-    runtime_auto["approvedCount"] = max(
-        int(runtime_auto.get("approvedCount") or 0), approved_count
-    )
+    runtime_auto["approvedCount"] = max(int(runtime_auto.get("approvedCount") or 0), approved_count)
     runtime = dict(runtime)
     runtime["autoApproval"] = runtime_auto
     report["runtime"] = runtime
@@ -280,7 +278,9 @@ def apply_discovery_auto_approval(
     candidates = report.get("candidates") if isinstance(report.get("candidates"), list) else []
     if candidates:
         report["candidates"] = [
-            _stamp_live_transition(row, approved_by="discovery_auto_approve", approved_at=approved_at)
+            _stamp_live_transition(
+                row, approved_by="discovery_auto_approve", approved_at=approved_at
+            )
             if isinstance(row, dict)
             and not bool(row.get("deferred"))
             and source_identity(row) in queued_ids

@@ -1145,9 +1145,13 @@ def test_get_current_task_state_payload_prefers_active_fetch_owner_over_finished
         ],
     )
 
-    payload = admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG).get_current_task_state_payload()
+    payload = admin_bridge.build_bridge_api(
+        admin_bridge.RUNTIME_CONFIG
+    ).get_current_task_state_payload()
     fetch_row = next(row for row in (payload.get("tasks") or []) if row.get("taskType") == "fetch")
     assert fetch_row["active"] is True
     assert str(fetch_row.get("runId") or "") == run_id
     diagnostics = payload.get("diagnostics") or []
-    assert any(str(item.get("code") or "") == "history_finished_while_owner_active" for item in diagnostics)
+    assert any(
+        str(item.get("code") or "") == "history_finished_while_owner_active" for item in diagnostics
+    )

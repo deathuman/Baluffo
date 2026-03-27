@@ -9,7 +9,7 @@
     "test": "npm run test:unit && npm run test:smoke",
     "verify": "npm run check:python-version && python scripts/orchestrator.py verify",
     "check:python-version": "python scripts/check_python_version.py",
-    "lint:precommit": "npm run lint:precommit:changed",
+    "lint:precommit": "npm run lint:precommit:ci",
     "lint:precommit:changed": "python scripts/precommit_gate.py --mode changed",
     "lint:precommit:all": "python scripts/precommit_gate.py --mode all",
     "lint:precommit:ci": "python scripts/precommit_gate.py --mode all --exclude-root data",

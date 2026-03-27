@@ -83,7 +83,9 @@ def _safe_parse_iso(
         return None
 
 
-def _path_is_recent(path: Path | None, now_utc: Callable[[], datetime], *, max_idle_minutes: float) -> bool:
+def _path_is_recent(
+    path: Path | None, now_utc: Callable[[], datetime], *, max_idle_minutes: float
+) -> bool:
     if path is None:
         return False
     try:
@@ -360,7 +362,9 @@ def _build_child_task_snapshot(
     if run_id and not finished_at and not active:
         started_dt = _safe_parse_iso(parse_iso, started_at)
         age_minutes = (
-            (now_utc() - started_dt).total_seconds() / 60.0 if started_dt else float(dead_age_minutes)
+            (now_utc() - started_dt).total_seconds() / 60.0
+            if started_dt
+            else float(dead_age_minutes)
         )
         explicit_dead = age_minutes >= float(dead_age_minutes)
 
@@ -512,7 +516,9 @@ def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
         task_artifact_path=deps.jobs_fetch_tasks_path,
     )
     diagnostics.extend(fetch_snapshot.diagnostics)
-    if fetch_snapshot.run_id and (fetch_snapshot.active or fetch_snapshot.finished_at or fetch_snapshot.explicit_dead):
+    if fetch_snapshot.run_id and (
+        fetch_snapshot.active or fetch_snapshot.finished_at or fetch_snapshot.explicit_dead
+    ):
         history = _replace_run_row(
             history,
             fetch_snapshot,
@@ -538,7 +544,9 @@ def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
     )
     diagnostics.extend(discovery_snapshot.diagnostics)
     if discovery_snapshot.run_id and (
-        discovery_snapshot.active or discovery_snapshot.finished_at or discovery_snapshot.explicit_dead
+        discovery_snapshot.active
+        or discovery_snapshot.finished_at
+        or discovery_snapshot.explicit_dead
     ):
         history = _replace_run_row(
             history,

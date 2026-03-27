@@ -12,8 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from src.source_registry import apply_discovery_auto_approval
-from src.source_registry import source_identity
+from src.source_registry import apply_discovery_auto_approval, source_identity
 
 BridgeLogFunc = Callable[[str, str], None]
 
@@ -315,7 +314,7 @@ class DiscoveryService:
                             )
                         ),
                         "approvedCount": 0,
-                    }
+                    },
                 },
             },
         )
@@ -395,7 +394,7 @@ class DiscoveryService:
                                 )
                             ),
                             "approvedCount": 0,
-                        }
+                        },
                     },
                 },
             )

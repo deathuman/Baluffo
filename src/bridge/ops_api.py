@@ -287,15 +287,25 @@ class OpsApi:
                     or fetch_state.get("startedAt")
                     or ""
                 ).strip(),
-                "finishedAt": str((fetch_snapshot.finished_at if fetch_snapshot else "") or "").strip(),
+                "finishedAt": str(
+                    (fetch_snapshot.finished_at if fetch_snapshot else "") or ""
+                ).strip(),
                 "status": "running"
                 if fetch_active
                 else str(fetch_report.get("status") or "").strip().lower(),
                 "taskProgress": self._coerce_task_progress(
-                    (fetch_snapshot.task_progress if fetch_snapshot else fetch_report.get("taskProgress"))
+                    fetch_snapshot.task_progress
+                    if fetch_snapshot
+                    else fetch_report.get("taskProgress")
                 ),
-                "summary": dict((fetch_snapshot.summary if fetch_snapshot else fetch_report.get("summary")) or {}),
-                "outputs": dict((fetch_snapshot.outputs if fetch_snapshot else fetch_report.get("outputs")) or {}),
+                "summary": dict(
+                    (fetch_snapshot.summary if fetch_snapshot else fetch_report.get("summary"))
+                    or {}
+                ),
+                "outputs": dict(
+                    (fetch_snapshot.outputs if fetch_snapshot else fetch_report.get("outputs"))
+                    or {}
+                ),
             },
         )
 
@@ -330,18 +340,24 @@ class OpsApi:
                 ).strip(),
                 "status": "running" if discovery_active else "",
                 "taskProgress": self._coerce_task_progress(
-                    (
-                        discovery_snapshot.task_progress
-                        if discovery_snapshot
-                        else discovery_report.get("taskProgress")
-                    )
+                    discovery_snapshot.task_progress
+                    if discovery_snapshot
+                    else discovery_report.get("taskProgress")
                 ),
                 "summary": dict(
-                    (discovery_snapshot.summary if discovery_snapshot else discovery_report.get("summary"))
+                    (
+                        discovery_snapshot.summary
+                        if discovery_snapshot
+                        else discovery_report.get("summary")
+                    )
                     or {}
                 ),
                 "outputs": dict(
-                    (discovery_snapshot.outputs if discovery_snapshot else {"report": str(self._paths.discovery_report)})
+                    (
+                        discovery_snapshot.outputs
+                        if discovery_snapshot
+                        else {"report": str(self._paths.discovery_report)}
+                    )
                     or {}
                 ),
             },

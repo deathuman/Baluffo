@@ -69,11 +69,7 @@ def test_verify_manifest_marks_passed_test_lanes() -> None:
             ]
             orchestrator.verify(args)
 
-        assert run_proc_mock.call_args_list[0].args[0] == [
-            "npm",
-            "run",
-            "lint:precommit:changed",
-        ]
+        assert run_proc_mock.call_args_list[0].args[0] == ["npm", "run", "lint:precommit"]
         manifest = json.loads(orchestrator.MANIFEST_PATH.read_text(encoding="utf-8"))
         artifacts = manifest["artifacts"]
         assert artifacts["py_tests_status"] == "passed"
@@ -109,11 +105,7 @@ def test_verify_manifest_marks_failed_test_lanes() -> None:
             ]
             orchestrator.verify(args)
 
-        assert run_proc_mock.call_args_list[0].args[0] == [
-            "npm",
-            "run",
-            "lint:precommit:changed",
-        ]
+        assert run_proc_mock.call_args_list[0].args[0] == ["npm", "run", "lint:precommit"]
         manifest = json.loads(orchestrator.MANIFEST_PATH.read_text(encoding="utf-8"))
         artifacts = manifest["artifacts"]
         assert artifacts["py_tests_status"] == "failed"

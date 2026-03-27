@@ -99,7 +99,11 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
             "rejected": [],
         }
         report = {
-            "summary": {"queuedCandidateCount": 1, "approvedCandidateCount": 0, "liveCandidateCount": 0},
+            "summary": {
+                "queuedCandidateCount": 1,
+                "approvedCandidateCount": 0,
+                "liveCandidateCount": 0,
+            },
             "runtime": {},
             "candidates": [
                 {
@@ -129,9 +133,7 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
         assert report["candidates"][0]["candidateState"] == "live"
         assert report["candidates"][0]["approvedBy"] == "discovery_auto_approve"
         assert report["candidates"][0]["liveAt"] == "2026-03-20T12:06:00Z"
-        assert json.loads(approval_path.read_text(encoding="utf-8")) == {
-            "approvedSinceLastRun": 1
-        }
+        assert json.loads(approval_path.read_text(encoding="utf-8")) == {"approvedSinceLastRun": 1}
 
         repeat_state, repeat_approved = sr.apply_discovery_auto_approval(
             next_state,
@@ -143,6 +145,4 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
 
         assert repeat_approved == 1
         assert repeat_state == next_state
-        assert json.loads(approval_path.read_text(encoding="utf-8")) == {
-            "approvedSinceLastRun": 1
-        }
+        assert json.loads(approval_path.read_text(encoding="utf-8")) == {"approvedSinceLastRun": 1}

@@ -42,7 +42,7 @@ repos:
 
       - id: eslint
         name: eslint
-        entry: npx eslint .
+        entry: npx eslint . --ignore-pattern "_out/**" --ignore-pattern "dist/**" --ignore-pattern "node_modules/**" --ignore-pattern ".codex/**" --ignore-pattern ".serena/**"
         language: system
         pass_filenames: false
         stages: [pre-push]

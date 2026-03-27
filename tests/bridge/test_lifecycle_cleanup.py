@@ -32,8 +32,12 @@ def test_reset_admin_task_lifecycle_resets_runtime_artifacts_and_archives_legacy
     (tmp_path / "admin-task-state.json").write_text(
         json.dumps({"fetch": {"runId": "fetch_live_1", "pid": 123}}), encoding="utf-8"
     )
-    (tmp_path / "jobs-fetch-report.json").write_text(json.dumps({"runId": "fetch_live_1"}), encoding="utf-8")
-    (tmp_path / "jobs-fetch-tasks.json").write_text(json.dumps({"runId": "fetch_live_1"}), encoding="utf-8")
+    (tmp_path / "jobs-fetch-report.json").write_text(
+        json.dumps({"runId": "fetch_live_1"}), encoding="utf-8"
+    )
+    (tmp_path / "jobs-fetch-tasks.json").write_text(
+        json.dumps({"runId": "fetch_live_1"}), encoding="utf-8"
+    )
     (tmp_path / "source-discovery-report.json").write_text(
         json.dumps({"runId": "discovery_live_1"}),
         encoding="utf-8",
@@ -56,7 +60,10 @@ def test_reset_admin_task_lifecycle_resets_runtime_artifacts_and_archives_legacy
     assert task_state == {}
     fetch_report = json.loads((tmp_path / "jobs-fetch-report.json").read_text(encoding="utf-8"))
     assert str(fetch_report.get("runId") or "") == ""
-    assert str(((fetch_report.get("runtime") or {}).get("lifecycle") or {}).get("owner") or "") == "fetch_report"
+    assert (
+        str(((fetch_report.get("runtime") or {}).get("lifecycle") or {}).get("owner") or "")
+        == "fetch_report"
+    )
     fetch_tasks = json.loads((tmp_path / "jobs-fetch-tasks.json").read_text(encoding="utf-8"))
     assert str(fetch_tasks.get("runId") or "") == ""
     assert str(fetch_tasks.get("heartbeatAt") or "") == ""

@@ -254,7 +254,7 @@ def verify(args: argparse.Namespace):
 
     # 0. Pre-commit gate
     ok_precommit, _log_precommit = run_proc(
-        ["npm", "run", "lint:precommit:changed"], "PreCommit", allow_stream=True
+        ["npm", "run", "lint:precommit"], "PreCommit", allow_stream=True
     )
 
     # Run build (might return a previous successful run_dir if skipped)

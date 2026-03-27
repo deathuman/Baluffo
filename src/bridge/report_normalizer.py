@@ -428,7 +428,9 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
             or normalized["runtime"].get("heartbeatAt")
         )
         if has_progress_evidence:
-            normalized["taskProgress"] = _derive_fetch_task_progress(normalized, normalized["summary"])
+            normalized["taskProgress"] = _derive_fetch_task_progress(
+                normalized, normalized["summary"]
+            )
         else:
             normalized["taskProgress"] = {
                 "active": False,

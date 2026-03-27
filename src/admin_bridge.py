@@ -1053,9 +1053,7 @@ def _run_sync_task_worker(
         prune_started_rows_for_type=lambda entry_type, *, finished_at: prune_started_rows_for_type(
             entry_type, finished_at=finished_at
         ),
-        upsert_run_history=lambda entry: upsert_run_history(
-            entry, dedupe_fields=("type", "runId")
-        ),
+        upsert_run_history=lambda entry: upsert_run_history(entry, dedupe_fields=("type", "runId")),
         bridge_log=bridge_log,
     )
 

@@ -3699,7 +3699,10 @@ def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts()
             out / "jobs-fetch-report.json"
         )
         assert str((task_payload.get("tasks") or [])[0].get("status") or "") == "ok"
-        assert str(((report.get("runtime") or {}).get("lifecycle") or {}).get("owner") or "") == "fetch_report"
+        assert (
+            str(((report.get("runtime") or {}).get("lifecycle") or {}).get("owner") or "")
+            == "fetch_report"
+        )
 
         state_payload = json.loads((out / "jobs-source-state.json").read_text(encoding="utf-8"))
         assert str(state_payload.get("schemaVersion") or "") == str(jf.SCHEMA_VERSION)
@@ -4487,7 +4490,9 @@ def test_run_social_reddit_source_keeps_successful_rss_fallback_out_of_error_sta
     assert details[0]["error"] == ""
 
 
-def test_run_social_reddit_source_keeps_successful_old_reddit_html_fallback_out_of_error_state() -> None:
+def test_run_social_reddit_source_keeps_successful_old_reddit_html_fallback_out_of_error_state() -> (
+    None
+):
     cfg = {
         "enabled": True,
         "minConfidence": 20,
