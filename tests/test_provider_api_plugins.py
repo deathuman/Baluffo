@@ -97,7 +97,9 @@ def fake_deps(monkeypatch: pytest.MonkeyPatch) -> _FakeDeps:
     return deps
 
 
-def test_provider_api_greenhouse_dispatch_extracts_registry_backed_jobs(fake_deps: _FakeDeps) -> None:
+def test_provider_api_greenhouse_dispatch_extracts_registry_backed_jobs(
+    fake_deps: _FakeDeps,
+) -> None:
     fake_deps.set_registry_entries(
         "greenhouse",
         [
@@ -132,7 +134,9 @@ def test_provider_api_greenhouse_dispatch_extracts_registry_backed_jobs(fake_dep
     assert dispatched[0]["sourceJobId"].startswith("greenhouse:studio-a:")
 
 
-def test_provider_api_teamtailor_dispatch_extracts_registry_backed_jobs(fake_deps: _FakeDeps) -> None:
+def test_provider_api_teamtailor_dispatch_extracts_registry_backed_jobs(
+    fake_deps: _FakeDeps,
+) -> None:
     fake_deps.set_registry_entries(
         "teamtailor",
         [

@@ -329,7 +329,9 @@ def test_status_endpoint_returns_current_state(payload, expected, tmp_path: Path
     handler = FakeHandler()
     api = FakeApi()
 
-    result = get_routes.handle_get(handler, api=api, path="/tasks/run-jobs-pipeline-status", query={})
+    result = get_routes.handle_get(
+        handler, api=api, path="/tasks/run-jobs-pipeline-status", query={}
+    )
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
@@ -671,7 +673,9 @@ def test_pipeline_status_matches_frontend_contract(tmp_path: Path) -> None:
     handler = FakeHandler()
     api = FakeApi()
 
-    result = get_routes.handle_get(handler, api=api, path="/tasks/run-jobs-pipeline-status", query={})
+    result = get_routes.handle_get(
+        handler, api=api, path="/tasks/run-jobs-pipeline-status", query={}
+    )
 
     assert result is True
     payload = handler.sent[-1]["payload"]

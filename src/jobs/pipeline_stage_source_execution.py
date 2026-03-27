@@ -243,7 +243,9 @@ def run_source_execution_stage(
                 "invalid_payload": int(drop_reasons.get("invalid_payload", 0)),
             }
 
-            current_fingerprint = source_rows_fingerprint([row.to_dict() for row in canonical_batch])
+            current_fingerprint = source_rows_fingerprint(
+                [row.to_dict() for row in canonical_batch]
+            )
             previous_fingerprint = clean_text(
                 (source_state_rows.get(name) or {}).get("lastFingerprint")
             )

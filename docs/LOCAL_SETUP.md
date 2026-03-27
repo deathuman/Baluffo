@@ -45,6 +45,7 @@ Saved job record fields:
 - Browser-safe frontend defaults are generated into `frontend-runtime-config.js`.
 - If you change `bridge.host`, `bridge.port`, `security.admin_pin_default`, or `security.github_app_enabled_default`,
   run `npm run build:frontend-runtime-config` before testing or packaging browser pages.
+- Run `npm run setup:hooks` once per clone to point Git at the tracked repo hook directory in `.githooks/`.
 
 ## Future migration note
 `local-data-client.js` intentionally keeps a stable abstraction boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.

@@ -12,8 +12,8 @@ import pytest
 from src import jobs_fetcher as jf
 from src import jobs_fetcher_registry as jfr
 from src.exceptions import AdapterValidationError
-from src.jobs import common as jobs_common
 from src.jobs import canonicalize as jobs_canonicalize
+from src.jobs import common as jobs_common
 from src.jobs import dedup as jobs_dedup
 from src.jobs.adapters import _runtime as runtime_resolver
 from src.jobs.adapters.plugins import default_registry
@@ -740,9 +740,7 @@ def test_fingerprint_url_keeps_language_query_significant_for_non_personio_urls(
 
 def test_deduplicate_jobs_covers_redirect_and_identity_rules() -> None:
     now_iso = jf.now_iso()
-    redirect_target = (
-        "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-technical-director-level-design-m-f-nb-projet-non-annonce"
-    )
+    redirect_target = "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-technical-director-level-design-m-f-nb-projet-non-annonce"
     cases = [
         {
             "name": "unknown company enrichment",
@@ -1022,7 +1020,9 @@ def test_deduplicate_jobs_covers_redirect_and_identity_rules() -> None:
         if "mergedCount" in case:
             assert int(stats.get("mergedCount") or 0) == case["mergedCount"], case["name"]
         if "mergedByPrimaryUrl" in case:
-            assert int(stats.get("mergedByPrimaryUrl") or 0) == case["mergedByPrimaryUrl"], case["name"]
+            assert int(stats.get("mergedByPrimaryUrl") or 0) == case["mergedByPrimaryUrl"], case[
+                "name"
+            ]
         if "company" in case:
             assert rows[0].company == case["company"], case["name"]
         if "jobLink" in case:

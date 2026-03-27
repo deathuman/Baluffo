@@ -19,6 +19,6 @@
       "webRoot": "${workspaceFolder}",
       "preLaunchTask": "Serve static site only (8080)",
       "postDebugTask": "Stop static site only"
-    },
+    }
   ]
 }

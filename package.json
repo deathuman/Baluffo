@@ -6,6 +6,7 @@
     "dev:bridge": "npm run check:python-version && python src/dev_admin_supervisor.py",
     "dev:pipeline": "npm run check:python-version && node -e \"const {spawnSync}=require('child_process');const r=spawnSync('python',['src/jobs/pipeline.py','--force-refresh-all'],{env:Object.assign({},process.env,{PYTHONPATH:process.cwd()}),stdio:'inherit'});process.exit(r.status||0)\"",
     "build": "npm run check:python-version && python scripts/orchestrator.py build",
+    "setup:hooks": "python scripts/install_git_hooks.py",
     "test": "npm run test:unit && npm run test:smoke",
     "verify": "npm run check:python-version && python scripts/orchestrator.py verify",
     "check:python-version": "python scripts/check_python_version.py",

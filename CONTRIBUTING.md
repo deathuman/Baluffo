@@ -20,6 +20,11 @@ Thank you for your interest in contributing to Baluffo!
 npm install
 ```
 
+### Install Repo Hooks
+```bash
+npm run setup:hooks
+```
+
 ### Run Development Server
 ```bash
 # Start the admin bridge (Python backend)

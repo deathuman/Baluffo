@@ -250,17 +250,35 @@ def test_apply_queue_balancing_covers_provider_bias_and_google_sheet_cap_bypass(
     ]
 
     for case in cases:
-        queued, report_rows, stats = sd.apply_queue_balancing(case["candidates"], top_n=case["top_n"])
+        queued, report_rows, stats = sd.apply_queue_balancing(
+            case["candidates"], top_n=case["top_n"]
+        )
         if "expected_queued" in case:
-            assert [str(row.get("adapter") or "") for row in queued] == case["expected_queued"], case["name"]
+            assert [str(row.get("adapter") or "") for row in queued] == case["expected_queued"], (
+                case["name"]
+            )
         if "expected_len" in case:
             assert len(queued) == case["expected_len"], case["name"]
-        assert int((stats.get("queuedByAdapter") or {}).get("static") or 0) == case["expected_static_queued"], case["name"]
-        assert int((stats.get("deferredByAdapter") or {}).get("static") or 0) == case["expected_static_deferred"], case["name"]
-        assert int((stats.get("healthyButDeferredByAdapter") or {}).get("static") or 0) == case["expected_static_healthy_deferred"], case["name"]
+        assert (
+            int((stats.get("queuedByAdapter") or {}).get("static") or 0)
+            == case["expected_static_queued"]
+        ), case["name"]
+        assert (
+            int((stats.get("deferredByAdapter") or {}).get("static") or 0)
+            == case["expected_static_deferred"]
+        ), case["name"]
+        assert (
+            int((stats.get("healthyButDeferredByAdapter") or {}).get("static") or 0)
+            == case["expected_static_healthy_deferred"]
+        ), case["name"]
         if "expected_deferred_count" in case:
-            assert len([row for row in report_rows if bool(row.get("deferred"))]) == case["expected_deferred_count"], case["name"]
-            assert int(stats.get("providerTarget") or 0) == case["expected_provider_target"], case["name"]
+            assert (
+                len([row for row in report_rows if bool(row.get("deferred"))])
+                == case["expected_deferred_count"]
+            ), case["name"]
+            assert int(stats.get("providerTarget") or 0) == case["expected_provider_target"], case[
+                "name"
+            ]
         else:
             assert len([row for row in report_rows if bool(row.get("deferred"))]) == 0, case["name"]
             assert "adapter_cap" not in (stats.get("deferredReasons") or {}), case["name"]
@@ -1447,9 +1465,17 @@ def test_run_discovery_deduplicates_duplicate_endpoints_and_stale_pending_rows()
                         include_web_search=False,
                         fetcher=case["setup"]["fetcher"],
                     )
-                    assert int(report["summary"].get("queuedCandidateCount") or 0) == case["expected_queued"], case["name"]
-                    assert int(report["summary"].get("skippedDuplicateCount") or 0) == case["expected_skipped"], case["name"]
-                    assert ("duplicateReasons" in report["summary"]) == case["expected_duplicate_reasons"], case["name"]
+                    assert (
+                        int(report["summary"].get("queuedCandidateCount") or 0)
+                        == case["expected_queued"]
+                    ), case["name"]
+                    assert (
+                        int(report["summary"].get("skippedDuplicateCount") or 0)
+                        == case["expected_skipped"]
+                    ), case["name"]
+                    assert ("duplicateReasons" in report["summary"]) == case[
+                        "expected_duplicate_reasons"
+                    ], case["name"]
                 finally:
                     (
                         sd.ACTIVE_PATH,
