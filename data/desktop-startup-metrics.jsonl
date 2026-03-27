@@ -481,3 +481,59 @@
 {"ts": "2026-03-27T14:43:16.025422+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
 {"ts": "2026-03-27T14:43:16.025746+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 4}}
 {"ts": "2026-03-27T14:43:16.026185+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
+{"ts": "2026-03-27T16:23:20.399581+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-27T16:23:20.400227+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-27T16:23:20.400314+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-27T16:35:06.570265+00:00", "event": "admin_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-27T16:35:06.570465+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-27T16:35:06.570633+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 5}}
+{"ts": "2026-03-27T16:35:22.213802+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-27T16:35:22.215253+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-27T16:35:22.223499+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
+{"ts": "2026-03-27T16:35:29.077653+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-27T16:35:29.077806+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-03-27T16:35:29.084558+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 5}}
+{"ts": "2026-03-27T16:36:08.491218+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 56}}
+{"ts": "2026-03-27T16:36:08.491371+00:00", "event": "admin_ready", "payload": {"elapsedMs": 57}}
+{"ts": "2026-03-27T16:36:08.491515+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 57}}
+{"ts": "2026-03-27T16:36:14.159795+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-27T16:36:14.159967+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-27T16:36:14.160210+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-27T16:38:21.782789+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
+{"ts": "2026-03-27T16:38:21.782941+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-27T16:38:21.783083+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-27T16:43:36.853630+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-27T16:43:36.853743+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-27T16:43:36.853782+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-27T17:43:42.670226+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 45}}
+{"ts": "2026-03-27T17:43:42.670311+00:00", "event": "admin_ready", "payload": {"elapsedMs": 46}}
+{"ts": "2026-03-27T17:43:42.670357+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 46}}
+{"ts": "2026-03-27T17:43:43.835217+00:00", "event": "desktop_browser_watchdog_started", "fields": {"elapsedMs": 2006, "mode": "process"}}
+{"ts": "2026-03-27T17:44:32.485247+00:00", "event": "desktop_browser_watchdog_grace", "fields": {"elapsedMs": 50656, "timeoutSeconds": 35}}
+{"ts": "2026-03-27T17:48:36.415977+00:00", "event": "admin_ready", "payload": {"elapsedMs": 43}}
+{"ts": "2026-03-27T17:48:36.416045+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 42}}
+{"ts": "2026-03-27T17:48:36.416088+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 43}}
+{"ts": "2026-03-27T18:00:03.811491+00:00", "event": "admin_ready", "payload": {"elapsedMs": 49}}
+{"ts": "2026-03-27T18:00:03.811592+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 49}}
+{"ts": "2026-03-27T18:00:03.811653+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 48}}
+{"ts": "2026-03-27T18:00:03.985851+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 54}}
+{"ts": "2026-03-27T18:00:03.986030+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 55}}
+{"ts": "2026-03-27T18:00:04.000022+00:00", "event": "admin_ready", "payload": {"elapsedMs": 54}}
+{"ts": "2026-03-27T18:00:12.762341+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 17}}
+{"ts": "2026-03-27T18:00:12.762428+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 18}}
+{"ts": "2026-03-27T18:00:12.762489+00:00", "event": "admin_ready", "payload": {"elapsedMs": 18}}
+{"ts": "2026-03-27T18:03:46.918780+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 42}}
+{"ts": "2026-03-27T18:03:46.918843+00:00", "event": "admin_ready", "payload": {"elapsedMs": 43}}
+{"ts": "2026-03-27T18:03:46.923473+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 43}}
+{"ts": "2026-03-27T18:05:53.568138+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-27T18:05:53.568198+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-27T18:05:53.568241+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-27T18:09:22.220334+00:00", "event": "admin_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-27T18:09:22.220408+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-27T18:09:22.220446+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-27T18:14:36.900905+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-27T18:14:36.900990+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-27T18:14:36.901028+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-27T18:18:01.714801+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-27T18:18:01.714964+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-27T18:18:01.715029+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}

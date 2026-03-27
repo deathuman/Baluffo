@@ -20,6 +20,10 @@ jobs.html / saved.html / admin.html
       -> UI registry (frontend/shared/ui/selectors.js)
       -> API client (frontend/shared/api-client.js), state hub (frontend/shared/state-hub.js), shared UI components (frontend/shared/ui/)
 
+Baluffo launcher (supervised dev entrypoint): src/dev_admin_supervisor.py
+  -> starts local static site + admin bridge + owned browser session for day-to-day local admin work
+  -> tears down owned processes when the local browser session exits
+
 admin bridge (local HTTP API): src/admin_bridge.py
   -> src/bridge/ (modular components)
       -> sync_state.py: SYNC_STATUS, locks, state management
@@ -52,7 +56,8 @@ runtime data roots:
 |--------|----------|---------|
 | `src/jobs_fetcher.py` | `src/` | Build unified jobs feed |
 | `src/source_discovery.py` | `src/` | Discover candidate sources (legacy CLI → delegates to package) |
-| `src/admin_bridge.py` | `src/` | Local admin HTTP API |
+| `src/dev_admin_supervisor.py` | `src/` | Baluffo launcher (site + bridge + browser ownership) |
+| `src/admin_bridge.py` | `src/` | Local admin HTTP API / expert bridge-only entrypoint |
 | `src/jobs/pipeline.py` | `src/jobs/` | Core job processing |
 | `src/source_discovery/` | `src/source_discovery/` | Source discovery package (orchestrator, probe, web_search, etc.) |
 | `src/jobs/common/` | `src/jobs/common/` | Jobs package helpers (config, contracts, heuristics, parsing, etc.) |

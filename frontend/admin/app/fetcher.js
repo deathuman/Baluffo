@@ -705,7 +705,6 @@ export function createAdminFetcherController({
       const bridge = await postBridge("/tasks/run-fetcher", payload);
       if (bridge && bridge.started) {
         setOptimisticFetchRun(bridge);
-        setBusyFlag("liveFetchRunning", true);
         const presetLabel = String(bridge?.preset || presetMeta.preset || "default");
         const argsLabel = Array.isArray(bridge?.args) ? bridge.args.join(" ") : "";
         appendFetcherLog(
@@ -737,7 +736,6 @@ export function createAdminFetcherController({
       runId: `fallback-fetch:${Date.now()}`,
       startedAt: new Date().toISOString()
     });
-    setBusyFlag("liveFetchRunning", true);
     const taskArgQuoted = encodeURIComponent(JSON.stringify(jobsFetcherTaskLabel));
     const taskArgRaw = encodeURIComponent(jobsFetcherTaskLabel);
     const taskUris = [

@@ -503,7 +503,6 @@ export function createAdminDiscoveryController({
       return;
     }
     setBusyFlag("discoveryRun", true);
-    setBusyFlag("liveDiscoveryRunning", true);
     state.discoveryLogRemoteOffset = 0;
     updateDiscoveryProgressFromReport(null, { running: true });
     appendDiscoveryLog("Triggering source discovery task...");

@@ -54,7 +54,7 @@ Do **not** load many docs by default. Start narrow and pull in task-specific ref
 - **Never guess UI selectors** — always use `frontend/shared/ui/selectors.js` as the source of truth for all UI element handles.
 - **Build/packaging scripts must NOT import composition roots** — avoid importing `src.jobs`, `src.admin_bridge`, or other top-level re-export modules from build scripts. Use leaf modules like `src/bridge/*`, `src/core/*`, or direct data-file reads instead.
 - **Don't assume endpoint payloads** — always check [`docs/admin-bridge-api.md`](admin-bridge-api.md) first before making assumptions about bridge API structures.
-- **Don't assume local bridge reflects code changes** — if behavior looks stale after a fix, restart the bridge (`npm run dev:bridge`) before concluding the fix failed.
+- **Don't assume the Baluffo launcher reflects code changes** — if behavior looks stale after a fix, restart the Baluffo launcher (`npm run dev:bridge`) before concluding the fix failed.
 - **Bridge changes require both frontend AND backend verification** — when modifying bridge routes or payloads, verify both the Python backend tests and any affected frontend tests.
 
 ---
@@ -178,7 +178,7 @@ See [`testing.md`](testing.md) and the verification matrix in [`architecture-ai-
 
 | Goal | Command |
 |------|---------|
-| Start Admin Bridge | `npm run dev:bridge` |
+| Start Baluffo Launcher | `npm run dev:bridge` or VS Code task `Launch Baluffo` |
 | Run Jobs Pipeline | `npm run dev:pipeline` |
 | Full build | `npm run build` |
 | Full verification | `npm run verify` |

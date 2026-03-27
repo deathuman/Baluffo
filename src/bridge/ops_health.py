@@ -489,12 +489,21 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
         if isinstance(latest_fetch_report.get("socialSummary"), dict)
         else {}
     )
+    owner_state = deps.owner_state if isinstance(getattr(deps, "owner_state", {}), dict) else {}
 
     return {
         "service": "baluffo-bridge",
         "desktopMode": bool(deps.desktop_mode),
         "generatedAt": deps.now_iso(),
         "desktopLastActivityAt": str(deps.desktop_last_activity_at or ""),
+        "owner": {
+            "mode": str(owner_state.get("ownerMode") or ""),
+            "token": str(owner_state.get("ownerToken") or ""),
+            "startedBy": str(owner_state.get("startedBy") or ""),
+            "startedAt": str(owner_state.get("startedAt") or ""),
+            "lastActivityAt": str(owner_state.get("lastActivityAt") or ""),
+            "idleTimeoutSeconds": float(owner_state.get("idleTimeoutSeconds") or 0.0),
+        },
         "status": severity,
         "kpis": {
             "lastSuccessfulFetchAge": format_age(

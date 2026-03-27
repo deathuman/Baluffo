@@ -51,6 +51,7 @@ class OpsDeps:
     normalize_discovery_report_contract: Callable[[dict[str, Any]], dict[str, Any]]
     desktop_mode: bool
     get_desktop_last_activity_at: Callable[[], str]
+    get_owner_state: Callable[[], dict[str, Any]]
     ops_schema_version: int
 
 
@@ -62,6 +63,7 @@ class OpsHealthDeps:
     now_iso: Callable[[], str]
     desktop_mode: bool
     desktop_last_activity_at: str
+    owner_state: dict[str, Any]
     load_alert_state_fn: Callable[[], dict[str, Any]]
     save_alert_state_fn: Callable[[dict[str, Any]], None]
     parse_schedule_metadata_fn: Callable[[], dict[str, Any]]
@@ -187,6 +189,7 @@ class OpsApi:
             now_iso=self._deps.now_iso,
             desktop_mode=bool(self._deps.desktop_mode),
             desktop_last_activity_at=str(self._deps.get_desktop_last_activity_at() or ""),
+            owner_state=dict(self._deps.get_owner_state() or {}),
             load_alert_state_fn=self.load_alert_state,
             save_alert_state_fn=self.save_alert_state,
             parse_schedule_metadata_fn=self.parse_schedule_metadata,
@@ -269,6 +272,8 @@ class OpsApi:
         )
         fetch_snapshot = projection.child_tasks.get("fetch")
         fetch_active = bool(fetch_snapshot and fetch_snapshot.active)
+        if fetch_state and not fetch_active:
+            self._deps.clear_task_state("fetch")
         append_if_active(
             "fetch",
             {
@@ -317,6 +322,8 @@ class OpsApi:
         )
         discovery_snapshot = projection.child_tasks.get("discovery")
         discovery_active = bool(discovery_snapshot and discovery_snapshot.active)
+        if discovery_state and not discovery_active:
+            self._deps.clear_task_state("discovery")
         append_if_active(
             "discovery",
             {

@@ -82,7 +82,12 @@ Saved job record fields:
   - `BALUFFO_DISCOVERY_PROBE_CONCURRENCY_STATIC` (default `16`)
   For faster runs on reliable networks, try total/provider 50–80 and teamtailor 25–40.
   - Optional: `BALUFFO_SHEET_DIRECTORY_MAX_ROWS` to cap how many game studio sheet rows are considered (no cap by default).
-- Run `python src/admin_bridge.py` to expose localhost admin endpoints used by `admin.html`:
+- Run `npm run dev:bridge` or the VS Code task `Launch Baluffo` to start the Baluffo launcher used by `jobs.html` on normal startup:
+  - local static site on `http://127.0.0.1:8080`
+  - local admin bridge on `http://127.0.0.1:8877`
+  - owned browser session teardown for the local workspace
+- Expert/manual bridge-only mode is still available with `python src/admin_bridge.py` when you intentionally want the bridge without the Baluffo launcher.
+- The bridge exposes localhost admin endpoints used by `admin.html`:
   - `GET /discovery/report`
   - `GET /registry/pending`
   - `GET /registry/active`
@@ -102,6 +107,9 @@ Saved job record fields:
 - If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback only for the standard fetcher run and shows a manual command fallback (`python -m src.jobs_fetcher --social-enabled`). Bridge-only presets such as `uncapped` still require the bridge.
 
 - Optional bridge runtime options:
+  - Baluffo launcher:
+    - `npm run dev:bridge`
+    - VS Code: `Launch Baluffo` / `Stop Baluffo`
   - CLI:
     - `--host`, `--port`, `--data-dir`, `--log-format (human|jsonl)`, `--log-level (info|debug)`, `--quiet-requests`
   - env:

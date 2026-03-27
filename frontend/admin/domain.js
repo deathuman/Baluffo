@@ -199,7 +199,11 @@ function normalizeRunStatus(value) {
 }
 
 function isRunLive(row) {
-  return normalizeRunStatus(row?.status) === "started" && !String(row?.finishedAt || "").trim();
+  return Boolean(row?.active) && !String(row?.finishedAt || "").trim();
+}
+
+function isTerminalHistoryRow(row) {
+  return Boolean(String(row?.finishedAt || "").trim());
 }
 
 function toOpsRunRow(row, nowMs) {
@@ -280,7 +284,7 @@ export function normalizeOpsRuns(runs, nowMs = Date.now()) {
     .sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a));
 
   const completedRows = sorted
-    .filter(row => !isRunLive(row))
+    .filter(row => !isRunLive(row) && isTerminalHistoryRow(row))
     .map(row => toOpsRunRow(row, nowMs));
 
   const visibleCompletedRows = completedRows.slice(0, 2);
@@ -329,47 +333,24 @@ function normalizeCurrentTaskStateRow(row, nowMs = Date.now()) {
 export function deriveAdminRunsModel(
   {
     taskState,
-    historyRuns,
-    optimisticDiscoveryRun = null,
-    optimisticFetchRun = null
+    historyRuns
   } = {},
   nowMs = Date.now()
 ) {
   const taskRows = Array.isArray(taskState?.tasks) ? taskState.tasks : [];
-  let normalizedCurrentRows = taskRows
+  const normalizedCurrentRows = taskRows
     .map(row => normalizeCurrentTaskStateRow(row, nowMs))
     .filter(row => row && row.isLive);
-
-  if (!normalizedCurrentRows.length) {
-    const legacyModel = normalizeOpsRuns(Array.isArray(historyRuns) ? historyRuns : [], nowMs);
-    normalizedCurrentRows = Array.isArray(legacyModel.currentRows) ? legacyModel.currentRows : [];
-  }
-
-  const completedOnlyHistory = (Array.isArray(historyRuns) ? historyRuns : []).filter(
-    row => row && typeof row === "object" && String(row?.finishedAt || "").trim()
-  );
-  const hasCompletedMatch = row => completedOnlyHistory.some(completedRow => {
-    const taskType = String(row?.taskType || row?.type || "").trim().toLowerCase();
-    const completedType = String(completedRow?.taskType || completedRow?.type || "").trim().toLowerCase();
-    if (!taskType || taskType !== completedType) return false;
-    const runId = String(row?.runId || "").trim();
-    const completedRunId = String(completedRow?.runId || completedRow?.id || "").trim();
-    if (runId && completedRunId && runId === completedRunId) return true;
-    const startedAt = String(row?.startedAt || "").trim();
-    const completedStartedAt = String(completedRow?.startedAt || "").trim();
-    return Boolean(startedAt) && startedAt === completedStartedAt;
-  });
-
   const currentByType = new Map();
   normalizedCurrentRows
     .sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a))
     .forEach(row => {
       const taskType = String(row?.taskType || row?.type || "").trim().toLowerCase();
-      if (!taskType || currentByType.has(taskType) || hasCompletedMatch(row)) return;
+      if (!taskType || currentByType.has(taskType)) return;
       currentByType.set(taskType, row);
     });
 
-  const completedModel = normalizeOpsRuns(completedOnlyHistory, nowMs);
+  const completedModel = normalizeOpsRuns(Array.isArray(historyRuns) ? historyRuns : [], nowMs);
 
   const baseModel = {
     currentRows: Array.from(currentByType.values()),
@@ -378,14 +359,7 @@ export function deriveAdminRunsModel(
     hasLiveRuns: currentByType.size > 0,
     liveTypes: Array.from(currentByType.keys())
   };
-
-  const withDiscoveryOptimism = optimisticDiscoveryRun
-    ? applyOptimisticDiscoveryRun(baseModel, optimisticDiscoveryRun, nowMs)
-    : baseModel;
-  const withFetchOptimism = optimisticFetchRun
-    ? applyOptimisticFetchRun(withDiscoveryOptimism, optimisticFetchRun, nowMs)
-    : withDiscoveryOptimism;
-  return withFetchOptimism;
+  return baseModel;
 }
 
 function compactCount(value) {
@@ -645,57 +619,9 @@ export function applyOptimisticDiscoveryRun(model, optimisticRun, nowMs = Date.n
         hasLiveRuns: false,
         liveTypes: []
       };
-  const startedAt = String(optimisticRun?.startedAt || "").trim();
-  if (!startedAt) return baseModel;
-
-  const currentRows = Array.isArray(baseModel.currentRows) ? [...baseModel.currentRows] : [];
-  const visibleCompletedRows = Array.isArray(baseModel.visibleCompletedRows) ? [...baseModel.visibleCompletedRows] : [];
-  const olderCompletedRows = Array.isArray(baseModel.olderCompletedRows) ? [...baseModel.olderCompletedRows] : [];
-  const allRows = [...currentRows, ...visibleCompletedRows, ...olderCompletedRows];
-
-  const hasLiveDiscovery = currentRows.some(row => (
-    String(row?.type || "").trim().toLowerCase() === "discovery"
-    && Boolean(row?.isLive)
-  ));
-  if (hasLiveDiscovery) return baseModel;
-
-  const hasCompletedMatch = allRows.some(row => (
-    String(row?.type || "").trim().toLowerCase() === "discovery"
-    && String(row?.startedAt || "").trim() === startedAt
-    && String(row?.finishedAt || "").trim()
-  ));
-  if (hasCompletedMatch) return baseModel;
-
-  currentRows.push({
-    id: String(optimisticRun?.runId || `optimistic-discovery:${startedAt}`),
-    type: "discovery",
-    status: "started",
-    startedAt,
-    finishedAt: "",
-    durationMs: 0,
-    summary: {},
-    isLive: true,
-    elapsedMs: Math.max(0, Number(nowMs || Date.now()) - parseRunTimestampMs({ startedAt })),
-    displayStatus: "running",
-    optimistic: true
-  });
-  currentRows.sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a));
-  const liveTypes = Array.from(new Set([
-    ...currentRows
-      .filter(row => Boolean(row?.isLive))
-      .map(row => String(row?.type || "").toLowerCase())
-      .filter(Boolean),
-    ...(Array.isArray(baseModel.liveTypes) ? baseModel.liveTypes : [])
-  ]));
-
-  return {
-    ...baseModel,
-    currentRows,
-    visibleCompletedRows,
-    olderCompletedRows,
-    hasLiveRuns: currentRows.some(row => Boolean(row?.isLive)),
-    liveTypes
-  };
+  void optimisticRun;
+  void nowMs;
+  return baseModel;
 }
 
 export function deriveFetcherProgressModel(report, { running = false } = {}) {
@@ -730,60 +656,9 @@ export function applyOptimisticFetchRun(model, optimisticRun, nowMs = Date.now()
         hasLiveRuns: false,
         liveTypes: []
       };
-  const startedAt = String(optimisticRun?.startedAt || "").trim();
-  const runId = String(optimisticRun?.runId || "").trim();
-  if (!startedAt) return baseModel;
-
-  const currentRows = Array.isArray(baseModel.currentRows) ? [...baseModel.currentRows] : [];
-  const visibleCompletedRows = Array.isArray(baseModel.visibleCompletedRows) ? [...baseModel.visibleCompletedRows] : [];
-  const olderCompletedRows = Array.isArray(baseModel.olderCompletedRows) ? [...baseModel.olderCompletedRows] : [];
-  const allRows = [...currentRows, ...visibleCompletedRows, ...olderCompletedRows];
-
-  const hasLiveFetch = currentRows.some(row => (
-    String(row?.type || "").trim().toLowerCase() === "fetch"
-    && Boolean(row?.isLive)
-    && ((runId && String(row?.runId || "").trim() === runId) || String(row?.startedAt || "").trim() === startedAt)
-  ));
-  if (hasLiveFetch) return baseModel;
-
-  const hasCompletedMatch = allRows.some(row => (
-    String(row?.type || "").trim().toLowerCase() === "fetch"
-    && String(row?.finishedAt || "").trim()
-    && ((runId && String(row?.runId || "").trim() === runId) || String(row?.startedAt || "").trim() === startedAt)
-  ));
-  if (hasCompletedMatch) return baseModel;
-
-  currentRows.push({
-    id: runId || `optimistic-fetch:${startedAt}`,
-    runId,
-    type: "fetch",
-    status: "started",
-    startedAt,
-    finishedAt: "",
-    durationMs: 0,
-    summary: {},
-    isLive: true,
-    elapsedMs: Math.max(0, Number(nowMs || Date.now()) - parseRunTimestampMs({ startedAt })),
-    displayStatus: "running",
-    optimistic: true
-  });
-  currentRows.sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a));
-  const liveTypes = Array.from(new Set([
-    ...currentRows
-      .filter(row => Boolean(row?.isLive))
-      .map(row => String(row?.type || "").toLowerCase())
-      .filter(Boolean),
-    ...(Array.isArray(baseModel.liveTypes) ? baseModel.liveTypes : [])
-  ]));
-
-  return {
-    ...baseModel,
-    currentRows,
-    visibleCompletedRows,
-    olderCompletedRows,
-    hasLiveRuns: currentRows.some(row => Boolean(row?.isLive)),
-    liveTypes
-  };
+  void optimisticRun;
+  void nowMs;
+  return baseModel;
 }
 
 function hasReportFailureSignal(row) {

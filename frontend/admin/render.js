@@ -809,7 +809,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
 
   historyEl.innerHTML = `
     <div class="admin-ops-current-runs">
-      <div class="admin-ops-history-title">Current Runs</div>
+      <div class="admin-ops-history-title">Runs</div>
       <div class="jobs-table-header">
         <div class="admin-row-header admin-ops-history-header">
           <div>Type</div>
@@ -821,7 +821,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
         </div>
       </div>
       <div class="jobs-table-body">
-        ${primaryViews.length ? renderRows(primaryViews) : '<div class="no-results">No active runs.</div>'}
+        ${primaryViews.length ? renderRows(primaryViews) : '<div class="no-results">No run history yet.</div>'}
       </div>
     </div>
     ${olderCompletedViews.length ? `

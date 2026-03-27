@@ -101,25 +101,32 @@ export function createAdminOpsController({
       const runModel = deriveAdminRunsModel(
         {
           taskState: taskStatePayload || {},
-          historyRuns: historyPayload?.runs || [],
-          optimisticDiscoveryRun: state.discoveryOptimisticRun,
-          optimisticFetchRun: state.fetchOptimisticRun
+          historyRuns: historyPayload?.runs || []
         },
         Date.now()
       );
-      const liveTypes = new Set(Array.isArray(runModel?.liveTypes) ? runModel.liveTypes : []);
+      const liveTaskRows = Array.isArray(taskStatePayload?.tasks)
+        ? taskStatePayload.tasks.filter(row => row && typeof row === "object" && row.active)
+        : [];
+      const liveTypes = new Set(
+        liveTaskRows
+          .map(row => String(row?.taskType || row?.type || "").toLowerCase())
+          .filter(Boolean)
+      );
       setBusyFlag("liveFetchRunning", liveTypes.has("fetch"));
       setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
       setBusyFlag("liveSyncRunning", liveTypes.has("sync"));
       setBusyFlag("livePipelineRunning", liveTypes.has("pipeline"));
       if (liveTypes.has("fetch") && !state.adminBusyState.fetcherWatch) {
-        const currentRows = Array.isArray(runModel?.currentRows) ? runModel.currentRows : [];
-        const activeFetchRun = currentRows.find(row => String(row?.type || "").toLowerCase() === "fetch") || null;
+        const activeFetchRun = liveTaskRows.find(
+          row => String(row?.taskType || row?.type || "").toLowerCase() === "fetch"
+        ) || null;
         onLiveFetchDetected?.(activeFetchRun);
       }
       if (liveTypes.has("discovery") && !state.adminBusyState.discoveryWatch) {
-        const currentRows = Array.isArray(runModel?.currentRows) ? runModel.currentRows : [];
-        const activeDiscoveryRun = currentRows.find(row => String(row?.type || "").toLowerCase() === "discovery") || null;
+        const activeDiscoveryRun = liveTaskRows.find(
+          row => String(row?.taskType || row?.type || "").toLowerCase() === "discovery"
+        ) || null;
         onLiveDiscoveryDetected?.(activeDiscoveryRun);
       }
 
@@ -145,7 +152,7 @@ export function createAdminOpsController({
       renderAdminOpsTrends(refs.adminOpsTrendsEl, historyPayload?.runs || []);
       loadSyncStatus({ silent: true }).catch(() => {});
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
-      scheduleOpsHealthPolling(getOpsPollIntervalMs(Boolean(runModel?.hasLiveRuns)));
+      scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0));
     } catch (err) {
       setOpsPlaceholders(`Ops health unavailable: ${getErrorMessage(err)}`);
       setBusyFlag("liveFetchRunning", false);

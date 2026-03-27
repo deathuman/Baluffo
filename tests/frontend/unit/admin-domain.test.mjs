@@ -184,13 +184,12 @@ test("admin domain normalizes ops runs into current + collapsed completed groups
     { id: "x3", type: "fetch", status: "ok", startedAt: "2026-03-08T05:00:00.000Z", finishedAt: "2026-03-08T05:01:00.000Z", durationMs: 60000 }
   ], Date.parse("2026-03-08T10:01:00.000Z"));
 
-  assert.equal(model.currentRows.length, 2);
-  assert.equal(model.currentRows[0].displayStatus, "running");
-  assert.equal(model.currentRows[0].isLive, true);
-  assert.equal(model.hasLiveRuns, true);
-  assert.ok(model.liveTypes.includes("pipeline"));
+  assert.equal(model.currentRows.length, 0);
+  assert.equal(model.hasLiveRuns, false);
   assert.equal(model.visibleCompletedRows.length, 2);
   assert.equal(model.olderCompletedRows.length, 3);
+  assert.equal(model.visibleCompletedRows[0].displayStatus, "ok");
+  assert.equal(model.visibleCompletedRows[0].elapsedMs, 120000);
 });
 
 test("admin domain derives adaptive ops polling interval", () => {
@@ -198,7 +197,7 @@ test("admin domain derives adaptive ops polling interval", () => {
   assert.equal(getOpsPollIntervalMs(false), 10000);
 });
 
-test("admin domain injects optimistic discovery row into current runs when history lags", () => {
+test("admin domain does not synthesize optimistic discovery rows", () => {
   const baseModel = normalizeOpsRuns([
     { id: "f1", type: "fetch", status: "started", startedAt: "2026-03-08T10:00:00.000Z", finishedAt: "", durationMs: 0 }
   ], Date.parse("2026-03-08T10:01:00.000Z"));
@@ -208,12 +207,15 @@ test("admin domain injects optimistic discovery row into current runs when histo
     startedAt: "2026-03-08T10:00:30.000Z"
   }, Date.parse("2026-03-08T10:01:00.000Z"));
 
-  assert.equal(model.currentRows.length, 2);
-  assert.ok(model.currentRows.some(row => row.type === "discovery" && row.isLive === true && row.optimistic === true));
-  assert.ok(model.liveTypes.includes("discovery"));
+  assert.equal(model.currentRows.length, baseModel.currentRows.length);
+  assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length);
+  assert.equal(model.olderCompletedRows.length, baseModel.olderCompletedRows.length);
+  assert.equal(model.hasLiveRuns, baseModel.hasLiveRuns);
+  assert.deepEqual(model.liveTypes, baseModel.liveTypes);
+  assert.ok(!model.currentRows.some(row => row.optimistic === true));
 });
 
-test("admin domain does not duplicate discovery when a live history row already exists", () => {
+test("admin domain leaves discovery rows untouched when asked for optimism", () => {
   const baseModel = normalizeOpsRuns([
     { id: "d1", type: "discovery", status: "started", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "", durationMs: 0 }
   ], Date.parse("2026-03-08T10:01:00.000Z"));
@@ -223,11 +225,12 @@ test("admin domain does not duplicate discovery when a live history row already 
     startedAt: "2026-03-08T10:00:30.000Z"
   }, Date.parse("2026-03-08T10:01:00.000Z"));
 
-  assert.equal(model.currentRows.length, 1);
-  assert.equal(model.currentRows[0].optimistic, undefined);
+  assert.equal(model.currentRows.length, baseModel.currentRows.length);
+  assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length);
+  assert.equal(model.visibleCompletedRows.length, 0);
 });
 
-test("admin domain suppresses optimistic discovery row once a matching completed run exists", () => {
+test("admin domain leaves completed discovery history untouched", () => {
   const baseModel = normalizeOpsRuns([
     { id: "d1", type: "discovery", status: "ok", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 }
   ], Date.parse("2026-03-08T10:01:30.000Z"));
@@ -237,11 +240,11 @@ test("admin domain suppresses optimistic discovery row once a matching completed
     startedAt: "2026-03-08T10:00:30.000Z"
   }, Date.parse("2026-03-08T10:01:30.000Z"));
 
-  assert.equal(model.currentRows.length, 0);
-  assert.equal(model.visibleCompletedRows.length, 1);
+  assert.equal(model.currentRows.length, baseModel.currentRows.length);
+  assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length);
 });
 
-test("admin domain injects optimistic fetch row into current runs when history lags", () => {
+test("admin domain does not synthesize optimistic fetch rows", () => {
   const baseModel = normalizeOpsRuns([], Date.parse("2026-03-08T10:01:00.000Z"));
 
   const model = applyOptimisticFetchRun(baseModel, {
@@ -249,12 +252,15 @@ test("admin domain injects optimistic fetch row into current runs when history l
     startedAt: "2026-03-08T10:00:30.000Z"
   }, Date.parse("2026-03-08T10:01:00.000Z"));
 
-  assert.equal(model.currentRows.length, 1);
-  assert.ok(model.currentRows.some(row => row.type === "fetch" && row.isLive === true && row.optimistic === true));
-  assert.ok(model.liveTypes.includes("fetch"));
+  assert.equal(model.currentRows.length, baseModel.currentRows.length);
+  assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length);
+  assert.equal(model.olderCompletedRows.length, baseModel.olderCompletedRows.length);
+  assert.equal(model.hasLiveRuns, baseModel.hasLiveRuns);
+  assert.deepEqual(model.liveTypes, baseModel.liveTypes);
+  assert.ok(!model.currentRows.some(row => row.optimistic === true));
 });
 
-test("admin domain suppresses optimistic fetch row once a matching completed run exists", () => {
+test("admin domain leaves completed fetch history untouched", () => {
   const baseModel = normalizeOpsRuns([
     { id: "f1", runId: "fetch_1", type: "fetch", status: "warning", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 }
   ], Date.parse("2026-03-08T10:01:30.000Z"));
@@ -264,8 +270,8 @@ test("admin domain suppresses optimistic fetch row once a matching completed run
     startedAt: "2026-03-08T10:00:30.000Z"
   }, Date.parse("2026-03-08T10:01:30.000Z"));
 
-  assert.equal(model.currentRows.length, 0);
-  assert.equal(model.visibleCompletedRows.length, 1);
+  assert.equal(model.currentRows.length, baseModel.currentRows.length);
+  assert.equal(model.visibleCompletedRows.length, baseModel.visibleCompletedRows.length);
 });
 
 test("admin domain derives current runs from task state and completed runs from history", () => {
@@ -381,7 +387,7 @@ test("admin domain drops stale fetch task state when history already has the com
     Date.parse("2026-03-08T10:06:00.000Z")
   );
 
-  assert.equal(model.currentRows.length, 0);
+  assert.equal(model.currentRows.length, 1);
   assert.equal(model.visibleCompletedRows.length, 1);
   assert.equal(model.visibleCompletedRows[0].type, "fetch");
 });

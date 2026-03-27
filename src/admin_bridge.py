@@ -216,6 +216,9 @@ def _get_discovery_service() -> DiscoveryService:
                     save_json_atomic=save_json_atomic,
                     run_background_script=run_background_script,
                     append_run_history=append_run_history,
+                    upsert_run_history=upsert_run_history,
+                    prune_started_rows_for_type=prune_started_rows_for_type,
+                    clear_task_state=clear_task_state,
                     normalize_discovery_report_contract=normalize_discovery_report_contract,
                     load_state=load_state,
                     persist_state_and_auto_sync=persist_state_and_auto_sync,
@@ -288,6 +291,7 @@ def _get_ops_api() -> _ops_api.OpsApi:
             normalize_discovery_report_contract=normalize_discovery_report_contract,
             desktop_mode=RUNTIME_CONFIG.desktop_mode,
             get_desktop_last_activity_at=lambda: bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
+            get_owner_state=bridge_runtime_state.get_owner_state,
             ops_schema_version=OPS_SCHEMA_VERSION,
         ),
     )
@@ -333,6 +337,10 @@ RUNTIME_CONFIG = RuntimeConfig(
     log_level="info",
     quiet_requests=False,
     desktop_mode=False,
+    owner_mode="",
+    owner_token="",
+    started_by="",
+    owner_idle_timeout_s=0.0,
 )
 
 
@@ -449,6 +457,10 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
         startup_metrics_path=STARTUP_METRICS_PATH,
         desktop_local_data_store=LocalDataStore(LocalDataPaths.from_data_dir(data_dir)),
         now_iso=now_iso,
+        owner_mode=config.owner_mode,
+        owner_token=config.owner_token,
+        started_by=config.started_by,
+        owner_idle_timeout_s=config.owner_idle_timeout_s,
     )
     with _REGISTRY_SERVICE_LOCK:
         _REGISTRY_SERVICE = None
@@ -499,6 +511,7 @@ def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
         sync_history_from_reports=sync_history_from_reports,
         get_projected_run_history=_get_ops_api().get_projected_run_history,
         get_current_task_state_payload=_get_ops_api().get_current_task_state_payload,
+        should_exit_for_owner_timeout=owner_session_should_exit,
         load_alert_state=load_alert_state,
         save_alert_state=save_alert_state,
     )
@@ -803,7 +816,24 @@ def mark_desktop_session_activity(path: str) -> None:
         path,
         now_iso=now_iso,
         desktop_mode=RUNTIME_CONFIG.desktop_mode,
+        owner_mode=RUNTIME_CONFIG.owner_mode,
     )
+
+
+def owner_session_should_exit() -> bool:
+    expired = bridge_runtime_state.owner_session_expired(parse_iso=parse_iso, now_utc=now_utc)
+    if expired:
+        owner_state = bridge_runtime_state.get_owner_state()
+        bridge_log(
+            "info",
+            "admin_bridge_owner_session_expired",
+            owner_mode=str(owner_state.get("ownerMode") or ""),
+            owner_token=str(owner_state.get("ownerToken") or ""),
+            started_by=str(owner_state.get("startedBy") or ""),
+            last_activity_at=str(owner_state.get("lastActivityAt") or ""),
+            idle_timeout_seconds=float(owner_state.get("idleTimeoutSeconds") or 0.0),
+        )
+    return expired
 
 
 def parse_iso(value: Any) -> datetime | None:
@@ -1138,6 +1168,7 @@ def start_fetcher_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     FETCHER_LOG_PATH.write_text(
         f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8"
     )
+    prune_started_rows_for_type("fetch", keep_started_at=started_at)
     append_run_history(
         {
             "id": run_id,

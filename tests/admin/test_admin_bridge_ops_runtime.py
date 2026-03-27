@@ -27,6 +27,7 @@ def test_resolve_runtime_config_cli_env_precedence(admin_bridge_entrypoint_root)
             "BALUFFO_DATA_DIR": "C:\\should-not-win",
             "BALUFFO_BRIDGE_LOG_FORMAT": "human",
             "BALUFFO_BRIDGE_LOG_LEVEL": "info",
+            "BALUFFO_BRIDGE_OWNER_MODE": "env-owner",
         },
     )
     assert cfg.host == "127.0.0.9"
@@ -34,6 +35,7 @@ def test_resolve_runtime_config_cli_env_precedence(admin_bridge_entrypoint_root)
     assert str(cfg.data_dir) == str(admin_bridge_entrypoint_root.resolve())
     assert cfg.log_format == "jsonl"
     assert cfg.log_level == "debug"
+    assert cfg.owner_mode == "env-owner"
 
 
 def test_resolve_runtime_config_env_defaults_when_cli_missing(admin_bridge_entrypoint_root):
@@ -63,6 +65,10 @@ def test_resolve_runtime_config_env_defaults_when_cli_missing(admin_bridge_entry
                 "BALUFFO_DATA_DIR": str(admin_bridge_entrypoint_root),
                 "BALUFFO_BRIDGE_LOG_FORMAT": "jsonl",
                 "BALUFFO_BRIDGE_LOG_LEVEL": "debug",
+                "BALUFFO_BRIDGE_OWNER_MODE": "dev-supervisor",
+                "BALUFFO_BRIDGE_OWNER_TOKEN": "token-123",
+                "BALUFFO_BRIDGE_STARTED_BY": "unit-test",
+                "BALUFFO_BRIDGE_OWNER_IDLE_TIMEOUT_S": "45",
             },
         )
     assert cfg.host == "0.0.0.0"
@@ -70,6 +76,10 @@ def test_resolve_runtime_config_env_defaults_when_cli_missing(admin_bridge_entry
     assert str(cfg.data_dir) == str(admin_bridge_entrypoint_root.resolve())
     assert cfg.log_format == "jsonl"
     assert cfg.log_level == "debug"
+    assert cfg.owner_mode == "dev-supervisor"
+    assert cfg.owner_token == "token-123"
+    assert cfg.started_by == "unit-test"
+    assert cfg.owner_idle_timeout_s == 45.0
 
 
 def test_resolve_runtime_config_uses_file_defaults_when_env_missing(admin_bridge_entrypoint_root):
@@ -186,10 +196,38 @@ def test_compute_ops_health_reports_alerts(admin_bridge_entrypoint_root):
     assert health["service"] == "baluffo-bridge"
     assert "desktopMode" in health
     assert bool(health["desktopMode"]) == bool(admin_bridge.RUNTIME_CONFIG.desktop_mode)
+    assert "owner" in health
+    assert str(health["owner"]["mode"] or "") == str(admin_bridge.RUNTIME_CONFIG.owner_mode or "")
     assert "kpis" in health
     assert "alerts" in health
     assert len(health["alerts"]) >= 1
     assert any(alert["id"] == "degraded_reliability" for alert in health["alerts"])
+
+
+def test_owner_session_should_exit_when_supervised_bridge_is_idle(admin_bridge_entrypoint_root):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+        desktop_mode=False,
+        owner_mode="dev-supervisor",
+        owner_token="owner-1",
+        started_by="test",
+        owner_idle_timeout_s=10.0,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    admin_bridge.bridge_runtime_state.OWNER_STATE["lastActivityAt"] = "2026-03-01T00:00:00+00:00"
+
+    with mock.patch.object(
+        admin_bridge,
+        "now_utc",
+        return_value=admin_bridge.parse_iso("2026-03-01T00:00:15+00:00"),
+    ):
+        assert admin_bridge.owner_session_should_exit() is True
 
 
 def test_compute_ops_health_includes_social_alerts(admin_bridge_entrypoint_root):
@@ -1078,6 +1116,78 @@ def test_get_current_task_state_payload_projects_active_tasks(admin_bridge_entry
                 "progress": {"currentStep": 0, "totalSteps": 3, "percent": 0, "label": "Idle"},
             }
         )
+
+
+def test_get_current_task_state_payload_clears_stale_task_state_once_report_finishes(
+    admin_bridge_entrypoint_root,
+):
+    started_at = "2026-03-08T10:00:30.000Z"
+    finished_at = "2026-03-08T10:05:30.000Z"
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "fetch": {
+                "runId": "fetch_1",
+                "taskType": "fetch",
+                "pid": 111,
+                "script": "jobs_fetcher.py",
+                "status": "running",
+                "startedAt": started_at,
+            },
+            "discovery": {
+                "runId": "discovery_1",
+                "taskType": "discovery",
+                "pid": 222,
+                "script": "source_discovery.py",
+                "status": "running",
+                "startedAt": started_at,
+            },
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "runId": "fetch_1",
+            "startedAt": started_at,
+            "finishedAt": finished_at,
+            "taskProgress": {
+                "active": False,
+                "phaseKey": "completed",
+                "phaseLabel": "Fetcher completed",
+                "mode": "determinate",
+                "ratio": 1,
+                "counts": {},
+            },
+            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+            "sources": [],
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.DISCOVERY_REPORT_PATH,
+        {
+            "runId": "discovery_1",
+            "startedAt": started_at,
+            "finishedAt": finished_at,
+            "taskProgress": {
+                "active": False,
+                "phaseKey": "completed",
+                "phaseLabel": "Discovery completed",
+                "mode": "determinate",
+                "ratio": 1,
+                "counts": {},
+            },
+            "summary": {"queuedCandidateCount": 3},
+            "candidates": [],
+            "failures": [],
+        },
+    )
+
+    payload = admin_bridge.build_bridge_api(
+        admin_bridge.RUNTIME_CONFIG
+    ).get_current_task_state_payload()
+    assert payload.get("count") == 0
+    assert payload.get("tasks") == []
+    assert admin_bridge.load_json_object(admin_bridge.TASK_STATE_PATH, {}) == {}
 
 
 def test_get_current_task_state_payload_prefers_active_fetch_owner_over_finished_history(

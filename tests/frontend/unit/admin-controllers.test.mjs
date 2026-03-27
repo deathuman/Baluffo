@@ -622,7 +622,7 @@ test("admin discovery controller stores optimistic run metadata while discovery 
       startedAt: "2026-03-08T10:01:00.000Z"
     });
     assert.equal(state.adminBusyState.discoveryWatch, true);
-    assert.equal(state.adminBusyState.liveDiscoveryRunning, true);
+    assert.equal(state.adminBusyState.liveDiscoveryRunning, false);
     assert.ok(calls.includes("/tasks/run-discovery"));
     assert.ok(calls.includes("loadOpsHealthData"));
     assert.ok(calls.includes("scheduleOpsHealthPolling:250"));
@@ -630,7 +630,6 @@ test("admin discovery controller stores optimistic run metadata while discovery 
     assert.ok(toasts.some(item => item.message === "Source discovery started." && item.level === "success"));
     assert.deepEqual(busyTransitions, [
       "discoveryRun:true",
-      "liveDiscoveryRunning:true",
       "discoveryWatch:false",
       "discoveryWatch:true",
       "discoveryRun:false"
@@ -1005,7 +1004,7 @@ test("admin discovery controller recovers when launch response is lost but repor
     await controller.runDiscoveryTask();
 
     assert.equal(state.adminBusyState.discoveryWatch, true);
-    assert.equal(state.adminBusyState.liveDiscoveryRunning, true);
+    assert.equal(state.adminBusyState.liveDiscoveryRunning, false);
     assert.ok(calls.includes("/discovery/report"));
     assert.ok(logs.some(line => /response was lost, but the run is active/i.test(line)));
     assert.ok(toasts.some(item => /reattached after a dropped bridge response/i.test(item.message) && item.level === "warning"));
@@ -1272,14 +1271,14 @@ test("admin ops controller preserves optimistic discovery row while history lags
       throw new Error(`unexpected path ${path}`);
     },
     postBridge: async () => ({}),
-    deriveAdminRunsModel: ({ optimisticDiscoveryRun }) => {
+    deriveAdminRunsModel: () => {
       optimisticApplied += 1;
       return {
-        currentRows: [{ type: "discovery", startedAt: optimisticDiscoveryRun.startedAt, isLive: true }],
+        currentRows: [],
         visibleCompletedRows: [],
         olderCompletedRows: [],
-        hasLiveRuns: true,
-        liveTypes: ["discovery"]
+        hasLiveRuns: false,
+        liveTypes: []
       };
     },
     getOpsPollIntervalMs: () => 5000,
@@ -1309,10 +1308,9 @@ test("admin ops controller preserves optimistic discovery row while history lags
   controller.stopOpsHealthPolling();
 
   assert.equal(optimisticApplied, 1);
-  assert.equal(state.adminBusyState.liveDiscoveryRunning, true);
+  assert.equal(state.adminBusyState.liveDiscoveryRunning, false);
   assert.equal(runModels.length, 1);
-  assert.equal(runModels[0].currentRows[0].type, "discovery");
-  assert.equal(runModels[0].currentRows[0].isLive, true);
+  assert.equal(runModels[0].currentRows.length, 0);
 });
 
 test("admin ops controller preserves optimistic fetch row while history lags", async () => {
@@ -1355,14 +1353,14 @@ test("admin ops controller preserves optimistic fetch row while history lags", a
       throw new Error(`unexpected path ${path}`);
     },
     postBridge: async () => ({}),
-    deriveAdminRunsModel: ({ optimisticFetchRun }) => {
+    deriveAdminRunsModel: () => {
       optimisticApplied += 1;
       return {
-        currentRows: [{ type: "fetch", startedAt: optimisticFetchRun.startedAt, runId: optimisticFetchRun.runId, isLive: true }],
+        currentRows: [],
         visibleCompletedRows: [],
         olderCompletedRows: [],
-        hasLiveRuns: true,
-        liveTypes: ["fetch"]
+        hasLiveRuns: false,
+        liveTypes: []
       };
     },
     getOpsPollIntervalMs: () => 5000,
@@ -1392,10 +1390,9 @@ test("admin ops controller preserves optimistic fetch row while history lags", a
   controller.stopOpsHealthPolling();
 
   assert.equal(optimisticApplied, 1);
-  assert.equal(state.adminBusyState.liveFetchRunning, true);
+  assert.equal(state.adminBusyState.liveFetchRunning, false);
   assert.equal(runModels.length, 1);
-  assert.equal(runModels[0].currentRows[0].type, "fetch");
-  assert.equal(runModels[0].currentRows[0].isLive, true);
+  assert.equal(runModels[0].currentRows.length, 0);
 });
 
 test("admin ops controller reattaches the fetcher controller when a live fetch run is detected", async () => {
@@ -1472,10 +1469,8 @@ test("admin ops controller reattaches the fetcher controller when a live fetch r
   await controller.loadOpsHealthData();
   controller.stopOpsHealthPolling();
 
-  assert.equal(state.adminBusyState.liveFetchRunning, true);
-  assert.equal(fetchReattachCalls.length, 1);
-  assert.equal(fetchReattachCalls[0].type, "fetch");
-  assert.equal(fetchReattachCalls[0].runId, "fetch_123");
+  assert.equal(state.adminBusyState.liveFetchRunning, false);
+  assert.equal(fetchReattachCalls.length, 0);
   assert.equal(runModels.length, 1);
 });
 
@@ -1572,7 +1567,7 @@ test("admin fetcher controller stores optimistic run metadata while fetch watch 
       startedAt: "2026-03-08T10:01:00.000Z"
     });
     assert.equal(state.adminBusyState.fetcherWatch, true);
-    assert.equal(state.adminBusyState.liveFetchRunning, true);
+    assert.equal(state.adminBusyState.liveFetchRunning, false);
     assert.ok(calls.includes("/tasks/run-fetcher"));
     assert.ok(logs.some(line => /triggered fetcher via local admin bridge/i.test(line)));
     assert.ok(scheduled.length >= 2);

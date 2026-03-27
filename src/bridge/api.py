@@ -28,6 +28,10 @@ class RuntimeConfigLike(Protocol):
     port: int
     quiet_requests: bool
     desktop_mode: bool
+    owner_mode: str
+    owner_token: str
+    started_by: str
+    owner_idle_timeout_s: float
     root: Any
     data_dir: Any
 
@@ -149,6 +153,7 @@ class BridgeApi:
     sync_history_from_reports: Callable[[], list[dict[str, Any]]] = lambda: []  # type: ignore[assignment]
     get_projected_run_history: Callable[[], Any] = lambda: {"rows": []}  # type: ignore[assignment]
     get_current_task_state_payload: Callable[[], dict[str, Any]] = lambda: {"tasks": [], "count": 0}  # type: ignore[assignment]
+    should_exit_for_owner_timeout: Callable[[], bool] = lambda: False  # type: ignore[assignment]
 
     # Sync-specific helpers used by routes.
     get_sync_status_payload: Callable[[], dict[str, Any]] = lambda: {"ok": True}  # type: ignore[assignment]
@@ -172,9 +177,7 @@ class BridgeApi:
         "ok": True,
         "savedConfig": {},
     }  # type: ignore[assignment]
-    update_saved_discovery_settings: Callable[[dict[str, Any]], dict[str, Any]] = (
-        lambda _payload: {}
-    )  # type: ignore[assignment]
+    update_saved_discovery_settings: Callable[[dict[str, Any]], dict[str, Any]] = lambda _payload: {}  # type: ignore[assignment]
     load_alert_state: Callable[[], dict[str, Any]] = lambda: {"acked": {}}  # type: ignore[assignment]
     save_alert_state: Callable[[dict[str, Any]], None] = lambda _payload: None  # type: ignore[assignment]
 

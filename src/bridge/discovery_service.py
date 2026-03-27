@@ -39,6 +39,9 @@ class DiscoveryDeps:
     save_json_atomic: Callable[[Any, Any], None]
     run_background_script: Callable[..., int]
     append_run_history: Callable[[dict[str, Any]], dict[str, Any]]
+    upsert_run_history: Callable[..., dict[str, Any]]
+    prune_started_rows_for_type: Callable[..., None]
+    clear_task_state: Callable[[str], None]
     normalize_discovery_report_contract: Callable[[dict[str, Any]], dict[str, Any]]
     load_state: Callable[[], dict[str, list[dict[str, Any]]]]
     persist_state_and_auto_sync: Callable[..., dict[str, list[dict[str, Any]]]]
@@ -62,6 +65,40 @@ class DiscoveryService:
                 return int(float(str(raw)))
             except (TypeError, ValueError):
                 return 1
+
+    def _finalize_discovery_run(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        finished_at: str,
+        summary: dict[str, Any],
+    ) -> None:
+        started_dt = self._deps.parse_iso(started_at)
+        finished_dt = self._deps.parse_iso(finished_at)
+        duration_ms = (
+            int(max(0.0, (finished_dt - started_dt).total_seconds() * 1000))
+            if started_dt and finished_dt
+            else 0
+        )
+        failed_probe_count = int(summary.get("failedProbeCount") or 0)
+        probe_miss_count = int(summary.get("probeMissCount") or 0)
+        status = "warning" if (failed_probe_count > 0 or probe_miss_count > 0) else "ok"
+        self._deps.clear_task_state("discovery")
+        self._deps.prune_started_rows_for_type("discovery", finished_at=finished_at)
+        self._deps.upsert_run_history(
+            {
+                "id": run_id,
+                "runId": run_id,
+                "type": "discovery",
+                "status": status,
+                "startedAt": started_at,
+                "finishedAt": finished_at,
+                "durationMs": duration_ms,
+                "summary": dict(summary or {}),
+            },
+            dedupe_fields=("type", "runId"),
+        )
 
     @staticmethod
     def _normalize_discovery_settings(payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -202,17 +239,30 @@ class DiscoveryService:
 
     def watch_discovery_run_for_auto_sync(self, run_id: str, pid: int, started_at: str) -> None:
         started_dt = self._deps.parse_iso(started_at) or self._deps.now_utc()
-        while self._deps.pid_is_running(pid):
-            threading.Event().wait(0.8)
-        try:
+        report: dict[str, Any] = {}
+        while True:
             report = self._deps.normalize_discovery_report_contract(
                 self._deps.load_json_object(self._paths.report, {})
             )
             finished_at = str(report.get("finishedAt") or "")
             finished_dt = self._deps.parse_iso(finished_at)
+            if finished_dt and finished_dt >= started_dt:
+                break
+            if not self._deps.pid_is_running(pid):
+                return
+            threading.Event().wait(0.8)
+        try:
+            finished_at = str(report.get("finishedAt") or "")
+            finished_dt = self._deps.parse_iso(finished_at)
             if not finished_dt or finished_dt < started_dt:
                 return
             summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+            self._finalize_discovery_run(
+                run_id=run_id,
+                started_at=started_at,
+                finished_at=finished_at,
+                summary=summary,
+            )
             queued = int(
                 summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0
             )
@@ -318,6 +368,7 @@ class DiscoveryService:
                 },
             },
         )
+        self._deps.prune_started_rows_for_type("discovery", keep_started_at=started_at)
         try:
             self._paths.log.parent.mkdir(parents=True, exist_ok=True)
             self._paths.log.write_text(

@@ -26,6 +26,10 @@ class RuntimeConfig:
     log_level: str
     quiet_requests: bool
     desktop_mode: bool = False
+    owner_mode: str = ""
+    owner_token: str = ""
+    started_by: str = ""
+    owner_idle_timeout_s: float = 0.0
 
 
 def _normalize_log_level(value: Any, default: str = "info") -> str:
@@ -61,6 +65,10 @@ def resolve_runtime_config(
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--data-dir", default=None)
     parser.add_argument("--desktop-mode", action="store_true", default=False)
+    parser.add_argument("--owner-mode", default=None)
+    parser.add_argument("--owner-token", default=None)
+    parser.add_argument("--started-by", default=None)
+    parser.add_argument("--owner-idle-timeout-s", type=float, default=None)
     parser.add_argument("--log-format", choices=("human", "jsonl"), default=None)
     parser.add_argument("--log-level", choices=tuple(LOG_LEVEL_ORDER.keys()), default=None)
     parser.add_argument("--quiet-requests", action="store_true", default=None)
@@ -98,6 +106,17 @@ def resolve_runtime_config(
     desktop_mode = bool(args.desktop_mode) or (
         str(env_map.get("BALUFFO_DESKTOP_MODE") or "").strip().lower() in {"1", "true", "yes", "on"}
     )
+    owner_mode = str(args.owner_mode or env_map.get("BALUFFO_BRIDGE_OWNER_MODE") or "").strip()
+    owner_token = str(args.owner_token or env_map.get("BALUFFO_BRIDGE_OWNER_TOKEN") or "").strip()
+    started_by = str(args.started_by or env_map.get("BALUFFO_BRIDGE_STARTED_BY") or "").strip()
+    try:
+        owner_idle_timeout_s = float(
+            args.owner_idle_timeout_s
+            if args.owner_idle_timeout_s is not None
+            else env_map.get("BALUFFO_BRIDGE_OWNER_IDLE_TIMEOUT_S") or 0.0
+        )
+    except (TypeError, ValueError):
+        owner_idle_timeout_s = 0.0
     return RuntimeConfig(
         root=Path(root),
         data_dir=data_dir,
@@ -107,6 +126,10 @@ def resolve_runtime_config(
         log_level=log_level,
         quiet_requests=quiet_requests,
         desktop_mode=desktop_mode,
+        owner_mode=owner_mode,
+        owner_token=owner_token,
+        started_by=started_by,
+        owner_idle_timeout_s=max(0.0, owner_idle_timeout_s),
     )
 
 
@@ -119,6 +142,10 @@ def startup_banner(*, config: RuntimeConfig, bridge_log: Any) -> None:
         data_dir=str(config.data_dir),
         log_format=config.log_format,
         log_level=config.log_level,
+        owner_mode=config.owner_mode,
+        owner_token=config.owner_token,
+        started_by=config.started_by,
+        owner_idle_timeout_s=config.owner_idle_timeout_s,
         pid=os.getpid(),
     )
     bridge_log(

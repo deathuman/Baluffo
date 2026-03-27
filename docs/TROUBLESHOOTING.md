@@ -23,14 +23,14 @@
 | Possible Cause | Solution |
 |----------------|----------|
 | No jobs feed generated | Run `python src/jobs_fetcher.py` to generate `data/jobs-unified.json` |
-| Bridge not running | Start bridge: `npm run dev:bridge` or `python src/admin_bridge.py` |
+| Bridge not running | Start the Baluffo launcher with `npm run dev:bridge` or VS Code task `Launch Baluffo` |
 | CORS errors in browser | Ensure frontend is served from same origin as bridge |
 
 ### Admin page shows "Bridge unavailable"
 
 | Possible Cause | Solution |
 |----------------|----------|
-| Bridge process not started | Start bridge with `python src/admin_bridge.py` |
+| Bridge process not started | Start the Baluffo launcher with `npm run dev:bridge` or VS Code task `Launch Baluffo` |
 | Wrong port | Check `baluffo.config.json` for bridge port (default 8877) |
 | Port in use | Kill existing process or change port in config |
 
@@ -58,7 +58,7 @@
 
 | Possible Cause | Solution |
 |----------------|----------|
-| Bridge not running | Start with `python src/admin_bridge.py` |
+| Bridge not running | Start with `npm run dev:bridge` |
 | Wrong host/port | Default is `http://127.0.0.1:8877` |
 | Port conflict | Check if another process is using the port |
 
@@ -70,6 +70,12 @@ netstat -ano | findstr :8877
 
 # Kill the process (replace <PID> with actual PID)
 taskkill /PID <PID> /F
+```
+
+If you intentionally want the bridge without the owned site/browser supervisor, use the expert-only bridge command:
+
+```powershell
+python src/admin_bridge.py --host 127.0.0.1 --port 8877
 ```
 
 ### Bridge starts but returns errors
@@ -207,7 +213,7 @@ npm run build:frontend-runtime-config
 | Check | Action |
 |-------|--------|
 | Python 3 default | Ensure `python` resolves to Python 3, not Python 2 |
-| Bridge running | Start bridge before running smoke tests |
+| Bridge running | Start the Baluffo launcher with `npm run dev:bridge` or VS Code task `Launch Baluffo` before running smoke tests |
 | Port available | Ensure port 8080 (web server) and 8877 (bridge) are free |
 
 ```powershell

@@ -1,18 +1,1 @@
-{
-  "discovery": {
-    "runId": "discovery_ce97391ec7",
-    "taskType": "discovery",
-    "pid": 57408,
-    "script": "source_discovery.py",
-    "status": "running",
-    "startedAt": "2026-03-27T14:43:53.132486+00:00"
-  },
-  "fetch": {
-    "runId": "fetch_5ce7a2b563",
-    "taskType": "fetch",
-    "pid": 108788,
-    "script": "jobs_fetcher.py",
-    "status": "running",
-    "startedAt": "2026-03-27T14:44:53.763358+00:00"
-  }
-}
+{}

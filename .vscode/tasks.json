@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Serve static site (8080)",
+      "label": "Serve static site only (8080)",
       "type": "shell",
       "command": "python -m http.server 8080 --directory .",
       "isBackground": true,
@@ -24,37 +24,9 @@
       }
     },
     {
-      "label": "Stop static site",
+      "label": "Stop static site only",
       "type": "shell",
       "command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'python(\\.exe)?' -and $_.CommandLine -match 'http\\.server 8080' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
-      "problemMatcher": []
-    },
-    {
-      "label": "Serve admin check site (8765)",
-      "type": "shell",
-      "command": "python -m http.server 8765 --directory .",
-      "isBackground": true,
-      "problemMatcher": {
-        "owner": "custom",
-        "fileLocation": "absolute",
-        "pattern": {
-          "regexp": "."
-        },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": ".",
-          "endsPattern": "Serving HTTP on"
-        }
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated"
-      }
-    },
-    {
-      "label": "Stop admin check site",
-      "type": "shell",
-      "command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'python(\\.exe)?' -and $_.CommandLine -match 'http\\.server 8765' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
       "problemMatcher": []
     },
     {
@@ -78,31 +50,18 @@
       }
     },
     {
-      "label": "Run admin bridge",
+      "label": "Launch Baluffo",
       "type": "shell",
-      "command": "python src/admin_bridge.py --host 127.0.0.1 --port 8877",
-      "isBackground": true,
-      "problemMatcher": {
-        "owner": "custom",
-        "fileLocation": "absolute",
-        "pattern": {
-          "regexp": "."
-        },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": ".",
-          "endsPattern": "admin_bridge_started"
-        }
-      },
+      "command": "python src/dev_admin_supervisor.py",
       "presentation": {
         "reveal": "always",
         "panel": "dedicated"
       }
     },
     {
-      "label": "Stop admin bridge",
+      "label": "Stop Baluffo",
       "type": "shell",
-      "command": "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'python(\\.exe)?' -and $_.CommandLine -match 'src\\\\admin_bridge.py' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
+      "command": "python src/dev_admin_supervisor.py stop",
       "problemMatcher": []
     },
     {

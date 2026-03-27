@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
+
+
+def _parse_iso_utc(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def test_trigger_discovery_task_uncapped_uses_explicit_uncapped_args(tmp_path: Path) -> None:
@@ -38,6 +45,9 @@ def test_trigger_discovery_task_uncapped_uses_explicit_uncapped_args(tmp_path: P
             save_json_atomic=lambda path, payload: Path(path).write_text("{}", encoding="utf-8"),
             run_background_script=run_background_script,
             append_run_history=lambda payload: payload,
+            upsert_run_history=lambda payload, **_kwargs: payload,
+            prune_started_rows_for_type=lambda *_args, **_kwargs: None,
+            clear_task_state=lambda _task_type: None,
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {"active": [], "pending": [], "rejected": []},
             persist_state_and_auto_sync=lambda state, **_kwargs: state,
@@ -98,6 +108,9 @@ def test_trigger_discovery_task_logs_launch_start_and_persists_shell(tmp_path: P
             save_json_atomic=save_json_atomic,
             run_background_script=lambda script_name, args=None, **kwargs: 456,
             append_run_history=lambda payload: payload,
+            upsert_run_history=lambda payload, **_kwargs: payload,
+            prune_started_rows_for_type=lambda *_args, **_kwargs: None,
+            clear_task_state=lambda _task_type: None,
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {"active": [], "pending": [], "rejected": []},
             persist_state_and_auto_sync=lambda state, **_kwargs: state,
@@ -144,6 +157,9 @@ def test_discovery_settings_default_to_auto_approve_enabled(tmp_path: Path) -> N
             save_json_atomic=lambda path, payload: None,
             run_background_script=lambda script_name, args=None, **kwargs: 1,
             append_run_history=lambda payload: payload,
+            upsert_run_history=lambda payload, **_kwargs: payload,
+            prune_started_rows_for_type=lambda *_args, **_kwargs: None,
+            clear_task_state=lambda _task_type: None,
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {"active": [], "pending": [], "rejected": []},
             persist_state_and_auto_sync=lambda state, **_kwargs: state,
@@ -189,6 +205,9 @@ def test_update_discovery_settings_persists_normalized_bool(tmp_path: Path) -> N
             save_json_atomic=save_json_atomic,
             run_background_script=lambda script_name, args=None, **kwargs: 1,
             append_run_history=lambda payload: payload,
+            upsert_run_history=lambda payload, **_kwargs: payload,
+            prune_started_rows_for_type=lambda *_args, **_kwargs: None,
+            clear_task_state=lambda _task_type: None,
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {"active": [], "pending": [], "rejected": []},
             persist_state_and_auto_sync=lambda state, **_kwargs: state,
@@ -241,6 +260,9 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     persisted_states: list[dict[str, object]] = []
     bridge_events: list[str] = []
     marked: list[str] = []
+    cleared_tasks: list[str] = []
+    pruned_runs: list[dict[str, object]] = []
+    upserted_runs: list[dict[str, object]] = []
     sync_calls: list[str] = []
     state = {
         "active": [{"id": "active-1", "adapter": "static", "name": "Already Active"}],
@@ -310,13 +332,20 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
             schema_version=1,
             now_iso=lambda: "2026-03-20T12:06:00Z",
             now_utc=lambda: None,
-            parse_iso=lambda value: value,
+            parse_iso=_parse_iso_utc,
             pid_is_running=lambda pid: False,
             bridge_log=lambda _level, message, **_fields: bridge_events.append(message),
             load_json_object=load_json_object,
             save_json_atomic=save_json_atomic,
             run_background_script=lambda script_name, args=None, **kwargs: 1,
             append_run_history=lambda payload: payload,
+            upsert_run_history=lambda payload, **_kwargs: (
+                upserted_runs.append(dict(payload)) or payload
+            ),
+            prune_started_rows_for_type=lambda run_type, **kwargs: pruned_runs.append(
+                {"runType": run_type, **kwargs}
+            ),
+            clear_task_state=lambda task_type: cleared_tasks.append(task_type),
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {
                 "active": list(state["active"]),
@@ -325,7 +354,7 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
             },
             persist_state_and_auto_sync=persist_state_and_auto_sync,
             load_sync_runtime_state=lambda: {},
-            maybe_trigger_auto_sync_push=lambda reason: sync_calls.append(reason) or True,
+            maybe_trigger_auto_sync_push=lambda reason: (sync_calls.append(reason), True)[1],
             mark_discovery_sync_finished=lambda finished_at: marked.append(finished_at),
         ),
     )
@@ -356,7 +385,105 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     assert (saved_report.get("candidates") or [])[0]["promotionReason"] == "structured_batch_family"
     assert sync_calls == ["discovery_completed"]
     assert marked == ["2026-03-20T12:05:00Z"]
+    assert cleared_tasks == ["discovery"]
+    assert pruned_runs == [{"runType": "discovery", "finished_at": "2026-03-20T12:05:00Z"}]
+    assert upserted_runs == [
+        {
+            "id": "discovery_1",
+            "runId": "discovery_1",
+            "type": "discovery",
+            "status": "ok",
+            "startedAt": "2026-03-20T12:00:00Z",
+            "finishedAt": "2026-03-20T12:05:00Z",
+            "durationMs": 300000,
+            "summary": {"queuedCandidateCount": 1},
+        }
+    ]
     assert "discovery_auto_approval_completed" in bridge_events
+
+
+def test_watch_discovery_run_finalizes_when_report_is_terminal_even_if_pid_lingers(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    settings_path = tmp_path / "source-discovery-config.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "2026-03-20T12:05:00Z",
+                "summary": {"queuedCandidateCount": 0, "failedProbeCount": 0, "probeMissCount": 0},
+                "runtime": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cleared_tasks: list[str] = []
+    pruned_runs: list[dict[str, object]] = []
+    upserted_runs: list[dict[str, object]] = []
+
+    def load_json_object(path: Path, default: dict[str, object]) -> dict[str, object]:
+        if path == report_path:
+            return json.loads(report_path.read_text(encoding="utf-8"))
+        if path == settings_path:
+            return json.loads(settings_path.read_text(encoding="utf-8"))
+        return dict(default)
+
+    service = DiscoveryService(
+        paths=DiscoveryPaths(
+            report=report_path,
+            candidates=tmp_path / "source-registry-pending.json",
+            pending=tmp_path / "source-registry-pending.json",
+            log=tmp_path / "source-discovery.log",
+            settings=settings_path,
+            approval_state=tmp_path / "source-approval-state.json",
+        ),
+        deps=DiscoveryDeps(
+            schema_version=1,
+            now_iso=lambda: "2026-03-20T12:06:00Z",
+            now_utc=lambda: None,
+            parse_iso=_parse_iso_utc,
+            pid_is_running=lambda pid: True,
+            bridge_log=lambda *args, **kwargs: None,
+            load_json_object=load_json_object,
+            save_json_atomic=lambda path, payload: Path(path).write_text(
+                json.dumps(payload), encoding="utf-8"
+            ),
+            run_background_script=lambda script_name, args=None, **kwargs: 1,
+            append_run_history=lambda payload: payload,
+            upsert_run_history=lambda payload, **_kwargs: (
+                upserted_runs.append(dict(payload)) or payload
+            ),
+            prune_started_rows_for_type=lambda run_type, **kwargs: pruned_runs.append(
+                {"runType": run_type, **kwargs}
+            ),
+            clear_task_state=lambda task_type: cleared_tasks.append(task_type),
+            normalize_discovery_report_contract=lambda payload: payload,
+            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            persist_state_and_auto_sync=lambda state, **_kwargs: state,
+            load_sync_runtime_state=lambda: {},
+            maybe_trigger_auto_sync_push=lambda reason: False,
+            mark_discovery_sync_finished=lambda finished_at: None,
+        ),
+    )
+
+    service.watch_discovery_run_for_auto_sync("discovery_1", 123, "2026-03-20T12:00:00Z")
+
+    assert cleared_tasks == ["discovery"]
+    assert pruned_runs == [{"runType": "discovery", "finished_at": "2026-03-20T12:05:00Z"}]
+    assert upserted_runs == [
+        {
+            "id": "discovery_1",
+            "runId": "discovery_1",
+            "type": "discovery",
+            "status": "ok",
+            "startedAt": "2026-03-20T12:00:00Z",
+            "finishedAt": "2026-03-20T12:05:00Z",
+            "durationMs": 300000,
+            "summary": {"queuedCandidateCount": 0, "failedProbeCount": 0, "probeMissCount": 0},
+        }
+    ]
 
 
 def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> None:
@@ -379,6 +506,9 @@ def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> 
     )
 
     persisted_states: list[dict[str, object]] = []
+    cleared_tasks: list[str] = []
+    pruned_runs: list[dict[str, object]] = []
+    upserted_runs: list[dict[str, object]] = []
     sync_calls: list[str] = []
     state = {
         "active": [],
@@ -414,7 +544,7 @@ def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> 
             schema_version=1,
             now_iso=lambda: "2026-03-20T12:06:00Z",
             now_utc=lambda: None,
-            parse_iso=lambda value: value,
+            parse_iso=_parse_iso_utc,
             pid_is_running=lambda pid: False,
             bridge_log=lambda *args, **kwargs: None,
             load_json_object=load_json_object,
@@ -423,6 +553,13 @@ def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> 
             ),
             run_background_script=lambda script_name, args=None, **kwargs: 1,
             append_run_history=lambda payload: payload,
+            upsert_run_history=lambda payload, **_kwargs: (
+                upserted_runs.append(dict(payload)) or payload
+            ),
+            prune_started_rows_for_type=lambda run_type, **kwargs: pruned_runs.append(
+                {"runType": run_type, **kwargs}
+            ),
+            clear_task_state=lambda task_type: cleared_tasks.append(task_type),
             normalize_discovery_report_contract=lambda payload: payload,
             load_state=lambda: {
                 "active": list(state["active"]),
@@ -451,4 +588,18 @@ def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> 
         )
         == 0
     )
+    assert cleared_tasks == ["discovery"]
+    assert pruned_runs == [{"runType": "discovery", "finished_at": "2026-03-20T12:05:00Z"}]
+    assert upserted_runs == [
+        {
+            "id": "discovery_1",
+            "runId": "discovery_1",
+            "type": "discovery",
+            "status": "ok",
+            "startedAt": "2026-03-20T12:00:00Z",
+            "finishedAt": "2026-03-20T12:05:00Z",
+            "durationMs": 300000,
+            "summary": {"queuedCandidateCount": 0},
+        }
+    ]
     assert sync_calls == []

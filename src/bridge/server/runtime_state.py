@@ -38,16 +38,42 @@ STARTUP_METRICS_PATH = (
     Path(__file__).resolve().parents[3] / "data" / "desktop-startup-metrics.jsonl"
 )
 DESKTOP_SESSION_ACTIVITY_AT = ""
+OWNER_STATE: dict[str, Any] = {
+    "ownerMode": "",
+    "ownerToken": "",
+    "startedBy": "",
+    "startedAt": "",
+    "lastActivityAt": "",
+    "idleTimeoutSeconds": 0.0,
+}
 
 
 def configure_runtime_paths(
-    *, startup_metrics_path: Path, desktop_local_data_store: Any, now_iso: Any
+    *,
+    startup_metrics_path: Path,
+    desktop_local_data_store: Any,
+    now_iso: Any,
+    owner_mode: str = "",
+    owner_token: str = "",
+    started_by: str = "",
+    owner_idle_timeout_s: float = 0.0,
 ) -> None:
     global STARTUP_METRICS_PATH, DESKTOP_LOCAL_DATA_STORE, DESKTOP_SESSION_ACTIVITY_AT
 
     STARTUP_METRICS_PATH = Path(startup_metrics_path)
     DESKTOP_LOCAL_DATA_STORE = desktop_local_data_store
-    DESKTOP_SESSION_ACTIVITY_AT = str(now_iso() or "")
+    started_at = str(now_iso() or "")
+    DESKTOP_SESSION_ACTIVITY_AT = started_at
+    OWNER_STATE.update(
+        {
+            "ownerMode": str(owner_mode or "").strip(),
+            "ownerToken": str(owner_token or "").strip(),
+            "startedBy": str(started_by or "").strip(),
+            "startedAt": started_at,
+            "lastActivityAt": started_at,
+            "idleTimeoutSeconds": max(0.0, float(owner_idle_timeout_s or 0.0)),
+        }
+    )
 
 
 def append_startup_metric(event: str, payload: dict[str, Any] | None, *, now_iso: Any) -> None:
@@ -85,15 +111,41 @@ def read_startup_metrics(limit: int = 200) -> list[dict[str, Any]]:
     return rows[-max_rows:]
 
 
-def mark_desktop_session_activity(path: str, *, now_iso: Any, desktop_mode: bool) -> None:
+def mark_desktop_session_activity(
+    path: str,
+    *,
+    now_iso: Any,
+    desktop_mode: bool,
+    owner_mode: str = "",
+) -> None:
     global DESKTOP_SESSION_ACTIVITY_AT
 
-    if not bool(desktop_mode):
+    if not bool(desktop_mode) and not str(owner_mode or "").strip():
         return
     normalized = str(path or "").strip()
     if not normalized or normalized == "/ops/health":
         return
-    DESKTOP_SESSION_ACTIVITY_AT = str(now_iso() or "")
+    activity_at = str(now_iso() or "")
+    DESKTOP_SESSION_ACTIVITY_AT = activity_at
+    OWNER_STATE["lastActivityAt"] = activity_at
+
+
+def get_owner_state() -> dict[str, Any]:
+    return dict(OWNER_STATE)
+
+
+def owner_session_expired(*, parse_iso: Any, now_utc: Any) -> bool:
+    owner_mode = str(OWNER_STATE.get("ownerMode") or "").strip()
+    if not owner_mode:
+        return False
+    timeout_seconds = max(0.0, float(OWNER_STATE.get("idleTimeoutSeconds") or 0.0))
+    if timeout_seconds <= 0.0:
+        return False
+    last_activity = parse_iso(OWNER_STATE.get("lastActivityAt"))
+    if last_activity is None:
+        return False
+    idle_seconds = (now_utc() - last_activity).total_seconds()
+    return idle_seconds > timeout_seconds
 
 
 def get_desktop_local_data_store() -> Any:
@@ -108,11 +160,14 @@ __all__ = [
     "PIPELINE_STATUS",
     "DESKTOP_LOCAL_DATA_STORE",
     "DESKTOP_SESSION_ACTIVITY_AT",
+    "OWNER_STATE",
     "STARTUP_METRICS_LOCK",
     "STARTUP_METRICS_PATH",
     "append_startup_metric",
     "configure_runtime_paths",
     "get_desktop_local_data_store",
+    "get_owner_state",
     "mark_desktop_session_activity",
+    "owner_session_expired",
     "read_startup_metrics",
 ]
