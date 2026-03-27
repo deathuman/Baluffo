@@ -4485,6 +4485,61 @@ def test_run_social_reddit_source_keeps_successful_rss_fallback_out_of_error_sta
     assert details[0]["error"] == ""
 
 
+def test_run_social_reddit_source_keeps_successful_old_reddit_html_fallback_out_of_error_state() -> None:
+    cfg = {
+        "enabled": True,
+        "minConfidence": 20,
+        "rejectForHirePosts": True,
+        "reddit": {
+            "enabled": True,
+            "subreddits": ["gamedev"],
+            "maxPostsPerSubreddit": 5,
+            "rssFallback": False,
+            "htmlFallback": True,
+            "rateLimitDelay": 0,
+        },
+    }
+    calls = []
+
+    def fake_fetch(url: str, _: int) -> str:
+        calls.append(url)
+        if url.endswith("/new.json?limit=5"):
+            raise RuntimeError("json api blocked")
+        if url.startswith("https://old.reddit.com/r/gamedev/new/"):
+            return "<html />"
+        raise AssertionError(f"unexpected reddit url: {url}")
+
+    with mock.patch(
+        "src.jobs.adapters.plugins.social.register._social_parsers.parse_reddit_html_payload",
+        return_value=(
+            [
+                {
+                    "title": "Technical Artist",
+                    "company": "Nebula Games",
+                    "jobLink": "https://jobs.nebula.dev/ta",
+                    "sourceJobId": "reddit:gamedev:abc123",
+                    "source": "social_reddit",
+                }
+            ],
+            0,
+        ),
+    ):
+        rows = jf.run_social_reddit_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            social_config=cfg,
+        )
+    assert len(rows) >= 1
+    assert any(url.startswith("https://old.reddit.com/r/gamedev/new/") for url in calls)
+    diag = jf.SOURCE_DIAGNOSTICS.get("social_reddit") or {}
+    details = diag.get("details") or []
+    assert len(details) == 1
+    assert details[0]["status"] == "ok"
+    assert details[0]["error"] == ""
+
+
 def test_run_pipeline_reports_social_subsource_cache_rollup() -> None:
     def social_loader(**_: object):
         jf.SOURCE_DIAGNOSTICS["social_x"] = {

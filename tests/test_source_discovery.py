@@ -1849,6 +1849,130 @@ def test_parse_args_supports_manual_gamesmap_mode() -> None:
     assert int(args.gamesmap_max_detail_pages or 0) == 25
 
 
+def test_run_discovery_auto_approves_healthy_pending_rows() -> None:
+    with workspace_tmpdir("source-discovery-auto-approval") as root:
+        prev_paths = (
+            sd.ACTIVE_PATH,
+            sd.PENDING_PATH,
+            sd.REJECTED_PATH,
+            sd.DISCOVERY_CANDIDATES_PATH,
+            sd.DISCOVERY_REPORT_PATH,
+            sd.M5_STRATEGIC_BACKLOG_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
+        )
+        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+        prev_seeds = list(sd.STUDIO_SEEDS)
+        prev_approval_state_path = discovery_orchestrator.DEFAULT_APPROVAL_STATE_PATH
+        prev_sheet = discovery_orchestrator.discover_game_studio_sheet_candidates
+        prev_gamesmap = discovery_orchestrator.discover_gamesmap_candidates
+        prev_gameprog = discovery_orchestrator.discover_gameprog_candidates
+        prev_web = discovery_orchestrator.discover_web_search_candidates
+        prev_seed_scan = discovery_orchestrator.sd.discover_seed_careers_page_candidates
+        prev_probe = discovery_orchestrator.async_probe_candidate
+        try:
+            sd.ACTIVE_PATH = root / "active.json"
+            sd.PENDING_PATH = root / "pending.json"
+            sd.REJECTED_PATH = root / "rejected.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+            sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.M5_STRATEGIC_BACKLOG_PATH = root / "m5.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+            discovery_orchestrator.DEFAULT_APPROVAL_STATE_PATH = root / "source-approval-state.json"
+            sd.STUDIO_SEEDS = []
+            sd.STATIC_DISCOVERY_CANDIDATES = []
+            sr.save_json_atomic(sd.ACTIVE_PATH, [])
+            sr.save_json_atomic(
+                sd.PENDING_PATH,
+                [
+                    {
+                        "id": "pending-ok",
+                        "adapter": "static",
+                        "name": "Healthy Pending",
+                        "jobsFound": 3,
+                        "status": "healthy",
+                    }
+                ],
+            )
+            sr.save_json_atomic(sd.REJECTED_PATH, [])
+
+            discovery_orchestrator.discover_game_studio_sheet_candidates = lambda *args, **kwargs: (
+                [],
+                [],
+                [],
+            )
+            discovery_orchestrator.discover_gamesmap_candidates = lambda *args, **kwargs: (
+                [],
+                [],
+                [],
+            )
+            discovery_orchestrator.discover_gameprog_candidates = lambda *args, **kwargs: (
+                [],
+                [],
+                [],
+            )
+            discovery_orchestrator.discover_web_search_candidates = lambda *args, **kwargs: (
+                [],
+                [],
+                [],
+            )
+            discovery_orchestrator.sd.discover_seed_careers_page_candidates = (
+                lambda *args, **kwargs: ([], [], [])
+            )
+            discovery_orchestrator.async_probe_candidate = lambda *args, **kwargs: (
+                False,
+                0,
+                "",
+            )
+
+            report = discovery_orchestrator.run_discovery(
+                timeout_s=1,
+                top_n=0,
+                preset="uncapped",
+                mode="dynamic",
+                include_web_search=False,
+                discovery_config={
+                    "autoApproveHealthyPendingOnComplete": True,
+                    "gamesmap": {"enabled": False},
+                    "gameprog": {"enabled": False},
+                },
+                fetcher=lambda *args, **kwargs: "",
+            )
+
+            assert int((report.get("summary") or {}).get("approvedCandidateCount") or 0) == 1
+            assert int((report.get("summary") or {}).get("liveCandidateCount") or 0) == 1
+            assert int(
+                (((report.get("runtime") or {}).get("autoApproval") or {}).get("approvedCount"))
+                or 0
+            ) == 1
+            active = json.loads(sd.ACTIVE_PATH.read_text(encoding="utf-8"))
+            pending = json.loads(sd.PENDING_PATH.read_text(encoding="utf-8"))
+            approval_state = json.loads(
+                (root / "source-approval-state.json").read_text(encoding="utf-8")
+            )
+            assert [row["id"] for row in active] == ["pending-ok"]
+            assert pending == []
+            assert int(approval_state["approvedSinceLastRun"]) == 1
+        finally:
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+                sd.M5_STRATEGIC_BACKLOG_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
+            ) = prev_paths
+            discovery_orchestrator.DEFAULT_APPROVAL_STATE_PATH = prev_approval_state_path
+            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+            sd.STUDIO_SEEDS = prev_seeds
+            discovery_orchestrator.discover_game_studio_sheet_candidates = prev_sheet
+            discovery_orchestrator.discover_gamesmap_candidates = prev_gamesmap
+            discovery_orchestrator.discover_gameprog_candidates = prev_gameprog
+            discovery_orchestrator.discover_web_search_candidates = prev_web
+            discovery_orchestrator.sd.discover_seed_careers_page_candidates = prev_seed_scan
+            discovery_orchestrator.async_probe_candidate = prev_probe
+
+
 def test_parse_game_studio_sheet_csv_returns_expected_keys() -> None:
     """Health check: parsed rows must have studio, careersUrl, openingsFlag (game-studios-sheet contract)."""
     csv_text = """,,,,

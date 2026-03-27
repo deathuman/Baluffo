@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from src import source_registry as sr
@@ -58,3 +59,90 @@ def test_source_url_fingerprint_uses_static_pages_when_no_endpoint_field() -> No
         "pages": ["https://milestone.it/careers/?utm_source=x"],
     }
     assert sr.source_url_fingerprint(row) == "https://milestone.it/careers"
+
+
+def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        approval_path = Path(tmp) / "source-approval-state.json"
+        state = {
+            "active": [
+                {
+                    "id": "active-1",
+                    "adapter": "static",
+                    "name": "Already Live",
+                    "candidateState": "live",
+                }
+            ],
+            "pending": [
+                {
+                    "id": "pending-ok",
+                    "adapter": "static",
+                    "name": "Healthy Pending",
+                    "jobsFound": 3,
+                    "status": "healthy",
+                },
+                {
+                    "id": "pending-zero",
+                    "adapter": "static",
+                    "name": "Empty Pending",
+                    "jobsFound": 0,
+                    "status": "healthy",
+                },
+                {
+                    "id": "pending-error",
+                    "adapter": "static",
+                    "name": "Errored Pending",
+                    "jobsFound": 2,
+                    "lastProbeError": "boom",
+                },
+            ],
+            "rejected": [],
+        }
+        report = {
+            "summary": {"queuedCandidateCount": 1, "approvedCandidateCount": 0, "liveCandidateCount": 0},
+            "runtime": {},
+            "candidates": [
+                {
+                    "id": "pending-ok",
+                    "adapter": "static",
+                    "name": "Healthy Pending",
+                    "jobsFound": 3,
+                    "status": "healthy",
+                },
+            ],
+        }
+
+        next_state, approved = sr.apply_discovery_auto_approval(
+            state,
+            report,
+            auto_approve_enabled=True,
+            approval_state_path=approval_path,
+            now_iso_fn=lambda: "2026-03-20T12:06:00Z",
+        )
+
+        assert approved == 1
+        assert [row["id"] for row in next_state["active"]] == ["active-1", "pending-ok"]
+        assert [row["id"] for row in next_state["pending"]] == ["pending-zero", "pending-error"]
+        assert report["summary"]["approvedCandidateCount"] == 1
+        assert report["summary"]["liveCandidateCount"] == 1
+        assert report["runtime"]["autoApproval"] == {"enabled": True, "approvedCount": 1}
+        assert report["candidates"][0]["candidateState"] == "live"
+        assert report["candidates"][0]["approvedBy"] == "discovery_auto_approve"
+        assert report["candidates"][0]["liveAt"] == "2026-03-20T12:06:00Z"
+        assert json.loads(approval_path.read_text(encoding="utf-8")) == {
+            "approvedSinceLastRun": 1
+        }
+
+        repeat_state, repeat_approved = sr.apply_discovery_auto_approval(
+            next_state,
+            report,
+            auto_approve_enabled=True,
+            approval_state_path=approval_path,
+            now_iso_fn=lambda: "2026-03-20T12:07:00Z",
+        )
+
+        assert repeat_approved == 1
+        assert repeat_state == next_state
+        assert json.loads(approval_path.read_text(encoding="utf-8")) == {
+            "approvedSinceLastRun": 1
+        }

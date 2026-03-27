@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from src.source_registry import apply_discovery_auto_approval
 from src.source_registry import source_identity
 
 BridgeLogFunc = Callable[[str, str], None]
@@ -218,40 +219,15 @@ class DiscoveryService:
             )
             saved_config = self.get_saved_discovery_config_payload()
             auto_approve_enabled = bool(saved_config.get("autoApproveHealthyPendingOnComplete"))
-            auto_approved = 0
-            if auto_approve_enabled:
-                auto_approved = self._auto_approve_healthy_pending_sources(
-                    queued_candidate_ids=self._queued_report_candidate_ids(report)
-                )
-            summary = summary if isinstance(summary, dict) else {}
-            summary["approvedCandidateCount"] = max(
-                int(summary.get("approvedCandidateCount") or 0),
-                int(auto_approved),
+            state, auto_approved = apply_discovery_auto_approval(
+                self._deps.load_state(),
+                report,
+                auto_approve_enabled=auto_approve_enabled,
+                approval_state_path=self._paths.approval_state,
+                now_iso_fn=self._deps.now_iso,
             )
-            summary["liveCandidateCount"] = max(
-                int(summary.get("liveCandidateCount") or 0),
-                int(auto_approved),
-            )
-            report["summary"] = summary
-            queued_ids = self._queued_report_candidate_ids(report)
-            candidates = (
-                report.get("candidates") if isinstance(report.get("candidates"), list) else []
-            )
-            if candidates:
-                report["candidates"] = [
-                    self._stamp_live_transition(row, approved_by="discovery_auto_approve")
-                    if isinstance(row, dict)
-                    and not bool(row.get("deferred"))
-                    and source_identity(row) in queued_ids
-                    else row
-                    for row in candidates
-                ]
-            runtime = dict(report.get("runtime") or {})
-            runtime["autoApproval"] = {
-                "enabled": auto_approve_enabled,
-                "approvedCount": int(auto_approved),
-            }
-            report["runtime"] = runtime
+            if auto_approved > 0:
+                self._deps.persist_state_and_auto_sync(state, reason="discovery_auto_approve")
             self._deps.save_json_atomic(self._paths.report, report)
             self._deps.bridge_log(
                 "info",

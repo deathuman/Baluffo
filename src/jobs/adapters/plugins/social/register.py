@@ -142,7 +142,7 @@ def _run_reddit(
         if not parsed_rows and html_fallback:
             try:
                 # Fetch HTML content
-                html_url = f"https://www.reddit.com/r/{quote(sub, safe='')}/new/"
+                html_url = f"https://old.reddit.com/r/{quote(sub, safe='')}/new/"
                 html_text = fetch_with_retries(html_url, fetch_text, timeout_s, retries, backoff_s)
                 parsed_rows, low_conf_sub = _social_parsers.parse_reddit_html_payload(
                     html_text,

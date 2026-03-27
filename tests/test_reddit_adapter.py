@@ -69,17 +69,24 @@ def test_reddit_adapter_loads_all_subreddits():
 
 
 def test_reddit_adapter_configuration():
-    """Default config should not poll broad Reddit discussion sources."""
+    """Committed Reddit pilot config should stay narrow and include HTML fallback."""
     from src.jobs.registry import load_social_config
 
     config = load_social_config(enabled=True)
     reddit_config = config.get("reddit") or {}
     subreddits = reddit_config.get("subreddits") or []
 
-    assert reddit_config.get("enabled") is False
-    assert len(subreddits) == 0
-    expected_subreddits = []
-    assert subreddits == expected_subreddits
+    assert reddit_config.get("enabled") is True
+    assert subreddits == [
+        "gamedev",
+        "gameDevClassifieds",
+        "gamedevjobs",
+        "INAT",
+        "gamejobs",
+        "indiegaming",
+    ]
+    assert reddit_config.get("rssFallback") is True
+    assert reddit_config.get("htmlFallback") is True
 
 
 def test_reddit_adapter_error_handling():

@@ -15,7 +15,7 @@
     ],
     "maxPostsPerSubreddit": 25,
     "rssFallback": true,
-    "htmlFallback": false,
+    "htmlFallback": true,
     "rateLimitDelay": 0.5,
     "timeoutSeconds": 10,
     "retries": 1

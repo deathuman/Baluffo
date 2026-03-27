@@ -24,8 +24,10 @@ from src.contracts import SCHEMA_VERSION
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.state import read_source_state
 from src.source_registry import (
+    APPROVAL_STATE_PATH as DEFAULT_APPROVAL_STATE_PATH,
     URL_PATCH_MANIFEST_PATH as DEFAULT_URL_PATCH_MANIFEST_PATH,
 )
+from src.source_registry import apply_discovery_auto_approval
 from src.source_registry import (
     load_json_array,
     save_json_atomic,
@@ -1305,6 +1307,20 @@ def run_discovery(
     }
     report["runtime"]["urlPatchStats"] = dict(url_patch_stats)
     report["runtime"]["urlPatchRecoveredCount"] = int(recovered_count)
+    state = {"active": active, "pending": [*queued_candidates, *pending_existing], "rejected": rejected}
+    auto_approve_enabled = bool(effective_config.get("autoApproveHealthyPendingOnComplete", True))
+    state, auto_approved = apply_discovery_auto_approval(
+        state,
+        report,
+        auto_approve_enabled=auto_approve_enabled,
+        approval_state_path=DEFAULT_APPROVAL_STATE_PATH,
+        now_iso_fn=sd.now_iso,
+    )
+    if auto_approved > 0:
+        save_json_atomic(sd.ACTIVE_PATH, state["active"])
+        save_json_atomic(sd.PENDING_PATH, state["pending"])
+        save_json_atomic(sd.REJECTED_PATH, state["rejected"])
+        sd.emit_log(f"Auto-approval applied during discovery: approved={auto_approved}.")
     DiscoveryReportSchema.model_validate(report)
     save_json_atomic(sd.DISCOVERY_REPORT_PATH, report)
     sd.emit_log(f"Discovery report written to {sd.DISCOVERY_REPORT_PATH}.")

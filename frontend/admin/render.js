@@ -100,6 +100,27 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
   const isRejected = mode === "rejected";
   const isActive = mode === "active";
   const leadHeader = "Select";
+
+  function buildSourceStatusTitle(row, normalizedStatus, statusErrorDetail) {
+    if (normalizedStatus === "error" && statusErrorDetail) {
+      return ` title="${escapeHtml(`Error: ${statusErrorDetail}`)}"`;
+    }
+    if (normalizedStatus !== "excluded") {
+      return "";
+    }
+    const reason = String(
+      row?.exclusionReason
+      || row?._lastError
+      || row?.error
+      || row?.cacheDecision
+      || ""
+    ).trim();
+    if (!reason) {
+      return "";
+    }
+    return ` title="${escapeHtml(`Excluded: ${reason}`)}"`;
+  }
+
   return `
     <div class="jobs-table-header">
       <div class="admin-row-header admin-source-row-header">
@@ -127,9 +148,7 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
           : String(resolvedStatus || "not run yet");
         const status = escapeHtml(statusLabel);
         const statusErrorDetail = String(row?._lastError || row?.lastProbeError || row?.error || "").trim();
-        const statusTitle = normalizedStatus === "error" && statusErrorDetail
-          ? ` title="${escapeHtml(`Error: ${statusErrorDetail}`)}"`
-          : "";
+        const statusTitle = buildSourceStatusTitle(row, normalizedStatus, statusErrorDetail);
         const statusClass = normalizedStatus === "error"
           ? "critical"
           : normalizedStatus === "excluded"

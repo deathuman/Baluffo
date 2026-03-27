@@ -344,6 +344,48 @@ test("admin domain drops optimistic fetch row once task state confirms the activ
   assert.equal(model.currentRows[0].runId, "fetch_1");
 });
 
+test("admin domain drops stale fetch task state when history already has the completed run", () => {
+  const model = deriveAdminRunsModel(
+    {
+      taskState: {
+        tasks: [
+          {
+            taskType: "fetch",
+            runId: "fetch_1",
+            active: true,
+            startedAt: "2026-03-08T10:00:30.000Z",
+            status: "running",
+            taskProgress: {
+              active: true,
+              phaseKey: "executing_sources",
+              phaseLabel: "Executing sources",
+              mode: "determinate",
+              ratio: 0.9,
+              counts: {}
+            }
+          }
+        ]
+      },
+      historyRuns: [
+        {
+          id: "fetch_1",
+          runId: "fetch_1",
+          type: "fetch",
+          status: "ok",
+          startedAt: "2026-03-08T10:00:30.000Z",
+          finishedAt: "2026-03-08T10:05:30.000Z",
+          durationMs: 300000
+        }
+      ]
+    },
+    Date.parse("2026-03-08T10:06:00.000Z")
+  );
+
+  assert.equal(model.currentRows.length, 0);
+  assert.equal(model.visibleCompletedRows.length, 1);
+  assert.equal(model.visibleCompletedRows[0].type, "fetch");
+});
+
 test("admin domain collapses legacy duplicate completed fetch rows without run ids", () => {
   const model = normalizeOpsRuns([
     { id: "f1", type: "fetch", status: "warning", startedAt: "2026-03-08T10:00:30.000Z", finishedAt: "2026-03-08T10:01:20.000Z", durationMs: 50000 },

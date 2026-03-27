@@ -505,14 +505,18 @@ def test_build_fetcher_args_uncapped_bypasses_admin_caps_and_keeps_social(
     assert preset == "uncapped"
     assert "--force-refresh-all" in args
     assert "--ignore-circuit-breaker" in args
+    assert "--max-workers" in args
+    assert args[args.index("--max-workers") + 1] == "16"
+    assert "--max-per-domain" in args
+    assert args[args.index("--max-per-domain") + 1] == "6"
+    assert "--static-detail-concurrency" in args
+    assert args[args.index("--static-detail-concurrency") + 1] == "24"
     assert "--source-ttl-minutes" in args
     assert args[args.index("--source-ttl-minutes") + 1] == "0"
     assert "--circuit-breaker-failures" in args
     assert args[args.index("--circuit-breaker-failures") + 1] == "0"
     assert "--circuit-breaker-cooldown-minutes" in args
     assert args[args.index("--circuit-breaker-cooldown-minutes") + 1] == "0"
-    assert "--max-workers" not in args
-    assert "--max-per-domain" not in args
     assert "--adapter-http-concurrency" not in args
     assert "--social-enabled" in args
 

@@ -6,7 +6,8 @@ import {
   renderAdminOpsSchedule,
   renderAdminOpsFetcherMetrics,
   renderAdminOpsTrends,
-  renderAdminOpsHistory
+  renderAdminOpsHistory,
+  renderSourcesTableHtml
 } from "../../../frontend/admin/render.js";
 
 function makeEl() {
@@ -180,4 +181,43 @@ test("admin render: signature patching skips redundant alerts/kpis/schedule rewr
   scheduleEl.innerHTML = `${scheduleEl.innerHTML}<!--keep-->`;
   renderAdminOpsSchedule(scheduleEl, schedule, latest);
   assert.match(scheduleEl.innerHTML, /<!--keep-->/);
+});
+
+test("admin render: active excluded rows include a tooltip with the exclusion reason", () => {
+  const excludedHtml = renderSourcesTableHtml(
+    [
+      {
+        id: "source-1",
+        name: "Excluded Source",
+        adapter: "static",
+        studio: "Studio A",
+        status: "excluded",
+        exclusionReason: "cache_within_freshness_window"
+      }
+    ],
+    "active",
+    row => Number(row.jobsFound || 0),
+    row => row._lastStatus || row.status
+  );
+
+  assert.match(excludedHtml, /admin-status-chip warning" title="Excluded: cache_within_freshness_window"/);
+  assert.match(excludedHtml, />excluded<\/span>/i);
+
+  const healthyHtml = renderSourcesTableHtml(
+    [
+      {
+        id: "source-2",
+        name: "Healthy Source",
+        adapter: "static",
+        studio: "Studio B",
+        status: "ok"
+      }
+    ],
+    "active",
+    row => Number(row.jobsFound || 0),
+    row => row._lastStatus || row.status
+  );
+
+  assert.doesNotMatch(healthyHtml, /Excluded:/);
+  assert.doesNotMatch(healthyHtml, /Error:/);
 });

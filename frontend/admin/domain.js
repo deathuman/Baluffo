@@ -345,18 +345,30 @@ export function deriveAdminRunsModel(
     normalizedCurrentRows = Array.isArray(legacyModel.currentRows) ? legacyModel.currentRows : [];
   }
 
+  const completedOnlyHistory = (Array.isArray(historyRuns) ? historyRuns : []).filter(
+    row => row && typeof row === "object" && String(row?.finishedAt || "").trim()
+  );
+  const hasCompletedMatch = row => completedOnlyHistory.some(completedRow => {
+    const taskType = String(row?.taskType || row?.type || "").trim().toLowerCase();
+    const completedType = String(completedRow?.taskType || completedRow?.type || "").trim().toLowerCase();
+    if (!taskType || taskType !== completedType) return false;
+    const runId = String(row?.runId || "").trim();
+    const completedRunId = String(completedRow?.runId || completedRow?.id || "").trim();
+    if (runId && completedRunId && runId === completedRunId) return true;
+    const startedAt = String(row?.startedAt || "").trim();
+    const completedStartedAt = String(completedRow?.startedAt || "").trim();
+    return Boolean(startedAt) && startedAt === completedStartedAt;
+  });
+
   const currentByType = new Map();
   normalizedCurrentRows
     .sort((a, b) => parseRunTimestampMs(b) - parseRunTimestampMs(a))
     .forEach(row => {
       const taskType = String(row?.taskType || row?.type || "").trim().toLowerCase();
-      if (!taskType || currentByType.has(taskType)) return;
+      if (!taskType || currentByType.has(taskType) || hasCompletedMatch(row)) return;
       currentByType.set(taskType, row);
     });
 
-  const completedOnlyHistory = (Array.isArray(historyRuns) ? historyRuns : []).filter(
-    row => row && typeof row === "object" && String(row?.finishedAt || "").trim()
-  );
   const completedModel = normalizeOpsRuns(completedOnlyHistory, nowMs);
 
   const baseModel = {

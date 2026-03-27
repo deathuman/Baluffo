@@ -222,6 +222,14 @@ export function createAdminFetcherController({
     state.fetchOptimisticRun = null;
   }
 
+  function attachToActiveFetchRun(runMeta = null) {
+    if (state.adminBusyState.fetcherWatch) return;
+    if (runMeta && typeof runMeta === "object" && !Array.isArray(runMeta)) {
+      setOptimisticFetchRun(runMeta);
+    }
+    startFetcherCompletionWatch();
+  }
+
   async function loadFetcherLogChunk(options = {}) {
     const reset = Boolean(options?.reset);
     const offset = reset ? 0 : Math.max(0, Number(state.fetcherLogRemoteOffset) || 0);
@@ -780,6 +788,7 @@ export function createAdminFetcherController({
     applyFetcherPresetMetadata,
     setFetcherLogPlaceholder,
     clearOptimisticFetchRun,
+    attachToActiveFetchRun,
     appendFetcherLog,
     loadLatestFetcherReport,
     copyLatestFailureSummary,

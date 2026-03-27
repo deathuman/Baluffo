@@ -29,6 +29,7 @@ export function createAdminOpsController({
   adminActions,
   escapeHtml,
   onBridgeStatusChange,
+  onLiveFetchDetected,
   onLiveDiscoveryDetected,
   bridgeStatusPollIntervalMs,
   idlePollIntervalMs
@@ -111,6 +112,11 @@ export function createAdminOpsController({
       setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
       setBusyFlag("liveSyncRunning", liveTypes.has("sync"));
       setBusyFlag("livePipelineRunning", liveTypes.has("pipeline"));
+      if (liveTypes.has("fetch") && !state.adminBusyState.fetcherWatch) {
+        const currentRows = Array.isArray(runModel?.currentRows) ? runModel.currentRows : [];
+        const activeFetchRun = currentRows.find(row => String(row?.type || "").toLowerCase() === "fetch") || null;
+        onLiveFetchDetected?.(activeFetchRun);
+      }
       if (liveTypes.has("discovery") && !state.adminBusyState.discoveryWatch) {
         const currentRows = Array.isArray(runModel?.currentRows) ? runModel.currentRows : [];
         const activeDiscoveryRun = currentRows.find(row => String(row?.type || "").toLowerCase() === "discovery") || null;
