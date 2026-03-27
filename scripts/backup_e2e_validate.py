@@ -346,7 +346,7 @@ def _seed_profile_data(store: LocalDataStore, uid: str) -> tuple[list[str], list
 
 
 def _wipe_profile(store: LocalDataStore, uid: str, profile_name: str) -> str:
-    store.wipe_account_admin("1234", uid)
+    store.wipe_account_admin(uid)
     recreated = store.sign_in(profile_name)
     return str(recreated.get("uid") or "")
 
