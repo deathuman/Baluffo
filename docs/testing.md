@@ -83,7 +83,7 @@ Use the narrowest check that matches the risky path:
 
 | Area | Test path |
 |------|-----------|
-| Jobs pipeline / jobs_fetcher | `tests/test_jobs_fetcher.py` |
+| Jobs pipeline / jobs_fetcher | `tests/test_jobs_fetcher.py` (integration shim), `tests/test_jobs_fetcher_google_sheets.py`, `tests/test_jobs_fetcher_parsing.py`, `tests/test_jobs_fetcher_providers.py`, `tests/test_jobs_fetcher_static.py`, `tests/test_jobs_fetcher_pipeline.py`, `tests/test_jobs_fetcher_quality.py` |
 | Source discovery | `tests/test_source_discovery.py` |
 | Admin bridge (registry, runtime, static fallback, sync) | `tests/admin/test_admin_bridge_ops_*.py` |
 | Desktop app / launcher | `tests/test_desktop_app.py` |

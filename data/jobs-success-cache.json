@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-03-27T19:06:24.005403+00:00",
+  "updatedAt": "2026-03-28T15:17:43.547667+00:00",
   "successfulSources": [
     "8bitplay",
     "ashby_sources",
@@ -67,6 +67,7 @@
     "static_source::static:listing_url:https://gardens.dev/careers",
     "static_source::static:listing_url:https://globalstep.com/careers/",
     "static_source::static:listing_url:https://gunfiregames.com/careers",
+    "static_source::static:listing_url:https://hadean.com/careers/",
     "static_source::static:listing_url:https://hellogames.org/join-us/",
     "static_source::static:listing_url:https://hrmos.co/pages/2052996596448374784/jobs",
     "static_source::static:listing_url:https://hrmos.co/pages/cygames/jobs",
@@ -95,6 +96,7 @@
     "static_source::static:listing_url:https://mindstormstudios.simplicant.com/jobs/board",
     "static_source::static:listing_url:https://norsfell.com/en/careers/",
     "static_source::static:listing_url:https://offroadgames.co/join-us.html",
+    "static_source::static:listing_url:https://racewardstudio.com/jobs/",
     "static_source::static:listing_url:https://rebel-wolves.com/en/join-us",
     "static_source::static:listing_url:https://recruit.nexon.co.jp/job/",
     "static_source::static:listing_url:https://remotecontrol.jobs.personio.com/",
@@ -140,6 +142,9 @@
     "static_source::static:listing_url:https://www.kojimaproductions.jp/en/careers",
     "static_source::static:listing_url:https://www.kw-studios.com/#jobs",
     "static_source::static:listing_url:https://www.linkedin.com/company/1047games/jobs/",
+    "static_source::static:listing_url:https://www.linkedin.com/company/high-5-games/jobs/",
+    "static_source::static:listing_url:https://www.linkedin.com/company/ironbelly-studios/",
+    "static_source::static:listing_url:https://www.linkedin.com/company/netease-games/jobs/",
     "static_source::static:listing_url:https://www.linkedin.com/company/nexus-studios/",
     "static_source::static:listing_url:https://www.linkedin.com/jobs/search/?currentjobid=4148163061&geoid=92000000&keywords=sega",
     "static_source::static:listing_url:https://www.linkedin.com/posts/wsalbright_were-hiring-combat-waffle-studios-is-activity-7348670199409074177-hlro",

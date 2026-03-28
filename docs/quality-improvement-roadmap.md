@@ -125,7 +125,7 @@ This is where the biggest immediate waste lives.
 **Implemented and verified — 2026-03-25.**
 
 Full-run artifact (`data/jobs-fetch-report.json`, commit `1482d98`, 645 sources) confirms:
-- `failureBucket` present on all error sources (e.g. `"unknown"`, propagated from taxonomy module)
+- `failureBucket` present on all error sources (e.g. `"unknown"` or `"needs_review"` for static zero-kept fallbacks, propagated from taxonomy module)
 - `zeroKeptClassification` present on all zero-kept sources (e.g. `"needs_review"`)
 - `healthSummary` section present in report with `topFailingDomains`, `topZeroKeptDomains`, `topSlowDomains`, `quarantinedSources`
 - `healthScore` and `consecutiveZeroKept` visible in `data/jobs-source-state.json`
@@ -435,7 +435,7 @@ For highest payoff, execute in this order:
 | Python tests | `npm run test:py` |
 | Bridge tests | `python -m pytest tests/admin/ -q` |
 | Source discovery | `python -m pytest tests/test_source_discovery.py -q` |
-| Jobs pipeline | `python -m pytest tests/test_jobs_fetcher.py -q` |
+| Jobs pipeline | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 
 ### Portable Fallback Commands
 
@@ -446,7 +446,7 @@ Use these if the execution environment does not support the npm wrappers cleanly
 | All Python tests | `python -m pytest tests -q` |
 | Bridge tests | `python -m pytest tests/admin/ -q` |
 | Source discovery | `python -m pytest tests/test_source_discovery.py -q` |
-| Jobs pipeline | `python -m pytest tests/test_jobs_fetcher.py -q` |
+| Jobs pipeline | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 
 ---
 

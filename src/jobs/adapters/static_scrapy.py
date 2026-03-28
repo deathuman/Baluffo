@@ -14,6 +14,8 @@ from src.jobs.common import config as common_config
 from src.jobs.common.datetime_utils import to_iso
 from src.jobs.common.taxonomy import (
     ClassificationContext,
+    assess_zero_extract,
+    classification_context_from_source_detail,
     classify_zero_kept,
     map_error_to_failure_bucket,
 )
@@ -30,14 +32,28 @@ TIMEOUT_BUCKET_SOURCE_NAMES = {
 
 def _update_taxonomy_fields(source_detail: dict[str, Any]) -> dict[str, Any]:
     """Update failureBucket and zeroKeptClassification based on current state."""
-    context = ClassificationContext(
-        status=source_detail.get("status", ""),
-        error=source_detail.get("error", ""),
-        classification=source_detail.get("classification", ""),
-    )
-    source_detail["failureBucket"] = map_error_to_failure_bucket(context).value
-    if int(source_detail.get("keptCount", 0)) == 0 and source_detail.get("status") == "ok":
+    context = classification_context_from_source_detail(source_detail)
+    if int(source_detail.get("keptCount", 0)) == 0 and source_detail.get("status") != "excluded":
+        assessment = assess_zero_extract(context)
         source_detail["zeroKeptClassification"] = classify_zero_kept(context).value
+        should_migrate = (
+            norm_text(source_detail.get("status")) == "ok"
+            or "no jobs extracted" in norm_text(source_detail.get("error"))
+            or norm_text(source_detail.get("classification"))
+            in {
+                "ok_no_jobs",
+                "fetch_ok_extract_zero",
+                "parser_stale",
+                "needs_review",
+                "empty_confirmed",
+            }
+            or assessment.diagnosis.value != "needs_review"
+        )
+        if should_migrate:
+            source_detail["classification"] = assessment.diagnosis.value
+            source_detail["browserFallbackRecommended"] = assessment.browser_fallback_recommended
+            context = classification_context_from_source_detail(source_detail)
+    source_detail["failureBucket"] = map_error_to_failure_bucket(context).value
     return source_detail
 
 
@@ -53,7 +69,11 @@ def _clean_errors(values: Any) -> list[str]:
 
 
 def _base_detail(
-    source_row: dict[str, Any], *, status: str = "error", error: str = ""
+    source_row: dict[str, Any],
+    *,
+    status: str = "error",
+    error: str = "",
+    signal_quality: str = "weak",
 ) -> dict[str, Any]:
     source_name = clean_text(source_row.get("name")) or "unknown"
     studio_name = clean_text(source_row.get("studio")) or source_name
@@ -67,6 +87,7 @@ def _base_detail(
         status=status,
         error=error or "",
         classification=classification,
+        signal_quality=signal_quality,
     )
     failure_bucket = map_error_to_failure_bucket(context)
     zero_kept_classification = None
@@ -86,6 +107,7 @@ def _base_detail(
         "zeroKeptClassification": zero_kept_classification,
         "top_reject_reasons": [],
         "browserFallbackRecommended": False,
+        "signalQuality": clean_text(signal_quality) or "weak",
         "sourceId": source_id,
         "pages": [clean_text(page) for page in pages if clean_text(page)],
         "loss": {
@@ -223,7 +245,7 @@ def run_scrapy_static_source(
         if timeout_bucket:
             config["runtime"]["timeout_s"] = min(int(timeout_s), 10)
 
-        source_detail = _base_detail(source)
+        source_detail = _base_detail(source, signal_quality="weak")
         try:
             timeout_window = min(
                 90 if timeout_bucket else 300,
@@ -323,15 +345,6 @@ def run_scrapy_static_source(
                 source_detail["status"] = "ok"
                 if not clean_text(source_detail.get("classification")):
                     source_detail["classification"] = "ok_with_jobs" if kept > 0 else "ok_no_jobs"
-                if (
-                    source_detail.get("classification") == "ok_no_jobs"
-                    and int(source_detail.get("fetchedCount") or 0) > 0
-                ):
-                    source_detail["classification"] = "parser_stale"
-                if source_detail.get("classification") == "fetch_ok_extract_zero":
-                    source_detail["classification"] = "parser_stale"
-                if source_detail.get("classification") == "blocked_or_challenge":
-                    source_detail["classification"] = "browser_retry_not_recommended"
                 source_detail["browserFallbackRecommended"] = False
             else:
                 source_detail["status"] = "error"

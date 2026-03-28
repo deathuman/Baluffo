@@ -15,7 +15,13 @@ LOW_YIELD_FETCHED_MIN = 20
 LOW_YIELD_RATIO_MAX = 0.1
 SOFT_FAILURE_CLASSIFICATIONS = {
     "blocked_or_challenge",
+    "anti_bot_or_challenge",
+    "js_required",
+    "site_changed",
+    "empty_confirmed",
+    "needs_review",
     "fetch_ok_extract_zero",
+    "ok_no_jobs",
     "parse_error",
     "parser_stale",
     "dead_listing_page",
@@ -183,6 +189,38 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
             read_json(
                 Path(report.get("outputs", {}).get("report", "")).parent
                 / "jobs-browser-fallback-queue.json",
+                [],
+            )
+        ),
+        "siteChangedDiagnosedCount": sum(
+            1 for row in sources if safe_text(row.get("failureBucket")).lower() == "site_changed"
+        ),
+        "siteChangedMissingOldUrlCount": sum(
+            1
+            for row in sources
+            if safe_text(row.get("failureBucket")).lower() == "site_changed"
+            and not (
+                safe_text(row.get("listingUrl"))
+                or (
+                    isinstance(row.get("pages"), list)
+                    and any(safe_text(page) for page in row.get("pages") or [])
+                )
+                or (
+                    isinstance(row.get("details"), list)
+                    and any(
+                        isinstance(item, dict)
+                        and isinstance(item.get("pages"), list)
+                        and any(safe_text(page) for page in item.get("pages") or [])
+                        for item in row.get("details") or []
+                    )
+                )
+                or safe_text(row.get("providerUrl"))
+            )
+        ),
+        "parserRegressionQueueCount": len(
+            read_json(
+                Path(report.get("outputs", {}).get("report", "")).parent
+                / "jobs-parser-regression-queue.json",
                 [],
             )
         ),

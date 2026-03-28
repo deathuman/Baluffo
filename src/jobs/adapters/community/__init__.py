@@ -54,14 +54,17 @@ def run_google_sheets_source(
     sheet_id: str = DEFAULT_GOOGLE_SHEET_ID,
     gid: str = DEFAULT_GOOGLE_SHEET_GID,
     diagnostics_name: str = "",
+    heartbeat_callback: Callable[[], None] | None = None,
 ) -> list[RawJob]:
     errors: list[str] = []
     details: list[dict[str, Any]] = []
     for url in google_sheet_candidate_urls(sheet_id, gid):
         try:
+            if heartbeat_callback:
+                heartbeat_callback()
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             parse_started = time.perf_counter()
-            jobs = parse_google_sheets_csv(text)
+            jobs = parse_google_sheets_csv(text, heartbeat_callback=heartbeat_callback)
             parse_csv_ms = int((time.perf_counter() - parse_started) * 1000)
             details.append(
                 {
@@ -88,6 +91,9 @@ def run_google_sheets_source(
             errors.append(f"{url}: empty/invalid CSV")
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{url}: {exc}")
+        finally:
+            if heartbeat_callback:
+                heartbeat_callback()
     if diagnostics_name:
         set_source_diagnostics(
             diagnostics_name,

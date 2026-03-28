@@ -131,7 +131,8 @@ These static sources failed with zero jobs extracted. Improvements to consider:
 1. **Run the pipeline again** (no need to clear browser queue) so that the **17** browser-queue URLs run with Scrapy-Playwright and see how many of them yield jobs.
 2. **Add observability** for Playwright usage: e.g. log when static listing fallback or discovery probe uses Playwright and whether it increased link/job count for that URL.
 3. **Prioritize 2–3 high-value static sources** (e.g. Larian, CDPR, Supercell) and add or tune plugins/selectors so “no jobs extracted” turns into at least one successful extraction path.
-4. **Re-check job count** after the next run: compare `data/jobs-unified.json` length and `data/jobs-browser-fallback-queue.json` size again to see if Scrapy-Playwright and any selector tweaks increase the total job count.
+4. **Summarize the latest run first** with `python tools/measurements/pipeline/latest_run_report.py` so you can see discovery/fetch counts, `site_changed` reconciliation, and parser-regression queue presence without opening the raw JSON.
+5. **Re-check job count** after the next run: compare `data/jobs-unified.json` length and `data/jobs-browser-fallback-queue.json` size again to see if Scrapy-Playwright and any selector tweaks increase the total job count.
 
 ---
 

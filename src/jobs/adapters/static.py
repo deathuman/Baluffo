@@ -134,6 +134,7 @@ def run_static_studio_pages_source(
             pages=pages,
             company=company,
         )
+        entry_report["browserEscalationEnabled"] = bool(try_playwright)
         cache_decision = get_incremental_cache_decision(
             source_name,
             source_state_rows or {},
@@ -249,8 +250,6 @@ def run_static_studio_pages_source(
                     entry_report["status"] = "error"
                     if not entry_report.get("error"):
                         entry_report["error"] = "no jobs extracted from source pages"
-                    if not classification:
-                        entry_report["classification"] = "fetch_ok_extract_zero"
                     if browser_recommended:
                         warn_page = clean_text(pages[0]) if pages else ""
                         warnings.append(
@@ -580,8 +579,6 @@ def run_static_studio_pages_source(
             and not clean_text(entry_report.get("classification"))
         ):
             entry_report["status"] = "error"
-            entry_report["classification"] = "fetch_ok_extract_zero"
-            entry_report["browserFallbackRecommended"] = True
             entry_report["error"] = "no jobs extracted from source pages"
             # If we're running a single static source loader, treat this as a hard error
             # so it isn't silently reported as ok-with-zero.

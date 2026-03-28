@@ -96,6 +96,37 @@ def normalize_source_state_payload(
                 "nextEligibleCheckAt": clean_text(raw_entry.get("nextEligibleCheckAt")),
                 "cacheDecision": clean_text(raw_entry.get("cacheDecision")),
                 "cacheDecisionReason": clean_text(raw_entry.get("cacheDecisionReason")),
+                "browserEscalationEligible": bool(raw_entry.get("browserEscalationEligible")),
+                "browserEscalationEligibleAt": clean_text(
+                    raw_entry.get("browserEscalationEligibleAt")
+                ),
+                "browserEscalationEligibilityReason": clean_text(
+                    raw_entry.get("browserEscalationEligibilityReason")
+                ),
+                "browserEscalationLastAttemptAt": clean_text(
+                    raw_entry.get("browserEscalationLastAttemptAt")
+                ),
+                "browserEscalationLastAttemptFingerprint": clean_text(
+                    raw_entry.get("browserEscalationLastAttemptFingerprint")
+                ),
+                "browserEscalationLastAttemptListingFingerprint": clean_text(
+                    raw_entry.get("browserEscalationLastAttemptListingFingerprint")
+                ),
+                "browserEscalationLastSuccessAt": clean_text(
+                    raw_entry.get("browserEscalationLastSuccessAt")
+                ),
+                "browserEscalationLastFailureAt": clean_text(
+                    raw_entry.get("browserEscalationLastFailureAt")
+                ),
+                "browserEscalationLastError": clean_text(
+                    raw_entry.get("browserEscalationLastError")
+                ),
+                "browserEscalationFailureCount": _clamped_int(
+                    raw_entry.get("browserEscalationFailureCount"), 0, 0
+                ),
+                "browserEscalationQuarantinedUntilAt": clean_text(
+                    raw_entry.get("browserEscalationQuarantinedUntilAt")
+                ),
                 "consecutiveFailures": _clamped_int(raw_entry.get("consecutiveFailures"), 0, 0),
                 "consecutiveZeroKept": _clamped_int(raw_entry.get("consecutiveZeroKept"), 0, 0),
                 "quarantinedUntilAt": clean_text(raw_entry.get("quarantinedUntilAt")),
@@ -464,7 +495,16 @@ def _decision_window_minutes(entry: dict[str, Any], *, adapter: str) -> int:
     if adapter == "static":
         if last_status == "error" and any(
             token in last_error
-            for token in ("dead_listing_page", "parser_stale", "fetch_ok_extract_zero")
+            for token in (
+                "dead_listing_page",
+                "parser_stale",
+                "fetch_ok_extract_zero",
+                "js_required",
+                "site_changed",
+                "anti_bot_or_challenge",
+                "empty_confirmed",
+                "needs_review",
+            )
         ):
             return DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES
         if last_kept <= 0:
@@ -542,7 +582,16 @@ def get_incremental_cache_decision(
             last_status == "error"
             and any(
                 token in last_error
-                for token in ("dead_listing_page", "parser_stale", "fetch_ok_extract_zero")
+                for token in (
+                    "dead_listing_page",
+                    "parser_stale",
+                    "fetch_ok_extract_zero",
+                    "js_required",
+                    "site_changed",
+                    "anti_bot_or_challenge",
+                    "empty_confirmed",
+                    "needs_review",
+                )
             )
             and age_seconds < float(DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES * 60)
         ):
@@ -687,6 +736,54 @@ def update_source_state_rows(
         name = clean_text(report.get("name"))
         if not name:
             return
+        browser_eligible = bool(report.get("browserEscalationEligible"))
+        browser_enabled = bool(report.get("browserEscalationEnabled"))
+        browser_reason = clean_text(report.get("browserEscalationEligibilityReason"))
+        if browser_eligible:
+            entry["browserEscalationEligible"] = True
+            entry["browserEscalationEligibleAt"] = finished_at
+            if browser_reason:
+                entry["browserEscalationEligibilityReason"] = browser_reason
+        elif entry.get("browserEscalationEligible"):
+            entry.pop("browserEscalationEligible", None)
+            entry.pop("browserEscalationEligibleAt", None)
+            entry.pop("browserEscalationEligibilityReason", None)
+        if browser_enabled:
+            attempt_fingerprint = clean_text(report.get("sourceFingerprint")) or clean_text(
+                entry.get("lastFingerprint")
+            )
+            attempt_listing_fingerprint = clean_text(
+                report.get("listingFingerprint")
+            ) or clean_text(entry.get("lastListingFingerprint"))
+            entry["browserEscalationLastAttemptAt"] = finished_at
+            if attempt_fingerprint:
+                entry["browserEscalationLastAttemptFingerprint"] = attempt_fingerprint
+            if attempt_listing_fingerprint:
+                entry["browserEscalationLastAttemptListingFingerprint"] = (
+                    attempt_listing_fingerprint
+                )
+            if entry["lastStatus"] == "ok" and entry["lastKeptCount"] > 0:
+                entry["browserEscalationLastSuccessAt"] = finished_at
+                entry.pop("browserEscalationLastFailureAt", None)
+                entry.pop("browserEscalationLastError", None)
+                entry["browserEscalationFailureCount"] = 0
+                entry.pop("browserEscalationQuarantinedUntilAt", None)
+                entry.pop("browserEscalationEligible", None)
+                entry.pop("browserEscalationEligibleAt", None)
+                entry.pop("browserEscalationEligibilityReason", None)
+            else:
+                failure_count = int(entry.get("browserEscalationFailureCount") or 0) + 1
+                entry["browserEscalationFailureCount"] = failure_count
+                entry["browserEscalationLastFailureAt"] = finished_at
+                entry["browserEscalationLastError"] = clean_text(report.get("error"))
+                if circuit_breaker_cooldown_minutes > 0:
+                    entry["browserEscalationQuarantinedUntilAt"] = (
+                        datetime.now(UTC) + timedelta(minutes=circuit_breaker_cooldown_minutes)
+                    ).isoformat()
+        if entry["lastKeptCount"] > 0:
+            entry.pop("browserEscalationEligible", None)
+            entry.pop("browserEscalationEligibleAt", None)
+            entry.pop("browserEscalationEligibilityReason", None)
         details = report.get("details") if isinstance(report.get("details"), list) else []
         static_detail = details[0] if len(details) == 1 and isinstance(details[0], dict) else {}
         static_stats = (
@@ -883,6 +980,44 @@ def browser_fallback_state_row(
         return {}
     entry = source_state_rows.get(BROWSER_FALLBACK_STATE_KEY)
     return dict(entry) if isinstance(entry, dict) else {}
+
+
+def browser_escalation_state_row(
+    source_state_rows: dict[str, dict[str, Any]] | None, source_name: str
+) -> dict[str, Any]:
+    if not isinstance(source_state_rows, dict):
+        return {}
+    name = clean_text(source_name)
+    if not name:
+        return {}
+    entry = source_state_rows.get(name)
+    return dict(entry) if isinstance(entry, dict) else {}
+
+
+def should_browser_escalate_source(
+    source_name: str,
+    source_state_rows: dict[str, dict[str, Any]] | None,
+) -> bool:
+    entry = browser_escalation_state_row(source_state_rows, source_name)
+    if not entry:
+        return False
+    eligible = bool(entry.get("browserEscalationEligible"))
+    if not eligible:
+        legacy_bucket = clean_text(entry.get("lastFailureBucket"))
+        eligible = legacy_bucket in {"js_required", "anti_bot_or_challenge"}
+    if not eligible:
+        return False
+    current_fp = clean_text(entry.get("lastFingerprint"))
+    current_listing_fp = clean_text(entry.get("lastListingFingerprint"))
+    attempt_fp = clean_text(entry.get("browserEscalationLastAttemptFingerprint"))
+    attempt_listing_fp = clean_text(entry.get("browserEscalationLastAttemptListingFingerprint"))
+    if clean_text(entry.get("browserEscalationLastAttemptAt")):
+        if attempt_fp or attempt_listing_fp:
+            if current_fp == attempt_fp and current_listing_fp == attempt_listing_fp:
+                return False
+        elif not current_fp and not current_listing_fp:
+            return False
+    return True
 
 
 def build_browser_fallback_circuit_breaker(

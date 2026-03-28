@@ -48,6 +48,7 @@ def _run_greenhouse_boards(
     jobs: list[RawJob] = []
     errors: list[str] = []
     details: list[dict[str, object]] = []
+    provider_url = ""
     deps = runtime_deps.facade()
     for board in deps.registry_entries("greenhouse"):
         slug = clean_text(board.get("slug"))
@@ -119,12 +120,15 @@ def _run_greenhouse_boards(
         except Exception as exc:  # noqa: BLE001
             entry_report["status"] = "error"
             entry_report["error"] = str(exc)
+            if not provider_url:
+                provider_url = url
             errors.append(f"greenhouse:{slug}: {exc}")
         details.append(entry_report)
     deps.set_source_diagnostics(
         "greenhouse_boards",
         adapter="greenhouse",
         studio="multiple",
+        provider_url=provider_url,
         details=details,
         partial_errors=errors,
     )
@@ -307,6 +311,7 @@ def _run_json_feed_sources(
     jobs: list[RawJob] = []
     errors: list[str] = []
     details: list[dict[str, object]] = []
+    provider_url = ""
     for source in deps.registry_entries(registry_adapter):
         source_name = clean_text(source.get("name")) or f"{registry_adapter}_source"
         studio = clean_text(source.get("studio")) or source_name
@@ -378,6 +383,8 @@ def _run_json_feed_sources(
         except Exception as exc:  # noqa: BLE001
             entry_report["status"] = "error"
             entry_report["error"] = str(exc)
+            if not provider_url:
+                provider_url = endpoint
             errors.append(f"{registry_adapter}:{source_name}: {exc}")
         details.append(entry_report)
 
@@ -385,6 +392,7 @@ def _run_json_feed_sources(
         f"{registry_adapter}_sources",
         adapter=adapter_name,
         studio="multiple",
+        provider_url=provider_url,
         details=details,
         partial_errors=errors,
     )
@@ -532,6 +540,7 @@ def _run_html_board_sources(
     jobs: list[RawJob] = []
     errors: list[str] = []
     details: list[dict[str, object]] = []
+    provider_url = ""
     for source in deps.registry_entries(registry_adapter):
         source_name = clean_text(source.get("name")) or f"{registry_adapter}_source"
         studio = clean_text(source.get("studio")) or source_name
@@ -617,6 +626,8 @@ def _run_html_board_sources(
         except Exception as exc:  # noqa: BLE001
             entry_report["status"] = "error"
             entry_report["error"] = str(exc)
+            if not provider_url:
+                provider_url = board_url
             errors.append(f"{registry_adapter}:{source_name}: {exc}")
         details.append(entry_report)
 
@@ -624,6 +635,7 @@ def _run_html_board_sources(
         f"{registry_adapter}_sources",
         adapter=adapter_name,
         studio="multiple",
+        provider_url=provider_url,
         details=details,
         partial_errors=errors,
     )

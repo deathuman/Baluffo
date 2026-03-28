@@ -43,6 +43,7 @@ is typically gitignored - do not commit generated files here.
 |------|---------------|
 | Analyze repo maturity | `tools/repo_health/bin/analyze_repo.py` |
 | Analyze refactorability | `tools/repo_health/bin/analyze_refactorability.py` |
+| Summarize latest discovery/fetch run | `python tools/measurements/pipeline/latest_run_report.py` |
 | Measure pipeline discovery gains | `tools/measurements/pipeline/job_discovery_increment_measurement.py` |
 | Monitor social sources | `tools/measurements/sources/social_sources_monitoring.py` |
 | Optimize social sources config | `tools/measurements/sources/social_sources_optimization.py` |

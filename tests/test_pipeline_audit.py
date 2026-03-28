@@ -1,7 +1,9 @@
+from pathlib import Path
+
 from src import pipeline_audit as audit
 
 
-def test_build_report_classifies_failures_and_slow_entries() -> None:
+def test_build_report_classifies_failures_and_slow_entries(tmp_path: Path) -> None:
     discovery_report = {
         "startedAt": "2026-03-19T20:00:00+00:00",
         "finishedAt": "2026-03-19T20:00:30+00:00",
@@ -70,7 +72,16 @@ def test_build_report_classifies_failures_and_slow_entries() -> None:
                         "fetchedCount": 25,
                         "keptCount": 0,
                         "stats": {"listing_fetch_ms": 10000, "detail_fetch_ms": 15000},
-                    }
+                    },
+                    {
+                        "name": "Needs Review Studio",
+                        "adapter": "static",
+                        "status": "ok",
+                        "classification": "needs_review",
+                        "fetchedCount": 14,
+                        "keptCount": 0,
+                        "stats": {"listing_fetch_ms": 2000, "detail_fetch_ms": 3000},
+                    },
                 ],
             },
             {
@@ -82,7 +93,7 @@ def test_build_report_classifies_failures_and_slow_entries() -> None:
                 "keptCount": 12,
             },
         ],
-        "outputs": {"report": "data/jobs-fetch-report.json"},
+        "outputs": {"report": str(tmp_path / "jobs-fetch-report.json")},
     }
     jobs = [{"id": "1"}, {"id": "2"}]
 
@@ -98,7 +109,7 @@ def test_build_report_classifies_failures_and_slow_entries() -> None:
         for row in (report.get("issues") or {}).get("hard_failures", [])
     )
     assert any(
-        str(row.get("category") or "") == "fetch_ok_extract_zero"
+        str(row.get("category") or "") in {"fetch_ok_extract_zero", "needs_review"}
         for row in (report.get("issues") or {}).get("soft_failures", [])
     )
     assert any(
@@ -109,6 +120,33 @@ def test_build_report_classifies_failures_and_slow_entries() -> None:
         str(row.get("category") or "") == "queue_filtered"
         for row in (report.get("issues") or {}).get("coverage_risks", [])
     )
+    assert int((report.get("fetch") or {}).get("siteChangedDiagnosedCount") or 0) == 0
+    assert int((report.get("fetch") or {}).get("siteChangedMissingOldUrlCount") or 0) == 0
+    assert int((report.get("fetch") or {}).get("parserRegressionQueueCount") or 0) == 0
+
+
+def test_summarize_fetch_counts_provider_url_as_old_url_surface(tmp_path: Path) -> None:
+    fetch_report = {
+        "startedAt": "2026-03-19T20:01:00+00:00",
+        "finishedAt": "2026-03-19T20:04:00+00:00",
+        "summary": {"successfulSources": 0, "failedSources": 0, "outputCount": 0},
+        "runtime": {"timingSummary": {"totalDurationMs": 0}},
+        "sources": [
+            {
+                "name": "greenhouse_boards",
+                "adapter": "greenhouse",
+                "status": "ok",
+                "failureBucket": "site_changed",
+                "providerUrl": "https://boards-api.greenhouse.io/v1/boards/guerrillagames/jobs?content=true",
+            }
+        ],
+        "outputs": {"report": str(tmp_path / "jobs-fetch-report.json")},
+    }
+
+    summary = audit.summarize_fetch(fetch_report, [])
+    assert int(summary.get("siteChangedDiagnosedCount") or 0) == 1
+    assert int(summary.get("siteChangedMissingOldUrlCount") or 0) == 0
+    assert int(summary.get("parserRegressionQueueCount") or 0) == 0
 
 
 def test_render_markdown_includes_key_sections() -> None:

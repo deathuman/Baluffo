@@ -28,7 +28,7 @@ Scrapy path (for scrapy_static sources from browser queue)
 - **Discovery:** Candidates that fail probe (403, timeout, challenge-like HTML) can be retried with Playwright so more sources pass and enter the queue.
 - **M5 review snapshot:** Discovery now also writes `data/m5-strategic-backlog.json` as a derived review artifact. It is built from the canonical discovery ledger and should not be treated as the source of truth for discovery state.
 - **Static adapter:** Only the **listing page** fetch per source can use Playwright fallback; detail pages stay HTTP. If the pipeline has Playwright available, it injects `try_playwright` into static loaders.
-- **Browser fallback queue:** Sources classified as `blocked_or_challenge` or `fetch_ok_extract_zero` (and adapter `scrapy_static`) are written to `jobs-browser-fallback-queue.json`. The next pipeline run uses that list as the scrapy_static registry and runs them with **Scrapy-Playwright** (use_browser=True).
+- **Browser fallback queue:** Sources classified as `blocked_or_challenge` or `needs_review` with `browserFallbackRecommended: true` (and adapter `scrapy_static`) are written to `jobs-browser-fallback-queue.json`. The next pipeline run uses that list as the scrapy_static registry and runs them with **Scrapy-Playwright** (use_browser=True).
 
 ## 2) Where Playwright is used
 
@@ -47,13 +47,13 @@ To see how much the job count changed after scraping improvements:
 
 1. **Total jobs:** `data/jobs-unified.json` — count top-level array length (or `keptCount` / output count from pipeline summary).
 2. **Browser fallback queue size:** `data/jobs-browser-fallback-queue.json` — number of entries (sources that were recommended for browser/Playwright).
-3. **Per-source status:** `data/jobs-fetch-report.json` — for each source: `status`, `fetchedCount`, `keptCount`, `classification`, `error`. Compare counts of `blocked_or_challenge`, `fetch_ok_extract_zero`, and `ok`/`ok_with_jobs` before vs after.
+3. **Per-source status:** `data/jobs-fetch-report.json` — for each source: `status`, `fetchedCount`, `keptCount`, `classification`, `error`. Compare counts of `blocked_or_challenge`, `needs_review`, and `ok`/`ok_with_jobs` before vs after.
 4. **Discovery:** `data/source-discovery-report.json` — `summary.lossAccounting`, probe failed / low_evidence_skipped; Playwright probe fallback aims to reduce those.
 
 **Suggested comparison:**
 
-- Before a run: note `len(jobs-unified.json)`, size of `jobs-browser-fallback-queue.json`, and number of sources with `classification` in `{blocked_or_challenge, fetch_ok_extract_zero}` in the last fetch report.
-- After a run (with Playwright fallbacks and Scrapy-Playwright enabled): compare the same metrics. Higher unified count, smaller browser queue, and fewer blocked/fetch_ok_extract_zero sources indicate improvement.
+- Before a run: note `len(jobs-unified.json)`, size of `jobs-browser-fallback-queue.json`, and number of sources with `classification` in `{blocked_or_challenge, needs_review}` in the last fetch report.
+- After a run (with Playwright fallbacks and Scrapy-Playwright enabled): compare the same metrics. Higher unified count, smaller browser queue, and fewer blocked/needs_review sources indicate improvement.
 
 See also: `docs/DATA_CONTRACT.md` for report shapes; `docs/architecture-ai-map.md` for static adapter and Scrapy path.
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from src.jobs import state as jobs_state
 from src.jobs.browser_fallback import (
     BROWSER_FALLBACK_STATE_KEY,
     BrowserFallbackCircuitBreaker,
@@ -40,3 +41,113 @@ def test_browser_fallback_state_roundtrip_preserves_cooldown_fields() -> None:
     )
     assert restored.failure_count == 1
     assert restored.disabled_until_at == row["browserFallbackQuarantinedUntilAt"]
+
+
+def test_browser_escalation_state_roundtrip_and_guard_bootstrap() -> None:
+    normalized = jobs_state.normalize_source_state_payload(
+        {
+            "sources": {
+                "crystal_dynamics": {
+                    "browserEscalationEligible": True,
+                    "browserEscalationEligibleAt": "2026-03-23T10:00:00Z",
+                    "browserEscalationEligibilityReason": "js_required",
+                    "browserEscalationLastAttemptAt": "2026-03-23T11:00:00Z",
+                    "browserEscalationLastAttemptFingerprint": "fp-a",
+                    "browserEscalationLastAttemptListingFingerprint": "listing-a",
+                    "browserEscalationLastFailureAt": "2026-03-23T11:00:00Z",
+                    "browserEscalationFailureCount": 1,
+                }
+            }
+        },
+        updated_at="2026-03-23T12:00:00Z",
+    )
+    source_row = normalized["sources"]["crystal_dynamics"]
+    assert source_row["browserEscalationEligible"] is True
+    assert source_row["browserEscalationEligibilityReason"] == "js_required"
+    assert source_row["browserEscalationFailureCount"] == 1
+
+    assert not jobs_state.should_browser_escalate_source(
+        "crystal_dynamics",
+        {
+            "crystal_dynamics": {
+                **source_row,
+                "lastFingerprint": "fp-a",
+                "lastListingFingerprint": "listing-a",
+            }
+        },
+    )
+    assert jobs_state.should_browser_escalate_source(
+        "crystal_dynamics",
+        {
+            "crystal_dynamics": {
+                **source_row,
+                "lastFingerprint": "fp-b",
+                "lastListingFingerprint": "listing-b",
+            }
+        },
+    )
+    assert jobs_state.should_browser_escalate_source(
+        "legacy_flagged",
+        {"legacy_flagged": {"lastFailureBucket": "js_required"}},
+    )
+
+
+def test_browser_escalation_state_update_remembers_attempts_and_successes() -> None:
+    finished_at = "2026-03-23T12:30:00Z"
+    zero_report = {
+        "name": "crystal_dynamics",
+        "status": "ok",
+        "adapter": "static",
+        "fetchedCount": 2,
+        "keptCount": 0,
+        "error": "no jobs extracted from source pages",
+        "classification": "js_required",
+        "browserEscalationEligible": True,
+        "browserEscalationEligibilityReason": "js_required",
+        "browserEscalationEnabled": True,
+        "listingFingerprint": "listing-a",
+        "sourceFingerprint": "",
+        "details": [],
+    }
+    state_rows = jobs_state.update_source_state_rows(
+        source_state_rows={"crystal_dynamics": {}},
+        source_reports=[zero_report],
+        canonical_rows=[],
+        finished_at=finished_at,
+        circuit_breaker_failures=0,
+        circuit_breaker_cooldown_minutes=30,
+    )
+    entry = state_rows["crystal_dynamics"]
+    assert entry["browserEscalationEligible"] is True
+    assert entry["browserEscalationLastAttemptAt"] == finished_at
+    assert entry["browserEscalationLastAttemptListingFingerprint"] == "listing-a"
+    assert entry["browserEscalationFailureCount"] == 1
+    assert not jobs_state.should_browser_escalate_source("crystal_dynamics", state_rows)
+
+    success_finished_at = "2026-03-23T12:45:00Z"
+    success_report = {
+        "name": "crystal_dynamics",
+        "status": "ok",
+        "adapter": "static",
+        "fetchedCount": 2,
+        "keptCount": 3,
+        "error": "",
+        "classification": "ok_with_jobs",
+        "browserEscalationEligible": False,
+        "browserEscalationEnabled": True,
+        "listingFingerprint": "listing-b",
+        "sourceFingerprint": "fp-b",
+        "details": [],
+    }
+    success_state_rows = jobs_state.update_source_state_rows(
+        source_state_rows={"crystal_dynamics": dict(entry)},
+        source_reports=[success_report],
+        canonical_rows=[{"source": "crystal_dynamics"}],
+        finished_at=success_finished_at,
+        circuit_breaker_failures=0,
+        circuit_breaker_cooldown_minutes=30,
+    )
+    success_entry = success_state_rows["crystal_dynamics"]
+    assert success_entry["browserEscalationLastSuccessAt"] == success_finished_at
+    assert success_entry["browserEscalationFailureCount"] == 0
+    assert "browserEscalationEligible" not in success_entry

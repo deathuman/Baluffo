@@ -50,8 +50,8 @@ def _classify_result(
     ):
         return "blocked_or_challenge"
     if fetched_count > 0 and kept_count == 0:
-        return "fetch_ok_extract_zero"
-    return "ok_no_jobs"
+        return "needs_review"
+    return "needs_review"
 
 
 def _stats_subset(stats: dict[str, Any]) -> dict[str, Any]:
@@ -233,7 +233,7 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
                     "fetchedCount": 0,
                     "keptCount": 0,
                     "error": "",
-                    "classification": "ok_no_jobs",
+                    "classification": "needs_review",
                     "browserFallbackRecommended": False,
                     "top_reject_reasons": [],
                     "sourceId": source_id_value,
@@ -352,7 +352,6 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
     )
     top_reject_reasons = [f"{key}:{count}" for key, count in reject_reasons.most_common(5)]
     browser_fallback_recommended = classification in {
-        "fetch_ok_extract_zero",
         "blocked_or_challenge",
     }
 

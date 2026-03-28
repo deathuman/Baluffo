@@ -480,6 +480,21 @@ def build_browser_fallback_queue(
     return reporting_pkg.build_browser_fallback_queue(source_reports, generated_at=generated_at)
 
 
+def build_parser_regression_queue(
+    source_reports: Sequence[dict[str, Any]],
+    *,
+    generated_at: str,
+    resolve_redirect_url: Callable[[str], str] | None = None,
+) -> list[dict[str, Any]]:
+    from src.jobs import reporting as reporting_pkg
+
+    return reporting_pkg.build_parser_regression_queue(
+        source_reports,
+        generated_at=generated_at,
+        resolve_redirect_url=resolve_redirect_url,
+    )
+
+
 def read_previously_successful_sources(report_path: Path) -> set[str]:
     from src.jobs import state as state_pkg
 

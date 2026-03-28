@@ -16,6 +16,16 @@ measurements/
 
 ## Usage
 
+### Latest Run Triage
+
+Use this first when you want a concise summary of the latest discovery/fetch run instead of opening the raw JSON artifacts:
+
+```bash
+python tools/measurements/pipeline/latest_run_report.py
+```
+
+Add `--json` when you want a machine-readable summary for automation.
+
 ### Pipeline Measurements
 
 ```bash

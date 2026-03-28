@@ -49,11 +49,19 @@ class _FakeDeps:
         return self._responses[url]
 
     def set_source_diagnostics(
-        self, name: str, *, adapter: str, studio: str, details: list, partial_errors: list
+        self,
+        name: str,
+        *,
+        adapter: str,
+        studio: str,
+        provider_url: str = "",
+        details: list,
+        partial_errors: list,
     ) -> None:
         self.SOURCE_DIAGNOSTICS[name] = {
             "adapter": adapter,
             "studio": studio,
+            "providerUrl": provider_url,
             "details": details,
             "partialErrors": partial_errors,
             "lowConfidenceDropped": 0,

@@ -23,7 +23,11 @@ from src.jobs.canonicalize import CanonicalNormalizer
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.models import CanonicalJob
 from src.jobs.reporting import format_source_error
-from src.jobs.state import set_browser_fallback_state, source_rows_fingerprint
+from src.jobs.state import (
+    set_browser_fallback_state,
+    should_browser_escalate_source,
+    source_rows_fingerprint,
+)
 from src.jobs.text_utils import clean_text, norm_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
 from src.shared.utils import now_iso
@@ -168,6 +172,21 @@ def run_source_execution_stage(
             },
         }
         canonical_batch: list[CanonicalJob] = []
+        loader_heartbeat_callback = None
+        if clean_text(name).startswith("google_sheets"):
+            last_heartbeat_write = 0.0
+
+            def loader_heartbeat_callback() -> None:
+                nonlocal last_heartbeat_write
+                now_mono = time.perf_counter()
+                if (now_mono - last_heartbeat_write) < 4.0:
+                    return
+                last_heartbeat_write = now_mono
+                with task_lock:
+                    row = task_rows.get(name)
+                    if isinstance(row, dict) and row.get("status") == "running":
+                        row["heartbeatAt"] = now_iso()
+                write_task_state(force=True)
 
         try:
             thread_local.source_name = name
@@ -182,8 +201,12 @@ def run_source_execution_stage(
             }
             if norm_text(report.get("adapter")) == "static":
                 loader_kwargs["static_detail_concurrency"] = config.static_detail_concurrency
-                if guarded_try_playwright is not None:
+                if guarded_try_playwright is not None and should_browser_escalate_source(
+                    name, source_state_rows
+                ):
                     loader_kwargs["try_playwright"] = guarded_try_playwright
+            if loader_heartbeat_callback is not None:
+                loader_kwargs["heartbeat_callback"] = loader_heartbeat_callback
 
             try:
                 signature = inspect.signature(loader)
@@ -257,6 +280,8 @@ def run_source_execution_stage(
                 report["adapter"] = clean_text(diag.get("adapter"))
             if clean_text(diag.get("studio")):
                 report["studio"] = clean_text(diag.get("studio"))
+            if clean_text(diag.get("providerUrl")):
+                report["providerUrl"] = clean_text(diag.get("providerUrl"))
 
             details = diag.get("details")
             if isinstance(details, list) and details:

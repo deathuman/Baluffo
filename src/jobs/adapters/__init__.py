@@ -46,6 +46,7 @@ def default_source_loaders(
             _sheet_id: str = sheet_id,
             _gid: str = gid,
             _source_name: str = source_name,
+            heartbeat_callback=None,
         ):
             return community.run_google_sheets_source(
                 fetch_text=fetch_text,
@@ -55,6 +56,7 @@ def default_source_loaders(
                 sheet_id=_sheet_id,
                 gid=_gid,
                 diagnostics_name=_source_name,
+                heartbeat_callback=heartbeat_callback,
             )
 
         google_sheet_loaders[source_name] = _loader

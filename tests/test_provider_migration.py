@@ -44,12 +44,14 @@ class _FakeDeps:
         *,
         adapter: str,
         studio: str,
+        provider_url: str = "",
         details: list[dict[str, object]],
         partial_errors: list[str],
     ) -> None:
         self.SOURCE_DIAGNOSTICS[name] = {
             "adapter": adapter,
             "studio": studio,
+            "providerUrl": provider_url,
             "details": details,
             "partialErrors": partial_errors,
         }

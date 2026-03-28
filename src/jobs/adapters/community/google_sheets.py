@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from io import StringIO
 from typing import Any
 from urllib.parse import quote
@@ -32,6 +32,7 @@ GOOGLE_SHEETS_SOURCES = [
     },
 ]
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = 8
+HeartbeatCallback = Callable[[], None]
 
 
 def google_sheet_candidate_urls(sheet_id: str, gid: str) -> list[str]:
@@ -220,7 +221,9 @@ def _resolve_company_name(
     return ""
 
 
-def parse_google_sheets_csv(csv_text: str) -> list[RawJob]:
+def parse_google_sheets_csv(
+    csv_text: str, *, heartbeat_callback: HeartbeatCallback | None = None
+) -> list[RawJob]:
     rows = list(csv.reader(StringIO(csv_text)))
     if len(rows) < 2:
         return []
@@ -289,6 +292,8 @@ def parse_google_sheets_csv(csv_text: str) -> list[RawJob]:
 
     jobs: list[RawJob] = []
     for idx in range(header_idx + 1, len(rows)):
+        if heartbeat_callback and idx % 250 == 0:
+            heartbeat_callback()
         row = rows[idx]
         title = clean_text(row[title_idx] if title_idx < len(row) else "")
         company = _resolve_company_name(row, company_idx, company_candidates)
@@ -320,4 +325,6 @@ def parse_google_sheets_csv(csv_text: str) -> list[RawJob]:
                 "sector": clean_text(row[sector_idx] if 0 <= sector_idx < len(row) else ""),
             }
         )
+    if heartbeat_callback:
+        heartbeat_callback()
     return jobs

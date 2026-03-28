@@ -287,6 +287,7 @@ Backend refactoring is directionally strong and materially narrower than the ear
 - **`data/jobs-unified.json`**: The main aggregated jobs feed. This is the primary data source for the Jobs UI.
 - **`data/jobs-unified.csv`**: A CSV version of the aggregated jobs feed.
 - **`data/jobs-fetch-report.json`**: A report on the last run of the jobs fetcher, including which sources were successful and which failed.
+- **`tools/measurements/pipeline/latest_run_report.py`**: Compact latest discovery/fetch triage summary. Use this before opening the raw report JSON when you only need a quick read of the latest run.
 - **`data/jobs-fetch-tasks.json`**: Fetch task execution state, including `runId`, progress counters, and heartbeat information used for Current Runs projection.
 - **`data/admin-task-state.json`**: Bridge launch-state for child tasks; fetch/discovery entries now carry `runId`, `taskType`, `pid`, `status`, and `startedAt`.
 - **`data/source-registry-active.json`**: A list of the active job sources that the fetcher will use.
@@ -380,7 +381,7 @@ Key stages:
 | Packaged desktop smoke contract | `npm run test:smoke` |
 | Bridge behavior changes | `python -m pytest tests/admin/ -q` |
 | Bridge sync state/service | `python -m pytest tests/admin/test_admin_bridge_ops_sync.py -q` |
-| Jobs pipeline / jobs_fetcher | `python -m pytest tests/test_jobs_fetcher.py -q` |
+| Jobs pipeline / jobs_fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Source discovery | `python -m pytest tests/test_source_discovery.py -q` |
 
 For more targeted runs and fixture list, see `docs/testing.md`.

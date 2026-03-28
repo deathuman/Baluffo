@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "runId": "discovery_06b5079310",
+  "runId": "discovery_beb2939413",
   "mode": "dynamic",
-  "startedAt": "2026-03-27T18:18:08.033227+00:00",
-  "finishedAt": "2026-03-27T18:18:50.459686+00:00",
+  "startedAt": "2026-03-28T14:55:42.290044+00:00",
+  "finishedAt": "2026-03-28T14:56:29.639245+00:00",
   "summary": {
     "phase": "completed",
     "phaseKey": "completed",
@@ -116,48 +116,48 @@
     }
   },
   "runtime": {
-    "totalDurationMs": 42093,
+    "totalDurationMs": 47014,
     "preset": "uncapped",
     "topCapBypassed": true,
     "sheetStaticProbeCapBypassed": true,
     "stageTimingsMs": {
       "curatedSeed": 0,
-      "sheetDirectory": 627,
+      "sheetDirectory": 574,
       "providerPatterns": 0,
-      "seedCareersScan": 24007,
+      "seedCareersScan": 25300,
       "gamesmap": 0,
       "gameprog": 0,
-      "webSearch": 4148,
-      "dedupeFilter": 4,
-      "probe": 12990,
+      "webSearch": 7418,
+      "dedupeFilter": 7,
+      "probe": 13370,
       "queueBalancing": 0
     },
     "stageTop": [
       {
         "stage": "seedCareersScan",
-        "durationMs": 24007
+        "durationMs": 25300
       },
       {
         "stage": "probe",
-        "durationMs": 12990
+        "durationMs": 13370
       },
       {
         "stage": "webSearch",
-        "durationMs": 4148
+        "durationMs": 7418
       },
       {
         "stage": "sheetDirectory",
-        "durationMs": 627
+        "durationMs": 574
       },
       {
         "stage": "dedupeFilter",
-        "durationMs": 4
+        "durationMs": 7
       }
     ],
     "adapterTimings": [
       {
         "adapter": "static",
-        "durationMs": 78938,
+        "durationMs": 85775,
         "generatedCount": 665,
         "failureCount": 32,
         "probedCount": 50,
@@ -166,7 +166,7 @@
       },
       {
         "adapter": "workable",
-        "durationMs": 9239,
+        "durationMs": 10053,
         "generatedCount": 27,
         "failureCount": 0,
         "probedCount": 9,
@@ -175,7 +175,7 @@
       },
       {
         "adapter": "greenhouse",
-        "durationMs": 5889,
+        "durationMs": 6361,
         "generatedCount": 41,
         "failureCount": 6,
         "probedCount": 11,
@@ -184,7 +184,7 @@
       },
       {
         "adapter": "lever",
-        "durationMs": 3748,
+        "durationMs": 5108,
         "generatedCount": 16,
         "failureCount": 2,
         "probedCount": 2,
@@ -193,7 +193,7 @@
       },
       {
         "adapter": "personio",
-        "durationMs": 2400,
+        "durationMs": 2530,
         "generatedCount": 5,
         "failureCount": 0,
         "probedCount": 0,
@@ -202,7 +202,7 @@
       },
       {
         "adapter": "smartrecruiters",
-        "durationMs": 1706,
+        "durationMs": 1837,
         "generatedCount": 8,
         "failureCount": 0,
         "probedCount": 1,
@@ -211,7 +211,7 @@
       },
       {
         "adapter": "seed_careers_page",
-        "durationMs": 1604,
+        "durationMs": 1689,
         "generatedCount": 0,
         "failureCount": 2,
         "probedCount": 0,
@@ -220,7 +220,7 @@
       },
       {
         "adapter": "teamtailor",
-        "durationMs": 930,
+        "durationMs": 1001,
         "generatedCount": 7,
         "failureCount": 1,
         "probedCount": 1,
@@ -229,7 +229,7 @@
       },
       {
         "adapter": "ashby",
-        "durationMs": 805,
+        "durationMs": 847,
         "generatedCount": 8,
         "failureCount": 0,
         "probedCount": 0,
@@ -238,7 +238,7 @@
       },
       {
         "adapter": "recruitee",
-        "durationMs": 5,
+        "durationMs": 4,
         "generatedCount": 7,
         "failureCount": 0,
         "probedCount": 0,
@@ -267,7 +267,7 @@
     "slowestAdapters": [
       {
         "adapter": "static",
-        "durationMs": 78938,
+        "durationMs": 85775,
         "generatedCount": 665,
         "failureCount": 32,
         "probedCount": 50,
@@ -276,7 +276,7 @@
       },
       {
         "adapter": "workable",
-        "durationMs": 9239,
+        "durationMs": 10053,
         "generatedCount": 27,
         "failureCount": 0,
         "probedCount": 9,
@@ -285,7 +285,7 @@
       },
       {
         "adapter": "greenhouse",
-        "durationMs": 5889,
+        "durationMs": 6361,
         "generatedCount": 41,
         "failureCount": 6,
         "probedCount": 11,
@@ -294,7 +294,7 @@
       },
       {
         "adapter": "lever",
-        "durationMs": 3748,
+        "durationMs": 5108,
         "generatedCount": 16,
         "failureCount": 2,
         "probedCount": 2,
@@ -303,7 +303,7 @@
       },
       {
         "adapter": "personio",
-        "durationMs": 2400,
+        "durationMs": 2530,
         "generatedCount": 5,
         "failureCount": 0,
         "probedCount": 0,
@@ -313,7 +313,7 @@
     ],
     "lifecycle": {
       "owner": "discovery_report",
-      "heartbeatAt": "2026-03-27T18:18:50.459708+00:00"
+      "heartbeatAt": "2026-03-28T14:56:29.639269+00:00"
     },
     "urlPatchStats": {
       "loaded": 192,
@@ -366,7 +366,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/high-voltage-software/#jobs",
       "weakSignal": false,
       "id": "workable:account:highvoltagesoftware",
-      "discoveredAt": "2026-03-27T18:18:37.170495+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.940772+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -374,7 +374,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-27T18:18:50.171428+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.321108+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 28,
@@ -419,7 +419,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/funkitron/",
       "weakSignal": false,
       "id": "workable:account:funkitron",
-      "discoveredAt": "2026-03-27T18:18:37.170481+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.940749+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -427,7 +427,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-27T18:18:50.143418+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.276309+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 28,
@@ -472,7 +472,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/forgotten-empires/#jobs",
       "weakSignal": false,
       "id": "workable:account:forgottenempires",
-      "discoveredAt": "2026-03-27T18:18:37.170477+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.940741+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -480,10 +480,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-27T18:18:50.162926+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.328144+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 43,
+      "rankScore": 47,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
@@ -497,9 +497,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -528,7 +528,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/devoted-studios-1/",
       "weakSignal": false,
       "id": "workable:account:devotedstudios1",
-      "discoveredAt": "2026-03-27T18:18:37.170465+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.940722+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -536,10 +536,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-27T18:18:50.184489+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.320727+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 43,
+      "rankScore": 47,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
@@ -553,9 +553,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -584,7 +584,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/arkadium-1/",
       "weakSignal": false,
       "id": "workable:account:arkadium1",
-      "discoveredAt": "2026-03-27T18:18:37.170447+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.940691+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -592,10 +592,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-27T18:18:50.171830+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.297203+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 43,
+      "rankScore": 47,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
@@ -609,9 +609,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -640,7 +640,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/team-17-digital/#jobs",
       "weakSignal": true,
       "id": "workable:account:team17digital",
-      "discoveredAt": "2026-03-27T18:18:37.170615+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.940972+00:00",
       "score": 22,
       "reasons": [
         "evidence_signal"
@@ -648,10 +648,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-27T18:18:50.171636+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.337035+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 42,
+      "rankScore": 46,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
@@ -665,9 +665,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -696,7 +696,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/spectarium/",
       "weakSignal": true,
       "id": "workable:account:spectarium",
-      "discoveredAt": "2026-03-27T18:18:37.170611+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.940964+00:00",
       "score": 20,
       "reasons": [
         "evidence_signal"
@@ -704,10 +704,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-27T18:18:50.148421+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.296976+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 28,
+      "rankScore": 32,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
@@ -721,9 +721,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -752,7 +752,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/snowed-in-studios-3/?lng=en",
       "weakSignal": true,
       "id": "workable:account:snowedinstudios3",
-      "discoveredAt": "2026-03-27T18:18:37.170608+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.940960+00:00",
       "score": 20,
       "reasons": [
         "evidence_signal"
@@ -760,10 +760,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-27T18:18:50.182418+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.337628+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 40,
+      "rankScore": 44,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
@@ -777,9 +777,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -808,7 +808,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/astrid-entertainment/",
       "weakSignal": true,
       "id": "workable:account:astridentertainment",
-      "discoveredAt": "2026-03-27T18:18:37.170596+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.940940+00:00",
       "score": 20,
       "reasons": [
         "evidence_signal"
@@ -816,10 +816,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-27T18:18:50.174007+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.337385+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 40,
+      "rankScore": 44,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
@@ -833,9 +833,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -866,7 +866,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://lemonskystudios.bamboohr.com/careers",
       "id": "static:listing_url:https://lemonskystudios.bamboohr.com/careers",
-      "discoveredAt": "2026-03-27T18:18:37.171263+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.942055+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -874,7 +874,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.184743+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.337907+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 14,
@@ -919,7 +919,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://tencent.wd1.myworkdayjobs.com/Lightspeed",
       "id": "static:listing_url:https://tencent.wd1.myworkdayjobs.com/lightspeed",
-      "discoveredAt": "2026-03-27T18:18:37.171270+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.942069+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -927,7 +927,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.158561+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.342998+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 14,
@@ -972,7 +972,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://intel.wd1.myworkdayjobs.com/en-US/External?q=game",
       "id": "static:listing_url:https://intel.wd1.myworkdayjobs.com/en-us/external?q=game",
-      "discoveredAt": "2026-03-27T18:18:37.171187+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.941923+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -980,7 +980,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.154092+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.290590+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 14,
@@ -1025,7 +1025,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://flyingbark.bamboohr.com/careers",
       "id": "static:listing_url:https://flyingbark.bamboohr.com/careers",
-      "discoveredAt": "2026-03-27T18:18:37.171010+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.941611+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1033,7 +1033,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.177093+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.321423+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 14,
@@ -1078,7 +1078,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://expressiongames.bamboohr.com/careers",
       "id": "static:listing_url:https://expressiongames.bamboohr.com/careers",
-      "discoveredAt": "2026-03-27T18:18:37.170983+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.941565+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1086,10 +1086,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.148677+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.287431+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 17,
+      "rankScore": 21,
       "rankReasons": [
         "evidence_rank_bonus",
         "existing_registry_match",
@@ -1101,9 +1101,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -1134,7 +1134,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://eleventhhourgames.bamboohr.com/careers",
       "id": "static:listing_url:https://eleventhhourgames.bamboohr.com/careers",
-      "discoveredAt": "2026-03-27T18:18:37.170959+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.941524+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1142,10 +1142,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.179743+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.331387+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 17,
+      "rankScore": 21,
       "rankReasons": [
         "evidence_rank_bonus",
         "existing_registry_match",
@@ -1157,9 +1157,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -1190,7 +1190,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://dinopoloclub.bamboohr.com/careers",
       "id": "static:listing_url:https://dinopoloclub.bamboohr.com/careers",
-      "discoveredAt": "2026-03-27T18:18:37.170929+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.941474+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1198,10 +1198,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.165877+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.328522+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 17,
+      "rankScore": 21,
       "rankReasons": [
         "evidence_rank_bonus",
         "existing_registry_match",
@@ -1213,9 +1213,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -1246,7 +1246,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://catface.bamboohr.com/careers",
       "id": "static:listing_url:https://catface.bamboohr.com/careers",
-      "discoveredAt": "2026-03-27T18:18:37.170811+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.941310+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1254,10 +1254,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.163194+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.293944+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 17,
+      "rankScore": 21,
       "rankReasons": [
         "evidence_rank_bonus",
         "existing_registry_match",
@@ -1269,9 +1269,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -1302,7 +1302,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://blazinggriffin.bamboohr.com/careers",
       "id": "static:listing_url:https://blazinggriffin.bamboohr.com/careers",
-      "discoveredAt": "2026-03-27T18:18:37.170782+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.941259+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1310,10 +1310,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.151370+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.280605+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 17,
+      "rankScore": 21,
       "rankReasons": [
         "evidence_rank_bonus",
         "existing_registry_match",
@@ -1325,9 +1325,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -1358,7 +1358,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://beamdog.bamboohr.com/careers",
       "id": "static:listing_url:https://beamdog.bamboohr.com/careers",
-      "discoveredAt": "2026-03-27T18:18:37.170747+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.941198+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1366,10 +1366,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.174340+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.316501+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 17,
+      "rankScore": 21,
       "rankReasons": [
         "evidence_rank_bonus",
         "existing_registry_match",
@@ -1381,9 +1381,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -1414,7 +1414,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://warnerbros.wd5.myworkdayjobs.com/en-US/global?q=Avalanche",
       "id": "static:listing_url:https://warnerbros.wd5.myworkdayjobs.com/en-us/global?q=avalanche",
-      "discoveredAt": "2026-03-27T18:18:37.170724+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.941158+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1422,10 +1422,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.145311+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.276662+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 17,
+      "rankScore": 21,
       "rankReasons": [
         "evidence_rank_bonus",
         "existing_registry_match",
@@ -1437,9 +1437,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -1470,7 +1470,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://aristocrat.wd3.myworkdayjobs.com/AristocratExternalCareersSite",
       "id": "static:listing_url:https://aristocrat.wd3.myworkdayjobs.com/aristocratexternalcareerssite",
-      "discoveredAt": "2026-03-27T18:18:37.170704+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.941124+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1478,10 +1478,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.138349+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.269647+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 17,
+      "rankScore": 21,
       "rankReasons": [
         "evidence_rank_bonus",
         "existing_registry_match",
@@ -1493,9 +1493,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -1526,7 +1526,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://activategames.bamboohr.com/careers",
       "id": "static:listing_url:https://activategames.bamboohr.com/careers",
-      "discoveredAt": "2026-03-27T18:18:37.170654+00:00",
+      "discoveredAt": "2026-03-28T14:56:15.941039+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1534,10 +1534,10 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-27T18:18:50.168748+00:00",
+      "lastProbedAt": "2026-03-28T14:56:29.312659+00:00",
       "deferred": true,
       "candidateState": "validated",
-      "rankScore": 17,
+      "rankScore": 21,
       "rankReasons": [
         "evidence_rank_bonus",
         "existing_registry_match",
@@ -1549,9 +1549,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 8,
+      "deferCount": 12,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-27T18:18:50.443449+00:00",
+      "lastDeferredAt": "2026-03-28T14:56:29.620373+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -7338,28 +7338,19 @@
       "dropReason": "probe"
     },
     {
-      "name": "Crate Entertainment (Sheet)",
-      "adapter": "static",
-      "domain": "careers.crateentertainment.com",
-      "error": "https://careers.crateentertainment.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Black Soup (Sheet)",
-      "adapter": "static",
-      "domain": "careers.blacksoup.gg",
-      "error": "https://careers.blacksoup.gg: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
       "name": "Chillchat (Sheet)",
       "adapter": "static",
       "domain": "careers.chillchat.com",
       "error": "https://careers.chillchat.com: [Errno 11001] getaddrinfo failed",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Crate Entertainment (Sheet)",
+      "adapter": "static",
+      "domain": "careers.crateentertainment.com",
+      "error": "https://careers.crateentertainment.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7374,10 +7365,10 @@
       "dropReason": "probe"
     },
     {
-      "name": "Datcroft Games (Sheet)",
+      "name": "Black Soup (Sheet)",
       "adapter": "static",
-      "domain": "datcroft.com",
-      "error": "https://datcroft.com/careers/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1032)",
+      "domain": "careers.blacksoup.gg",
+      "error": "https://careers.blacksoup.gg: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7419,15 +7410,6 @@
       "dropReason": "probe"
     },
     {
-      "name": "GameChanger (Sheet)",
-      "adapter": "static",
-      "domain": "gc.com",
-      "error": "https://gc.com/careers#Job-Openings: Client error '487 ' for url 'https://gc.com/careers#Job-Openings'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/487",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
       "name": "Companion Group (Sheet)",
       "adapter": "static",
       "domain": "careers.companiongroup.io",
@@ -7437,13 +7419,22 @@
       "dropReason": "probe"
     },
     {
-      "name": "Ubisoft (SmartRecruiters)",
-      "adapter": "smartrecruiters",
-      "domain": "api.smartrecruiters.com",
-      "error": "candidate passed probe but evidence 24 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
+      "name": "Datcroft Games (Sheet)",
+      "adapter": "static",
+      "domain": "datcroft.com",
+      "error": "https://datcroft.com/careers/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1032)",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "GameChanger (Sheet)",
+      "adapter": "static",
+      "domain": "gc.com",
+      "error": "https://gc.com/careers#Job-Openings: Client error '487 ' for url 'https://gc.com/careers#Job-Openings'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/487",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
     },
     {
       "name": "Intrepid Studios, Inc (Sheet)",
@@ -7464,6 +7455,33 @@
       "dropReason": "probe"
     },
     {
+      "name": "Remedy Entertainment (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "www.remedygames.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
+      "name": "Ubisoft (SmartRecruiters)",
+      "adapter": "smartrecruiters",
+      "domain": "api.smartrecruiters.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
+      "name": "Remedy Entertainment (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "www.remedygames.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
       "name": "Jam City (Sheet)",
       "adapter": "static",
       "domain": "www.jamcity.com",
@@ -7473,28 +7491,19 @@
       "dropReason": "probe"
     },
     {
-      "name": "Remedy Entertainment (Greenhouse)",
+      "name": "Larian Studios (Greenhouse)",
       "adapter": "greenhouse",
-      "domain": "www.remedygames.com",
+      "domain": "larian.com",
       "error": "candidate passed probe but evidence 24 is below queue threshold",
       "stage": "queue_filtered",
       "dropStage": "queue_filtered",
       "dropReason": "queue_threshold"
     },
     {
-      "name": "Remedy Entertainment (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "www.remedygames.com",
-      "error": "candidate passed probe but evidence 24 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
-    },
-    {
-      "name": "Digital Happiness (Sheet)",
+      "name": "MagMic (Sheet)",
       "adapter": "static",
-      "domain": "www.digitalhappiness.net",
-      "error": "https://www.digitalhappiness.net/career/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
+      "domain": "magmic.com",
+      "error": "https://magmic.com/jobs/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7507,15 +7516,6 @@
       "stage": "probe_miss",
       "dropStage": "probe_failed",
       "dropReason": "probe_miss"
-    },
-    {
-      "name": "VR Factory (Sheet)",
-      "adapter": "static",
-      "domain": "www.vrfactory.pro",
-      "error": "https://www.vrfactory.pro/careers: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'www.vrfactory.pro'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
     },
     {
       "name": "Bandai Namco Entertainment (Greenhouse)",
@@ -7536,10 +7536,28 @@
       "dropReason": "probe"
     },
     {
-      "name": "MagMic (Sheet)",
+      "name": "IO Interactive (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.boards.greenhouse.io",
+      "error": "https://boards.greenhouse.io/io-interactive: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/io-interactive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
+    },
+    {
+      "name": "IO Interactive (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.boards.greenhouse.io",
+      "error": "https://boards.greenhouse.io/iointeractive: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/iointeractive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
+      "dropStage": "probe_failed",
+      "dropReason": "probe_miss"
+    },
+    {
+      "name": "Mojiworks (Sheet)",
       "adapter": "static",
-      "domain": "magmic.com",
-      "error": "https://magmic.com/jobs/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
+      "domain": "careers.mojiworks.com",
+      "error": "https://careers.mojiworks.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7554,47 +7572,10 @@
       "dropReason": "probe"
     },
     {
-      "name": "To The Sky (Sheet)",
+      "name": "Meta Quest (Sheet)",
       "adapter": "static",
-      "domain": "careers.tothesky.se",
-      "error": "https://careers.tothesky.se: [Errno 11001] getaddrinfo failed",
-      "stage": "probe_miss",
-      "dropStage": "probe_failed",
-      "dropReason": "probe_miss",
-      "urlPatchRetried": true
-    },
-    {
-      "name": "Mojiworks (Sheet)",
-      "adapter": "static",
-      "domain": "careers.mojiworks.com",
-      "error": "https://careers.mojiworks.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "IO Interactive (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "careers.boards.greenhouse.io",
-      "error": "https://boards.greenhouse.io/iointeractive: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/iointeractive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe_miss",
-      "dropStage": "probe_failed",
-      "dropReason": "probe_miss"
-    },
-    {
-      "name": "Lava Labs (Sheet)",
-      "adapter": "static",
-      "domain": "www.lavalabs.gg",
-      "error": "candidate passed probe but evidence 18 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
-    },
-    {
-      "name": "Farcana (Sheet)",
-      "adapter": "static",
-      "domain": "careers.farcana.com",
-      "error": "https://careers.farcana.com: [Errno 11001] getaddrinfo failed",
+      "domain": "www.metacareers.com",
+      "error": "https://www.metacareers.com/jobs?q=game: Client error '400 Bad Request' for url 'https://www.metacareers.com/jobs?q=game'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7609,22 +7590,13 @@
       "dropReason": "probe"
     },
     {
-      "name": "Giant Enemy Crab (Sheet)",
+      "name": "VR Factory (Sheet)",
       "adapter": "static",
-      "domain": "careers.giantenemycrab.net",
-      "error": "https://careers.giantenemycrab.net: [Errno 11001] getaddrinfo failed",
+      "domain": "www.vrfactory.pro",
+      "error": "https://www.vrfactory.pro/careers: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'www.vrfactory.pro'. (_ssl.c:1032)",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
-    },
-    {
-      "name": "Larian Studios (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "larian.com",
-      "error": "candidate passed probe but evidence 24 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
     },
     {
       "name": "PlayStation Global (Greenhouse)",
@@ -7636,28 +7608,56 @@
       "dropReason": "queue_threshold"
     },
     {
-      "name": "IO Interactive (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "careers.boards.greenhouse.io",
-      "error": "https://boards.greenhouse.io/io-interactive: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/io-interactive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "name": "Farcana (Sheet)",
+      "adapter": "static",
+      "domain": "careers.farcana.com",
+      "error": "https://careers.farcana.com: [Errno 11001] getaddrinfo failed",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Giant Enemy Crab (Sheet)",
+      "adapter": "static",
+      "domain": "careers.giantenemycrab.net",
+      "error": "https://careers.giantenemycrab.net: [Errno 11001] getaddrinfo failed",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Lava Labs (Sheet)",
+      "adapter": "static",
+      "domain": "www.lavalabs.gg",
+      "error": "candidate passed probe but evidence 18 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
+      "name": "To The Sky (Sheet)",
+      "adapter": "static",
+      "domain": "careers.tothesky.se",
+      "error": "https://careers.tothesky.se: [Errno 11001] getaddrinfo failed",
       "stage": "probe_miss",
       "dropStage": "probe_failed",
-      "dropReason": "probe_miss"
+      "dropReason": "probe_miss",
+      "urlPatchRetried": true
+    },
+    {
+      "name": "PlayStation Global (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.playstation.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
     },
     {
       "name": "Thunderful Games (Sheet)",
       "adapter": "static",
       "domain": "careers.career.thunderfulgames.com",
       "error": "https://careers.career.thunderfulgames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Meta Quest (Sheet)",
-      "adapter": "static",
-      "domain": "www.metacareers.com",
-      "error": "https://www.metacareers.com/jobs?q=game: Client error '400 Bad Request' for url 'https://www.metacareers.com/jobs?q=game'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -7672,27 +7672,9 @@
       "dropReason": "probe"
     },
     {
-      "name": "PlayStation Global (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "careers.playstation.com",
-      "error": "candidate passed probe but evidence 24 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
-    },
-    {
       "name": "The Game Band (Sheet)",
       "adapter": "static",
       "domain": "thegameband.notion.site",
-      "error": "candidate passed probe but evidence 12 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
-    },
-    {
-      "name": "Made on Earth Games (Sheet)",
-      "adapter": "static",
-      "domain": "madeonearthgames.notion.site",
       "error": "candidate passed probe but evidence 12 is below queue threshold",
       "stage": "queue_filtered",
       "dropStage": "queue_filtered",
@@ -7708,6 +7690,15 @@
       "dropReason": "probe_miss"
     },
     {
+      "name": "Ironwood Studios (Sheet)",
+      "adapter": "static",
+      "domain": "www.ironwoodstudios.com",
+      "error": "candidate passed probe but evidence 12 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
       "name": "Stoic (Lever)",
       "adapter": "lever",
       "domain": "careers.jobs.lever.co",
@@ -7717,9 +7708,18 @@
       "dropReason": "probe_miss"
     },
     {
-      "name": "Ironwood Studios (Sheet)",
+      "name": "Digital Happiness (Sheet)",
       "adapter": "static",
-      "domain": "www.ironwoodstudios.com",
+      "domain": "www.digitalhappiness.net",
+      "error": "https://www.digitalhappiness.net/career/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Made on Earth Games (Sheet)",
+      "adapter": "static",
+      "domain": "madeonearthgames.notion.site",
       "error": "candidate passed probe but evidence 12 is below queue threshold",
       "stage": "queue_filtered",
       "dropStage": "queue_filtered",

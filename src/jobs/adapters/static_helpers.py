@@ -15,7 +15,8 @@ from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, strip_ht
 from src.jobs.common import config as common_config
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.taxonomy import (
-    ClassificationContext,
+    assess_zero_extract,
+    classification_context_from_source_detail,
     classify_zero_kept,
     map_error_to_failure_bucket,
 )
@@ -84,6 +85,8 @@ def build_static_entry_report(
         "fetchedCount": len(pages),
         "keptCount": 0,
         "error": "",
+        "browserEscalationEligible": False,
+        "browserEscalationEnabled": False,
         "loss": {
             "staticNonJobUrlRejected": 0,
             "staticDuplicateLinkRejected": 0,
@@ -105,14 +108,41 @@ def build_static_entry_report(
 
 def update_source_detail_taxonomy(source_detail: dict[str, Any]) -> dict[str, Any]:
     """Update failureBucket and zeroKeptClassification based on current state."""
-    context = ClassificationContext(
-        status=source_detail.get("status", ""),
-        error=source_detail.get("error", ""),
-        classification=source_detail.get("classification", ""),
-    )
-    source_detail["failureBucket"] = map_error_to_failure_bucket(context).value
-    if int(source_detail.get("keptCount", 0)) == 0 and source_detail.get("status") == "ok":
+    context = classification_context_from_source_detail(source_detail)
+    if int(source_detail.get("keptCount", 0)) == 0 and source_detail.get("status") != "excluded":
+        assessment = assess_zero_extract(context)
         source_detail["zeroKeptClassification"] = classify_zero_kept(context).value
+        browser_eligible = False
+        browser_reason = ""
+        if assessment.diagnosis.value in {"js_required", "anti_bot_or_challenge"}:
+            browser_eligible = True
+            browser_reason = assessment.diagnosis.value
+        elif assessment.diagnosis.value == "needs_review" and bool(
+            source_detail.get("browserFallbackRecommended")
+        ):
+            browser_eligible = True
+            browser_reason = "needs_review_high_value"
+        source_detail["browserEscalationEligible"] = browser_eligible
+        if browser_eligible:
+            source_detail["browserEscalationEligibilityReason"] = browser_reason
+        should_migrate = (
+            norm_text(source_detail.get("status")) == "ok"
+            or "no jobs extracted" in norm_text(source_detail.get("error"))
+            or norm_text(source_detail.get("classification"))
+            in {
+                "ok_no_jobs",
+                "fetch_ok_extract_zero",
+                "parser_stale",
+                "needs_review",
+                "empty_confirmed",
+            }
+            or assessment.diagnosis.value != "needs_review"
+        )
+        if should_migrate:
+            source_detail["classification"] = assessment.diagnosis.value
+            source_detail["browserFallbackRecommended"] = assessment.browser_fallback_recommended
+            context = classification_context_from_source_detail(source_detail)
+    source_detail["failureBucket"] = map_error_to_failure_bucket(context).value
     return source_detail
 
 

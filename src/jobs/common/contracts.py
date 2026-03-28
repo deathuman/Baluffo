@@ -243,9 +243,19 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     failure_bucket = clean_text(src.get("failureBucket"))
     if failure_bucket:
         normalized["failureBucket"] = failure_bucket
+    classification = clean_text(src.get("classification"))
+    if classification:
+        normalized["classification"] = classification
     zk_classification = clean_text(src.get("zeroKeptClassification"))
     if zk_classification:
         normalized["zeroKeptClassification"] = zk_classification
+    if "browserEscalationEligible" in src:
+        normalized["browserEscalationEligible"] = bool(src.get("browserEscalationEligible"))
+    browser_reason = clean_text(src.get("browserEscalationEligibilityReason"))
+    if browser_reason:
+        normalized["browserEscalationEligibilityReason"] = browser_reason
+    if "browserEscalationEnabled" in src:
+        normalized["browserEscalationEnabled"] = bool(src.get("browserEscalationEnabled"))
     cache_decision = clean_text(src.get("cacheDecision"))
     if cache_decision:
         normalized["cacheDecision"] = cache_decision
@@ -261,6 +271,25 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     http_last_modified = clean_text(src.get("httpLastModified"))
     if http_last_modified:
         normalized["httpLastModified"] = http_last_modified
+    if norm_text(src.get("adapter")) == "static" and failure_bucket == "site_changed":
+        listing_url = clean_text(src.get("listingUrl"))
+        if listing_url:
+            normalized["listingUrl"] = listing_url
+        pages = src.get("pages")
+        if isinstance(pages, list):
+            clean_pages = [clean_text(page) for page in pages if clean_text(page)]
+            if clean_pages:
+                normalized["pages"] = clean_pages
+        source_id = clean_text(src.get("sourceId"))
+        if source_id:
+            normalized["sourceId"] = source_id
+    if (
+        clean_text(src.get("name")) in {"greenhouse_boards", "workable_sources"}
+        and failure_bucket == "site_changed"
+    ):
+        provider_url = clean_text(src.get("providerUrl"))
+        if provider_url:
+            normalized["providerUrl"] = provider_url
     listing_fingerprint = clean_text(src.get("listingFingerprint"))
     if listing_fingerprint:
         normalized["listingFingerprint"] = listing_fingerprint
@@ -410,6 +439,17 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
                     "classification": clean_text(item.get("classification")) or "",
                     "browserFallbackRecommended": bool(item.get("browserFallbackRecommended")),
                 }
+                if "browserEscalationEligible" in item:
+                    clean_item["browserEscalationEligible"] = bool(
+                        item.get("browserEscalationEligible")
+                    )
+                item_browser_reason = clean_text(item.get("browserEscalationEligibilityReason"))
+                if item_browser_reason:
+                    clean_item["browserEscalationEligibilityReason"] = item_browser_reason
+                if "browserEscalationEnabled" in item:
+                    clean_item["browserEscalationEnabled"] = bool(
+                        item.get("browserEscalationEnabled")
+                    )
                 item_bucket = clean_text(item.get("failureBucket"))
                 if item_bucket:
                     clean_item["failureBucket"] = item_bucket
@@ -764,6 +804,7 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "report": clean_text(outputs.get("report")),
             "lifecycleState": clean_text(outputs.get("lifecycleState")),
             "browserFallbackQueue": clean_text(outputs.get("browserFallbackQueue")),
+            "parserRegressionQueue": clean_text(outputs.get("parserRegressionQueue")),
             "changed": {
                 "json": bool(changed.get("json")),
                 "csv": bool(changed.get("csv")),
@@ -771,6 +812,3 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
             },
         },
     }
-
-
-# Placeholders to be filled by follow-up patch once we transplant implementations.

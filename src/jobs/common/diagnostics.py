@@ -13,12 +13,14 @@ def set_source_diagnostics(
     *,
     adapter: str,
     studio: str,
+    provider_url: str = "",
     details: list[dict[str, Any]] | None = None,
     partial_errors: list[str] | None = None,
 ) -> None:
     SOURCE_DIAGNOSTICS[source_name] = {
         "adapter": clean_text(adapter) or "unknown",
         "studio": clean_text(studio) or "multiple",
+        "providerUrl": clean_text(provider_url),
         "details": details or [],
         "partialErrors": partial_errors or [],
     }

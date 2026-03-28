@@ -114,6 +114,12 @@ Start in:
 - `src/jobs/pipeline.py`
 - then nearby modules under `src/jobs/`
 - use [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) or [`scraping-pipeline.md`](scraping-pipeline.md) when source extraction is involved
+- for test work, choose the focused `tests/test_jobs_fetcher_<area>.py` file that matches the subsystem (`google_sheets`, `parsing`, `providers`, `static`, `pipeline`, `quality`); keep `tests/test_jobs_fetcher.py` as the thin integration shim
+
+### Latest discovery/fetch triage
+Start in:
+- `tools/measurements/pipeline/latest_run_report.py`
+- then `src/pipeline_audit.py` if the summary contract itself needs to change
 
 ### Schema/contract changes
 Start in:
@@ -180,6 +186,7 @@ See [`testing.md`](testing.md) and the verification matrix in [`architecture-ai-
 |------|---------|
 | Start Baluffo Launcher | `npm run dev:bridge` or VS Code task `Launch Baluffo` |
 | Run Jobs Pipeline | `npm run dev:pipeline` |
+| Summarize latest discovery/fetch run | `python tools/measurements/pipeline/latest_run_report.py` |
 | Full build | `npm run build` |
 | Full verification | `npm run verify` |
 | Python tests | `npm run test:py` |

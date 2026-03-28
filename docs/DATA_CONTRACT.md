@@ -273,3 +273,24 @@ This block is additive and exists so the jobs fetch report, bridge ops health, a
 ### Bridge visibility
 
 The bridge ops health payload mirrors a compact `kpis.socialExperiment` view from the fetch report so operators can review the experiment without reading the raw report file.
+
+---
+
+## 10. Fetch regression reconciliation contract
+
+The fetch report may include a top-level `healthSummary` reconciliation pair for the parser-regression lane.
+
+### Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `siteChangedDiagnosedCount` | `number` | Number of top-level source rows diagnosed as `site_changed`. |
+| `parserRegressionQueueCount` | `number` | Number of rows written to `jobs-parser-regression-queue.json`. |
+
+### Queue artifact
+
+- The canonical parser-regression artifact path is exposed at `outputs.parserRegressionQueue`.
+- `listingChanged` remains the source/report field; the queue artifact projects it as `listingFingerprintChanged` for review readability.
+- For normalized fetch-report rows, static sources diagnosed as `site_changed` preserve `listingUrl`, `pages`, and `sourceId` so the regression lane can recover `oldUrl` even when detail payloads are empty.
+- For normalized fetch-report rows, aggregate provider sources diagnosed as `site_changed` preserve `providerUrl` so `greenhouse_boards` and `workable_sources` can still enter the regression lane when no listing URL surface exists.
+- Admission to the lane is diagnosis-driven from the top-level source row. URL/status/fingerprint fields are enrichment and ordering data only.

@@ -102,6 +102,7 @@ CanonicalDeduplicator = dedup_pkg.CanonicalDeduplicator
 format_source_error = reporting_pkg.format_source_error
 build_pipeline_summary = reporting_pkg.build_pipeline_summary
 build_browser_fallback_queue = reporting_pkg.build_browser_fallback_queue
+build_parser_regression_queue = reporting_pkg.build_parser_regression_queue
 normalize_runtime_payload = reporting_pkg.normalize_runtime_payload
 normalize_fetch_report_payload = reporting_pkg.normalize_fetch_report_payload
 source_rows_fingerprint = state_pkg.source_rows_fingerprint
@@ -788,6 +789,15 @@ def run_pipeline(
         paths.browser_fallback_queue_path,
         json.dumps(browser_fallback_queue_rows, indent=2, ensure_ascii=False),
     )
+    parser_regression_queue_rows = build_parser_regression_queue(
+        source_reports,
+        generated_at=lifecycle_finished_at,
+        resolve_redirect_url=getattr(redirect_resolver, "resolve", None),
+    )
+    write_text_if_changed(
+        paths.parser_regression_queue_path,
+        json.dumps(parser_regression_queue_rows, indent=2, ensure_ascii=False),
+    )
     social_review_path = paths.output_dir / reporting_pkg.SOCIAL_EXPERIMENT_REVIEW_FILENAME
     social_review_candidates = reporting_pkg.build_social_experiment_review_sample(
         deduped_payload_rows,
@@ -911,6 +921,7 @@ def run_pipeline(
                 "report": str(paths.report_path),
                 "lifecycleState": str(paths.lifecycle_state_path),
                 "browserFallbackQueue": str(paths.browser_fallback_queue_path),
+                "parserRegressionQueue": str(paths.parser_regression_queue_path),
                 "changed": {"json": wrote_json, "csv": wrote_csv, "lightJson": wrote_light_json},
             },
         }
@@ -930,6 +941,13 @@ def run_pipeline(
         "topZeroKeptDomains": health_module.get_top_zero_kept_sources(source_state_rows, limit=10),
         "topSlowDomains": health_module.get_top_slow_sources(source_state_rows, limit=10),
         "quarantinedSources": health_module.get_quarantined_sources(source_state_rows),
+        "siteChangedDiagnosedCount": reporting_pkg.count_site_changed_diagnosed_sources(
+            source_reports
+        ),
+        "siteChangedMissingOldUrlCount": reporting_pkg.count_site_changed_missing_old_url_sources(
+            source_reports
+        ),
+        "parserRegressionQueueCount": len(parser_regression_queue_rows),
     }
     import sys
 
