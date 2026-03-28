@@ -1318,6 +1318,45 @@ def test_run_social_reddit_source_keeps_successful_rss_fallback_out_of_error_sta
     assert details[0]["error"] == ""
 
 
+def test_run_social_reddit_source_forwards_heartbeat_to_plugin_run() -> None:
+    cfg = {
+        "enabled": True,
+        "minConfidence": 20,
+        "rejectForHirePosts": True,
+        "reddit": {
+            "enabled": True,
+            "subreddits": ["gamedev"],
+            "maxPostsPerSubreddit": 5,
+            "rssFallback": False,
+            "htmlFallback": False,
+            "rateLimitDelay": 0,
+        },
+    }
+    heartbeat_calls: list[str] = []
+
+    class _Plugin:
+        def run(self, **kwargs):  # noqa: ANN001, ANN202
+            heartbeat = kwargs.get("heartbeat_callback")
+            assert callable(heartbeat)
+            heartbeat()
+            return []
+
+    with mock.patch("src.jobs.adapters.social.ensure_social_plugins"), mock.patch(
+        "src.jobs.adapters.social.default_registry.select", return_value=(_Plugin(), None)
+    ):
+        rows = jf.run_social_reddit_source(
+            fetch_text=lambda url, _: "{}",
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            social_config=cfg,
+            heartbeat_callback=lambda: heartbeat_calls.append("tick"),
+        )
+
+    assert rows == []
+    assert len(heartbeat_calls) >= 2
+
+
 def test_run_social_reddit_source_keeps_successful_old_reddit_html_fallback_out_of_error_state() -> (
     None
 ):

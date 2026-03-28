@@ -50,7 +50,7 @@ class TaskHistoryManager:
             if not row.get("type"):
                 continue
             cleaned.append(dict(row))
-        cleaned.sort(key=lambda item: str(item.get("finishedAt") or item.get("startedAt") or ""))
+        cleaned.sort(key=lambda item: str(item.get("startedAt") or item.get("finishedAt") or ""))
         return cleaned[-self._max_rows :]
 
     def save_run_history(self, rows: list[dict[str, Any]]) -> None:

@@ -43,6 +43,7 @@ def run_social_reddit_source(
     social_config: dict[str, Any],
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
+    heartbeat_callback: Callable[[], None] | None = None,
 ) -> list[RawJob]:
     cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
@@ -65,6 +66,10 @@ def run_social_reddit_source(
     details: list[dict[str, Any]] = []
     errors: list[str] = []
     rows: list[RawJob] = []
+
+    def tick() -> None:
+        if heartbeat_callback:
+            heartbeat_callback()
 
     for sub in subs:
         entry = {
@@ -93,16 +98,19 @@ def run_social_reddit_source(
             details.append(entry)
             continue
         try:
+            tick()
             sub_rows = plugin.run(
                 fetch_text=fetch_text,
                 timeout_s=timeout_s,
                 retries=retries,
                 backoff_s=backoff_s,
                 subreddits=[sub],
+                heartbeat_callback=heartbeat_callback,
             )
             entry["fetchedCount"] = len(sub_rows)
             entry["keptCount"] = len(sub_rows)
             rows.extend(sub_rows)
+            tick()
         except Exception as exc:  # noqa: BLE001
             entry["status"] = "error"
             entry["error"] = str(exc)

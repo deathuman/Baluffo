@@ -1,4 +1,6 @@
 # ruff: noqa: F403,F405
+from collections import Counter
+
 from tests.jobs_fetcher_helpers import *
 
 patch_jobs_fetcher_aliases()
@@ -50,6 +52,23 @@ def test_normalize_source_report_row_preserves_static_zero_extract_classificatio
     )
     assert str(row.get("classification") or "") == "needs_review"
     assert str(row.get("failureBucket") or "") == "needs_review"
+
+
+def test_normalize_source_report_row_drops_n_a_label_residues() -> None:
+    row = jf.normalize_source_report_row(
+        {
+            "name": "static_source::n_a_residue",
+            "status": "error",
+            "adapter": "static",
+            "failureBucket": "n/a",
+            "classification": "na",
+            "zeroKeptClassification": "none",
+            "error": "no jobs extracted from source pages",
+        }
+    )
+    assert "failureBucket" not in row
+    assert "classification" not in row
+    assert "zeroKeptClassification" not in row
 
 
 def test_run_static_studio_pages_source_with_fixture() -> None:
@@ -621,6 +640,74 @@ def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
         jf.STUDIO_SOURCE_REGISTRY = prev
 
 
+
+def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> None:
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    source = {
+        "name": "Tail Test Studio",
+        "studio": "Tail Test Studio",
+        "adapter": "static",
+        "company": "Tail Test Studio",
+        "pages": ["https://example.net/careers"],
+        "enabledByDefault": True,
+    }
+    jf.STUDIO_SOURCE_REGISTRY = [source]
+    listing_html = "<html><body>" + "".join(
+        f'<article><h2>Role {i}</h2><a href="/job/{i}">More Details</a></article>'
+        for i in range(20)
+    ) + "</body></html>"
+    detail_html = "<html><body><h1>Role</h1></body></html>"
+    detail_calls = {"count": 0}
+    tail_state = {
+        "Tail Test Studio": {
+            "lastDetailPagesVisited": 42,
+            "lastKeptCount": 1,
+            "lastDurationMs": 145137,
+            "lastDetailYieldPct": 2,
+            "lastStageTimingsMs": {"detailFetch": 217029},
+        }
+    }
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url == "https://example.net/careers":
+            return listing_html
+        if url.startswith("https://example.net/job/"):
+            detail_calls["count"] += 1
+            time.sleep(0.01)
+            return detail_html
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    def run_once(source_state_rows: dict[str, dict[str, object]]) -> tuple[float, int, int]:
+        jf.SOURCE_DIAGNOSTICS.clear()
+        start = time.perf_counter()
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            sources=[source],
+            diagnostics_name="Tail Test Studio",
+            source_state_rows=source_state_rows,
+        )
+        elapsed = time.perf_counter() - start
+        diag = (jf.SOURCE_DIAGNOSTICS.get("Tail Test Studio") or {}).get("details") or []
+        stats = ((diag[0] if diag else {}).get("stats") or {})
+        return elapsed, int(stats.get("detail_pages_visited") or 0), len(rows)
+
+    try:
+        control_elapsed, control_detail_pages, control_rows = run_once({})
+        tail_elapsed, tail_detail_pages, tail_rows = run_once(tail_state)
+
+        assert control_rows >= 1
+        assert tail_rows >= 1
+        assert control_detail_pages >= 10
+        assert tail_detail_pages <= 6
+        assert tail_elapsed < control_elapsed
+        assert detail_calls["count"] >= control_detail_pages
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+
 def test_run_scrapy_static_source_handles_malformed_json() -> None:
     prev = list(jf.STUDIO_SOURCE_REGISTRY)
     jf.STUDIO_SOURCE_REGISTRY = [
@@ -1091,6 +1178,157 @@ def test_site_changed_provider_url_reconciliation_counts_align() -> None:
     )
 
 
+def test_unknown_static_breakdown_groups_by_shape_and_orders_views() -> None:
+    source_reports = [
+        {
+            "name": "static_source::static:listing_url:https://example.com/a",
+            "adapter": "static",
+            "studio": "Example A",
+            "status": "error",
+            "failureBucket": "unknown",
+            "durationMs": 1000,
+            "error": "connection timeout while fetching https://example.com/a",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/b",
+            "adapter": "static",
+            "studio": "Example B",
+            "status": "error",
+            "failureBucket": "unknown",
+            "durationMs": 300,
+            "error": "HTTP 429 Too Many Requests for https://example.com/b",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/c",
+            "adapter": "static",
+            "studio": "Example C",
+            "status": "error",
+            "failureBucket": "unknown",
+            "durationMs": 200,
+            "error": "static:Example C (Manual Website): no jobs extracted from source pages",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/d",
+            "adapter": "static",
+            "studio": "Example D",
+            "status": "error",
+            "failureBucket": "unknown",
+            "durationMs": 75,
+            "error": "static:Example D (Manual Website): no jobs extracted from source pages",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/e",
+            "adapter": "static",
+            "studio": "Example E",
+            "status": "error",
+            "failureBucket": "unknown",
+            "durationMs": 50,
+            "error": "unexpected parser shape with no obvious classification",
+        },
+        {
+            "name": "personio_sources",
+            "adapter": "personio",
+            "studio": "Personio Example",
+            "status": "error",
+            "failureBucket": "unknown",
+            "durationMs": 999,
+            "error": "personio_sources: HTTP 429 for https://example.personio.de/xml",
+        },
+        {
+            "name": "ok_source",
+            "adapter": "static",
+            "studio": "Ok Studio",
+            "status": "ok",
+            "failureBucket": "unknown",
+            "durationMs": 12,
+            "fetchedCount": 4,
+            "keptCount": 2,
+            "error": "",
+        },
+    ]
+
+    breakdown = jobs_reporting.build_unknown_static_breakdown(source_reports)
+
+    assert breakdown["byShape"]["no_jobs_extracted"]["count"] == 2
+    assert breakdown["byShape"]["transport_network"]["count"] == 1
+    assert breakdown["byShape"]["anti_bot_challenge"]["count"] == 1
+    assert breakdown["byShape"]["other_static"]["count"] == 1
+    assert breakdown["topByWallTime"][0]["name"] == "static_source::static:listing_url:https://example.com/a"
+    assert breakdown["topByFrequency"][0]["shape"] == "no_jobs_extracted"
+    assert breakdown["topByFrequency"][0]["count"] == 2
+    assert source_reports[0]["failureBucket"] == "unknown"
+    assert source_reports[-1]["status"] == "ok"
+
+
+def test_build_pipeline_summary_embeds_unknown_static_breakdown_without_affecting_totals() -> None:
+    source_reports = [
+        {
+            "name": "static_source::static:listing_url:https://example.com/a",
+            "adapter": "static",
+            "studio": "Example A",
+            "status": "error",
+            "failureBucket": "unknown",
+            "durationMs": 1000,
+            "error": "connection timeout while fetching https://example.com/a",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/b",
+            "adapter": "static",
+            "studio": "Example B",
+            "status": "error",
+            "failureBucket": "unknown",
+            "durationMs": 300,
+            "error": "HTTP 429 Too Many Requests for https://example.com/b",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/c",
+            "adapter": "static",
+            "studio": "Example C",
+            "status": "error",
+            "failureBucket": "unknown",
+            "durationMs": 200,
+            "error": "static:Example C (Manual Website): no jobs extracted from source pages",
+        },
+        {
+            "name": "ok_source",
+            "adapter": "static",
+            "studio": "Ok Studio",
+            "status": "ok",
+            "failureBucket": "unknown",
+            "durationMs": 12,
+            "fetchedCount": 4,
+            "keptCount": 2,
+            "error": "",
+        },
+    ]
+
+    summary = jobs_reporting.build_pipeline_summary(
+        {"inputCount": 0, "mergedCount": 0},
+        [],
+        source_reports,
+        0,
+        False,
+        1,
+        0,
+        0,
+        json_bytes=123,
+        csv_bytes=456,
+        light_json_bytes=78,
+        lifecycle_counts_map={"active": 0, "likelyRemoved": 0, "archived": 0, "totalTracked": 0},
+    )
+
+    breakdown = summary.get("unknownStaticBreakdown") or {}
+    assert summary["rawFetched"] == 4
+    assert summary["successfulSources"] == 1
+    assert summary["failedSources"] == 3
+    assert breakdown["byShape"]["no_jobs_extracted"]["count"] == 1
+    assert breakdown["byShape"]["transport_network"]["count"] == 1
+    assert breakdown["byShape"]["anti_bot_challenge"]["count"] == 1
+    assert breakdown["byShape"]["other_static"]["count"] == 0
+    assert len(breakdown["topByWallTime"]) == 3
+    assert len(breakdown["topByFrequency"]) == 4
+
+
 def test_build_parser_regression_queue_projects_listing_changed_to_artifact_flag() -> None:
     class DummyRedirectResolver:
         def resolve(self, url: str) -> str:
@@ -1226,6 +1464,237 @@ def test_static_zero_extract_generic_path_falls_back_to_needs_review() -> None:
     assert str(updated.get("classification") or "") == "needs_review"
     assert str(updated.get("failureBucket") or "") == "needs_review"
     assert str(updated.get("zeroKeptClassification") or "") == "needs_review"
+
+
+def test_static_manual_no_jobs_surface_as_js_required() -> None:
+    detail = {
+        "adapter": "static",
+        "studio": "Frontier Developments",
+        "name": "Frontier Developments Careers",
+        "status": "error",
+        "fetchedCount": 0,
+        "keptCount": 0,
+        "error": "static:Frontier Developments (Sheet): no jobs extracted from source pages",
+        "classification": "needs_review",
+        "browserFallbackRecommended": False,
+        "signalQuality": "strong",
+        "stats": {
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "jobs_rejected_validation": 0,
+        },
+    }
+
+    updated = static_helpers.update_source_detail_taxonomy(detail)
+    normalized = jf.normalize_source_report_row(updated)
+
+    assert str(updated.get("classification") or "") == "js_required"
+    assert str(updated.get("failureBucket") or "") == "js_required"
+    assert str(updated.get("zeroKeptClassification") or "") == "broken_extraction"
+    assert str(normalized.get("classification") or "") == "js_required"
+    assert str(normalized.get("failureBucket") or "") == "js_required"
+    assert str(normalized.get("zeroKeptClassification") or "") == "broken_extraction"
+
+
+def test_static_zero_extract_linkedin_429_promotes_to_anti_bot_or_challenge() -> None:
+    detail = {
+        "adapter": "static",
+        "studio": "Nexus Studios",
+        "name": "Nexus Studios Careers",
+        "status": "error",
+        "fetchedCount": 0,
+        "keptCount": 0,
+        "error": "HTTP 429 Too Many Requests for https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search",
+        "classification": "rate_limited",
+        "browserFallbackRecommended": False,
+        "signalQuality": "strong",
+        "stats": {
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "jobs_rejected_validation": 0,
+        },
+    }
+
+    updated = static_helpers.update_source_detail_taxonomy(detail)
+
+    assert str(updated.get("classification") or "") == "anti_bot_or_challenge"
+    assert str(updated.get("failureBucket") or "") == "anti_bot_or_challenge"
+    assert str(updated.get("zeroKeptClassification") or "") == "broken_extraction"
+    assert bool(updated.get("browserFallbackRecommended"))
+
+
+def test_run_static_studio_pages_source_classifies_ea_as_js_required() -> None:
+    sources = [
+        {
+            "name": "Electronic Arts (Manual Website)",
+            "studio": "Electronic Arts",
+            "company": "Electronic Arts",
+            "adapter": "static",
+            "pages": ["https://careers.ea.com/careers"],
+            "enabledByDefault": True,
+        }
+    ]
+
+    jf.SOURCE_DIAGNOSTICS.clear()
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=lambda _url, _timeout: "",
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=sources,
+    )
+
+    assert rows == []
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert str(detail.get("classification") or "") == "js_required"
+    assert str(detail.get("failureBucket") or "") == "js_required"
+    assert bool(detail.get("browserFallbackRecommended"))
+
+
+def test_run_static_studio_pages_source_classifies_sega_as_js_required() -> None:
+    sources = [
+        {
+            "name": "SEGA (Manual Website)",
+            "studio": "SEGA",
+            "company": "SEGA",
+            "adapter": "static",
+            "pages": ["https://www.sega.co.jp/en/recruit/"],
+            "enabledByDefault": True,
+        }
+    ]
+
+    jf.SOURCE_DIAGNOSTICS.clear()
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=lambda _url, _timeout: "",
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=sources,
+    )
+
+    assert rows == []
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert str(detail.get("classification") or "") == "js_required"
+    assert str(detail.get("failureBucket") or "") == "js_required"
+    assert bool(detail.get("browserFallbackRecommended"))
+
+
+def test_static_repeat_offender_no_jobs_surface_as_js_required() -> None:
+    cases = [
+        (
+            "Electronic Arts",
+            "static:Electronic Arts (Manual Website): no jobs extracted from source pages",
+            "static:electronic arts (manual website): no jobs extracted from source pages",
+        ),
+        (
+            "SEGA",
+            "static:SEGA (Manual Website): no jobs extracted from source pages",
+            "static:sega (manual website): no jobs extracted from source pages",
+        ),
+        (
+            "Capcom",
+            "static:Capcom (Sheet): no jobs extracted from source pages",
+            "static:capcom (sheet): no jobs extracted from source pages",
+        ),
+        (
+            "Stormind",
+            "static:Stormind Games (Gameprog): no jobs extracted from source pages",
+            "static:stormind games (gameprog): no jobs extracted from source pages",
+        ),
+        (
+            "Unknown Worlds",
+            "static:Unknown Worlds Entertainment (Sheet): no jobs extracted from source pages",
+            "static:unknown worlds entertainment (sheet): no jobs extracted from source pages",
+        ),
+    ]
+
+    for source_name, error, expected_error in cases:
+        detail = {
+            "adapter": "static",
+            "studio": source_name,
+            "name": f"{source_name} Careers",
+            "status": "error",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "error": error,
+            "classification": "needs_review",
+            "browserFallbackRecommended": False,
+            "signalQuality": "strong",
+            "stats": {
+                "candidate_links_found": 0,
+                "detail_pages_visited": 0,
+                "jobs_emitted": 0,
+                "jobs_rejected_validation": 0,
+            },
+        }
+
+        updated = static_helpers.update_source_detail_taxonomy(detail)
+        normalized = jf.normalize_source_report_row(updated)
+
+        assert str(updated.get("classification") or "") == "js_required"
+        assert str(updated.get("failureBucket") or "") == "js_required"
+        assert str(normalized.get("classification") or "") == "js_required"
+        assert str(normalized.get("failureBucket") or "") == "js_required"
+        assert str(normalized.get("error") or "").lower() == expected_error
+
+
+def test_add_detail_link_strips_unknown_worlds_trailing_backslash() -> None:
+    detail_links: list[tuple[str, str]] = []
+    detail_seen: set[str] = set()
+    seen_links: set[str] = set()
+    link_rejections: Counter[str] = Counter()
+
+    static_helpers.add_detail_link(
+        detail_links,
+        detail_seen,
+        seen_links,
+        link_rejections,
+        candidate_url="https://boards.greenhouse.io/unknownworlds/jobs/7535230002\\",
+        anchor_text="Lead Environment Artist",
+        enforce_heuristics=False,
+        page_url="https://unknownworlds.com/en/careers",
+        source={"company": "Unknown Worlds Entertainment"},
+        default_path_tokens=[],
+        default_query_keys=[],
+    )
+
+    assert detail_links == [
+        ("https://boards.greenhouse.io/unknownworlds/jobs/7535230002", "Lead Environment Artist")
+    ]
+    assert not link_rejections
+
+
+def test_run_static_studio_pages_source_classifies_linkedin_429_as_anti_bot_or_challenge() -> None:
+    sources = [
+        {
+            "name": "LinkedIn Careers",
+            "studio": "LinkedIn",
+            "adapter": "static",
+            "company": "LinkedIn",
+            "pages": ["https://www.linkedin.com/jobs/view/123"],
+            "enabledByDefault": True,
+        }
+    ]
+
+    def fake_fetch(url: str, _timeout: int) -> str:
+        raise RuntimeError(f"HTTP 429 Too Many Requests for {url}")
+
+    jf.SOURCE_DIAGNOSTICS.clear()
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=fake_fetch,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=sources,
+    )
+
+    assert rows == []
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert str(detail.get("classification") or "") == "anti_bot_or_challenge"
+    assert str(detail.get("failureBucket") or "") == "anti_bot_or_challenge"
+    assert bool(detail.get("browserFallbackRecommended"))
 
 
 def test_static_loader_disables_browser_fallback_after_environment_failure() -> None:

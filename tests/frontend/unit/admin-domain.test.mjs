@@ -192,6 +192,41 @@ test("admin domain normalizes ops runs into current + collapsed completed groups
   assert.equal(model.visibleCompletedRows[0].elapsedMs, 120000);
 });
 
+
+test("admin domain orders completed runs by startedAt across mixed durations", () => {
+  const model = normalizeOpsRuns([
+    {
+      id: "fetch-long",
+      type: "fetch",
+      status: "ok",
+      startedAt: "2026-03-08T08:00:00.000Z",
+      finishedAt: "2026-03-08T10:00:00.000Z",
+      durationMs: 7200000
+    },
+    {
+      id: "sync-short",
+      type: "sync",
+      status: "ok",
+      startedAt: "2026-03-08T09:00:00.000Z",
+      finishedAt: "2026-03-08T09:05:00.000Z",
+      durationMs: 300000
+    },
+    {
+      id: "discovery-old",
+      type: "discovery",
+      status: "warning",
+      startedAt: "2026-03-08T07:00:00.000Z",
+      finishedAt: "2026-03-08T07:10:00.000Z",
+      durationMs: 600000
+    }
+  ]);
+
+  assert.equal(model.visibleCompletedRows.length, 2);
+  assert.equal(model.visibleCompletedRows[0].type, "sync");
+  assert.equal(model.visibleCompletedRows[1].type, "fetch");
+  assert.equal(model.olderCompletedRows[0].type, "discovery");
+});
+
 test("admin domain derives adaptive ops polling interval", () => {
   assert.equal(getOpsPollIntervalMs(true), 2000);
   assert.equal(getOpsPollIntervalMs(false), 10000);

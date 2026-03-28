@@ -356,6 +356,72 @@ test("admin registry controller loads filtered discovery state and dispatches re
   assert.deepEqual(busyTransitions, ["discoveryLoad:true", "discoveryLoad:false"]);
 });
 
+test("admin registry controller only logs discovery refreshes when the registry snapshot changes", async () => {
+  const logs = [];
+  const state = {
+    adminPin: "1234",
+    adminBusyState: {
+      discoveryRun: false,
+      discoveryWatch: false,
+      discoveryLoad: false,
+      discoveryWrite: false,
+      manualAdd: false,
+      manualCheck: false,
+      liveDiscoveryRunning: false
+    }
+  };
+  const refs = {
+    adminDiscoverySummaryEl: createElement(),
+    adminPendingSourcesEl: createElement(),
+    adminActiveSourcesEl: createElement(),
+    adminRejectedSourcesEl: createElement()
+  };
+  const controller = createAdminRegistryController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/discovery/report") return { summary: {} };
+      if (path === "/registry/pending") {
+        return {
+          summary: { pendingCount: 1 },
+          sources: [{ id: "p1", name: "Pending", jobsFound: 1, status: "pending" }]
+        };
+      }
+      if (path === "/registry/active") return { summary: { activeCount: 0 }, sources: [] };
+      if (path === "/registry/rejected") return { summary: { rejectedCount: 0 }, sources: [] };
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    fetchJobsFetchReportJson: async () => ({ sources: [] }),
+    mergeSourceStatusFromReport: rows => rows,
+    applySourceFilter: rows => rows,
+    getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
+    deriveSourceStatus: row => String(row?.status || "unknown"),
+    renderSourcesTableHtml: rows => rows.map(row => row.name).join("|"),
+    readShowZeroJobs: () => false,
+    normalizeSourceFilter: value => value,
+    adminDispatch: { dispatch() {} },
+    adminActions: { DISCOVERY_REFRESHED: "discovery/refreshed" },
+    appendDiscoveryLog(message) {
+      logs.push(String(message));
+    },
+    formatManualCheckFailureMessage: () => "failed",
+    loadOpsHealthData: async () => {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown")
+  });
+
+  await controller.loadDiscoveryData();
+  await controller.loadDiscoveryData();
+
+  assert.equal(logs.filter(line => /source discovery data loaded/i.test(line)).length, 1);
+  assert.equal(logs.filter(line => /loading source discovery report and registries/i.test(line)).length, 1);
+  assert.ok(logs.some(line => /discovery summary:/i.test(line)));
+});
+
 test("admin registry controller adds a manual source and runs the follow-up check", async () => {
   const toasts = [];
   const logs = [];
@@ -737,7 +803,7 @@ test("admin discovery controller emits summary-first live progress and updates p
       },
       loadOpsHealthData: async () => {},
       scheduleOpsHealthPolling() {},
-      loadDiscoveryData: async () => {}
+      _loadDiscoveryData: async () => {}
     });
 
     await controller.runDiscoveryTask();
@@ -1378,6 +1444,7 @@ test("admin ops controller renders bridge task-state without reattaching from hi
       adminOpsTrendsEl: createElement()
     };
     const runModels = [];
+    const calls = [];
     let controller;
     try {
       controller = createAdminOpsController({
@@ -1428,6 +1495,9 @@ test("admin ops controller renders bridge task-state without reattaching from hi
         adminActions: { OPS_REFRESHED: "ops/refreshed" },
         escapeHtml: value => String(value || ""),
         onBridgeStatusChange() {},
+        loadDiscoveryData: async () => {
+          calls.push("loadDiscoveryData");
+        },
         bridgeStatusPollIntervalMs: 1000,
         idlePollIntervalMs: 1000
       });
@@ -1438,6 +1508,7 @@ test("admin ops controller renders bridge task-state without reattaching from hi
       assert.equal(state.adminBusyState[watcherKey], false, label);
       assert.equal(runModels.length, 1, label);
       assert.equal(runModels[0].currentRows.length, 1, label);
+      assert.deepEqual(calls, label === "discovery" ? ["loadDiscoveryData"] : [], label);
     } finally {
       controller?.stopOpsHealthPolling?.();
     }

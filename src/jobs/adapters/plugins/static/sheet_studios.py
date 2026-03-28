@@ -40,6 +40,12 @@ _SHEET_STUDIO_HOSTS = frozenset(
         "www.10chambers.com",
         "careers.10chambers.com",
         "www.careers.10chambers.com",
+        "careers.ea.com",
+        "jobs.ea.com",
+        "sega.co.jp",
+        "www.sega.co.jp",
+        "unknownworlds.com",
+        "www.unknownworlds.com",
     }
 )
 
@@ -121,10 +127,12 @@ def run(
                 _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
             )
             source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
-                if likely_js
-                else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
-                "browserFallbackRecommended": True,
+                "classification": (
+                    _heuristics.CLASSIFICATION_JS_REQUIRED
+                    if likely_js
+                    else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO
+                ),
+                "browserFallbackRecommended": bool(likely_js),
                 "extractorHint": "parse_empty_js_shell_suspected" if likely_js else "parse_empty",
                 "atsLinks": ats_links[:5],
             }

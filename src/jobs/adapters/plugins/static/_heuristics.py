@@ -131,6 +131,8 @@ def classify_fetch_exception(exc: Exception) -> tuple[str, bool]:
     if "HTTP 403" in msg:
         return CLASSIFICATION_BLOCKED_OR_CHALLENGE, True
     if "HTTP 429" in msg:
+        if "linkedin" in msg.lower():
+            return CLASSIFICATION_BLOCKED_OR_CHALLENGE, True
         return CLASSIFICATION_RATE_LIMITED, False
     if "Network error" in msg or "timed out" in msg or "Timeout" in msg:
         return CLASSIFICATION_TIMEOUT, True

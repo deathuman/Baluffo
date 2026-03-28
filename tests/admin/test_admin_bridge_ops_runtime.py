@@ -182,6 +182,32 @@ def test_append_run_history_enforces_limit(admin_bridge_entrypoint_root):
     assert rows[-1]["summary"]["outputCount"] == 8
 
 
+def test_append_run_history_orders_by_started_at(admin_bridge_entrypoint_root):
+    admin_bridge.append_run_history(
+        {
+            "type": "fetch",
+            "status": "ok",
+            "startedAt": "2026-03-01T08:00:00+00:00",
+            "finishedAt": "2026-03-01T10:00:00+00:00",
+            "durationMs": 7200000,
+            "summary": {"outputCount": 1, "failedSources": 0, "sourceCount": 1},
+        }
+    )
+    admin_bridge.append_run_history(
+        {
+            "type": "sync",
+            "status": "ok",
+            "startedAt": "2026-03-01T09:00:00+00:00",
+            "finishedAt": "2026-03-01T09:05:00+00:00",
+            "durationMs": 300000,
+            "summary": {"action": "pull", "activeCount": 1, "pendingCount": 0, "rejectedCount": 0},
+        }
+    )
+
+    rows = admin_bridge.load_run_history()
+    assert [row["type"] for row in rows] == ["fetch", "sync"]
+
+
 def test_compute_ops_health_reports_alerts(admin_bridge_entrypoint_root):
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
@@ -554,7 +580,7 @@ def test_build_fetcher_args_uncapped_bypasses_admin_caps_and_keeps_social(
     assert "--force-refresh-all" in args
     assert "--ignore-circuit-breaker" in args
     assert "--max-workers" in args
-    assert args[args.index("--max-workers") + 1] == "16"
+    assert args[args.index("--max-workers") + 1] == "64"
     assert "--max-per-domain" in args
     assert args[args.index("--max-per-domain") + 1] == "6"
     assert "--static-detail-concurrency" in args

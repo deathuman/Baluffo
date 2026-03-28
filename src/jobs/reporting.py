@@ -47,6 +47,12 @@ OFFICIAL_BOARD_SOURCE_ADAPTERS = {
     "static",
 }
 OFFICIAL_BOARD_SOURCE_NAMES = {"epic_games_careers"}
+UNKNOWN_STATIC_BREAKDOWN_SHAPES = (
+    "no_jobs_extracted",
+    "transport_network",
+    "anti_bot_challenge",
+    "other_static",
+)
 
 
 def format_source_error(source_name: str, error: Any) -> str:
@@ -185,6 +191,109 @@ def build_social_experiment_review_payload(
         "falsePositiveRate": false_positive_rate,
         "reviewArtifactPath": clean_text(review_artifact_path),
         "rows": rows,
+    }
+
+
+def _classify_unknown_static_shape(report: dict[str, Any]) -> str:
+    error_lower = clean_text(report.get("error")).lower()
+    if "no jobs extracted from source pages" in error_lower:
+        return "no_jobs_extracted"
+    if any(
+        marker in error_lower
+        for marker in (
+            "timeout",
+            "timed out",
+            "network error",
+            "fetch failed",
+            "connection reset",
+            "connection aborted",
+            "name resolution",
+            "temporary failure",
+            "dns",
+        )
+    ):
+        return "transport_network"
+    if any(
+        marker in error_lower
+        for marker in (
+            "429",
+            "403",
+            "blocked",
+            "captcha",
+            "challenge",
+            "too many requests",
+            "rate limit",
+        )
+    ):
+        return "anti_bot_challenge"
+    return "other_static"
+
+
+def build_unknown_static_breakdown(
+    source_reports: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    by_shape: dict[str, dict[str, Any]] = {
+        shape: {"count": 0, "totalDurationMs": 0, "examples": []}
+        for shape in UNKNOWN_STATIC_BREAKDOWN_SHAPES
+    }
+    for report in source_reports:
+        if not isinstance(report, dict):
+            continue
+        if clean_text(report.get("adapter")) != "static":
+            continue
+        if norm_text(report.get("status")) != "error":
+            continue
+        if norm_text(report.get("failureBucket")) != "unknown":
+            continue
+        shape = _classify_unknown_static_shape(report)
+        duration_ms = max(0, int(report.get("durationMs") or 0))
+        entry = {
+            "name": clean_text(report.get("name")) or "unknown",
+            "studio": clean_text(report.get("studio")) or "",
+            "adapter": clean_text(report.get("adapter")) or "unknown",
+            "durationMs": duration_ms,
+            "shape": shape,
+            "error": clean_text(report.get("error")),
+            "keptCount": int(report.get("keptCount") or 0),
+            "fetchedCount": int(report.get("fetchedCount") or 0),
+            "failureBucket": clean_text(report.get("failureBucket")) or "unknown",
+            "zeroKeptClassification": clean_text(report.get("zeroKeptClassification")) or "",
+        }
+        rows.append(entry)
+        bucket = by_shape[shape]
+        bucket["count"] += 1
+        bucket["totalDurationMs"] += duration_ms
+        if len(bucket["examples"]) < 3:
+            bucket["examples"].append(entry["name"])
+
+    top_by_wall_time = sorted(
+        rows,
+        key=lambda row: (
+            -int(row.get("durationMs") or 0),
+            clean_text(row.get("studio")),
+            clean_text(row.get("name")),
+        ),
+    )[:20]
+    by_frequency = sorted(
+        (
+            {
+                "shape": shape,
+                "count": values["count"],
+                "totalDurationMs": values["totalDurationMs"],
+                "examples": list(values["examples"]),
+                "share": (
+                    float(values["count"]) / float(len(rows)) if rows else 0.0
+                ),
+            }
+            for shape, values in by_shape.items()
+        ),
+        key=lambda row: (-int(row.get("count") or 0), -int(row.get("totalDurationMs") or 0), row["shape"]),
+    )
+    return {
+        "byShape": by_shape,
+        "topByWallTime": top_by_wall_time,
+        "topByFrequency": by_frequency,
     }
 
 
@@ -379,6 +488,7 @@ def build_pipeline_summary(
         "lifecycleLikelyRemovedCount": int(lifecycle.get("likelyRemoved") or 0),
         "lifecycleArchivedCount": int(lifecycle.get("archived") or 0),
         "lifecycleTrackedCount": int(lifecycle.get("totalTracked") or 0),
+        "unknownStaticBreakdown": build_unknown_static_breakdown(source_reports),
     }
 
 

@@ -196,7 +196,7 @@ class TaskLaunchApi:
                     "--force-refresh-all",
                     "--ignore-circuit-breaker",
                     "--max-workers",
-                    "16",
+                    "64",
                     "--max-per-domain",
                     "6",
                     "--static-detail-concurrency",

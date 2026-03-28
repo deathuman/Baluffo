@@ -236,7 +236,7 @@ def _collapse_duplicate_history_rows(rows: list[dict[str, Any]]) -> list[dict[st
             merged["id"] = str(merged.get("id") or run_id)
             run_id_rows[key] = merged
     combined = list(run_id_rows.values())
-    combined.sort(key=lambda item: str(item.get("finishedAt") or item.get("startedAt") or ""))
+    combined.sort(key=lambda item: str(item.get("startedAt") or item.get("finishedAt") or ""))
     return combined
 
 

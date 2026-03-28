@@ -32,6 +32,14 @@ class TestMapErrorToFailureBucket:
         )
         assert map_error_to_failure_bucket(ctx) == FailureBucket.ANTI_BOT_OR_CHALLENGE
 
+    def test_anti_bot_linkedin_429(self):
+        ctx = ClassificationContext(
+            status="error",
+            error="HTTP 429 Too Many Requests for https://www.linkedin.com/jobs",
+            classification="rate_limited",
+        )
+        assert map_error_to_failure_bucket(ctx) == FailureBucket.ANTI_BOT_OR_CHALLENGE
+
     def test_site_changed_redirect(self):
         ctx = ClassificationContext(
             status="error", error="301 Moved Permanently", classification="parse_error"
@@ -92,6 +100,15 @@ class TestClassifyZeroKept:
         )
         assert classify_zero_kept(ctx) == ZeroKeptClassification.NEEDS_REVIEW
 
+    def test_stronger_static_no_jobs_diagnosis_beats_needs_review(self):
+        ctx = ClassificationContext(
+            status="ok",
+            error="static:Frontier Developments (Sheet): no jobs extracted from source pages",
+            classification="ok_no_jobs",
+            fetched_count=0,
+        )
+        assert classify_zero_kept(ctx) == ZeroKeptClassification.BROKEN_EXTRACTION
+
     def test_legit_empty_with_jobs(self):
         ctx = ClassificationContext(
             status="ok", error="", classification="ok_with_jobs", fetched_count=5
@@ -129,6 +146,16 @@ class TestAssessZeroExtract:
             error="HTTP 403 Forbidden",
             classification="parse_error",
             http_status=403,
+        )
+        assessment = assess_zero_extract(ctx)
+        assert assessment.diagnosis == ZeroExtractDiagnosis.ANTI_BOT_OR_CHALLENGE
+        assert assessment.browser_fallback_recommended
+
+    def test_anti_bot_from_linkedin_429(self):
+        ctx = ClassificationContext(
+            status="error",
+            error="HTTP 429 Too Many Requests for https://www.linkedin.com/jobs",
+            classification="rate_limited",
         )
         assessment = assess_zero_extract(ctx)
         assert assessment.diagnosis == ZeroExtractDiagnosis.ANTI_BOT_OR_CHALLENGE
@@ -177,6 +204,57 @@ class TestAssessZeroExtract:
         )
         assessment = assess_zero_extract(ctx)
         assert assessment.diagnosis == ZeroExtractDiagnosis.NEEDS_REVIEW
+        assert not assessment.browser_fallback_recommended
+
+    def test_static_manual_no_jobs_becomes_js_required(self):
+        ctx = ClassificationContext(
+            status="error",
+            error="static:Frontier Developments (Sheet): no jobs extracted from source pages",
+            classification="needs_review",
+            fetched_count=0,
+            signal_quality="strong",
+        )
+        assessment = assess_zero_extract(ctx)
+        assert assessment.diagnosis == ZeroExtractDiagnosis.JS_REQUIRED
+        assert not assessment.browser_fallback_recommended
+
+    @pytest.mark.parametrize(
+        ("error", "expected_label"),
+        [
+            (
+                "static:Electronic Arts (Manual Website): no jobs extracted from source pages",
+                ZeroExtractDiagnosis.JS_REQUIRED,
+            ),
+            (
+                "static:SEGA (Manual Website): no jobs extracted from source pages",
+                ZeroExtractDiagnosis.JS_REQUIRED,
+            ),
+            (
+                "static:Capcom (Sheet): no jobs extracted from source pages",
+                ZeroExtractDiagnosis.JS_REQUIRED,
+            ),
+            (
+                "static:Stormind Games (Gameprog): no jobs extracted from source pages",
+                ZeroExtractDiagnosis.JS_REQUIRED,
+            ),
+            (
+                "static:Unknown Worlds Entertainment (Sheet): no jobs extracted from source pages",
+                ZeroExtractDiagnosis.JS_REQUIRED,
+            ),
+        ],
+    )
+    def test_repeat_static_no_jobs_offenders_become_js_required(
+        self, error: str, expected_label: ZeroExtractDiagnosis
+    ) -> None:
+        ctx = ClassificationContext(
+            status="error",
+            error=error,
+            classification="needs_review",
+            fetched_count=0,
+            signal_quality="strong",
+        )
+        assessment = assess_zero_extract(ctx)
+        assert assessment.diagnosis == expected_label
         assert not assessment.browser_fallback_recommended
 
     def test_weak_static_scrapy_defaults_to_needs_review(self):

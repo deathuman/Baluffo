@@ -309,6 +309,94 @@ def test_run_pipeline_tracks_google_sheets_redirect_stats_in_report_and_state() 
         assert str(source_state.get("lastAdapter") or "") == "csv"
 
 
+def test_run_pipeline_reuses_and_persists_google_sheets_redirect_cache() -> None:
+    redirect_url = "https://gracklehq.com/rd/372393"
+    resolved_url = "https://jobs.smartrecruiters.com/Ubisoft2/744000108777145-role"
+    csv_text = (
+        "Company,City,Country,Fully Remote?,Job Type,Job,Link\n"
+        f"{jf.UNKNOWN_COMPANY_LABEL},Montpellier,France,No,Full-time,Technical Director,{redirect_url}\n"
+    )
+
+    def google_loader(**kwargs):
+        return jf.run_google_sheets_source(
+            fetch_text=kwargs["fetch_text"],
+            timeout_s=kwargs["timeout_s"],
+            retries=kwargs["retries"],
+            backoff_s=kwargs["backoff_s"],
+            sheet_id="test-sheet",
+            gid="0",
+            diagnostics_name="google_sheets",
+        )
+
+    class _FakeResolver:
+        def __init__(self) -> None:
+            self.seeded: dict[str, str] = {}
+            self.cache_hits = 0
+            self.resolved_count = 0
+
+        def seed_cache(self, cache: dict[str, str]) -> None:
+            self.seeded.update(cache)
+
+        def resolve(self, url: str) -> str:
+            if url in self.seeded:
+                self.cache_hits += 1
+                return self.seeded[url]
+            self.resolved_count += 1
+            return resolved_url
+
+        def snapshot_stats(self) -> dict:
+            return {"cacheHits": self.cache_hits, "resolvedCount": self.resolved_count}
+
+        def snapshot_cache(self) -> dict[str, str]:
+            return dict(self.seeded)
+
+        def close(self) -> None:
+            return None
+
+    with workspace_tmpdir("jobs-fetcher-google-cache") as tmp:
+        out = Path(tmp)
+        state_payload = {
+            "schemaVersion": jf.SCHEMA_VERSION,
+            "updatedAt": "2026-03-23T00:00:00Z",
+            "sources": {
+                "google_sheets": {
+                    "googleSheetsRedirectCache": {redirect_url: resolved_url},
+                }
+            },
+        }
+        (out / "jobs-source-state.json").write_text(
+            json.dumps(state_payload, indent=2), encoding="utf-8"
+        )
+
+        with mock.patch.object(jf, "build_redirect_resolver", return_value=_FakeResolver()) as builder:
+
+            def fake_fetch(url: str, _: int) -> str:
+                if "docs.google.com" in url or "allorigins.win" in url:
+                    return csv_text
+                raise RuntimeError(f"Unexpected URL: {url}")
+
+            report = jf.run_pipeline(
+                output_dir=out,
+                fetch_text=fake_fetch,
+                source_loaders=[("google_sheets", google_loader)],
+            )
+
+        resolver = builder.return_value
+        assert resolver.seeded.get(redirect_url) == resolved_url
+        assert int(resolver.cache_hits) >= 1
+        assert int(resolver.resolved_count) == 0
+
+        runtime = report.get("runtime") or {}
+        assert int(runtime.get("googleSheetsRedirectConcurrency") or 0) == (
+            jf.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
+        )
+
+        state_payload = json.loads((out / "jobs-source-state.json").read_text(encoding="utf-8"))
+        source_state = (state_payload.get("sources") or {}).get("google_sheets") or {}
+        cache = source_state.get("googleSheetsRedirectCache") or {}
+        assert cache.get(redirect_url) == resolved_url
+
+
 def test_run_google_sheets_source_heartbeats_between_candidate_attempts() -> None:
     heartbeat_calls: list[str] = []
     csv_text = (

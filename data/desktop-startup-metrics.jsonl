@@ -558,3 +558,42 @@
 {"ts": "2026-03-28T14:55:23.452766+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
 {"ts": "2026-03-28T14:55:23.452954+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
 {"ts": "2026-03-28T14:55:23.456968+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T16:07:11.008338+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-28T16:07:11.008413+00:00", "event": "admin_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-28T16:07:11.008457+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-28T16:37:26.651089+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-28T16:37:26.651170+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T16:37:26.651240+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-28T18:11:55.364198+00:00", "event": "admin_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-28T18:11:55.364425+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T18:11:55.379154+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-28T18:41:59.045662+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-28T18:41:59.045770+00:00", "event": "admin_ready", "payload": {"elapsedMs": 8}}
+{"ts": "2026-03-28T18:41:59.045809+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 8}}
+{"ts": "2026-03-28T18:45:56.313535+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-28T18:45:56.313683+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T18:45:56.313725+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T19:30:53.910033+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T19:30:53.910120+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T19:30:53.910189+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-28T19:56:41.525644+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T19:56:41.525716+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-28T19:56:41.525760+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T19:56:55.102129+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-28T19:56:55.103612+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-28T19:56:55.117352+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}
+{"ts": "2026-03-28T20:00:10.894399+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T20:00:10.894512+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-28T20:00:10.894904+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T20:01:12.579794+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 5}}
+{"ts": "2026-03-28T20:01:12.579952+00:00", "event": "admin_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-28T20:01:12.580017+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-28T20:30:09.468868+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-28T20:30:09.468943+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 8}}
+{"ts": "2026-03-28T20:30:09.468988+00:00", "event": "admin_ready", "payload": {"elapsedMs": 8}}
+{"ts": "2026-03-28T21:22:22.391595+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-28T21:22:22.391834+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-28T21:22:22.392713+00:00", "event": "admin_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-28T21:41:15.553973+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-28T21:41:15.554345+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-28T21:41:15.554425+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}

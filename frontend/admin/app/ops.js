@@ -29,10 +29,12 @@ export function createAdminOpsController({
   adminActions,
   escapeHtml,
   onBridgeStatusChange,
+  loadDiscoveryData,
   bridgeStatusPollIntervalMs,
   idlePollIntervalMs
 }) {
   let lastBridgeStatus = "checking";
+  let lastDiscoveryRegistryRefreshAtMs = 0;
 
   function maybeUnrefTimer(timer) {
     timer?.unref?.();
@@ -120,6 +122,14 @@ export function createAdminOpsController({
       setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
       setBusyFlag("liveSyncRunning", liveTypes.has("sync"));
       setBusyFlag("livePipelineRunning", liveTypes.has("pipeline"));
+      const nowMs = Date.now();
+      const discoveryLive = liveTypes.has("discovery");
+      if (!discoveryLive) {
+        lastDiscoveryRegistryRefreshAtMs = 0;
+      } else if (typeof loadDiscoveryData === "function" && nowMs - lastDiscoveryRegistryRefreshAtMs >= 5000) {
+        lastDiscoveryRegistryRefreshAtMs = nowMs;
+        loadDiscoveryData().catch(() => {});
+      }
 
       renderAdminOpsAlerts(refs.adminOpsAlertsEl, health?.alerts || [], {
         onAck: async alertId => {

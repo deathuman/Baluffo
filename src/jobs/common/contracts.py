@@ -194,6 +194,10 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         except (TypeError, ValueError):
             return 0.0
 
+    def _clean_label(value: Any) -> str:
+        text = clean_text(value)
+        return "" if text.lower() in {"n/a", "na", "none"} else text
+
     def _normalize_loss(loss: Any) -> dict[str, Any]:
         payload = loss if isinstance(loss, dict) else {}
         drop_reasons = (
@@ -240,26 +244,26 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         "error": clean_text(src.get("error")),
         "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
     }
-    failure_bucket = clean_text(src.get("failureBucket"))
+    failure_bucket = _clean_label(src.get("failureBucket"))
     if failure_bucket:
         normalized["failureBucket"] = failure_bucket
-    classification = clean_text(src.get("classification"))
+    classification = _clean_label(src.get("classification"))
     if classification:
         normalized["classification"] = classification
-    zk_classification = clean_text(src.get("zeroKeptClassification"))
+    zk_classification = _clean_label(src.get("zeroKeptClassification"))
     if zk_classification:
         normalized["zeroKeptClassification"] = zk_classification
     if "browserEscalationEligible" in src:
         normalized["browserEscalationEligible"] = bool(src.get("browserEscalationEligible"))
-    browser_reason = clean_text(src.get("browserEscalationEligibilityReason"))
+    browser_reason = _clean_label(src.get("browserEscalationEligibilityReason"))
     if browser_reason:
         normalized["browserEscalationEligibilityReason"] = browser_reason
     if "browserEscalationEnabled" in src:
         normalized["browserEscalationEnabled"] = bool(src.get("browserEscalationEnabled"))
-    cache_decision = clean_text(src.get("cacheDecision"))
+    cache_decision = _clean_label(src.get("cacheDecision"))
     if cache_decision:
         normalized["cacheDecision"] = cache_decision
-    cache_reason = clean_text(src.get("cacheDecisionReason"))
+    cache_reason = _clean_label(src.get("cacheDecisionReason"))
     if cache_reason:
         normalized["cacheDecisionReason"] = cache_reason
     http_status = _clamped_int(src.get("httpStatus"), 0, 0)
@@ -450,16 +454,16 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
                     clean_item["browserEscalationEnabled"] = bool(
                         item.get("browserEscalationEnabled")
                     )
-                item_bucket = clean_text(item.get("failureBucket"))
+                item_bucket = _clean_label(item.get("failureBucket"))
                 if item_bucket:
                     clean_item["failureBucket"] = item_bucket
-                item_zk = clean_text(item.get("zeroKeptClassification"))
+                item_zk = _clean_label(item.get("zeroKeptClassification"))
                 if item_zk:
                     clean_item["zeroKeptClassification"] = item_zk
-                item_cache_decision = clean_text(item.get("cacheDecision"))
+                item_cache_decision = _clean_label(item.get("cacheDecision"))
                 if item_cache_decision:
                     clean_item["cacheDecision"] = item_cache_decision
-                item_cache_reason = clean_text(item.get("cacheDecisionReason"))
+                item_cache_reason = _clean_label(item.get("cacheDecisionReason"))
                 if item_cache_reason:
                     clean_item["cacheDecisionReason"] = item_cache_reason
                 item_http_status = _clamped_int(item.get("httpStatus"), 0, 0)

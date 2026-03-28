@@ -52,7 +52,8 @@ export function createAdminDiscoveryController({
   appendLogRow,
   loadOpsHealthData,
   scheduleOpsHealthPolling,
-  _loadDiscoveryData
+  _loadDiscoveryData,
+  loadDiscoveryData
 }) {
   function maybeUnrefTimer(timer) {
     timer?.unref?.();
@@ -412,6 +413,7 @@ export function createAdminDiscoveryController({
     state.discoveryLiveProgressState = {
       phaseLabel: "",
       summarySignature: "",
+      registryRefreshSignature: "",
       candidateCount: 0,
       failureCount: 0,
       serverPhaseLabel: "",
@@ -423,6 +425,29 @@ export function createAdminDiscoveryController({
     appendDiscoveryLog("Discovery started. Watching live progress...", "info");
     loadDiscoveryLogChunk({ reset: true }).catch(() => {});
     scheduleDiscoveryCompletionPoll(250);
+  }
+
+  function refreshDiscoveryDataIfNeeded(report) {
+    const loadDiscoveryDataFn = typeof _loadDiscoveryData === "function"
+      ? _loadDiscoveryData
+      : (typeof loadDiscoveryData === "function" ? loadDiscoveryData : null);
+    if (!loadDiscoveryDataFn) return;
+    const liveState = state.discoveryLiveProgressState;
+    if (!liveState) return;
+    const summary = report?.summary || {};
+    const signature = [
+      String(report?.runId || ""),
+      String(report?.startedAt || ""),
+      String(report?.finishedAt || ""),
+      Number(summary.foundEndpointCount || 0),
+      Number(summary.probedCandidateCount ?? summary.probedCount ?? 0),
+      Number(summary.queuedCandidateCount ?? 0),
+      Number(summary.failedProbeCount || 0),
+      Number(summary.skippedDuplicateCount || 0)
+    ].join("|");
+    if (signature === liveState.registryRefreshSignature) return;
+    liveState.registryRefreshSignature = signature;
+    loadDiscoveryDataFn().catch(() => {});
   }
 
   function stopDiscoveryCompletionWatch() {
@@ -461,6 +486,7 @@ export function createAdminDiscoveryController({
 
       // Update progress even if not started yet, for better UX
       updateDiscoveryProgressFromReport(report, { running: true });
+      refreshDiscoveryDataIfNeeded(report);
     }
 
     const finishedMs = parseReportTimestampMs(report?.finishedAt);
@@ -471,6 +497,7 @@ export function createAdminDiscoveryController({
       const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
       const failedCount = Number(summary.failedProbeCount || 0);
       updateDiscoveryProgressFromReport(report, { running: true });
+      refreshDiscoveryDataIfNeeded(report);
       appendDiscoveryLog(
         `Discovery completed: endpoints ${Number(summary.foundEndpointCount ?? 0)}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}, failed ${failedCount}.`,
         failedCount > 0 ? "warn" : "success"

@@ -33,6 +33,7 @@ from src.jobs.adapters.static_helpers import (
     process_detail_link,
     source_detail_concurrency_for,
     source_detail_limit_for,
+    source_detail_retries_for,
     update_source_detail_taxonomy,
 )
 from src.jobs.adapters.static_scrapy import run_scrapy_static_source
@@ -300,10 +301,19 @@ def run_static_studio_pages_source(
                 except Exception as exc:  # noqa: BLE001
                     err_str = str(exc)
                     err_lower = err_str.lower()
+                    linked_in_throttle = "linkedin" in f"{page_url} {err_str}".lower()
                     if try_playwright and (
-                        "403" in err_str or "timeout" in err_lower or "timed out" in err_lower
+                        "403" in err_str
+                        or (linked_in_throttle and "429" in err_str)
+                        or "timeout" in err_lower
+                        or "timed out" in err_lower
                     ):
-                        reason = "403" if "403" in err_str else "timeout"
+                        if "403" in err_str:
+                            reason = "403"
+                        elif linked_in_throttle and "429" in err_str:
+                            reason = "429"
+                        else:
+                            reason = "timeout"
                         html, _ = try_playwright(page_url, effective_timeout_s)
                         print(
                             f"[static] playwright_fallback_used url={page_url!r} reason={reason} got_html={bool(html)}",
@@ -483,6 +493,11 @@ def run_static_studio_pages_source(
                     low_yield_detail_cap=static_runtime.low_yield_detail_cap,
                     very_low_yield_detail_cap=static_runtime.very_low_yield_detail_cap,
                 )
+                detail_retries = source_detail_retries_for(
+                    source_key,
+                    source_state_rows=source_state_rows,
+                    base_retries=retries,
+                )
                 profile_max_detail_links = max(0, int(domain_profile.get("max_detail_links") or 0))
                 if profile_max_detail_links > 0:
                     detail_limit = (
@@ -512,6 +527,7 @@ def run_static_studio_pages_source(
                             company=company,
                             source_name=source_name,
                             source=source,
+                            detail_retries=detail_retries,
                             ignored_link_titles=ignored_link_titles,
                         ): (detail, detail_title)
                         for detail, detail_title in detail_links
@@ -523,7 +539,11 @@ def run_static_studio_pages_source(
                             detail_result = future.result()
                         except Exception as exc:  # noqa: BLE001
                             msg = str(exc)
-                            if "HTTP 403" in msg:
+                            linked_in_throttle = "linkedin" in f"{page_url} {msg}".lower()
+                            if "HTTP 403" in msg or (
+                                linked_in_throttle
+                                and ("HTTP 429" in msg or "Too Many Requests" in msg)
+                            ):
                                 entry_report["classification"] = "blocked_or_challenge"
                                 entry_report["browserFallbackRecommended"] = True
                                 entry_report["error"] = msg
@@ -548,7 +568,10 @@ def run_static_studio_pages_source(
                 )
             except Exception as exc:  # noqa: BLE001
                 msg = str(exc)
-                if "HTTP 403" in msg:
+                linked_in_throttle = "linkedin" in f"{page_url} {msg}".lower()
+                if "HTTP 403" in msg or (
+                    linked_in_throttle and ("HTTP 429" in msg or "Too Many Requests" in msg)
+                ):
                     entry_report["status"] = "error"
                     entry_report["classification"] = "blocked_or_challenge"
                     entry_report["browserFallbackRecommended"] = True

@@ -84,6 +84,9 @@ def normalize_source_state_payload(
                 ),
                 "lastRedirectResolved": _clamped_int(raw_entry.get("lastRedirectResolved"), 0, 0),
                 "lastRedirectCacheHits": _clamped_int(raw_entry.get("lastRedirectCacheHits"), 0, 0),
+                "googleSheetsRedirectCache": _normalized_google_sheets_redirect_cache(
+                    raw_entry.get("googleSheetsRedirectCache")
+                ),
                 "lastAdapter": clean_text(raw_entry.get("lastAdapter")),
                 "lastSuccessAt": clean_text(raw_entry.get("lastSuccessAt")),
                 "lastNonEmptyAt": clean_text(raw_entry.get("lastNonEmptyAt")),
@@ -215,6 +218,21 @@ def _structured_duplicate_rate(value: Any) -> float:
         return max(0.0, min(1.0, float(value)))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _normalized_google_sheets_redirect_cache(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict) or not value:
+        return {}
+    out: dict[str, str] = {}
+    for raw_key, raw_value in value.items():
+        key = clean_text(raw_key)
+        resolved = normalize_url(raw_value)
+        if not key or not resolved:
+            continue
+        if not common_url.is_supported_redirect_url(key):
+            continue
+        out[key] = resolved
+    return out
 
 
 def _structured_source_host(source_row: dict[str, Any]) -> str:

@@ -162,8 +162,9 @@ def test_stage_enables_browser_only_for_eligible_static_sources(monkeypatch) -> 
     assert not browser_calls
 
 
-def test_stage_passes_heartbeat_only_to_google_sheets_loaders() -> None:
+def test_stage_passes_heartbeat_only_to_google_sheets_and_social_reddit_loaders() -> None:
     google_kwargs: list[dict[str, object]] = []
+    reddit_kwargs: list[dict[str, object]] = []
     other_kwargs: list[dict[str, object]] = []
     task_state_calls: list[dict[str, object]] = []
 
@@ -187,12 +188,29 @@ def test_stage_passes_heartbeat_only_to_google_sheets_loaders() -> None:
             heartbeat()
         return []
 
+    def reddit_loader(**kwargs):  # noqa: ANN202
+        reddit_kwargs.append(kwargs)
+        heartbeat = kwargs.get("heartbeat_callback")
+        if callable(heartbeat):
+            heartbeat()
+        return []
+
     def other_loader(**kwargs):  # noqa: ANN202
         other_kwargs.append(kwargs)
         return []
 
     task_rows = {
         "google_sheets": {
+            "status": "pending",
+            "startedAt": "",
+            "finishedAt": "",
+            "heartbeatAt": "",
+            "durationMs": 0,
+            "error": "",
+            "_startedMonotonic": 0.0,
+            "_slowWarned": False,
+        },
+        "social_reddit": {
             "status": "pending",
             "startedAt": "",
             "finishedAt": "",
@@ -216,7 +234,11 @@ def test_stage_passes_heartbeat_only_to_google_sheets_loaders() -> None:
 
     run_source_execution_stage(
         config=config,
-        selected_loaders=[("google_sheets", google_loader), ("remote_ok", other_loader)],
+        selected_loaders=[
+            ("google_sheets", google_loader),
+            ("social_reddit", reddit_loader),
+            ("remote_ok", other_loader),
+        ],
         fetch_text_limited=lambda _url, _timeout: "",
         source_state_rows={},
         redirect_resolver=type("Resolver", (), {"resolve": staticmethod(lambda url: url)})(),
@@ -231,5 +253,7 @@ def test_stage_passes_heartbeat_only_to_google_sheets_loaders() -> None:
 
     assert "heartbeat_callback" in google_kwargs[0]
     assert callable(google_kwargs[0]["heartbeat_callback"])
+    assert "heartbeat_callback" in reddit_kwargs[0]
+    assert callable(reddit_kwargs[0]["heartbeat_callback"])
     assert "heartbeat_callback" not in other_kwargs[0]
-    assert len(task_state_calls) >= 3
+    assert len(task_state_calls) >= 4

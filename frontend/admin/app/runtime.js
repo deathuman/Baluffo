@@ -353,6 +353,7 @@ function composeControllers() {
         registryController?.loadDiscoveryData().catch(() => {});
       }
     },
+    loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
     bridgeStatusPollIntervalMs: BRIDGE_STATUS_POLL_INTERVAL_MS,
     idlePollIntervalMs: OPS_POLL_IDLE_INTERVAL_MS
   });
@@ -409,7 +410,7 @@ function composeControllers() {
     appendLogRow,
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
     scheduleOpsHealthPolling: (...args) => opsController.scheduleOpsHealthPolling(...args),
-    loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args)
+    _loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args)
   });
 
   registryController = createAdminRegistryController({

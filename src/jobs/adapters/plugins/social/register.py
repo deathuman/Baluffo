@@ -44,6 +44,7 @@ def _run_reddit(
     retries: int,
     backoff_s: float,
     subreddits: list[str] | None = None,
+    heartbeat_callback: Callable[[], None] | None = None,
 ) -> list[RawJob]:
     social_config = _SOCIAL_CONFIG if isinstance(_SOCIAL_CONFIG, dict) else {}
     cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
@@ -74,6 +75,10 @@ def _run_reddit(
     jobs: list[RawJob] = []
     low_conf_total = 0
 
+    def tick() -> None:
+        if heartbeat_callback:
+            heartbeat_callback()
+
     for i, sub in enumerate(subs):
         source_name = f"reddit:r/{sub}"
         json_url = f"https://www.reddit.com/r/{quote(sub, safe='')}/new.json?limit={max_posts}"
@@ -97,7 +102,15 @@ def _run_reddit(
             time.sleep(rate_limit_delay)
         # Try JSON API first
         try:
-            text = fetch_with_retries(json_url, fetch_text, timeout_s, retries, backoff_s)
+            tick()
+            text = fetch_with_retries(
+                json_url,
+                fetch_text,
+                timeout_s,
+                retries,
+                backoff_s,
+                heartbeat_callback=heartbeat_callback,
+            )
             payload = json.loads(text)
             parsed_rows, low_conf_sub = _social_parsers.parse_reddit_json_payload(
                 payload,
@@ -114,6 +127,7 @@ def _run_reddit(
                 )
                 or []
             )
+            tick()
 
         except json.JSONDecodeError as json_exc:
             error_messages.append(f"JSON decode error: {json_exc}")
@@ -123,7 +137,15 @@ def _run_reddit(
         # Try RSS fallback if enabled and JSON failed
         if not parsed_rows and rss_fallback:
             try:
-                rss_text = fetch_with_retries(rss_url, fetch_text, timeout_s, retries, backoff_s)
+                tick()
+                rss_text = fetch_with_retries(
+                    rss_url,
+                    fetch_text,
+                    timeout_s,
+                    retries,
+                    backoff_s,
+                    heartbeat_callback=heartbeat_callback,
+                )
                 parsed_rows, low_conf_sub = _social_parsers.parse_reddit_rss_payload(
                     rss_text,
                     subreddit=sub,
@@ -132,6 +154,7 @@ def _run_reddit(
                     reject_reasons=reject_reason_counts,
                 )
                 entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
+                tick()
 
             except ET.ParseError as rss_exc:
                 error_messages.append(f"RSS parse error: {rss_exc}")
@@ -143,7 +166,15 @@ def _run_reddit(
             try:
                 # Fetch HTML content
                 html_url = f"https://old.reddit.com/r/{quote(sub, safe='')}/new/"
-                html_text = fetch_with_retries(html_url, fetch_text, timeout_s, retries, backoff_s)
+                tick()
+                html_text = fetch_with_retries(
+                    html_url,
+                    fetch_text,
+                    timeout_s,
+                    retries,
+                    backoff_s,
+                    heartbeat_callback=heartbeat_callback,
+                )
                 parsed_rows, low_conf_sub = _social_parsers.parse_reddit_html_payload(
                     html_text,
                     subreddit=sub,
@@ -152,6 +183,7 @@ def _run_reddit(
                     reject_reasons=reject_reason_counts,
                 )
                 entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
+                tick()
 
             except Exception as html_exc:  # noqa: BLE001
                 error_messages.append(f"HTML fetch error: {html_exc}")

@@ -142,6 +142,7 @@ class PooledRedirectResolver:
         *,
         timeout_s: int = DEFAULT_TIMEOUT_S,
         max_connections: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+        initial_cache: dict[str, str] | None = None,
     ) -> None:
         self._timeout_s = max(1, int(timeout_s or DEFAULT_TIMEOUT_S))
         self._cache: dict[str, str] = {}
@@ -163,6 +164,8 @@ class PooledRedirectResolver:
                 )
             except Exception:  # noqa: BLE001
                 self._client = None
+        if isinstance(initial_cache, dict) and initial_cache:
+            self.seed_cache(initial_cache)
 
     def _resolve_with_client(self, normalized: str) -> str:
         if self._client is None:
@@ -223,6 +226,23 @@ class PooledRedirectResolver:
                 "resolvedCount": int(self._resolved_count),
             }
 
+    def seed_cache(self, cache: dict[str, str] | None) -> None:
+        if not isinstance(cache, dict) or not cache:
+            return
+        with self._lock:
+            for key, value in cache.items():
+                normalized_key = normalize_url(key)
+                normalized_value = normalize_url(value)
+                if not normalized_key or not normalized_value:
+                    continue
+                if not is_supported_redirect_url(normalized_key):
+                    continue
+                self._cache[normalized_key] = normalized_value
+
+    def snapshot_cache(self) -> dict[str, str]:
+        with self._lock:
+            return dict(self._cache)
+
     def close(self) -> None:
         client = self._client
         self._client = None
@@ -238,8 +258,13 @@ def build_redirect_resolver(
     *,
     timeout_s: int = DEFAULT_TIMEOUT_S,
     max_connections: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+    initial_cache: dict[str, str] | None = None,
 ) -> PooledRedirectResolver:
-    return PooledRedirectResolver(timeout_s=timeout_s, max_connections=max_connections)
+    return PooledRedirectResolver(
+        timeout_s=timeout_s,
+        max_connections=max_connections,
+        initial_cache=initial_cache,
+    )
 
 
 def default_fetch_text(url: str, timeout_s: int, request: RequestConfig | None = None) -> str:

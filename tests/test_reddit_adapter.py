@@ -161,8 +161,14 @@ def test_reddit_adapter_rate_limiting():
     try:
 
         def mock_fetch_with_retries(
-            url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
+            url: str,
+            fetch_text,
+            timeout_s: int,
+            retries: int,
+            backoff_s: float,
+            heartbeat_callback=None,
         ) -> str:
+            assert heartbeat_callback is None or callable(heartbeat_callback)
             fetch_calls.append(time.time())
             return "{}"
 
@@ -181,6 +187,60 @@ def test_reddit_adapter_rate_limiting():
 
     finally:
         # Restore original config
+        register_module._SOCIAL_CONFIG = original_social_config
+
+
+def test_reddit_adapter_heartbeats_during_fetch_attempts():
+    """Test that Reddit adapter emits heartbeat signals during long fetch attempts."""
+    social_config = {
+        "enabled": True,
+        "reddit": {
+            "enabled": True,
+            "subreddits": ["gamedev"],
+            "maxPostsPerSubreddit": 1,
+            "rssFallback": False,
+            "htmlFallback": False,
+            "rateLimitDelay": 0.0,
+        },
+    }
+    heartbeat_calls: list[str] = []
+
+    def mock_fetch(url: str, timeout: int) -> str:
+        assert timeout == 10
+        return "{}"
+
+    def mock_fetch_with_retries(
+        url: str,
+        fetch_text,
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+        heartbeat_callback=None,
+    ) -> str:
+        assert callable(heartbeat_callback)
+        heartbeat_callback()
+        return fetch_text(url, timeout_s)
+
+    import src.jobs.adapters.plugins.social.register as register_module
+
+    original_social_config = register_module._SOCIAL_CONFIG
+    register_module._SOCIAL_CONFIG = social_config
+
+    try:
+        with patch(
+            "src.jobs.adapters.plugins.social.register.fetch_with_retries",
+            mock_fetch_with_retries,
+        ):
+            _run_reddit(
+                fetch_text=mock_fetch,
+                timeout_s=10,
+                retries=0,
+                backoff_s=0.0,
+                heartbeat_callback=lambda: heartbeat_calls.append("tick"),
+            )
+
+        assert len(heartbeat_calls) >= 2
+    finally:
         register_module._SOCIAL_CONFIG = original_social_config
 
 

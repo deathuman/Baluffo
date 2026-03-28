@@ -88,6 +88,31 @@ export function createAdminRegistryController({
     };
   }
 
+  function buildDiscoveryRegistrySignature(rowsByBucket) {
+    const buckets = ["pending", "active", "rejected"];
+    return JSON.stringify(
+      buckets.map(bucket => {
+        const rows = Array.isArray(rowsByBucket?.[bucket]) ? rowsByBucket[bucket] : [];
+        return rows
+          .map(row => ({
+            id: String(row?.id || row?.sourceId || row?.name || ""),
+            name: String(row?.name || ""),
+            adapter: String(row?.adapter || ""),
+            studio: String(row?.studio || ""),
+            status: String(row?.status || ""),
+            jobsFound: Number(getSourceJobsFoundCount(row) || 0),
+            sourceId: String(row?.sourceId || ""),
+            sourceUrl: String(row?.url || row?.sourceUrl || "")
+          }))
+          .sort((left, right) => {
+            const leftKey = `${left.id}|${left.name}|${left.sourceUrl}`;
+            const rightKey = `${right.id}|${right.name}|${right.sourceUrl}`;
+            return leftKey.localeCompare(rightKey);
+          });
+      })
+    );
+  }
+
   async function addManualSource() {
     if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
       showToast("Another discovery operation is running.", "info");
@@ -278,7 +303,6 @@ export function createAdminRegistryController({
   async function loadDiscoveryData() {
     if (state.adminBusyState.discoveryLoad) return;
     setBusyFlag("discoveryLoad", true);
-    appendDiscoveryLog("Loading source discovery report and registries...");
     try {
       const [report, pending, active, rejected] = await Promise.all([
         getBridge("/discovery/report"),
@@ -299,6 +323,11 @@ export function createAdminRegistryController({
       const pendingRows = mergeSourceStatusFromReport(Array.isArray(pending?.sources) ? pending.sources : [], latestFetchReport, "pending");
       const activeRows = mergeSourceStatusFromReport(Array.isArray(active?.sources) ? active.sources : [], latestFetchReport, "active");
       const rejectedRows = mergeSourceStatusFromReport(Array.isArray(rejected?.sources) ? rejected.sources : [], latestFetchReport, "rejected");
+      const registrySignature = buildDiscoveryRegistrySignature({
+        pending: pendingRows,
+        active: activeRows,
+        rejected: rejectedRows
+      });
       const filterState = toAdminFilterState();
       const hiddenZeroJobsCount = pendingRows.filter(row => getSourceJobsFoundCount(row) === 0).length;
       const visiblePendingRows = applySourceFilter(
@@ -314,16 +343,24 @@ export function createAdminRegistryController({
       renderSourcesTable(refs.adminPendingSourcesEl, visiblePendingRows, "pending");
       renderSourcesTable(refs.adminActiveSourcesEl, visibleActiveRows, "active");
       renderSourcesTable(refs.adminRejectedSourcesEl, visibleRejectedRows, "rejected");
-      appendDiscoveryLog(
-        `Discovery summary: found ${foundCount}, probed ${probedCount}, queued (new) ${queuedCount}, failed ${failedCount}, skipped duplicates ${skippedCount}.`,
-        "info"
-      );
-      const topFailures = Array.isArray(report?.topFailures) ? report.topFailures : [];
-      if (topFailures.length) {
-        const line = topFailures.slice(0, 3).map(item => `${String(item?.key || "unknown")} (${Number(item?.count || 0)})`).join(", ");
-        appendDiscoveryLog(`Top failures: ${line}`, "warn");
+      const registryChanged = registrySignature !== String(state.discoveryRegistrySignature || "");
+      state.discoveryRegistrySignature = registrySignature;
+      if (registryChanged) {
+        appendDiscoveryLog("Loading source discovery report and registries...");
+        appendDiscoveryLog(
+          `Discovery summary: found ${foundCount}, probed ${probedCount}, queued (new) ${queuedCount}, failed ${failedCount}, skipped duplicates ${skippedCount}.`,
+          "info"
+        );
+        const topFailures = Array.isArray(report?.topFailures) ? report.topFailures : [];
+        if (topFailures.length) {
+          const line = topFailures
+            .slice(0, 3)
+            .map(item => `${String(item?.key || "unknown")} (${Number(item?.count || 0)})`)
+            .join(", ");
+          appendDiscoveryLog(`Top failures: ${line}`, "warn");
+        }
+        appendDiscoveryLog("Source discovery data loaded.", "success");
       }
-      appendDiscoveryLog("Source discovery data loaded.", "success");
       adminDispatch.dispatch({ type: adminActions.DISCOVERY_REFRESHED, payload: { at: new Date().toISOString() } });
     } catch (err) {
       appendDiscoveryLog(`Could not load source discovery data: ${getErrorMessage(err)}`, "error");

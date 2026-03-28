@@ -173,7 +173,7 @@ def run_source_execution_stage(
         }
         canonical_batch: list[CanonicalJob] = []
         loader_heartbeat_callback = None
-        if clean_text(name).startswith("google_sheets"):
+        if clean_text(name) in {"google_sheets", "social_reddit"}:
             last_heartbeat_write = 0.0
 
             def loader_heartbeat_callback() -> None:

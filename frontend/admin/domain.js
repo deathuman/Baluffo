@@ -188,7 +188,7 @@ export function applySourceFilter(rows, activeSourceFilter) {
 }
 
 function parseRunTimestampMs(row) {
-  const raw = String(row?.finishedAt || row?.startedAt || "").trim();
+  const raw = String(row?.startedAt || row?.finishedAt || "").trim();
   const parsed = Date.parse(raw);
   return Number.isFinite(parsed) ? parsed : 0;
 }

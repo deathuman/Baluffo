@@ -163,8 +163,12 @@ def test_default_source_loaders_includes_all_registry_sources() -> None:
             "static_studio_pages_s_z",
         }
     }
+    # Reddit is intentionally excluded from the default loader fan-out for now because it
+    # currently burns a lot of time while yielding no usable jobs in uncapped runs.
+    assert "social_reddit" not in base_expected
     loaders_with_social = jf.default_source_loaders(social_enabled=True)
     loader_names = {name for name, _ in loaders_with_social}
+    assert "social_reddit" not in loader_names
     for name in base_expected:
         assert name in loader_names, (
             f"Registry source {name} should be in default loaders when social_enabled=True"
@@ -210,3 +214,40 @@ def test_source_detail_limit_for_uses_tighter_cap_when_listing_jobs_already_foun
         very_low_yield_detail_cap=6,
     )
     assert limit == 6
+
+
+def test_source_detail_limit_for_tails_off_from_detail_fetch_history() -> None:
+    limit = source_detail_limit_for(
+        "Stillfront (Sheet)",
+        source_state_rows={
+            "Stillfront (Sheet)": {
+                "lastDetailPagesVisited": 54,
+                "lastKeptCount": 21,
+                "lastDurationMs": 145137,
+                "lastDetailYieldPct": 39,
+                "lastStageTimingsMs": {"detailFetch": 217029},
+            }
+        },
+        discovered_links=54,
+        listing_jobs_found=21,
+        low_yield_detail_cap=12,
+        very_low_yield_detail_cap=6,
+    )
+    assert limit == 6
+
+
+def test_source_detail_retries_for_reduces_tail_retry_pressure() -> None:
+    retries = source_detail_retries_for(
+        "Stillfront (Sheet)",
+        source_state_rows={
+            "Stillfront (Sheet)": {
+                "lastDetailPagesVisited": 54,
+                "lastKeptCount": 21,
+                "lastDurationMs": 145137,
+                "lastDetailYieldPct": 39,
+                "lastStageTimingsMs": {"detailFetch": 217029},
+            }
+        },
+        base_retries=2,
+    )
+    assert retries == 0

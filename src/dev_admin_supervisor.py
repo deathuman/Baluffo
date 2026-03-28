@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.contracts import SCHEMA_VERSION
 from src.ship.desktop_app import launch_browser_for_url, terminate_process, watch_browser_session
 from src.ship.runtime_launcher import wait_for_url
 
@@ -29,6 +30,9 @@ DEFAULT_OWNER_IDLE_TIMEOUT_S = 30.0
 LOCAL_BROWSER_EXIT_POLL_INTERVAL_S = 0.25
 LOCAL_BROWSER_EXIT_SETTLE_S = 1.0
 SESSION_FILENAME = "admin-dev-session.json"
+TASK_STATE_FILENAME = "admin-task-state.json"
+FETCH_REPORT_FILENAME = "jobs-fetch-report.json"
+FETCH_TASKS_FILENAME = "jobs-fetch-tasks.json"
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,30 @@ class DevAdminConfig:
 
 def _session_path(data_dir: Path) -> Path:
     return Path(data_dir) / SESSION_FILENAME
+
+
+def _task_state_path(data_dir: Path) -> Path:
+    return Path(data_dir) / TASK_STATE_FILENAME
+
+
+def _fetch_report_path(data_dir: Path) -> Path:
+    return Path(data_dir) / FETCH_REPORT_FILENAME
+
+
+def _fetch_tasks_path(data_dir: Path) -> Path:
+    return Path(data_dir) / FETCH_TASKS_FILENAME
+
+
+def _schema_version_int() -> int:
+    try:
+        return int(SCHEMA_VERSION)
+    except (TypeError, ValueError):
+        return int(float(str(SCHEMA_VERSION or 1)))
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _python_command() -> list[str]:
@@ -141,16 +169,115 @@ def clear_session_state(data_dir: Path, *, owner_token: str = "") -> None:
         return
 
 
-def stop_owned_session(data_dir: Path) -> dict[str, Any]:
-    state = load_session_state(data_dir)
+def _load_task_state(data_dir: Path) -> dict[str, Any]:
+    path = _task_state_path(data_dir)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _clear_task_state(data_dir: Path) -> None:
+    try:
+        _task_state_path(data_dir).unlink()
+    except OSError:
+        return
+
+
+def _reset_fetch_report(data_dir: Path) -> None:
+    path = _fetch_report_path(data_dir)
+    _write_json(
+        path,
+        {
+            "schemaVersion": _schema_version_int(),
+            "runId": "",
+            "startedAt": "",
+            "finishedAt": "",
+            "runtime": {"lifecycle": {"owner": "fetch_report", "heartbeatAt": ""}},
+            "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+            "taskProgress": {
+                "active": False,
+                "phaseKey": "",
+                "phaseLabel": "",
+                "mode": "indeterminate",
+                "ratio": 0.0,
+                "counts": {},
+            },
+            "sources": [],
+            "outputs": {"report": str(path)},
+        },
+    )
+
+
+def _reset_fetch_tasks(data_dir: Path) -> None:
+    path = _fetch_tasks_path(data_dir)
+    _write_json(
+        path,
+        {
+            "schemaVersion": _schema_version_int(),
+            "runId": "",
+            "startedAt": "",
+            "finishedAt": "",
+            "heartbeatAt": "",
+            "summary": {"queued": 0, "running": 0, "ok": 0, "error": 0},
+            "taskProgress": {
+                "active": False,
+                "phaseKey": "",
+                "phaseLabel": "",
+                "mode": "indeterminate",
+                "ratio": 0.0,
+                "counts": {},
+            },
+            "tasks": [],
+            "outputs": {"report": str(_fetch_report_path(data_dir))},
+        },
+    )
+
+
+def _reset_fetch_artifacts(data_dir: Path) -> None:
+    _reset_fetch_report(data_dir)
+    _reset_fetch_tasks(data_dir)
+
+
+def _terminate_recorded_pids(state: dict[str, Any]) -> list[int]:
     killed: list[int] = []
+    seen: set[int] = set()
     for key in ("bridgePid", "sitePid", "supervisorPid"):
         pid = int(state.get(key) or 0)
-        if pid > 0:
+        if pid > 0 and pid not in seen:
             _terminate_pid(pid)
+            seen.add(pid)
             killed.append(pid)
+    return killed
+
+
+def reclaim_previous_dev_session(
+    data_dir: Path, *, kill_recorded_pids: bool = True
+) -> dict[str, Any]:
+    session_state = load_session_state(data_dir)
+    task_state = _load_task_state(data_dir)
+    killed: list[int] = []
+    if kill_recorded_pids and session_state:
+        killed.extend(_terminate_recorded_pids(session_state))
+    if kill_recorded_pids and task_state:
+        for task_type, entry in task_state.items():
+            if not isinstance(entry, dict):
+                continue
+            if str(task_type) not in {"discovery", "fetch"}:
+                continue
+            pid = int(entry.get("pid") or 0)
+            if pid > 0 and pid not in killed:
+                _terminate_pid(pid)
+                killed.append(pid)
     clear_session_state(data_dir)
+    _clear_task_state(data_dir)
+    _reset_fetch_artifacts(data_dir)
     return {"stopped": bool(killed), "killedPids": killed}
+
+
+def stop_owned_session(data_dir: Path) -> dict[str, Any]:
+    return reclaim_previous_dev_session(data_dir)
 
 
 def _health_url(config: DevAdminConfig) -> str:
@@ -163,9 +290,12 @@ def _admin_url(config: DevAdminConfig) -> str:
 
 def _ensure_previous_owned_session_stopped(data_dir: Path) -> None:
     state = load_session_state(data_dir)
-    if not state:
+    task_state = _load_task_state(data_dir)
+    if not state and not task_state:
+        _reset_fetch_artifacts(data_dir)
         return
-    stop_owned_session(data_dir)
+    reclaim_previous_dev_session(data_dir)
+    _reset_fetch_artifacts(data_dir)
 
 
 def wait_for_local_browser_exit(
@@ -247,7 +377,7 @@ def run_supervised_admin_session(config: DevAdminConfig) -> int:
             terminate_process(browser_process)
         terminate_process(bridge_process)
         terminate_process(site_process)
-        clear_session_state(config.data_dir, owner_token=owner_token)
+        reclaim_previous_dev_session(config.data_dir, kill_recorded_pids=False)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

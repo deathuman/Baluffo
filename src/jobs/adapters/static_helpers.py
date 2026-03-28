@@ -162,6 +162,27 @@ def source_detail_concurrency_for(
     return static_detail_concurrency
 
 
+def _source_tail_metrics(
+    source_key: str,
+    *,
+    source_state_rows: dict[str, dict[str, Any]] | None,
+) -> dict[str, int]:
+    entry = (source_state_rows or {}).get(source_key) if isinstance(source_state_rows, dict) else {}
+    if not isinstance(entry, dict):
+        return {}
+    stage_timings = (
+        entry.get("lastStageTimingsMs") if isinstance(entry.get("lastStageTimingsMs"), dict) else {}
+    )
+    return {
+        "last_detail_pages": int(entry.get("lastDetailPagesVisited") or 0),
+        "last_kept": int(entry.get("lastKeptCount") or 0),
+        "last_duration_ms": int(entry.get("lastDurationMs") or 0),
+        "last_detail_yield_pct": int(entry.get("lastDetailYieldPct") or 0),
+        "last_detail_fetch_ms": int(stage_timings.get("detailFetch") or 0),
+        "last_listing_fetch_ms": int(stage_timings.get("listingFetch") or 0),
+    }
+
+
 def source_detail_limit_for(
     source_key: str,
     *,
@@ -173,13 +194,26 @@ def source_detail_limit_for(
 ) -> int:
     if discovered_links <= 0:
         return 0
-    entry = (source_state_rows or {}).get(source_key) if isinstance(source_state_rows, dict) else {}
-    if not isinstance(entry, dict):
+    metrics = _source_tail_metrics(source_key, source_state_rows=source_state_rows)
+    if not metrics:
         return discovered_links
-    last_detail_pages = int(entry.get("lastDetailPagesVisited") or 0)
-    last_kept = int(entry.get("lastKeptCount") or 0)
-    last_duration_ms = int(entry.get("lastDurationMs") or 0)
-    last_detail_yield_pct = int(entry.get("lastDetailYieldPct") or 0)
+    last_detail_pages = metrics["last_detail_pages"]
+    last_kept = metrics["last_kept"]
+    last_duration_ms = metrics["last_duration_ms"]
+    last_detail_yield_pct = metrics["last_detail_yield_pct"]
+    last_detail_fetch_ms = metrics["last_detail_fetch_ms"]
+
+    if last_detail_fetch_ms >= 120_000 or last_duration_ms >= 120_000 or last_detail_pages >= 60:
+        cap = very_low_yield_detail_cap
+        if listing_jobs_found > 0 and (last_detail_yield_pct <= 20 or last_kept <= 1):
+            cap = max(1, min(very_low_yield_detail_cap, 4))
+        return min(discovered_links, max(1, cap))
+    if last_detail_fetch_ms >= 60_000 or last_duration_ms >= 90_000 or last_detail_pages >= 30:
+        cap = low_yield_detail_cap if last_detail_yield_pct <= 20 or last_kept <= 1 else very_low_yield_detail_cap
+        return min(discovered_links, max(1, cap))
+    if last_detail_fetch_ms >= 30_000 or last_duration_ms >= 45_000 or last_detail_pages >= 20:
+        cap = low_yield_detail_cap if last_detail_yield_pct <= 15 else very_low_yield_detail_cap
+        return min(discovered_links, max(1, cap))
 
     if last_detail_pages >= 30 and last_kept <= 1 and last_duration_ms >= 45_000:
         cap = very_low_yield_detail_cap if listing_jobs_found > 0 else low_yield_detail_cap
@@ -190,6 +224,29 @@ def source_detail_limit_for(
     if listing_jobs_found > 0 and last_detail_pages >= 10 and last_detail_yield_pct <= 10:
         return min(discovered_links, max(1, very_low_yield_detail_cap))
     return discovered_links
+
+
+def source_detail_retries_for(
+    source_key: str,
+    *,
+    source_state_rows: dict[str, dict[str, Any]] | None,
+    base_retries: int,
+) -> int:
+    metrics = _source_tail_metrics(source_key, source_state_rows=source_state_rows)
+    retries = max(0, int(base_retries or 0))
+    if not metrics:
+        return retries
+    last_duration_ms = metrics["last_duration_ms"]
+    last_detail_fetch_ms = metrics["last_detail_fetch_ms"]
+    last_detail_pages = metrics["last_detail_pages"]
+
+    if last_detail_fetch_ms >= 120_000 or last_duration_ms >= 120_000 or last_detail_pages >= 60:
+        return 0
+    if last_detail_fetch_ms >= 60_000 or last_duration_ms >= 90_000 or last_detail_pages >= 30:
+        return min(retries, 1)
+    if last_detail_fetch_ms >= 30_000 or last_duration_ms >= 45_000 or last_detail_pages >= 20:
+        return min(retries, 1)
+    return retries
 
 
 def choose_detail_traversal_mode(
@@ -215,6 +272,19 @@ def choose_detail_traversal_mode(
         detail_fetch_required = profile.get("detail_fetch_required")
     if detail_fetch_required is False and listing_jobs_found > 0:
         return "listing_only"
+    metrics = _source_tail_metrics(source_key, source_state_rows=source_state_rows)
+    if metrics and listing_jobs_found > 0:
+        last_detail_pages = metrics["last_detail_pages"]
+        last_kept = metrics["last_kept"]
+        last_duration_ms = metrics["last_duration_ms"]
+        last_detail_yield_pct = metrics["last_detail_yield_pct"]
+        last_detail_fetch_ms = metrics["last_detail_fetch_ms"]
+        if (
+            last_detail_fetch_ms >= 120_000
+            or last_duration_ms >= 120_000
+            or last_detail_pages >= 40
+        ) and (last_detail_yield_pct <= 20 or last_kept <= 1):
+            return "listing_only"
     host = (urlparse(clean_text(page_url) or "").hostname or "").lower()
     if host in runtime_config.listing_only_hosts and listing_jobs_found > 0:
         return "listing_only"
@@ -230,7 +300,6 @@ def choose_detail_traversal_mode(
         return "capped_detail"
     return "full_detail"
 
-
 def create_fetch_html_cached(
     *,
     fetch_text: Callable[[str, int], str],
@@ -241,7 +310,12 @@ def create_fetch_html_cached(
     fetch_cache: dict[str, str] = {}
     fetch_cache_lock = threading.Lock()
 
-    def fetch_html_cached(url: str, *, remaining_budget_s: float | None = None) -> tuple[str, bool]:
+    def fetch_html_cached(
+        url: str,
+        *,
+        remaining_budget_s: float | None = None,
+        retries_override: int | None = None,
+    ) -> tuple[str, bool]:
         normalized = normalize_url(url) or clean_text(url)
         if not normalized:
             return "", False
@@ -251,7 +325,9 @@ def create_fetch_html_cached(
             return cached, True
         fetch_url = clean_text(url) or normalized
         effective_timeout_s = int(timeout_s or 1)
-        effective_retries = int(retries or 0)
+        effective_retries = max(
+            0, int(retries_override if retries_override is not None else retries or 0)
+        )
         if remaining_budget_s is not None:
             remaining = float(max(0.0, remaining_budget_s))
             effective_timeout_s = max(3, min(effective_timeout_s, int(remaining)))
@@ -321,7 +397,8 @@ def add_detail_link(
     default_path_tokens: list[str],
     default_query_keys: list[str],
 ) -> None:
-    absolute = normalize_url(urljoin(page_url, clean_text(candidate_url)))
+    candidate = clean_text(candidate_url).rstrip("\\")
+    absolute = normalize_url(urljoin(page_url, candidate))
     if not absolute:
         link_rejections["non_job_url"] += 1
         return
@@ -348,6 +425,7 @@ def process_detail_link(
     static_source_time_budget_s: int,
     fetch_html_cached: Callable[..., tuple[str, bool]],
     timeout_s: int,
+    detail_retries: int,
     company: str,
     source_name: str,
     source: dict[str, Any],
@@ -357,7 +435,11 @@ def process_detail_link(
     remaining_budget_s = float(static_source_time_budget_s) - float(
         time.perf_counter() - source_started
     )
-    detail_html, cache_hit = fetch_html_cached(detail, remaining_budget_s=remaining_budget_s)
+    detail_html, cache_hit = fetch_html_cached(
+        detail,
+        remaining_budget_s=remaining_budget_s,
+        retries_override=detail_retries,
+    )
     fetch_ms = int((time.perf_counter() - fetch_started) * 1000)
     parse_started = time.perf_counter()
     detail_jobs = parse_jobpostings_from_html(

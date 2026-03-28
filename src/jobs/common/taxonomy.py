@@ -63,6 +63,52 @@ def _has_any(text: str, phrases: list[str] | tuple[str, ...]) -> bool:
     return any(phrase in text for phrase in phrases)
 
 
+def _is_linkedin_throttle_error(error_lower: str) -> bool:
+    """Detect LinkedIn throttling / 429 errors without widening other rate-limit cases."""
+    return "linkedin" in error_lower and _has_any(
+        error_lower,
+        [
+            "429",
+            "too many requests",
+            "rate limit",
+            "throttl",
+        ],
+    )
+
+
+def _is_named_static_no_jobs_offender(error_lower: str) -> bool:
+    """Detect repeat static offenders that still report generic no-jobs failures."""
+    if "no jobs extracted" not in error_lower:
+        return False
+    return _has_any(
+        error_lower,
+        [
+            "static:sega",
+            "static:capcom",
+            "static:stormind games",
+            "static:electronic arts",
+            "static:unknown worlds entertainment",
+        ],
+    )
+
+
+def _is_static_manual_no_jobs_error(error_lower: str) -> bool:
+    """Detect static/manual no-jobs failures that should be classified deterministically."""
+    if "no jobs extracted from source pages" not in error_lower:
+        return False
+    if "static:" not in error_lower:
+        return False
+    return _has_any(
+        error_lower,
+        [
+            "manual website",
+            "sheet",
+            "gamesmap",
+            "gameprog",
+        ],
+    )
+
+
 def classification_context_from_source_detail(
     source_detail: dict[str, object],
 ) -> ClassificationContext:
@@ -145,6 +191,8 @@ def assess_zero_extract(context: ClassificationContext) -> ZeroExtractAssessment
             "ddos-guard",
         ],
     )
+    if not anti_bot_signals and _is_linkedin_throttle_error(error_lower):
+        anti_bot_signals = True
     if not anti_bot_signals:
         anti_bot_signals = classification in {
             "blocked_or_challenge",
@@ -169,6 +217,12 @@ def assess_zero_extract(context: ClassificationContext) -> ZeroExtractAssessment
     )
     if js_signals and not (signal_quality == "weak" and not explicit_js):
         return ZeroExtractAssessment(ZeroExtractDiagnosis.JS_REQUIRED, True)
+
+    if _is_named_static_no_jobs_offender(error_lower):
+        return ZeroExtractAssessment(ZeroExtractDiagnosis.JS_REQUIRED, False)
+
+    if _is_static_manual_no_jobs_error(error_lower):
+        return ZeroExtractAssessment(ZeroExtractDiagnosis.JS_REQUIRED, False)
 
     site_changed_signals = (
         context.listing_changed
@@ -240,6 +294,9 @@ def map_error_to_failure_bucket(context: ClassificationContext) -> FailureBucket
             return FailureBucket.NEEDS_REVIEW
         return FailureBucket.UNKNOWN
 
+    if classification in {"blocked_or_challenge", "anti_bot_or_challenge"}:
+        return FailureBucket.ANTI_BOT_OR_CHALLENGE
+
     if "timeout" in error_lower or classification == "browser_timeout":
         return FailureBucket.TIMEOUT
 
@@ -256,6 +313,9 @@ def map_error_to_failure_bucket(context: ClassificationContext) -> FailureBucket
             "ddos-guard",
         ]
     ):
+        return FailureBucket.ANTI_BOT_OR_CHALLENGE
+
+    if _is_linkedin_throttle_error(error_lower):
         return FailureBucket.ANTI_BOT_OR_CHALLENGE
 
     if any(
@@ -310,6 +370,7 @@ def classify_zero_kept(
     classification = _normalized_text(context.classification)
     if context.fetched_count > 0:
         return ZeroKeptClassification.LEGIT_EMPTY
+    assessment = assess_zero_extract(context)
     if status == "error" and (
         context.http_status in {401, 403, 404, 429, 500, 502, 503, 504}
         or any(
@@ -330,5 +391,7 @@ def classify_zero_kept(
     ):
         return ZeroKeptClassification.BROKEN_EXTRACTION
     if classification in {"ok_no_jobs", "needs_review"} or status == "ok":
-        return ZeroKeptClassification.NEEDS_REVIEW
-    return _legacy_zero_kept_from_diagnosis(assess_zero_extract(context).diagnosis)
+        if assessment.diagnosis == ZeroExtractDiagnosis.NEEDS_REVIEW:
+            return ZeroKeptClassification.NEEDS_REVIEW
+        return _legacy_zero_kept_from_diagnosis(assessment.diagnosis)
+    return _legacy_zero_kept_from_diagnosis(assessment.diagnosis)

@@ -28,7 +28,6 @@ DEFAULT_SOURCE_LOADER_NAMES: list[str] = [
     "workday_sources",
     "personio_sources",
     "scrapy_static_sources",
-    "social_reddit",
     "social_x",
     "social_mastodon",
 ]

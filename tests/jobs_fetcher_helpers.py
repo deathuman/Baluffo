@@ -16,7 +16,7 @@ from src.jobs.adapters import static_helpers, static_scrapy
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.static_helpers import source_detail_limit_for
+from src.jobs.adapters.static_helpers import source_detail_limit_for, source_detail_retries_for
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.contamination_audit import (
     build_contamination_report,
@@ -52,6 +52,7 @@ __all__ = [
     "runtime_resolver",
     "scrapy_runner",
     "source_detail_limit_for",
+    "source_detail_retries_for",
     "static_helpers",
     "static_scrapy",
     "subprocess",

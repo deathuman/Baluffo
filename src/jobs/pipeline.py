@@ -474,6 +474,21 @@ def run_pipeline(
         max_connections=google_sheets_redirect_concurrency,
     )
     source_state_rows = read_source_state(paths.source_state_path)
+    google_sheets_redirect_cache: dict[str, str] = {}
+    for _state in source_state_rows.values():
+        if not isinstance(_state, dict):
+            continue
+        raw_cache = _state.get("googleSheetsRedirectCache")
+        if not isinstance(raw_cache, dict) or not raw_cache:
+            continue
+        for _raw_url, _resolved_url in raw_cache.items():
+            _url = clean_text(_raw_url)
+            _resolved = clean_text(_resolved_url)
+            if _url and _resolved:
+                google_sheets_redirect_cache[_url] = _resolved
+    seed_redirect_cache = getattr(redirect_resolver, "seed_cache", None)
+    if callable(seed_redirect_cache) and google_sheets_redirect_cache:
+        seed_redirect_cache(google_sheets_redirect_cache)
     lifecycle_rows = read_job_lifecycle_state(paths.lifecycle_state_path)
     incremental_cache_enabled = bool(not force_refresh_all and paths.json_path.exists())
     effective_seed_from_existing_output = bool(
@@ -936,6 +951,17 @@ def run_pipeline(
         circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
         circuit_breaker_zero_kept=circuit_breaker_zero_kept,
     )
+    snapshot_redirect_cache = getattr(redirect_resolver, "snapshot_cache", None)
+    if callable(snapshot_redirect_cache):
+        persisted_redirect_cache = {
+            clean_text(url): clean_text(resolved)
+            for url, resolved in (snapshot_redirect_cache() or {}).items()
+            if clean_text(url) and clean_text(resolved)
+        }
+        if persisted_redirect_cache:
+            for source_name, source_row in source_state_rows.items():
+                if clean_text(source_name).startswith("google_sheets") and isinstance(source_row, dict):
+                    source_row["googleSheetsRedirectCache"] = dict(persisted_redirect_cache)
     report_payload["healthSummary"] = {
         "topFailingDomains": health_module.get_top_failing_sources(source_state_rows, limit=10),
         "topZeroKeptDomains": health_module.get_top_zero_kept_sources(source_state_rows, limit=10),
