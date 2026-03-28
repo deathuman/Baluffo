@@ -282,13 +282,15 @@ def build_unknown_static_breakdown(
                 "count": values["count"],
                 "totalDurationMs": values["totalDurationMs"],
                 "examples": list(values["examples"]),
-                "share": (
-                    float(values["count"]) / float(len(rows)) if rows else 0.0
-                ),
+                "share": (float(values["count"]) / float(len(rows)) if rows else 0.0),
             }
             for shape, values in by_shape.items()
         ),
-        key=lambda row: (-int(row.get("count") or 0), -int(row.get("totalDurationMs") or 0), row["shape"]),
+        key=lambda row: (
+            -int(row.get("count") or 0),
+            -int(row.get("totalDurationMs") or 0),
+            row["shape"],
+        ),
     )
     return {
         "byShape": by_shape,

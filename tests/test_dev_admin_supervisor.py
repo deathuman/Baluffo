@@ -228,9 +228,7 @@ def test_reclaim_previous_dev_session_can_clear_files_without_re_killing_owner()
         )
 
         with mock.patch.object(supervisor, "_terminate_pid") as terminate_pid:
-            result = supervisor.reclaim_previous_dev_session(
-                data_dir, kill_recorded_pids=False
-            )
+            result = supervisor.reclaim_previous_dev_session(data_dir, kill_recorded_pids=False)
 
         assert result == {"stopped": False, "killedPids": []}
         terminate_pid.assert_not_called()

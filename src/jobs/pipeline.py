@@ -960,7 +960,9 @@ def run_pipeline(
         }
         if persisted_redirect_cache:
             for source_name, source_row in source_state_rows.items():
-                if clean_text(source_name).startswith("google_sheets") and isinstance(source_row, dict):
+                if clean_text(source_name).startswith("google_sheets") and isinstance(
+                    source_row, dict
+                ):
                     source_row["googleSheetsRedirectCache"] = dict(persisted_redirect_cache)
     report_payload["healthSummary"] = {
         "topFailingDomains": health_module.get_top_failing_sources(source_state_rows, limit=10),

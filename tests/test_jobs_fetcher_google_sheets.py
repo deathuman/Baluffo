@@ -368,7 +368,9 @@ def test_run_pipeline_reuses_and_persists_google_sheets_redirect_cache() -> None
             json.dumps(state_payload, indent=2), encoding="utf-8"
         )
 
-        with mock.patch.object(jf, "build_redirect_resolver", return_value=_FakeResolver()) as builder:
+        with mock.patch.object(
+            jf, "build_redirect_resolver", return_value=_FakeResolver()
+        ) as builder:
 
             def fake_fetch(url: str, _: int) -> str:
                 if "docs.google.com" in url or "allorigins.win" in url:

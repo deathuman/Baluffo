@@ -209,7 +209,11 @@ def source_detail_limit_for(
             cap = max(1, min(very_low_yield_detail_cap, 4))
         return min(discovered_links, max(1, cap))
     if last_detail_fetch_ms >= 60_000 or last_duration_ms >= 90_000 or last_detail_pages >= 30:
-        cap = low_yield_detail_cap if last_detail_yield_pct <= 20 or last_kept <= 1 else very_low_yield_detail_cap
+        cap = (
+            low_yield_detail_cap
+            if last_detail_yield_pct <= 20 or last_kept <= 1
+            else very_low_yield_detail_cap
+        )
         return min(discovered_links, max(1, cap))
     if last_detail_fetch_ms >= 30_000 or last_duration_ms >= 45_000 or last_detail_pages >= 20:
         cap = low_yield_detail_cap if last_detail_yield_pct <= 15 else very_low_yield_detail_cap
@@ -299,6 +303,7 @@ def choose_detail_traversal_mode(
     if detail_limit < discovered_links:
         return "capped_detail"
     return "full_detail"
+
 
 def create_fetch_html_cached(
     *,

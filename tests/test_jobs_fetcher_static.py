@@ -640,7 +640,6 @@ def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
         jf.STUDIO_SOURCE_REGISTRY = prev
 
 
-
 def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> None:
     prev = list(jf.STUDIO_SOURCE_REGISTRY)
     source = {
@@ -652,10 +651,14 @@ def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> Non
         "enabledByDefault": True,
     }
     jf.STUDIO_SOURCE_REGISTRY = [source]
-    listing_html = "<html><body>" + "".join(
-        f'<article><h2>Role {i}</h2><a href="/job/{i}">More Details</a></article>'
-        for i in range(20)
-    ) + "</body></html>"
+    listing_html = (
+        "<html><body>"
+        + "".join(
+            f'<article><h2>Role {i}</h2><a href="/job/{i}">More Details</a></article>'
+            for i in range(20)
+        )
+        + "</body></html>"
+    )
     detail_html = "<html><body><h1>Role</h1></body></html>"
     detail_calls = {"count": 0}
     tail_state = {
@@ -691,7 +694,7 @@ def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> Non
         )
         elapsed = time.perf_counter() - start
         diag = (jf.SOURCE_DIAGNOSTICS.get("Tail Test Studio") or {}).get("details") or []
-        stats = ((diag[0] if diag else {}).get("stats") or {})
+        stats = (diag[0] if diag else {}).get("stats") or {}
         return elapsed, int(stats.get("detail_pages_visited") or 0), len(rows)
 
     try:
@@ -1253,7 +1256,10 @@ def test_unknown_static_breakdown_groups_by_shape_and_orders_views() -> None:
     assert breakdown["byShape"]["transport_network"]["count"] == 1
     assert breakdown["byShape"]["anti_bot_challenge"]["count"] == 1
     assert breakdown["byShape"]["other_static"]["count"] == 1
-    assert breakdown["topByWallTime"][0]["name"] == "static_source::static:listing_url:https://example.com/a"
+    assert (
+        breakdown["topByWallTime"][0]["name"]
+        == "static_source::static:listing_url:https://example.com/a"
+    )
     assert breakdown["topByFrequency"][0]["shape"] == "no_jobs_extracted"
     assert breakdown["topByFrequency"][0]["count"] == 2
     assert source_reports[0]["failureBucket"] == "unknown"

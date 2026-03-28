@@ -1341,8 +1341,11 @@ def test_run_social_reddit_source_forwards_heartbeat_to_plugin_run() -> None:
             heartbeat()
             return []
 
-    with mock.patch("src.jobs.adapters.social.ensure_social_plugins"), mock.patch(
-        "src.jobs.adapters.social.default_registry.select", return_value=(_Plugin(), None)
+    with (
+        mock.patch("src.jobs.adapters.social.ensure_social_plugins"),
+        mock.patch(
+            "src.jobs.adapters.social.default_registry.select", return_value=(_Plugin(), None)
+        ),
     ):
         rows = jf.run_social_reddit_source(
             fetch_text=lambda url, _: "{}",
