@@ -406,7 +406,9 @@ def run_static_studio_pages_source(
                                     continue
                                 seen_links.add(link)
                                 row["adapter"] = "static"
-                                row["studio"] = clean_text(source.get("studio")) or company or source_name
+                                row["studio"] = (
+                                    clean_text(source.get("studio")) or company or source_name
+                                )
                                 jobs.append(row)
                                 listing_jobs_found += 1
                             if listing_jobs_found > 0:

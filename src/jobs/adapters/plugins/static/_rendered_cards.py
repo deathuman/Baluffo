@@ -83,7 +83,11 @@ def _normalize_title_candidate(text: str) -> str:
         return ""
     if "placeholder" in lower:
         candidate = candidate.split("Placeholder", 1)[0].strip()
-    candidate = re.sub(r"(?is)\b(?:apply now|learn more|details|read more|view job|view details)\b.*$", "", candidate)
+    candidate = re.sub(
+        r"(?is)\b(?:apply now|learn more|details|read more|view job|view details)\b.*$",
+        "",
+        candidate,
+    )
     hiring_match = re.search(
         r"(?is)^(?:.*?\bis hiring (?:a|an)\s+)(.+?)(?:\s+(?:to|for|from|in|at|on)\b.*)?$",
         candidate,
@@ -109,7 +113,9 @@ def _pick_title(block_html: str, anchor_body: str) -> str:
         lower = candidate.lower()
         if lower in _IGNORED_TOKENS:
             continue
-        if any(hint in lower for hint in ("location", "term", "type", "contract", "department", "team")):
+        if any(
+            hint in lower for hint in ("location", "term", "type", "contract", "department", "team")
+        ):
             continue
         return candidate
     return ""
@@ -127,11 +133,14 @@ def _pick_location_and_terms(block_html: str, title: str) -> tuple[str, str, str
         if not location and any(hint in lower for hint in _LOCATION_HINTS):
             location = candidate
             continue
-        if not work_type and any(token in lower for token in ("full time", "part time", "remote", "hybrid")):
+        if not work_type and any(
+            token in lower for token in ("full time", "part time", "remote", "hybrid")
+        ):
             work_type = candidate
             continue
         if not contract_type and any(
-            token in lower for token in ("permanent", "contract", "temporary", "fixed term", "fixed-term")
+            token in lower
+            for token in ("permanent", "contract", "temporary", "fixed term", "fixed-term")
         ):
             contract_type = candidate
             continue
@@ -191,12 +200,16 @@ def extract_rendered_card_jobs(
             if not block_text:
                 continue
             lower = block_text.lower()
-            if not allow_any_anchor and not any(token in lower for token in _JOB_HINT_TOKENS | _CTA_TOKENS):
+            if not allow_any_anchor and not any(
+                token in lower for token in _JOB_HINT_TOKENS | _CTA_TOKENS
+            ):
                 continue
             anchors = list(iter_anchor_fragments(block_html))
             if not anchors:
                 continue
-            anchor = _pick_job_anchor(anchors, href_tokens=href_tokens, allow_any_anchor=allow_any_anchor)
+            anchor = _pick_job_anchor(
+                anchors, href_tokens=href_tokens, allow_any_anchor=allow_any_anchor
+            )
             if not anchor:
                 continue
             href = clean_text(anchor.get("href"))

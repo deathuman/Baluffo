@@ -29,7 +29,7 @@ _IGNORED_TOKENS = frozenset(
     }
 )
 _ANCHOR_RE = re.compile(
-    r'(?is)<a\b(?P<attrs>[^>]*)href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)(?P<tail>[^>]*)>(?P<body>.*?)</a>'
+    r"(?is)<a\b(?P<attrs>[^>]*)href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)(?P<tail>[^>]*)>(?P<body>.*?)</a>"
 )
 _LI_RE = re.compile(r"(?is)<li\b[^>]*>(.*?)</li>")
 
@@ -46,9 +46,7 @@ def _window(text: str, start: int, end: int, *, pad: int = 2200) -> str:
 
 
 def _pick_title(window_before: str, window: str) -> str:
-    headings = list(
-        re.finditer(r"(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]>", window_before or "")
-    )
+    headings = list(re.finditer(r"(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]>", window_before or ""))
     for match in reversed(headings):
         title = clean_text(strip_html_text(match.group(1) or ""))
         if title and title.lower() not in _IGNORED_TOKENS:
@@ -92,7 +90,9 @@ def _pick_location_and_terms(window: str) -> tuple[str, str, str]:
     return location, work_type, contract_type
 
 
-def _extract_from_li_blocks(html: str, *, page_url: str, company: str, source_id: str) -> list[RawJob]:
+def _extract_from_li_blocks(
+    html: str, *, page_url: str, company: str, source_id: str
+) -> list[RawJob]:
     jobs: list[RawJob] = []
     seen_links: set[str] = set()
     for li_match in _LI_RE.finditer(html or ""):
@@ -100,7 +100,7 @@ def _extract_from_li_blocks(html: str, *, page_url: str, company: str, source_id
         if "Details" not in li_html and "details" not in li_html.lower():
             continue
         href_match = re.search(
-            r'(?is)<a\b[^>]*href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)[^>]*>\s*Details\s*</a>',
+            r"(?is)<a\b[^>]*href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)[^>]*>\s*Details\s*</a>",
             li_html,
         )
         if not href_match:
@@ -112,7 +112,7 @@ def _extract_from_li_blocks(html: str, *, page_url: str, company: str, source_id
         if not link or link in seen_links:
             continue
         detail_match = re.search(
-            r'(?is)<div\b[^>]*class\s*=\s*(?P<quote>[\"\'])c-careers-job-listing__department-list-detail(?P=quote)[^>]*>(.*?)</div>',
+            r"(?is)<div\b[^>]*class\s*=\s*(?P<quote>[\"\'])c-careers-job-listing__department-list-detail(?P=quote)[^>]*>(.*?)</div>",
             li_html,
         )
         detail_html = detail_match.group(2) if detail_match else li_html
@@ -160,7 +160,9 @@ def _render_with_playwright(page_url: str, timeout_s: int) -> str:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
-            page.goto(page_url, wait_until="domcontentloaded", timeout=max(1, int(timeout_s)) * 1000)
+            page.goto(
+                page_url, wait_until="domcontentloaded", timeout=max(1, int(timeout_s)) * 1000
+            )
             page.wait_for_selector(
                 "li .c-careers-job-listing__department-list-cta a[href*='/careers/']",
                 timeout=max(1, int(timeout_s)) * 1000,

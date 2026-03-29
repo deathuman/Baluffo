@@ -1554,7 +1554,10 @@ def test_needs_review_breakdown_groups_by_shape_and_orders_views() -> None:
     assert breakdown["byShape"]["site_changed"]["count"] == 1
     assert breakdown["byShape"]["blank_residue"]["count"] == 1
     assert breakdown["byShape"]["ambiguous_review"]["count"] == 1
-    assert breakdown["topByWallTime"][0]["name"] == "static_source::static:listing_url:https://example.com/a"
+    assert (
+        breakdown["topByWallTime"][0]["name"]
+        == "static_source::static:listing_url:https://example.com/a"
+    )
     assert breakdown["topByFrequency"][0]["shape"] == "no_jobs_extracted"
 
 
@@ -1673,7 +1676,10 @@ def test_blank_residue_breakdown_ignores_success_rows_and_tracks_true_zero_kept_
     breakdown = jobs_reporting.build_blank_residue_breakdown(source_reports)
 
     assert breakdown["byShape"]["blank_residue"]["count"] == 1
-    assert breakdown["topByWallTime"][0]["name"] == "static_source::static:listing_url:https://example.com/blank"
+    assert (
+        breakdown["topByWallTime"][0]["name"]
+        == "static_source::static:listing_url:https://example.com/blank"
+    )
     assert all(
         row["name"] != "static_source::static:listing_url:https://example.com/success"
         for row in breakdown["topByWallTime"]
@@ -1740,7 +1746,10 @@ def test_build_pipeline_summary_embeds_blank_residue_breakdown_without_affecting
     assert summary["successfulSources"] == 2
     assert summary["failedSources"] == 1
     assert breakdown["byShape"]["blank_residue"]["count"] == 1
-    assert breakdown["topByWallTime"][0]["name"] == "static_source::static:listing_url:https://example.com/blank"
+    assert (
+        breakdown["topByWallTime"][0]["name"]
+        == "static_source::static:listing_url:https://example.com/blank"
+    )
     assert all(
         row["name"] != "static_source::static:listing_url:https://example.com/success"
         for row in breakdown["topByWallTime"]

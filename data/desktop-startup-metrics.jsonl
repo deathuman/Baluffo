@@ -642,3 +642,6 @@
 {"ts": "2026-03-29T11:22:11.826329+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
 {"ts": "2026-03-29T11:22:11.826469+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}
 {"ts": "2026-03-29T11:22:11.826578+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-29T15:11:56.017692+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-29T15:11:56.017806+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 3}}
+{"ts": "2026-03-29T15:11:56.044224+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}

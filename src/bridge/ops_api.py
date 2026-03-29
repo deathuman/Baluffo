@@ -282,7 +282,11 @@ class OpsApi:
                 )
             )
         )
-        if fetch_state and fetch_snapshot and (fetch_snapshot.finished_at or fetch_snapshot.explicit_dead):
+        if (
+            fetch_state
+            and fetch_snapshot
+            and (fetch_snapshot.finished_at or fetch_snapshot.explicit_dead)
+        ):
             self._deps.clear_task_state("fetch")
         append_if_active(
             "fetch",
@@ -342,8 +346,10 @@ class OpsApi:
                 )
             )
         )
-        if discovery_state and discovery_snapshot and (
-            discovery_snapshot.finished_at or discovery_snapshot.explicit_dead
+        if (
+            discovery_state
+            and discovery_snapshot
+            and (discovery_snapshot.finished_at or discovery_snapshot.explicit_dead)
         ):
             self._deps.clear_task_state("discovery")
         append_if_active(

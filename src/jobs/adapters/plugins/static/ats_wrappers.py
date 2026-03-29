@@ -129,7 +129,9 @@ def run(
         ),
         "browserFallbackRecommended": False,
         "extractorHint": (
-            "ats_wrapper_present_but_empty" if ats_links else "ats_wrapper_listing_present_but_empty"
+            "ats_wrapper_present_but_empty"
+            if ats_links
+            else "ats_wrapper_listing_present_but_empty"
         ),
         "atsLinks": ats_links[:5],
         "detailFetchRequired": False,

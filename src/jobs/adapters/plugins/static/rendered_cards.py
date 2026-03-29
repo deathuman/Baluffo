@@ -155,7 +155,9 @@ def run(
         ),
         "browserFallbackRecommended": bool(likely_js),
         "extractorHint": (
-            "rendered_cards_js_shell_suspected" if likely_js else "rendered_cards_listing_present_but_empty"
+            "rendered_cards_js_shell_suspected"
+            if likely_js
+            else "rendered_cards_listing_present_but_empty"
         ),
         "atsLinks": ats_links[:5],
         "detailFetchRequired": False,

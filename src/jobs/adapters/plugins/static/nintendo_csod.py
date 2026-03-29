@@ -27,9 +27,11 @@ _IGNORED_TOKENS = frozenset(
     }
 )
 _ANCHOR_RE = re.compile(
-    r'(?is)<a\b(?P<attrs>[^>]*)href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)(?P<tail>[^>]*)>(?P<body>.*?)</a>'
+    r"(?is)<a\b(?P<attrs>[^>]*)href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)(?P<tail>[^>]*)>(?P<body>.*?)</a>"
 )
-_LI_RE = re.compile(r'(?is)<li\b[^>]*class\s*=\s*(?P<quote>["\'])(?P<class>.*?)(?P=quote)[^>]*>(?P<body>.*?)</li>')
+_LI_RE = re.compile(
+    r'(?is)<li\b[^>]*class\s*=\s*(?P<quote>["\'])(?P<class>.*?)(?P=quote)[^>]*>(?P<body>.*?)</li>'
+)
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
@@ -47,9 +49,7 @@ def _pick_title(window_before: str, window: str, anchor_body: str) -> str:
     title = clean_text(strip_html_text(anchor_body))
     if title and title.lower() not in _IGNORED_TOKENS:
         return title
-    headings = list(
-        re.finditer(r"(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]>", window_before or "")
-    )
+    headings = list(re.finditer(r"(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]>", window_before or ""))
     for match in reversed(headings):
         heading = clean_text(strip_html_text(match.group(1) or ""))
         if heading and heading.lower() not in _IGNORED_TOKENS:
@@ -64,7 +64,9 @@ def _pick_title(window_before: str, window: str, anchor_body: str) -> str:
     return ""
 
 
-def _extract_from_li_blocks(html: str, *, page_url: str, company: str, source_id: str) -> list[RawJob]:
+def _extract_from_li_blocks(
+    html: str, *, page_url: str, company: str, source_id: str
+) -> list[RawJob]:
     jobs: list[RawJob] = []
     seen_links: set[str] = set()
     for li_match in _LI_RE.finditer(html or ""):
@@ -73,7 +75,7 @@ def _extract_from_li_blocks(html: str, *, page_url: str, company: str, source_id
         if "SearchResult_job_item" not in li_class and "target-req" not in li_html:
             continue
         href_match = re.search(
-            r'(?is)<a\b[^>]*href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)[^>]*>\s*Details\s*</a>',
+            r"(?is)<a\b[^>]*href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)[^>]*>\s*Details\s*</a>",
             li_html,
         )
         if not href_match:
@@ -98,7 +100,7 @@ def _extract_from_li_blocks(html: str, *, page_url: str, company: str, source_id
         work_type = ""
         contract_type = ""
         location_match = re.search(
-            r'(?is)<p\b[^>]*class\s*=\s*(?P<quote>[\"\'])SearchResult_job_item__location[^\"\']*(?P=quote)[^>]*>(.*?)</p>',
+            r"(?is)<p\b[^>]*class\s*=\s*(?P<quote>[\"\'])SearchResult_job_item__location[^\"\']*(?P=quote)[^>]*>(.*?)</p>",
             li_html,
         )
         if location_match:
@@ -109,7 +111,10 @@ def _extract_from_li_blocks(html: str, *, page_url: str, company: str, source_id
                 if " | " in line or "," in line or "germany" in lower or "netherlands" in lower:
                     location = line
                     break
-        sub_match = re.search(r"(?is)<ul\b[^>]*class\s*=\s*(?P<quote>[\"\'])SearchResult_job_item__sub[^\"\']*(?P=quote)[^>]*>(.*?)</ul>", li_html)
+        sub_match = re.search(
+            r"(?is)<ul\b[^>]*class\s*=\s*(?P<quote>[\"\'])SearchResult_job_item__sub[^\"\']*(?P=quote)[^>]*>(.*?)</ul>",
+            li_html,
+        )
         if sub_match:
             sub_items = [
                 clean_text(strip_html_text(item))
@@ -118,7 +123,9 @@ def _extract_from_li_blocks(html: str, *, page_url: str, company: str, source_id
             sub_items = [item for item in sub_items if item]
             for item in sub_items:
                 lower = item.lower()
-                if not work_type and any(token in lower for token in ("full-time", "part-time", "remote", "hybrid")):
+                if not work_type and any(
+                    token in lower for token in ("full-time", "part-time", "remote", "hybrid")
+                ):
                     work_type = item
                     continue
                 if not contract_type and any(
@@ -178,7 +185,9 @@ def _extract_jobs(html: str, *, page_url: str, company: str, source_id: str) -> 
             if not location and ("," in line or "germany" in lower or "netherlands" in lower):
                 location = line
                 continue
-            if not work_type and any(token in lower for token in ("full time", "part time", "hybrid", "remote")):
+            if not work_type and any(
+                token in lower for token in ("full time", "part time", "hybrid", "remote")
+            ):
                 work_type = line
                 continue
             if not contract_type and any(
@@ -217,7 +226,9 @@ def _render_with_playwright(page_url: str, timeout_s: int) -> str:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
-            page.goto(page_url, wait_until="domcontentloaded", timeout=max(1, int(timeout_s)) * 1000)
+            page.goto(
+                page_url, wait_until="domcontentloaded", timeout=max(1, int(timeout_s)) * 1000
+            )
             page.wait_for_selector(
                 "li[class*='SearchResult_job_item__'] a[href*='target-req=']",
                 timeout=max(1, int(timeout_s)) * 1000,

@@ -394,10 +394,7 @@ def build_needs_review_breakdown(
         zero_kept = norm_text(report.get("zeroKeptClassification"))
         if kept_count > 0:
             continue
-        if (
-            failure_bucket not in {"needs_review", ""}
-            and zero_kept not in {"needs_review", ""}
-        ):
+        if failure_bucket not in {"needs_review", ""} and zero_kept not in {"needs_review", ""}:
             continue
         shape = _classify_needs_review_shape(report)
         duration_ms = max(0, int(report.get("durationMs") or 0))

@@ -146,9 +146,7 @@ def test_registry_entries_suppresses_nextlevelgames_static_when_jazzhr_provider_
     ):
         static_entries = jobs_common.registry_entries("static")
 
-    assert all(
-        row.get("name") != "Next Level Games (Manual Website)" for row in static_entries
-    )
+    assert all(row.get("name") != "Next Level Games (Manual Website)" for row in static_entries)
 
 
 def test_parse_args_uses_config_backed_output_and_social_defaults() -> None:
