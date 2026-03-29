@@ -12,13 +12,20 @@ from typing import Any
 
 from src.jobs.common import config as common_config
 from src.jobs.common.datetime_utils import parse_datetime
+from src.jobs.game_detection import has_positive_game_evidence
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text
 
 
-def classify_company_type(company: Any, title: Any = "") -> str:
-    text = f"{norm_text(company)} {norm_text(title)}"
-    if re.search(
+def classify_company_type(
+    company: Any,
+    title: Any = "",
+    source: Any = "",
+    job_link: Any = "",
+    source_bundle: Any = None,
+) -> str:
+    text = f"{norm_text(company)} {norm_text(title)} {norm_text(source)} {norm_text(job_link)}"
+    if has_positive_game_evidence(company, title, source, job_link, source_bundle) or re.search(
         r"\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b", text
     ):
         return "Game"

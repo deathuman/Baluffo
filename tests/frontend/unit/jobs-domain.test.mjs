@@ -6,9 +6,11 @@ import {
   classifyCompanyType,
   mapProfession,
   normalizeJobs,
+  normalizeSector,
   sanitizePublicText,
   sanitizeLocationField,
   isSemanticallyValidLocationValue,
+  isValidCountry,
   getJobKeyForJob,
   deriveFreshness,
   mapFreshnessAgeToScore
@@ -23,6 +25,13 @@ test("jobs domain detects work type and contract", () => {
   assert.equal(detectContractType("fixed term"), "Temporary");
 });
 
+test("jobs domain hides placeholder country values from filter options", () => {
+  assert.equal(isValidCountry("Unknown"), false);
+  assert.equal(isValidCountry("N/A"), false);
+  assert.equal(isValidCountry("Remote"), true);
+  assert.equal(isValidCountry("Japan"), true);
+});
+
 test("jobs domain classifies company and normalizes jobs", () => {
   assert.equal(classifyCompanyType("Some Game Studio", ""), "Game");
   const rows = normalizeJobs([{ title: "Gameplay Engineer", company: "Foo", workType: "remote" }], {
@@ -32,6 +41,65 @@ test("jobs domain classifies company and normalizes jobs", () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].workType, "Remote");
   assert.equal(rows[0].companyType, "Game");
+});
+
+test("jobs domain normalizes sector from positive game evidence", () => {
+  assert.equal(classifyCompanyType("Trek", "Assembler/Bike Builder"), "Tech");
+  assert.equal(
+    classifyCompanyType(
+      "Zynga",
+      "Marketing Artist",
+      "greenhouse_boards",
+      "https://job-boards.greenhouse.io/zyngacareers/jobs/5835998004",
+      [{ source: "greenhouse_boards", studio: "Zynga", adapter: "greenhouse" }]
+    ),
+    "Game"
+  );
+  assert.equal(
+    classifyCompanyType(
+      "Cloud Chamber",
+      "Senior Gameplay Programmer",
+      "greenhouse_boards",
+      "https://job-boards.greenhouse.io/cloudchamberen/jobs/7655929003",
+      [{ source: "greenhouse_boards", studio: "Cloud Chamber", adapter: "greenhouse" }]
+    ),
+    "Game"
+  );
+  assert.equal(
+    normalizeSector("Game", "Trek", "Assembler/Bike Builder", "google_sheets", "https://trekbikes.com/jobs/assembler"),
+    "Tech"
+  );
+  assert.equal(
+    normalizeSector("Tech", "Studio Other", "Gameplay Programmer", "google_sheets", "https://example.com/gameplay"),
+    "Game"
+  );
+  assert.equal(
+    normalizeSector("Tech", "Gameloft", "Marketing Artist", "smartrecruiters_sources", "https://jobs.smartrecruiters.com/Gameloft/744000115751281"),
+    "Game"
+  );
+  const rows = normalizeJobs(
+    [
+      { title: "Assembler/Bike Builder", company: "Trek", sector: "Game", source: "google_sheets", jobLink: "https://trekbikes.com/jobs/assembler" },
+      { title: "Gameplay Programmer", company: "Studio Other", sector: "Tech", source: "google_sheets", jobLink: "https://example.com/gameplay" },
+      { title: "Marketing Artist", company: "Zynga", sector: "Tech", source: "greenhouse_boards", jobLink: "https://job-boards.greenhouse.io/zyngacareers/jobs/5835998004", sourceBundle: [{ source: "greenhouse_boards", studio: "Zynga", adapter: "greenhouse" }] },
+      { title: "Marketing Artist", company: "Gameloft", sector: "Tech", source: "smartrecruiters_sources", jobLink: "https://jobs.smartrecruiters.com/Gameloft/744000115751281" }
+      ,
+      { title: "Senior Gameplay Programmer", company: "Cloud Chamber", sector: "Tech", source: "google_sheets", jobLink: "https://example.com/cloud-chamber/senior-gameplay-programmer", sourceBundle: [{ source: "greenhouse_boards", studio: "Cloud Chamber", adapter: "greenhouse" }] }
+    ],
+    {
+      professionLabels: {},
+      sanitizeUrl: value => value
+    }
+  );
+  assert.equal(rows[0].sector, "Tech");
+  assert.equal(rows[1].sector, "Game");
+  assert.equal(rows[2].sector, "Game");
+  assert.equal(rows[3].sector, "Game");
+  assert.equal(rows[4].sector, "Game");
+  assert.equal(rows[0].companyType, "Tech");
+  assert.equal(rows[2].companyType, "Game");
+  assert.equal(rows[3].companyType, "Game");
+  assert.equal(rows[4].companyType, "Game");
 });
 
 test("jobs domain maps technical director title synonyms", () => {
@@ -146,8 +214,35 @@ test("jobs domain blanks semantic location noise but preserves valid locations",
     ),
     ""
   );
+  assert.equal(sanitizeLocationField("6,559 followers", "city"), "");
+  assert.equal(sanitizeLocationField("1,012 open jobs", "city"), "");
+  assert.equal(
+    sanitizeLocationField(
+      '--grid-gutter: calc(var(--sqs-mobile-site-gutter, 6vw) - 0.0px);',
+      "city"
+    ),
+    ""
+  );
+  assert.equal(
+    sanitizeLocationField("#1 city in the country for women ,", "city"),
+    ""
+  );
+  assert.equal(sanitizeLocationField("2D Artist, Bombergrounds", "city"), "");
+  assert.equal(sanitizeLocationField("2D Games Animator - Freelancing - Fully Remote", "city"), "");
+  assert.equal(sanitizeLocationField("A Fast, Fun Quiz Game", "city"), "");
+  assert.equal(sanitizeLocationField("Berlin / Hamburg", "city"), "");
+  assert.equal(sanitizeLocationField("Cambridge / Hybrid", "city"), "");
+  assert.equal(sanitizeLocationField(".career-btn-primary {", "city"), "");
+  assert.equal(sanitizeLocationField("document.addEventListener(\"DOMContentLoaded\", function () {", "city"), "");
+  assert.equal(sanitizeLocationField("Learn how talent, purpose, and progress combine to create careers that change the world at our new Careers home .", "city"), "");
+  assert.equal(sanitizeLocationField("31-621 Kraków, Poland", "city"), "");
+  assert.equal(
+    sanitizeLocationField("1401 21st ST # 5799, Sacramento, CA 95811 United States", "city"),
+    ""
+  );
   assert.equal(sanitizeLocationField("Tokyo", "city"), "Tokyo");
   assert.equal(isSemanticallyValidLocationValue("Montréal", "city"), true);
+  assert.equal(isSemanticallyValidLocationValue("6,559 followers", "city"), false);
 
   const rows = normalizeJobs([{
     title: "Growth Marketing Intern",

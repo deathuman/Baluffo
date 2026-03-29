@@ -25,20 +25,91 @@ export function detectContractType(text, title = "") {
   return "Unknown";
 }
 
-export function classifyCompanyType(company, title = "") {
-  const text = `${company} ${title}`.toLowerCase();
+const GAME_SOURCE_FAMILY_HINTS = [
+  "8bitplay",
+  "epic_games_careers",
+  "gamejobs",
+  "gamesindustry",
+  "gracklehq",
+  "workwithindies"
+];
+
+const GAME_ROLE_KEYWORDS = [
+  "artist",
+  "designer",
+  "engineer",
+  "programmer",
+  "animator",
+  "technical artist",
+  "concept artist",
+  "environment artist",
+  "character artist",
+  "gameplay",
+  "level design"
+];
+
+function normalizeBundleList(sourceBundle) {
+  return Array.isArray(sourceBundle) ? sourceBundle.filter(item => item && typeof item === "object") : [];
+}
+
+function hasGameSourceProvenance(source = "", sourceBundle = []) {
+  const sourceText = String(source || "").toLowerCase();
+  if (sourceText && GAME_SOURCE_FAMILY_HINTS.some(hint => sourceText.includes(hint))) {
+    return true;
+  }
+
+  for (const item of normalizeBundleList(sourceBundle)) {
+    const bundleSource = String(item.source || "").toLowerCase();
+    if (bundleSource && GAME_SOURCE_FAMILY_HINTS.some(hint => bundleSource.includes(hint))) {
+      return true;
+    }
+    const studio = String(item.studio || "").trim().toLowerCase();
+    const adapter = String(item.adapter || "").trim().toLowerCase();
+    if (studio && adapter && !["csv", "static", "scrapy_static"].includes(adapter)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasPositiveGameEvidence(company = "", title = "", source = "", jobLink = "", sourceBundle = []) {
+  const text = `${company} ${title} ${source} ${jobLink}`.toLowerCase();
+  if (hasGameSourceProvenance(source, sourceBundle)) {
+    return true;
+  }
+  if (
+    /\b(game|gaming|games|esports|gameplay|gamedev|unity|unreal|technical artist|tech artist|shader|material artist|world artist|terrain artist|environment art|environment artist|character artist|engine programmer|graphics programmer|level design|animator)\b/.test(text) ||
+    /\b(studio|studios|interactive|publisher|entertainment)\b/.test(text) ||
+    text.includes("game")
+  ) {
+    return true;
+  }
+  const titleText = String(title || "").toLowerCase();
+  const companyToken = String(company || "").toLowerCase().replace(/\s+/g, "");
+  if (companyToken && GAME_ROLE_KEYWORDS.some(keyword => titleText.includes(keyword))) {
+    const joined = `${source} ${jobLink}`.toLowerCase().replace(/\s+/g, "");
+    if (joined.includes(companyToken)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function classifyCompanyType(company, title = "", source = "", jobLink = "", sourceBundle = []) {
+  const text = `${company} ${title} ${source} ${jobLink}`.toLowerCase();
   const isGame =
+    hasPositiveGameEvidence(company, title, source, jobLink, sourceBundle) ||
     /\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b/.test(text) ||
     /\b(gameplay|level design|character artist|environment artist|technical artist|animator)\b/.test(text);
   return isGame ? "Game" : "Tech";
 }
 
-export function normalizeSector(text, company = "", title = "") {
-  const value = String(text || "").trim();
-  const lower = value.toLowerCase();
-  if (/\b(game|gaming|esports|studio|publisher)\b/.test(lower)) return "Game";
-  if (/\b(tech|technology|software|it)\b/.test(lower)) return "Tech";
-  return classifyCompanyType(company, title) === "Game" ? "Game" : "Tech";
+export function normalizeSector(text, company = "", title = "", source = "", jobLink = "", sourceBundle = []) {
+  const sectorText = String(text || "").trim();
+  if (!sectorText) {
+    return hasPositiveGameEvidence(company, title, source, jobLink, sourceBundle) ? "Game" : "Tech";
+  }
+  return hasPositiveGameEvidence(company, title, source, jobLink, sourceBundle) ? "Game" : "Tech";
 }
 
 export function mapProfession(title) {
@@ -117,6 +188,7 @@ export function isValidCountry(country) {
   if (!country || typeof country !== "string") return false;
   const trimmed = country.trim();
   if (!trimmed || trimmed.length < 2) return false;
+  if (["unknown", "n/a", "na", "none"].includes(trimmed.toLowerCase())) return false;
   if (trimmed.includes(",")) return false;
   return true;
 }
@@ -159,6 +231,20 @@ export function sanitizePublicText(value) {
   return normalized;
 }
 
+const LOCATION_NOISE_PATTERNS = [
+  /\b(requirements?|responsibilit(?:y|ies)|qualifications?|experience|register|registration|apply|position|positions)\b/i,
+  /\b(business level|job description|preferred|benefits?|contact us)\b/i,
+  /\b(open jobs?|followers?|following|connections?|employees?)\b/i,
+  /\b(report this post|view all jobs|job postings?|all jobs)\b/i,
+  /\b(job|jobs|career|careers|hiring|quiz|game|artist|animator|designer|developer|engineer|programmer|producer|director|writer|specialist|manager|intern|freelanc(?:e|ing)|technical)\b/i,
+  /(?:https?:\/\/|www\.)/i
+];
+const LOCATION_CSS_NOISE_RE = /(?:--|var\(|calc\(|box-shadow|grid-gutter)/i;
+const LOCATION_ADDRESS_NOISE_RE = /\b\d[^\n]*\b(?:street|st\.?|avenue|ave\.?|road|rd\.?|boulevard|blvd\.?|drive|dr\.?|lane|ln\.?|way|parkway|pkwy\.?|suite|ste\.?|apt\.?|unit|floor|fl\.?|building|bldg\.?)/i;
+const LOCATION_POSTAL_CODE_RE = /\b\d{2,6}(?:-\d{2,4})?\b/;
+const LOCATION_SCRIPT_NOISE_RE = /(?:document\.|addEventListener|DOMContentLoaded|querySelector|innerHTML|setTimeout|console\.|function\s*\(|\{\{|\}\})/i;
+const LOCATION_SENTENCE_PREFIX_RE = /^(learn|view|choose|click|if you|to view|document|our)\b/i;
+
 export function invalidLocationReason(value, field = "city") {
   const text = sanitizePublicText(value);
   if (!text) return "";
@@ -176,12 +262,25 @@ export function invalidLocationReason(value, field = "city") {
   if (text.length > 48 && ((text.match(/[.!?。！？]/g) || []).length >= 2)) {
     return `invalid_${field}_semantic_sentence_noise`;
   }
-  if (/(requirements?|responsibilit(?:y|ies)|qualifications?|experience|register|registration|apply|position|positions|business level|job description|preferred|benefits?|contact us)/i.test(text)) {
+  if (LOCATION_CSS_NOISE_RE.test(text)) {
     return `invalid_${field}_semantic_noise`;
   }
-  if (/(キャリア登録|ポジション|ご案内|応募|職務経歴|ビジネスレベルの日本語能力)/.test(text)) {
+  if (LOCATION_NOISE_PATTERNS.some(pattern => pattern.test(text))) {
     return `invalid_${field}_semantic_noise`;
   }
+  if (LOCATION_ADDRESS_NOISE_RE.test(text)) {
+    return `invalid_${field}_semantic_noise`;
+  }
+  if (text.includes(",") && LOCATION_POSTAL_CODE_RE.test(text)) {
+    return `invalid_${field}_semantic_noise`;
+  }
+  if (text.includes("/")) return `invalid_${field}_semantic_noise`;
+  if (text.endsWith(",")) return `invalid_${field}_semantic_noise`;
+  if (LOCATION_SCRIPT_NOISE_RE.test(text)) return `invalid_${field}_semantic_noise`;
+  if (LOCATION_SENTENCE_PREFIX_RE.test(text)) return `invalid_${field}_semantic_noise`;
+  if (text.startsWith("#")) return `invalid_${field}_semantic_noise`;
+  if (text.includes('"') && text.includes(":")) return `invalid_${field}_semantic_noise`;
+  if (text.includes("{") || text.includes("}")) return `invalid_${field}_semantic_noise`;
   return "";
 }
 
@@ -282,9 +381,24 @@ export function normalizeJobs(rows, options = {}) {
     job.dedupKey = String(job.dedupKey || "").trim();
     const quality = Number(job.qualityScore);
     job.qualityScore = Number.isFinite(quality) ? Math.max(0, Math.min(100, Math.round(quality))) : 0;
-    job.sector = normalizeSector(sanitizePublicText(job.sector || ""), job.company || "", job.title || "");
+    job.sector = normalizeSector(
+      sanitizePublicText(job.sector || ""),
+      job.company || "",
+      job.title || "",
+      job.source || "",
+      job.jobLink || "",
+      job.sourceBundle || []
+    );
     job.profession = professionLabels[job.profession] ? job.profession : mapProfession(String(job.title || ""));
-    if (!job.companyType) job.companyType = classifyCompanyType(job.company, job.title || "");
+    if (!job.companyType) {
+      job.companyType = classifyCompanyType(
+        job.company,
+        job.title || "",
+        job.source || "",
+        job.jobLink || "",
+        job.sourceBundle || []
+      );
+    }
     if (!job.description) job.description = `${job.title} at ${job.company}`;
     return job;
   });
@@ -319,7 +433,13 @@ export function getJobKeyForJob(job, options = {}) {
  */
 export function toJobSnapshot(job, options = {}) {
   const sanitizeUrl = options.sanitizeUrl || (value => String(value || ""));
-  const companyType = classifyCompanyType(job?.company, job?.title);
+  const companyType = classifyCompanyType(
+    job?.company,
+    job?.title,
+    job?.source,
+    job?.jobLink,
+    job?.sourceBundle || []
+  );
   return {
     title: job?.title || "",
     company: job?.company || "",

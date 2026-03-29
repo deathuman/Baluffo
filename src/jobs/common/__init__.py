@@ -251,8 +251,20 @@ def normalize_contract_type(contract_text: Any, title: Any = "") -> str:
     return parsing.normalize_contract_type(contract_text, title)
 
 
-def classify_company_type(company: Any, title: Any = "") -> str:
-    return _common_heuristics.classify_company_type(company, title)
+def classify_company_type(
+    company: Any,
+    title: Any = "",
+    source: Any = "",
+    job_link: Any = "",
+    source_bundle: Any = None,
+) -> str:
+    return _common_heuristics.classify_company_type(
+        company,
+        title,
+        source,
+        job_link,
+        source_bundle,
+    )
 
 
 def map_profession(title: Any) -> str:

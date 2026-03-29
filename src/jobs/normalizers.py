@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from src.jobs.game_detection import has_positive_game_evidence
+
 COUNTRY_NAME_TO_CODE = {
     "united states": "US",
     "usa": "US",
@@ -31,6 +33,16 @@ def _clean_text(value: Any) -> str:
 
 def _norm_text(value: Any) -> str:
     return re.sub(r"\s+", " ", _clean_text(value)).strip().lower()
+
+
+def _has_positive_game_evidence(
+    company: Any,
+    title: Any = "",
+    source: Any = "",
+    job_link: Any = "",
+    source_bundle: Any = None,
+) -> bool:
+    return has_positive_game_evidence(company, title, source, job_link, source_bundle)
 
 
 def normalize_country(value: Any) -> str:
@@ -61,19 +73,19 @@ def normalize_work_type(value: Any, title: Any = None) -> str:
 
 
 def _classify_company_type(company: Any, title: Any = "") -> str:
-    text = f"{_norm_text(company)} {_norm_text(title)}"
-    if re.search(
-        r"\b(game|gaming|games|esports|studio|studios|interactive|publisher|entertainment)\b",
-        text,
-    ):
+    if _has_positive_game_evidence(company, title):
         return "Game"
     return "Tech"
 
 
-def normalize_sector(value: Any, company: Any = "", title: Any = "") -> str:
-    lower = _norm_text(value)
-    if re.search(r"\b(game|gaming|esports|studio|publisher)\b", lower):
+def normalize_sector(
+    value: Any,
+    company: Any = "",
+    title: Any = "",
+    source: Any = "",
+    job_link: Any = "",
+    source_bundle: Any = None,
+) -> str:
+    if _has_positive_game_evidence(company, title, source, job_link, source_bundle):
         return "Game"
-    if re.search(r"\b(tech|technology|software|it)\b", lower):
-        return "Tech"
-    return "Game" if _classify_company_type(company, title) == "Game" else "Tech"
+    return "Tech"

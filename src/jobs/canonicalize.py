@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from collections import Counter
@@ -50,6 +51,9 @@ _LOCATION_AUDIT_LOCK = threading.Lock()
 _LOCATION_AUDIT_FIELD_COUNTS: Counter[str] = Counter()
 _LOCATION_AUDIT_REASON_COUNTS: Counter[str] = Counter()
 _LOCATION_AUDIT_EXAMPLES: list[dict[str, Any]] = []
+_SECTOR_AUDIT_LOCK = threading.Lock()
+_SECTOR_AUDIT_DOWNGRADED_COUNT = 0
+_SECTOR_AUDIT_EXAMPLES: list[dict[str, Any]] = []
 
 
 def reset_location_quality_audit() -> None:
@@ -67,6 +71,22 @@ def snapshot_location_quality_audit(*, total_rows: int = 0) -> dict[str, Any]:
             "fieldCounts": dict(_LOCATION_AUDIT_FIELD_COUNTS),
             "reasonCounts": dict(_LOCATION_AUDIT_REASON_COUNTS),
             "examples": list(_LOCATION_AUDIT_EXAMPLES[:20]),
+        }
+
+
+def reset_sector_quality_audit() -> None:
+    global _SECTOR_AUDIT_DOWNGRADED_COUNT
+    with _SECTOR_AUDIT_LOCK:
+        _SECTOR_AUDIT_DOWNGRADED_COUNT = 0
+        _SECTOR_AUDIT_EXAMPLES.clear()
+
+
+def snapshot_sector_quality_audit(*, total_rows: int = 0) -> dict[str, Any]:
+    with _SECTOR_AUDIT_LOCK:
+        return {
+            "totalRows": max(0, int(total_rows or 0)),
+            "downgradedGameSectorCount": int(_SECTOR_AUDIT_DOWNGRADED_COUNT),
+            "examples": list(_SECTOR_AUDIT_EXAMPLES[:20]),
         }
 
 
@@ -97,6 +117,37 @@ def _record_location_quality_issue(
                     "field": clean_field,
                     "reason": clean_reason,
                     "value": clean_text(raw_value),
+                }
+            )
+
+
+def _looks_like_game_sector_label(value: Any) -> bool:
+    return bool(re.search(r"\b(game|gaming|games|esports)\b", norm_text(value)))
+
+
+def _record_sector_quality_issue(
+    *,
+    raw_sector: Any,
+    normalized_sector: str,
+    source: str,
+    company: str,
+    title: str,
+    job_link: Any,
+) -> None:
+    global _SECTOR_AUDIT_DOWNGRADED_COUNT
+    if normalized_sector != "Tech" or not _looks_like_game_sector_label(raw_sector):
+        return
+    with _SECTOR_AUDIT_LOCK:
+        _SECTOR_AUDIT_DOWNGRADED_COUNT += 1
+        if len(_SECTOR_AUDIT_EXAMPLES) < 20:
+            _SECTOR_AUDIT_EXAMPLES.append(
+                {
+                    "company": clean_text(company),
+                    "title": clean_text(title),
+                    "source": clean_text(source),
+                    "jobLink": clean_text(job_link),
+                    "rawSector": clean_text(raw_sector),
+                    "normalizedSector": normalized_sector,
                 }
             )
 
@@ -136,37 +187,8 @@ def canonicalize_job_with_reason(
     raw_link = clean_text(raw.get("jobLink"))
     if not normalized_link:
         return None, "missing_job_link"
-    if (
-        env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL)
-        and raw_link
-        and not normalized_link
-    ):
-        return None, "invalid_url"
-
     adapter = clean_text(raw.get("adapter"))
     studio = sanitize_public_text(raw.get("studio"))
-    city_value, city_reason = sanitize_location_text(raw.get("city"), field_name="city")
-    country_value, country_reason = sanitize_location_text(raw.get("country"), field_name="country")
-    if city_reason:
-        _record_location_quality_issue(
-            field_name="city",
-            reason=city_reason,
-            raw_value=raw.get("city"),
-            source=source,
-            company=company,
-            title=title,
-            job_link=normalized_link,
-        )
-    if country_reason:
-        _record_location_quality_issue(
-            field_name="country",
-            reason=country_reason,
-            raw_value=raw.get("country"),
-            source=source,
-            company=company,
-            title=title,
-            job_link=normalized_link,
-        )
 
     def normalize_source_bundle(value: Any) -> list[dict[str, Any]]:
         entries = value
@@ -215,6 +237,52 @@ def canonicalize_job_with_reason(
                 "studio": studio,
             }
         ]
+    raw_sector = sanitize_public_text(raw.get("sector"))
+    normalized_sector = normalize_sector(
+        raw_sector,
+        company,
+        title,
+        source,
+        normalized_link,
+        source_bundle,
+    )
+    _record_sector_quality_issue(
+        raw_sector=raw_sector,
+        normalized_sector=normalized_sector,
+        source=source,
+        company=company,
+        title=title,
+        job_link=normalized_link,
+    )
+    if (
+        env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL)
+        and raw_link
+        and not normalized_link
+    ):
+        return None, "invalid_url"
+
+    city_value, city_reason = sanitize_location_text(raw.get("city"), field_name="city")
+    country_value, country_reason = sanitize_location_text(raw.get("country"), field_name="country")
+    if city_reason:
+        _record_location_quality_issue(
+            field_name="city",
+            reason=city_reason,
+            raw_value=raw.get("city"),
+            source=source,
+            company=company,
+            title=title,
+            job_link=normalized_link,
+        )
+    if country_reason:
+        _record_location_quality_issue(
+            field_name="country",
+            reason=country_reason,
+            raw_value=raw.get("country"),
+            source=source,
+            company=company,
+            title=title,
+            job_link=normalized_link,
+        )
 
     sanitized_contract_type = sanitize_public_text(raw.get("contractType"))
 
@@ -228,9 +296,9 @@ def canonicalize_job_with_reason(
             "workType": normalize_work_type(sanitize_public_text(raw.get("workType")), title),
             "contractType": normalize_contract_type(sanitized_contract_type, title),
             "jobLink": normalized_link,
-            "sector": normalize_sector(sanitize_public_text(raw.get("sector")), company, title),
+            "sector": normalized_sector,
             "profession": map_profession(title),
-            "companyType": classify_company_type(company, title),
+            "companyType": classify_company_type(company, title, source, normalized_link, source_bundle),
             "description": f"{title} at {company}",
             "source": source,
             "sourceJobId": clean_text(raw.get("sourceJobId") or raw.get("id")),
