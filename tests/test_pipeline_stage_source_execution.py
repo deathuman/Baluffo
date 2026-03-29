@@ -162,9 +162,10 @@ def test_stage_enables_browser_only_for_eligible_static_sources(monkeypatch) -> 
     assert not browser_calls
 
 
-def test_stage_passes_heartbeat_only_to_google_sheets_and_social_reddit_loaders() -> None:
+def test_stage_passes_heartbeat_to_google_sheets_social_reddit_and_static_loaders() -> None:
     google_kwargs: list[dict[str, object]] = []
     reddit_kwargs: list[dict[str, object]] = []
+    static_kwargs: list[dict[str, object]] = []
     other_kwargs: list[dict[str, object]] = []
     task_state_calls: list[dict[str, object]] = []
 
@@ -195,6 +196,13 @@ def test_stage_passes_heartbeat_only_to_google_sheets_and_social_reddit_loaders(
             heartbeat()
         return []
 
+    def static_loader(**kwargs):  # noqa: ANN202
+        static_kwargs.append(kwargs)
+        heartbeat = kwargs.get("heartbeat_callback")
+        if callable(heartbeat):
+            heartbeat()
+        return []
+
     def other_loader(**kwargs):  # noqa: ANN202
         other_kwargs.append(kwargs)
         return []
@@ -211,6 +219,16 @@ def test_stage_passes_heartbeat_only_to_google_sheets_and_social_reddit_loaders(
             "_slowWarned": False,
         },
         "social_reddit": {
+            "status": "pending",
+            "startedAt": "",
+            "finishedAt": "",
+            "heartbeatAt": "",
+            "durationMs": 0,
+            "error": "",
+            "_startedMonotonic": 0.0,
+            "_slowWarned": False,
+        },
+        "static_source::static:listing_url:https://example.com/jobs": {
             "status": "pending",
             "startedAt": "",
             "finishedAt": "",
@@ -237,6 +255,7 @@ def test_stage_passes_heartbeat_only_to_google_sheets_and_social_reddit_loaders(
         selected_loaders=[
             ("google_sheets", google_loader),
             ("social_reddit", reddit_loader),
+            ("static_source::static:listing_url:https://example.com/jobs", static_loader),
             ("remote_ok", other_loader),
         ],
         fetch_text_limited=lambda _url, _timeout: "",
@@ -255,5 +274,74 @@ def test_stage_passes_heartbeat_only_to_google_sheets_and_social_reddit_loaders(
     assert callable(google_kwargs[0]["heartbeat_callback"])
     assert "heartbeat_callback" in reddit_kwargs[0]
     assert callable(reddit_kwargs[0]["heartbeat_callback"])
+    assert "heartbeat_callback" in static_kwargs[0]
+    assert callable(static_kwargs[0]["heartbeat_callback"])
     assert "heartbeat_callback" not in other_kwargs[0]
-    assert len(task_state_calls) >= 4
+    assert len(task_state_calls) >= 5
+
+
+def test_stage_reclassifies_zero_kept_static_manual_no_jobs_sources(monkeypatch) -> None:
+    source_name = "static_source::static:listing_url:https://example.com/jobs"
+    monkeypatch.setitem(
+        stage_mod.SOURCE_DIAGNOSTICS,
+        source_name,
+        {
+            "partialErrors": [
+                "static:Frontier Developments (Sheet): no jobs extracted from source pages"
+            ],
+            "details": [],
+        },
+    )
+
+    config = SourceExecutionStageConfig(
+        max_workers=1,
+        timeout_s=1,
+        retries=0,
+        backoff_s=0.0,
+        static_detail_concurrency=1,
+        google_sheets_redirect_concurrency=1,
+        started_at="2026-03-23T00:00:00Z",
+        show_progress=False,
+        force_refresh_all=False,
+        browser_fallback_cooldown_minutes=30,
+    )
+
+    def empty_loader(**_kwargs):  # noqa: ANN202
+        return []
+
+    task_rows = {
+        source_name: {
+            "status": "pending",
+            "startedAt": "",
+            "finishedAt": "",
+            "heartbeatAt": "",
+            "durationMs": 0,
+            "error": "",
+            "_startedMonotonic": 0.0,
+            "_slowWarned": False,
+        }
+    }
+
+    source_reports: list[dict[str, object]] = []
+
+    run_source_execution_stage(
+        config=config,
+        selected_loaders=[(source_name, empty_loader)],
+        fetch_text_limited=lambda _url, _timeout: "",
+        source_state_rows={},
+        redirect_resolver=type("Resolver", (), {"resolve": staticmethod(lambda url: url)})(),
+        task_rows=task_rows,
+        task_lock=threading.Lock(),
+        thread_local=_ThreadLocal(),
+        write_task_state=lambda **_kwargs: None,
+        write_progress_report=lambda: None,
+        canonical_rows=[],
+        source_reports=source_reports,
+    )
+
+    report = source_reports[0]
+    assert report["status"] == "ok"
+    assert report["keptCount"] == 0
+    assert report["failureBucket"] == "js_required"
+    assert report["zeroKeptClassification"] == "broken_extraction"
+    assert "no jobs extracted from source pages" in str(report["error"])

@@ -54,21 +54,118 @@ def test_normalize_source_report_row_preserves_static_zero_extract_classificatio
     assert str(row.get("failureBucket") or "") == "needs_review"
 
 
-def test_normalize_source_report_row_drops_n_a_label_residues() -> None:
+def test_normalize_source_report_row_fills_zero_kept_label_residues() -> None:
     row = jf.normalize_source_report_row(
         {
-            "name": "static_source::n_a_residue",
+            "name": "static_source::zero_kept_residue",
+            "status": "ok",
+            "adapter": "static",
+            "failureBucket": "",
+            "classification": "",
+            "zeroKeptClassification": "n/a",
+            "fetchedCount": 2,
+            "keptCount": 0,
+            "error": "",
+        }
+    )
+    assert str(row.get("failureBucket") or "") == "no_openings"
+    assert str(row.get("classification") or "") == ""
+    assert str(row.get("zeroKeptClassification") or "") == "legit_empty"
+
+
+def test_js_required_audit_rows_stay_explicit_and_keep_needs_review_bounded() -> None:
+    audit_rows = [
+        {
+            "name": "static_source::combat_waffle_studios",
+            "status": "ok",
+            "adapter": "static",
+            "failureBucket": "",
+            "classification": "ok_no_jobs",
+            "zeroKeptClassification": "n/a",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "durationMs": 1_200,
+            "error": "static:Combat Waffle Studios (Sheet): no jobs extracted from source pages",
+        },
+        {
+            "name": "static_source::nexus_studios",
+            "status": "ok",
+            "adapter": "static",
+            "failureBucket": "",
+            "classification": "ok_no_jobs",
+            "zeroKeptClassification": "",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "durationMs": 1_100,
+            "error": "static:Nexus Studios (Manual Website): no jobs extracted from source pages",
+        },
+        {
+            "name": "static_source::high_5_games",
+            "status": "error",
+            "adapter": "static",
+            "failureBucket": "",
+            "classification": "needs_review",
+            "zeroKeptClassification": "",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "durationMs": 1_000,
+            "error": "static:High 5 Games (Sheet): no jobs extracted from source pages",
+        },
+        {
+            "name": "static_source::sega",
             "status": "error",
             "adapter": "static",
             "failureBucket": "n/a",
-            "classification": "na",
-            "zeroKeptClassification": "none",
-            "error": "no jobs extracted from source pages",
-        }
-    )
-    assert "failureBucket" not in row
-    assert "classification" not in row
-    assert "zeroKeptClassification" not in row
+            "classification": "needs_review",
+            "zeroKeptClassification": "n/a",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "durationMs": 900,
+            "error": "static:SEGA (Manual Website): no jobs extracted from source pages",
+        },
+        {
+            "name": "static_source::netease_games",
+            "status": "ok",
+            "adapter": "static",
+            "failureBucket": "",
+            "classification": "ok_no_jobs",
+            "zeroKeptClassification": "",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "durationMs": 800,
+            "error": "static:Netease Games (Gameprog): no jobs extracted from source pages",
+        },
+        {
+            "name": "static_source::weak_generic_zero_kept",
+            "status": "ok",
+            "adapter": "static",
+            "failureBucket": "",
+            "classification": "ok_no_jobs",
+            "zeroKeptClassification": "n/a",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "durationMs": 10,
+            "error": "",
+        },
+    ]
+
+    normalized_rows = [jf.normalize_source_report_row(row) for row in audit_rows]
+    breakdown = jobs_reporting.build_unknown_static_breakdown(normalized_rows)
+
+    for row in normalized_rows[:-1]:
+        assert str(row.get("failureBucket") or "") == "js_required"
+        assert str(row.get("zeroKeptClassification") or "") == "broken_extraction"
+
+    weak_row = normalized_rows[-1]
+    assert str(weak_row.get("failureBucket") or "") == "needs_review"
+    assert str(weak_row.get("zeroKeptClassification") or "") == "needs_review"
+
+    assert breakdown["byShape"]["no_jobs_extracted"]["count"] == 5
+    assert breakdown["byShape"]["other_static"]["count"] == 1
+    assert breakdown["byShape"]["transport_network"]["count"] == 0
+    assert breakdown["byShape"]["anti_bot_challenge"]["count"] == 0
+    assert breakdown["topByWallTime"][0]["name"] == "static_source::combat_waffle_studios"
+    assert breakdown["topByWallTime"][-1]["name"] == "static_source::weak_generic_zero_kept"
 
 
 def test_run_static_studio_pages_source_with_fixture() -> None:
@@ -101,6 +198,44 @@ def test_run_static_studio_pages_source_with_fixture() -> None:
         )
         assert len(rows) == 2
         assert any("/job/" in (row.get("jobLink") or "") for row in rows)
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+
+def test_run_static_studio_pages_source_emits_heartbeat_callbacks() -> None:
+    listing = _fixture("littlechicken_jobs_page.html")
+    detail = _fixture("littlechicken_job_detail.html")
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    heartbeat_calls: list[str] = []
+    jf.STUDIO_SOURCE_REGISTRY = [
+        {
+            "name": "Fallback Heartbeat Studio",
+            "studio": "Fallback Heartbeat Studio",
+            "adapter": "static",
+            "company": "Fallback Heartbeat Studio",
+            "pages": ["https://example.net/about-us/jobs/"],
+            "enabledByDefault": True,
+        }
+    ]
+
+    try:
+
+        def fake_fetch(url: str, _: int) -> str:
+            if url == "https://example.net/about-us/jobs/":
+                return listing
+            if "/job/" in url:
+                return detail
+            raise RuntimeError(f"Unexpected URL: {url}")
+
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            heartbeat_callback=lambda: heartbeat_calls.append("beat"),
+        )
+        assert len(rows) == 2
+        assert len(heartbeat_calls) >= 4
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
 
@@ -1245,25 +1380,27 @@ def test_unknown_static_breakdown_groups_by_shape_and_orders_views() -> None:
             "failureBucket": "unknown",
             "durationMs": 12,
             "fetchedCount": 4,
-            "keptCount": 2,
-            "error": "",
+            "keptCount": 0,
+            "error": "time_budget_exceeded while fetching https://example.com/f",
+            "zeroKeptClassification": "needs_review",
         },
     ]
 
     breakdown = jobs_reporting.build_unknown_static_breakdown(source_reports)
 
     assert breakdown["byShape"]["no_jobs_extracted"]["count"] == 2
-    assert breakdown["byShape"]["transport_network"]["count"] == 1
+    assert breakdown["byShape"]["transport_network"]["count"] == 2
     assert breakdown["byShape"]["anti_bot_challenge"]["count"] == 1
     assert breakdown["byShape"]["other_static"]["count"] == 1
     assert (
         breakdown["topByWallTime"][0]["name"]
         == "static_source::static:listing_url:https://example.com/a"
     )
-    assert breakdown["topByFrequency"][0]["shape"] == "no_jobs_extracted"
+    assert breakdown["topByFrequency"][0]["shape"] == "transport_network"
     assert breakdown["topByFrequency"][0]["count"] == 2
     assert source_reports[0]["failureBucket"] == "unknown"
     assert source_reports[-1]["status"] == "ok"
+    assert source_reports[-1]["keptCount"] == 0
 
 
 def test_build_pipeline_summary_embeds_unknown_static_breakdown_without_affecting_totals() -> None:
@@ -1303,8 +1440,9 @@ def test_build_pipeline_summary_embeds_unknown_static_breakdown_without_affectin
             "failureBucket": "unknown",
             "durationMs": 12,
             "fetchedCount": 4,
-            "keptCount": 2,
-            "error": "",
+            "keptCount": 0,
+            "error": "time_budget_exceeded while fetching https://example.com/f",
+            "zeroKeptClassification": "needs_review",
         },
     ]
 
@@ -1328,10 +1466,10 @@ def test_build_pipeline_summary_embeds_unknown_static_breakdown_without_affectin
     assert summary["successfulSources"] == 1
     assert summary["failedSources"] == 3
     assert breakdown["byShape"]["no_jobs_extracted"]["count"] == 1
-    assert breakdown["byShape"]["transport_network"]["count"] == 1
+    assert breakdown["byShape"]["transport_network"]["count"] == 2
     assert breakdown["byShape"]["anti_bot_challenge"]["count"] == 1
     assert breakdown["byShape"]["other_static"]["count"] == 0
-    assert len(breakdown["topByWallTime"]) == 3
+    assert len(breakdown["topByWallTime"]) == 4
     assert len(breakdown["topByFrequency"]) == 4
 
 
@@ -1494,6 +1632,7 @@ def test_static_manual_no_jobs_surface_as_js_required() -> None:
 
     updated = static_helpers.update_source_detail_taxonomy(detail)
     normalized = jf.normalize_source_report_row(updated)
+    breakdown = jobs_reporting.build_unknown_static_breakdown([normalized])
 
     assert str(updated.get("classification") or "") == "js_required"
     assert str(updated.get("failureBucket") or "") == "js_required"
@@ -1501,6 +1640,8 @@ def test_static_manual_no_jobs_surface_as_js_required() -> None:
     assert str(normalized.get("classification") or "") == "js_required"
     assert str(normalized.get("failureBucket") or "") == "js_required"
     assert str(normalized.get("zeroKeptClassification") or "") == "broken_extraction"
+    assert breakdown["byShape"]["no_jobs_extracted"]["count"] == 1
+    assert breakdown["topByWallTime"][0]["name"] == "Frontier Developments Careers"
 
 
 def test_static_zero_extract_linkedin_429_promotes_to_anti_bot_or_challenge() -> None:

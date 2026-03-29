@@ -212,45 +212,49 @@ def make_task_state_writer(
     write_text_if_changed: Callable[[Any, str], Any],
 ) -> Callable[..., None]:
     def write_task_state(finished_at: str = "", *, force: bool = False) -> None:
-        now_mono = time.perf_counter()
-        if not force and (now_mono - runtime.last_task_write_monotonic) < 0.9:
-            return
-        runtime.last_task_write_monotonic = now_mono
         with runtime.task_lock:
+            now_mono = time.perf_counter()
+            if not force and (now_mono - runtime.last_task_write_monotonic) < 0.9:
+                return
+            runtime.last_task_write_monotonic = now_mono
             rows_snapshot = [dict(row) for row in runtime.task_rows.values()]
-        payload = normalize_task_state_payload(
-            {
-                "runId": run_id,
-                "startedAt": started_at,
-                "finishedAt": finished_at,
-                "heartbeatAt": now_iso(),
-                "summary": {
-                    "queued": sum(1 for row in rows_snapshot if row.get("status") == "queued"),
-                    "running": sum(1 for row in rows_snapshot if row.get("status") == "running"),
-                    "ok": sum(1 for row in rows_snapshot if row.get("status") == "ok"),
-                    "error": sum(1 for row in rows_snapshot if row.get("status") == "error"),
-                },
-                "taskProgress": build_fetch_task_progress_payload(
-                    phase_key="completed" if finished_at else "executing_sources",
-                    phase_label="Completed" if finished_at else "Executing sources",
-                    task_rows={
-                        str(row.get("name") or ""): row
-                        for row in rows_snapshot
-                        if str(row.get("name") or "").strip()
+            payload = normalize_task_state_payload(
+                {
+                    "runId": run_id,
+                    "startedAt": started_at,
+                    "finishedAt": finished_at,
+                    "heartbeatAt": now_iso(),
+                    "summary": {
+                        "queued": sum(1 for row in rows_snapshot if row.get("status") == "queued"),
+                        "running": sum(
+                            1 for row in rows_snapshot if row.get("status") == "running"
+                        ),
+                        "ok": sum(1 for row in rows_snapshot if row.get("status") == "ok"),
+                        "error": sum(1 for row in rows_snapshot if row.get("status") == "error"),
                     },
-                    source_reports=[],
-                    output_count=0,
-                    finished=bool(finished_at),
-                ),
-                "tasks": rows_snapshot,
-                "outputs": {"report": str(report_path)},
-            },
-            run_id=run_id,
-            started_at=started_at,
-            finished_at=finished_at,
-            report_path=str(report_path),
-        )
-        write_text_if_changed(task_state_path, json.dumps(payload, indent=2, ensure_ascii=False))
+                    "taskProgress": build_fetch_task_progress_payload(
+                        phase_key="completed" if finished_at else "executing_sources",
+                        phase_label="Completed" if finished_at else "Executing sources",
+                        task_rows={
+                            str(row.get("name") or ""): row
+                            for row in rows_snapshot
+                            if str(row.get("name") or "").strip()
+                        },
+                        source_reports=[],
+                        output_count=0,
+                        finished=bool(finished_at),
+                    ),
+                    "tasks": rows_snapshot,
+                    "outputs": {"report": str(report_path)},
+                },
+                run_id=run_id,
+                started_at=started_at,
+                finished_at=finished_at,
+                report_path=str(report_path),
+            )
+            write_text_if_changed(
+                task_state_path, json.dumps(payload, indent=2, ensure_ascii=False)
+            )
 
     return write_task_state
 

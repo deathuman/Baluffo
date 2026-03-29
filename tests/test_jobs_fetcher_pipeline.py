@@ -1,4 +1,8 @@
 # ruff: noqa: F403,F405
+import threading
+import time
+
+from src.jobs.pipeline_runtime import PipelineTaskRuntime, make_task_state_writer
 from tests.jobs_fetcher_helpers import *
 
 patch_jobs_fetcher_aliases()
@@ -120,6 +124,67 @@ def test_run_pipeline_social_sources_report_and_output() -> None:
         assert int(review_payload.get("sampleSize") or 0) == 0
         rows = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
         assert any(str(row.get("source") or "").startswith("social_") for row in rows)
+
+
+def test_task_state_writer_serializes_concurrent_writes() -> None:
+    runtime = PipelineTaskRuntime(
+        task_rows={
+            "static_source::static:listing_url:https://example.com/careers": {
+                "name": "static_source::static:listing_url:https://example.com/careers",
+                "status": "running",
+                "startedAt": "2026-03-28T21:45:26+00:00",
+                "finishedAt": "",
+                "durationMs": 0,
+                "heartbeatAt": "2026-03-28T21:45:26+00:00",
+                "error": "",
+            }
+        },
+        task_lock=threading.Lock(),
+        last_task_write_monotonic=0.0,
+        last_heartbeat_write={},
+        thread_local=threading.local(),
+        domain_lock=threading.Lock(),
+        domain_gates={},
+        show_progress=False,
+    )
+    write_calls = 0
+    active_writes = 0
+    max_active_writes = 0
+    write_guard = threading.Lock()
+
+    def normalize_task_state_payload(payload, **_kwargs):
+        return payload
+
+    def fake_write_text_if_changed(_path, _text):
+        nonlocal write_calls, active_writes, max_active_writes
+        with write_guard:
+            write_calls += 1
+            active_writes += 1
+            max_active_writes = max(max_active_writes, active_writes)
+        time.sleep(0.02)
+        with write_guard:
+            active_writes -= 1
+        return True
+
+    write_task_state = make_task_state_writer(
+        runtime=runtime,
+        run_id="fetch_test",
+        started_at="2026-03-28T21:45:26+00:00",
+        report_path="C:/tmp/jobs-fetch-report.json",
+        task_state_path="C:/tmp/jobs-fetch-tasks.json",
+        normalize_task_state_payload=normalize_task_state_payload,
+        write_text_if_changed=fake_write_text_if_changed,
+    )
+
+    threads = [threading.Thread(target=write_task_state, kwargs={"force": True}) for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert write_calls == 6
+    assert max_active_writes == 1
 
 
 def test_normalize_source_report_row_preserves_static_stage_timings() -> None:

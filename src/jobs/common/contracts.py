@@ -6,6 +6,14 @@ from typing import Any
 
 from src.contracts import SCHEMA_VERSION
 from src.jobs.common.numbers import _clamped_int
+from src.jobs.common.taxonomy import (
+    ClassificationContext,
+    FailureBucket,
+    ZeroKeptClassification,
+    assess_zero_extract,
+    classify_zero_kept,
+    failure_bucket_from_zero_extract_assessment,
+)
 from src.jobs.text_utils import clean_text, norm_text
 
 
@@ -245,12 +253,35 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
     }
     failure_bucket = _clean_label(src.get("failureBucket"))
+    classification = _clean_label(src.get("classification"))
+    zk_classification = _clean_label(src.get("zeroKeptClassification"))
+    if normalized["keptCount"] == 0 and normalized["status"] != "excluded":
+        context = ClassificationContext(
+            status=normalized["status"],
+            error=normalized["error"],
+            classification=classification,
+            fetched_count=normalized["fetchedCount"],
+        )
+        if not zk_classification:
+            zk_classification = classify_zero_kept(context).value
+        if not failure_bucket:
+            assessment = assess_zero_extract(context)
+            inferred_bucket = failure_bucket_from_zero_extract_assessment(
+                assessment,
+                ZeroKeptClassification.LEGIT_EMPTY
+                if zk_classification == ZeroKeptClassification.LEGIT_EMPTY.value
+                else None,
+            )
+            if inferred_bucket != FailureBucket.UNKNOWN:
+                failure_bucket = inferred_bucket.value
+            elif zk_classification == ZeroKeptClassification.LEGIT_EMPTY.value:
+                failure_bucket = FailureBucket.NO_OPENINGS.value
+            else:
+                failure_bucket = FailureBucket.NEEDS_REVIEW.value
     if failure_bucket:
         normalized["failureBucket"] = failure_bucket
-    classification = _clean_label(src.get("classification"))
     if classification:
         normalized["classification"] = classification
-    zk_classification = _clean_label(src.get("zeroKeptClassification"))
     if zk_classification:
         normalized["zeroKeptClassification"] = zk_classification
     if "browserEscalationEligible" in src:

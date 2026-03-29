@@ -77,6 +77,7 @@ def run_static_studio_pages_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
+    heartbeat_callback: Callable[[], None] | None = None,
     sources: list[dict[str, Any]] | None = None,
     shard: str | None = None,
     diagnostics_name: str = "static_studio_pages",
@@ -109,6 +110,7 @@ def run_static_studio_pages_source(
         retries=retries,
         backoff_s=backoff_s,
     )
+    emit_heartbeat = heartbeat_callback or (lambda: None)
 
     if isinstance(sources, list):
         selected_sources = sources
@@ -123,6 +125,7 @@ def run_static_studio_pages_source(
             selected_sources = registry_entries("static")
     static_source_time_budget_s = static_runtime.static_source_time_budget_s
     for source in selected_sources:
+        emit_heartbeat()
         source_started = time.perf_counter()
         if shard and static_source_shard(source) != shard:
             continue
@@ -212,12 +215,14 @@ def run_static_studio_pages_source(
                 timeout_s=timeout_s,
                 retries=retries,
                 backoff_s=backoff_s,
+                heartbeat_callback=heartbeat_callback,
                 pages=pages,
                 source_row=source,
                 parse_jobpostings_from_html=parse_jobpostings_from_html,
                 maybe_fetch_kojima_job_listing_html=maybe_fetch_kojima_job_listing_html,
                 try_playwright=try_playwright,
             )
+            emit_heartbeat()
             jobs.extend(plugin_jobs)
             entry_report["fetchedCount"] = len(pages)
             entry_report["keptCount"] = len(plugin_jobs)
@@ -242,6 +247,7 @@ def run_static_studio_pages_source(
             # If plugin extracted nothing, treat as error unless it proved an explicit empty state
             # or a non-fatal browser escalation classification.
             if not plugin_jobs:
+                emit_heartbeat()
                 classification = clean_text(entry_report.get("classification"))
                 empty_confirmed = (
                     bool(entry_report.get("emptyConfirmed")) or classification == "empty_confirmed"
@@ -270,6 +276,7 @@ def run_static_studio_pages_source(
             pass
 
         for page in pages:
+            emit_heartbeat()
             page_url = clean_text(page)
             if not page_url:
                 continue
@@ -327,6 +334,7 @@ def run_static_studio_pages_source(
                 )
                 if cache_hit:
                     stats["fetch_cache_hits"] += 1
+                emit_heartbeat()
                 if try_playwright and html and detect_js_shell(html):
                     parsed_pre = parse_jobpostings_from_html(
                         html,
@@ -365,6 +373,7 @@ def run_static_studio_pages_source(
                 extraction_started = time.perf_counter()
                 listing_jobs_found = 0
                 for listing_html in listing_htmls:
+                    emit_heartbeat()
                     parsed = parse_jobpostings_from_html(
                         listing_html,
                         base_url=page_url,
@@ -468,6 +477,7 @@ def run_static_studio_pages_source(
                     detail_links = []
 
                 if not detail_links:
+                    emit_heartbeat()
                     continue
                 source_key = diagnostics_name if len(selected_sources) == 1 else source_name
                 plugin_meta = source.get("_staticPluginMeta") if isinstance(source, dict) else None
@@ -484,6 +494,7 @@ def run_static_studio_pages_source(
                 entry_report["detailTraversalMode"] = detail_traversal_mode
                 if detail_traversal_mode == "listing_only":
                     detail_links = []
+                    emit_heartbeat()
                     continue
                 detail_limit = source_detail_limit_for(
                     source_key,
@@ -508,6 +519,7 @@ def run_static_studio_pages_source(
                 if detail_limit and detail_limit < len(detail_links):
                     detail_links = detail_links[:detail_limit]
                 detail_fetch_started = time.perf_counter()
+                emit_heartbeat()
                 with ThreadPoolExecutor(
                     max_workers=source_detail_concurrency_for(
                         source_key,
@@ -535,6 +547,7 @@ def run_static_studio_pages_source(
                     for future in as_completed(future_map):
                         detail, _detail_title = future_map[future]
                         stats["detail_pages_visited"] += 1
+                        emit_heartbeat()
                         try:
                             detail_result = future.result()
                         except Exception as exc:  # noqa: BLE001
@@ -561,6 +574,7 @@ def run_static_studio_pages_source(
                                 continue
                             seen_links.add(link)
                             jobs.append(row)
+                        emit_heartbeat()
                 stats["detail_fetch_ms"] += max(
                     0,
                     int((time.perf_counter() - detail_fetch_started) * 1000)
@@ -585,6 +599,7 @@ def run_static_studio_pages_source(
                     warnings.append(f"static:{source_name}:{page_url}: {msg}")
                 else:
                     errors.append(f"static:{source_name}:{page_url}: {exc}")
+                emit_heartbeat()
         entry_report["keptCount"] = max(0, len(jobs) - kept_before)
         stats["jobs_emitted"] = int(entry_report["keptCount"])
         if int(stats["detail_pages_visited"] or 0) > 0:
@@ -607,6 +622,7 @@ def run_static_studio_pages_source(
             # so it isn't silently reported as ok-with-zero.
             if len(selected_sources) == 1:
                 errors.append(f"static:{source_name}: no jobs extracted from source pages")
+        emit_heartbeat()
         update_source_detail_taxonomy(entry_report)
         details.append(entry_report)
 
@@ -642,6 +658,7 @@ def run_static_source_entry_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
+    heartbeat_callback: Callable[[], None] | None = None,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
@@ -652,6 +669,7 @@ def run_static_source_entry_source(
         timeout_s=timeout_s,
         retries=retries,
         backoff_s=backoff_s,
+        heartbeat_callback=heartbeat_callback,
         sources=[source_row],
         diagnostics_name=diagnostics_name,
         static_detail_concurrency=static_detail_concurrency,
@@ -667,6 +685,7 @@ def run_static_studio_pages_a_i_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
+    heartbeat_callback: Callable[[], None] | None = None,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
@@ -677,6 +696,7 @@ def run_static_studio_pages_a_i_source(
         timeout_s=timeout_s,
         retries=retries,
         backoff_s=backoff_s,
+        heartbeat_callback=heartbeat_callback,
         shard="a_i",
         diagnostics_name="static_studio_pages_a_i",
         static_detail_concurrency=static_detail_concurrency,
@@ -711,6 +731,7 @@ def build_static_source_loaders() -> list[tuple[str, SourceLoader]]:
             timeout_s: int,
             retries: int,
             backoff_s: float,
+            heartbeat_callback: Callable[[], None] | None = None,
             _row: dict[str, Any] = row,
             _loader_name: str = loader_name,
             static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
@@ -725,6 +746,7 @@ def build_static_source_loaders() -> list[tuple[str, SourceLoader]]:
                 timeout_s=timeout_s,
                 retries=retries,
                 backoff_s=backoff_s,
+                heartbeat_callback=heartbeat_callback,
                 static_detail_concurrency=static_detail_concurrency,
                 source_state_rows=source_state_rows,
                 try_playwright=try_playwright,
@@ -741,6 +763,7 @@ def run_static_studio_pages_j_r_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
+    heartbeat_callback: Callable[[], None] | None = None,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
@@ -751,6 +774,7 @@ def run_static_studio_pages_j_r_source(
         timeout_s=timeout_s,
         retries=retries,
         backoff_s=backoff_s,
+        heartbeat_callback=heartbeat_callback,
         shard="j_r",
         diagnostics_name="static_studio_pages_j_r",
         static_detail_concurrency=static_detail_concurrency,

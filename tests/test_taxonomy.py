@@ -9,6 +9,7 @@ from src.jobs.common.taxonomy import (
     ZeroKeptClassification,
     assess_zero_extract,
     classify_zero_kept,
+    failure_bucket_from_zero_extract_assessment,
     map_error_to_failure_bucket,
 )
 
@@ -49,6 +50,14 @@ class TestMapErrorToFailureBucket:
     def test_no_openings(self):
         ctx = ClassificationContext(status="ok", error="", classification="ok_no_jobs")
         assert map_error_to_failure_bucket(ctx) == FailureBucket.NO_OPENINGS
+
+    def test_static_manual_no_jobs(self):
+        ctx = ClassificationContext(
+            status="error",
+            error="static:Frontier Developments (Sheet): no jobs extracted from source pages",
+            classification="",
+        )
+        assert map_error_to_failure_bucket(ctx) == FailureBucket.JS_REQUIRED
 
     def test_needs_review(self):
         ctx = ClassificationContext(
@@ -270,3 +279,25 @@ class TestAssessZeroExtract:
         assessment = assess_zero_extract(ctx)
         assert assessment.diagnosis == ZeroExtractDiagnosis.NEEDS_REVIEW
         assert not assessment.browser_fallback_recommended
+
+    def test_failure_bucket_from_static_manual_js_required_assessment(self):
+        ctx = ClassificationContext(
+            status="error",
+            error="static:Frontier Developments (Sheet): no jobs extracted from source pages",
+            classification="needs_review",
+            fetched_count=0,
+            signal_quality="strong",
+        )
+        assessment = assess_zero_extract(ctx)
+        assert failure_bucket_from_zero_extract_assessment(assessment) == FailureBucket.JS_REQUIRED
+
+    def test_failure_bucket_from_generic_needs_review_assessment(self):
+        ctx = ClassificationContext(
+            status="ok",
+            error="",
+            classification="ok_no_jobs",
+            fetched_count=0,
+            signal_quality="weak",
+        )
+        assessment = assess_zero_extract(ctx)
+        assert failure_bucket_from_zero_extract_assessment(assessment) == FailureBucket.NEEDS_REVIEW

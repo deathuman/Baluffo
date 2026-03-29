@@ -21,6 +21,13 @@ from typing import Any
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.canonicalize import CanonicalNormalizer
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
+from src.jobs.common.taxonomy import (
+    ClassificationContext,
+    FailureBucket,
+    ZeroExtractDiagnosis,
+    ZeroKeptClassification,
+    assess_zero_extract,
+)
 from src.jobs.models import CanonicalJob
 from src.jobs.reporting import format_source_error
 from src.jobs.state import (
@@ -76,6 +83,26 @@ def _is_social_subsource_report(source_name: str, adapter_name: str) -> bool:
         "social_x",
         "social_mastodon",
     }
+
+
+def _failure_bucket_from_zero_extract_context(
+    cls_context: ClassificationContext,
+    zero_kept_classification: str = "",
+) -> FailureBucket:
+    if clean_text(zero_kept_classification) == ZeroKeptClassification.LEGIT_EMPTY.value:
+        return FailureBucket.NO_OPENINGS
+    diagnosis = assess_zero_extract(cls_context).diagnosis
+    if diagnosis == ZeroExtractDiagnosis.EMPTY_CONFIRMED:
+        return FailureBucket.NO_OPENINGS
+    if diagnosis == ZeroExtractDiagnosis.JS_REQUIRED:
+        return FailureBucket.JS_REQUIRED
+    if diagnosis == ZeroExtractDiagnosis.SITE_CHANGED:
+        return FailureBucket.SITE_CHANGED
+    if diagnosis == ZeroExtractDiagnosis.ANTI_BOT_OR_CHALLENGE:
+        return FailureBucket.ANTI_BOT_OR_CHALLENGE
+    if diagnosis == ZeroExtractDiagnosis.NEEDS_REVIEW:
+        return FailureBucket.NEEDS_REVIEW
+    return FailureBucket.UNKNOWN
 
 
 def _console_safe_text(value: Any) -> str:
@@ -173,7 +200,10 @@ def run_source_execution_stage(
         }
         canonical_batch: list[CanonicalJob] = []
         loader_heartbeat_callback = None
-        if clean_text(name) in {"google_sheets", "social_reddit"}:
+        if (
+            clean_text(name) in {"google_sheets", "social_reddit"}
+            or norm_text(report.get("adapter")) == "static"
+        ):
             last_heartbeat_write = 0.0
 
             def loader_heartbeat_callback() -> None:
@@ -478,10 +508,25 @@ def run_source_execution_stage(
             http_status=None,
             fetched_count=int(report.get("fetchedCount") or 0),
         )
-        if report["status"] == "error" or report.get("error"):
-            report["failureBucket"] = map_error_to_failure_bucket(cls_context).value
+        zero_kept_classification = classify_zero_kept(cls_context)
+        failure_bucket = map_error_to_failure_bucket(cls_context)
+        if (
+            int(report.get("keptCount") or 0) == 0
+            and report["status"] != "excluded"
+            and failure_bucket == FailureBucket.UNKNOWN
+        ):
+            failure_bucket = _failure_bucket_from_zero_extract_context(
+                cls_context,
+                zero_kept_classification.value,
+            )
+        if (
+            report["status"] == "error"
+            or report.get("error")
+            or int(report.get("keptCount") or 0) == 0
+        ):
+            report["failureBucket"] = failure_bucket.value
         if int(report.get("keptCount") or 0) == 0 and report["status"] != "excluded":
-            report["zeroKeptClassification"] = classify_zero_kept(cls_context).value
+            report["zeroKeptClassification"] = zero_kept_classification.value
 
         return report, canonical_batch
 
@@ -555,8 +600,15 @@ def run_source_execution_stage(
             http_status=None,
             fetched_count=0,
         )
-        report["failureBucket"] = map_error_to_failure_bucket(cls_context).value
-        report["zeroKeptClassification"] = classify_zero_kept(cls_context).value
+        zero_kept_classification = classify_zero_kept(cls_context)
+        failure_bucket = map_error_to_failure_bucket(cls_context)
+        if failure_bucket == FailureBucket.UNKNOWN:
+            failure_bucket = _failure_bucket_from_zero_extract_context(
+                cls_context,
+                zero_kept_classification.value,
+            )
+        report["failureBucket"] = failure_bucket.value
+        report["zeroKeptClassification"] = zero_kept_classification.value
         return report
 
     def mark_task_started(source_name: str) -> None:

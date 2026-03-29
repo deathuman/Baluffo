@@ -157,6 +157,26 @@ def _legacy_zero_kept_from_diagnosis(
     return ZeroKeptClassification.NEEDS_REVIEW
 
 
+def failure_bucket_from_zero_extract_assessment(
+    assessment: ZeroExtractAssessment,
+    zero_kept_classification: ZeroKeptClassification | None = None,
+) -> FailureBucket:
+    """Map a zero-extract assessment to the most specific failure bucket available."""
+    if zero_kept_classification == ZeroKeptClassification.LEGIT_EMPTY:
+        return FailureBucket.NO_OPENINGS
+    if assessment.diagnosis == ZeroExtractDiagnosis.EMPTY_CONFIRMED:
+        return FailureBucket.NO_OPENINGS
+    if assessment.diagnosis == ZeroExtractDiagnosis.JS_REQUIRED:
+        return FailureBucket.JS_REQUIRED
+    if assessment.diagnosis == ZeroExtractDiagnosis.SITE_CHANGED:
+        return FailureBucket.SITE_CHANGED
+    if assessment.diagnosis == ZeroExtractDiagnosis.ANTI_BOT_OR_CHALLENGE:
+        return FailureBucket.ANTI_BOT_OR_CHALLENGE
+    if assessment.diagnosis == ZeroExtractDiagnosis.NEEDS_REVIEW:
+        return FailureBucket.NEEDS_REVIEW
+    return FailureBucket.UNKNOWN
+
+
 def assess_zero_extract(context: ClassificationContext) -> ZeroExtractAssessment:
     """Classify a zero-kept source using adapter-level signals.
 
@@ -317,6 +337,11 @@ def map_error_to_failure_bucket(context: ClassificationContext) -> FailureBucket
 
     if _is_linkedin_throttle_error(error_lower):
         return FailureBucket.ANTI_BOT_OR_CHALLENGE
+
+    if _is_named_static_no_jobs_offender(error_lower) or _is_static_manual_no_jobs_error(
+        error_lower
+    ):
+        return FailureBucket.JS_REQUIRED
 
     if any(
         phrase in error_lower

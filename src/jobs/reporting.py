@@ -196,6 +196,12 @@ def build_social_experiment_review_payload(
 
 def _classify_unknown_static_shape(report: dict[str, Any]) -> str:
     error_lower = clean_text(report.get("error")).lower()
+    failure_bucket = norm_text(report.get("failureBucket"))
+    zero_kept = norm_text(report.get("zeroKeptClassification"))
+    if failure_bucket == "no_openings" or zero_kept == "legit_empty":
+        return "no_jobs_extracted"
+    if failure_bucket == "js_required" or zero_kept == "broken_extraction":
+        return "no_jobs_extracted"
     if "no jobs extracted from source pages" in error_lower:
         return "no_jobs_extracted"
     if any(
@@ -203,6 +209,7 @@ def _classify_unknown_static_shape(report: dict[str, Any]) -> str:
         for marker in (
             "timeout",
             "timed out",
+            "time_budget_exceeded",
             "network error",
             "fetch failed",
             "connection reset",
@@ -212,6 +219,8 @@ def _classify_unknown_static_shape(report: dict[str, Any]) -> str:
             "dns",
         )
     ):
+        return "transport_network"
+    if failure_bucket == "timeout":
         return "transport_network"
     if any(
         marker in error_lower
@@ -242,9 +251,9 @@ def build_unknown_static_breakdown(
             continue
         if clean_text(report.get("adapter")) != "static":
             continue
-        if norm_text(report.get("status")) != "error":
-            continue
-        if norm_text(report.get("failureBucket")) != "unknown":
+        kept_count = int(report.get("keptCount") or 0)
+        failure_bucket = norm_text(report.get("failureBucket"))
+        if kept_count > 0 and failure_bucket not in {"unknown", ""}:
             continue
         shape = _classify_unknown_static_shape(report)
         duration_ms = max(0, int(report.get("durationMs") or 0))
