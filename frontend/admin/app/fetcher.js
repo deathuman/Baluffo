@@ -110,6 +110,28 @@ export function createAdminFetcherController({
     };
   }
 
+  function getRestorableFetcherRunMeta(report = null) {
+    const hasLiveFetcherState = Boolean(
+      state.fetcherLiveProgressState
+      || state.fetchOptimisticRun
+      || state.adminBusyState.fetcherWatch
+      || state.adminBusyState.liveFetchRunning
+    );
+    if (!hasLiveFetcherState) {
+      return null;
+    }
+    const finishedMs = parseReportTimestampMs(report?.finishedAt);
+    if (finishedMs >= (state.fetcherLaunchAtMs - 1000)) {
+      return null;
+    }
+    const runId = String(report?.runId || state.fetchOptimisticRun?.runId || "").trim();
+    const startedAt = String(report?.startedAt || state.fetchOptimisticRun?.startedAt || "").trim();
+    if (!runId && !startedAt) {
+      return null;
+    }
+    return { runId, startedAt };
+  }
+
   function updateFetcherProgressFromReport(report, { running = false } = {}) {
     setFetcherProgress(deriveFetcherProgressModel(report, { running }));
   }
@@ -224,6 +246,11 @@ export function createAdminFetcherController({
     startFetcherCompletionWatch();
   }
 
+  function restartFetcherCompletionWatch(runMeta = null) {
+    stopFetcherCompletionWatch();
+    attachToActiveFetchRun(runMeta);
+  }
+
   async function loadFetcherLogChunk(options = {}) {
     const reset = Boolean(options?.reset);
     const offset = reset ? 0 : Math.max(0, Number(state.fetcherLogRemoteOffset) || 0);
@@ -335,7 +362,7 @@ export function createAdminFetcherController({
     const silent = Boolean(options.silent);
     if (state.adminBusyState.fetcherReportLoad) {
       if (!silent) showToast("Fetch report loading already in progress.", "info");
-      return;
+      return null;
     }
     setBusyFlag("fetcherReportLoad", true);
     try {
@@ -345,7 +372,7 @@ export function createAdminFetcherController({
         appendFetcherLog("Fetch report is not available yet. It may still be generating.", "warn");
         updateFetcherProgressFromReport(null, { running: Boolean(state.adminBusyState.fetcherWatch || state.adminBusyState.liveFetchRunning) });
         if (!silent) showToast("Fetch report not available yet. Retry in a few seconds.", "info");
-        return;
+        return null;
       }
       state.latestFetcherReportCache = report;
       updateFetcherProgressFromReport(report, { running: false });
@@ -395,6 +422,7 @@ export function createAdminFetcherController({
       }
 
       loadOpsHealthData().catch(() => {});
+      return report;
     } finally {
       setBusyFlag("fetcherReportLoad", false);
     }
@@ -773,6 +801,8 @@ export function createAdminFetcherController({
     setFetcherLogPlaceholder,
     clearOptimisticFetchRun,
     attachToActiveFetchRun,
+    restartFetcherCompletionWatch,
+    getRestorableFetcherRunMeta,
     appendFetcherLog,
     loadLatestFetcherReport,
     copyLatestFailureSummary,

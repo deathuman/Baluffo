@@ -1220,6 +1220,53 @@ def test_get_current_task_state_payload_clears_stale_task_state_once_report_fini
     assert admin_bridge.load_json_object(admin_bridge.TASK_STATE_PATH, {}) == {}
 
 
+def test_get_current_task_state_payload_keeps_recent_fetch_visible_during_heartbeat_gap(
+    admin_bridge_entrypoint_root,
+):
+    started_at = admin_bridge.now_iso()
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "fetch": {
+                "runId": "fetch_1",
+                "taskType": "fetch",
+                "pid": 111,
+                "script": "jobs_fetcher.py",
+                "status": "running",
+                "startedAt": started_at,
+            }
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "runId": "fetch_1",
+            "startedAt": started_at,
+            "finishedAt": "",
+            "runtime": {"lifecycle": {"owner": "fetch_report", "heartbeatAt": ""}},
+            "taskProgress": {
+                "active": False,
+                "phaseKey": "executing_sources",
+                "phaseLabel": "Executing sources",
+                "mode": "determinate",
+                "ratio": 0.5,
+                "counts": {"resolvedSources": 5, "sourceCount": 10},
+            },
+            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+            "sources": [],
+        },
+    )
+
+    payload = admin_bridge.build_bridge_api(
+        admin_bridge.RUNTIME_CONFIG
+    ).get_current_task_state_payload()
+    tasks = payload.get("tasks") or []
+    fetch_row = next(row for row in tasks if str(row.get("taskType") or "") == "fetch")
+    assert payload.get("count") == 1
+    assert fetch_row.get("active") is True
+    assert str(fetch_row.get("status") or "") == "running"
+
+
 def test_get_current_task_state_payload_prefers_active_fetch_owner_over_finished_history(
     admin_bridge_entrypoint_root,
 ):

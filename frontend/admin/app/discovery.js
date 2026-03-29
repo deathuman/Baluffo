@@ -86,6 +86,22 @@ export function createAdminDiscoveryController({
     }
   }
 
+  async function loadLatestDiscoveryReport(options = {}) {
+    const silent = Boolean(options.silent);
+    try {
+      const report = await getBridge("/discovery/report");
+      if (report && typeof report === "object" && !Array.isArray(report)) {
+        state.latestDiscoveryReportCache = report;
+      }
+      return report || null;
+    } catch (err) {
+      if (!silent) {
+        logAdminError("Failed to load discovery report", err);
+      }
+      return null;
+    }
+  }
+
   async function saveDiscoveryConfig() {
     setBusyFlag("discoveryWrite", true);
     try {
@@ -235,6 +251,11 @@ export function createAdminDiscoveryController({
       setOptimisticDiscoveryRun(runMeta);
     }
     startDiscoveryCompletionWatch();
+  }
+
+  function restartDiscoveryCompletionWatch(runMeta = null) {
+    stopDiscoveryCompletionWatch();
+    attachToActiveDiscoveryRun(runMeta);
   }
 
   function appendDiscoveryLog(message, level = "info") {
@@ -574,9 +595,11 @@ export function createAdminDiscoveryController({
     appendDiscoveryLogEvent,
     appendDiscoveryServerLogText,
     loadDiscoveryLogChunk,
+    loadLatestDiscoveryReport,
     setDiscoveryLogPlaceholder,
     clearOptimisticDiscoveryRun,
     attachToActiveDiscoveryRun,
+    restartDiscoveryCompletionWatch,
     startDiscoveryCompletionWatch,
     stopDiscoveryCompletionWatch,
     runDiscoveryTask,

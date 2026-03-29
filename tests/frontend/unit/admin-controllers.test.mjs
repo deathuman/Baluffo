@@ -131,6 +131,9 @@ test("admin auth controller initializes the composed admin view immediately", as
     setFetcherLogPlaceholder(message) {
       calls.push(`fetcherPlaceholder:${message}`);
     },
+    attachToActiveFetchRun(runMeta) {
+      calls.push(`attachToActiveFetchRun:${String(runMeta?.runId || "")}`);
+    },
     setDiscoveryLogPlaceholder(message) {
       calls.push(`discoveryPlaceholder:${message}`);
     },
@@ -205,6 +208,329 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.ok(calls.includes("scheduleOpsHealthPolling:900"));
   assert.equal(refs.adminSyncStatusEl.textContent, "Loading sync status...");
   assert.equal(toasts.length, 0);
+});
+
+test("admin auth controller reattaches fetch progress when report is still active", async () => {
+  const calls = [];
+  const refs = {
+    adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminSyncStatusEl: createElement()
+  };
+
+  const controller = createAdminAuthController({
+    refs,
+    emitAdminStartupMetric() {},
+    markAdminFirstInteractive() {},
+    syncAdminBusyUi() {},
+    syncDiscoveryLogDisclosure() {},
+    resetBusyFlags() {},
+    setSourceFilter() {},
+    setSourceStatus() {},
+    setFetcherLogPlaceholder() {},
+    attachToActiveFetchRun(runMeta) {
+      calls.push(`attachToActiveFetchRun:${String(runMeta?.runId || "")}`);
+    },
+    setDiscoveryLogPlaceholder() {},
+    clearOptimisticFetchRun() {},
+    clearOptimisticDiscoveryRun() {},
+    setManualSourceFeedback() {},
+    setOpsPlaceholders() {},
+    setBridgeStatusBadge() {},
+    renderUsersEmpty() {},
+    startBridgeStatusWatch() {},
+    stopBridgeStatusWatch() {},
+    scheduleOpsHealthPolling() {},
+    stopOpsHealthPolling() {},
+    refreshOverview: async () => {},
+    loadLatestFetcherReport: async () => ({
+      runId: "fetch_reattach_1",
+      startedAt: "2026-03-29T11:49:22+02:00",
+      finishedAt: "",
+      taskProgress: { active: true, phaseKey: "executing_sources", phaseLabel: "Executing sources" },
+      summary: { outputCount: 10, failedSources: 1, sourceCount: 10 }
+    }),
+    loadDiscoveryData: async () => {},
+    loadOpsHealthData: async () => {},
+    loadSyncStatus: async () => {},
+    loadDiscoveryConfig: async () => {},
+    logAdminError() {},
+    showToast() {}
+  });
+
+  controller.initAdminPage();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.ok(calls.includes("attachToActiveFetchRun:fetch_reattach_1"));
+});
+
+test("admin auth controller reattaches discovery progress when report is still active", async () => {
+  const calls = [];
+  const refs = {
+    adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminSyncStatusEl: createElement()
+  };
+
+  const controller = createAdminAuthController({
+    refs,
+    emitAdminStartupMetric() {},
+    markAdminFirstInteractive() {},
+    syncAdminBusyUi() {},
+    syncDiscoveryLogDisclosure() {},
+    resetBusyFlags() {},
+    setSourceFilter() {},
+    setSourceStatus() {},
+    setFetcherLogPlaceholder() {},
+    attachToActiveFetchRun() {},
+    setDiscoveryLogPlaceholder() {},
+    clearOptimisticFetchRun() {},
+    clearOptimisticDiscoveryRun() {},
+    loadLatestDiscoveryReport: async () => ({
+      runId: "discovery_reattach_1",
+      startedAt: "2026-03-29T11:49:22+02:00",
+      finishedAt: "",
+      taskProgress: { active: true, phaseKey: "scanning_sources", phaseLabel: "Scanning sources" },
+      summary: { queuedCandidateCount: 3 }
+    }),
+    attachToActiveDiscoveryRun(runMeta) {
+      calls.push(`attachToActiveDiscoveryRun:${String(runMeta?.runId || "")}`);
+    },
+    setManualSourceFeedback() {},
+    setOpsPlaceholders() {},
+    setBridgeStatusBadge() {},
+    renderUsersEmpty() {},
+    startBridgeStatusWatch() {},
+    stopBridgeStatusWatch() {},
+    scheduleOpsHealthPolling() {},
+    stopOpsHealthPolling() {},
+    refreshOverview: async () => {},
+    loadLatestFetcherReport: async () => null,
+    loadDiscoveryData: async () => {},
+    loadDiscoveryConfig: async () => {},
+    loadOpsHealthData: async () => {},
+    loadSyncStatus: async () => {},
+    logAdminError() {},
+    showToast() {}
+  });
+
+  controller.initAdminPage();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.ok(calls.includes("attachToActiveDiscoveryRun:discovery_reattach_1"));
+});
+
+test("admin auth controller restores active fetch and discovery watches on page restore", async () => {
+  const calls = [];
+  const refs = {
+    adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminSyncStatusEl: createElement()
+  };
+
+  const controller = createAdminAuthController({
+    refs,
+    emitAdminStartupMetric() {},
+    markAdminFirstInteractive() {},
+    syncAdminBusyUi() {},
+    syncDiscoveryLogDisclosure() {},
+    resetBusyFlags() {},
+    setSourceFilter() {},
+    setSourceStatus() {},
+    setFetcherLogPlaceholder() {},
+    attachToActiveFetchRun() {},
+    restartFetcherCompletionWatch(runMeta) {
+      calls.push(`restartFetcherCompletionWatch:${String(runMeta?.runId || "")}`);
+    },
+    setDiscoveryLogPlaceholder() {},
+    clearOptimisticFetchRun() {},
+    clearOptimisticDiscoveryRun() {},
+    loadLatestDiscoveryReport: async () => ({
+      runId: "discovery_restore_1",
+      startedAt: "2026-03-29T11:49:22+02:00",
+      finishedAt: "",
+      taskProgress: { active: true, phaseKey: "scanning_sources", phaseLabel: "Scanning sources" },
+      summary: { queuedCandidateCount: 3 }
+    }),
+    attachToActiveDiscoveryRun() {},
+    restartDiscoveryCompletionWatch(runMeta) {
+      calls.push(`restartDiscoveryCompletionWatch:${String(runMeta?.runId || "")}`);
+    },
+    setManualSourceFeedback() {},
+    setOpsPlaceholders() {},
+    setBridgeStatusBadge() {},
+    renderUsersEmpty() {},
+    startBridgeStatusWatch() {},
+    stopBridgeStatusWatch() {},
+    scheduleOpsHealthPolling() {},
+    stopOpsHealthPolling() {},
+    refreshOverview: async () => {},
+    loadLatestFetcherReport: async () => ({
+      runId: "fetch_restore_1",
+      startedAt: "2026-03-29T11:49:22+02:00",
+      finishedAt: "",
+      taskProgress: { active: true, phaseKey: "executing_sources", phaseLabel: "Executing sources" },
+      summary: { outputCount: 10, failedSources: 1, sourceCount: 10 }
+    }),
+    loadDiscoveryData: async () => {},
+    loadDiscoveryConfig: async () => {},
+    loadOpsHealthData: async () => {},
+    loadSyncStatus: async () => {},
+    logAdminError() {},
+    showToast() {}
+  });
+
+  await controller.restoreActiveRunWatches();
+
+  assert.ok(calls.includes("restartFetcherCompletionWatch:fetch_restore_1"));
+  assert.ok(calls.includes("restartDiscoveryCompletionWatch:discovery_restore_1"));
+});
+
+test("admin auth controller restores fetch watch from live state when the latest report is stale", async () => {
+  const calls = [];
+  const refs = {
+    adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminSyncStatusEl: createElement()
+  };
+
+  const controller = createAdminAuthController({
+    refs,
+    emitAdminStartupMetric() {},
+    markAdminFirstInteractive() {},
+    syncAdminBusyUi() {},
+    syncDiscoveryLogDisclosure() {},
+    resetBusyFlags() {},
+    setSourceFilter() {},
+    setSourceStatus() {},
+    setFetcherLogPlaceholder() {},
+    attachToActiveFetchRun() {},
+    restartFetcherCompletionWatch(runMeta) {
+      calls.push(`restartFetcherCompletionWatch:${String(runMeta?.runId || "")}`);
+    },
+    getRestorableFetcherRunMeta(report) {
+      calls.push(`restoreMeta:${String(report?.runId || "")}`);
+      return {
+        runId: "fetch_stale_1",
+        startedAt: "2026-03-29T11:49:22+02:00"
+      };
+    },
+    setDiscoveryLogPlaceholder() {},
+    clearOptimisticFetchRun() {},
+    clearOptimisticDiscoveryRun() {},
+    loadLatestDiscoveryReport: async () => null,
+    attachToActiveDiscoveryRun() {},
+    restartDiscoveryCompletionWatch() {},
+    setManualSourceFeedback() {},
+    setOpsPlaceholders() {},
+    setBridgeStatusBadge() {},
+    renderUsersEmpty() {},
+    startBridgeStatusWatch() {},
+    stopBridgeStatusWatch() {},
+    scheduleOpsHealthPolling() {},
+    stopOpsHealthPolling() {},
+    refreshOverview: async () => {},
+    loadLatestFetcherReport: async () => ({
+      runId: "fetch_stale_1",
+      startedAt: "2026-03-29T11:49:22+02:00",
+      finishedAt: "",
+      taskProgress: { active: false, phaseKey: "executing_sources", phaseLabel: "Executing sources" },
+      summary: { outputCount: 10, failedSources: 1, sourceCount: 10 }
+    }),
+    loadDiscoveryData: async () => {},
+    loadDiscoveryConfig: async () => {},
+    loadOpsHealthData: async () => {},
+    loadSyncStatus: async () => {},
+    logAdminError() {},
+    showToast() {}
+  });
+
+  await controller.restoreActiveRunWatches();
+
+  assert.ok(calls.includes("restoreMeta:fetch_stale_1"));
+  assert.ok(calls.includes("restartFetcherCompletionWatch:fetch_stale_1"));
+});
+
+test("admin auth controller dedupes concurrent restore requests for active runs", async () => {
+  const calls = [];
+  let fetchReportLoads = 0;
+  let discoveryReportLoads = 0;
+  const refs = {
+    adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
+    adminSyncStatusEl: createElement()
+  };
+
+  const controller = createAdminAuthController({
+    refs,
+    emitAdminStartupMetric() {},
+    markAdminFirstInteractive() {},
+    syncAdminBusyUi() {},
+    syncDiscoveryLogDisclosure() {},
+    resetBusyFlags() {},
+    setSourceFilter() {},
+    setSourceStatus() {},
+    setFetcherLogPlaceholder() {},
+    attachToActiveFetchRun() {},
+    restartFetcherCompletionWatch(runMeta) {
+      calls.push(`restartFetcherCompletionWatch:${String(runMeta?.runId || "")}`);
+    },
+    setDiscoveryLogPlaceholder() {},
+    clearOptimisticFetchRun() {},
+    clearOptimisticDiscoveryRun() {},
+    loadLatestDiscoveryReport: async () => {
+      discoveryReportLoads += 1;
+      return {
+        runId: "discovery_restore_2",
+        startedAt: "2026-03-29T11:49:22+02:00",
+        finishedAt: "",
+        taskProgress: { active: true, phaseKey: "scanning_sources", phaseLabel: "Scanning sources" },
+        summary: { queuedCandidateCount: 3 }
+      };
+    },
+    attachToActiveDiscoveryRun() {},
+    restartDiscoveryCompletionWatch(runMeta) {
+      calls.push(`restartDiscoveryCompletionWatch:${String(runMeta?.runId || "")}`);
+    },
+    setManualSourceFeedback() {},
+    setOpsPlaceholders() {},
+    setBridgeStatusBadge() {},
+    renderUsersEmpty() {},
+    startBridgeStatusWatch() {},
+    stopBridgeStatusWatch() {},
+    scheduleOpsHealthPolling() {},
+    stopOpsHealthPolling() {},
+    refreshOverview: async () => {},
+    loadLatestFetcherReport: async () => {
+      fetchReportLoads += 1;
+      return {
+        runId: "fetch_restore_2",
+        startedAt: "2026-03-29T11:49:22+02:00",
+        finishedAt: "",
+        taskProgress: { active: true, phaseKey: "executing_sources", phaseLabel: "Executing sources" },
+        summary: { outputCount: 10, failedSources: 1, sourceCount: 10 }
+      };
+    },
+    loadDiscoveryData: async () => {},
+    loadDiscoveryConfig: async () => {},
+    loadOpsHealthData: async () => {},
+    loadSyncStatus: async () => {},
+    logAdminError() {},
+    showToast() {}
+  });
+
+  await Promise.all([controller.restoreActiveRunWatches(), controller.restoreActiveRunWatches()]);
+
+  assert.equal(fetchReportLoads, 1);
+  assert.equal(discoveryReportLoads, 1);
+  assert.equal(
+    calls.filter(line => line === "restartFetcherCompletionWatch:fetch_restore_2").length,
+    1
+  );
+  assert.equal(
+    calls.filter(line => line === "restartDiscoveryCompletionWatch:discovery_restore_2").length,
+    1
+  );
 });
 
 test("admin auth controller session view model tracks bridge badge state", async () => {
@@ -1731,6 +2057,143 @@ test("admin fetcher controller starts live progress watching for an explicit bri
     });
     assert.ok(logs.some(line => /fetcher started\. watching live progress/i.test(line)));
     assert.ok(!logs.some(line => /timeout window/i.test(line)));
+    assert.equal(refs.adminFetcherProgressEl.classList.contains("hidden"), false);
+    assert.equal(refs.adminFetcherProgressEl.classList.contains("indeterminate"), true);
+    assert.ok(scheduled.length >= 2);
+  } finally {
+    controller?.stopFetcherCompletionWatch?.();
+    global.setTimeout = previousSetTimeout;
+    global.clearTimeout = previousClearTimeout;
+  }
+});
+
+test("admin fetcher controller can restore a live watch from local state when the latest report is stale", async () => {
+  const state = {
+    adminPin: "1234",
+    latestFetcherReportCache: null,
+    fetcherLaunchAtMs: Date.parse("2026-03-08T10:00:00.000Z"),
+    fetcherCompletionPollDeadline: 0,
+    fetcherLogRemoteOffset: 0,
+    fetcherCompletionPollTimer: null,
+    fetcherLogPollTimer: null,
+    fetcherLiveProgressState: {
+      summarySignature: "",
+      sourceSignatures: new Map(),
+      reportedSlowSources: new Set(),
+      serverLogSignatures: new Set(),
+      slowSourceSummarySignature: "",
+      slowStageSummarySignature: "",
+      lastHeartbeatAtMs: 0,
+      lastActivityAtMs: Date.now()
+    },
+    fetchOptimisticRun: {
+      runId: "fetch_stale_2",
+      startedAt: "2026-03-08T10:00:00.000Z"
+    },
+    adminBusyState: {
+      fetcherRun: false,
+      fetcherWatch: true,
+      fetcherReportLoad: false,
+      liveFetchRunning: false
+    }
+  };
+  const refs = {
+    adminFetcherLogEl: createElement(),
+    adminFetcherProgressEl: createElement({ style: {}, classList: createClassList(["hidden"]) }),
+    adminFetcherProgressBarEl: createElement({ style: {} }),
+    adminFetcherProgressLabelEl: createElement()
+  };
+  const scheduled = [];
+  const previousSetTimeout = global.setTimeout;
+  const previousClearTimeout = global.clearTimeout;
+  global.setTimeout = callback => {
+    scheduled.push(callback);
+    return scheduled.length;
+  };
+  global.clearTimeout = () => {};
+  const controller = createAdminFetcherController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (String(path).startsWith("/fetcher/log?offset=")) {
+        return { text: "", nextOffset: 0 };
+      }
+      return {
+        runId: "fetch_stale_2",
+        startedAt: "2026-03-08T10:00:00.000Z",
+        finishedAt: "",
+        taskProgress: {
+          active: false,
+          phaseKey: "executing_sources",
+          phaseLabel: "Executing sources",
+          mode: "indeterminate",
+          ratio: 0,
+          counts: {}
+        },
+        runtime: {},
+        summary: {},
+        sources: []
+      };
+    },
+    postBridge: async () => ({}),
+    fetchJobsFetchReportJson: async () => ({
+      runId: "fetch_stale_2",
+      startedAt: "2026-03-08T10:00:00.000Z",
+      finishedAt: "",
+      taskProgress: {
+        active: false,
+        phaseKey: "executing_sources",
+        phaseLabel: "Executing sources",
+        mode: "indeterminate",
+        ratio: 0,
+        counts: {}
+      },
+      runtime: {},
+      summary: {},
+      sources: []
+    }),
+    writeJobsAutoRefreshSignal() {},
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    logAdminError() {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    getSourceStatusSetter: () => () => {},
+    loadOpsHealthData: async () => {},
+    startOpsHealthPolling() {},
+    fetchReportPollIntervalMs: 5000,
+    fetchReportPollTimeoutMs: 600000,
+    jobsAutoRefreshSignalKey: "k",
+    jobsFetcherCommand: "python -m src.jobs_fetcher",
+    jobsFetcherTaskLabel: "Run jobs fetcher",
+    jobsFetchReportUrl: "data/jobs-fetch-report.json",
+    createLogEvent(scope, message, level) {
+      return { scope, message, level, timestamp: "2026-03-08T10:00:00.000Z" };
+    },
+    appendLogRow(_container, event) {
+      // Intentionally unused in this regression.
+      void event;
+    }
+  });
+
+  try {
+    const meta = controller.getRestorableFetcherRunMeta({
+      runId: "fetch_stale_2",
+      startedAt: "2026-03-08T10:00:00.000Z",
+      finishedAt: "",
+      taskProgress: { active: false }
+    });
+
+    assert.deepEqual(meta, {
+      runId: "fetch_stale_2",
+      startedAt: "2026-03-08T10:00:00.000Z"
+    });
+
+    controller.restartFetcherCompletionWatch(meta);
+
+    assert.equal(state.adminBusyState.fetcherWatch, true);
+    assert.equal(state.adminBusyState.liveFetchRunning, false);
     assert.equal(refs.adminFetcherProgressEl.classList.contains("hidden"), false);
     assert.equal(refs.adminFetcherProgressEl.classList.contains("indeterminate"), true);
     assert.ok(scheduled.length >= 2);

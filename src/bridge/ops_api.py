@@ -271,8 +271,18 @@ class OpsApi:
             self._deps.load_json_object(self._paths.jobs_fetch_report, {})
         )
         fetch_snapshot = projection.child_tasks.get("fetch")
-        fetch_active = bool(fetch_snapshot and fetch_snapshot.active)
-        if fetch_state and not fetch_active:
+        fetch_active = bool(
+            fetch_snapshot
+            and (
+                fetch_snapshot.active
+                or (
+                    fetch_snapshot.run_id
+                    and not fetch_snapshot.finished_at
+                    and not fetch_snapshot.explicit_dead
+                )
+            )
+        )
+        if fetch_state and fetch_snapshot and (fetch_snapshot.finished_at or fetch_snapshot.explicit_dead):
             self._deps.clear_task_state("fetch")
         append_if_active(
             "fetch",
@@ -321,8 +331,20 @@ class OpsApi:
             self._deps.load_json_object(self._paths.discovery_report, {})
         )
         discovery_snapshot = projection.child_tasks.get("discovery")
-        discovery_active = bool(discovery_snapshot and discovery_snapshot.active)
-        if discovery_state and not discovery_active:
+        discovery_active = bool(
+            discovery_snapshot
+            and (
+                discovery_snapshot.active
+                or (
+                    discovery_snapshot.run_id
+                    and not discovery_snapshot.finished_at
+                    and not discovery_snapshot.explicit_dead
+                )
+            )
+        )
+        if discovery_state and discovery_snapshot and (
+            discovery_snapshot.finished_at or discovery_snapshot.explicit_dead
+        ):
             self._deps.clear_task_state("discovery")
         append_if_active(
             "discovery",

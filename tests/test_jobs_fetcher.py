@@ -124,6 +124,33 @@ def test_registry_entries_bamboohr_derives_static_rows_and_suppresses_static_whe
     assert all(row.get("name") != "Wolcen Studios (Manual Website)" for row in static_entries)
 
 
+def test_registry_entries_suppresses_nextlevelgames_static_when_jazzhr_provider_exists() -> None:
+    static_nextlevel = {
+        "name": "Next Level Games (Manual Website)",
+        "studio": "Next Level Games",
+        "adapter": "static",
+        "pages": [
+            "https://nextlevelgames.com/jobs-at-next-level-games-subsidiary-of-nintendo-co-ltd/"
+        ],
+        "enabledByDefault": True,
+    }
+    jazzhr_provider = {
+        "name": "Next Level Games (JazzHR)",
+        "studio": "Next Level Games",
+        "adapter": "jazzhr",
+        "board_url": "https://nextlevelgames.applytojob.com/apply",
+        "enabledByDefault": True,
+    }
+    with mock.patch.object(
+        jobs_common, "STUDIO_SOURCE_REGISTRY", [static_nextlevel, jazzhr_provider]
+    ):
+        static_entries = jobs_common.registry_entries("static")
+
+    assert all(
+        row.get("name") != "Next Level Games (Manual Website)" for row in static_entries
+    )
+
+
 def test_parse_args_uses_config_backed_output_and_social_defaults() -> None:
     prev_argv = list(sys.argv)
     try:

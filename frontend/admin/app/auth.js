@@ -8,9 +8,15 @@ export function createAdminAuthController({
   setSourceFilter,
   setSourceStatus,
   setFetcherLogPlaceholder,
+  attachToActiveFetchRun,
+  restartFetcherCompletionWatch,
+  getRestorableFetcherRunMeta,
   setDiscoveryLogPlaceholder,
   clearOptimisticFetchRun,
   clearOptimisticDiscoveryRun,
+  loadLatestDiscoveryReport,
+  attachToActiveDiscoveryRun,
+  restartDiscoveryCompletionWatch,
   setManualSourceFeedback,
   setOpsPlaceholders,
   setBridgeStatusBadge,
@@ -28,6 +34,25 @@ export function createAdminAuthController({
   logAdminError,
   _showToast
 }) {
+  let restoreActiveRunWatchesPromise = null;
+
+  function getFetchRestoreMeta(fetchReport) {
+    if (typeof getRestorableFetcherRunMeta === "function") {
+      const meta = getRestorableFetcherRunMeta(fetchReport);
+      if (meta) return meta;
+    }
+    const active = Boolean(
+      fetchReport
+      && !String(fetchReport.finishedAt || "").trim()
+      && Boolean(fetchReport?.taskProgress?.active)
+    );
+    if (!active) return null;
+    return {
+      runId: fetchReport.runId,
+      startedAt: fetchReport.startedAt
+    };
+  }
+
   function initAdminPage() {
     syncAdminBusyUi();
     syncDiscoveryLogDisclosure();
@@ -53,9 +78,35 @@ export function createAdminAuthController({
     refreshOverview().catch(err => {
       logAdminError("Failed to refresh admin overview", err);
     });
-    loadLatestFetcherReport({ silent: true }).catch(err => {
-      logAdminError("Failed to load jobs fetch report", err);
-    });
+    loadLatestFetcherReport({ silent: true })
+      .then(report => {
+        const fetchMeta = getFetchRestoreMeta(report);
+        if (fetchMeta && typeof attachToActiveFetchRun === "function") {
+          attachToActiveFetchRun(fetchMeta);
+        }
+      })
+      .catch(err => {
+        logAdminError("Failed to load jobs fetch report", err);
+      });
+    if (typeof loadLatestDiscoveryReport === "function") {
+      loadLatestDiscoveryReport({ silent: true })
+        .then(report => {
+          const active = Boolean(
+            report
+            && !String(report.finishedAt || "").trim()
+            && Boolean(report?.taskProgress?.active)
+          );
+          if (active && typeof attachToActiveDiscoveryRun === "function") {
+            attachToActiveDiscoveryRun({
+              runId: report.runId,
+              startedAt: report.startedAt
+            });
+          }
+        })
+        .catch(err => {
+          logAdminError("Failed to load discovery report", err);
+        });
+    }
     loadDiscoveryData().catch(err => {
       logAdminError("Failed to load discovery data", err);
     });
@@ -69,6 +120,39 @@ export function createAdminAuthController({
       logAdminError("Failed to load sync status", err);
     });
     return true;
+  }
+
+  async function restoreActiveRunWatches() {
+    if (restoreActiveRunWatchesPromise) {
+      return restoreActiveRunWatchesPromise;
+    }
+
+    restoreActiveRunWatchesPromise = (async () => {
+      const fetchReport = await loadLatestFetcherReport({ silent: true }).catch(() => null);
+      const fetchRestoreMeta = getFetchRestoreMeta(fetchReport);
+      if (fetchRestoreMeta && typeof restartFetcherCompletionWatch === "function") {
+        restartFetcherCompletionWatch(fetchRestoreMeta);
+      }
+
+      const discoveryReport = await loadLatestDiscoveryReport({ silent: true }).catch(() => null);
+      const discoveryActive = Boolean(
+        discoveryReport
+        && !String(discoveryReport.finishedAt || "").trim()
+        && Boolean(discoveryReport?.taskProgress?.active)
+      );
+      if (discoveryActive && typeof restartDiscoveryCompletionWatch === "function") {
+        restartDiscoveryCompletionWatch({
+          runId: discoveryReport.runId,
+          startedAt: discoveryReport.startedAt
+        });
+      }
+    })();
+
+    try {
+      return await restoreActiveRunWatchesPromise;
+    } finally {
+      restoreActiveRunWatchesPromise = null;
+    }
   }
 
   function toAdminSessionViewModel() {
@@ -85,6 +169,7 @@ export function createAdminAuthController({
 
   return {
     initAdminPage,
+    restoreActiveRunWatches,
     toAdminSessionViewModel
   };
 }

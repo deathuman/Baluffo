@@ -23,6 +23,7 @@ from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.errors import NoPluginFoundError
 from src.jobs.adapters.plugins.static import register_static_plugins
 from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
+from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_helpers import (
     add_detail_link,
@@ -389,6 +390,32 @@ def run_static_studio_pages_source(
                         row["studio"] = clean_text(source.get("studio")) or company or source_name
                         jobs.append(row)
                         listing_jobs_found += 1
+
+                    if listing_jobs_found == 0:
+                        rendered_rows = extract_rendered_card_jobs(
+                            listing_html,
+                            page_url=page_url,
+                            company=company,
+                            source_id=clean_text(source.get("id")) or source_name,
+                            allow_any_anchor=True,
+                        )
+                        if rendered_rows:
+                            for row in rendered_rows:
+                                link = normalize_url(row.get("jobLink"))
+                                if not link or link in seen_links:
+                                    continue
+                                seen_links.add(link)
+                                row["adapter"] = "static"
+                                row["studio"] = clean_text(source.get("studio")) or company or source_name
+                                jobs.append(row)
+                                listing_jobs_found += 1
+                            if listing_jobs_found > 0:
+                                source["_staticPluginMeta"] = {
+                                    "detailFetchRequired": False,
+                                    "detailTraversalMode": "listing_only",
+                                }
+                                emit_heartbeat()
+                                continue
 
                     for row_match in re.finditer(
                         r'(?is)<(?:div|tr)[^>]*class=["\'][^"\']*job-listing-item[^"\']*["\'][^>]*>(.*?)</(?:div|tr)>',

@@ -446,9 +446,13 @@ function composeControllers() {
     setSourceFilter,
     setSourceStatus,
     setFetcherLogPlaceholder: (...args) => fetcherController.setFetcherLogPlaceholder(...args),
+    getRestorableFetcherRunMeta: (...args) => fetcherController.getRestorableFetcherRunMeta(...args),
     clearOptimisticFetchRun: (...args) => fetcherController.clearOptimisticFetchRun(...args),
+    attachToActiveFetchRun: (...args) => fetcherController.attachToActiveFetchRun(...args),
     setDiscoveryLogPlaceholder: (...args) => discoveryController.setDiscoveryLogPlaceholder(...args),
     clearOptimisticDiscoveryRun: (...args) => discoveryController.clearOptimisticDiscoveryRun(...args),
+    loadLatestDiscoveryReport: (...args) => discoveryController.loadLatestDiscoveryReport(...args),
+    attachToActiveDiscoveryRun: (...args) => discoveryController.attachToActiveDiscoveryRun(...args),
     setManualSourceFeedback: (...args) => registryController.setManualSourceFeedback(...args),
     setOpsPlaceholders: (...args) => opsController.setOpsPlaceholders(...args),
     setBridgeStatusBadge: (...args) => opsController.setBridgeStatusBadge(...args),
@@ -473,6 +477,17 @@ function cacheDom() {
 }
 
 function bindEvents() {
+  window.addEventListener("pageshow", event => {
+    if (!event?.persisted) return;
+    authController?.restoreActiveRunWatches?.().catch(() => {});
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    authController?.restoreActiveRunWatches?.().catch(() => {});
+  });
+  window.addEventListener("focus", () => {
+    authController?.restoreActiveRunWatches?.().catch(() => {});
+  });
   bindUi(refs.adminJobsBtnEl, "click", () => {
     window.location.href = getLastJobsUrl();
   });

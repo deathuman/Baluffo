@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from src.jobs.adapters.plugins.static import _heuristics
+from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
@@ -42,6 +43,8 @@ _SHEET_STUDIO_HOSTS = frozenset(
         "www.careers.10chambers.com",
         "careers.ea.com",
         "jobs.ea.com",
+        "rovio.com",
+        "www.rovio.com",
         "sega.co.jp",
         "www.sega.co.jp",
         "unknownworlds.com",
@@ -63,6 +66,7 @@ def run(
     backoff_s: float,
     pages: list[str],
     source_row: dict[str, Any],
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]] | None = None,
     **kwargs: Any,
 ) -> list[RawJob]:
@@ -113,6 +117,31 @@ def run(
             row["studio"] = company
             row["source"] = clean_text(source_row.get("name")) or company
     cleaned = [r for r in rows if isinstance(r, dict)]
+    if not cleaned:
+        rendered_rows = extract_rendered_card_jobs(
+            html,
+            page_url=page_url,
+            company=company,
+            source_id=source_id,
+            allow_any_anchor=True,
+        )
+        if not rendered_rows and callable(try_playwright):
+            browser_html, _ = try_playwright(page_url, max(3, min(timeout_s, 25)))
+            if browser_html:
+                html = browser_html
+                rendered_rows = extract_rendered_card_jobs(
+                    html,
+                    page_url=page_url,
+                    company=company,
+                    source_id=source_id,
+                    allow_any_anchor=True,
+                )
+        if rendered_rows:
+            for row in rendered_rows:
+                row["adapter"] = "static"
+                row["studio"] = company
+                row["source"] = clean_text(source_row.get("name")) or company
+            return rendered_rows
     if not cleaned:
         if _heuristics.detect_no_openings(html):
             source_row["_staticPluginMeta"] = {

@@ -1,6 +1,9 @@
 # ruff: noqa: F403,F405
 from collections import Counter
 
+from src.jobs.adapters.plugins.static import ats_wrappers, rendered_cards
+from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
+from src.jobs.adapters.plugins.types import AdapterPluginContext
 from tests.jobs_fetcher_helpers import *
 
 patch_jobs_fetcher_aliases()
@@ -1473,6 +1476,277 @@ def test_build_pipeline_summary_embeds_unknown_static_breakdown_without_affectin
     assert len(breakdown["topByFrequency"]) == 4
 
 
+def test_needs_review_breakdown_groups_by_shape_and_orders_views() -> None:
+    source_reports = [
+        {
+            "name": "static_source::static:listing_url:https://example.com/a",
+            "adapter": "static",
+            "studio": "Example A",
+            "status": "error",
+            "failureBucket": "needs_review",
+            "zeroKeptClassification": "needs_review",
+            "keptCount": 0,
+            "durationMs": 1000,
+            "error": "static:Example A (Manual Website): no jobs extracted from source pages",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/b",
+            "adapter": "static",
+            "studio": "Example B",
+            "status": "error",
+            "failureBucket": "needs_review",
+            "zeroKeptClassification": "needs_review",
+            "keptCount": 0,
+            "durationMs": 300,
+            "error": "time_budget_exceeded while fetching https://example.com/b",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/c",
+            "adapter": "static",
+            "studio": "Example C",
+            "status": "error",
+            "failureBucket": "needs_review",
+            "zeroKeptClassification": "needs_review",
+            "keptCount": 0,
+            "durationMs": 200,
+            "error": "HTTP 429 Too Many Requests for https://example.com/c",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/d",
+            "adapter": "static",
+            "studio": "Example D",
+            "status": "error",
+            "failureBucket": "needs_review",
+            "zeroKeptClassification": "needs_review",
+            "keptCount": 0,
+            "durationMs": 150,
+            "error": "site changed redirect after page move",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/e",
+            "adapter": "static",
+            "studio": "Example E",
+            "status": "ok",
+            "failureBucket": "",
+            "zeroKeptClassification": "n/a",
+            "keptCount": 0,
+            "durationMs": 75,
+            "error": "unexpected parser shape with no obvious classification",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/f",
+            "adapter": "static",
+            "studio": "Example F",
+            "status": "error",
+            "failureBucket": "needs_review",
+            "zeroKeptClassification": "needs_review",
+            "keptCount": 0,
+            "durationMs": 50,
+            "error": "unhelpful zero-kept outcome with no clear clues",
+        },
+    ]
+
+    breakdown = jobs_reporting.build_needs_review_breakdown(source_reports)
+
+    assert breakdown["byShape"]["no_jobs_extracted"]["count"] == 1
+    assert breakdown["byShape"]["transport_network"]["count"] == 1
+    assert breakdown["byShape"]["anti_bot_challenge"]["count"] == 1
+    assert breakdown["byShape"]["site_changed"]["count"] == 1
+    assert breakdown["byShape"]["blank_residue"]["count"] == 1
+    assert breakdown["byShape"]["ambiguous_review"]["count"] == 1
+    assert breakdown["topByWallTime"][0]["name"] == "static_source::static:listing_url:https://example.com/a"
+    assert breakdown["topByFrequency"][0]["shape"] == "no_jobs_extracted"
+
+
+def test_build_pipeline_summary_embeds_needs_review_breakdown_without_affecting_totals() -> None:
+    source_reports = [
+        {
+            "name": "static_source::static:listing_url:https://example.com/a",
+            "adapter": "static",
+            "studio": "Example A",
+            "status": "error",
+            "failureBucket": "needs_review",
+            "zeroKeptClassification": "needs_review",
+            "keptCount": 0,
+            "durationMs": 1000,
+            "error": "static:Example A (Manual Website): no jobs extracted from source pages",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/b",
+            "adapter": "static",
+            "studio": "Example B",
+            "status": "error",
+            "failureBucket": "needs_review",
+            "zeroKeptClassification": "needs_review",
+            "keptCount": 0,
+            "durationMs": 300,
+            "error": "time_budget_exceeded while fetching https://example.com/b",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/c",
+            "adapter": "static",
+            "studio": "Example C",
+            "status": "error",
+            "failureBucket": "needs_review",
+            "zeroKeptClassification": "needs_review",
+            "keptCount": 0,
+            "durationMs": 200,
+            "error": "HTTP 429 Too Many Requests for https://example.com/c",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/d",
+            "adapter": "static",
+            "studio": "Example D",
+            "status": "error",
+            "failureBucket": "needs_review",
+            "zeroKeptClassification": "needs_review",
+            "keptCount": 0,
+            "durationMs": 150,
+            "error": "site changed redirect after page move",
+        },
+    ]
+
+    summary = jobs_reporting.build_pipeline_summary(
+        {"inputCount": 0, "mergedCount": 0},
+        [],
+        source_reports,
+        0,
+        False,
+        1,
+        0,
+        0,
+        json_bytes=123,
+        csv_bytes=456,
+        light_json_bytes=78,
+        lifecycle_counts_map={"active": 0, "likelyRemoved": 0, "archived": 0, "totalTracked": 0},
+    )
+
+    breakdown = summary.get("needsReviewBreakdown") or {}
+    assert summary["rawFetched"] == 0
+    assert summary["successfulSources"] == 0
+    assert summary["failedSources"] == 4
+    assert breakdown["byShape"]["no_jobs_extracted"]["count"] == 1
+    assert breakdown["byShape"]["transport_network"]["count"] == 1
+    assert breakdown["byShape"]["anti_bot_challenge"]["count"] == 1
+    assert breakdown["byShape"]["site_changed"]["count"] == 1
+    assert breakdown["byShape"]["blank_residue"]["count"] == 0
+    assert breakdown["byShape"]["ambiguous_review"]["count"] == 0
+
+
+def test_blank_residue_breakdown_ignores_success_rows_and_tracks_true_zero_kept_residue() -> None:
+    source_reports = [
+        {
+            "name": "static_source::static:listing_url:https://example.com/success",
+            "adapter": "static",
+            "studio": "Example Success",
+            "status": "ok",
+            "failureBucket": "",
+            "zeroKeptClassification": "",
+            "keptCount": 5,
+            "durationMs": 900,
+            "error": "",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/blank",
+            "adapter": "static",
+            "studio": "Example Blank",
+            "status": "ok",
+            "failureBucket": "",
+            "zeroKeptClassification": "",
+            "keptCount": 0,
+            "durationMs": 800,
+            "error": "time_budget_exceeded while fetching https://example.com/blank",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/explicit",
+            "adapter": "static",
+            "studio": "Example Explicit",
+            "status": "error",
+            "failureBucket": "needs_review",
+            "zeroKeptClassification": "needs_review",
+            "keptCount": 0,
+            "durationMs": 700,
+            "error": "manual site with ambiguous zero-kept outcome",
+        },
+    ]
+
+    breakdown = jobs_reporting.build_blank_residue_breakdown(source_reports)
+
+    assert breakdown["byShape"]["blank_residue"]["count"] == 1
+    assert breakdown["topByWallTime"][0]["name"] == "static_source::static:listing_url:https://example.com/blank"
+    assert all(
+        row["name"] != "static_source::static:listing_url:https://example.com/success"
+        for row in breakdown["topByWallTime"]
+    )
+
+
+def test_build_pipeline_summary_embeds_blank_residue_breakdown_without_affecting_totals() -> None:
+    source_reports = [
+        {
+            "name": "static_source::static:listing_url:https://example.com/success",
+            "adapter": "static",
+            "studio": "Example Success",
+            "status": "ok",
+            "failureBucket": "",
+            "zeroKeptClassification": "",
+            "keptCount": 5,
+            "fetchedCount": 6,
+            "durationMs": 900,
+            "error": "",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/blank",
+            "adapter": "static",
+            "studio": "Example Blank",
+            "status": "ok",
+            "failureBucket": "",
+            "zeroKeptClassification": "",
+            "keptCount": 0,
+            "fetchedCount": 0,
+            "durationMs": 800,
+            "error": "time_budget_exceeded while fetching https://example.com/blank",
+        },
+        {
+            "name": "static_source::static:listing_url:https://example.com/explicit",
+            "adapter": "static",
+            "studio": "Example Explicit",
+            "status": "error",
+            "failureBucket": "needs_review",
+            "zeroKeptClassification": "needs_review",
+            "keptCount": 0,
+            "fetchedCount": 0,
+            "durationMs": 700,
+            "error": "manual site with ambiguous zero-kept outcome",
+        },
+    ]
+
+    summary = jobs_reporting.build_pipeline_summary(
+        {"inputCount": 0, "mergedCount": 0},
+        [],
+        source_reports,
+        0,
+        False,
+        1,
+        0,
+        0,
+        json_bytes=123,
+        csv_bytes=456,
+        light_json_bytes=78,
+        lifecycle_counts_map={"active": 0, "likelyRemoved": 0, "archived": 0, "totalTracked": 0},
+    )
+
+    breakdown = summary.get("blankResidueBreakdown") or {}
+    assert summary["rawFetched"] == 6
+    assert summary["successfulSources"] == 2
+    assert summary["failedSources"] == 1
+    assert breakdown["byShape"]["blank_residue"]["count"] == 1
+    assert breakdown["topByWallTime"][0]["name"] == "static_source::static:listing_url:https://example.com/blank"
+    assert all(
+        row["name"] != "static_source::static:listing_url:https://example.com/success"
+        for row in breakdown["topByWallTime"]
+    )
+
+
 def test_build_parser_regression_queue_projects_listing_changed_to_artifact_flag() -> None:
     class DummyRedirectResolver:
         def resolve(self, url: str) -> str:
@@ -1813,6 +2087,30 @@ def test_add_detail_link_strips_unknown_worlds_trailing_backslash() -> None:
     assert not link_rejections
 
 
+def test_add_detail_link_rejects_linkedin_job_urls_before_detail_fetch() -> None:
+    detail_links: list[tuple[str, str]] = []
+    detail_seen: set[str] = set()
+    seen_links: set[str] = set()
+    link_rejections: Counter[str] = Counter()
+
+    static_helpers.add_detail_link(
+        detail_links,
+        detail_seen,
+        seen_links,
+        link_rejections,
+        candidate_url="https://www.linkedin.com/jobs/view/1234567890/",
+        anchor_text="Senior Engineer",
+        enforce_heuristics=False,
+        page_url="https://www.example.com/careers",
+        source={"company": "Example"},
+        default_path_tokens=[],
+        default_query_keys=[],
+    )
+
+    assert detail_links == []
+    assert link_rejections["non_job_url"] == 1
+
+
 def test_run_static_studio_pages_source_classifies_linkedin_429_as_anti_bot_or_challenge() -> None:
     sources = [
         {
@@ -2015,6 +2313,43 @@ def test_run_static_studio_pages_source_climax_listing_only() -> None:
     assert rows[0]["title"] == "Experienced Games Producer"
 
 
+def test_run_static_studio_pages_source_sheet_studios_uses_rendered_card_fallback() -> None:
+    html = """
+        <html>
+          <body>
+            <article class="job-card">
+              <h3>Business Development Manager</h3>
+              <div>Helsinki Metropolitan Area</div>
+              <div>Permanent</div>
+              <a href="/open-positions/business-development-manager">Learn More</a>
+            </article>
+          </body>
+        </html>
+        """
+    jf.SOURCE_DIAGNOSTICS.clear()
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=lambda _url, _timeout: html,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[
+            {
+                "name": "Rovio Entertainment (Sheet)",
+                "studio": "Rovio Entertainment",
+                "company": "Rovio Entertainment",
+                "pages": ["https://www.rovio.com/open-positions/"],
+                "id": "static:listing_url:https://www.rovio.com/open-positions/",
+            }
+        ],
+    )
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Business Development Manager"
+    assert rows[0]["jobLink"] == "https://www.rovio.com/open-positions/business-development-manager"
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert int(detail.get("keptCount") or 0) == 1
+    assert str(detail.get("failureBucket") or "") != "js_required"
+
+
 def test_run_static_studio_pages_source_amber_jobvite_listing_only() -> None:
     html = """
         <a href="/amberstudiocareers/job/oSIbufwZ">
@@ -2039,6 +2374,210 @@ def test_run_static_studio_pages_source_amber_jobvite_listing_only() -> None:
     )
     assert len(rows) == 1
     assert rows[0]["jobLink"] == "https://jobs.jobvite.com/amberstudiocareers/job/oSIbufwZ"
+
+
+def test_run_static_studio_pages_source_rendered_cards_extracts_indie_job_cards() -> None:
+    html = """
+        <html>
+          <body>
+            <article class="job-card">
+              <div>Black Beach Studio is hiring a Video Producer to work from Anywhere</div>
+              <a href="/work-with/black-beach-studio/video-producer">Learn More</a>
+            </article>
+            <article class="job-card">
+              <div>Romero Games is hiring a Senior Gameplay Programmer in Galway</div>
+              <a href="/work-with/romero-games/senior-gameplay-programmer">View Job</a>
+            </article>
+          </body>
+        </html>
+        """
+    jf.SOURCE_DIAGNOSTICS.clear()
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=lambda _url, _timeout: html,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[
+            {
+                "name": "Work With Indies (Manual Website)",
+                "studio": "Work With Indies",
+                "company": "Work With Indies",
+                "pages": ["https://www.workwithindies.com/work-with/black-beach-studio"],
+                "id": "static:listing_url:https://www.workwithindies.com/work-with/black-beach-studio",
+            }
+        ],
+    )
+    assert len(rows) == 2
+    assert {row["title"] for row in rows} == {"Video Producer", "Senior Gameplay Programmer"}
+    assert {row["jobLink"] for row in rows} == {
+        "https://www.workwithindies.com/work-with/black-beach-studio/video-producer",
+        "https://www.workwithindies.com/work-with/romero-games/senior-gameplay-programmer",
+    }
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert int(detail.get("keptCount") or 0) == 2
+    assert str(detail.get("failureBucket") or "") != "js_required"
+
+
+def test_extract_rendered_card_jobs_handles_table_row_manual_website_cards() -> None:
+    html = """
+        <html>
+          <body>
+            <table class="jobs-table">
+              <tbody>
+                <tr class="job-row">
+                  <td><a href="/jobs/environment-artist">Environment Artist</a></td>
+                  <td>Remote</td>
+                  <td>Permanent</td>
+                  <td><a href="/jobs/environment-artist">Details</a></td>
+                </tr>
+                <tr class="job-row">
+                  <td><a href="/jobs/technical-artist">Technical Artist</a></td>
+                  <td>Berlin, Germany</td>
+                  <td>Contract</td>
+                  <td><a href="/jobs/technical-artist">View Details</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </body>
+        </html>
+        """
+
+    rows = extract_rendered_card_jobs(
+        html,
+        page_url="https://example.com/careers",
+        company="Example Studio",
+        source_id="example_manual_table",
+        allow_any_anchor=True,
+    )
+    assert len(rows) == 2
+    assert {row["title"] for row in rows} == {"Environment Artist", "Technical Artist"}
+    assert {row["jobLink"] for row in rows} == {
+        "https://example.com/jobs/environment-artist",
+        "https://example.com/jobs/technical-artist",
+    }
+    assert {row["country"] for row in rows} == {"Unknown"}
+
+
+def test_run_static_studio_pages_source_uses_rendered_card_fallback_for_manual_table_pages() -> (
+    None
+):
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    jf.STUDIO_SOURCE_REGISTRY = [
+        {
+            "name": "Example Manual Website (Manual Website)",
+            "studio": "Example Manual Website",
+            "adapter": "static",
+            "company": "Example Manual Website",
+            "pages": ["https://example.net/careers"],
+            "enabledByDefault": True,
+            "id": "static:listing_url:https://example.net/careers",
+        }
+    ]
+    html = """
+        <html>
+          <body>
+            <table class="jobs-table">
+              <tbody>
+                <tr class="job-row">
+                  <td>Environment Artist</td>
+                  <td>Remote</td>
+                  <td>Permanent</td>
+                  <td><a href="/jobs/environment-artist">Read More</a></td>
+                </tr>
+                <tr class="job-row">
+                  <td>Technical Artist</td>
+                  <td>Berlin, Germany</td>
+                  <td>Contract</td>
+                  <td><a href="/jobs/technical-artist">Read More</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </body>
+        </html>
+        """
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url == "https://example.net/careers":
+            return html
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    try:
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+        )
+        assert len(rows) == 2
+        assert {row["title"] for row in rows} == {"Environment Artist", "Technical Artist"}
+        assert {row["jobLink"] for row in rows} == {
+            "https://example.net/jobs/environment-artist",
+            "https://example.net/jobs/technical-artist",
+        }
+        detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[
+            0
+        ]
+        assert int(detail.get("keptCount") or 0) == 2
+        assert str(detail.get("failureBucket") or "") != "js_required"
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+
+def test_run_static_studio_pages_source_ats_wrapper_extracts_greenhouse_cards() -> None:
+    html = """
+        <html>
+          <body>
+            <article class="job-card">
+              <h4>Senior Technical Gameplay Animator</h4>
+              <div>California, US</div>
+              <a href="https://www.naughtydog.com/greenhouse/job/5645048004?gh_jid=5645048004">APPLY NOW</a>
+            </article>
+            <article class="job-card">
+              <h4>Senior Sound Designer Contingent</h4>
+              <div>California, US</div>
+              <a href="https://www.naughtydog.com/greenhouse/job/5749070004?gh_jid=5749070004">APPLY NOW</a>
+            </article>
+          </body>
+        </html>
+        """
+    jf.SOURCE_DIAGNOSTICS.clear()
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=lambda _url, _timeout: html,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[
+            {
+                "name": "Naughty Dog Careers",
+                "studio": "Naughty Dog",
+                "company": "Naughty Dog",
+                "pages": ["https://www.naughtydog.com/openings?department=naughty-dog"],
+                "id": "static:listing_url:https://www.naughtydog.com/openings?department=naughty-dog",
+            }
+        ],
+    )
+    assert len(rows) == 2
+    assert {row["title"] for row in rows} == {
+        "Senior Technical Gameplay Animator",
+        "Senior Sound Designer Contingent",
+    }
+    assert {row["jobLink"] for row in rows} == {
+        "https://www.naughtydog.com/greenhouse/job/5645048004?gh_jid=5645048004",
+        "https://www.naughtydog.com/greenhouse/job/5749070004?gh_jid=5749070004",
+    }
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert int(detail.get("keptCount") or 0) == 2
+    assert str(detail.get("failureBucket") or "") != "js_required"
+
+
+def test_rendered_card_family_and_ats_wrapper_do_not_overlap_on_zenimax() -> None:
+    ctx = AdapterPluginContext(
+        family="static",
+        adapter_key="static",
+        source_identity="jobs.zenimax.com",
+    )
+    assert ats_wrappers.can_handle(ctx)
+    assert not rendered_cards.can_handle(ctx)
 
 
 def test_run_static_studio_pages_source_amanotes_plugin_extracts_next_data_positions() -> None:

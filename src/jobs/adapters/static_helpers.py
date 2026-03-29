@@ -359,6 +359,8 @@ def is_probable_job_detail_url(
     host = parsed.netloc.lower()
     path = parsed.path.lower()
     query = parsed.query.lower()
+    if host == "linkedin.com" or host.endswith(".linkedin.com") or host.endswith(".linkedin.cn"):
+        return False
     if host.endswith("larian.com") and "/careers/location/" in path:
         return False
     path_tokens = list(default_path_tokens)
@@ -405,6 +407,11 @@ def add_detail_link(
     candidate = clean_text(candidate_url).rstrip("\\")
     absolute = normalize_url(urljoin(page_url, candidate))
     if not absolute:
+        link_rejections["non_job_url"] += 1
+        return
+    parsed = urlparse(absolute)
+    host = parsed.netloc.lower()
+    if host == "linkedin.com" or host.endswith(".linkedin.com") or host.endswith(".linkedin.cn"):
         link_rejections["non_job_url"] += 1
         return
     if enforce_heuristics and not is_probable_job_detail_url(
