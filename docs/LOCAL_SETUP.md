@@ -101,11 +101,12 @@ Saved job record fields:
 - Admin task presets:
   - Fetcher: `default`, `incremental`, `retry_failed`, `force_full`, `uncapped`
   - Discovery: `default`, `uncapped`
-    - `uncapped` bypasses queue `top_n` and sheet-directory static probe caps, but still keeps evidence thresholds, low-evidence probe cap, blocked-domain suppression, and probe concurrency safety
+    - `default` uses the former uncapped-lite discovery behavior
+    - `uncapped` is the stronger exploration preset with higher queue caps, while still keeping evidence thresholds, low-evidence probe cap, blocked-domain suppression, and probe concurrency safety
 - In the Admin Source Discovery panel, `Auto-approve healthy pending sources after discovery completes` is enabled by default and saved by the bridge as a machine-local preference.
 - When that setting is enabled, discovery completion sweeps all currently pending sources and auto-approves only rows that are still healthy and already show jobs (`jobsFound > 0`, or `sampleCount > 0` when `jobsFound` is absent, with no explicit probe/error state). Auto-approval runs before any follow-on discovery auto-sync push check.
 - The Admin discovery log now reconnects to already-running discovery tasks on page load/refresh and tails `/discovery/log` live while the task is active.
-- If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback only for the standard fetcher run and shows a manual command fallback (`python -m src.jobs_fetcher --social-enabled`). Bridge-only presets such as `uncapped` still require the bridge.
+- If the admin bridge is unavailable, the Admin UI uses a VS Code task fallback only for the standard fetcher run and shows a manual command fallback (`python -m src.jobs_fetcher --social-enabled`). Bridge-only discovery presets such as `uncapped` still require the bridge.
 
 - Optional bridge runtime options:
   - Baluffo launcher:

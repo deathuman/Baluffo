@@ -334,7 +334,12 @@ def run_discovery(
     if preset_name not in {"default", "uncapped"}:
         preset_name = "default"
     top_cap_bypassed = int(top_n or 0) <= 0
-    sheet_static_probe_cap_bypassed = preset_name == "uncapped"
+    sheet_static_probe_cap_bypassed = preset_name in {"default", "uncapped"}
+    queue_domain_cap = sd.DOMAIN_QUEUE_CAP_DEFAULT
+    queue_adapter_caps = sd.ADAPTER_QUEUE_CAPS
+    if preset_name == "uncapped":
+        queue_domain_cap = sd.UNCAPPED_DISCOVERY_DOMAIN_QUEUE_CAP
+        queue_adapter_caps = sd.UNCAPPED_DISCOVERY_ADAPTER_QUEUE_CAPS
 
     active = load_json_array(sd.ACTIVE_PATH, [])
     pending_existing = load_json_array(sd.PENDING_PATH, [])
@@ -1186,7 +1191,10 @@ def run_discovery(
 
     queue_balancing_started = time.perf_counter()
     queued_candidates, report_candidates, balancing_summary = apply_queue_balancing(
-        queueable_candidates, top_n
+        queueable_candidates,
+        top_n,
+        domain_cap=queue_domain_cap,
+        adapter_caps=queue_adapter_caps,
     )
     queue_balancing_duration_ms = _record_stage_timing(
         stage_timings_ms, "queueBalancing", queue_balancing_started
@@ -1270,9 +1278,33 @@ def run_discovery(
     task_progress = build_discovery_task_progress(summary=summary, finished=True)
     failure_counter: Counter[str] = Counter()
     for row in failures:
+        stage = str(row.get("stage") or "").strip().lower()
+        drop_stage = str(row.get("dropStage") or "").strip().lower()
+        drop_reason = str(row.get("dropReason") or "").strip().lower()
+        if stage == "dedupe_skipped" or drop_stage == "dedupe_skipped":
+            continue
+        if stage == "suppressed_static" or drop_stage == "suppressed_static":
+            continue
+        if drop_reason in {
+            "existing_id",
+            "existing_domain",
+            "run_id",
+            "run_domain",
+            "blocked_domain",
+            "sheet_directory_stage_cap",
+        }:
+            continue
         adapter = str(row.get("adapter") or "unknown")
         domain = str(row.get("domain") or "").strip()
         failure_counter[f"{adapter}:{domain}" if domain else adapter] += 1
+
+    suppression_summary = {
+        "dedupeSkippedCount": int(skipped_duplicate_count),
+        "dedupeSkippedByReason": dict(duplicate_reasons),
+        "suppressedStaticCount": int(suppressed_static_count),
+        "suppressedStaticByReason": dict(suppressed_static_by_reason),
+        "suppressedStaticByStage": dict(suppressed_static_by_stage),
+    }
 
     sheet_directory_failures = [
         f for f in failures if isinstance(f, dict) and str(f.get("adapter")) == "sheet_directory"
@@ -1317,6 +1349,7 @@ def run_discovery(
         "topFailures": [
             {"key": key, "count": count} for key, count in failure_counter.most_common(5)
         ],
+        "suppressionSummary": suppression_summary,
         "sheetDirectorySummary": sheet_directory_summary,
         "outputs": {
             "report": str(sd.DISCOVERY_REPORT_PATH),

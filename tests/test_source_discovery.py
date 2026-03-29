@@ -153,6 +153,19 @@ def test_adapter_queue_caps_use_updated_provider_growth_defaults() -> None:
         "personio": 3,
         "static": 8,
     }
+    assert sd.UNCAPPED_DISCOVERY_DOMAIN_QUEUE_CAP == 8
+    assert sd.UNCAPPED_DISCOVERY_ADAPTER_QUEUE_CAPS == {
+        "greenhouse": 24,
+        "lever": 20,
+        "smartrecruiters": 16,
+        "workable": 16,
+        "teamtailor": 16,
+        "ashby": 20,
+        "recruitee": 12,
+        "pinpoint": 12,
+        "personio": 6,
+        "static": 16,
+    }
 
 
 def test_apply_queue_balancing_covers_provider_bias_and_google_sheet_cap_bypass() -> None:
@@ -224,7 +237,7 @@ def test_apply_queue_balancing_covers_provider_bias_and_google_sheet_cap_bypass(
             "expected_provider_target": 2,
         },
         {
-            "name": "google sheet cap bypass",
+            "name": "google sheet family cap under base balancing",
             "candidates": [
                 {
                     "name": f"Sheet Static {index}",
@@ -233,25 +246,61 @@ def test_apply_queue_balancing_covers_provider_bias_and_google_sheet_cap_bypass(
                     "score": 90 - index,
                     "evidenceScore": 70,
                     "jobsFound": 2,
-                    "pages": [f"https://sheet-{index}.example/jobs"],
+                    "pages": [f"https://sheet.example/jobs/{index}"],
                     "discoveryStage": "sheet_directory",
                     "sourceDirectory": "game_studios_sheet",
-                    "careersUrl": f"https://sheet-{index}.example/jobs",
-                    "sourceDirectoryEntryUrl": f"https://sheet-{index}.example/jobs",
+                    "careersUrl": f"https://sheet.example/jobs/{index}",
+                    "sourceDirectoryEntryUrl": f"https://sheet.example/jobs/{index}",
                 }
                 for index in range(10)
             ],
             "top_n": 0,
-            "expected_len": 10,
-            "expected_static_queued": 10,
-            "expected_static_deferred": 0,
-            "expected_static_healthy_deferred": 0,
+            "expected_len": 2,
+            "expected_static_queued": 2,
+            "expected_static_deferred": 8,
+            "expected_static_healthy_deferred": 8,
+            "expected_deferred_count": 8,
+            "expected_deferred_reason": "domain_cap",
+            "expected_provider_target": 0,
+        },
+        {
+            "name": "uncapped exploration raises family cap for repeated sheet families",
+            "candidates": [
+                {
+                    "name": f"Sheet Static {index}",
+                    "studio": "Sheet Static",
+                    "adapter": "static",
+                    "score": 90 - index,
+                    "evidenceScore": 70,
+                    "jobsFound": 2,
+                    "pages": [f"https://sheet.example/jobs/{index}"],
+                    "discoveryStage": "sheet_directory",
+                    "sourceDirectory": "game_studios_sheet",
+                    "careersUrl": f"https://sheet.example/jobs/{index}",
+                    "sourceDirectoryEntryUrl": f"https://sheet.example/jobs/{index}",
+                }
+                for index in range(10)
+            ],
+            "top_n": 0,
+            "queue_kwargs": {
+                "domain_cap": sd.UNCAPPED_DISCOVERY_DOMAIN_QUEUE_CAP,
+                "adapter_caps": sd.UNCAPPED_DISCOVERY_ADAPTER_QUEUE_CAPS,
+            },
+            "expected_len": 8,
+            "expected_static_queued": 8,
+            "expected_static_deferred": 2,
+            "expected_static_healthy_deferred": 2,
+            "expected_deferred_count": 2,
+            "expected_deferred_reason": "domain_cap",
+            "expected_provider_target": 0,
         },
     ]
 
     for case in cases:
         queued, report_rows, stats = sd.apply_queue_balancing(
-            case["candidates"], top_n=case["top_n"]
+            case["candidates"],
+            top_n=case["top_n"],
+            **dict(case.get("queue_kwargs") or {}),
         )
         if "expected_queued" in case:
             assert [str(row.get("adapter") or "") for row in queued] == case["expected_queued"], (
@@ -282,6 +331,11 @@ def test_apply_queue_balancing_covers_provider_bias_and_google_sheet_cap_bypass(
         else:
             assert len([row for row in report_rows if bool(row.get("deferred"))]) == 0, case["name"]
             assert "adapter_cap" not in (stats.get("deferredReasons") or {}), case["name"]
+        if "expected_deferred_reason" in case:
+            assert (
+                int((stats.get("deferredReasons") or {}).get(case["expected_deferred_reason"]) or 0)
+                == case["expected_deferred_count"]
+            ), case["name"]
 
 
 def test_apply_sheet_directory_static_probe_cap_bypasses_cap_for_uncapped_mode() -> None:
@@ -311,17 +365,17 @@ def test_apply_sheet_directory_static_probe_cap_bypasses_cap_for_uncapped_mode()
     assert suppressed == []
 
 
-def test_run_discovery_uncapped_reports_runtime_cap_bypass_flags() -> None:
+def test_run_discovery_default_and_uncapped_report_runtime_cap_bypass_flags() -> None:
     dynamic_candidates = [
         {
             "name": f"Sheet Static {index}",
-            "studio": f"Sheet Static {index}",
+            "studio": "Sheet Static",
             "adapter": "static",
             "score": 90 - index,
             "evidenceScore": 80,
-            "pages": [f"https://sheet-{index}.example/jobs"],
-            "careersUrl": f"https://sheet-{index}.example/jobs",
-            "sourceDirectoryEntryUrl": f"https://sheet-{index}.example/jobs",
+            "pages": [f"https://sheet.example/jobs/{index}"],
+            "careersUrl": f"https://sheet.example/jobs/{index}",
+            "sourceDirectoryEntryUrl": f"https://sheet.example/jobs/{index}",
             "discoveryStage": "sheet_directory",
             "sourceDirectory": "game_studios_sheet",
             "discoveryMethod": "static",
@@ -334,88 +388,127 @@ def test_run_discovery_uncapped_reports_runtime_cap_bypass_flags() -> None:
         return True, 2, ""
 
     config = sd.load_discovery_config()
-    with workspace_tmpdir("source-discovery") as tmp:
-        root = Path(tmp)
-        previous_paths = {
-            "ACTIVE_PATH": sd.ACTIVE_PATH,
-            "PENDING_PATH": sd.PENDING_PATH,
-            "REJECTED_PATH": sd.REJECTED_PATH,
-            "DISCOVERY_REPORT_PATH": sd.DISCOVERY_REPORT_PATH,
-            "DISCOVERY_CANDIDATES_PATH": sd.DISCOVERY_CANDIDATES_PATH,
-            "URL_PATCH_MANIFEST_PATH": getattr(sd, "URL_PATCH_MANIFEST_PATH", None),
-        }
-        sd.ACTIVE_PATH = root / "source-registry-active.json"
-        sd.PENDING_PATH = root / "source-registry-pending.json"
-        sd.REJECTED_PATH = root / "source-registry-rejected.json"
-        sd.DISCOVERY_REPORT_PATH = root / "source-discovery-report.json"
-        sd.DISCOVERY_CANDIDATES_PATH = root / "source-discovery-candidates.json"
-        if previous_paths["URL_PATCH_MANIFEST_PATH"] is not None:
-            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
-        for path in (sd.ACTIVE_PATH, sd.PENDING_PATH, sd.REJECTED_PATH):
-            path.write_text("[]", encoding="utf-8")
-        try:
-            with (
-                mock.patch.object(
-                    discovery_orchestrator,
-                    "discover_game_studio_sheet_candidates",
-                    return_value=([], list(dynamic_candidates), []),
-                ),
-                mock.patch.object(
-                    discovery_orchestrator, "stage_curated_seed_candidates", return_value=[]
-                ),
-                mock.patch.object(
-                    discovery_orchestrator.sd, "build_pattern_candidates", return_value=[]
-                ),
-                mock.patch.object(
-                    discovery_orchestrator.sd,
-                    "discover_seed_careers_page_candidates",
-                    return_value=([], [], []),
-                ),
-                mock.patch.object(
-                    discovery_orchestrator, "discover_web_search_candidates", return_value=([], [])
-                ),
-                mock.patch.object(
-                    discovery_orchestrator,
-                    "discover_gamesmap_candidates",
-                    return_value=([], [], []),
-                ),
-                mock.patch.object(
-                    discovery_orchestrator,
-                    "discover_gameprog_candidates",
-                    return_value=([], [], []),
-                ),
-                mock.patch.object(
-                    discovery_orchestrator, "async_probe_candidate", side_effect=fake_probe
-                ),
-                mock.patch.object(discovery_orchestrator, "load_url_patches", return_value={}),
-                mock.patch.object(
-                    discovery_orchestrator, "save_url_patch_manifest", return_value=None
-                ),
-                mock.patch.object(discovery_orchestrator, "read_source_state", return_value={}),
-            ):
-                report = discovery_orchestrator.run_discovery(
-                    timeout_s=1,
-                    top_n=0,
-                    preset="uncapped",
-                    mode="dynamic",
-                    include_web_search=False,
-                    discovery_config=config,
-                )
-        finally:
-            sd.ACTIVE_PATH = previous_paths["ACTIVE_PATH"]
-            sd.PENDING_PATH = previous_paths["PENDING_PATH"]
-            sd.REJECTED_PATH = previous_paths["REJECTED_PATH"]
-            sd.DISCOVERY_REPORT_PATH = previous_paths["DISCOVERY_REPORT_PATH"]
-            sd.DISCOVERY_CANDIDATES_PATH = previous_paths["DISCOVERY_CANDIDATES_PATH"]
-            if previous_paths["URL_PATCH_MANIFEST_PATH"] is not None:
-                sd.URL_PATCH_MANIFEST_PATH = previous_paths["URL_PATCH_MANIFEST_PATH"]
 
-    runtime = report.get("runtime") or {}
-    assert str(runtime.get("preset") or "") == "uncapped"
-    assert bool(runtime.get("topCapBypassed")) is True
-    assert bool(runtime.get("sheetStaticProbeCapBypassed")) is True
-    assert int((report.get("summary") or {}).get("probedCandidateCount") or 0) == 12
-    assert int((report.get("summary") or {}).get("suppressedStaticCount") or 0) == 0
+    def run_preset(preset: str) -> dict:
+        with workspace_tmpdir(f"source-discovery-{preset}") as tmp:
+            root = Path(tmp)
+            previous_paths = {
+                "ACTIVE_PATH": sd.ACTIVE_PATH,
+                "PENDING_PATH": sd.PENDING_PATH,
+                "REJECTED_PATH": sd.REJECTED_PATH,
+                "DISCOVERY_REPORT_PATH": sd.DISCOVERY_REPORT_PATH,
+                "DISCOVERY_CANDIDATES_PATH": sd.DISCOVERY_CANDIDATES_PATH,
+                "URL_PATCH_MANIFEST_PATH": getattr(sd, "URL_PATCH_MANIFEST_PATH", None),
+            }
+            sd.ACTIVE_PATH = root / "source-registry-active.json"
+            sd.PENDING_PATH = root / "source-registry-pending.json"
+            sd.REJECTED_PATH = root / "source-registry-rejected.json"
+            sd.DISCOVERY_REPORT_PATH = root / "source-discovery-report.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "source-discovery-candidates.json"
+            if previous_paths["URL_PATCH_MANIFEST_PATH"] is not None:
+                sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+            for path in (sd.ACTIVE_PATH, sd.PENDING_PATH, sd.REJECTED_PATH):
+                path.write_text("[]", encoding="utf-8")
+            try:
+                with (
+                    mock.patch.object(
+                        discovery_orchestrator,
+                        "discover_game_studio_sheet_candidates",
+                        return_value=([], list(dynamic_candidates), []),
+                    ),
+                    mock.patch.object(
+                        discovery_orchestrator, "stage_curated_seed_candidates", return_value=[]
+                    ),
+                    mock.patch.object(
+                        discovery_orchestrator.sd, "build_pattern_candidates", return_value=[]
+                    ),
+                    mock.patch.object(
+                        discovery_orchestrator.sd,
+                        "discover_seed_careers_page_candidates",
+                        return_value=([], [], []),
+                    ),
+                    mock.patch.object(
+                        discovery_orchestrator,
+                        "discover_web_search_candidates",
+                        return_value=([], []),
+                    ),
+                    mock.patch.object(
+                        discovery_orchestrator,
+                        "discover_gamesmap_candidates",
+                        return_value=([], [], []),
+                    ),
+                    mock.patch.object(
+                        discovery_orchestrator,
+                        "discover_gameprog_candidates",
+                        return_value=([], [], []),
+                    ),
+                    mock.patch.object(
+                        discovery_orchestrator, "async_probe_candidate", side_effect=fake_probe
+                    ),
+                    mock.patch.object(discovery_orchestrator, "load_url_patches", return_value={}),
+                    mock.patch.object(
+                        discovery_orchestrator, "save_url_patch_manifest", return_value=None
+                    ),
+                    mock.patch.object(discovery_orchestrator, "read_source_state", return_value={}),
+                ):
+                    return discovery_orchestrator.run_discovery(
+                        timeout_s=1,
+                        top_n=0,
+                        preset=preset,
+                        mode="dynamic",
+                        include_web_search=False,
+                        discovery_config=config,
+                    )
+            finally:
+                sd.ACTIVE_PATH = previous_paths["ACTIVE_PATH"]
+                sd.PENDING_PATH = previous_paths["PENDING_PATH"]
+                sd.REJECTED_PATH = previous_paths["REJECTED_PATH"]
+                sd.DISCOVERY_REPORT_PATH = previous_paths["DISCOVERY_REPORT_PATH"]
+                sd.DISCOVERY_CANDIDATES_PATH = previous_paths["DISCOVERY_CANDIDATES_PATH"]
+                if previous_paths["URL_PATCH_MANIFEST_PATH"] is not None:
+                    sd.URL_PATCH_MANIFEST_PATH = previous_paths["URL_PATCH_MANIFEST_PATH"]
+
+    default_report = run_preset("default")
+    uncapped_report = run_preset("uncapped")
+
+    default_runtime = default_report.get("runtime") or {}
+    default_summary = default_report.get("summary") or {}
+    uncapped_runtime = uncapped_report.get("runtime") or {}
+    uncapped_summary = uncapped_report.get("summary") or {}
+
+    assert str(default_runtime.get("preset") or "") == "default"
+    assert bool(default_runtime.get("topCapBypassed")) is True
+    assert bool(default_runtime.get("sheetStaticProbeCapBypassed")) is True
+    assert int(default_summary.get("queuedCandidateCount") or 0) == 2
+    assert int(default_summary.get("discoverableButDeferredCount") or 0) == 10
+    assert int((default_summary.get("deferredReasons") or {}).get("domain_cap") or 0) == 10
+    assert int(default_summary.get("suppressedStaticCount") or 0) == 0
+    assert all(
+        str(entry.get("key") or "") != "static" for entry in default_report.get("topFailures") or []
+    )
+    assert int((default_report.get("suppressionSummary") or {}).get("dedupeSkippedCount") or 0) == 0
+    assert (
+        int((default_report.get("suppressionSummary") or {}).get("suppressedStaticCount") or 0) == 0
+    )
+
+    assert str(uncapped_runtime.get("preset") or "") == "uncapped"
+    assert bool(uncapped_runtime.get("topCapBypassed")) is True
+    assert bool(uncapped_runtime.get("sheetStaticProbeCapBypassed")) is True
+    assert int(uncapped_summary.get("queuedCandidateCount") or 0) == 8
+    assert int(uncapped_summary.get("discoverableButDeferredCount") or 0) == 4
+    assert int((uncapped_summary.get("deferredReasons") or {}).get("domain_cap") or 0) == 4
+    assert int(uncapped_summary.get("suppressedStaticCount") or 0) == 0
+    assert all(
+        str(entry.get("key") or "") != "static"
+        for entry in uncapped_report.get("topFailures") or []
+    )
+    assert (
+        int((uncapped_report.get("suppressionSummary") or {}).get("dedupeSkippedCount") or 0) == 0
+    )
+    assert (
+        int((uncapped_report.get("suppressionSummary") or {}).get("suppressedStaticCount") or 0)
+        == 0
+    )
 
 
 def test_classify_static_suppression_suppresses_weak_repeat_low_yield_static_candidate() -> None:

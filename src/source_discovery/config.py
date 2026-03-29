@@ -142,6 +142,19 @@ ADAPTER_QUEUE_CAPS: dict[str, int] = {
     "personio": 3,
     "static": 8,
 }
+UNCAPPED_DISCOVERY_DOMAIN_QUEUE_CAP = 8
+UNCAPPED_DISCOVERY_ADAPTER_QUEUE_CAPS: dict[str, int] = {
+    "greenhouse": 24,
+    "lever": 20,
+    "smartrecruiters": 16,
+    "workable": 16,
+    "teamtailor": 16,
+    "ashby": 20,
+    "recruitee": 12,
+    "pinpoint": 12,
+    "personio": 6,
+    "static": 16,
+}
 
 DEFAULT_DISCOVERY_THRESHOLDS: dict[str, int] = {
     "minProviderEvidenceToProbe": MIN_PROVIDER_EVIDENCE_TO_PROBE,

@@ -56,7 +56,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | GET | `/discovery/log` | Discovery log (supports `?offset=`) |
 | POST | `/discovery/check-source` | Check specific source (`{sourceId: ""}`) |
 | POST | `/discovery/config` | Update Source Discovery admin preferences (`{autoApproveHealthyPendingOnComplete: true|false}`) |
-| POST | `/tasks/run-discovery` | Trigger discovery task (`{preset: "default"|"uncapped"}`); `uncapped` bypasses queue `top_n` and sheet-directory static probe caps but keeps evidence/probe safety guardrails |
+| POST | `/tasks/run-discovery` | Trigger discovery task (`{preset: "default"|"uncapped"}`); `default` now uses the former uncapped-lite behavior, while `uncapped` is the stronger exploration preset with higher queue caps, and both keep evidence/probe safety guardrails |
 
 ## Jobs Pipeline
 
@@ -116,6 +116,6 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
   - `python scripts/reset_admin_task_lifecycle.py --data-dir data`
 
 - Bridge-started fetch runs enable social by default unless the request payload explicitly sets `socialEnabled: false`.
-- `uncapped` is an explicit aggressive admin preset. It is distinct from `force_full`.
+- Discovery `default` now maps to the former uncapped-lite behavior. Discovery `uncapped` is the stronger exploration preset and is distinct from `force_full`.
 - `/discovery/log` is designed for live tailing via byte offsets, and the Admin UI now re-attaches to active discovery runs after page refresh.
 - Source Discovery keeps a bridge-persisted admin preference, enabled by default, that auto-approves healthy pending sources with jobs after discovery completes and before any follow-on auto-sync push decision.

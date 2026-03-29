@@ -261,7 +261,11 @@ def provider_queue_target(top_n: int) -> int:
 
 
 def apply_queue_balancing(
-    candidates: list[dict[str, Any]], top_n: int
+    candidates: list[dict[str, Any]],
+    top_n: int,
+    *,
+    domain_cap: int = DOMAIN_QUEUE_CAP_DEFAULT,
+    adapter_caps: dict[str, int] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     queued: list[dict[str, Any]] = []
     all_rows: list[dict[str, Any]] = []
@@ -271,6 +275,8 @@ def apply_queue_balancing(
     queued_by_adapter: Counter[str] = Counter()
     deferred_by_adapter: Counter[str] = Counter()
     healthy_but_deferred_by_adapter: Counter[str] = Counter()
+    effective_adapter_caps = adapter_caps if isinstance(adapter_caps, dict) else ADAPTER_QUEUE_CAPS
+    effective_domain_cap = max(0, int(domain_cap or 0))
     provider_target = provider_queue_target(top_n)
     provider_rows = [
         row
@@ -297,11 +303,11 @@ def apply_queue_balancing(
                 and len(queued) < provider_target
             ):
                 defer_reason = "provider_reservation"
-            elif not bypass_adapter_cap and adapter_counts[adapter] >= ADAPTER_QUEUE_CAPS.get(
+            elif not bypass_adapter_cap and adapter_counts[adapter] >= effective_adapter_caps.get(
                 adapter, 3
             ):
                 defer_reason = "adapter_cap"
-            elif family and family_counts[family] >= DOMAIN_QUEUE_CAP_DEFAULT:
+            elif family and family_counts[family] >= effective_domain_cap:
                 defer_reason = "domain_cap"
             normalized = dict(row)
             if defer_reason:
