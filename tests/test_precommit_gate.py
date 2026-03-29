@@ -55,7 +55,7 @@ def test_collect_repo_files_excludes_requested_roots(tmp_path, monkeypatch) -> N
     assert precommit_gate.collect_repo_files(("data",)) == ["docs/readme.md", "src/app.py"]
 
 
-def test_run_all_executes_precommit_and_prepush_commands(monkeypatch) -> None:
+def test_run_all_executes_single_precommit_command(monkeypatch) -> None:
     commands: list[list[str]] = []
 
     def fake_run(command: list[str]) -> int:
@@ -73,17 +73,6 @@ def test_run_all_executes_precommit_and_prepush_commands(monkeypatch) -> None:
             "run",
             "--show-diff-on-failure",
             "--color=always",
-            "--all-files",
-        ],
-        [
-            precommit_gate.PYTHON,
-            "-m",
-            "pre_commit",
-            "run",
-            "--show-diff-on-failure",
-            "--color=always",
-            "--hook-stage",
-            "pre-push",
             "--all-files",
         ],
     ]
@@ -135,19 +124,6 @@ def test_run_all_with_exclusions_uses_filtered_repo_files(monkeypatch) -> None:
             "run",
             "--show-diff-on-failure",
             "--color=always",
-            "--files",
-            "docs/readme.md",
-            "src/app.py",
-        ],
-        [
-            precommit_gate.PYTHON,
-            "-m",
-            "pre_commit",
-            "run",
-            "--show-diff-on-failure",
-            "--color=always",
-            "--hook-stage",
-            "pre-push",
             "--files",
             "docs/readme.md",
             "src/app.py",

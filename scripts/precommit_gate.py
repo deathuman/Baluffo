@@ -129,10 +129,7 @@ def build_changed_command(files: list[str]) -> list[str]:
 
 def build_all_commands(files: list[str] | None = None) -> list[list[str]]:
     file_args = ["--files", *files] if files else ["--all-files"]
-    return [
-        [*_precommit_base_command(), *file_args],
-        [*_precommit_base_command(), "--hook-stage", "pre-push", *file_args],
-    ]
+    return [[*_precommit_base_command(), *file_args]]
 
 
 def run_changed() -> int:
