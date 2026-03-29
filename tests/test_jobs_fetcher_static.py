@@ -284,7 +284,7 @@ def test_run_static_studio_pages_source_loads_kojima_dynamic_listing() -> None:
         )
         titles = {str(row.get("title") or "") for row in rows}
         assert "Game Programmer" in titles
-        assert "Ai Programmer" in titles
+        assert "AI Programmer" in titles
         assert len(rows) == 2
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
@@ -680,7 +680,7 @@ def test_run_static_studio_pages_source_accepts_ubisoft_query_key_override() -> 
 
 def test_run_static_studio_pages_source_dedupes_candidate_links_before_fetch() -> None:
     prev = list(jf.STUDIO_SOURCE_REGISTRY)
-    # Use example.net so the generic fallback runs (no static plugin)
+    # Use example.net so the generic listing-only fallback runs (no static plugin)
     jf.STUDIO_SOURCE_REGISTRY = [
         {
             "name": "Dedup Test Studio",
@@ -715,14 +715,14 @@ def test_run_static_studio_pages_source_dedupes_candidate_links_before_fetch() -
             fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0
         )
         assert len(rows) == 1
-        assert fetch_counts["detail"] == 1
+        assert fetch_counts["detail"] == 0
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
 
 
 def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
     prev = list(jf.STUDIO_SOURCE_REGISTRY)
-    # Use example.net so the generic fallback runs (no static plugin)
+    # Use example.net so the generic listing-only fallback runs (no static plugin)
     jf.STUDIO_SOURCE_REGISTRY = [
         {
             "name": "Parallel Static Studio",
@@ -841,10 +841,10 @@ def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> Non
 
         assert control_rows >= 1
         assert tail_rows >= 1
-        assert control_detail_pages >= 10
-        assert tail_detail_pages <= 6
-        assert tail_elapsed < control_elapsed
-        assert detail_calls["count"] >= control_detail_pages
+        assert control_detail_pages == 0
+        assert tail_detail_pages == 0
+        assert tail_elapsed <= control_elapsed
+        assert detail_calls["count"] == 0
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
 
