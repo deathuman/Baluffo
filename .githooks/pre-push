@@ -16,4 +16,6 @@ if [ "$need_gate" -eq 1 ]; then
     cd "$root"
     echo "Running CI-parity pre-commit gate before pushing to main..."
     npm run lint:precommit:ci
+    npm run test:py
+    npm run test:smoke
 fi

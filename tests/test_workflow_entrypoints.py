@@ -53,3 +53,14 @@ def test_lint_workflow_uses_split_precommit_entrypoints() -> None:
     assert "--exclude-root data" in package_text, (
         f"{package_path.name} should route the CI pre-commit entrypoint through the data exclusion."
     )
+
+
+def test_pre_push_hook_runs_python_and_smoke_gates() -> None:
+    root = Path(__file__).resolve().parents[1]
+    hook_path = root / ".githooks" / "pre-push"
+    hook_text = hook_path.read_text(encoding="utf-8")
+
+    for expected_command in ("npm run lint:precommit:ci", "npm run test:py", "npm run test:smoke"):
+        assert expected_command in hook_text, (
+            f"{hook_path.name} should invoke `{expected_command}` before pushing to main."
+        )
