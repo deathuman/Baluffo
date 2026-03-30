@@ -21,6 +21,11 @@ from src.jobs.common.taxonomy import (
     map_error_to_failure_bucket,
 )
 from src.jobs.models import RawJob
+from src.jobs.page_gating import (
+    classify_job_page,
+    looks_like_regular_navigation_text,
+    looks_like_regular_page_url,
+)
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 
 
@@ -87,10 +92,12 @@ def build_static_entry_report(
         "error": "",
         "browserEscalationEligible": False,
         "browserEscalationEnabled": False,
+        "deadListingPageCount": 0,
         "loss": {
             "staticNonJobUrlRejected": 0,
             "staticDuplicateLinkRejected": 0,
             "staticDetailParseEmpty": 0,
+            "staticDeadListingPageRejected": 0,
         },
         "stats": {
             "candidate_links_found": 0,
@@ -102,14 +109,23 @@ def build_static_entry_report(
             "candidate_extraction_ms": 0,
             "detail_fetch_ms": 0,
             "detail_skipped_by_listing_fingerprint": 0,
+            "dead_listing_pages_rejected": 0,
         },
+        "deadListingPageExamples": [],
     }
 
 
 def update_source_detail_taxonomy(source_detail: dict[str, Any]) -> dict[str, Any]:
     """Update failureBucket and zeroKeptClassification based on current state."""
+    original_classification = norm_text(source_detail.get("classification"))
     context = classification_context_from_source_detail(source_detail)
     if int(source_detail.get("keptCount", 0)) == 0 and source_detail.get("status") != "excluded":
+        if original_classification == "dead_listing_page":
+            source_detail["zeroKeptClassification"] = classify_zero_kept(context).value
+            source_detail["browserEscalationEligible"] = False
+            source_detail.pop("browserEscalationEligibilityReason", None)
+            source_detail["failureBucket"] = map_error_to_failure_bucket(context).value
+            return source_detail
         assessment = assess_zero_extract(context)
         source_detail["zeroKeptClassification"] = classify_zero_kept(context).value
         browser_eligible = False
@@ -137,7 +153,7 @@ def update_source_detail_taxonomy(source_detail: dict[str, Any]) -> dict[str, An
                 "empty_confirmed",
             }
             or assessment.diagnosis.value != "needs_review"
-        )
+        ) and original_classification != "dead_listing_page"
         if should_migrate:
             source_detail["classification"] = assessment.diagnosis.value
             source_detail["browserFallbackRecommended"] = assessment.browser_fallback_recommended
@@ -412,7 +428,10 @@ def add_detail_link(
     parsed = urlparse(absolute)
     host = parsed.netloc.lower()
     if host == "linkedin.com" or host.endswith(".linkedin.com") or host.endswith(".linkedin.cn"):
-        link_rejections["non_job_url"] += 1
+        link_rejections["dead_listing_page"] += 1
+        return
+    if looks_like_regular_navigation_text(anchor_text) or looks_like_regular_page_url(absolute):
+        link_rejections["dead_listing_page"] += 1
         return
     if enforce_heuristics and not is_probable_job_detail_url(
         absolute,
@@ -464,6 +483,8 @@ def process_detail_link(
 
     rows: list[RawJob] = []
     parse_empty = False
+    rejected_classification = ""
+    rejected_example = ""
     if detail_jobs:
         for row in detail_jobs:
             row["adapter"] = "static"
@@ -471,36 +492,50 @@ def process_detail_link(
             rows.append(row)
     else:
         parse_empty = True
-        path_parts = [part for part in urlparse(detail).path.rstrip("/").split("/") if part]
-        slug = path_parts[-1] if path_parts else ""
-        if slug.lower() == "apply" and len(path_parts) >= 2:
-            slug = path_parts[-2]
-        slug = re.sub(r"_[Rr]\d+(?:-\d+)?$", "", slug)
-        title = strip_html_text(re.sub(r"[-_]+", " ", slug))
         parsed_title = clean_text(detail_title)
-        if parsed_title and parsed_title.lower() not in ignored_link_titles:
-            title = parsed_title
-        if title and not re.fullmatch(r"\d+", title):
-            rows.append(
-                {
-                    "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
-                    "title": title.title(),
-                    "company": company,
-                    "city": "",
-                    "country": "Unknown",
-                    "workType": "",
-                    "contractType": "",
-                    "jobLink": detail,
-                    "sector": "Game",
-                    "postedAt": "",
-                    "adapter": "static",
-                    "studio": clean_text(source.get("studio")) or company or source_name,
-                }
+        job_like, gate_reason = classify_job_page(
+            detail_html,
+            detail,
+            page_title=parsed_title,
+            profile=source if isinstance(source, dict) else None,
+        )
+        if not job_like:
+            rejected_classification = (
+                "dead_listing_page" if gate_reason == "dead_listing_page" else "needs_review"
             )
+            rejected_example = f"{detail} | {parsed_title}" if parsed_title else detail
+        else:
+            path_parts = [part for part in urlparse(detail).path.rstrip("/").split("/") if part]
+            slug = path_parts[-1] if path_parts else ""
+            if slug.lower() == "apply" and len(path_parts) >= 2:
+                slug = path_parts[-2]
+            slug = re.sub(r"_[Rr]\d+(?:-\d+)?$", "", slug)
+            title = strip_html_text(re.sub(r"[-_]+", " ", slug))
+            if parsed_title and parsed_title.lower() not in ignored_link_titles:
+                title = parsed_title
+            if title and not re.fullmatch(r"\d+", title):
+                rows.append(
+                    {
+                        "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
+                        "title": title.title(),
+                        "company": company,
+                        "city": "",
+                        "country": "Unknown",
+                        "workType": "",
+                        "contractType": "",
+                        "jobLink": detail,
+                        "sector": "Game",
+                        "postedAt": "",
+                        "adapter": "static",
+                        "studio": clean_text(source.get("studio")) or company or source_name,
+                    }
+                )
     return {
         "rows": rows,
         "parseEmpty": parse_empty,
         "fetchMs": fetch_ms,
         "parseMs": parse_ms,
         "cacheHit": cache_hit,
+        "rejectedClassification": rejected_classification,
+        "rejectedExample": rejected_example,
     }

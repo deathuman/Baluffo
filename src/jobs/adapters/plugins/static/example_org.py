@@ -10,6 +10,7 @@ from typing import Any
 
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.jobs.page_gating import classify_job_page, dead_listing_page_meta
 from src.jobs.text_utils import clean_text
 
 
@@ -43,6 +44,17 @@ def run(
         html = fetch_text(page_url, timeout_s)
     except Exception:  # noqa: BLE001
         return []
+    job_like, gate_reason = classify_job_page(
+        html,
+        page_url,
+        profile=source_row if isinstance(source_row, dict) else None,
+    )
+    if not job_like and gate_reason == "dead_listing_page":
+        source_row["_staticPluginMeta"] = dead_listing_page_meta(
+            page_url=page_url,
+            company=company,
+        )
+        return []
     rows = parse_jobpostings_from_html(
         html,
         base_url=page_url,
@@ -54,4 +66,12 @@ def run(
             row["adapter"] = "static"
             row["studio"] = company
             row["source"] = clean_text(source_row.get("name")) or "example_org"
-    return [r for r in rows if isinstance(r, dict)]
+    cleaned = [r for r in rows if isinstance(r, dict)]
+    if cleaned:
+        return cleaned
+    if not job_like:
+        source_row["_staticPluginMeta"] = dead_listing_page_meta(
+            page_url=page_url,
+            company=company,
+        )
+    return cleaned

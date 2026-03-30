@@ -1,9 +1,14 @@
 # ruff: noqa: F403,F405
 from collections import Counter
 
-from src.jobs.adapters.plugins.static import ats_wrappers, rendered_cards
+from scrapy.http import HtmlResponse, Request
+
+from src.jobs.adapters.plugins.static import ats_wrappers, k_id, rendered_cards
 from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.static_helpers import process_detail_link
+from src.jobs.page_gating import classify_job_page
+from src.scrapers.spiders.generic_careers import GenericCareersSpider
 from tests.jobs_fetcher_helpers import *
 
 patch_jobs_fetcher_aliases()
@@ -74,6 +79,229 @@ def test_normalize_source_report_row_fills_zero_kept_label_residues() -> None:
     assert str(row.get("failureBucket") or "") == "no_openings"
     assert str(row.get("classification") or "") == ""
     assert str(row.get("zeroKeptClassification") or "") == "legit_empty"
+
+
+def test_job_page_gate_rejects_regular_pages_and_accepts_jobposting_jsonld() -> None:
+    regular_html = """
+        <html>
+          <head><title>About</title></head>
+          <body><h1>About</h1><p>About us</p></body>
+        </html>
+    """
+    allowed, reason = classify_job_page(
+        regular_html,
+        "https://example.com/jobs/about",
+        page_title="About",
+    )
+    assert not allowed
+    assert reason == "dead_listing_page"
+
+    job_html = """
+        <html>
+          <head><title>Software Engineer</title></head>
+          <body>
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "JobPosting",
+              "title": "Software Engineer",
+              "url": "/careers/software-engineer",
+              "hiringOrganization": {"name": "Example Studio"}
+            }
+            </script>
+          </body>
+        </html>
+    """
+    allowed, reason = classify_job_page(
+        job_html,
+        "https://example.com/careers/software-engineer",
+        page_title="Software Engineer",
+    )
+    assert allowed
+    assert reason == "jobposting_jsonld"
+
+
+def test_static_detail_fallback_rejects_regular_pages_without_synthesizing_rows() -> None:
+    regular_html = """
+        <html>
+          <head><title>About</title></head>
+          <body><h1>About</h1><p>About us</p></body>
+        </html>
+    """
+
+    def fake_fetch(
+        url: str, _remaining_budget_s: float | None = None, **kwargs: object
+    ) -> tuple[str, bool]:
+        assert url == "https://example.com/jobs/about"
+        return regular_html, False
+
+    result = process_detail_link(
+        detail="https://example.com/jobs/about",
+        detail_title="About",
+        source_started=0.0,
+        static_source_time_budget_s=10,
+        fetch_html_cached=fake_fetch,
+        timeout_s=5,
+        detail_retries=0,
+        company="Example Studio",
+        source_name="Example Careers",
+        source={"studio": "Example Studio"},
+        ignored_link_titles=set(),
+    )
+
+    assert result["rows"] == []
+    assert str(result.get("rejectedClassification") or "") == "dead_listing_page"
+    assert "https://example.com/jobs/about" in str(result.get("rejectedExample") or "")
+
+
+def test_static_source_rejects_regular_pages_as_dead_listing_pages() -> None:
+    listing_html = """
+        <html>
+          <body>
+            <a href="/jobs/about">Senior Engineer</a>
+          </body>
+        </html>
+    """
+    detail_html = """
+        <html>
+          <head><title>About</title></head>
+          <body><h1>About</h1><p>About us</p></body>
+        </html>
+    """
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    jf.STUDIO_SOURCE_REGISTRY = [
+        {
+            "name": "Example Studio (Manual Website)",
+            "studio": "Example Studio",
+            "adapter": "static",
+            "company": "Example Studio",
+            "pages": ["https://example.com/careers"],
+            "enabledByDefault": True,
+        }
+    ]
+
+    try:
+
+        def fake_fetch(url: str, _timeout: int) -> str:
+            if url == "https://example.com/careers":
+                return listing_html
+            if url == "https://example.com/jobs/about":
+                return detail_html
+            raise RuntimeError(f"Unexpected URL: {url}")
+
+        jf.SOURCE_DIAGNOSTICS.clear()
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+        )
+        assert rows == []
+        detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[
+            0
+        ]
+        assert str(detail.get("classification") or "") == "dead_listing_page"
+        assert int(detail.get("deadListingPageCount") or 0) == 1
+        examples = detail.get("deadListingPageExamples")
+        assert isinstance(examples, list) and examples
+        normalized = jf.normalize_source_report_row(detail)
+        assert str(normalized.get("classification") or "") == "dead_listing_page"
+        assert int(normalized.get("deadListingPageCount") or 0) == 1
+        assert isinstance(normalized.get("deadListingPageExamples"), list)
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+
+def test_gameloft_static_source_rejects_regular_pages_as_dead_listing_pages() -> None:
+    listing_html = """
+        <html>
+          <body>
+            <nav>
+              <a href="/about-us">About Us</a>
+              <a href="/blog">Blog</a>
+            </nav>
+            <main>
+              <a href="/careers">Careers</a>
+              <a href="/gameloft-studios/bucharest">Bucharest</a>
+            </main>
+          </body>
+        </html>
+    """
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    jf.STUDIO_SOURCE_REGISTRY = [
+        {
+            "name": "Gameloft (Sheet)",
+            "studio": "Gameloft",
+            "adapter": "static",
+            "company": "Gameloft",
+            "pages": ["https://www.gameloft.com/jobs"],
+            "enabledByDefault": True,
+        }
+    ]
+
+    try:
+
+        def fake_fetch(url: str, _timeout: int) -> str:
+            if url == "https://www.gameloft.com/jobs":
+                return listing_html
+            raise RuntimeError(f"Unexpected URL: {url}")
+
+        jf.SOURCE_DIAGNOSTICS.clear()
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+        )
+        assert rows == []
+        detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[
+            0
+        ]
+        assert str(detail.get("classification") or "") == "dead_listing_page"
+        assert int(detail.get("deadListingPageCount") or 0) >= 1
+        assert isinstance(detail.get("deadListingPageExamples"), list)
+        normalized = jf.normalize_source_report_row(detail)
+        assert str(normalized.get("classification") or "") == "dead_listing_page"
+        assert int(normalized.get("deadListingPageCount") or 0) >= 1
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+
+def test_generic_careers_detail_rejects_regular_pages_as_dead_listing_pages() -> None:
+    container = {
+        "jobs": [],
+        "seen_links": set(),
+        "reject_reasons": Counter(),
+        "extraction_stats": {
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "jobs_rejected_validation": 0,
+            "dead_listing_pages_rejected": 0,
+        },
+        "partial_errors": [],
+        "dead_listing_page_examples": [],
+    }
+    spider = GenericCareersSpider(
+        start_urls=[],
+        studio_name="Example Studio",
+        source_name_value="example_careers",
+        profile={},
+        container=container,
+    )
+    response = HtmlResponse(
+        url="https://example.com/jobs/about",
+        body=b"<html><head><title>About</title></head><body><h1>About</h1></body></html>",
+        encoding="utf-8",
+        request=Request(url="https://example.com/jobs/about"),
+    )
+
+    spider.parse_job_detail(response)
+
+    assert container["jobs"] == []
+    assert container["reject_reasons"]["dead_listing_page"] == 1
+    assert container["extraction_stats"]["dead_listing_pages_rejected"] == 1
+    assert container["dead_listing_page_examples"]
 
 
 def test_js_required_audit_rows_stay_explicit_and_keep_needs_review_bounded() -> None:
@@ -2117,7 +2345,31 @@ def test_add_detail_link_rejects_linkedin_job_urls_before_detail_fetch() -> None
     )
 
     assert detail_links == []
-    assert link_rejections["non_job_url"] == 1
+    assert link_rejections["dead_listing_page"] == 1
+
+
+def test_add_detail_link_rejects_regular_navigation_titles_before_detail_fetch() -> None:
+    detail_links: list[tuple[str, str]] = []
+    detail_seen: set[str] = set()
+    seen_links: set[str] = set()
+    link_rejections: Counter[str] = Counter()
+
+    static_helpers.add_detail_link(
+        detail_links,
+        detail_seen,
+        seen_links,
+        link_rejections,
+        candidate_url="https://example.com/jobs/about",
+        anchor_text="About",
+        enforce_heuristics=True,
+        page_url="https://example.com/careers",
+        source={"company": "Example"},
+        default_path_tokens=["/job/", "/jobs/"],
+        default_query_keys=["job_id"],
+    )
+
+    assert detail_links == []
+    assert link_rejections["dead_listing_page"] == 1
 
 
 def test_run_static_studio_pages_source_classifies_linkedin_429_as_anti_bot_or_challenge() -> None:
@@ -2587,6 +2839,66 @@ def test_rendered_card_family_and_ats_wrapper_do_not_overlap_on_zenimax() -> Non
     )
     assert ats_wrappers.can_handle(ctx)
     assert not rendered_cards.can_handle(ctx)
+
+
+def test_k_id_careers_is_suppressed_by_source_specific_plugin() -> None:
+    ctx = AdapterPluginContext(
+        family="static",
+        adapter_key="static",
+        source_identity="www.k-id.com",
+    )
+    assert k_id.can_handle(ctx)
+    assert not rendered_cards.can_handle(ctx)
+
+
+def test_k_id_careers_plugin_returns_no_false_positive_rows() -> None:
+    page_html = """
+    <html>
+      <body>
+        <header>
+          <a href="/products/agekit">AgeKit Age classification (minor, youth, adult)</a>
+          <a href="/products/agekit-plus">AgeKit+ High-assurance age verification</a>
+          <a href="/products/agekey">AgeKey Reusable age credentials</a>
+          <a href="/contact">Contact</a>
+        </header>
+        <main>
+          <h1>Careers</h1>
+          <p>At k-ID, we are building the infrastructure that makes the internet age-aware.</p>
+          <p>If you want to solve problems that sit at the intersection of technology, policy, law,
+          and family safety online, we’re hiring.</p>
+          <a href="https://docs.k-id.com/">Documentation</a>
+          <a href="https://product.k-id.com/">Blog</a>
+          <a href="https://family.k-id.com/">For Parents</a>
+        </main>
+      </body>
+    </html>
+    """
+    source_row = {
+        "name": "k-ID Careers",
+        "studio": "k-ID",
+        "adapter": "static",
+        "company": "k-ID",
+        "pages": ["https://www.k-id.com/careers"],
+        "enabledByDefault": True,
+    }
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url == "https://www.k-id.com/careers":
+            return page_html
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    rows = k_id.run(
+        fetch_text=fake_fetch,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        pages=["https://www.k-id.com/careers"],
+        source_row=source_row,
+    )
+    assert rows == []
+    assert (
+        str(source_row.get("_staticPluginMeta", {}).get("classification") or "") == "site_changed"
+    )
 
 
 def test_run_static_studio_pages_source_amanotes_plugin_extracts_next_data_positions() -> None:
