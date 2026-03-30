@@ -3,24 +3,24 @@
   "runId": "fetch_b21865f36c",
   "startedAt": "2026-03-30T13:21:50.885441+00:00",
   "finishedAt": "",
-  "heartbeatAt": "2026-03-30T13:22:40.184372+00:00",
+  "heartbeatAt": "2026-03-30T13:23:22.812664+00:00",
   "summary": {
     "queued": 0,
-    "running": 357,
-    "ok": 259,
-    "error": 38
+    "running": 212,
+    "ok": 386,
+    "error": 56
   },
   "taskProgress": {
     "active": true,
     "phaseKey": "executing_sources",
     "phaseLabel": "Executing sources",
     "mode": "determinate",
-    "ratio": 0.41788990825688077,
+    "ratio": 0.5730886850152905,
     "counts": {
       "totalTasks": 654,
       "queuedTasks": 0,
-      "runningTasks": 357,
-      "completedTasks": 297,
+      "runningTasks": 212,
+      "completedTasks": 442,
       "resolvedSources": 0,
       "outputCount": 0,
       "failedSources": 0,
@@ -34,17 +34,17 @@
       "startedAt": "2026-03-30T13:21:52.732253+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:37.738600+00:00",
+      "heartbeatAt": "2026-03-30T13:23:13.359659+00:00",
       "error": ""
     },
     {
       "name": "gracklehq",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:52.736041+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:33.537276+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:23:00.190345+00:00",
+      "durationMs": 67448,
+      "heartbeatAt": "2026-03-30T13:23:00.190345+00:00",
+      "error": "gracklehq: https://gracklehq.com/jobs: Network error for https://gracklehq.com/jobs:"
     },
     {
       "name": "greenhouse_boards",
@@ -52,7 +52,7 @@
       "startedAt": "2026-03-30T13:21:52.739538+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.372539+00:00",
+      "heartbeatAt": "2026-03-30T13:23:10.632758+00:00",
       "error": ""
     },
     {
@@ -61,7 +61,7 @@
       "startedAt": "2026-03-30T13:21:52.742888+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:38.101297+00:00",
+      "heartbeatAt": "2026-03-30T13:23:13.407141+00:00",
       "error": ""
     },
     {
@@ -70,7 +70,7 @@
       "startedAt": "2026-03-30T13:21:52.748115+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.264565+00:00",
+      "heartbeatAt": "2026-03-30T13:23:09.755029+00:00",
       "error": ""
     },
     {
@@ -79,7 +79,7 @@
       "startedAt": "2026-03-30T13:21:52.750791+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:39.395374+00:00",
+      "heartbeatAt": "2026-03-30T13:23:08.460145+00:00",
       "error": ""
     },
     {
@@ -88,7 +88,7 @@
       "startedAt": "2026-03-30T13:21:52.753521+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:33.579067+00:00",
+      "heartbeatAt": "2026-03-30T13:23:11.357884+00:00",
       "error": ""
     },
     {
@@ -97,16 +97,16 @@
       "startedAt": "2026-03-30T13:21:52.757789+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:31.355736+00:00",
+      "heartbeatAt": "2026-03-30T13:23:06.462176+00:00",
       "error": ""
     },
     {
       "name": "gamejobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:52.762772+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:37.929491+00:00",
+      "finishedAt": "2026-03-30T13:23:15.225819+00:00",
+      "durationMs": 82148,
+      "heartbeatAt": "2026-03-30T13:23:15.225819+00:00",
       "error": ""
     },
     {
@@ -2181,11 +2181,11 @@
     },
     {
       "name": "static_source::static:listing_url:https://jobs.plaion.com/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.466034+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:23.760797+00:00",
+      "finishedAt": "2026-03-30T13:22:42.252295+00:00",
+      "durationMs": 25197,
+      "heartbeatAt": "2026-03-30T13:22:42.252295+00:00",
       "error": ""
     },
     {
@@ -2361,11 +2361,11 @@
     },
     {
       "name": "static_source::static:listing_url:http://www.aerosoft.com/de/stellenangebote",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.517385+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:20.848787+00:00",
+      "finishedAt": "2026-03-30T13:22:41.666541+00:00",
+      "durationMs": 20951,
+      "heartbeatAt": "2026-03-30T13:22:41.666541+00:00",
       "error": ""
     },
     {
@@ -2532,11 +2532,11 @@
     },
     {
       "name": "static_source::static:listing_url:https://www.movingstonedigital.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.563722+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:23.946764+00:00",
+      "finishedAt": "2026-03-30T13:22:45.462908+00:00",
+      "durationMs": 20750,
+      "heartbeatAt": "2026-03-30T13:22:45.462908+00:00",
       "error": ""
     },
     {
@@ -2586,11 +2586,11 @@
     },
     {
       "name": "static_source::static:listing_url:https://www.digitalbros.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.577717+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:24.714674+00:00",
+      "finishedAt": "2026-03-30T13:22:51.020604+00:00",
+      "durationMs": 26063,
+      "heartbeatAt": "2026-03-30T13:22:51.020604+00:00",
       "error": ""
     },
     {
@@ -2811,11 +2811,11 @@
     },
     {
       "name": "static_source::static:listing_url:https://www.pearlabyss.com/en-us/company/careers/list",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.647893+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:40.184168+00:00",
+      "finishedAt": "2026-03-30T13:22:40.259559+00:00",
+      "durationMs": 10474,
+      "heartbeatAt": "2026-03-30T13:22:40.259559+00:00",
       "error": ""
     },
     {
@@ -2829,714 +2829,714 @@
     },
     {
       "name": "static_source::static:listing_url:https://www.gameloft.com/jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.652443+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:30.152346+00:00",
+      "finishedAt": "2026-03-30T13:22:41.846600+00:00",
+      "durationMs": 11525,
+      "heartbeatAt": "2026-03-30T13:22:41.846600+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://disbelief.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.655225+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:30.339866+00:00",
+      "finishedAt": "2026-03-30T13:22:40.448932+00:00",
+      "durationMs": 10133,
+      "heartbeatAt": "2026-03-30T13:22:40.448932+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.littleredzombies.com/join-us/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.667995+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:30.455726+00:00",
+      "finishedAt": "2026-03-30T13:22:41.209218+00:00",
+      "durationMs": 10732,
+      "heartbeatAt": "2026-03-30T13:22:41.209218+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.memorable.games/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.681238+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:30.477785+00:00",
+      "finishedAt": "2026-03-30T13:22:41.003826+00:00",
+      "durationMs": 10680,
+      "heartbeatAt": "2026-03-30T13:22:41.003826+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.radicalforge.com/jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.683567+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:30.491224+00:00",
+      "finishedAt": "2026-03-30T13:22:40.818986+00:00",
+      "durationMs": 9995,
+      "heartbeatAt": "2026-03-30T13:22:40.818986+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.mobilityware.com/jobs/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.685956+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:31.005961+00:00",
+      "finishedAt": "2026-03-30T13:22:41.462461+00:00",
+      "durationMs": 10464,
+      "heartbeatAt": "2026-03-30T13:22:41.462461+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.bitkraft.vc/companies/pocket-worlds",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.688536+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:31.181345+00:00",
+      "finishedAt": "2026-03-30T13:22:40.644213+00:00",
+      "durationMs": 9283,
+      "heartbeatAt": "2026-03-30T13:22:40.644213+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://jobs.wudo.co/",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:53.692535+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:31.664438+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:43.041016+00:00",
+      "durationMs": 11437,
+      "heartbeatAt": "2026-03-30T13:22:43.041016+00:00",
+      "error": "static_source::static:listing_url:https://jobs.wudo.co/: static:Wudo (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:http://www.ahoiii.com/jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.695261+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:31.670723+00:00",
+      "finishedAt": "2026-03-30T13:23:08.785681+00:00",
+      "durationMs": 37367,
+      "heartbeatAt": "2026-03-30T13:23:08.785681+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.forthstar.com/#jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.699262+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:31.749616+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:43.229285+00:00",
+      "durationMs": 11571,
+      "heartbeatAt": "2026-03-30T13:22:43.229285+00:00",
+      "error": "static_source::static:listing_url:https://www.forthstar.com/#jobs: static:Forthstar (Sheet):https://www.forthstar.com/#jobs: Network error for https://www.forthstar.com/#jobs:"
     },
     {
       "name": "static_source::static:listing_url:https://jobs.softgames.de/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.701645+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:31.764795+00:00",
+      "finishedAt": "2026-03-30T13:22:42.672559+00:00",
+      "durationMs": 10823,
+      "heartbeatAt": "2026-03-30T13:22:42.672559+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://voodoo.io/careers/jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.704350+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:32.136523+00:00",
+      "finishedAt": "2026-03-30T13:22:42.479077+00:00",
+      "durationMs": 10643,
+      "heartbeatAt": "2026-03-30T13:22:42.479077+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.rocketscience.gg/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.707882+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:32.571405+00:00",
+      "finishedAt": "2026-03-30T13:22:42.856155+00:00",
+      "durationMs": 10668,
+      "heartbeatAt": "2026-03-30T13:22:42.856155+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://solitoninteractive.com/career/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.710025+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:32.846716+00:00",
+      "finishedAt": "2026-03-30T13:22:42.049248+00:00",
+      "durationMs": 9229,
+      "heartbeatAt": "2026-03-30T13:22:42.049248+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.stitch.media/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.712771+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:33.604796+00:00",
+      "finishedAt": "2026-03-30T13:22:43.633938+00:00",
+      "durationMs": 10045,
+      "heartbeatAt": "2026-03-30T13:22:43.633938+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:http://www.spiritbomb.co/vacant-jobs/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.715998+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:33.942061+00:00",
+      "finishedAt": "2026-03-30T13:22:45.984698+00:00",
+      "durationMs": 11329,
+      "heartbeatAt": "2026-03-30T13:22:45.984698+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://planatechnologies.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.723137+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:33.944885+00:00",
+      "finishedAt": "2026-03-30T13:22:45.809028+00:00",
+      "durationMs": 11146,
+      "heartbeatAt": "2026-03-30T13:22:45.809028+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.vivuga.com/career",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.725913+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:33.944965+00:00",
+      "finishedAt": "2026-03-30T13:22:43.429702+00:00",
+      "durationMs": 9657,
+      "heartbeatAt": "2026-03-30T13:22:43.429702+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.playq.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.728604+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:33.994092+00:00",
+      "finishedAt": "2026-03-30T13:22:53.339368+00:00",
+      "durationMs": 18962,
+      "heartbeatAt": "2026-03-30T13:22:53.339368+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.fortisgames.com/en-us/careers#openings",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.730989+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.368855+00:00",
+      "finishedAt": "2026-03-30T13:22:44.227403+00:00",
+      "durationMs": 10104,
+      "heartbeatAt": "2026-03-30T13:22:44.227403+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://double11.com/vacancies/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.733268+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.566299+00:00",
+      "finishedAt": "2026-03-30T13:22:45.099147+00:00",
+      "durationMs": 10307,
+      "heartbeatAt": "2026-03-30T13:22:45.099147+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://chimera-entertainment.jobs.personio.com/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.735346+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.566368+00:00",
+      "finishedAt": "2026-03-30T13:22:44.025601+00:00",
+      "durationMs": 9504,
+      "heartbeatAt": "2026-03-30T13:22:44.025601+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.giantskull.com/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.737467+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.566423+00:00",
+      "finishedAt": "2026-03-30T13:22:44.447666+00:00",
+      "durationMs": 9877,
+      "heartbeatAt": "2026-03-30T13:22:44.447666+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.bhvr.com/jobs/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.743972+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.566456+00:00",
+      "finishedAt": "2026-03-30T13:22:45.275916+00:00",
+      "durationMs": 10300,
+      "heartbeatAt": "2026-03-30T13:22:45.275916+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.careers-page.com/gigxr#openings",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.757062+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.570143+00:00",
+      "finishedAt": "2026-03-30T13:22:43.847859+00:00",
+      "durationMs": 9477,
+      "heartbeatAt": "2026-03-30T13:22:43.847859+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.ilogos.biz/#jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.761558+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.605078+00:00",
+      "finishedAt": "2026-03-30T13:22:44.673653+00:00",
+      "durationMs": 9871,
+      "heartbeatAt": "2026-03-30T13:22:44.673653+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://thirtyfirstunion.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.764394+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.605180+00:00",
+      "finishedAt": "2026-03-30T13:23:05.499129+00:00",
+      "durationMs": 31040,
+      "heartbeatAt": "2026-03-30T13:23:05.499129+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://cyanide-studio.com/en/join-us/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.766522+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.604924+00:00",
+      "finishedAt": "2026-03-30T13:22:47.262825+00:00",
+      "durationMs": 12700,
+      "heartbeatAt": "2026-03-30T13:22:47.262825+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://11bitstudios.com/jobs/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.769058+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.747485+00:00",
+      "finishedAt": "2026-03-30T13:22:45.635748+00:00",
+      "durationMs": 10105,
+      "heartbeatAt": "2026-03-30T13:22:45.635748+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://charisma.ai/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.771191+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:34.747298+00:00",
+      "finishedAt": "2026-03-30T13:22:44.919082+00:00",
+      "durationMs": 9832,
+      "heartbeatAt": "2026-03-30T13:22:44.919082+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.redbitgames.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.773356+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:36.654830+00:00",
+      "finishedAt": "2026-03-30T13:22:48.686181+00:00",
+      "durationMs": 11814,
+      "heartbeatAt": "2026-03-30T13:22:48.686181+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://join.portalone.com/#jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.776203+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:36.650879+00:00",
+      "finishedAt": "2026-03-30T13:22:46.825625+00:00",
+      "durationMs": 10103,
+      "heartbeatAt": "2026-03-30T13:22:46.825625+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.digitalextremes.com/careers/list",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.778766+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:37.031243+00:00",
+      "finishedAt": "2026-03-30T13:22:46.198287+00:00",
+      "durationMs": 9360,
+      "heartbeatAt": "2026-03-30T13:22:46.198287+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://bigmoxigames.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.781234+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:37.036647+00:00",
+      "finishedAt": "2026-03-30T13:22:47.019629+00:00",
+      "durationMs": 9930,
+      "heartbeatAt": "2026-03-30T13:22:47.019629+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.series.inc/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.785066+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:37.036727+00:00",
+      "finishedAt": "2026-03-30T13:22:56.306527+00:00",
+      "durationMs": 19438,
+      "heartbeatAt": "2026-03-30T13:22:56.306527+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.microsoft.com/v2/global/en/home.html?q=%23halo&l=en_us&pg=1&pgsz=20&o=relevance&flt=true",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.788214+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:37.036853+00:00",
+      "finishedAt": "2026-03-30T13:22:49.308866+00:00",
+      "durationMs": 12111,
+      "heartbeatAt": "2026-03-30T13:22:49.308866+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://illfonic.breezy.hr/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.791199+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:37.209726+00:00",
+      "finishedAt": "2026-03-30T13:22:48.071569+00:00",
+      "durationMs": 10863,
+      "heartbeatAt": "2026-03-30T13:22:48.071569+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.draftkings.com/jobs/",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:53.793794+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:37.929572+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:48.876749+00:00",
+      "durationMs": 10937,
+      "heartbeatAt": "2026-03-30T13:22:48.876749+00:00",
+      "error": "static_source::static:listing_url:https://careers.draftkings.com/jobs/: static:DraftKings (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:http://jobs.andarion-games.com",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.796872+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:37.960495+00:00",
+      "finishedAt": "2026-03-30T13:23:03.139348+00:00",
+      "durationMs": 25281,
+      "heartbeatAt": "2026-03-30T13:23:03.139348+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://lilithgames.jobs.feishu.cn/career",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:53.799675+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:37.963304+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:47.655178+00:00",
+      "durationMs": 9886,
+      "heartbeatAt": "2026-03-30T13:22:47.655178+00:00",
+      "error": "static_source::static:listing_url:https://lilithgames.jobs.feishu.cn/career: static:Lilith Games (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://www.badrobotgames.com/job-openings",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.802090+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:37.981436+00:00",
+      "finishedAt": "2026-03-30T13:22:48.318815+00:00",
+      "durationMs": 10162,
+      "heartbeatAt": "2026-03-30T13:22:48.318815+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://lofigames.com/jobs/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.809322+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:38.027793+00:00",
+      "finishedAt": "2026-03-30T13:22:47.868343+00:00",
+      "durationMs": 9903,
+      "heartbeatAt": "2026-03-30T13:22:47.868343+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://it.indeed.com/cmp/day-4-night-productions-srl/jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.814013+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:38.074198+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:47.465388+00:00",
+      "durationMs": 9500,
+      "heartbeatAt": "2026-03-30T13:22:47.465388+00:00",
+      "error": "static_source::static:listing_url:https://it.indeed.com/cmp/day-4-night-productions-srl/jobs: static:Day 4 Night Productions (Sheet):https://it.indeed.com/cmp/Day-4-Night-Productions-Srl/jobs: HTTP 403 for https://it.indeed.com/cmp/Day-4-Night-Productions-Srl/jobs"
     },
     {
       "name": "static_source::static:listing_url:https://hadean.com/careers/",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:53.816642+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:38.140438+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:46.404647+00:00",
+      "durationMs": 8272,
+      "heartbeatAt": "2026-03-30T13:22:46.404647+00:00",
+      "error": "static_source::static:listing_url:https://hadean.com/careers/: static:Hadean (Sheet):https://hadean.com/careers/: HTTP 429 for https://hadean.com/careers/; static:Hadean (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://www.konami.com/games/us/en/jobs/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.819615+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:38.520811+00:00",
+      "finishedAt": "2026-03-30T13:22:46.611217+00:00",
+      "durationMs": 8100,
+      "heartbeatAt": "2026-03-30T13:22:46.611217+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://halfmermaid.co/jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.822095+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:38.644608+00:00",
+      "finishedAt": "2026-03-30T13:22:48.499965+00:00",
+      "durationMs": 9750,
+      "heartbeatAt": "2026-03-30T13:22:48.499965+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.massive.se/career/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.824675+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:39.399040+00:00",
+      "finishedAt": "2026-03-30T13:22:51.426721+00:00",
+      "durationMs": 12028,
+      "heartbeatAt": "2026-03-30T13:22:51.426721+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.theorycraftgames.com/careers#open-roles",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.827104+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:39.855658+00:00",
+      "finishedAt": "2026-03-30T13:22:49.762920+00:00",
+      "durationMs": 10164,
+      "heartbeatAt": "2026-03-30T13:22:49.762920+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://career.snowprintstudios.com/#jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.830636+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:39.858586+00:00",
+      "finishedAt": "2026-03-30T13:22:49.117324+00:00",
+      "durationMs": 9513,
+      "heartbeatAt": "2026-03-30T13:22:49.117324+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.ypuniverse.com/career",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.832949+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:22:39.855697+00:00",
+      "finishedAt": "2026-03-30T13:22:50.590656+00:00",
+      "durationMs": 10918,
+      "heartbeatAt": "2026-03-30T13:22:50.590656+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://fairplaystudios.net/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.835822+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.835822+00:00",
+      "finishedAt": "2026-03-30T13:22:50.382860+00:00",
+      "durationMs": 9940,
+      "heartbeatAt": "2026-03-30T13:22:50.382860+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.immutable.com/jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.838090+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.838090+00:00",
+      "finishedAt": "2026-03-30T13:22:49.508998+00:00",
+      "durationMs": 9061,
+      "heartbeatAt": "2026-03-30T13:22:49.508998+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://fa-exhj-saasfaprod1.fa.ocs.oraclecloud.com/hcmui/candidateexperience/en/sites/cx_1/jobs?location=viet+nam&locationid=300000000466768&locationlevel=country&mode=job-location%253b",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.840438+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.840438+00:00",
+      "finishedAt": "2026-03-30T13:22:49.957818+00:00",
+      "durationMs": 9500,
+      "heartbeatAt": "2026-03-30T13:22:49.957818+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://edix.fa.us2.oraclecloud.com/hcmui/candidateexperience/en/sites/cx_1/jobs",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:53.845139+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.845139+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:50.165422+00:00",
+      "durationMs": 9480,
+      "heartbeatAt": "2026-03-30T13:22:50.165422+00:00",
+      "error": "static_source::static:listing_url:https://edix.fa.us2.oraclecloud.com/hcmui/candidateexperience/en/sites/cx_1/jobs: static:Corsair (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://bethesdagamestudios.com/#careers",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:53.848117+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.848117+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:51.201186+00:00",
+      "durationMs": 9827,
+      "heartbeatAt": "2026-03-30T13:22:51.201186+00:00",
+      "error": "static_source::static:listing_url:https://bethesdagamestudios.com/#careers: static:Bethesda Game Studios (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://www.darkpassenger.eu/rekrutacja",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.851507+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.851507+00:00",
+      "finishedAt": "2026-03-30T13:22:50.832086+00:00",
+      "durationMs": 9574,
+      "heartbeatAt": "2026-03-30T13:22:50.832086+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://nsusgroup.applytojobs.ca/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.853894+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.853894+00:00",
+      "finishedAt": "2026-03-30T13:22:52.694323+00:00",
+      "durationMs": 11182,
+      "heartbeatAt": "2026-03-30T13:22:52.694323+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.lilsnack.co/about",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.856403+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.856403+00:00",
+      "finishedAt": "2026-03-30T13:22:51.635305+00:00",
+      "durationMs": 9984,
+      "heartbeatAt": "2026-03-30T13:22:51.635305+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.siegecamp.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.858761+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.858761+00:00",
+      "finishedAt": "2026-03-30T13:22:52.500964+00:00",
+      "durationMs": 10636,
+      "heartbeatAt": "2026-03-30T13:22:52.500964+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://demiurgestudios.com/job-openings/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.861168+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.861168+00:00",
+      "finishedAt": "2026-03-30T13:22:52.023487+00:00",
+      "durationMs": 9974,
+      "heartbeatAt": "2026-03-30T13:22:52.023487+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://pappagallogames.com/jobs/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.863531+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.863531+00:00",
+      "finishedAt": "2026-03-30T13:22:59.270978+00:00",
+      "durationMs": 16151,
+      "heartbeatAt": "2026-03-30T13:22:59.270978+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://app.dover.com/dover/careers/04885ef8-6fba-41c4-9a28-646b35babe5a",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:53.865818+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.865818+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:51.825569+00:00",
+      "durationMs": 9157,
+      "heartbeatAt": "2026-03-30T13:22:51.825569+00:00",
+      "error": "static_source::static:listing_url:https://app.dover.com/dover/careers/04885ef8-6fba-41c4-9a28-646b35babe5a: static:Greensky Games Studio (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://www.stardock.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.869533+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.869533+00:00",
+      "finishedAt": "2026-03-30T13:22:53.701916+00:00",
+      "durationMs": 10667,
+      "heartbeatAt": "2026-03-30T13:22:53.701916+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.klei.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.872485+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.872485+00:00",
+      "finishedAt": "2026-03-30T13:22:53.158616+00:00",
+      "durationMs": 10384,
+      "heartbeatAt": "2026-03-30T13:22:53.158616+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.stcware.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.875023+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.875023+00:00",
+      "finishedAt": "2026-03-30T13:22:52.910733+00:00",
+      "durationMs": 9838,
+      "heartbeatAt": "2026-03-30T13:22:52.910733+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.hasbro.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.878473+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.878473+00:00",
+      "finishedAt": "2026-03-30T13:22:53.515832+00:00",
+      "durationMs": 9680,
+      "heartbeatAt": "2026-03-30T13:22:53.515832+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.decagames.com/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.885296+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.885296+00:00",
+      "finishedAt": "2026-03-30T13:22:52.283332+00:00",
+      "durationMs": 8855,
+      "heartbeatAt": "2026-03-30T13:22:52.283332+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.bitkraft.vc/companies/joyride-games",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.889234+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.889234+00:00",
+      "finishedAt": "2026-03-30T13:22:55.497038+00:00",
+      "durationMs": 11619,
+      "heartbeatAt": "2026-03-30T13:22:55.497038+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.eyeball.games/career",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.893630+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.893630+00:00",
+      "finishedAt": "2026-03-30T13:22:54.120850+00:00",
+      "durationMs": 10271,
+      "heartbeatAt": "2026-03-30T13:22:54.120850+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.crystaldynamics.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.897247+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.897247+00:00",
+      "finishedAt": "2026-03-30T13:22:54.529045+00:00",
+      "durationMs": 10673,
+      "heartbeatAt": "2026-03-30T13:22:54.529045+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.anothereality.io/it/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.900116+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.900116+00:00",
+      "finishedAt": "2026-03-30T13:22:54.803543+00:00",
+      "durationMs": 10574,
+      "heartbeatAt": "2026-03-30T13:22:54.803543+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://tactilegames.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.902946+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.902946+00:00",
+      "finishedAt": "2026-03-30T13:22:55.700993+00:00",
+      "durationMs": 11257,
+      "heartbeatAt": "2026-03-30T13:22:55.700993+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.rebellion.com/#vacancies",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.965270+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.965270+00:00",
+      "finishedAt": "2026-03-30T13:22:53.921713+00:00",
+      "durationMs": 9672,
+      "heartbeatAt": "2026-03-30T13:22:53.921713+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.matryoshka.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.970827+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.970827+00:00",
+      "finishedAt": "2026-03-30T13:22:55.236226+00:00",
+      "durationMs": 10801,
+      "heartbeatAt": "2026-03-30T13:22:55.236226+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.ruckus-games.com/#js-careers-jobs-block",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.975049+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.975049+00:00",
+      "finishedAt": "2026-03-30T13:22:55.910038+00:00",
+      "durationMs": 10846,
+      "heartbeatAt": "2026-03-30T13:22:55.910038+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://mundfish.com/en/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.979103+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.979103+00:00",
+      "finishedAt": "2026-03-30T13:22:56.094758+00:00",
+      "durationMs": 11241,
+      "heartbeatAt": "2026-03-30T13:22:56.094758+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.creative-assembly.com/careers",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:53.981306+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.981306+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:54.326651+00:00",
+      "durationMs": 9653,
+      "heartbeatAt": "2026-03-30T13:22:54.326651+00:00",
+      "error": "static_source::static:listing_url:https://www.creative-assembly.com/careers: static:Creative Assembly (Sheet):https://www.creative-assembly.com/careers: HTTP 429 for https://www.creative-assembly.com/careers; static:Creative Assembly (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://careers.wbd.com/global/en/job/r000087820/lead-environment-artist",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.984586+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.984586+00:00",
+      "finishedAt": "2026-03-30T13:23:07.849513+00:00",
+      "durationMs": 23153,
+      "heartbeatAt": "2026-03-30T13:23:07.849513+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.crazylabs.com/careers/remote/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.986661+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.986661+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:55.038556+00:00",
+      "durationMs": 10075,
+      "heartbeatAt": "2026-03-30T13:22:55.038556+00:00",
+      "error": "static_source::static:listing_url:https://www.crazylabs.com/careers/remote/: static:CrazyLabs (Sheet):https://www.crazylabs.com/careers/remote/: HTTP 403 for https://www.crazylabs.com/careers/remote/"
     },
     {
       "name": "static_source::static:listing_url:https://emploi.afjv.com/annonces-societes/12",
@@ -3544,79 +3544,79 @@
       "startedAt": "2026-03-30T13:21:53.989176+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.989176+00:00",
+      "heartbeatAt": "2026-03-30T13:22:54.724160+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.superbloomgames.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.992513+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.992513+00:00",
+      "finishedAt": "2026-03-30T13:22:57.757823+00:00",
+      "durationMs": 10991,
+      "heartbeatAt": "2026-03-30T13:22:57.757823+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://decimated.net/jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.995994+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.995994+00:00",
+      "finishedAt": "2026-03-30T13:22:57.438353+00:00",
+      "durationMs": 10684,
+      "heartbeatAt": "2026-03-30T13:22:57.438353+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.evercurious.games/open-positions",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:53.998445+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:53.998445+00:00",
+      "finishedAt": "2026-03-30T13:22:56.524311+00:00",
+      "durationMs": 9932,
+      "heartbeatAt": "2026-03-30T13:22:56.524311+00:00",
       "error": ""
     },
     {
       "name": "gamesindustry",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.001665+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.001665+00:00",
+      "finishedAt": "2026-03-30T13:23:11.694043+00:00",
+      "durationMs": 24777,
+      "heartbeatAt": "2026-03-30T13:23:11.694043+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.oxalis.games/job-board",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.004955+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.004955+00:00",
+      "finishedAt": "2026-03-30T13:22:56.759193+00:00",
+      "durationMs": 9977,
+      "heartbeatAt": "2026-03-30T13:22:56.759193+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://gamejobs.work/category/environment-artist",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.007230+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.007230+00:00",
+      "finishedAt": "2026-03-30T13:23:13.064215+00:00",
+      "durationMs": 25802,
+      "heartbeatAt": "2026-03-30T13:23:13.064215+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.midwestgames.com/jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.010082+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.010082+00:00",
+      "finishedAt": "2026-03-30T13:22:58.049351+00:00",
+      "durationMs": 9884,
+      "heartbeatAt": "2026-03-30T13:22:58.049351+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.edengames.com/career/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.013574+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.013574+00:00",
+      "finishedAt": "2026-03-30T13:22:58.700178+00:00",
+      "durationMs": 10719,
+      "heartbeatAt": "2026-03-30T13:22:58.700178+00:00",
       "error": ""
     },
     {
@@ -3625,79 +3625,79 @@
       "startedAt": "2026-03-30T13:21:54.015908+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.015908+00:00",
+      "heartbeatAt": "2026-03-30T13:23:00.181454+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://thatsnomoon.com/careers",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:54.018198+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.018198+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:58.402516+00:00",
+      "durationMs": 9686,
+      "heartbeatAt": "2026-03-30T13:22:58.402516+00:00",
+      "error": "static_source::static:listing_url:https://thatsnomoon.com/careers: static:That's No Moon (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://kabam.com/careers/",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:54.021478+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.021478+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:22:57.056055+00:00",
+      "durationMs": 8952,
+      "heartbeatAt": "2026-03-30T13:22:57.056055+00:00",
+      "error": "static_source::static:listing_url:https://kabam.com/careers/: static:Kabam (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://finalstrikegames.net/#careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.024017+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.024017+00:00",
+      "finishedAt": "2026-03-30T13:23:00.520412+00:00",
+      "durationMs": 12262,
+      "heartbeatAt": "2026-03-30T13:23:00.520412+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.funcraft.com/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.026382+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.026382+00:00",
+      "finishedAt": "2026-03-30T13:22:59.869180+00:00",
+      "durationMs": 11253,
+      "heartbeatAt": "2026-03-30T13:22:59.869180+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.smartrecruiters.com/giantssoftwaregmbh",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.028907+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.028907+00:00",
+      "finishedAt": "2026-03-30T13:22:58.986552+00:00",
+      "durationMs": 9710,
+      "heartbeatAt": "2026-03-30T13:22:58.986552+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.yuyutogames.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.031056+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.031056+00:00",
+      "finishedAt": "2026-03-30T13:22:59.573067+00:00",
+      "durationMs": 9865,
+      "heartbeatAt": "2026-03-30T13:22:59.573067+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.bitwisealchemy.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.033910+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.033910+00:00",
+      "finishedAt": "2026-03-30T13:23:01.527405+00:00",
+      "durationMs": 12404,
+      "heartbeatAt": "2026-03-30T13:23:01.527405+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://teyon.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.036626+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.036626+00:00",
+      "finishedAt": "2026-03-30T13:23:01.884313+00:00",
+      "durationMs": 12026,
+      "heartbeatAt": "2026-03-30T13:23:01.884313+00:00",
       "error": ""
     },
     {
@@ -3706,25 +3706,25 @@
       "startedAt": "2026-03-30T13:21:54.038859+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.038859+00:00",
+      "heartbeatAt": "2026-03-30T13:23:06.382597+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.merkurgamingindia.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.040950+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.040950+00:00",
+      "finishedAt": "2026-03-30T13:23:00.885225+00:00",
+      "durationMs": 10924,
+      "heartbeatAt": "2026-03-30T13:23:00.885225+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.uken.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.043455+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.043455+00:00",
+      "finishedAt": "2026-03-30T13:23:02.486483+00:00",
+      "durationMs": 11944,
+      "heartbeatAt": "2026-03-30T13:23:02.486483+00:00",
       "error": ""
     },
     {
@@ -3733,133 +3733,133 @@
       "startedAt": "2026-03-30T13:21:54.045578+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.045578+00:00",
+      "heartbeatAt": "2026-03-30T13:22:50.338836+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://theforge.dev/career/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.047845+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.047845+00:00",
+      "finishedAt": "2026-03-30T13:23:02.800898+00:00",
+      "durationMs": 11594,
+      "heartbeatAt": "2026-03-30T13:23:02.800898+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.redkitegames.co.uk/jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.050461+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.050461+00:00",
+      "finishedAt": "2026-03-30T13:23:03.817455+00:00",
+      "durationMs": 12905,
+      "heartbeatAt": "2026-03-30T13:23:03.817455+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.bigant.com/jobs/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.052636+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.052636+00:00",
+      "finishedAt": "2026-03-30T13:23:02.171722+00:00",
+      "durationMs": 11071,
+      "heartbeatAt": "2026-03-30T13:23:02.171722+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.gooddogstudios.com/careers",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:54.054938+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.054938+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:23:01.178912+00:00",
+      "durationMs": 10343,
+      "heartbeatAt": "2026-03-30T13:23:01.178912+00:00",
+      "error": "static_source::static:listing_url:https://www.gooddogstudios.com/careers: static:Good Dog Studios (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://careers.garena.com/global/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.071285+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.071285+00:00",
+      "finishedAt": "2026-03-30T13:23:04.157830+00:00",
+      "durationMs": 12732,
+      "heartbeatAt": "2026-03-30T13:23:04.157830+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://herobeatstudios.com/job-openings/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.075115+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.075115+00:00",
+      "finishedAt": "2026-03-30T13:23:05.800029+00:00",
+      "durationMs": 14147,
+      "heartbeatAt": "2026-03-30T13:23:05.800029+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://mooncolony.co/jobs#jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.077492+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.077492+00:00",
+      "finishedAt": "2026-03-30T13:23:03.526006+00:00",
+      "durationMs": 11889,
+      "heartbeatAt": "2026-03-30T13:23:03.526006+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://mankindgames.jp/en/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.080093+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.080093+00:00",
+      "finishedAt": "2026-03-30T13:23:04.462750+00:00",
+      "durationMs": 12141,
+      "heartbeatAt": "2026-03-30T13:23:04.462750+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.studiogobo.com/join-us/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.082342+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.082342+00:00",
+      "finishedAt": "2026-03-30T13:23:04.840888+00:00",
+      "durationMs": 12554,
+      "heartbeatAt": "2026-03-30T13:23:04.840888+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.milkytea.com/home#jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.084524+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.084524+00:00",
+      "finishedAt": "2026-03-30T13:23:06.941843+00:00",
+      "durationMs": 14492,
+      "heartbeatAt": "2026-03-30T13:23:06.941843+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.kojimaproductions.jp/en/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.086549+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.086549+00:00",
+      "finishedAt": "2026-03-30T13:23:07.532433+00:00",
+      "durationMs": 14828,
+      "heartbeatAt": "2026-03-30T13:23:07.532433+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://jobs.fatsharkgames.com/#jobs",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.088569+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.088569+00:00",
+      "finishedAt": "2026-03-30T13:23:06.415499+00:00",
+      "durationMs": 13517,
+      "heartbeatAt": "2026-03-30T13:23:06.415499+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.bandainamcoent.com/careers#join",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.090967+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.090967+00:00",
+      "finishedAt": "2026-03-30T13:23:08.149343+00:00",
+      "durationMs": 15142,
+      "heartbeatAt": "2026-03-30T13:23:08.149343+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://about.endlessstudios.com/careers.html",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.093240+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.093240+00:00",
+      "finishedAt": "2026-03-30T13:23:06.082497+00:00",
+      "durationMs": 12895,
+      "heartbeatAt": "2026-03-30T13:23:06.082497+00:00",
       "error": ""
     },
     {
@@ -3868,151 +3868,151 @@
       "startedAt": "2026-03-30T13:21:54.095547+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.095547+00:00",
+      "heartbeatAt": "2026-03-30T13:23:21.839449+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://wushustudios.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.097685+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.097685+00:00",
+      "finishedAt": "2026-03-30T13:23:05.179108+00:00",
+      "durationMs": 12023,
+      "heartbeatAt": "2026-03-30T13:23:05.179108+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://grimloregames.com/jobs/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.099856+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.099856+00:00",
+      "finishedAt": "2026-03-30T13:23:08.480205+00:00",
+      "durationMs": 14557,
+      "heartbeatAt": "2026-03-30T13:23:08.480205+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.oneoonegames.com/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.103465+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.103465+00:00",
+      "finishedAt": "2026-03-30T13:23:07.235236+00:00",
+      "durationMs": 13098,
+      "heartbeatAt": "2026-03-30T13:23:07.235236+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://refactorgames.com/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.119860+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.119860+00:00",
+      "finishedAt": "2026-03-30T13:23:09.767935+00:00",
+      "durationMs": 15440,
+      "heartbeatAt": "2026-03-30T13:23:09.767935+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.linkedin.com/company/nexus-studios/",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:54.123423+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.123423+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:23:09.454135+00:00",
+      "durationMs": 14925,
+      "heartbeatAt": "2026-03-30T13:23:09.454135+00:00",
+      "error": "static_source::static:listing_url:https://www.linkedin.com/company/nexus-studios/: static:Nexus Studios (Sheet):https://www.linkedin.com/company/nexus-studios/: HTTP 999 for https://www.linkedin.com/company/nexus-studios/; static:Nexus Studios (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://bandainamcostudios.sg/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.126095+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.126095+00:00",
+      "finishedAt": "2026-03-30T13:23:10.743180+00:00",
+      "durationMs": 15938,
+      "heartbeatAt": "2026-03-30T13:23:10.743180+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://lostboysinteractive.applytojob.com/apply",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.128336+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.128336+00:00",
+      "finishedAt": "2026-03-30T13:23:11.384042+00:00",
+      "durationMs": 16054,
+      "heartbeatAt": "2026-03-30T13:23:11.384042+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.gridpaperstudio.com/gridpaperstudiocareers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.131142+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.131142+00:00",
+      "finishedAt": "2026-03-30T13:23:12.349388+00:00",
+      "durationMs": 16944,
+      "heartbeatAt": "2026-03-30T13:23:12.349388+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers-cn.nekcomgames.com/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.133538+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.133538+00:00",
+      "finishedAt": "2026-03-30T13:23:10.410191+00:00",
+      "durationMs": 14835,
+      "heartbeatAt": "2026-03-30T13:23:10.410191+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.pahdolabs.com/",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:54.135855+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.135855+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:23:10.103864+00:00",
+      "durationMs": 14493,
+      "heartbeatAt": "2026-03-30T13:23:10.103864+00:00",
+      "error": "static_source::static:listing_url:https://careers.pahdolabs.com/: static:Pahdo Labs (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://careers.bitkraft.vc/companies/arcturus-2",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.138437+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.138437+00:00",
+      "finishedAt": "2026-03-30T13:23:09.131343+00:00",
+      "durationMs": 13631,
+      "heartbeatAt": "2026-03-30T13:23:09.131343+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.anzu.io/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.141315+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.141315+00:00",
+      "finishedAt": "2026-03-30T13:23:11.067110+00:00",
+      "durationMs": 15116,
+      "heartbeatAt": "2026-03-30T13:23:11.067110+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://careers.playsimple.in/jobs/careers",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:54.144338+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.144338+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:23:17.733538+00:00",
+      "durationMs": 21424,
+      "heartbeatAt": "2026-03-30T13:23:17.733538+00:00",
+      "error": "static_source::static:listing_url:https://careers.playsimple.in/jobs/careers: static:PlaySimple Games (Sheet):https://careers.playsimple.in/jobs/Careers: Invalid IPv6 URL; static:PlaySimple Games (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://remotecontrol.jobs.personio.com/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.147006+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.147006+00:00",
+      "finishedAt": "2026-03-30T13:23:12.008901+00:00",
+      "durationMs": 15483,
+      "heartbeatAt": "2026-03-30T13:23:12.008901+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.strikerz.inc/jobs/development-department",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.149762+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.149762+00:00",
+      "finishedAt": "2026-03-30T13:23:12.718988+00:00",
+      "durationMs": 15958,
+      "heartbeatAt": "2026-03-30T13:23:12.718988+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://gardens.dev/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.152131+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.152131+00:00",
+      "finishedAt": "2026-03-30T13:23:14.862843+00:00",
+      "durationMs": 17796,
+      "heartbeatAt": "2026-03-30T13:23:14.862843+00:00",
       "error": ""
     },
     {
@@ -4021,70 +4021,70 @@
       "startedAt": "2026-03-30T13:21:54.155820+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.155820+00:00",
+      "heartbeatAt": "2026-03-30T13:22:57.434789+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://survios.com/studio/careers/listings/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.158536+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.158536+00:00",
+      "finishedAt": "2026-03-30T13:23:13.445965+00:00",
+      "durationMs": 16254,
+      "heartbeatAt": "2026-03-30T13:23:13.445965+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://nca.ncsoft.com/en-us/careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.160780+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.160780+00:00",
+      "finishedAt": "2026-03-30T13:23:16.835367+00:00",
+      "durationMs": 19081,
+      "heartbeatAt": "2026-03-30T13:23:16.835367+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://tencent.wd1.myworkdayjobs.com/timi_careers",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:54.163791+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.163791+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:23:14.401968+00:00",
+      "durationMs": 16336,
+      "heartbeatAt": "2026-03-30T13:23:14.401968+00:00",
+      "error": "static_source::static:listing_url:https://tencent.wd1.myworkdayjobs.com/timi_careers: static:TiMi Studio Group (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://www.ogreheadstudio.com/career",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.166291+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.166291+00:00",
+      "finishedAt": "2026-03-30T13:23:16.045959+00:00",
+      "durationMs": 17669,
+      "heartbeatAt": "2026-03-30T13:23:16.045959+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://hellogames.org/join-us/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.168611+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.168611+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:23:13.769373+00:00",
+      "durationMs": 15380,
+      "heartbeatAt": "2026-03-30T13:23:13.769373+00:00",
+      "error": "static_source::static:listing_url:https://hellogames.org/join-us/: static:Hello Games (Sheet):https://hellogames.org/join-us/: Network error for https://hellogames.org/join-us/:"
     },
     {
       "name": "static_source::static:listing_url:https://madcore.games/#careers",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.171420+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.171420+00:00",
+      "finishedAt": "2026-03-30T13:23:14.098601+00:00",
+      "durationMs": 15665,
+      "heartbeatAt": "2026-03-30T13:23:14.098601+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://lilagames.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.174229+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.174229+00:00",
+      "finishedAt": "2026-03-30T13:23:18.599282+00:00",
+      "durationMs": 19328,
+      "heartbeatAt": "2026-03-30T13:23:18.599282+00:00",
       "error": ""
     },
     {
@@ -4093,35 +4093,35 @@
       "startedAt": "2026-03-30T13:21:54.176966+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.176966+00:00",
+      "heartbeatAt": "2026-03-30T13:23:21.852618+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://frostline.games/en/career/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.179538+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.179538+00:00",
+      "finishedAt": "2026-03-30T13:23:20.213329+00:00",
+      "durationMs": 20022,
+      "heartbeatAt": "2026-03-30T13:23:20.213329+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.probablymonsters.com/careers/",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:54.182371+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.182371+00:00",
+      "finishedAt": "2026-03-30T13:23:19.367395+00:00",
+      "durationMs": 18063,
+      "heartbeatAt": "2026-03-30T13:23:19.367395+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://jobs.studiodrydock.com/",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:54.184826+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.184826+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:23:21.859550+00:00",
+      "durationMs": 20131,
+      "heartbeatAt": "2026-03-30T13:23:21.859550+00:00",
+      "error": "static_source::static:listing_url:https://jobs.studiodrydock.com/: static:Studio Drydock (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://careers.king.com/us/en",
@@ -4129,17 +4129,17 @@
       "startedAt": "2026-03-30T13:21:54.187562+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.187562+00:00",
+      "heartbeatAt": "2026-03-30T13:23:21.989483+00:00",
       "error": ""
     },
     {
       "name": "static_source::static:listing_url:https://www.liquidnitro.games/careers",
-      "status": "running",
+      "status": "error",
       "startedAt": "2026-03-30T13:21:54.190591+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.190591+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:23:21.029687+00:00",
+      "durationMs": 19425,
+      "heartbeatAt": "2026-03-30T13:23:21.029687+00:00",
+      "error": "static_source::static:listing_url:https://www.liquidnitro.games/careers: static:Liquidnitro Games (Sheet): no jobs extracted from source pages"
     },
     {
       "name": "static_source::static:listing_url:https://antada.com.vn/",
@@ -4147,7 +4147,7 @@
       "startedAt": "2026-03-30T13:21:54.193053+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.193053+00:00",
+      "heartbeatAt": "2026-03-30T13:23:21.852634+00:00",
       "error": ""
     },
     {
@@ -4156,7 +4156,7 @@
       "startedAt": "2026-03-30T13:21:54.195485+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.195485+00:00",
+      "heartbeatAt": "2026-03-30T13:23:01.876768+00:00",
       "error": ""
     },
     {
@@ -4165,7 +4165,7 @@
       "startedAt": "2026-03-30T13:21:54.198191+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.198191+00:00",
+      "heartbeatAt": "2026-03-30T13:23:02.029611+00:00",
       "error": ""
     },
     {
@@ -4174,7 +4174,7 @@
       "startedAt": "2026-03-30T13:21:54.210836+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.210836+00:00",
+      "heartbeatAt": "2026-03-30T13:23:22.005209+00:00",
       "error": ""
     },
     {
@@ -4183,7 +4183,7 @@
       "startedAt": "2026-03-30T13:21:54.213966+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.213966+00:00",
+      "heartbeatAt": "2026-03-30T13:23:03.088947+00:00",
       "error": ""
     },
     {
@@ -4192,7 +4192,7 @@
       "startedAt": "2026-03-30T13:21:54.216543+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.216543+00:00",
+      "heartbeatAt": "2026-03-30T13:23:22.768518+00:00",
       "error": ""
     },
     {
@@ -4201,7 +4201,7 @@
       "startedAt": "2026-03-30T13:21:54.219335+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.219335+00:00",
+      "heartbeatAt": "2026-03-30T13:23:03.805024+00:00",
       "error": ""
     },
     {
@@ -4210,7 +4210,7 @@
       "startedAt": "2026-03-30T13:21:54.222325+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.222325+00:00",
+      "heartbeatAt": "2026-03-30T13:23:04.346993+00:00",
       "error": ""
     },
     {
@@ -4219,7 +4219,7 @@
       "startedAt": "2026-03-30T13:21:54.224459+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.224459+00:00",
+      "heartbeatAt": "2026-03-30T13:23:04.427782+00:00",
       "error": ""
     },
     {
@@ -4228,7 +4228,7 @@
       "startedAt": "2026-03-30T13:21:54.226622+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.226622+00:00",
+      "heartbeatAt": "2026-03-30T13:23:04.842021+00:00",
       "error": ""
     },
     {
@@ -4237,7 +4237,7 @@
       "startedAt": "2026-03-30T13:21:54.228908+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.228908+00:00",
+      "heartbeatAt": "2026-03-30T13:23:05.420297+00:00",
       "error": ""
     },
     {
@@ -4246,7 +4246,7 @@
       "startedAt": "2026-03-30T13:21:54.235125+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.235125+00:00",
+      "heartbeatAt": "2026-03-30T13:23:05.483917+00:00",
       "error": ""
     },
     {
@@ -4255,7 +4255,7 @@
       "startedAt": "2026-03-30T13:21:54.237743+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.237743+00:00",
+      "heartbeatAt": "2026-03-30T13:23:05.823787+00:00",
       "error": ""
     },
     {
@@ -4264,7 +4264,7 @@
       "startedAt": "2026-03-30T13:21:54.239953+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.239953+00:00",
+      "heartbeatAt": "2026-03-30T13:23:06.016774+00:00",
       "error": ""
     },
     {
@@ -4273,7 +4273,7 @@
       "startedAt": "2026-03-30T13:21:54.242061+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.242061+00:00",
+      "heartbeatAt": "2026-03-30T13:23:06.322368+00:00",
       "error": ""
     },
     {
@@ -4282,7 +4282,7 @@
       "startedAt": "2026-03-30T13:21:54.244574+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.244574+00:00",
+      "heartbeatAt": "2026-03-30T13:23:06.908564+00:00",
       "error": ""
     },
     {
@@ -4291,7 +4291,7 @@
       "startedAt": "2026-03-30T13:21:54.248070+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.248070+00:00",
+      "heartbeatAt": "2026-03-30T13:23:07.229358+00:00",
       "error": ""
     },
     {
@@ -4300,7 +4300,7 @@
       "startedAt": "2026-03-30T13:21:54.250256+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.250256+00:00",
+      "heartbeatAt": "2026-03-30T13:23:07.526790+00:00",
       "error": ""
     },
     {
@@ -4309,7 +4309,7 @@
       "startedAt": "2026-03-30T13:21:54.253029+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.253029+00:00",
+      "heartbeatAt": "2026-03-30T13:23:07.850414+00:00",
       "error": ""
     },
     {
@@ -4318,7 +4318,7 @@
       "startedAt": "2026-03-30T13:21:54.255404+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.255404+00:00",
+      "heartbeatAt": "2026-03-30T13:23:08.098324+00:00",
       "error": ""
     },
     {
@@ -4327,7 +4327,7 @@
       "startedAt": "2026-03-30T13:21:54.258098+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.258098+00:00",
+      "heartbeatAt": "2026-03-30T13:23:08.481117+00:00",
       "error": ""
     },
     {
@@ -4336,7 +4336,7 @@
       "startedAt": "2026-03-30T13:21:54.260602+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.260602+00:00",
+      "heartbeatAt": "2026-03-30T13:23:08.799938+00:00",
       "error": ""
     },
     {
@@ -4345,7 +4345,7 @@
       "startedAt": "2026-03-30T13:21:54.280365+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.280365+00:00",
+      "heartbeatAt": "2026-03-30T13:23:09.132513+00:00",
       "error": ""
     },
     {
@@ -4354,7 +4354,7 @@
       "startedAt": "2026-03-30T13:21:54.293589+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.293589+00:00",
+      "heartbeatAt": "2026-03-30T13:23:09.455019+00:00",
       "error": ""
     },
     {
@@ -4363,7 +4363,7 @@
       "startedAt": "2026-03-30T13:21:54.297678+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.297678+00:00",
+      "heartbeatAt": "2026-03-30T13:23:09.780522+00:00",
       "error": ""
     },
     {
@@ -4372,7 +4372,7 @@
       "startedAt": "2026-03-30T13:21:54.300200+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.300200+00:00",
+      "heartbeatAt": "2026-03-30T13:23:10.100290+00:00",
       "error": ""
     },
     {
@@ -4381,7 +4381,7 @@
       "startedAt": "2026-03-30T13:21:54.302597+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.302597+00:00",
+      "heartbeatAt": "2026-03-30T13:23:10.103701+00:00",
       "error": ""
     },
     {
@@ -4390,7 +4390,7 @@
       "startedAt": "2026-03-30T13:21:54.305939+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.305939+00:00",
+      "heartbeatAt": "2026-03-30T13:23:10.744283+00:00",
       "error": ""
     },
     {
@@ -4399,7 +4399,7 @@
       "startedAt": "2026-03-30T13:21:54.309463+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.309463+00:00",
+      "heartbeatAt": "2026-03-30T13:23:11.062990+00:00",
       "error": ""
     },
     {
@@ -4408,7 +4408,7 @@
       "startedAt": "2026-03-30T13:21:54.312826+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.312826+00:00",
+      "heartbeatAt": "2026-03-30T13:23:11.067032+00:00",
       "error": ""
     },
     {
@@ -4417,7 +4417,7 @@
       "startedAt": "2026-03-30T13:21:54.316310+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.316310+00:00",
+      "heartbeatAt": "2026-03-30T13:23:11.396996+00:00",
       "error": ""
     },
     {
@@ -4426,7 +4426,7 @@
       "startedAt": "2026-03-30T13:21:54.319478+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.319478+00:00",
+      "heartbeatAt": "2026-03-30T13:23:12.009994+00:00",
       "error": ""
     },
     {
@@ -4435,7 +4435,7 @@
       "startedAt": "2026-03-30T13:21:54.322495+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.322495+00:00",
+      "heartbeatAt": "2026-03-30T13:23:12.251543+00:00",
       "error": ""
     },
     {
@@ -4444,7 +4444,7 @@
       "startedAt": "2026-03-30T13:21:54.326506+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.326506+00:00",
+      "heartbeatAt": "2026-03-30T13:23:12.720060+00:00",
       "error": ""
     },
     {
@@ -4453,7 +4453,7 @@
       "startedAt": "2026-03-30T13:21:54.331241+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.331241+00:00",
+      "heartbeatAt": "2026-03-30T13:23:13.098012+00:00",
       "error": ""
     },
     {
@@ -4462,7 +4462,7 @@
       "startedAt": "2026-03-30T13:21:54.335761+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.335761+00:00",
+      "heartbeatAt": "2026-03-30T13:23:13.462637+00:00",
       "error": ""
     },
     {
@@ -4471,7 +4471,7 @@
       "startedAt": "2026-03-30T13:21:54.347823+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.347823+00:00",
+      "heartbeatAt": "2026-03-30T13:23:13.782272+00:00",
       "error": ""
     },
     {
@@ -4480,7 +4480,7 @@
       "startedAt": "2026-03-30T13:21:54.354309+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.354309+00:00",
+      "heartbeatAt": "2026-03-30T13:23:14.082069+00:00",
       "error": ""
     },
     {
@@ -4489,7 +4489,7 @@
       "startedAt": "2026-03-30T13:21:54.357686+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.357686+00:00",
+      "heartbeatAt": "2026-03-30T13:23:14.098464+00:00",
       "error": ""
     },
     {
@@ -4498,7 +4498,7 @@
       "startedAt": "2026-03-30T13:21:54.360762+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.360762+00:00",
+      "heartbeatAt": "2026-03-30T13:23:14.924698+00:00",
       "error": ""
     },
     {
@@ -4507,7 +4507,7 @@
       "startedAt": "2026-03-30T13:21:54.364357+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.364357+00:00",
+      "heartbeatAt": "2026-03-30T13:23:15.152410+00:00",
       "error": ""
     },
     {
@@ -4516,7 +4516,7 @@
       "startedAt": "2026-03-30T13:21:54.367149+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.367149+00:00",
+      "heartbeatAt": "2026-03-30T13:23:16.046856+00:00",
       "error": ""
     },
     {
@@ -4525,7 +4525,7 @@
       "startedAt": "2026-03-30T13:21:54.370472+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.370472+00:00",
+      "heartbeatAt": "2026-03-30T13:23:16.572563+00:00",
       "error": ""
     },
     {
@@ -4534,7 +4534,7 @@
       "startedAt": "2026-03-30T13:21:54.373236+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.373236+00:00",
+      "heartbeatAt": "2026-03-30T13:23:17.758237+00:00",
       "error": ""
     },
     {
@@ -4543,7 +4543,7 @@
       "startedAt": "2026-03-30T13:21:54.376332+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.376332+00:00",
+      "heartbeatAt": "2026-03-30T13:23:18.506516+00:00",
       "error": ""
     },
     {
@@ -4552,7 +4552,7 @@
       "startedAt": "2026-03-30T13:21:54.380071+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.380071+00:00",
+      "heartbeatAt": "2026-03-30T13:23:18.594111+00:00",
       "error": ""
     },
     {
@@ -4561,7 +4561,7 @@
       "startedAt": "2026-03-30T13:21:54.383725+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.383725+00:00",
+      "heartbeatAt": "2026-03-30T13:23:20.232780+00:00",
       "error": ""
     },
     {
@@ -4570,7 +4570,7 @@
       "startedAt": "2026-03-30T13:21:54.386822+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.386822+00:00",
+      "heartbeatAt": "2026-03-30T13:23:21.024912+00:00",
       "error": ""
     },
     {
@@ -4579,7 +4579,7 @@
       "startedAt": "2026-03-30T13:21:54.390352+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.390352+00:00",
+      "heartbeatAt": "2026-03-30T13:23:21.048087+00:00",
       "error": ""
     },
     {
@@ -4588,7 +4588,7 @@
       "startedAt": "2026-03-30T13:21:54.393486+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.393486+00:00",
+      "heartbeatAt": "2026-03-30T13:23:22.005229+00:00",
       "error": ""
     },
     {
@@ -4597,7 +4597,7 @@
       "startedAt": "2026-03-30T13:21:54.397333+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.397333+00:00",
+      "heartbeatAt": "2026-03-30T13:23:22.768160+00:00",
       "error": ""
     },
     {
@@ -4606,7 +4606,7 @@
       "startedAt": "2026-03-30T13:21:54.403907+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.403907+00:00",
+      "heartbeatAt": "2026-03-30T13:23:22.768455+00:00",
       "error": ""
     },
     {
@@ -4615,7 +4615,7 @@
       "startedAt": "2026-03-30T13:21:54.409345+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.409345+00:00",
+      "heartbeatAt": "2026-03-30T13:23:22.809216+00:00",
       "error": ""
     },
     {
@@ -4624,7 +4624,7 @@
       "startedAt": "2026-03-30T13:21:54.414803+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.414803+00:00",
+      "heartbeatAt": "2026-03-30T13:23:22.805374+00:00",
       "error": ""
     },
     {
@@ -4633,7 +4633,7 @@
       "startedAt": "2026-03-30T13:21:54.421090+00:00",
       "finishedAt": "",
       "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:21:54.421090+00:00",
+      "heartbeatAt": "2026-03-30T13:23:22.809168+00:00",
       "error": ""
     },
     {
@@ -5916,4 +5916,6 @@
     }
   ],
   "outputs": {
-    "report": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\
+    "report": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-fetch-report.json"
+  }
+}

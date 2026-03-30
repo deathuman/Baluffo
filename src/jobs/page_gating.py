@@ -9,8 +9,8 @@ from urllib.parse import urlparse
 from src.jobs.adapters.html_parsers import (
     extract_first_tag_text,
     extract_json_ld_blocks,
-    iter_job_postings_from_jsonld,
     iter_anchor_fragments,
+    iter_job_postings_from_jsonld,
     strip_html_text,
 )
 from src.jobs.text_utils import clean_text
