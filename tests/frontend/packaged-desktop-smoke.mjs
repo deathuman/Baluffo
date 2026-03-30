@@ -355,7 +355,7 @@ async function main() {
   if (!report.ok) {
     console.error("Smoke test failed:", report.errors);
   }
-  process.exitCode = report.ok ? 0 : 1;
+  process.exit(report.ok ? 0 : 1);
 }
 
 await main().catch(err => {
