@@ -81,7 +81,7 @@ def test_canonicalize_job_with_reason_blanks_metric_and_css_location_noise() -> 
             "title": "Artist",
             "company": "Studio",
             "city": "6,559 followers",
-            "country": '--grid-gutter: calc(var(--sqs-mobile-site-gutter, 6vw) - 0.0px);',
+            "country": "--grid-gutter: calc(var(--sqs-mobile-site-gutter, 6vw) - 0.0px);",
             "jobLink": "https://example.com/metric-noise",
             "sector": "Game",
         },
@@ -140,7 +140,14 @@ def test_canonicalize_job_with_reason_normalizes_sector_from_game_evidence() -> 
     assert game_row is not None
     game_payload = game_row if isinstance(game_row, dict) else game_row.to_dict()
     assert game_payload["sector"] == "Game"
-    assert int(jobs_canonicalize.snapshot_sector_quality_audit(total_rows=2)["downgradedGameSectorCount"]) == 1
+    assert (
+        int(
+            jobs_canonicalize.snapshot_sector_quality_audit(total_rows=2)[
+                "downgradedGameSectorCount"
+            ]
+        )
+        == 1
+    )
 
     zynga_row, zynga_reason = jf.canonicalize_job_with_reason(
         {
@@ -243,7 +250,7 @@ def test_canonicalize_job_with_reason_blanks_composite_and_script_city_noise() -
             "title": "Artist",
             "company": "Studio",
             "city": "Berlin / Hamburg",
-            "country": "document.addEventListener(\"DOMContentLoaded\", function () {",
+            "country": 'document.addEventListener("DOMContentLoaded", function () {',
             "jobLink": "https://example.com/composite-noise",
             "sector": "Game",
         },
@@ -279,7 +286,7 @@ def test_location_quality_audit_reports_semantic_location_examples() -> None:
                 "title": "Artist",
                 "company": "Studio",
                 "city": "6,559 followers",
-                "country": '--grid-gutter: calc(var(--sqs-mobile-site-gutter, 6vw) - 0.0px);',
+                "country": "--grid-gutter: calc(var(--sqs-mobile-site-gutter, 6vw) - 0.0px);",
                 "source": "static_source::noise",
                 "jobLink": "https://example.com/3",
             },
@@ -295,7 +302,7 @@ def test_location_quality_audit_reports_semantic_location_examples() -> None:
                 "title": "Artist",
                 "company": "Studio",
                 "city": "Berlin / Hamburg",
-                "country": "document.addEventListener(\"DOMContentLoaded\", function () {",
+                "country": 'document.addEventListener("DOMContentLoaded", function () {',
                 "source": "static_source::noise",
                 "jobLink": "https://example.com/5",
             },
@@ -308,26 +315,17 @@ def test_location_quality_audit_reports_semantic_location_examples() -> None:
         str(report["examples"][0]["fields"]["city"]["reason"])
         == "invalid_city_semantic_multi_location_blob"
     )
-    assert (
-        str(report["examples"][1]["fields"]["city"]["reason"])
-        == "invalid_city_semantic_noise"
-    )
+    assert str(report["examples"][1]["fields"]["city"]["reason"]) == "invalid_city_semantic_noise"
     assert (
         str(report["examples"][1]["fields"]["country"]["reason"])
         == "invalid_country_semantic_noise"
     )
-    assert (
-        str(report["examples"][2]["fields"]["city"]["reason"])
-        == "invalid_city_semantic_noise"
-    )
+    assert str(report["examples"][2]["fields"]["city"]["reason"]) == "invalid_city_semantic_noise"
     assert (
         str(report["examples"][2]["fields"]["country"]["reason"])
         == "invalid_country_semantic_noise"
     )
-    assert (
-        str(report["examples"][3]["fields"]["city"]["reason"])
-        == "invalid_city_semantic_noise"
-    )
+    assert str(report["examples"][3]["fields"]["city"]["reason"]) == "invalid_city_semantic_noise"
     assert (
         str(report["examples"][3]["fields"]["country"]["reason"])
         == "invalid_country_semantic_noise"

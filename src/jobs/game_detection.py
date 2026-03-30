@@ -88,7 +88,9 @@ def has_positive_game_evidence(
 ) -> bool:
     if has_game_source_provenance(source, source_bundle):
         return True
-    text = " ".join(str(v or "").strip().lower() for v in (company, title, source, job_link) if v is not None)
+    text = " ".join(
+        str(v or "").strip().lower() for v in (company, title, source, job_link) if v is not None
+    )
     if not text:
         return False
     if any(keyword in text for keyword in GAME_KEYWORDS):

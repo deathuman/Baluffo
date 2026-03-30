@@ -298,7 +298,9 @@ def canonicalize_job_with_reason(
             "jobLink": normalized_link,
             "sector": normalized_sector,
             "profession": map_profession(title),
-            "companyType": classify_company_type(company, title, source, normalized_link, source_bundle),
+            "companyType": classify_company_type(
+                company, title, source, normalized_link, source_bundle
+            ),
             "description": f"{title} at {company}",
             "source": source,
             "sourceJobId": clean_text(raw.get("sourceJobId") or raw.get("id")),
