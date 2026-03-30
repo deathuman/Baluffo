@@ -64,6 +64,8 @@ def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[
 
 
 def save_json_atomic(path: Path, payload: Any) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     ensure_data_dir()
     # Use a unique temp file per write to avoid collisions across threads/processes.
     tmp = path.with_suffix(path.suffix + f".{os.getpid()}.{time.time_ns()}.tmp")

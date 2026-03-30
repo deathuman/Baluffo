@@ -25,6 +25,7 @@ from scripts.build_frontend_runtime_config import (
 from src.app_version import APP_VERSION
 from src.baluffo_config import get_sync_defaults
 from src.python_version_guard import ensure_required_python
+from src.ship.update_manager import ShipPaths, refresh_runtime_bootstrap
 
 DEFAULT_BUNDLE_VERSION = APP_VERSION
 
@@ -445,6 +446,12 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     _copy_app_version(version_dir)
+    if not (version_dir / "src" / "admin_bridge.py").exists():
+        raise RuntimeError(
+            "Ship bundle build failed: admin bridge missing at "
+            f"{version_dir / 'src' / 'admin_bridge.py'}"
+        )
+    refresh_runtime_bootstrap(ShipPaths.from_root(output_dir), version_dir, version_name=version)
     _copy_file(ROOT / "src" / "ship" / "update_manager.py", tooling_dir / "update_manager.py")
     _copy_file(ROOT / "src" / "ship" / "migrations.py", tooling_dir / "migrations.py")
     _copy_file(ROOT / "src" / "ship" / "runtime_launcher.py", tooling_dir / "runtime_launcher.py")

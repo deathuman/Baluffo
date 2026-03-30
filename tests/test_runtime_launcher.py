@@ -1,4 +1,5 @@
 import json
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -143,3 +144,55 @@ def test_run_site_server_reports_app_version() -> None:
         payload = json.loads(print_mock.call_args.args[0])
         assert payload["appVersion"] == APP_VERSION
         assert payload["currentVersion"] == "2.4.6"
+
+
+def test_heal_active_ship_version_restores_missing_admin_bridge_from_repo() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_ship_root(root, version="9.9.9")
+        bridge = root / "app" / "versions" / "9.9.9" / "src" / "admin_bridge.py"
+        bridge.unlink()
+        assert not bridge.exists()
+        layout = rl.resolve_runtime_layout(root)
+        with mock.patch.object(sys, "frozen", False, create=True):
+            rl.heal_active_ship_version(layout)
+        assert bridge.is_file()
+
+
+def test_heal_active_ship_version_restores_from_meipass_when_frozen() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        v = "9.8.7"
+        _write(root / "app" / "current.txt", f"{v}\n")
+        _write(
+            root / "app" / "update-state.json",
+            json.dumps(
+                {
+                    "current_version": v,
+                    "previous_version": "",
+                    "last_update_status": "ready",
+                    "last_error_code": "",
+                    "updated_at": "2026-03-09T00:00:00+00:00",
+                }
+            ),
+        )
+        vdir = root / "app" / "versions" / v
+        (vdir / "src").mkdir(parents=True, exist_ok=True)
+        _write(vdir / "index.html", "<html></html>\n")
+        _write(vdir / "jobs.html", "<html></html>\n")
+        _write(vdir / "saved.html", "<html></html>\n")
+        meipass_parent = Path(tmp) / "internal"
+        embed = meipass_parent / "baluffo_embed"
+        (embed / "src").mkdir(parents=True, exist_ok=True)
+        _write(embed / "src" / "admin_bridge.py", "print('embedded')\n")
+        _write(embed / "index.html", "<html></html>\n")
+        _write(embed / "jobs.html", "<html></html>\n")
+        _write(embed / "saved.html", "<html></html>\n")
+        (root / "data").mkdir(parents=True, exist_ok=True)
+        layout = rl.resolve_runtime_layout(root)
+        with (
+            mock.patch.object(sys, "frozen", True, create=True),
+            mock.patch.object(sys, "_MEIPASS", str(meipass_parent), create=True),
+        ):
+            rl.heal_active_ship_version(layout)
+        assert (vdir / "src" / "admin_bridge.py").is_file()

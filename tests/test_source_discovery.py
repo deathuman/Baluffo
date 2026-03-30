@@ -2012,6 +2012,26 @@ def test_run_discovery_writes_phase_progress_before_probe() -> None:
             sd.STUDIO_SEEDS = prev_seeds
 
 
+def test_discovery_report_write_path_prefers_baluffo_data_dir(monkeypatch, tmp_path: Path) -> None:
+    data_dir = tmp_path / "desktop-data"
+    data_dir.mkdir()
+    monkeypatch.setenv("BALUFFO_DATA_DIR", str(data_dir))
+    assert (
+        discovery_orchestrator._discovery_report_write_path()
+        == data_dir / "source-discovery-report.json"
+    )
+
+
+def test_discovery_report_write_path_prefers_bridge_spawn_env(monkeypatch, tmp_path: Path) -> None:
+    """Bridge sets BALUFFO_DISCOVERY_REPORT_PATH so the worker updates the seeded file exactly."""
+    explicit = tmp_path / "source-discovery-report.json"
+    wrong_dir = tmp_path / "other-data"
+    wrong_dir.mkdir()
+    monkeypatch.setenv("BALUFFO_DISCOVERY_REPORT_PATH", str(explicit))
+    monkeypatch.setenv("BALUFFO_DATA_DIR", str(wrong_dir))
+    assert discovery_orchestrator._discovery_report_write_path() == explicit.resolve()
+
+
 def test_parse_args_supports_manual_gamesmap_mode() -> None:
     prev_argv = list(sys.argv)
     try:

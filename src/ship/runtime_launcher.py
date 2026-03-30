@@ -8,6 +8,7 @@ import contextlib
 import json
 import os
 import runpy
+import shutil
 import socket
 import sys
 import time
@@ -107,8 +108,8 @@ def resolve_runtime_layout(
 ) -> RuntimeLayout:
     bundle_root = resolve_root(root)
     paths = update_manager.ShipPaths.from_root(bundle_root)
-    state = update_manager.ensure_state(paths)
-    current_version = str(state.get("current_version") or "").strip()
+    update_manager.ensure_state(paths)
+    current_version = paths.current.read_text(encoding="utf-8").strip()
     if not current_version:
         raise RuntimeError("Current version pointer is empty.")
     active_root = paths.versions / current_version
@@ -121,6 +122,63 @@ def resolve_runtime_layout(
         active_root=active_root,
         data_dir=resolved_data_dir,
     )
+
+
+def _try_heal_required_files_from_repo(layout: RuntimeLayout) -> int:
+    """Dev checkout: fill missing ``REQUIRED_VERSION_FILES`` from the repo beside ``src/ship``."""
+    if getattr(sys, "frozen", False):
+        return 0
+    repo = Path(__file__).resolve().parents[2]
+    copied = 0
+    for rel in update_manager.REQUIRED_VERSION_FILES:
+        dest = layout.active_root / rel
+        if dest.exists():
+            continue
+        if rel.startswith("src/"):
+            src = repo / rel
+        else:
+            src = repo / Path(rel).name
+        if not src.is_file():
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        copied += 1
+    return copied
+
+
+def _try_heal_required_files_from_meipass(layout: RuntimeLayout) -> int:
+    """Frozen exe: copy missing required files from PyInstaller ``baluffo_embed`` payload."""
+    if not getattr(sys, "frozen", False):
+        return 0
+    meipass = getattr(sys, "_MEIPASS", None)
+    if not meipass:
+        return 0
+    base = Path(meipass) / "baluffo_embed"
+    if not base.is_dir():
+        return 0
+    copied = 0
+    for rel in update_manager.REQUIRED_VERSION_FILES:
+        dest = layout.active_root / rel
+        if dest.exists():
+            continue
+        name = Path(rel).name
+        src = (base / "src" / name) if rel.startswith("src/") else (base / name)
+        if not src.is_file():
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        copied += 1
+    return copied
+
+
+def heal_active_ship_version(layout: RuntimeLayout) -> None:
+    """Best-effort restore of missing critical files before health checks or static serving."""
+    paths = update_manager.ShipPaths.from_root(layout.root)
+    update_manager.repair_version_from_runtime_bootstrap(
+        paths, layout.active_root, layout.current_version
+    )
+    _try_heal_required_files_from_repo(layout)
+    _try_heal_required_files_from_meipass(layout)
 
 
 def find_free_port() -> int:
@@ -203,6 +261,7 @@ def run_site_server(
     root: str | Path | None = None, *, port: int = int(DESKTOP_DEFAULTS["site_port"])
 ) -> None:
     layout = resolve_runtime_layout(root)
+    heal_active_ship_version(layout)
     print(
         json.dumps(
             {
@@ -238,6 +297,7 @@ def run_bridge_server(
     desktop_mode: bool = False,
 ) -> None:
     layout = resolve_runtime_layout(root, data_dir=data_dir)
+    heal_active_ship_version(layout)
     update_manager.startup_check(layout.root, layout.data_dir)
     bridge_script = layout.active_root / "src" / "admin_bridge.py"
     if not bridge_script.exists():

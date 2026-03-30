@@ -72,6 +72,32 @@ def test_write_json_atomic_retries_transient_permission_error() -> None:
         assert calls["count"] == 2
 
 
+def test_ensure_state_resyncs_current_version_from_current_txt() -> None:
+    """Stale update-state.json must not point startup at the wrong versions/* folder."""
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="1.0.0")
+        _write(
+            root / "app" / "update-state.json",
+            json.dumps(
+                {
+                    "current_version": "9.9.9",
+                    "previous_version": "",
+                    "last_update_status": "ready",
+                    "last_error_code": "",
+                    "updated_at": um.iso_now(),
+                }
+            ),
+        )
+        paths = um.ShipPaths.from_root(root)
+        state = um.ensure_state(paths)
+        assert state["current_version"] == "1.0.0"
+        reparsed = json.loads((root / "app" / "update-state.json").read_text(encoding="utf-8"))
+        assert reparsed["current_version"] == "1.0.0"
+        result = um.startup_check(root, root / "data")
+        assert result["ok"]
+
+
 def test_startup_check_rejects_data_dir_inside_versions() -> None:
     with workspace_tmpdir("ship-update") as tmp:
         root = Path(tmp) / "ship"
@@ -80,6 +106,135 @@ def test_startup_check_rejects_data_dir_inside_versions() -> None:
         bad_data_dir.mkdir(parents=True, exist_ok=True)
         with pytest.raises(ValueError):
             um.startup_check(root, bad_data_dir)
+
+
+def _seed_full_version(root: Path, version: str) -> None:
+    base = root / "app" / "versions" / version
+    (base / "src").mkdir(parents=True, exist_ok=True)
+    _write(base / "src" / "admin_bridge.py", f"print('{version}')\n")
+    _write(base / "index.html", "<html></html>\n")
+    _write(base / "jobs.html", "<html></html>\n")
+    _write(base / "saved.html", "<html></html>\n")
+
+
+def test_startup_check_auto_selects_healthy_version_when_current_broken() -> None:
+    """If current.txt points at an incomplete tree, use another healthy app/versions/* folder."""
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="0.9.0")
+        vbroken = root / "app" / "versions" / "2.0.0"
+        (vbroken / "src").mkdir(parents=True, exist_ok=True)
+        _write(vbroken / "index.html", "<html></html>\n")
+        _write(vbroken / "jobs.html", "<html></html>\n")
+        _write(vbroken / "saved.html", "<html></html>\n")
+        _write(root / "app" / "current.txt", "2.0.0\n")
+        _write(
+            root / "app" / "update-state.json",
+            json.dumps(
+                {
+                    "current_version": "2.0.0",
+                    "previous_version": "",
+                    "last_update_status": "ready",
+                    "last_error_code": "",
+                    "updated_at": um.iso_now(),
+                }
+            ),
+        )
+        result = um.startup_check(root, root / "data")
+        assert result["ok"] is True
+        assert result["current_version"] == "0.9.0"
+        assert result.get("repaired_pointer") is True
+        assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "0.9.0"
+
+
+def test_startup_check_prefers_highest_healthy_semver_when_current_broken() -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="0.9.0")
+        _seed_full_version(root, "1.1.0")
+        vbroken = root / "app" / "versions" / "3.0.0"
+        (vbroken / "src").mkdir(parents=True, exist_ok=True)
+        _write(vbroken / "index.html", "<html></html>\n")
+        _write(vbroken / "jobs.html", "<html></html>\n")
+        _write(vbroken / "saved.html", "<html></html>\n")
+        _write(root / "app" / "current.txt", "3.0.0\n")
+        _write(
+            root / "app" / "update-state.json",
+            json.dumps(
+                {
+                    "current_version": "3.0.0",
+                    "previous_version": "",
+                    "last_update_status": "ready",
+                    "last_error_code": "",
+                    "updated_at": um.iso_now(),
+                }
+            ),
+        )
+        result = um.startup_check(root, root / "data")
+        assert result["ok"] is True
+        assert result["current_version"] == "1.1.0"
+
+
+def test_startup_check_skips_unhealthy_previous_and_scans_versions() -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="0.8.0")
+        _write(root / "app" / "current.txt", "9.0.0\n")
+        vbroken_prev = root / "app" / "versions" / "8.0.0"
+        (vbroken_prev / "src").mkdir(parents=True, exist_ok=True)
+        _write(vbroken_prev / "index.html", "<html></html>\n")
+        _write(vbroken_prev / "jobs.html", "<html></html>\n")
+        _write(vbroken_prev / "saved.html", "<html></html>\n")
+        vbroken_cur = root / "app" / "versions" / "9.0.0"
+        (vbroken_cur / "src").mkdir(parents=True, exist_ok=True)
+        _write(vbroken_cur / "index.html", "<html></html>\n")
+        _write(vbroken_cur / "jobs.html", "<html></html>\n")
+        _write(vbroken_cur / "saved.html", "<html></html>\n")
+        _write(
+            root / "app" / "update-state.json",
+            json.dumps(
+                {
+                    "current_version": "9.0.0",
+                    "previous_version": "8.0.0",
+                    "last_update_status": "ready",
+                    "last_error_code": "",
+                    "updated_at": um.iso_now(),
+                }
+            ),
+        )
+        result = um.startup_check(root, root / "data")
+        assert result["ok"] is True
+        assert result["current_version"] == "0.8.0"
+        assert result.get("repaired_pointer") is True
+
+
+def test_bootstrap_repair_is_noop_when_canonical_tag_mismatches_active_version() -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="1.0.0")
+        paths = um.ShipPaths.from_root(root)
+        um.refresh_runtime_bootstrap(
+            paths, root / "app" / "versions" / "1.0.0", version_name="1.0.0"
+        )
+        broken = root / "app" / "versions" / "2.0.0"
+        (broken / "src").mkdir(parents=True, exist_ok=True)
+        assert um.repair_version_from_runtime_bootstrap(paths, broken, "2.0.0") == 0
+
+
+def test_startup_check_repairs_current_from_runtime_bootstrap() -> None:
+    """Missing files under the active version are restored from ``app/runtime-bootstrap``."""
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="1.0.0")
+        paths = um.ShipPaths.from_root(root)
+        canon = root / "app" / "versions" / "1.0.0"
+        um.refresh_runtime_bootstrap(paths, canon, version_name="1.0.0")
+        (canon / "src" / "admin_bridge.py").unlink()
+        assert not (canon / "src" / "admin_bridge.py").exists()
+        result = um.startup_check(root, root / "data")
+        assert result["ok"] is True
+        assert int(result.get("bootstrap_repair") or 0) >= 1
+        assert (canon / "src" / "admin_bridge.py").exists()
 
 
 def test_apply_update_success_switches_current_version_and_keeps_data() -> None:
@@ -104,6 +259,7 @@ def test_apply_update_success_switches_current_version_and_keeps_data() -> None:
         result = um.apply_update(root, bundle, manifest_path, key)
         assert result["ok"]
         assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "1.1.0"
+        assert (root / "app" / "runtime-bootstrap" / "src" / "admin_bridge.py").is_file()
         assert (
             json.loads((root / "data" / "user-settings.json").read_text(encoding="utf-8"))["theme"]
             == "dark"

@@ -422,6 +422,28 @@ export function createAdminDiscoveryController({
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  /** Avoid dropping live progress when report.startedAt lags discoveryLaunchAtMs (slow POST, skew, etc.). */
+  function shouldApplyDiscoveryLiveProgressGate(report) {
+    const runId = String(report?.runId || "").trim();
+    const optimisticRunId = String(state.discoveryOptimisticRun?.runId || "").trim();
+    if (optimisticRunId && runId && runId === optimisticRunId) {
+      return true;
+    }
+    const startedMs = parseReportTimestampMs(report?.startedAt);
+    return startedMs >= (state.discoveryLaunchAtMs - 60000);
+  }
+
+  /** Same idea for completion: match runId or allow modest clock skew vs launch anchor. */
+  function shouldApplyDiscoveryFinishedGate(report) {
+    const runId = String(report?.runId || "").trim();
+    const optimisticRunId = String(state.discoveryOptimisticRun?.runId || "").trim();
+    if (optimisticRunId && runId && runId === optimisticRunId) {
+      return true;
+    }
+    const finishedMs = parseReportTimestampMs(report?.finishedAt);
+    return finishedMs >= (state.discoveryLaunchAtMs - 60000);
+  }
+
   function startDiscoveryCompletionWatch() {
     stopDiscoveryCompletionWatch();
     setBusyFlag("discoveryWatch", true);
@@ -500,8 +522,7 @@ export function createAdminDiscoveryController({
 
     // Always update progress during polling for real-time updates
     if (report) {
-      const startedMs = parseReportTimestampMs(report?.startedAt);
-      if (startedMs >= (state.discoveryLaunchAtMs - 1000)) {
+      if (shouldApplyDiscoveryLiveProgressGate(report)) {
         runProgressAppend(report, now);
       }
 
@@ -511,7 +532,7 @@ export function createAdminDiscoveryController({
     }
 
     const finishedMs = parseReportTimestampMs(report?.finishedAt);
-    if (finishedMs >= (state.discoveryLaunchAtMs - 1000)) {
+    if (finishedMs > 0 && shouldApplyDiscoveryFinishedGate(report)) {
       const summary = report?.summary || {};
       const queuedCount = deriveDiscoveryQueuedCount(report);
       const deferredCount = Number(summary.discoverableButDeferredCount ?? 0);

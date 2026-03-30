@@ -95,6 +95,7 @@ export function createAdminAuthController({
             report
             && !String(report.finishedAt || "").trim()
             && Boolean(report?.taskProgress?.active)
+            && (String(report.runId || "").trim() || String(report.startedAt || "").trim())
           );
           if (active && typeof attachToActiveDiscoveryRun === "function") {
             attachToActiveDiscoveryRun({
@@ -139,6 +140,10 @@ export function createAdminAuthController({
         discoveryReport
         && !String(discoveryReport.finishedAt || "").trim()
         && Boolean(discoveryReport?.taskProgress?.active)
+        && (
+          String(discoveryReport.runId || "").trim()
+          || String(discoveryReport.startedAt || "").trim()
+        )
       );
       if (discoveryActive && typeof restartDiscoveryCompletionWatch === "function") {
         restartDiscoveryCompletionWatch({

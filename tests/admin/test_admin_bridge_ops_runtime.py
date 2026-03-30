@@ -1257,9 +1257,12 @@ def test_get_current_task_state_payload_keeps_recent_fetch_visible_during_heartb
         },
     )
 
-    payload = admin_bridge.build_bridge_api(
-        admin_bridge.RUNTIME_CONFIG
-    ).get_current_task_state_payload()
+    # Task state still points at a live PID while the report heartbeat lags; ops uses PID truth
+    # (not the old unfinished-run fallback) to keep the fetch row visible.
+    with mock.patch.object(admin_bridge, "pid_is_running", return_value=True):
+        payload = admin_bridge.build_bridge_api(
+            admin_bridge.RUNTIME_CONFIG
+        ).get_current_task_state_payload()
     tasks = payload.get("tasks") or []
     fetch_row = next(row for row in tasks if str(row.get("taskType") or "") == "fetch")
     assert payload.get("count") == 1

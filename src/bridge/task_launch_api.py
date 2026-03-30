@@ -22,6 +22,7 @@ class TaskLaunchRuntime:
 @dataclass(frozen=True)
 class TaskLaunchPaths:
     discovery_log: Path
+    discovery_report: Path
     fetcher_log: Path
     task_state: Path
     jobs_fetch_report: Path
@@ -110,6 +111,7 @@ class TaskLaunchApi:
                 )
         if task_type == "discovery":
             child_env["BALUFFO_DISCOVERY_LOG_PATH"] = str(self._paths.discovery_log)
+            child_env["BALUFFO_DISCOVERY_REPORT_PATH"] = str(self._paths.discovery_report)
         elif task_type == "fetch":
             child_env["BALUFFO_FETCHER_LOG_PATH"] = str(self._paths.fetcher_log)
         popen_kwargs: dict[str, Any] = {

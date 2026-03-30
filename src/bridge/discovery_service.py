@@ -249,6 +249,9 @@ class DiscoveryService:
             if finished_dt and finished_dt >= started_dt:
                 break
             if not self._deps.pid_is_running(pid):
+                # Worker exited without a terminal report (crash/kill); clear stale task state
+                # so ops/UI do not show discovery as running forever.
+                self._deps.clear_task_state("discovery")
                 return
             threading.Event().wait(0.8)
         try:
@@ -343,6 +346,24 @@ class DiscoveryService:
                     "failedProbeCount": 0,
                     "skippedDuplicateCount": 0,
                     "skippedLowEvidenceProbeCount": 0,
+                    "phase": "starting",
+                    "phaseKey": "starting",
+                    "phaseLabel": "Spawning discovery worker",
+                },
+                "taskProgress": {
+                    "active": True,
+                    "phaseKey": "starting",
+                    "phaseLabel": "Spawning discovery worker",
+                    "mode": "indeterminate",
+                    "ratio": 0.0,
+                    "counts": {
+                        "foundEndpoints": 0,
+                        "probedCandidates": 0,
+                        "probeTotal": 0,
+                        "queuedCandidates": 0,
+                        "deferredCandidates": 0,
+                        "failedProbes": 0,
+                    },
                 },
                 "candidates": [],
                 "failures": [],

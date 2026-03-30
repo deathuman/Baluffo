@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import binascii
 import math
+import os
 import shutil
 import struct
 import subprocess
@@ -45,6 +46,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.build_ship_bundle import DEFAULT_BUNDLE_VERSION, build_bundle
 from src.python_version_guard import ensure_required_python
+from src.ship.update_manager import REQUIRED_VERSION_FILES
 
 
 def _copy_tree_contents(src: Path, dst: Path) -> None:
@@ -361,7 +363,9 @@ def build_portable_layout(output_dir: Path, version: str) -> Path:
     return output_dir
 
 
-def run_pyinstaller(output_dir: Path, *, exe_name: str, icon_path: Path) -> Path:
+def run_pyinstaller(
+    output_dir: Path, *, exe_name: str, icon_path: Path, bundle_version: str
+) -> Path:
     pyinstaller_dist = output_dir.parent / ".pyinstaller-dist"
     pyinstaller_work = output_dir.parent / ".pyinstaller-work"
     pyinstaller_spec = output_dir.parent / ".pyinstaller-spec"
@@ -390,6 +394,13 @@ def run_pyinstaller(output_dir: Path, *, exe_name: str, icon_path: Path) -> Path
     ]
     for module_name in RUNTIME_HIDDEN_IMPORTS:
         command.extend(["--hidden-import", module_name])
+    ship_version_dir = output_dir / "ship" / "app" / "versions" / bundle_version
+    for rel in REQUIRED_VERSION_FILES:
+        src_file = (ship_version_dir / rel).resolve()
+        if not src_file.is_file():
+            raise RuntimeError(f"Portable build cannot embed missing ship file: {src_file}")
+        data_dest = "baluffo_embed/src" if rel.startswith("src/") else "baluffo_embed"
+        command.extend(["--add-data", f"{src_file}{os.pathsep}{data_dest}"])
     # Ship desktop app is a package; PyInstaller needs a real script entrypoint.
     command.append(str(ROOT / "src" / "ship" / "desktop_app" / "__main__.py"))
     subprocess.run(command, check=True, cwd=str(ROOT))
@@ -430,7 +441,9 @@ def main() -> int:
     portable_root = build_portable_layout(output_dir, version)
     exe_name = str(args.exe_name).strip() or DEFAULT_EXE_NAME
     icon_path = resolve_icon_path(portable_root, exe_name=exe_name, icon_arg=str(args.icon or ""))
-    exe_path = run_pyinstaller(portable_root, exe_name=exe_name, icon_path=icon_path)
+    exe_path = run_pyinstaller(
+        portable_root, exe_name=exe_name, icon_path=icon_path, bundle_version=version
+    )
     print(f"Portable executable ready: {exe_path}")
     print(f"Ship bundle root: {portable_root / 'ship'}")
     print(f"Executable icon: {icon_path}")

@@ -238,6 +238,7 @@ def _get_task_launch_api() -> _task_launch_api.TaskLaunchApi:
         ),
         paths=_task_launch_api.TaskLaunchPaths(
             discovery_log=DISCOVERY_LOG_PATH,
+            discovery_report=DISCOVERY_REPORT_PATH,
             fetcher_log=FETCHER_LOG_PATH,
             task_state=TASK_STATE_PATH,
             jobs_fetch_report=JOBS_FETCH_REPORT_PATH,

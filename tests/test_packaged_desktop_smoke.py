@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from unittest import mock
 
@@ -7,6 +8,35 @@ import pytest
 from src import packaged_desktop_smoke as smoke
 from src.ship.startup_profile import summarize_startup_metrics
 from tests.helpers.temp_paths import workspace_tmpdir
+
+
+def test_local_address_matches_listen_port() -> None:
+    assert smoke._local_address_matches_listen_port("127.0.0.1:8080", 8080) is True
+    assert smoke._local_address_matches_listen_port("127.0.0.1:8080", 8081) is False
+    assert smoke._local_address_matches_listen_port("[::1]:9090", 9090) is True
+
+
+def test_pids_listening_on_tcp_port_windows_parses_netstat() -> None:
+    sample = (
+        "\n"
+        "Proto  Local Address          Foreign Address        State           PID\n"
+        "TCP    127.0.0.1:50001        0.0.0.0:0              LISTENING       4242\n"
+        "TCP    127.0.0.1:50002        0.0.0.0:0              LISTENING       4243\n"
+        "TCP    192.168.1.1:50001      0.0.0.0:0              LISTENING       9999\n"
+        "TCP    127.0.0.1:50003        10.0.0.1:443           ESTABLISHED     1111\n"
+    )
+    fake_completed = mock.Mock(stdout=sample, returncode=0)
+    with mock.patch.object(smoke.os, "name", "nt"):
+        with mock.patch.object(smoke.subprocess, "run", return_value=fake_completed) as run_mock:
+            assert smoke.pids_listening_on_tcp_port_windows(50001) == {4242, 9999}
+            assert smoke.pids_listening_on_tcp_port_windows(50002) == {4243}
+            assert smoke.pids_listening_on_tcp_port_windows(50003) == set()
+    assert run_mock.call_count == 3
+
+
+def test_pids_listening_on_tcp_port_non_windows_returns_empty() -> None:
+    with mock.patch.object(smoke.os, "name", "posix"):
+        assert smoke.pids_listening_on_tcp_port_windows(9999) == set()
 
 
 def test_read_startup_metrics_file_reads_jsonl_rows() -> None:
@@ -301,6 +331,21 @@ def test_ensure_portable_exe_uses_rebuild_output_dir_when_requested() -> None:
             )
         assert resolved == rebuilt_exe.resolve()
         build_mock.assert_called_once_with(rebuilt_dir)
+
+
+def test_ensure_portable_exe_rebuilds_default_dist_when_exe_older_than_sources() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        fake_default = Path(tmp) / "dist" / "baluffo-portable" / "Baluffo.exe"
+        fake_default.parent.mkdir(parents=True, exist_ok=True)
+        fake_default.write_text("old", encoding="utf-8")
+        old = 1_000_000.0
+        os.utime(fake_default, (old, old))
+        with (
+            mock.patch.object(smoke, "DEFAULT_EXE_PATH", fake_default),
+            mock.patch.object(smoke, "run_portable_build", return_value=fake_default) as build_mock,
+        ):
+            smoke.ensure_portable_exe(fake_default, rebuild=False)
+        build_mock.assert_called_once_with(None)
 
 
 def test_parse_packaged_node_smoke_report_reads_scenarios() -> None:

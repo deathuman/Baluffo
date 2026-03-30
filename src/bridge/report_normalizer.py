@@ -54,7 +54,9 @@ def coerce_fetch_report_detail_row(detail: Any) -> dict[str, Any] | None:
     }
 
 
-def _normalize_task_progress(payload: Any) -> dict[str, Any]:
+def _normalize_task_progress(
+    payload: Any, *, default_active_when_missing: bool = False
+) -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
     mode = str(src.get("mode") or "").strip().lower()
     if mode not in {"determinate", "indeterminate"}:
@@ -77,8 +79,12 @@ def _normalize_task_progress(payload: Any) -> dict[str, Any]:
         ratio = float(src.get("ratio"))
     except (TypeError, ValueError):
         ratio = 0.0
+    if "active" in src:
+        active = bool(src.get("active"))
+    else:
+        active = bool(default_active_when_missing)
     return {
-        "active": bool(src.get("active")),
+        "active": active,
         "phaseKey": str(src.get("phaseKey") or "").strip(),
         "phaseLabel": str(src.get("phaseLabel") or "").strip(),
         "mode": mode,
@@ -180,6 +186,56 @@ def _derive_discovery_task_progress(src: dict[str, Any], summary: dict[str, Any]
             "failedProbes": failed,
         },
     }
+
+
+def _idle_discovery_task_progress(*, queued: int = 0) -> dict[str, Any]:
+    """Inactive task progress used for ship seed / empty reports (no run identity on disk)."""
+    q = max(0, int(queued))
+    return {
+        "active": False,
+        "phaseKey": "",
+        "phaseLabel": "",
+        "mode": "indeterminate",
+        "ratio": 0.0,
+        "counts": {
+            "foundEndpoints": 0,
+            "probedCandidates": 0,
+            "probeTotal": 0,
+            "queuedCandidates": q,
+            "deferredCandidates": 0,
+            "failedProbes": 0,
+        },
+    }
+
+
+def _discovery_summary_has_progress_signal(summary: dict[str, Any]) -> bool:
+    """True when summary carries non-placeholder discovery state (counters, phase, nested objects)."""
+    if not isinstance(summary, dict) or not summary:
+        return False
+    for _key, value in summary.items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            if value:
+                return True
+            continue
+        if isinstance(value, (int, float)):
+            if int(value) != 0:
+                return True
+            continue
+        if isinstance(value, str):
+            if str(value).strip():
+                return True
+            continue
+        if isinstance(value, dict):
+            if value and _discovery_summary_has_progress_signal(value):
+                return True
+            continue
+        if isinstance(value, list):
+            if value:
+                return True
+            continue
+    return False
 
 
 def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
@@ -409,7 +465,10 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
             },
         },
         "summary": dict(summary),
-        "taskProgress": _normalize_task_progress(src.get("taskProgress")),
+        "taskProgress": _normalize_task_progress(
+            src.get("taskProgress"),
+            default_active_when_missing=not bool(str(src.get("finishedAt") or "").strip()),
+        ),
         "sources": normalized_sources,
         "outputs": dict(src.get("outputs") or {}),
     }
@@ -526,7 +585,10 @@ def normalize_discovery_report_contract(payload: dict[str, Any]) -> dict[str, An
                 if isinstance(row, dict)
             ],
         },
-        "taskProgress": _normalize_task_progress(src.get("taskProgress")),
+        "taskProgress": _normalize_task_progress(
+            src.get("taskProgress"),
+            default_active_when_missing=not bool(str(src.get("finishedAt") or "").strip()),
+        ),
         "candidates": list(candidates) if isinstance(candidates, list) else [],
         "failures": list(failures) if isinstance(failures, list) else [],
         "topFailures": list(top_failures) if isinstance(top_failures, list) else [],
@@ -535,7 +597,23 @@ def normalize_discovery_report_contract(payload: dict[str, Any]) -> dict[str, An
     normalized["summary"]["queuedCandidateCount"] = derive_discovery_queued_count(
         normalized, normalized["summary"]
     )
-    if not normalized["taskProgress"].get("phaseKey"):
+    # Packaged ship seed is {"summary":{}, "candidates":[], "failures":[]} with no run
+    # identity. Without this guard, missing finishedAt makes taskProgress look "active" and
+    # the admin UI attaches a completion watch (locks discovery controls forever).
+    ship_seed_placeholder = (
+        not normalized["runId"]
+        and not normalized["startedAt"]
+        and not normalized["finishedAt"]
+        and not normalized["candidates"]
+        and not normalized["failures"]
+        and not normalized["topFailures"]
+        and not _discovery_summary_has_progress_signal(normalized["summary"])
+    )
+    if ship_seed_placeholder:
+        normalized["taskProgress"] = _idle_discovery_task_progress(
+            queued=int(normalized["summary"].get("queuedCandidateCount") or 0),
+        )
+    elif not normalized["taskProgress"].get("phaseKey"):
         normalized["taskProgress"] = _derive_discovery_task_progress(
             normalized, normalized["summary"]
         )

@@ -271,17 +271,10 @@ class OpsApi:
             self._deps.load_json_object(self._paths.jobs_fetch_report, {})
         )
         fetch_snapshot = projection.child_tasks.get("fetch")
-        fetch_active = bool(
-            fetch_snapshot
-            and (
-                fetch_snapshot.active
-                or (
-                    fetch_snapshot.run_id
-                    and not fetch_snapshot.finished_at
-                    and not fetch_snapshot.explicit_dead
-                )
-            )
-        )
+        # Rely on ChildTaskSnapshot.active (PID + heartbeat + report freshness). A broad fallback
+        # that treated any unfinished run as active left the admin UI stuck in "running" after
+        # crashed/orphaned tasks until explicit_dead aged out (especially visible in packaged mode).
+        fetch_active = bool(fetch_snapshot and fetch_snapshot.active)
         if (
             fetch_state
             and fetch_snapshot
@@ -335,17 +328,7 @@ class OpsApi:
             self._deps.load_json_object(self._paths.discovery_report, {})
         )
         discovery_snapshot = projection.child_tasks.get("discovery")
-        discovery_active = bool(
-            discovery_snapshot
-            and (
-                discovery_snapshot.active
-                or (
-                    discovery_snapshot.run_id
-                    and not discovery_snapshot.finished_at
-                    and not discovery_snapshot.explicit_dead
-                )
-            )
-        )
+        discovery_active = bool(discovery_snapshot and discovery_snapshot.active)
         if (
             discovery_state
             and discovery_snapshot

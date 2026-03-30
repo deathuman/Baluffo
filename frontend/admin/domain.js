@@ -559,10 +559,19 @@ export function deriveFetcherTaskProgress(report, { running = false } = {}) {
 }
 
 export function deriveDiscoveryTaskProgress(report, { running = false, phaseHint = "" } = {}) {
-  const normalized = normalizeTaskProgressContract(report?.taskProgress);
+  const rawTaskProgress = report?.taskProgress;
+  let normalized = normalizeTaskProgressContract(rawTaskProgress);
+  const finished = Boolean(String(report?.finishedAt || "").trim());
+  if (normalized && !finished) {
+    const rawObj = rawTaskProgress && typeof rawTaskProgress === "object" && !Array.isArray(rawTaskProgress)
+      ? rawTaskProgress
+      : null;
+    if (rawObj && !Object.prototype.hasOwnProperty.call(rawObj, "active")) {
+      normalized = { ...normalized, active: true };
+    }
+  }
   const nextPhaseHint = String(phaseHint || "").trim();
   if (normalized) {
-    const finished = Boolean(String(report?.finishedAt || "").trim());
     const phaseKey = String(normalized.phaseKey || "").trim();
     const phaseLabel = String(normalized.phaseLabel || "").trim();
     const shouldUsePhaseHint = !finished && normalized.active && nextPhaseHint && (

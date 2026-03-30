@@ -1150,6 +1150,112 @@ test("admin discovery controller emits summary-first live progress and updates p
   }
 });
 
+test("admin discovery controller applies live progress when runId matches despite startedAt skew", async () => {
+  const logs = [];
+  const previousSetTimeout = global.setTimeout;
+  const previousClearTimeout = global.clearTimeout;
+  const previousDateNow = Date.now;
+  const scheduled = [];
+  global.setTimeout = callback => {
+    scheduled.push(callback);
+    return scheduled.length;
+  };
+  global.clearTimeout = () => {};
+  Date.now = () => Date.parse("2026-03-08T10:10:00.500Z");
+
+  try {
+    const barEl = createElement({ style: {} });
+    const state = {
+      adminPin: "1234",
+      discoveryLogRemoteOffset: 0,
+      discoveryLaunchAtMs: 0,
+      discoveryCompletionPollDeadline: 0,
+      discoveryReportPollTimeoutMs: 600000,
+      discoveryReportPollIntervalMs: 5000,
+      discoveryCompletionPollTimer: null,
+      discoveryLiveProgressState: null,
+      discoveryOptimisticRun: null,
+      adminBusyState: {
+        discoveryRun: false,
+        discoveryWatch: false,
+        discoveryLoad: false,
+        discoveryWrite: false,
+        manualAdd: false,
+        manualCheck: false,
+        liveDiscoveryRunning: false
+      }
+    };
+    const refs = {
+      adminDiscoveryLogEl: createElement(),
+      adminDiscoveryProgressEl: createElement({ style: {}, classList: createClassList(["hidden"]) }),
+      adminDiscoveryProgressBarEl: barEl,
+      adminDiscoveryProgressLabelEl: createElement(),
+      adminRunDiscoveryUncappedBtnEl: createElement()
+    };
+    const controller = createAdminDiscoveryController({
+      state,
+      refs,
+      getBridge: async path => {
+        if (path === "/discovery/report") {
+          return {
+            runId: "discovery_skew_1",
+            startedAt: "2026-03-08T10:05:00.000Z",
+            finishedAt: "",
+            summary: {
+              phaseLabel: "Scanning known careers pages",
+              foundEndpointCount: 12,
+              probedCandidateCount: 5,
+              queuedCandidateCount: 3,
+              discoverableButDeferredCount: 4,
+              failedProbeCount: 1,
+              skippedDuplicateCount: 2,
+              skippedInvalidCount: 0
+            },
+            candidates: [{ adapter: "greenhouse" }],
+            failures: [{ stage: "timeout", error: "request timed out" }]
+          };
+        }
+        if (String(path).startsWith("/discovery/log?offset=")) {
+          return { text: "", nextOffset: 0 };
+        }
+        throw new Error(`unexpected path ${path}`);
+      },
+      postBridge: async () => ({
+        started: true,
+        runId: "discovery_skew_1",
+        startedAt: "2026-03-08T10:10:00.000Z"
+      }),
+      setBusyFlag(key, value) {
+        state.adminBusyState[key] = value;
+      },
+      getErrorMessage: err => String(err?.message || err || "unknown"),
+      logAdminError() {},
+      showToast() {},
+      createLogEvent(scope, message, level) {
+        return { scope, message, level, timestamp: "2026-03-08T10:10:00.000Z" };
+      },
+      appendLogRow(_container, event) {
+        logs.push(String(event.message || ""));
+      },
+      loadOpsHealthData: async () => {},
+      scheduleOpsHealthPolling() {},
+      _loadDiscoveryData: async () => {}
+    });
+
+    await controller.runDiscoveryTask();
+    await scheduled[0]();
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.ok(logs.some(line => /discovery started\. watching live progress/i.test(line)));
+    assert.ok(logs.some(line => /scanning known careers pages/i.test(line)));
+    assert.ok(logs.some(line => /endpoints 12, probed 5, queued 3/i.test(line)));
+  } finally {
+    global.setTimeout = previousSetTimeout;
+    global.clearTimeout = previousClearTimeout;
+    Date.now = previousDateNow;
+  }
+});
+
 test("admin discovery controller forwards uncapped preset payload", async () => {
   const calls = [];
   const state = {

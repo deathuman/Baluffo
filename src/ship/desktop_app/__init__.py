@@ -26,6 +26,7 @@ from typing import Any
 
 if os.name == "nt":
     import ctypes
+    import ctypes.wintypes  # noqa: F401 — PyInstaller needs explicit import; else ctypes has no wintypes
     import winreg
 
 from src.app_version import get_app_version
@@ -184,7 +185,10 @@ def build_child_command(
 
 
 def start_child_process(
-    command: Sequence[str], *, extra_env: dict[str, str] | None = None
+    command: Sequence[str],
+    *,
+    extra_env: dict[str, str] | None = None,
+    job_handle: int | None = None,
 ) -> subprocess.Popen[str]:
     popen_kwargs: dict[str, object] = {
         "stdout": subprocess.DEVNULL,
@@ -199,7 +203,10 @@ def start_child_process(
         popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) | int(
             getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         )
-    return subprocess.Popen(list(command), **popen_kwargs)
+    proc = subprocess.Popen(list(command), **popen_kwargs)
+    if job_handle and proc.pid:
+        _windows_try_assign_pid_to_job(job_handle, int(proc.pid))
+    return proc
 
 
 def terminate_process(process: subprocess.Popen[str] | None) -> None:
@@ -590,9 +597,102 @@ def _get_windows_process_start_ts(pid: int) -> float:
         ctypes.windll.kernel32.CloseHandle(handle)
 
 
-def _process_identity_matches(
-    lock_payload: dict[str, object], *, expected_exe_path: str = ""
-) -> bool:
+if os.name == "nt":
+    _IO_COUNTERS = type(
+        "_IO_COUNTERS",
+        (ctypes.Structure,),
+        {
+            "_fields_": [
+                ("ReadOperationCount", ctypes.c_uint64),
+                ("WriteOperationCount", ctypes.c_uint64),
+                ("OtherOperationCount", ctypes.c_uint64),
+                ("ReadTransferCount", ctypes.c_uint64),
+                ("WriteTransferCount", ctypes.c_uint64),
+                ("OtherTransferCount", ctypes.c_uint64),
+            ]
+        },
+    )
+    _JOBOBJECT_BASIC_LIMIT_INFORMATION = type(
+        "_JOBOBJECT_BASIC_LIMIT_INFORMATION",
+        (ctypes.Structure,),
+        {
+            "_fields_": [
+                ("PerProcessUserTimeLimit", ctypes.c_longlong),
+                ("PerJobUserTimeLimit", ctypes.c_longlong),
+                ("LimitFlags", ctypes.wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", ctypes.wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", ctypes.wintypes.DWORD),
+                ("SchedulingClass", ctypes.wintypes.DWORD),
+            ]
+        },
+    )
+    _JOBOBJECT_EXTENDED_LIMIT_INFORMATION = type(
+        "_JOBOBJECT_EXTENDED_LIMIT_INFORMATION",
+        (ctypes.Structure,),
+        {
+            "_fields_": [
+                ("BasicLimitInformation", _JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                ("IoInfo", _IO_COUNTERS),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+        },
+    )
+    _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+    _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
+    _PROCESS_SET_QUOTA = 0x0100
+
+
+def _windows_create_kill_on_close_job() -> int | None:
+    """Return a job handle that terminates all assigned processes when the handle is closed."""
+    if os.name != "nt":
+        return None
+    job = ctypes.windll.kernel32.CreateJobObjectW(None, None)
+    if not job:
+        return None
+    info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+    info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    ok = ctypes.windll.kernel32.SetInformationJobObject(
+        job,
+        _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+        ctypes.byref(info),
+        ctypes.sizeof(info),
+    )
+    if not ok:
+        ctypes.windll.kernel32.CloseHandle(job)
+        return None
+    return int(job)
+
+
+def _windows_try_assign_pid_to_job(job_handle: int, pid: int) -> None:
+    if os.name != "nt" or not job_handle or pid <= 0:
+        return
+    hproc = ctypes.windll.kernel32.OpenProcess(_PROCESS_SET_QUOTA, False, int(pid))
+    if not hproc:
+        return
+    try:
+        ctypes.windll.kernel32.AssignProcessToJobObject(job_handle, hproc)
+    finally:
+        ctypes.windll.kernel32.CloseHandle(hproc)
+
+
+def _windows_close_desktop_job(job_handle: int | None) -> None:
+    if os.name != "nt" or not job_handle:
+        return
+    ctypes.windll.kernel32.CloseHandle(ctypes.wintypes.HANDLE(job_handle))
+
+
+def _process_identity_matches(lock_payload: dict[str, object]) -> bool:
+    """True if lock/session record still refers to a live process whose image matches exePath.
+
+    Compares the running process image to the path stored in the lock (not to this process),
+    so another Baluffo build in a different folder is not mistaken for a stale lock holder.
+    """
     pid = int(lock_payload.get("pid") or 0)
     if pid <= 0 or not is_process_alive(pid):
         return False
@@ -601,11 +701,10 @@ def _process_identity_matches(
     process_path = _normalize_path_text(_get_windows_process_image_path(pid))
     if not process_path:
         return False
-    expected = _normalize_path_text(expected_exe_path or _current_exe_path())
     lock_exe = _normalize_path_text(lock_payload.get("exePath"))
-    if expected and process_path != expected:
+    if not lock_exe:
         return False
-    if lock_exe and process_path != lock_exe:
+    if process_path != lock_exe:
         return False
     lock_created_ts = _parse_metric_ts(lock_payload.get("createdAt"))
     process_created_ts = _get_windows_process_start_ts(pid)
@@ -762,7 +861,6 @@ def wait_for_baluffo_bridge(
 def validate_session_state(
     state: dict[str, object],
     *,
-    expected_exe_path: str = "",
     expected_launcher_token: str = "",
 ) -> tuple[bool, str]:
     launcher_pid = int(state.get("launcherPid") or 0)
@@ -786,7 +884,6 @@ def validate_session_state(
             "createdAt": launcher_started_at,
             "exePath": session_exe_path,
         },
-        expected_exe_path=expected_exe_path,
     ):
         return False, "launcher_identity_mismatch"
     if expected_launcher_token and launcher_token != expected_launcher_token:
@@ -799,7 +896,6 @@ def validate_session_state(
 def get_valid_session_state(
     env: dict[str, str] | None = None,
     *,
-    expected_exe_path: str = "",
     expected_launcher_token: str = "",
     clear_invalid: bool = True,
 ) -> dict[str, object]:
@@ -808,7 +904,6 @@ def get_valid_session_state(
         return {}
     ok, _reason = validate_session_state(
         state,
-        expected_exe_path=expected_exe_path,
         expected_launcher_token=expected_launcher_token,
     )
     if ok:
@@ -822,14 +917,12 @@ def wait_for_valid_session_state(
     *,
     timeout_s: float = SESSION_REUSE_WAIT_S,
     env: dict[str, str] | None = None,
-    expected_exe_path: str = "",
     expected_launcher_token: str = "",
 ) -> dict[str, object]:
     deadline = time.monotonic() + max(0.5, float(timeout_s))
     while time.monotonic() < deadline:
         state = get_valid_session_state(
             env,
-            expected_exe_path=expected_exe_path,
             expected_launcher_token=expected_launcher_token,
             clear_invalid=False,
         )
@@ -861,13 +954,12 @@ def diagnose_instance_conflict(
 ) -> dict[str, object]:
     _append_startup_trace(data_dir, "desktop_lock_contended")
     deadline = time.monotonic() + max(0.5, float(timeout_s))
-    expected_exe = _current_exe_path()
     while time.monotonic() < deadline:
         lock_path = resolve_instance_lock_path(env)
         lock_payload = _read_instance_lock_payload(lock_path)
         if not lock_payload:
             return {"action": "retry", "reason": "missing_lock"}
-        owner_active = _process_identity_matches(lock_payload, expected_exe_path=expected_exe)
+        owner_active = _process_identity_matches(lock_payload)
         lock_token = str(lock_payload.get("launcherToken") or "")
         if not owner_active:
             _reclaim_stale_instance_artifacts(env=env)
@@ -881,7 +973,6 @@ def diagnose_instance_conflict(
         if raw_state:
             session_ok, reason = validate_session_state(
                 raw_state,
-                expected_exe_path=expected_exe,
                 expected_launcher_token=lock_token,
             )
             if session_ok:
@@ -1165,6 +1256,8 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
 
     site_process: subprocess.Popen[str] | None = None
     bridge_process: subprocess.Popen[str] | None = None
+    browser_process: subprocess.Popen[str] | None = None
+    desktop_job: int | None = None
     started_mono = time.perf_counter()
     session_state_written = False
     _append_startup_trace(
@@ -1189,6 +1282,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         if bool(config.startup_probe):
             child_env["BALUFFO_STARTUP_PROBE"] = "1"
         ensure_runtime_ports(config)
+        desktop_job = _windows_create_kill_on_close_job()
         _append_startup_trace(
             config.data_dir,
             "desktop_ports_available",
@@ -1199,6 +1293,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 "site", root=config.ship_root, port=config.site_port, desktop_runtime=True
             ),
             extra_env=child_env,
+            job_handle=desktop_job,
         )
         _append_startup_trace(
             config.data_dir,
@@ -1216,6 +1311,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 desktop_runtime=True,
             ),
             extra_env=child_env,
+            job_handle=desktop_job,
         )
         _append_startup_trace(
             config.data_dir,
@@ -1258,6 +1354,10 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             if isinstance(launch_result.get("process"), subprocess.Popen)
             else None
         )
+        if desktop_job and browser_process is not None:
+            browser_pid = getattr(browser_process, "pid", None)
+            if browser_pid:
+                _windows_try_assign_pid_to_job(desktop_job, int(browser_pid))
         shell_window_shown_elapsed_ms = int((time.perf_counter() - started_mono) * 1000)
         window_shown_at_mono = launch_result.get("windowShownAtMonotonic")
         if isinstance(window_shown_at_mono, (int, float)):
@@ -1361,11 +1461,13 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         )
         raise
     finally:
+        terminate_process(bridge_process)
+        terminate_process(site_process)
+        terminate_process(browser_process)
+        _windows_close_desktop_job(desktop_job)
         release_instance_lock(instance_lock)
         if session_state_written:
             clear_session_state()
-        terminate_process(bridge_process)
-        terminate_process(site_process)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

@@ -1,3 +1,27 @@
+"""Pytest root conftest. Clear host desktop env before importing Baluffo modules.
+
+``get_storage_defaults()`` and derived constants (e.g. ``DEFAULT_SOCIAL_CONFIG_PATH``) are
+computed at import time. A leaked ``BALUFFO_DATA_DIR`` from a local EXE/smoke session would
+poison the entire test process.
+"""
+
+from __future__ import annotations
+
+import os
+
+_BALUFFO_RUNTIME_ISOLATION_KEYS = (
+    "BALUFFO_DATA_DIR",
+    "BALUFFO_DISCOVERY_REPORT_PATH",
+    "BALUFFO_DISCOVERY_LOG_PATH",
+    "BALUFFO_DISCOVERY_RUN_ID",
+    "BALUFFO_DISCOVERY_STARTED_AT",
+    "BALUFFO_DESKTOP_MODE",
+    "BALUFFO_STARTUP_PROBE",
+)
+
+for _key in _BALUFFO_RUNTIME_ISOLATION_KEYS:
+    os.environ.pop(_key, None)
+
 import json
 import shutil
 import uuid
@@ -7,6 +31,16 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CODEX_TMP_ROOT = REPO_ROOT / ".codex-tmp-tests"
+
+
+@pytest.fixture(autouse=True)
+def _clear_baluffo_runtime_env_each_test() -> None:
+    """Prevent one test (or host) from leaving desktop spawn env around for the next test."""
+    for key in _BALUFFO_RUNTIME_ISOLATION_KEYS:
+        os.environ.pop(key, None)
+    yield
+    for key in _BALUFFO_RUNTIME_ISOLATION_KEYS:
+        os.environ.pop(key, None)
 
 
 @pytest.fixture(scope="session")

@@ -37,6 +37,16 @@ DEFAULT_ARTIFACT_ROOT = ROOT / ".codex-tmp" / "packaged-desktop-smoke"
 DEFAULT_RUNTIME_TIMEOUT_S = 35.0
 DEFAULT_SMOKE_RUNNER_TIMEOUT_S = 180.0
 DEFAULT_NODE_SMOKE_SCRIPT = ROOT / "tests" / "frontend" / "packaged-desktop-smoke.mjs"
+# If any of these are newer than ``dist/.../Baluffo.exe``, the smoke gate must rebuild
+# so CI/local never runs an obsolete PyInstaller payload against current sources.
+_PORTABLE_EXE_FRESHNESS_MARKERS = (
+    ROOT / "scripts" / "build_portable_exe.py",
+    ROOT / "scripts" / "build_ship_bundle.py",
+    ROOT / "src" / "ship" / "runtime_launcher.py",
+    ROOT / "src" / "ship" / "update_manager.py",
+    ROOT / "src" / "ship" / "desktop_app" / "__init__.py",
+    ROOT / "src" / "admin_bridge.py",
+)
 STARTUP_REQUIRED_EVENTS = (
     "desktop_launch_start",
     "desktop_site_ready",
@@ -141,6 +151,26 @@ def choose_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as handle:
         handle.bind(("127.0.0.1", 0))
         return int(handle.getsockname()[1])
+
+
+def _default_portable_exe_stale(exe_path: Path) -> bool:
+    """True when ``dist/baluffo-portable/Baluffo.exe`` is older than ship/desktop sources."""
+    resolved = Path(exe_path).expanduser().resolve()
+    if resolved != DEFAULT_EXE_PATH.resolve():
+        return False
+    if not resolved.is_file():
+        return False
+    try:
+        exe_mtime = resolved.stat().st_mtime
+    except OSError:
+        return True
+    for marker in _PORTABLE_EXE_FRESHNESS_MARKERS:
+        try:
+            if marker.is_file() and marker.stat().st_mtime > exe_mtime:
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def run_portable_build(output_dir: Path | None = None) -> Path:
@@ -263,13 +293,18 @@ def ensure_portable_exe(
     exe_path: Path, rebuild: bool = False, rebuild_output_dir: Path | None = None
 ) -> Path:
     exe = Path(exe_path).expanduser().resolve()
-    if rebuild or not exe.exists():
-        built_exe = run_portable_build(rebuild_output_dir)
-        if rebuild_output_dir:
-            exe = Path(built_exe).expanduser().resolve()
-    if not exe.exists():
-        raise RuntimeError(f"Packaged desktop executable not found: {exe}")
-    return exe
+    stale = _default_portable_exe_stale(exe)
+    if not (rebuild or not exe.is_file() or stale):
+        return exe
+    if rebuild and rebuild_output_dir is not None:
+        build_dir = rebuild_output_dir
+    else:
+        build_dir = None
+    built_exe = run_portable_build(build_dir)
+    final = Path(built_exe).expanduser().resolve()
+    if not final.is_file():
+        raise RuntimeError(f"Packaged desktop executable not found: {final}")
+    return final
 
 
 def launch_packaged_exe(
@@ -307,6 +342,79 @@ def launch_packaged_exe(
         stderr=stderr_handle,
     )
     return process, stdout_handle, stderr_handle
+
+
+def _local_address_matches_listen_port(local_addr: str, port: int) -> bool:
+    token = str(local_addr or "").strip()
+    if not token:
+        return False
+    suffix = f":{int(port)}"
+    return token.endswith(suffix)
+
+
+def pids_listening_on_tcp_port_windows(port: int) -> set[int]:
+    """Return PIDs with a TCP LISTEN on *port* (Windows netstat). Used to reap orphan site/bridge."""
+    pids: set[int] = set()
+    if os.name != "nt":
+        return pids
+    try:
+        completed = subprocess.run(
+            ["netstat", "-ano", "-p", "tcp"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except OSError:
+        return pids
+    text = str(completed.stdout or "")
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        if str(parts[0]).upper() != "TCP":
+            continue
+        local_field = parts[1]
+        state = str(parts[3]).upper()
+        if state != "LISTENING":
+            continue
+        pid_field = parts[-1]
+        if not _local_address_matches_listen_port(local_field, port):
+            continue
+        try:
+            pid = int(pid_field)
+        except ValueError:
+            continue
+        if pid > 0:
+            pids.add(pid)
+    return pids
+
+
+def cleanup_orphaned_desktop_ports_nt(*ports: int) -> None:
+    """Kill process trees still bound to ephemeral site/bridge ports after the launcher exits.
+
+    When Baluffo.exe dies before its ``finally`` tears down children, or when the smoke runner
+    only tracks the launcher PID, site/bridge can keep listening. ``terminate_process_tree`` also
+    no-ops once ``poll()`` is set, so this port sweep is required for CI/local smoke hygiene.
+    """
+    if os.name != "nt":
+        return
+    own = int(os.getpid())
+    seen: set[int] = set()
+    for raw in ports:
+        port = int(raw)
+        if port <= 0 or port > 65535:
+            continue
+        for pid in pids_listening_on_tcp_port_windows(port):
+            if pid == own or pid in seen:
+                continue
+            seen.add(pid)
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
 
 
 def terminate_process_tree(process: subprocess.Popen[Any] | None) -> None:
@@ -502,6 +610,9 @@ def run_embedded_runtime_probe(
         }
     finally:
         terminate_process_tree(process)
+        if os.name == "nt":
+            time.sleep(0.25)
+        cleanup_orphaned_desktop_ports_nt(site_port, bridge_port)
         if stdout_handle is not None:
             stdout_handle.close()
         if stderr_handle is not None:
@@ -620,6 +731,8 @@ def run_warmup_launch(
     process = None
     stdout_handle = None
     stderr_handle = None
+    site_port = 0
+    bridge_port = 0
     try:
         site_port = choose_free_port()
         bridge_port = choose_free_port()
@@ -643,6 +756,10 @@ def run_warmup_launch(
         time.sleep(1.0)
     finally:
         terminate_process_tree(process)
+        if os.name == "nt":
+            time.sleep(0.25)
+        if site_port and bridge_port:
+            cleanup_orphaned_desktop_ports_nt(site_port, bridge_port)
         if stdout_handle is not None:
             stdout_handle.close()
         if stderr_handle is not None:
@@ -894,6 +1011,9 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             )
     finally:
         terminate_process_tree(process)
+        if os.name == "nt":
+            time.sleep(0.25)
+        cleanup_orphaned_desktop_ports_nt(site_port, bridge_port)
         if stdout_handle is not None:
             stdout_handle.close()
         if stderr_handle is not None:

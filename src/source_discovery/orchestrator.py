@@ -15,6 +15,7 @@ import asyncio
 import os
 import time
 from collections import Counter
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -80,6 +81,71 @@ from .web_search import (
     fetch_text,
     is_blocked_generic_static_url,
 )
+
+
+def _discovery_report_write_path() -> Path:
+    """Where to write the live discovery report.
+
+    Prefer ``BALUFFO_DISCOVERY_REPORT_PATH`` (set by the admin bridge when spawning the
+    worker) so we always update the same absolute path used for the pre-run seed file.
+    Fall back to ``BALUFFO_DATA_DIR`` / default filename, then ``sd.DISCOVERY_REPORT_PATH``.
+    """
+    env_path = str(os.environ.get("BALUFFO_DISCOVERY_REPORT_PATH") or "").strip()
+    if env_path:
+        return Path(env_path).expanduser().resolve()
+    raw = str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve() / "source-discovery-report.json"
+    return Path(str(sd.DISCOVERY_REPORT_PATH))
+
+
+def _prime_bridge_discovery_report(*, run_id: str, started_at: str, mode: str) -> None:
+    """Publish a minimal in-progress report before heavy setup so the admin UI updates immediately."""
+    rid = str(run_id or "").strip()
+    sat = str(started_at or "").strip()
+    if not rid or not sat:
+        return
+    summary: dict[str, Any] = {
+        "foundEndpointCount": 0,
+        "probedCandidateCount": 0,
+        "queuedCandidateCount": 0,
+        "failedProbeCount": 0,
+        "skippedDuplicateCount": 0,
+        "skippedLowEvidenceProbeCount": 0,
+        "phase": "starting",
+        "phaseKey": "starting",
+        "phaseLabel": "Initializing scan",
+    }
+    report_path = _discovery_report_write_path()
+    task_progress = build_discovery_task_progress(summary=summary, finished=False)
+    save_json_atomic(
+        report_path,
+        {
+            "schemaVersion": SCHEMA_VERSION,
+            "runId": rid,
+            "mode": str(mode or "dynamic"),
+            "startedAt": sat,
+            "finishedAt": "",
+            "summary": summary,
+            "runtime": {
+                "lifecycle": {
+                    "owner": "discovery_report",
+                    "heartbeatAt": sd.now_iso(),
+                },
+            },
+            "taskProgress": task_progress,
+            "candidates": [],
+            "failures": [],
+            "topFailures": [],
+            "outputs": {
+                "report": str(report_path),
+                "candidates": str(sd.DISCOVERY_CANDIDATES_PATH),
+                "pending": str(sd.PENDING_PATH),
+                "urlPatches": str(getattr(sd, "URL_PATCH_MANIFEST_PATH", "")),
+            },
+        },
+    )
+
 
 DISCOVERY_TIMING_STAGE_KEYS = [
     "curatedSeed",
@@ -308,6 +374,35 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _apply_discovery_cli_args_to_config(
+    discovery_config: dict[str, Any], args: argparse.Namespace
+) -> dict[str, Any]:
+    """Apply CLI flags to a discovery config dict (gamesmap/gameprog overrides)."""
+    cfg = dict(discovery_config)
+    if bool(getattr(args, "gamesmap_website_only_fallback", False)):
+        gamesmap_cfg = dict(cfg.get("gamesmap") or {})
+        gamesmap_cfg["websiteOnlyFallback"] = True
+        gamesmap_cfg["websiteOnlyManualOnly"] = True
+        cfg["gamesmap"] = gamesmap_cfg
+    if int(getattr(args, "gamesmap_max_detail_pages", 0) or 0) > 0:
+        gamesmap_cfg = dict(cfg.get("gamesmap") or {})
+        gamesmap_cfg["maxDetailPages"] = int(args.gamesmap_max_detail_pages)
+        cfg["gamesmap"] = gamesmap_cfg
+    if bool(getattr(args, "gameprog_enabled", False)):
+        gameprog_cfg = dict(cfg.get("gameprog") or {})
+        gameprog_cfg["enabled"] = True
+        cfg["gameprog"] = gameprog_cfg
+    if int(getattr(args, "gameprog_max_studios", 0) or 0) > 0:
+        gameprog_cfg = dict(cfg.get("gameprog") or {})
+        gameprog_cfg["maxStudios"] = int(args.gameprog_max_studios)
+        cfg["gameprog"] = gameprog_cfg
+    if bool(getattr(args, "gameprog_website_only_fallback", False)):
+        gameprog_cfg = dict(cfg.get("gameprog") or {})
+        gameprog_cfg["websiteOnlyFallback"] = True
+        cfg["gameprog"] = gameprog_cfg
+    return cfg
+
+
 def run_discovery(
     *,
     timeout_s: int,
@@ -319,13 +414,23 @@ def run_discovery(
     run_id: str = "",
     started_at_override: str = "",
     fetcher=fetch_text,
+    cli_args: argparse.Namespace | None = None,
 ) -> dict[str, Any]:
     started_at = str(started_at_override or sd.now_iso()).strip()
     run_id = str(run_id or "").strip()
     run_started_mono = time.perf_counter()
+    sd.emit_log(
+        f"Discovery worker run_discovery() begin runId={run_id!r} "
+        f"report_path={_discovery_report_write_path()!s}"
+    )
+    _prime_bridge_discovery_report(
+        run_id=run_id, started_at=started_at, mode=str(mode or "dynamic")
+    )
     effective_config = (
         discovery_config if isinstance(discovery_config, dict) else sd.load_discovery_config()
     )
+    if cli_args is not None:
+        effective_config = _apply_discovery_cli_args_to_config(effective_config, cli_args)
     thresholds = resolve_discovery_thresholds(effective_config)
     stage_timings_ms: dict[str, int] = {key: 0 for key in DISCOVERY_TIMING_STAGE_KEYS}
     adapter_runtime: dict[str, dict[str, int | str]] = {}
@@ -340,37 +445,6 @@ def run_discovery(
     if preset_name == "uncapped":
         queue_domain_cap = sd.UNCAPPED_DISCOVERY_DOMAIN_QUEUE_CAP
         queue_adapter_caps = sd.UNCAPPED_DISCOVERY_ADAPTER_QUEUE_CAPS
-
-    active = load_json_array(sd.ACTIVE_PATH, [])
-    pending_existing = load_json_array(sd.PENDING_PATH, [])
-    rejected = load_json_array(sd.REJECTED_PATH, [])
-    prior_review_candidates = load_json_array(sd.DISCOVERY_CANDIDATES_PATH, [])
-    prior_review_candidates_by_id = {
-        source_identity(row): dict(row) for row in prior_review_candidates if isinstance(row, dict)
-    }
-    ranking_registry_rows = [
-        *[dict(row) for row in active if isinstance(row, dict)],
-        *[dict(row) for row in pending_existing if isinstance(row, dict)],
-    ]
-
-    sd.emit_log(
-        f"Starting source discovery: mode={mode}, preset={preset_name}, top_n={top_n}, web_search={'on' if include_web_search else 'off'}."
-    )
-    sd.emit_log(
-        f"Loaded registries: active={len(active)}, pending={len(pending_existing)}, rejected={len(rejected)}."
-    )
-
-    # Pending rows are intentionally excluded here so discovery can refresh stale
-    # pending candidates with newer probe evidence and job counts.
-    existing_rows = [*active, *rejected]
-    seen_ids = {source_identity(row) for row in existing_rows if isinstance(row, dict)}
-    seen_domains = {
-        fp
-        for fp in (
-            adapter_domain_fingerprint(row) for row in existing_rows if isinstance(row, dict)
-        )
-        if fp
-    }
 
     web_failures: list[dict[str, Any]] = []
     streams: list[tuple[str, list[dict[str, Any]]]] = []
@@ -402,13 +476,8 @@ def run_discovery(
         fetcher is fetch_text
         or str(url_patch_manifest_path) != str(DEFAULT_URL_PATCH_MANIFEST_PATH)
     )
-    url_patches = load_url_patches(url_patch_manifest_path) if url_patch_manifest_enabled else {}
-    url_patch_stats = summarize_url_patch_runtime(
-        loaded=len(url_patches),
-        added=0,
-        updated=0,
-        reprobed=0,
-    )
+    url_patches: dict[str, Any] = {}
+    url_patch_stats = summarize_url_patch_runtime(loaded=0, added=0, updated=0, reprobed=0)
 
     def write_progress_report(
         current_candidates: list[dict[str, Any]], *, phase: str, phase_label: str
@@ -453,8 +522,9 @@ def run_discovery(
             phase_label=phase_label,
         )
         task_progress = build_discovery_task_progress(summary=summary, finished=False)
+        report_write_path = _discovery_report_write_path()
         save_json_atomic(
-            sd.DISCOVERY_REPORT_PATH,
+            report_write_path,
             {
                 "schemaVersion": SCHEMA_VERSION,
                 "runId": run_id,
@@ -474,7 +544,7 @@ def run_discovery(
                 "failures": failures,
                 "topFailures": [],
                 "outputs": {
-                    "report": str(sd.DISCOVERY_REPORT_PATH),
+                    "report": str(report_write_path),
                     "candidates": str(sd.DISCOVERY_CANDIDATES_PATH),
                     "pending": str(sd.PENDING_PATH),
                     "urlPatches": str(getattr(sd, "URL_PATCH_MANIFEST_PATH", "")),
@@ -487,6 +557,47 @@ def run_discovery(
     write_progress_report(
         [], phase="generating_candidates", phase_label="Generating seed candidates"
     )
+
+    active = load_json_array(sd.ACTIVE_PATH, [])
+    pending_existing = load_json_array(sd.PENDING_PATH, [])
+    rejected = load_json_array(sd.REJECTED_PATH, [])
+    prior_review_candidates = load_json_array(sd.DISCOVERY_CANDIDATES_PATH, [])
+    prior_review_candidates_by_id = {
+        source_identity(row): dict(row) for row in prior_review_candidates if isinstance(row, dict)
+    }
+    ranking_registry_rows = [
+        *[dict(row) for row in active if isinstance(row, dict)],
+        *[dict(row) for row in pending_existing if isinstance(row, dict)],
+    ]
+
+    sd.emit_log(
+        f"Starting source discovery: mode={mode}, preset={preset_name}, top_n={top_n}, web_search={'on' if include_web_search else 'off'}."
+    )
+    sd.emit_log(
+        f"Loaded registries: active={len(active)}, pending={len(pending_existing)}, rejected={len(rejected)}."
+    )
+
+    # Pending rows are intentionally excluded here so discovery can refresh stale
+    # pending candidates with newer probe evidence and job counts.
+    existing_rows = [*active, *rejected]
+    seen_ids = {source_identity(row) for row in existing_rows if isinstance(row, dict)}
+    seen_domains = {
+        fp
+        for fp in (
+            adapter_domain_fingerprint(row) for row in existing_rows if isinstance(row, dict)
+        )
+        if fp
+    }
+
+    if url_patch_manifest_enabled:
+        url_patches = load_url_patches(url_patch_manifest_path)
+        url_patch_stats = summarize_url_patch_runtime(
+            loaded=len(url_patches),
+            added=0,
+            updated=0,
+            reprobed=0,
+        )
+
     sd.emit_log("Generating curated seed candidates from static discovery inputs.")
     stage_started = time.perf_counter()
     curated_seed_candidates = stage_curated_seed_candidates()
@@ -1352,7 +1463,7 @@ def run_discovery(
         "suppressionSummary": suppression_summary,
         "sheetDirectorySummary": sheet_directory_summary,
         "outputs": {
-            "report": str(sd.DISCOVERY_REPORT_PATH),
+            "report": str(_discovery_report_write_path()),
             "candidates": str(sd.DISCOVERY_CANDIDATES_PATH),
             "pending": str(sd.PENDING_PATH),
             "urlPatches": str(getattr(sd, "URL_PATCH_MANIFEST_PATH", "")),
@@ -1379,8 +1490,9 @@ def run_discovery(
         save_json_atomic(sd.REJECTED_PATH, state["rejected"])
         sd.emit_log(f"Auto-approval applied during discovery: approved={auto_approved}.")
     DiscoveryReportSchema.model_validate(report)
-    save_json_atomic(sd.DISCOVERY_REPORT_PATH, report)
-    sd.emit_log(f"Discovery report written to {sd.DISCOVERY_REPORT_PATH}.")
+    final_report_path = _discovery_report_write_path()
+    save_json_atomic(final_report_path, report)
+    sd.emit_log(f"Discovery report written to {final_report_path}.")
     return report
 
 
@@ -1388,28 +1500,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     env_run_id = str(os.environ.get("BALUFFO_DISCOVERY_RUN_ID") or "").strip()
     env_started_at = str(os.environ.get("BALUFFO_DISCOVERY_STARTED_AT") or "").strip()
-    discovery_config = sd.load_discovery_config()
-    if bool(getattr(args, "gamesmap_website_only_fallback", False)):
-        gamesmap_cfg = dict(discovery_config.get("gamesmap") or {})
-        gamesmap_cfg["websiteOnlyFallback"] = True
-        gamesmap_cfg["websiteOnlyManualOnly"] = True
-        discovery_config["gamesmap"] = gamesmap_cfg
-    if int(getattr(args, "gamesmap_max_detail_pages", 0) or 0) > 0:
-        gamesmap_cfg = dict(discovery_config.get("gamesmap") or {})
-        gamesmap_cfg["maxDetailPages"] = int(args.gamesmap_max_detail_pages)
-        discovery_config["gamesmap"] = gamesmap_cfg
-    if bool(getattr(args, "gameprog_enabled", False)):
-        gameprog_cfg = dict(discovery_config.get("gameprog") or {})
-        gameprog_cfg["enabled"] = True
-        discovery_config["gameprog"] = gameprog_cfg
-    if int(getattr(args, "gameprog_max_studios", 0) or 0) > 0:
-        gameprog_cfg = dict(discovery_config.get("gameprog") or {})
-        gameprog_cfg["maxStudios"] = int(args.gameprog_max_studios)
-        discovery_config["gameprog"] = gameprog_cfg
-    if bool(getattr(args, "gameprog_website_only_fallback", False)):
-        gameprog_cfg = dict(discovery_config.get("gameprog") or {})
-        gameprog_cfg["websiteOnlyFallback"] = True
-        discovery_config["gameprog"] = gameprog_cfg
+    bridge_spawned = bool(env_run_id and env_started_at)
+    if bridge_spawned:
+        _prime_bridge_discovery_report(
+            run_id=env_run_id,
+            started_at=env_started_at,
+            mode=str(getattr(args, "mode", None) or "dynamic"),
+        )
+    if bridge_spawned:
+        discovery_config = None
+    else:
+        discovery_config = _apply_discovery_cli_args_to_config(sd.load_discovery_config(), args)
     report = run_discovery(
         timeout_s=int(args.timeout),
         top_n=int(args.top),
@@ -1419,6 +1520,7 @@ def main(argv: list[str] | None = None) -> int:
         discovery_config=discovery_config,
         run_id=env_run_id,
         started_at_override=env_started_at,
+        cli_args=args if bridge_spawned else None,
     )
     sd.emit_log(
         "Source discovery completed. "

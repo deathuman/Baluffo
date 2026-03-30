@@ -154,7 +154,9 @@ def ensure_state(paths: ShipPaths) -> dict[str, Any]:
     except OSError:
         state_path = fallback_state_path
         state = read_json(fallback_state_path, fallback_state)
-    state.setdefault("current_version", current_version)
+    # ``current.txt`` is the on-disk truth for which ``app/versions/<v>`` is active.
+    # ``update-state.json`` can drift (hand edits, partial deploys, interrupted updates).
+    state["current_version"] = current_version
     state.setdefault("previous_version", "")
     state.setdefault("last_update_status", "ready")
     state.setdefault("last_error_code", "")
@@ -236,10 +238,89 @@ def verify_artifact(bundle_zip: Path, manifest: dict[str, Any], signing_key: str
 
 
 def health_check_version(version_dir: Path) -> tuple[bool, str]:
+    resolved = version_dir.expanduser().resolve()
     for rel in REQUIRED_VERSION_FILES:
-        if not (version_dir / rel).exists():
-            return False, f"missing_required_file:{rel}"
+        candidate = resolved / rel
+        if not candidate.exists():
+            return False, f"missing_required_file:{rel} (expected {candidate})"
     return True, ""
+
+
+BOOTSTRAP_DIR_NAME = "runtime-bootstrap"
+_BOOTSTRAP_ROOT_HTML = ("index.html", "jobs.html", "saved.html")
+_BOOTSTRAP_VERSION_TAG = ".canonical-version"
+
+
+def refresh_runtime_bootstrap(
+    paths: ShipPaths, canonical_version_dir: Path, *, version_name: str
+) -> None:
+    """Mirror required runtime files from a healthy version dir into ``app/runtime-bootstrap``."""
+    root = paths.app / BOOTSTRAP_DIR_NAME
+    if root.exists():
+        shutil.rmtree(root)
+    canonical = canonical_version_dir.expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(root / _BOOTSTRAP_VERSION_TAG, f"{version_name.strip()}\n")
+    shutil.copytree(canonical / "src", root / "src")
+    for rel in _BOOTSTRAP_ROOT_HTML:
+        shutil.copy2(canonical / rel, root / rel)
+
+
+def repair_version_from_runtime_bootstrap(
+    paths: ShipPaths, version_dir: Path, active_version_name: str
+) -> int:
+    """Copy missing required and ``src`` files from ``app/runtime-bootstrap``. Returns files restored."""
+    root = paths.app / BOOTSTRAP_DIR_NAME
+    tag_path = root / _BOOTSTRAP_VERSION_TAG
+    if not tag_path.is_file():
+        return 0
+    if tag_path.read_text(encoding="utf-8").strip() != str(active_version_name).strip():
+        return 0
+    src_mirror = root / "src"
+    if not src_mirror.is_dir():
+        return 0
+    copied = 0
+    for rel in REQUIRED_VERSION_FILES:
+        dest = version_dir / rel
+        if dest.exists():
+            continue
+        candidate = root / rel
+        if not candidate.is_file():
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(candidate, dest)
+        copied += 1
+    for path in src_mirror.rglob("*"):
+        if not path.is_file():
+            continue
+        rel_under_src = path.relative_to(src_mirror)
+        dest = version_dir / "src" / rel_under_src
+        if dest.exists():
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, dest)
+        copied += 1
+    return copied
+
+
+def _list_healthy_version_names(paths: ShipPaths) -> list[str]:
+    names: list[str] = []
+    if not paths.versions.is_dir():
+        return names
+    for child in paths.versions.iterdir():
+        if not child.is_dir():
+            continue
+        ok, _ = health_check_version(child)
+        if ok:
+            names.append(child.name)
+    return names
+
+
+def _prefer_higher_semver(names: Iterable[str]) -> str:
+    bucket = list(names)
+    if not bucket:
+        return ""
+    return max(bucket, key=lambda v: (_parse_version(v), v))
 
 
 def create_data_backup(paths: ShipPaths) -> Path:
@@ -359,6 +440,7 @@ def apply_update(
         write_text_atomic(paths.current, f"{next_version}\n")
         state["current_version"] = next_version
         write_state(paths, state, status="ready", error="")
+        refresh_runtime_bootstrap(paths, target_dir, version_name=next_version)
         log_event(paths, "update_succeeded", {"from": current_version, "to": next_version})
     except Exception as exc:
         rollback_report = rollback_migrations(
@@ -411,22 +493,63 @@ def startup_check(root: Path, data_dir: Path) -> dict[str, Any]:
     state = ensure_state(paths)
     validate_data_dir(paths, data_dir)
 
-    current = str(state.get("current_version") or "").strip()
+    # Always follow ``app/current.txt`` for the active tree (not only JSON state).
+    current = paths.current.read_text(encoding="utf-8").strip()
+    if not current:
+        raise RuntimeError("Current pointer is empty.")
     current_dir = paths.versions / current
     ok, error = health_check_version(current_dir)
     if ok:
         return {"ok": True, "current_version": current}
 
-    previous = str(state.get("previous_version") or "").strip()
-    if previous and (paths.versions / previous).exists():
-        write_text_atomic(paths.current, f"{previous}\n")
-        state["current_version"] = previous
-        state["previous_version"] = current
-        write_state(paths, state, status="auto_rolled_back", error=error)
-        log_event(paths, "startup_auto_rollback", {"from": current, "to": previous, "error": error})
-        return {"ok": True, "current_version": previous, "rolled_back": True}
+    restored = repair_version_from_runtime_bootstrap(paths, current_dir, current)
+    if restored:
+        ok_boot, err_boot = health_check_version(current_dir)
+        if ok_boot:
+            log_event(
+                paths,
+                "startup_runtime_bootstrap_repair",
+                {"version": current, "files_restored": restored},
+            )
+            write_state(paths, state, status="ready", error="")
+            return {"ok": True, "current_version": current, "bootstrap_repair": restored}
+        error = f"{error}; after bootstrap repair: {err_boot}"
 
-    raise RuntimeError(f"Startup check failed and no valid rollback target exists: {error}")
+    previous = str(state.get("previous_version") or "").strip()
+    previous_dir = paths.versions / previous if previous else None
+    if previous_dir and previous_dir.exists():
+        prev_ok, prev_err = health_check_version(previous_dir)
+        if prev_ok:
+            write_text_atomic(paths.current, f"{previous}\n")
+            state["current_version"] = previous
+            state["previous_version"] = current
+            write_state(paths, state, status="auto_rolled_back", error=error)
+            log_event(
+                paths, "startup_auto_rollback", {"from": current, "to": previous, "error": error}
+            )
+            return {"ok": True, "current_version": previous, "rolled_back": True}
+        error = f"{error}; rollback target unhealthy: {prev_err}"
+
+    healthy = _list_healthy_version_names(paths)
+    replacement = _prefer_higher_semver(healthy)
+    if replacement:
+        write_text_atomic(paths.current, f"{replacement}\n")
+        state["current_version"] = replacement
+        state["previous_version"] = current
+        write_state(paths, state, status="auto_repaired_version", error=error)
+        log_event(
+            paths,
+            "startup_auto_select_version",
+            {"from": current, "to": replacement, "error": error},
+        )
+        return {"ok": True, "current_version": replacement, "repaired_pointer": True}
+
+    raise RuntimeError(
+        f"Startup check failed and no valid rollback target exists: {error}. "
+        f"Active version dir: {current_dir.resolve()}. "
+        "Replace the ``ship`` folder from a full portable build, or run recover-previous.ps1 "
+        "if a prior version is still under app/versions."
+    )
 
 
 def create_support_bundle(root: Path, output: Path | None = None) -> Path:
