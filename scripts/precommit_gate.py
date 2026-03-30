@@ -21,6 +21,10 @@ def _default_pre_commit_home() -> Path:
 
 
 PRE_COMMIT_HOME = _default_pre_commit_home()
+EXCLUDED_FILES = {
+    "data/jobs-fetch-report.json",
+    "data/jobs-fetch-tasks.json",
+}
 EXCLUDED_ROOT_PREFIXES = (
     ".codex-tmp-",
     ".pre-commit-home",
@@ -61,6 +65,8 @@ def _top_level_component(rel_path: str) -> str:
 
 
 def _is_excluded_root(rel_path: str, extra_roots: tuple[str, ...] = ()) -> bool:
+    if rel_path in EXCLUDED_FILES:
+        return True
     root_name = _top_level_component(rel_path)
     if any(root_name.startswith(prefix) for prefix in EXCLUDED_ROOT_PREFIXES):
         return True

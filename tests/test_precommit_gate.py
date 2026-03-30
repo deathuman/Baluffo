@@ -55,6 +55,35 @@ def test_collect_repo_files_excludes_requested_roots(tmp_path, monkeypatch) -> N
     assert precommit_gate.collect_repo_files(("data",)) == ["docs/readme.md", "src/app.py"]
 
 
+def test_collect_changed_files_excludes_generated_fetch_reports(tmp_path, monkeypatch) -> None:
+    changed = [
+        "data/jobs-fetch-report.json",
+        "data/jobs-fetch-tasks.json",
+        "docs/readme.md",
+        "src/app.py",
+    ]
+
+    def fake_git_lines(*args: str) -> list[str]:
+        query = tuple(args)
+        if query == ("diff", "--cached", "--name-only", "--diff-filter=ACMRTUXB"):
+            return changed
+        if query == ("diff", "--name-only", "--diff-filter=ACMRTUXB"):
+            return []
+        if query == ("ls-files", "--others", "--exclude-standard"):
+            return []
+        raise AssertionError(f"Unexpected git query: {query}")
+
+    monkeypatch.setattr(precommit_gate, "ROOT", tmp_path)
+    monkeypatch.setattr(precommit_gate, "_git_lines", fake_git_lines)
+
+    for rel_path in changed[2:]:
+        path = tmp_path / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x", encoding="utf-8")
+
+    assert precommit_gate.collect_changed_files() == ["docs/readme.md", "src/app.py"]
+
+
 def test_run_all_executes_single_precommit_command(monkeypatch) -> None:
     commands: list[list[str]] = []
 
