@@ -69,7 +69,10 @@ def test_parsers_keep_extraction_raw_and_dedup_accepts_typed_records() -> None:
           "url": "/jobs/env-artist",
           "hiringOrganization": {"name": "Studio B"},
           "employmentType": "Full-time",
-          "jobLocation": {"address": {"addressLocality": "Utrecht", "addressCountry": "NL"}}
+          "jobLocation": [
+            {"address": {"addressLocality": "Utrecht", "addressCountry": "NL"}},
+            {"address": {"addressLocality": "Guildford", "addressCountry": "UK"}}
+          ]
         }
         </script>
         """,
@@ -77,6 +80,11 @@ def test_parsers_keep_extraction_raw_and_dedup_accepts_typed_records() -> None:
     )
     assert len(rows) == 1
     assert "profession" not in rows[0]
+    assert rows[0]["locations"] == [
+        {"city": "Utrecht", "country": "NL"},
+        {"city": "Guildford", "country": "UK"},
+    ]
+    assert rows[0]["locationSummary"] == "Utrecht, NL | Guildford, UK"
 
     typed_rows = [
         canonicalize.canonicalize_job(
@@ -91,6 +99,11 @@ def test_parsers_keep_extraction_raw_and_dedup_accepts_typed_records() -> None:
     assert len(merged) == 1
     assert int(stats["outputCount"]) == 1
     assert isinstance(merged[0], CanonicalJob)
+    assert merged[0].locations == [
+        {"city": "Utrecht", "country": "NL"},
+        {"city": "Guildford", "country": "UK"},
+    ]
+    assert merged[0].locationSummary == "Utrecht, NL | Guildford, UK"
 
 
 def test_extracted_adapter_registry_exposes_moved_families() -> None:

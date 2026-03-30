@@ -10,6 +10,7 @@ from src.jobs.adapters.html_parsers import (
     extract_first_tag_text,
     extract_json_ld_blocks,
     iter_job_postings_from_jsonld,
+    iter_anchor_fragments,
     strip_html_text,
 )
 from src.jobs.text_utils import clean_text
@@ -35,6 +36,10 @@ _REGULAR_PAGE_TOKENS = (
     "support",
     "help",
     "faq",
+    "games",
+    "all games",
+    "product",
+    "products",
     "documentation",
     "docs",
     "api reference",
@@ -101,6 +106,79 @@ _JOB_TEXT_MARKERS = (
     "hiring",
 )
 
+_JOB_LISTING_HREF_HINTS = (
+    "jobs.ashbyhq.com",
+    "boards.greenhouse.io",
+    "jobs.lever.co",
+    "jobs.workable.com",
+    "jobs.personio.com",
+    "jobs.jobvite.com",
+    "careers.teamtailor.com",
+    "jobs.smartrecruiters.com",
+    "applytojob.com",
+    "recruiting.ultipro.com",
+    "jobs.recruitee.com",
+)
+
+_JOB_TITLE_HINT_TOKENS = (
+    "artist",
+    "designer",
+    "engineer",
+    "programmer",
+    "developer",
+    "manager",
+    "director",
+    "producer",
+    "specialist",
+    "analyst",
+    "scientist",
+    "writer",
+    "animator",
+    "coordinator",
+    "recruiter",
+    "architect",
+    "consultant",
+    "assistant",
+    "lead",
+    "principal",
+    "intern",
+    "technician",
+    "technical",
+    "qa",
+    "quality assurance",
+    "operations",
+    "marketing",
+    "community",
+    "data",
+    "security",
+    "devops",
+    "infrastructure",
+    "finance",
+    "legal",
+    "hr",
+    "talent",
+    "mobile",
+    "web",
+    "backend",
+    "frontend",
+    "full stack",
+    "fullstack",
+    "ui",
+    "ux",
+    "audio",
+    "content",
+    "training",
+    "sales",
+    "account",
+    "partnership",
+    "research",
+    "software",
+    "systems",
+    "localization",
+    "monetization",
+    "retention",
+)
+
 _NO_OPENING_MARKERS = (
     "no open positions",
     "no open roles",
@@ -135,6 +213,13 @@ def _lower(text: str) -> str:
 def _count_hits(text: str, needles: tuple[str, ...]) -> int:
     lowered = _lower(text)
     return sum(1 for needle in needles if needle and needle in lowered)
+
+
+def looks_like_job_title_candidate(text: str) -> bool:
+    lowered = _lower(text)
+    if not lowered or lowered in {"job", "jobs", "career", "careers"}:
+        return False
+    return any(token in lowered for token in _JOB_TITLE_HINT_TOKENS)
 
 
 def _has_jsonld_jobposting(html_text: str) -> bool:
@@ -183,6 +268,10 @@ def looks_like_regular_page_url(candidate_url: str) -> bool:
             "/support",
             "/help",
             "/faq",
+            "/games",
+            "/all-games",
+            "/product",
+            "/products",
             "/docs",
             "/documentation",
             "/status",
@@ -212,6 +301,10 @@ def _looks_like_regular_page(page_url: str, title_text: str, body_text: str) -> 
             "/support",
             "/help",
             "/faq",
+            "/games",
+            "/all-games",
+            "/product",
+            "/products",
             "/docs",
             "/documentation",
             "/status",
@@ -299,6 +392,24 @@ def _has_positive_job_evidence(
     return False
 
 
+def _has_job_listing_anchor_evidence(html_text: str) -> bool:
+    """True when a page contains multiple obvious job anchors from a known ATS."""
+    hits = 0
+    for anchor in iter_anchor_fragments(html_text or ""):
+        href = _lower(anchor.get("href"))
+        text = _lower(anchor.get("text"))
+        if not href or not text:
+            continue
+        if not any(token in href for token in _JOB_LISTING_HREF_HINTS):
+            continue
+        if not looks_like_job_title_candidate(text):
+            continue
+        hits += 1
+        if hits >= 2:
+            return True
+    return False
+
+
 def classify_job_page(
     html_text: str,
     page_url: str,
@@ -316,6 +427,9 @@ def classify_job_page(
         return True, "jobposting_jsonld"
     if any(marker in _lower(html_text) for marker in _NO_OPENING_MARKERS):
         return False, "no_openings"
+
+    if _has_job_listing_anchor_evidence(html_text):
+        return True, "job_listing_anchors"
 
     if _looks_like_regular_page(page_url, title_text, body_text):
         if _has_positive_job_evidence(

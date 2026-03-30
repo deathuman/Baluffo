@@ -42,9 +42,9 @@ def google_sheet_candidate_urls(sheet_id: str, gid: str) -> list[str]:
     )
     pub_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv"
     return [
-        csv_url,
         gviz_csv_url,
         pub_csv_url,
+        csv_url,
         f"https://api.allorigins.win/raw?url={quote(csv_url, safe='')}",
         f"https://api.allorigins.win/raw?url={quote(gviz_csv_url, safe='')}",
     ]

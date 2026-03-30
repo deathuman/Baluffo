@@ -61,7 +61,7 @@ def serialize_rows_for_csv(rows: Sequence[RawJob], fields: Sequence[str]) -> str
         payload: dict[str, Any] = {}
         for field in fields:
             value = row.get(field, "")
-            if field == "sourceBundle" and isinstance(value, list):
+            if isinstance(value, (list, dict)):
                 value = json.dumps(value, ensure_ascii=False)
             payload[field] = value
         writer.writerow(payload)

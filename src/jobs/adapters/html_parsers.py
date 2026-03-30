@@ -135,20 +135,62 @@ def iter_job_postings_from_jsonld(value: Any) -> Iterable[dict[str, Any]]:
         yield from iter_job_postings_from_jsonld(child)
 
 
-def parse_jobposting_locations(job_location: Any) -> tuple[str, str]:
-    location = job_location
-    if isinstance(location, list) and location:
-        location = location[0]
+def _extract_jobposting_location_entry(location: Any) -> dict[str, str] | None:
     if not isinstance(location, dict):
-        return "", "Unknown"
+        return None
 
     address = location.get("address")
-    if not isinstance(address, dict):
-        return "", "Unknown"
+    source = address if isinstance(address, dict) else location
+    city = clean_text(source.get("addressLocality"))
+    country = clean_text(source.get("addressCountry"))
+    if not city and not country:
+        return None
+    return {"city": city, "country": country}
 
-    city = clean_text(address.get("addressLocality"))
-    country = clean_text(address.get("addressCountry")) or "Unknown"
-    return city, country
+
+def parse_jobposting_location_details(job_location: Any) -> dict[str, Any]:
+    entries = job_location if isinstance(job_location, list) else [job_location]
+    locations: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for entry in entries:
+        normalized = _extract_jobposting_location_entry(entry)
+        if not normalized:
+            continue
+        token = f"{normalized['city']}|{normalized['country']}"
+        if token in seen:
+            continue
+        seen.add(token)
+        locations.append(normalized)
+
+    if not locations:
+        return {
+            "city": "",
+            "country": "Unknown",
+            "locations": [],
+            "locationSummary": "",
+        }
+
+    primary_location = next(
+        (item for item in locations if item.get("city") or item.get("country")),
+        locations[0],
+    )
+    city = primary_location.get("city", "")
+    country = primary_location.get("country", "") or "Unknown"
+    location_summary = " | ".join(
+        ", ".join(part for part in [item.get("city", ""), item.get("country", "")] if part)
+        for item in locations
+    )
+    return {
+        "city": city,
+        "country": country,
+        "locations": locations,
+        "locationSummary": location_summary,
+    }
+
+
+def parse_jobposting_locations(job_location: Any) -> tuple[str, str]:
+    details = parse_jobposting_location_details(job_location)
+    return clean_text(details.get("city")), clean_text(details.get("country")) or "Unknown"
 
 
 def parse_jobposting_company(hiring_org: Any, fallback_company: str = "") -> str:
@@ -204,7 +246,7 @@ def parse_jobpostings_from_html(
             company = parse_jobposting_company(
                 row.get("hiringOrganization"), fallback_company=fallback_company
             )
-            city, country = parse_jobposting_locations(row.get("jobLocation"))
+            location_details = parse_jobposting_location_details(row.get("jobLocation"))
             source_id = parse_jobposting_source_id(
                 row.get("identifier"),
                 fallback=f"{fallback_source_id_prefix}-{counter}"
@@ -217,8 +259,10 @@ def parse_jobpostings_from_html(
                     "sourceJobId": source_id,
                     "title": title,
                     "company": company,
-                    "city": city,
-                    "country": country,
+                    "city": location_details["city"],
+                    "country": location_details["country"],
+                    "locations": location_details["locations"],
+                    "locationSummary": location_details["locationSummary"],
                     "workType": clean_text(row.get("jobLocationType") or ""),
                     "contractType": clean_text(row.get("employmentType") or ""),
                     "jobLink": job_link,
@@ -339,16 +383,7 @@ def parse_gamesindustry_html(
                 else {}
             )
             company = clean_text(org.get("name"))
-            location = row.get("jobLocation")
-            if isinstance(location, list) and location:
-                location = location[0]
-            address = (
-                location.get("address")
-                if isinstance(location, dict) and isinstance(location.get("address"), dict)
-                else {}
-            )
-            city = clean_text(address.get("addressLocality"))
-            country = clean_text(address.get("addressCountry"))
+            location_details = parse_jobposting_location_details(row.get("jobLocation"))
             link = clean_text(row.get("url"))
             if link:
                 link = urljoin(base_url, link)
@@ -360,8 +395,10 @@ def parse_gamesindustry_html(
                     "sourceJobId": clean_text(identifier.get("value")),
                     "title": title,
                     "company": company,
-                    "city": city,
-                    "country": country,
+                    "city": location_details["city"],
+                    "country": location_details["country"],
+                    "locations": location_details["locations"],
+                    "locationSummary": location_details["locationSummary"],
                     "workType": clean_text(row.get("jobLocationType") or ""),
                     "contractType": clean_text(row.get("employmentType") or ""),
                     "jobLink": link,
@@ -397,6 +434,8 @@ def parse_gamesindustry_html(
                 "company": company or "Unknown",
                 "city": city,
                 "country": "Unknown",
+                "locations": [{"city": clean_text(city), "country": "Unknown"}] if city else [],
+                "locationSummary": clean_text(city),
                 "workType": "",
                 "contractType": "",
                 "jobLink": urljoin(base_url, href),
@@ -424,6 +463,8 @@ def parse_gamesindustry_html(
                 "company": "Unknown",
                 "city": "",
                 "country": "Unknown",
+                "locations": [],
+                "locationSummary": "",
                 "workType": "",
                 "contractType": "",
                 "jobLink": urljoin(base_url, href),

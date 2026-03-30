@@ -19,8 +19,8 @@ import {
   classifyCompanyType,
   mapProfession,
   isInternshipJob,
-  isValidCountry,
-  isSemanticallyValidLocationValue,
+  getJobLocationCities,
+  getJobLocationCountries,
   normalizeJobs,
   getJobKeyForJob,
   toJobSnapshot
@@ -1231,9 +1231,11 @@ function applyFiltersAndRender({ resetPage }) {
     const matchesWorkType = !state.filters.workType || job.workType === state.filters.workType;
     const lifecycleStatus = String(job.status || "active").toLowerCase() || "active";
     const matchesLifecycle = !state.filters.lifecycleStatus || lifecycleStatus === state.filters.lifecycleStatus;
+    const locationCities = getJobLocationCities(job);
+    const locationCountries = getJobLocationCountries(job);
     const matchesCountry = state.filters.countries.length === 0
-      || matchesCountrySelection(job.country, state.filters.countries);
-    const matchesCity = !state.filters.city || job.city === state.filters.city;
+      || locationCountries.some(country => matchesCountrySelection(country, state.filters.countries));
+    const matchesCity = !state.filters.city || locationCities.includes(state.filters.city);
     const matchesSector = !state.filters.sector || job.sector === state.filters.sector;
     const matchesProfession = !state.filters.profession || job.profession === state.filters.profession;
     const jobKey = getJobKeyForJobWithService(job);
@@ -1244,7 +1246,10 @@ function applyFiltersAndRender({ resetPage }) {
       job.title.toLowerCase().includes(searchTerm) ||
       job.company.toLowerCase().includes(searchTerm) ||
       (job.city || "").toLowerCase().includes(searchTerm) ||
-      (job.sector || "").toLowerCase().includes(searchTerm);
+      (job.sector || "").toLowerCase().includes(searchTerm) ||
+      (job.locationSummary || "").toLowerCase().includes(searchTerm) ||
+      locationCities.some(value => value.toLowerCase().includes(searchTerm)) ||
+      locationCountries.some(value => value.toLowerCase().includes(searchTerm));
 
     return matchesWorkType
       && matchesLifecycle
@@ -1538,9 +1543,13 @@ function updateFilterOptions() {
   const sectors = new Set();
 
   allJobs.forEach(job => {
-    if (isValidCountry(job.country)) countries.add(job.country);
+    getJobLocationCountries(job).forEach(country => {
+      if (isValidCountry(country)) countries.add(country);
+    });
     if (job.profession) professions.add(job.profession);
-    if (job.city && isCleanFilterOptionValue(job.city)) cities.add(job.city);
+    getJobLocationCities(job).forEach(city => {
+      if (city && isCleanFilterOptionValue(city)) cities.add(city);
+    });
     if (job.sector) sectors.add(job.sector);
   });
 

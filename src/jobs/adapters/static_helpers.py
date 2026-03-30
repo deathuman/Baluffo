@@ -23,6 +23,7 @@ from src.jobs.common.taxonomy import (
 from src.jobs.models import RawJob
 from src.jobs.page_gating import (
     classify_job_page,
+    looks_like_job_title_candidate,
     looks_like_regular_navigation_text,
     looks_like_regular_page_url,
 )
@@ -513,7 +514,11 @@ def process_detail_link(
             title = strip_html_text(re.sub(r"[-_]+", " ", slug))
             if parsed_title and parsed_title.lower() not in ignored_link_titles:
                 title = parsed_title
-            if title and not re.fullmatch(r"\d+", title):
+            if (
+                title
+                and not re.fullmatch(r"\d+", title)
+                and looks_like_job_title_candidate(title)
+            ):
                 rows.append(
                     {
                         "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
@@ -530,6 +535,9 @@ def process_detail_link(
                         "studio": clean_text(source.get("studio")) or company or source_name,
                     }
                 )
+            else:
+                rejected_classification = "dead_listing_page"
+                rejected_example = f"{detail} | {title}" if title else detail
     return {
         "rows": rows,
         "parseEmpty": parse_empty,

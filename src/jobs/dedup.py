@@ -128,6 +128,40 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
             bundle.append(normalized_item)
     merged["sourceBundle"] = bundle
     merged["sourceBundleCount"] = len(bundle)
+
+    location_entries: list[dict[str, Any]] = []
+    location_seen = set()
+    for row in [existing.to_dict(), candidate.to_dict(), merged]:
+        entries = row.get("locations")
+        if not isinstance(entries, list):
+            continue
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            normalized_item = {
+                "city": clean_text(item.get("city")),
+                "country": clean_text(item.get("country")),
+            }
+            key = "|".join(
+                [
+                    norm_text(normalized_item.get("city")),
+                    norm_text(normalized_item.get("country")),
+                ]
+            )
+            if key in location_seen:
+                continue
+            location_seen.add(key)
+            location_entries.append(normalized_item)
+    if location_entries:
+        merged["locations"] = location_entries
+        merged["locationSummary"] = " | ".join(
+            ", ".join(
+                part for part in [clean_text(item.get("city")), clean_text(item.get("country"))] if part
+            )
+            for item in location_entries
+            if clean_text(item.get("city")) or clean_text(item.get("country"))
+        )
+
     merged["qualityScore"] = compute_quality_score(merged)
     merged["focusScore"] = compute_focus_score(merged)
     return CanonicalJob.from_mapping(merged)

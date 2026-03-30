@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Any, TypedDict
@@ -86,12 +87,20 @@ class CanonicalJob:
     focusScore: int = 0
     sourceBundleCount: int = 0
     sourceBundle: list[dict[str, Any]] = field(default_factory=list)
+    locations: list[dict[str, Any]] = field(default_factory=list)
+    locationSummary: str = ""
     adapter: str = ""
     studio: str = ""
 
     @classmethod
     def from_mapping(cls, payload: RawJobLike) -> CanonicalJob:
         data = dict(payload)
+        locations_raw = data.get("locations") or []
+        if isinstance(locations_raw, str):
+            try:
+                locations_raw = json.loads(locations_raw)
+            except json.JSONDecodeError:
+                locations_raw = []
         return cls(
             id=data.get("id", ""),
             title=str(data.get("title") or ""),
@@ -120,6 +129,8 @@ class CanonicalJob:
             sourceBundle=[
                 dict(item) for item in data.get("sourceBundle") or [] if isinstance(item, Mapping)
             ],
+            locations=[dict(item) for item in locations_raw if isinstance(item, Mapping)],
+            locationSummary=str(data.get("locationSummary") or ""),
             adapter=str(data.get("adapter") or ""),
             studio=str(data.get("studio") or ""),
         )

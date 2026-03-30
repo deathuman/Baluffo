@@ -86,7 +86,7 @@ export function renderJobRow(job, options = {}) {
   const safeTitle = escapeHtml(job.title);
   const safeCompany = escapeHtml(job.company);
   const safeSector = escapeHtml(job.sector || "Unknown");
-  const safeCity = escapeHtml(job.city || "");
+  const safeCity = escapeHtml(job.locationSummary || job.city || "");
   const safeCountry = escapeHtml(fullCountryName(job.country));
   const safeJobLink = sanitizeUrl(job.jobLink);
   const jobKey = getJobKeyForJob(job);
@@ -124,7 +124,7 @@ export function renderJobRow(job, options = {}) {
       <span class="job-sector">${safeSector}</span>
     </div>
     <div class="col-city job-cell" data-label="City">
-      <span class="job-location">${safeCity}</span>
+      <span class="job-location" title="${safeCity}">${safeCity}</span>
     </div>
     <div class="col-country job-cell" data-label="Country">
       <span class="job-location">${safeCountry}</span>

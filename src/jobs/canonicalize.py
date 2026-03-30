@@ -225,6 +225,46 @@ def canonicalize_job_with_reason(
             normalized_entries.append(normalized_item)
         return normalized_entries
 
+    def normalize_locations(value: Any) -> list[dict[str, str]]:
+        entries = value
+        if isinstance(entries, str):
+            try:
+                entries = json.loads(entries)
+            except json.JSONDecodeError:
+                entries = []
+        if not isinstance(entries, list):
+            entries = []
+        normalized_entries: list[dict[str, str]] = []
+        seen = set()
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            city_value, city_reason = sanitize_location_text(
+                item.get("city") or item.get("addressLocality"),
+                field_name="city",
+            )
+            country_value, country_reason = sanitize_location_text(
+                item.get("country") or item.get("addressCountry"),
+                field_name="country",
+            )
+            if not city_value and not country_value:
+                continue
+            normalized_city = city_value
+            normalized_country = ""
+            if country_value and not country_reason:
+                normalized_country = normalize_country(country_value)
+            key = "|".join([norm_text(normalized_city), norm_text(normalized_country)])
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized_entries.append(
+                {
+                    "city": normalized_city,
+                    "country": normalized_country,
+                }
+            )
+        return normalized_entries
+
     source_bundle = normalize_source_bundle(raw.get("sourceBundle"))
     if not source_bundle:
         source_bundle = [
@@ -254,6 +294,11 @@ def canonicalize_job_with_reason(
         title=title,
         job_link=normalized_link,
     )
+    normalized_locations = normalize_locations(raw.get("locations"))
+    primary_location = next(
+        (item for item in normalized_locations if item.get("city") or item.get("country")),
+        {},
+    )
     if (
         env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL)
         and raw_link
@@ -263,6 +308,18 @@ def canonicalize_job_with_reason(
 
     city_value, city_reason = sanitize_location_text(raw.get("city"), field_name="city")
     country_value, country_reason = sanitize_location_text(raw.get("country"), field_name="country")
+    if not city_value and primary_location.get("city"):
+        city_value = primary_location["city"]
+    if (not country_value or country_reason) and primary_location.get("country"):
+        country_value = primary_location["country"]
+        country_reason = ""
+    if not normalized_locations and (city_value or country_value):
+        normalized_locations = [
+            {
+                "city": city_value,
+                "country": "" if country_reason else normalize_country(country_value),
+            }
+        ]
     if city_reason:
         _record_location_quality_issue(
             field_name="city",
@@ -285,6 +342,11 @@ def canonicalize_job_with_reason(
         )
 
     sanitized_contract_type = sanitize_public_text(raw.get("contractType"))
+    location_summary = " | ".join(
+        ", ".join(part for part in [item.get("city", ""), item.get("country", "")] if part)
+        for item in normalized_locations
+        if item.get("city", "") or item.get("country", "")
+    )
 
     normalized = CanonicalJob.from_mapping(
         {
@@ -315,6 +377,8 @@ def canonicalize_job_with_reason(
             "focusScore": 0,
             "sourceBundleCount": len(source_bundle),
             "sourceBundle": source_bundle,
+            "locations": normalized_locations,
+            "locationSummary": location_summary,
             "adapter": adapter,
             "studio": studio,
         }

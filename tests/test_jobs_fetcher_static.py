@@ -3,7 +3,7 @@ from collections import Counter
 
 from scrapy.http import HtmlResponse, Request
 
-from src.jobs.adapters.plugins.static import ats_wrappers, rendered_cards
+from src.jobs.adapters.plugins.static import ats_wrappers, rendered_cards, sheet_studios
 from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_helpers import process_detail_link
@@ -152,6 +152,34 @@ def test_static_detail_fallback_rejects_regular_pages_without_synthesizing_rows(
     assert result["rows"] == []
     assert str(result.get("rejectedClassification") or "") == "dead_listing_page"
     assert "https://example.com/jobs/about" in str(result.get("rejectedExample") or "")
+
+
+def test_static_detail_fallback_rejects_generic_synthesized_titles() -> None:
+    empty_html = "<html><body></body></html>"
+
+    def fake_fetch(
+        url: str, _remaining_budget_s: float | None = None, **kwargs: object
+    ) -> tuple[str, bool]:
+        assert url == "https://www.tetherstudios.com/job/tech"
+        return empty_html, False
+
+    result = process_detail_link(
+        detail="https://www.tetherstudios.com/job/tech",
+        detail_title="Tech",
+        source_started=0.0,
+        static_source_time_budget_s=10,
+        fetch_html_cached=fake_fetch,
+        timeout_s=5,
+        detail_retries=0,
+        company="Tether Studios",
+        source_name="Tether Studios",
+        source={"studio": "Tether Studios"},
+        ignored_link_titles=set(),
+    )
+
+    assert result["rows"] == []
+    assert str(result.get("rejectedClassification") or "") == "dead_listing_page"
+    assert "https://www.tetherstudios.com/job/tech" in str(result.get("rejectedExample") or "")
 
 
 def test_static_source_rejects_regular_pages_as_dead_listing_pages() -> None:
@@ -2611,6 +2639,88 @@ def test_run_static_studio_pages_source_sheet_studios_uses_rendered_card_fallbac
     assert str(detail.get("failureBucket") or "") != "js_required"
 
 
+def test_sheet_studios_enriches_generic_category_rows_from_jobposting_details() -> None:
+    listing_html = """
+        <html>
+          <body>
+            <div class="job-category tech">
+              <a href="https://www.tetherstudios.com/job/tech"></a>
+              <div class="hiring">
+                <h1>Tech</h1>
+                <h2>1 Open Position</h2>
+              </div>
+            </div>
+            <div class="job-category art">
+              <a href="https://www.tetherstudios.com/job/art"></a>
+              <div class="hiring">
+                <h1>Art</h1>
+                <h2>1 Open Position</h2>
+              </div>
+            </div>
+          </body>
+        </html>
+        """
+    detail_htmls = {
+        "https://www.tetherstudios.com/careers": listing_html,
+        "https://www.tetherstudios.com/job/tech": """
+            <html><head><title>Software Engineers</title></head>
+            <body>
+              <script type="application/ld+json">
+              {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "Software Engineers",
+                "description": "Engineering role",
+                "hiringOrganization": {"name": "Tether Studios"},
+                "url": "https://www.tetherstudios.com/job/tech"
+              }
+              </script>
+            </body></html>
+        """,
+        "https://www.tetherstudios.com/job/art": """
+            <html><head><title>UI Artist</title></head>
+            <body>
+              <script type="application/ld+json">
+              {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "UI Artist",
+                "description": "Art role",
+                "hiringOrganization": {"name": "Tether Studios"},
+                "url": "https://www.tetherstudios.com/job/art"
+              }
+              </script>
+            </body></html>
+        """,
+    }
+
+    def fake_fetch(url: str, timeout_s: int) -> str:
+        assert timeout_s == 5
+        return detail_htmls[url]
+
+    rows = sheet_studios.run(
+        fetch_text=fake_fetch,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0.0,
+        pages=["https://www.tetherstudios.com/careers"],
+        source_row={
+            "name": "Tether Studios (Sheet)",
+            "studio": "Tether Studios",
+            "company": "Tether Studios",
+            "id": "static:listing_url:https://www.tetherstudios.com/careers",
+        },
+        parse_jobpostings_from_html=jf.parse_jobpostings_from_html,
+    )
+
+    assert len(rows) == 2
+    assert {row["title"] for row in rows} == {"Software Engineers", "UI Artist"}
+    assert {row["jobLink"] for row in rows} == {
+        "https://www.tetherstudios.com/job/tech",
+        "https://www.tetherstudios.com/job/art",
+    }
+
+
 def test_run_static_studio_pages_source_amber_jobvite_listing_only() -> None:
     html = """
         <a href="/amberstudiocareers/job/oSIbufwZ">
@@ -2717,6 +2827,161 @@ def test_extract_rendered_card_jobs_handles_table_row_manual_website_cards() -> 
         "https://example.com/jobs/technical-artist",
     }
     assert {row["country"] for row in rows} == {"Unknown"}
+
+
+def test_extract_rendered_card_jobs_rejects_generic_site_pages_with_allow_any_anchor() -> (
+    None
+):
+    html = """
+        <html>
+          <body>
+            <article class="card">
+              <h3>Yatzy Royale A Classic Puzzle with No Dice</h3>
+              <a href="/games/yatzy-royale">Learn More</a>
+            </article>
+            <article class="card">
+              <h3>Tech</h3>
+              <a href="/job/tech">Learn More</a>
+            </article>
+            <article class="card">
+              <h3>Art</h3>
+              <a href="/job/art">Read More</a>
+            </article>
+            <article class="card">
+              <h3>About Tether Studios</h3>
+              <a href="/about">Learn More</a>
+            </article>
+            <article class="card">
+              <h3>Search FAQ</h3>
+              <a href="/support">View Details</a>
+            </article>
+            <article class="card">
+              <h3>Privacy Policy</h3>
+              <a href="/privacy">Read More</a>
+            </article>
+            <article class="card">
+              <h3>Games</h3>
+              <a href="/all-games">Details</a>
+            </article>
+            <article class="job-card">
+              <h3>Business Development Manager</h3>
+              <div>Helsinki Metropolitan Area</div>
+              <div>Permanent</div>
+              <a href="/careers/business-development-manager">Apply Now</a>
+            </article>
+          </body>
+        </html>
+        """
+
+    rows = extract_rendered_card_jobs(
+        html,
+        page_url="https://www.tetherstudios.com/careers",
+        company="Tether Studios",
+        source_id="tether_mixed_pages",
+        allow_any_anchor=True,
+    )
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Business Development Manager"
+    assert rows[0]["jobLink"] == "https://www.tetherstudios.com/careers/business-development-manager"
+
+
+def test_extract_rendered_card_jobs_keeps_tether_category_openings() -> None:
+    html = """
+        <html>
+          <body>
+            <div class="job-category tech">
+              <a href="https://www.tetherstudios.com/job/tech"></a>
+              <div class="hiring">
+                <h1>Tech</h1>
+                <h2>1 Open Position</h2>
+              </div>
+            </div>
+            <div class="job-category art">
+              <a href="https://www.tetherstudios.com/job/art"></a>
+              <div class="hiring">
+                <h1>Art</h1>
+                <h2>1 Open Position</h2>
+              </div>
+            </div>
+          </body>
+        </html>
+        """
+
+    rows = extract_rendered_card_jobs(
+        html,
+        page_url="https://www.tetherstudios.com/careers",
+        company="Tether Studios",
+        source_id="tether_category_openings",
+        allow_any_anchor=True,
+    )
+    assert len(rows) == 2
+    assert {row["title"] for row in rows} == {"Tech", "Art"}
+    assert {row["jobLink"] for row in rows} == {
+        "https://www.tetherstudios.com/job/tech",
+        "https://www.tetherstudios.com/job/art",
+    }
+
+
+def test_classify_job_page_rejects_tether_style_regular_pages_as_dead_listing_pages() -> (
+    None
+):
+    for url in (
+        "https://www.tetherstudios.com/about",
+        "https://www.tetherstudios.com/support",
+        "https://www.tetherstudios.com/privacy",
+        "https://www.tetherstudios.com/all-games",
+        "https://www.tetherstudios.com/games/yatzy-royale",
+    ):
+        job_like, reason = classify_job_page("", url)
+        assert not job_like
+        assert reason == "dead_listing_page"
+
+
+def test_stellar_join_us_page_with_ashby_job_anchors_is_not_dead_listed() -> None:
+    html = """
+        <html>
+          <body>
+            <article class="careers-listing">
+              <a href="https://jobs.ashbyhq.com/stellarentertainment/8615ea53-9992-489f-b2cd-38ede3434679" target="_blank" class="join_row Engineering United Kingdom">
+                <div class="d-table-cell vacancy ps-1 pe-3 pe-md-0">Principal Rendering Engineer</div>
+                <div class="d-table-cell vacancy">Engineering</div>
+                <div class="d-table-cell vacancy text-end pe-1">Guildford, UK | Remote, UK</div>
+                <div class="d-table-cell d-none">United Kingdom</div>
+              </a>
+              <a href="https://jobs.ashbyhq.com/stellarentertainment/393927f5-29cd-492c-b091-7a5eaeab7284" target="_blank" class="join_row Art United Kingdom">
+                <div class="d-table-cell vacancy ps-1 pe-3 pe-md-0">Lighting Artist</div>
+                <div class="d-table-cell vacancy">Art</div>
+                <div class="d-table-cell vacancy text-end pe-1">Guildford, UK | Remote, UK</div>
+                <div class="d-table-cell d-none">United Kingdom</div>
+              </a>
+              <div class="sorry ps-1">Sorry no jobs match your search...</div>
+            </article>
+          </body>
+        </html>
+        """
+
+    job_like, reason = classify_job_page(
+        html,
+        "https://stellarentertainment.software/join-us/",
+        page_title="Join us - Stellar Entertainment",
+    )
+    assert job_like
+    assert reason in {"job_listing_anchors", "job_markers"}
+
+    rows = extract_rendered_card_jobs(
+        html,
+        page_url="https://stellarentertainment.software/join-us/",
+        company="Stellar Entertainment",
+        source_id="stellar_test",
+        allow_any_anchor=True,
+    )
+    assert len(rows) == 2
+    assert any(row["title"].startswith("Principal Rendering Engineer") for row in rows)
+    assert any(row["title"].startswith("Lighting Artist") for row in rows)
+    assert {row["jobLink"] for row in rows} == {
+        "https://jobs.ashbyhq.com/stellarentertainment/8615ea53-9992-489f-b2cd-38ede3434679",
+        "https://jobs.ashbyhq.com/stellarentertainment/393927f5-29cd-492c-b091-7a5eaeab7284",
+    }
 
 
 def test_run_static_studio_pages_source_uses_rendered_card_fallback_for_manual_table_pages() -> (

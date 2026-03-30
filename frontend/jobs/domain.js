@@ -294,6 +294,83 @@ export function sanitizeLocationField(value, field = "city") {
   return isSemanticallyValidLocationValue(text, field) ? text : "";
 }
 
+function normalizeLocationEntry(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const city = sanitizeLocationField(entry.city || entry.addressLocality || "", "city");
+  const country = sanitizeLocationField(entry.country || entry.addressCountry || "", "country");
+  if (!city && !country) return null;
+  return { city, country };
+}
+
+export function normalizeJobLocations(value, fallbackCity = "", fallbackCountry = "") {
+  const entries = Array.isArray(value) ? value : [];
+  const normalized = [];
+  const seen = new Set();
+  for (const item of entries) {
+    const normalizedEntry = normalizeLocationEntry(item);
+    if (!normalizedEntry) continue;
+    const key = `${normalizedEntry.city}|${normalizedEntry.country}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(normalizedEntry);
+  }
+  if (normalized.length === 0) {
+    const city = sanitizeLocationField(fallbackCity || "", "city");
+    const country = sanitizeLocationField(fallbackCountry || "", "country");
+    if (city || country) normalized.push({ city, country });
+  }
+  return normalized;
+}
+
+export function getJobLocationCities(job) {
+  const locations = Array.isArray(job?.locations) ? job.locations : [];
+  const cities = [];
+  const seen = new Set();
+  for (const location of locations) {
+    const city = sanitizeLocationField(location?.city || "", "city");
+    if (!city || seen.has(city)) continue;
+    seen.add(city);
+    cities.push(city);
+  }
+  if (cities.length === 0) {
+    const fallbackCity = sanitizeLocationField(job?.city || "", "city");
+    if (fallbackCity) cities.push(fallbackCity);
+  }
+  return cities;
+}
+
+export function getJobLocationCountries(job) {
+  const locations = Array.isArray(job?.locations) ? job.locations : [];
+  const countries = [];
+  const seen = new Set();
+  for (const location of locations) {
+    const country = sanitizeLocationField(location?.country || "", "country");
+    if (!country || seen.has(country)) continue;
+    seen.add(country);
+    countries.push(country);
+  }
+  if (countries.length === 0) {
+    const fallbackCountry = sanitizeLocationField(job?.country || "", "country");
+    if (fallbackCountry) countries.push(fallbackCountry);
+  }
+  return countries;
+}
+
+export function buildJobLocationSummary(job) {
+  const locations = Array.isArray(job?.locations) ? job.locations : [];
+  const locationLabels = locations
+    .map(location => {
+      const city = sanitizeLocationField(location?.city || "", "city");
+      const country = sanitizeLocationField(location?.country || "", "country");
+      return [city, country].filter(Boolean).join(", ");
+    })
+    .filter(Boolean);
+  if (locationLabels.length > 0) return locationLabels.join(" | ");
+  const city = sanitizeLocationField(job?.city || "", "city");
+  const country = sanitizeLocationField(job?.country || "", "country");
+  return [city, country].filter(Boolean).join(", ");
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function parseTimestampMs(value) {
@@ -359,9 +436,13 @@ export function normalizeJobs(rows, options = {}) {
     job.id = job.id || (1000 + idx);
     job.title = sanitizePublicText(job.title || "");
     job.company = sanitizePublicText(job.company || "");
-    job.city = sanitizeLocationField(job.city || "", "city");
     const rawCountry = sanitizePublicText(job.country || "");
-    const sanitizedCountry = sanitizeLocationField(rawCountry, "country");
+    job.locations = normalizeJobLocations(job.locations, job.city || "", rawCountry);
+    job.locationSummary = sanitizePublicText(job.locationSummary || buildJobLocationSummary(job));
+    const primaryLocation = job.locations.find(location => location?.city || location?.country) || job.locations[0] || {};
+    job.city = sanitizeLocationField(job.city || primaryLocation.city || "", "city");
+    const locationCountry = primaryLocation.country || rawCountry;
+    const sanitizedCountry = sanitizeLocationField(locationCountry, "country");
     job.country = sanitizedCountry || (rawCountry ? "" : "Unknown");
     job.workType = detectWorkType(job.workType || "");
     job.contractType = detectContractType(job.contractType || "", job.title || "");
@@ -447,6 +528,8 @@ export function toJobSnapshot(job, options = {}) {
     companyType: job?.companyType || companyType,
     city: job?.city || "",
     country: job?.country || "",
+    locations: Array.isArray(job?.locations) ? job.locations : [],
+    locationSummary: job?.locationSummary || buildJobLocationSummary(job),
     workType: job?.workType || "Onsite",
     contractType: job?.contractType || "Unknown",
     jobLink: sanitizeUrl(job?.jobLink || "")

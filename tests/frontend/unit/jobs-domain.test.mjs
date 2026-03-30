@@ -11,6 +11,8 @@ import {
   sanitizeLocationField,
   isSemanticallyValidLocationValue,
   isValidCountry,
+  getJobLocationCities,
+  getJobLocationCountries,
   getJobKeyForJob,
   deriveFreshness,
   mapFreshnessAgeToScore
@@ -41,6 +43,30 @@ test("jobs domain classifies company and normalizes jobs", () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].workType, "Remote");
   assert.equal(rows[0].companyType, "Game");
+});
+
+test("jobs domain preserves multiple locations for filtering and display", () => {
+  const rows = normalizeJobs([
+    {
+      title: "Systems & Tools Engineer",
+      company: "Stellar Entertainment",
+      city: "",
+      country: "Unknown",
+      locations: [
+        { city: "Guildford", country: "UK" },
+        { city: "Utrecht", country: "NL" }
+      ]
+    }
+  ], {
+    professionLabels: {},
+    sanitizeUrl: value => value
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].city, "Guildford");
+  assert.equal(rows[0].country, "UK");
+  assert.equal(rows[0].locationSummary, "Guildford, UK | Utrecht, NL");
+  assert.deepEqual(getJobLocationCities(rows[0]), ["Guildford", "Utrecht"]);
+  assert.deepEqual(getJobLocationCountries(rows[0]), ["UK", "NL"]);
 });
 
 test("jobs domain normalizes sector from positive game evidence", () => {

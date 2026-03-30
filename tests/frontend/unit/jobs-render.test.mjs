@@ -108,6 +108,22 @@ test("jobs render rewrites remoteok detail links to the listing page", () => {
   assert.doesNotMatch(html, /remote-jobs\/remote-gameplay-programmer-nebula-1234567/);
 });
 
+test("jobs render shows multi-location summaries", () => {
+  const html = render({
+    id: "4b",
+    title: "Systems & Tools Engineer",
+    company: "Stellar Entertainment",
+    sector: "Game",
+    city: "Guildford",
+    country: "UK",
+    locationSummary: "Guildford, UK | Utrecht, NL",
+    workType: "Remote",
+    contractType: "Full-time",
+    jobLink: "https://jobs.example.com/stellar"
+  });
+  assert.match(html, /Guildford, UK \| Utrecht, NL/);
+});
+
 test("jobs render marks unseen rows with New badge and seen rows with class", () => {
   const newHtml = render({
     id: "5",

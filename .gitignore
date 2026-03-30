@@ -44,3 +44,5 @@ baluffo.config.local.json
 .kilo/
 .kilocode/
 .opencode/
+.codex/
+.serena/

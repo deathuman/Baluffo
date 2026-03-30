@@ -100,6 +100,8 @@ OPTIONAL_FIELDS = [
     "focusScore",
     "sourceBundleCount",
     "sourceBundle",
+    "locations",
+    "locationSummary",
 ]
 
 OUTPUT_FIELDS = ["id", *REQUIRED_FIELDS, "companyType", "description", *OPTIONAL_FIELDS]
@@ -114,6 +116,8 @@ LIGHTWEIGHT_OUTPUT_FIELDS = [
     "jobLink",
     "sector",
     "profession",
+    "locations",
+    "locationSummary",
     "source",
     "postedAt",
     "status",

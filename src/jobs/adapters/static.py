@@ -42,7 +42,7 @@ from src.jobs.common import config as common_config
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import RawJob
-from src.jobs.page_gating import classify_job_page
+from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
 from src.jobs.registry import registry_entries
 from src.jobs.state import (
     get_incremental_cache_decision,
@@ -449,18 +449,63 @@ def run_static_studio_pages_source(
                             allow_any_anchor=True,
                         )
                         if rendered_rows:
+                            has_job_like_rendered_title = False
                             for row in rendered_rows:
-                                link = normalize_url(row.get("jobLink"))
-                                if not link or link in seen_links:
-                                    continue
-                                seen_links.add(link)
+                                row = dict(row)
                                 row["adapter"] = "static"
                                 row["studio"] = (
                                     clean_text(source.get("studio")) or company or source_name
                                 )
-                                jobs.append(row)
-                                listing_jobs_found += 1
-                            if listing_jobs_found > 0:
+                                row["source"] = clean_text(source.get("name")) or company or source_name
+                                title = clean_text(row.get("title"))
+                                link = normalize_url(row.get("jobLink"))
+                                if looks_like_job_title_candidate(title):
+                                    if not link or link in seen_links:
+                                        continue
+                                    seen_links.add(link)
+                                    jobs.append(row)
+                                    listing_jobs_found += 1
+                                    has_job_like_rendered_title = True
+                                    continue
+                                if not link or link in seen_links:
+                                    continue
+                                detail_result = process_detail_link(
+                                    detail=link,
+                                    detail_title=title,
+                                    source_started=source_started,
+                                    static_source_time_budget_s=source_budget_s,
+                                    fetch_html_cached=fetch_html_cached,
+                                    timeout_s=timeout_s,
+                                    detail_retries=retries,
+                                    company=company,
+                                    source_name=source_name,
+                                    source=source,
+                                    ignored_link_titles=ignored_link_titles,
+                                )
+                                stats["detail_pages_visited"] += 1
+                                stats["detail_fetch_ms"] += int(
+                                    detail_result.get("fetchMs") or 0
+                                )
+                                emitted_detail_rows = detail_result.get("rows") or []
+                                if emitted_detail_rows:
+                                    seen_links.add(link)
+                                    for emitted_row in emitted_detail_rows:
+                                        if not isinstance(emitted_row, dict):
+                                            continue
+                                        emitted_row["source"] = (
+                                            clean_text(source.get("name")) or company or source_name
+                                        )
+                                        emitted_row["studio"] = (
+                                            clean_text(source.get("studio"))
+                                            or company
+                                            or source_name
+                                        )
+                                        jobs.append(emitted_row)
+                                        listing_jobs_found += 1
+                                elif row:
+                                    jobs.append(row)
+                                    listing_jobs_found += 1
+                            if listing_jobs_found > 0 and has_job_like_rendered_title:
                                 source["_staticPluginMeta"] = {
                                     "detailFetchRequired": False,
                                     "detailTraversalMode": "listing_only",

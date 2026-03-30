@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from typing import Any
 
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.static_helpers import process_detail_link
 from src.jobs.models import RawJob
-from src.jobs.page_gating import classify_job_page
+from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
 from src.jobs.text_utils import clean_text
 
 # Hosts (netloc, lower) for which this plugin handles static extraction.
@@ -138,11 +140,45 @@ def run(
                     allow_any_anchor=True,
                 )
         if rendered_rows:
+            enriched_rows: list[RawJob] = []
+            source_name = clean_text(source_row.get("name")) or company
             for row in rendered_rows:
+                row = dict(row)
                 row["adapter"] = "static"
                 row["studio"] = company
-                row["source"] = clean_text(source_row.get("name")) or company
-            return rendered_rows
+                row["source"] = source_name
+                title = clean_text(row.get("title"))
+                if not title or looks_like_job_title_candidate(title):
+                    enriched_rows.append(row)
+                    continue
+                detail_link = clean_text(row.get("jobLink"))
+                if not detail_link:
+                    enriched_rows.append(row)
+                    continue
+                detail_result = process_detail_link(
+                    detail=detail_link,
+                    detail_title=title,
+                    source_started=time.perf_counter(),
+                    static_source_time_budget_s=max(5, int(timeout_s) * 2),
+                    fetch_html_cached=lambda url, **kwargs: (fetch_text(url, timeout_s), False),
+                    timeout_s=timeout_s,
+                    detail_retries=max(0, int(retries)),
+                    company=company,
+                    source_name=source_id,
+                    source=source_row,
+                    ignored_link_titles=set(),
+                )
+                detail_rows = detail_result.get("rows") if isinstance(detail_result, dict) else []
+                if detail_rows:
+                    for detail_row in detail_rows:
+                        if isinstance(detail_row, dict):
+                            detail_row["source"] = source_name
+                            detail_row["studio"] = company
+                            detail_row["adapter"] = "static"
+                            enriched_rows.append(detail_row)
+                    continue
+                enriched_rows.append(row)
+            return enriched_rows
     if not cleaned:
         if _heuristics.detect_no_openings(html):
             source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(

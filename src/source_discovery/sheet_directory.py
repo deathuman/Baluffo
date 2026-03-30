@@ -24,7 +24,7 @@ def game_studios_sheet_candidate_urls(sheet_id: str, gid: str) -> list[str]:
         f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
     )
     pub_csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv"
-    return [csv_url, gviz_csv_url, pub_csv_url]
+    return [gviz_csv_url, pub_csv_url, csv_url]
 
 
 def parse_game_studio_sheet_csv(csv_text: str) -> list[dict[str, Any]]:
