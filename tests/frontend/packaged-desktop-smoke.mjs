@@ -352,9 +352,10 @@ async function main() {
     errors
   };
   await writeReport(report);
-  const exitCode = report.ok ? 0 : 1;
-  process.exitCode = exitCode;
-  process.exit(exitCode);
+  if (!report.ok) {
+    console.error("Smoke test failed:", report.errors);
+  }
+  process.exitCode = report.ok ? 0 : 1;
 }
 
 await main().catch(err => {
