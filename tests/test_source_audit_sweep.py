@@ -16,13 +16,13 @@ def test_build_report_classifies_active_sources_and_mismatches() -> None:
                 "keptCount": 3,
                 "fetchedCount": 3,
                 "details": [
-                        {
-                            "name": "google_sheets_1er2oaxo",
-                            "adapter": "csv",
-                            "status": "ok",
-                            "keptCount": 3,
-                            "fetchedCount": 3,
-                        }
+                    {
+                        "name": "google_sheets_1er2oaxo",
+                        "adapter": "csv",
+                        "status": "ok",
+                        "keptCount": 3,
+                        "fetchedCount": 3,
+                    }
                 ],
             },
             {
@@ -209,7 +209,9 @@ def test_render_markdown_includes_summary_sections() -> None:
         "issues": {
             "stale_materialization": [],
             "broken_source": [],
-            "needs_review": [{"name": "Needs Review", "family": "static", "classification": "needs_review"}],
+            "needs_review": [
+                {"name": "Needs Review", "family": "static", "classification": "needs_review"}
+            ],
             "dead_listing_page": [],
         },
     }

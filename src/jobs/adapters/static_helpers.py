@@ -514,11 +514,7 @@ def process_detail_link(
             title = strip_html_text(re.sub(r"[-_]+", " ", slug))
             if parsed_title and parsed_title.lower() not in ignored_link_titles:
                 title = parsed_title
-            if (
-                title
-                and not re.fullmatch(r"\d+", title)
-                and looks_like_job_title_candidate(title)
-            ):
+            if title and not re.fullmatch(r"\d+", title) and looks_like_job_title_candidate(title):
                 rows.append(
                     {
                         "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",

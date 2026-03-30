@@ -156,7 +156,9 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
         merged["locations"] = location_entries
         merged["locationSummary"] = " | ".join(
             ", ".join(
-                part for part in [clean_text(item.get("city")), clean_text(item.get("country"))] if part
+                part
+                for part in [clean_text(item.get("city")), clean_text(item.get("country"))]
+                if part
             )
             for item in location_entries
             if clean_text(item.get("city")) or clean_text(item.get("country"))

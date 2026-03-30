@@ -131,7 +131,9 @@ def _detail_duration_ms(detail: dict[str, Any], family_row: dict[str, Any]) -> i
     return sum(max(0, safe_int(stats.get(key))) for key in timing_keys)
 
 
-def _family_name(source_name: str, adapter: str, registry_row: dict[str, Any], state_row: dict[str, Any]) -> str:
+def _family_name(
+    source_name: str, adapter: str, registry_row: dict[str, Any], state_row: dict[str, Any]
+) -> str:
     name = safe_text(source_name)
     adapter_name = safe_text(adapter).lower()
     registry_adapter = safe_text((registry_row or {}).get("adapter")).lower()
@@ -201,7 +203,8 @@ def _aggregate_report_sources(report: dict[str, Any]) -> dict[str, dict[str, Any
             entry["reportFetchedCount"] += safe_int(source_row.get("fetchedCount"))
             entry["reportDurationMs"] += _detail_duration_ms(source_row, family_row)
             entry["reportStatus"] = _merge_status(
-                entry["reportStatus"], safe_text(source_row.get("status")) or family_row.get("status")
+                entry["reportStatus"],
+                safe_text(source_row.get("status")) or family_row.get("status"),
             )
             for field, target in (
                 ("failureBucket", "reportFailureBuckets"),
@@ -277,7 +280,9 @@ def _classify_source(
     unified_count: int,
 ) -> tuple[str, str]:
     report_present = isinstance(report_row, dict)
-    report_status = safe_text((report_row or {}).get("reportStatus") or (report_row or {}).get("status")).lower()
+    report_status = safe_text(
+        (report_row or {}).get("reportStatus") or (report_row or {}).get("status")
+    ).lower()
     state_status = safe_text(state_row.get("lastStatus")).lower()
     report_kept = safe_int((report_row or {}).get("reportKeptCount"))
     state_kept = safe_int(state_row.get("lastKeptCount"))
@@ -367,8 +372,12 @@ def _normalize_sources(
                 "reportKeptCount": safe_int((report_row or {}).get("reportKeptCount")),
                 "reportFetchedCount": safe_int((report_row or {}).get("reportFetchedCount")),
                 "reportDurationMs": safe_int((report_row or {}).get("reportDurationMs")),
-                "reportClassification": safe_text((report_row or {}).get("reportClassification")).lower(),
-                "reportFailureBucket": safe_text((report_row or {}).get("reportFailureBucket")).lower(),
+                "reportClassification": safe_text(
+                    (report_row or {}).get("reportClassification")
+                ).lower(),
+                "reportFailureBucket": safe_text(
+                    (report_row or {}).get("reportFailureBucket")
+                ).lower(),
                 "reportZeroKeptClassification": safe_text(
                     (report_row or {}).get("reportZeroKeptClassification")
                 ).lower(),
@@ -498,7 +507,9 @@ def build_report(
         "registryActiveCount": len(registry_active),
         "stateSourceCount": len(source_state),
         "unifiedLightCount": len(unified_light),
-        "workingCount": sum(1 for row in sources if safe_text(row.get("classification")) == "working"),
+        "workingCount": sum(
+            1 for row in sources if safe_text(row.get("classification")) == "working"
+        ),
         "deadListingPageCount": sum(
             1 for row in sources if safe_text(row.get("classification")) == "dead_listing_page"
         ),
@@ -511,11 +522,11 @@ def build_report(
         ),
         "reportMissingCount": sum(1 for row in sources if not row.get("reportPresent")),
         "registryOnlyCount": sum(
-            1
-            for row in sources
-            if row.get("registryPresent") and not row.get("reportPresent")
+            1 for row in sources if row.get("registryPresent") and not row.get("reportPresent")
         ),
-        "reportOnlyCount": sum(1 for row in sources if row.get("reportPresent") and not row.get("registryPresent")),
+        "reportOnlyCount": sum(
+            1 for row in sources if row.get("reportPresent") and not row.get("registryPresent")
+        ),
     }
     manifest_summary = manifest or {}
     report = {
@@ -719,7 +730,11 @@ def main(argv: list[str] | None = None) -> int:
         registry_active = []
     if not isinstance(unified_light, list):
         unified_light = []
-    source_state = source_state_payload.get("sources") if isinstance(source_state_payload.get("sources"), dict) else {}
+    source_state = (
+        source_state_payload.get("sources")
+        if isinstance(source_state_payload.get("sources"), dict)
+        else {}
+    )
     if not isinstance(source_state, dict):
         source_state = {}
 

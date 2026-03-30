@@ -2829,9 +2829,7 @@ def test_extract_rendered_card_jobs_handles_table_row_manual_website_cards() -> 
     assert {row["country"] for row in rows} == {"Unknown"}
 
 
-def test_extract_rendered_card_jobs_rejects_generic_site_pages_with_allow_any_anchor() -> (
-    None
-):
+def test_extract_rendered_card_jobs_rejects_generic_site_pages_with_allow_any_anchor() -> None:
     html = """
         <html>
           <body>
@@ -2882,7 +2880,9 @@ def test_extract_rendered_card_jobs_rejects_generic_site_pages_with_allow_any_an
     )
     assert len(rows) == 1
     assert rows[0]["title"] == "Business Development Manager"
-    assert rows[0]["jobLink"] == "https://www.tetherstudios.com/careers/business-development-manager"
+    assert (
+        rows[0]["jobLink"] == "https://www.tetherstudios.com/careers/business-development-manager"
+    )
 
 
 def test_extract_rendered_card_jobs_keeps_tether_category_openings() -> None:
@@ -2922,9 +2922,7 @@ def test_extract_rendered_card_jobs_keeps_tether_category_openings() -> None:
     }
 
 
-def test_classify_job_page_rejects_tether_style_regular_pages_as_dead_listing_pages() -> (
-    None
-):
+def test_classify_job_page_rejects_tether_style_regular_pages_as_dead_listing_pages() -> None:
     for url in (
         "https://www.tetherstudios.com/about",
         "https://www.tetherstudios.com/support",

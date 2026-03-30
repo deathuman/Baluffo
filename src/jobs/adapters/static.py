@@ -456,7 +456,9 @@ def run_static_studio_pages_source(
                                 row["studio"] = (
                                     clean_text(source.get("studio")) or company or source_name
                                 )
-                                row["source"] = clean_text(source.get("name")) or company or source_name
+                                row["source"] = (
+                                    clean_text(source.get("name")) or company or source_name
+                                )
                                 title = clean_text(row.get("title"))
                                 link = normalize_url(row.get("jobLink"))
                                 if looks_like_job_title_candidate(title):
@@ -483,9 +485,7 @@ def run_static_studio_pages_source(
                                     ignored_link_titles=ignored_link_titles,
                                 )
                                 stats["detail_pages_visited"] += 1
-                                stats["detail_fetch_ms"] += int(
-                                    detail_result.get("fetchMs") or 0
-                                )
+                                stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
                                 emitted_detail_rows = detail_result.get("rows") or []
                                 if emitted_detail_rows:
                                     seen_links.add(link)
