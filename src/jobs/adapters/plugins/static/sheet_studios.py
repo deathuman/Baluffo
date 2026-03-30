@@ -176,9 +176,7 @@ def run(
                     if likely_js
                     else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
                     browser_fallback_recommended=bool(likely_js),
-                    extractor_hint="parse_empty_js_shell_suspected"
-                    if likely_js
-                    else "parse_empty",
+                    extractor_hint="parse_empty_js_shell_suspected" if likely_js else "parse_empty",
                     ats_links=ats_links,
                 )
     return cleaned
