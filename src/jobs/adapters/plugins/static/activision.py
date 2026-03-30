@@ -57,22 +57,22 @@ def run(
         html = fetch_text(page_url, timeout_s)
     except Exception as exc:  # noqa: BLE001
         classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = {
-            "classification": classification,
-            "browserFallbackRecommended": bool(recommend),
-            "extractorHint": "fetch_failed",
-            "error": str(exc),
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            classification,
+            browser_fallback_recommended=bool(recommend),
+            extractor_hint="fetch_failed",
+            error=str(exc),
+        )
         return []
 
     ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url)
     if _heuristics.detect_js_shell(html):
-        source_row["_staticPluginMeta"] = {
-            "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE,
-            "browserFallbackRecommended": True,
-            "extractorHint": "js_shell_detected",
-            "atsLinks": ats_links[:5],
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE,
+            browser_fallback_recommended=True,
+            extractor_hint="js_shell_detected",
+            ats_links=ats_links,
+        )
         return []
 
     rows = parse_jobpostings_from_html(
@@ -126,25 +126,26 @@ def run(
     cleaned = [r for r in rows if isinstance(r, dict)]
     if not cleaned:
         if _heuristics.detect_no_openings(html):
-            source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
-                "browserFallbackRecommended": False,
-                "emptyConfirmed": True,
-                "extractorHint": "explicit_no_openings_marker",
-                "atsLinks": ats_links[:5],
-            }
+            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+                _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
+                browser_fallback_recommended=False,
+                empty_confirmed=True,
+                extractor_hint="explicit_no_openings_marker",
+                ats_links=ats_links,
+            )
         else:
-            source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_PARSER_STALE,
-                "browserFallbackRecommended": False,
-                "extractorHint": "search_results_present_but_plugin_empty",
-                "atsLinks": ats_links[:5],
-                "detailFetchRequired": False,
-                "detailTraversalMode": "listing_only",
-            }
+            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+                _heuristics.CLASSIFICATION_PARSER_STALE,
+                browser_fallback_recommended=False,
+                extractor_hint="search_results_present_but_plugin_empty",
+                ats_links=ats_links,
+                detail_fetch_required=False,
+                detail_traversal_mode="listing_only",
+            )
     else:
-        source_row["_staticPluginMeta"] = {
-            "detailFetchRequired": False,
-            "detailTraversalMode": "listing_only",
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_OK_WITH_JOBS,
+            detail_fetch_required=False,
+            detail_traversal_mode="listing_only",
+        )
     return cleaned

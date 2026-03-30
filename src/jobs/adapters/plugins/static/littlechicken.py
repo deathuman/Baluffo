@@ -51,12 +51,12 @@ def run(
             fetched_pages[page_url] = fetch_text(page_url, timeout_s)
         except Exception as exc:  # noqa: BLE001
             classification, recommend = _heuristics.classify_fetch_exception(exc)
-            source_row["_staticPluginMeta"] = {
-                "classification": classification,
-                "browserFallbackRecommended": bool(recommend),
-                "extractorHint": "fetch_failed",
-                "error": str(exc),
-            }
+            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+                classification,
+                browser_fallback_recommended=bool(recommend),
+                extractor_hint="fetch_failed",
+                error=str(exc),
+            )
             continue
         if "/job/" in (urlparse(page_url).path or "").lower():
             detail_urls.append(page_url)
@@ -176,9 +176,9 @@ def run(
         row["jobLink"] = normalize_url(row.get("jobLink")) or ""
 
     if not cleaned:
-        source_row["_staticPluginMeta"] = {
-            "classification": _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
-            "browserFallbackRecommended": False,
-            "extractorHint": "listing_cards_empty",
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
+            browser_fallback_recommended=False,
+            extractor_hint="listing_cards_empty",
+        )
     return cleaned

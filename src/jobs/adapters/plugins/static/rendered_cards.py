@@ -95,12 +95,12 @@ def run(
         html = fetch_text(page_url, timeout_s)
     except Exception as exc:  # noqa: BLE001
         classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = {
-            "classification": classification,
-            "browserFallbackRecommended": bool(recommend),
-            "extractorHint": "fetch_failed",
-            "error": str(exc),
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            classification,
+            browser_fallback_recommended=bool(recommend),
+            extractor_hint="fetch_failed",
+            error=str(exc),
+        )
         return []
 
     rows = extract_rendered_card_jobs(
@@ -123,10 +123,11 @@ def run(
             )
 
     if rows:
-        source_row["_staticPluginMeta"] = {
-            "detailFetchRequired": False,
-            "detailTraversalMode": "listing_only",
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_OK_WITH_JOBS,
+            detail_fetch_required=False,
+            detail_traversal_mode="listing_only",
+        )
         source_name = clean_text(source_row.get("name")) or company
         for row in rows:
             row["source"] = source_name
@@ -134,15 +135,15 @@ def run(
 
     ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url)
     if _heuristics.detect_no_openings(html):
-        source_row["_staticPluginMeta"] = {
-            "classification": _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
-            "browserFallbackRecommended": False,
-            "emptyConfirmed": True,
-            "extractorHint": "explicit_no_openings_marker",
-            "atsLinks": ats_links[:5],
-            "detailFetchRequired": False,
-            "detailTraversalMode": "listing_only",
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
+            browser_fallback_recommended=False,
+            empty_confirmed=True,
+            extractor_hint="explicit_no_openings_marker",
+            ats_links=ats_links,
+            detail_fetch_required=False,
+            detail_traversal_mode="listing_only",
+        )
         return []
 
     job_like, gate_reason = classify_job_page(
@@ -151,33 +152,31 @@ def run(
         profile=source_row if isinstance(source_row, dict) else None,
     )
     if not job_like and gate_reason == "dead_listing_page":
-        source_row["_staticPluginMeta"] = {
-            "classification": "dead_listing_page",
-            "browserFallbackRecommended": False,
-            "deadListingPageCount": 1,
-            "deadListingPageExamples": [f"{page_url} | {company}"],
-            "extractorHint": "regular_page_rejected",
-            "atsLinks": ats_links[:5],
-            "detailFetchRequired": False,
-            "detailTraversalMode": "listing_only",
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_DEAD_LISTING_PAGE,
+            browser_fallback_recommended=False,
+            extractor_hint="regular_page_rejected",
+            ats_links=ats_links,
+            detail_fetch_required=False,
+            detail_traversal_mode="listing_only",
+            deadListingPageCount=1,
+            deadListingPageExamples=[f"{page_url} | {company}"],
+        )
         return []
 
     likely_js = _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
-    source_row["_staticPluginMeta"] = {
-        "classification": (
-            _heuristics.CLASSIFICATION_JS_REQUIRED
-            if likely_js
-            else _heuristics.CLASSIFICATION_PARSER_STALE
-        ),
-        "browserFallbackRecommended": bool(likely_js),
-        "extractorHint": (
+    source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+        _heuristics.CLASSIFICATION_JS_REQUIRED
+        if likely_js
+        else _heuristics.CLASSIFICATION_PARSER_STALE,
+        browser_fallback_recommended=bool(likely_js),
+        extractor_hint=(
             "rendered_cards_js_shell_suspected"
             if likely_js
             else "rendered_cards_listing_present_but_empty"
         ),
-        "atsLinks": ats_links[:5],
-        "detailFetchRequired": False,
-        "detailTraversalMode": "listing_only",
-    }
+        ats_links=ats_links,
+        detail_fetch_required=False,
+        detail_traversal_mode="listing_only",
+    )
     return []

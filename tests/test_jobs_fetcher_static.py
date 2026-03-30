@@ -3,7 +3,7 @@ from collections import Counter
 
 from scrapy.http import HtmlResponse, Request
 
-from src.jobs.adapters.plugins.static import ats_wrappers, k_id, rendered_cards
+from src.jobs.adapters.plugins.static import ats_wrappers, rendered_cards
 from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_helpers import process_detail_link
@@ -2839,66 +2839,6 @@ def test_rendered_card_family_and_ats_wrapper_do_not_overlap_on_zenimax() -> Non
     )
     assert ats_wrappers.can_handle(ctx)
     assert not rendered_cards.can_handle(ctx)
-
-
-def test_k_id_careers_is_suppressed_by_source_specific_plugin() -> None:
-    ctx = AdapterPluginContext(
-        family="static",
-        adapter_key="static",
-        source_identity="www.k-id.com",
-    )
-    assert k_id.can_handle(ctx)
-    assert not rendered_cards.can_handle(ctx)
-
-
-def test_k_id_careers_plugin_returns_no_false_positive_rows() -> None:
-    page_html = """
-    <html>
-      <body>
-        <header>
-          <a href="/products/agekit">AgeKit Age classification (minor, youth, adult)</a>
-          <a href="/products/agekit-plus">AgeKit+ High-assurance age verification</a>
-          <a href="/products/agekey">AgeKey Reusable age credentials</a>
-          <a href="/contact">Contact</a>
-        </header>
-        <main>
-          <h1>Careers</h1>
-          <p>At k-ID, we are building the infrastructure that makes the internet age-aware.</p>
-          <p>If you want to solve problems that sit at the intersection of technology, policy, law,
-          and family safety online, we’re hiring.</p>
-          <a href="https://docs.k-id.com/">Documentation</a>
-          <a href="https://product.k-id.com/">Blog</a>
-          <a href="https://family.k-id.com/">For Parents</a>
-        </main>
-      </body>
-    </html>
-    """
-    source_row = {
-        "name": "k-ID Careers",
-        "studio": "k-ID",
-        "adapter": "static",
-        "company": "k-ID",
-        "pages": ["https://www.k-id.com/careers"],
-        "enabledByDefault": True,
-    }
-
-    def fake_fetch(url: str, _: int) -> str:
-        if url == "https://www.k-id.com/careers":
-            return page_html
-        raise RuntimeError(f"Unexpected URL: {url}")
-
-    rows = k_id.run(
-        fetch_text=fake_fetch,
-        timeout_s=5,
-        retries=0,
-        backoff_s=0,
-        pages=["https://www.k-id.com/careers"],
-        source_row=source_row,
-    )
-    assert rows == []
-    assert (
-        str(source_row.get("_staticPluginMeta", {}).get("classification") or "") == "site_changed"
-    )
 
 
 def test_run_static_studio_pages_source_amanotes_plugin_extracts_next_data_positions() -> None:

@@ -42,12 +42,12 @@ def run(
         html = fetch_text(page_url, timeout_s)
     except Exception as exc:  # noqa: BLE001
         classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = {
-            "classification": classification,
-            "browserFallbackRecommended": bool(recommend),
-            "extractorHint": "fetch_failed",
-            "error": str(exc),
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            classification,
+            browser_fallback_recommended=bool(recommend),
+            extractor_hint="fetch_failed",
+            error=str(exc),
+        )
         return []
 
     jobs = _parse_listing_rows(
@@ -61,19 +61,20 @@ def run(
         source_name=clean_text(source_row.get("name")) or "Riot Games",
     )
     if not jobs:
-        source_row["_staticPluginMeta"] = {
-            "classification": _heuristics.CLASSIFICATION_PARSER_STALE,
-            "browserFallbackRecommended": False,
-            "extractorHint": "riot_listing_present_but_plugin_empty",
-            "detailFetchRequired": False,
-            "detailTraversalMode": "listing_only",
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_PARSER_STALE,
+            browser_fallback_recommended=False,
+            extractor_hint="riot_listing_present_but_plugin_empty",
+            detail_fetch_required=False,
+            detail_traversal_mode="listing_only",
+        )
         return []
 
-    source_row["_staticPluginMeta"] = {
-        "detailFetchRequired": False,
-        "detailTraversalMode": "listing_only",
-    }
+    source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+        _heuristics.CLASSIFICATION_OK_WITH_JOBS,
+        detail_fetch_required=False,
+        detail_traversal_mode="listing_only",
+    )
     return jobs
 
 

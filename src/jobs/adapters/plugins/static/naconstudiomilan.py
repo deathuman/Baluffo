@@ -42,12 +42,12 @@ def run(
         html = fetch_text(page_url, timeout_s)
     except Exception as exc:  # noqa: BLE001
         classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = {
-            "classification": classification,
-            "browserFallbackRecommended": bool(recommend),
-            "extractorHint": "fetch_failed",
-            "error": str(exc),
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            classification,
+            browser_fallback_recommended=bool(recommend),
+            extractor_hint="fetch_failed",
+            error=str(exc),
+        )
         return []
 
     jobs: list[RawJob] = []
@@ -80,9 +80,9 @@ def run(
         )
 
     if not jobs:
-        source_row["_staticPluginMeta"] = {
-            "classification": _heuristics.CLASSIFICATION_PARSER_STALE,
-            "browserFallbackRecommended": False,
-            "extractorHint": "listing_cards_present_but_plugin_empty",
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_PARSER_STALE,
+            browser_fallback_recommended=False,
+            extractor_hint="listing_cards_present_but_plugin_empty",
+        )
     return jobs

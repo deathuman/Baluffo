@@ -88,22 +88,22 @@ def run(
         html = fetch_text(page_url, timeout_s)
     except Exception as exc:  # noqa: BLE001
         classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = {
-            "classification": classification,
-            "browserFallbackRecommended": bool(recommend),
-            "extractorHint": "fetch_failed",
-            "error": str(exc),
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            classification,
+            browser_fallback_recommended=bool(recommend),
+            extractor_hint="fetch_failed",
+            error=str(exc),
+        )
         return []
 
     ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url)
     if _heuristics.detect_js_shell(html):
-        source_row["_staticPluginMeta"] = {
-            "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE,
-            "browserFallbackRecommended": True,
-            "extractorHint": "js_shell_detected",
-            "atsLinks": ats_links[:5],
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE,
+            browser_fallback_recommended=True,
+            extractor_hint="js_shell_detected",
+            ats_links=ats_links,
+        )
         return []
 
     rows = parse_jobpostings_from_html(
@@ -145,13 +145,13 @@ def run(
             return rendered_rows
     if not cleaned:
         if _heuristics.detect_no_openings(html):
-            source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
-                "browserFallbackRecommended": False,
-                "emptyConfirmed": True,
-                "extractorHint": "explicit_no_openings_marker",
-                "atsLinks": ats_links[:5],
-            }
+            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+                _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
+                browser_fallback_recommended=False,
+                empty_confirmed=True,
+                extractor_hint="explicit_no_openings_marker",
+                ats_links=ats_links,
+            )
         else:
             job_like, gate_reason = classify_job_page(
                 html,
@@ -159,28 +159,26 @@ def run(
                 profile=source_row if isinstance(source_row, dict) else None,
             )
             if not job_like and gate_reason == "dead_listing_page":
-                source_row["_staticPluginMeta"] = {
-                    "classification": "dead_listing_page",
-                    "browserFallbackRecommended": False,
-                    "deadListingPageCount": 1,
-                    "deadListingPageExamples": [f"{page_url} | {company}"],
-                    "extractorHint": "regular_page_rejected",
-                    "atsLinks": ats_links[:5],
-                }
+                source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+                    _heuristics.CLASSIFICATION_DEAD_LISTING_PAGE,
+                    browser_fallback_recommended=False,
+                    extractor_hint="regular_page_rejected",
+                    ats_links=ats_links,
+                    deadListingPageCount=1,
+                    deadListingPageExamples=[f"{page_url} | {company}"],
+                )
             else:
                 likely_js = (
                     _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
                 )
-                source_row["_staticPluginMeta"] = {
-                    "classification": (
-                        _heuristics.CLASSIFICATION_JS_REQUIRED
-                        if likely_js
-                        else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO
-                    ),
-                    "browserFallbackRecommended": bool(likely_js),
-                    "extractorHint": "parse_empty_js_shell_suspected"
+                source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+                    _heuristics.CLASSIFICATION_JS_REQUIRED
+                    if likely_js
+                    else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
+                    browser_fallback_recommended=bool(likely_js),
+                    extractor_hint="parse_empty_js_shell_suspected"
                     if likely_js
                     else "parse_empty",
-                    "atsLinks": ats_links[:5],
-                }
+                    ats_links=ats_links,
+                )
     return cleaned

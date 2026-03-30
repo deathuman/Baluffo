@@ -272,12 +272,12 @@ def run(
         html = fetch_text(page_url, timeout_s)
     except Exception as exc:  # noqa: BLE001
         classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = {
-            "classification": classification,
-            "browserFallbackRecommended": bool(recommend),
-            "extractorHint": "fetch_failed",
-            "error": str(exc),
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            classification,
+            browser_fallback_recommended=bool(recommend),
+            extractor_hint="fetch_failed",
+            error=str(exc),
+        )
         return []
 
     rows = _extract_jobs(html, page_url=page_url, company=company, source_id=source_id)
@@ -293,38 +293,37 @@ def run(
             rows = _extract_jobs(html, page_url=page_url, company=company, source_id=source_id)
 
     if rows:
-        source_row["_staticPluginMeta"] = {
-            "detailFetchRequired": False,
-            "detailTraversalMode": "listing_only",
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_OK_WITH_JOBS,
+            detail_fetch_required=False,
+            detail_traversal_mode="listing_only",
+        )
         source_name = clean_text(source_row.get("name")) or company
         for row in rows:
             row["source"] = source_name
         return rows
 
     if _heuristics.detect_no_openings(html):
-        source_row["_staticPluginMeta"] = {
-            "classification": _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
-            "browserFallbackRecommended": False,
-            "emptyConfirmed": True,
-            "extractorHint": "explicit_no_openings_marker",
-            "detailFetchRequired": False,
-            "detailTraversalMode": "listing_only",
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
+            browser_fallback_recommended=False,
+            empty_confirmed=True,
+            extractor_hint="explicit_no_openings_marker",
+            detail_fetch_required=False,
+            detail_traversal_mode="listing_only",
+        )
         return []
 
     browser_recommended = bool(_heuristics.detect_js_shell(html))
-    source_row["_staticPluginMeta"] = {
-        "classification": (
-            _heuristics.CLASSIFICATION_JS_REQUIRED
-            if browser_recommended
-            else _heuristics.CLASSIFICATION_PARSER_STALE
-        ),
-        "browserFallbackRecommended": browser_recommended,
-        "extractorHint": (
+    source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+        _heuristics.CLASSIFICATION_JS_REQUIRED
+        if browser_recommended
+        else _heuristics.CLASSIFICATION_PARSER_STALE,
+        browser_fallback_recommended=browser_recommended,
+        extractor_hint=(
             "js_shell_detected" if browser_recommended else "nintendo_listing_present_but_empty"
         ),
-        "detailFetchRequired": False,
-        "detailTraversalMode": "listing_only",
-    }
+        detail_fetch_required=False,
+        detail_traversal_mode="listing_only",
+    )
     return []

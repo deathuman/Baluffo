@@ -51,12 +51,12 @@ def run(
             html, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
         if not html:
             classification, recommend = _heuristics.classify_fetch_exception(exc)
-            source_row["_staticPluginMeta"] = {
-                "classification": classification,
-                "browserFallbackRecommended": bool(recommend),
-                "extractorHint": "fetch_failed",
-                "error": str(exc),
-            }
+            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+                classification,
+                browser_fallback_recommended=bool(recommend),
+                extractor_hint="fetch_failed",
+                error=str(exc),
+            )
             return []
 
     ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url) if html else []
@@ -66,12 +66,12 @@ def run(
             html = html2
             ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url)
     if _heuristics.detect_js_shell(html):
-        source_row["_staticPluginMeta"] = {
-            "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE,
-            "browserFallbackRecommended": True,
-            "extractorHint": "js_shell_detected",
-            "atsLinks": ats_links[:5],
-        }
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE,
+            browser_fallback_recommended=True,
+            extractor_hint="js_shell_detected",
+            ats_links=ats_links,
+        )
         return []
 
     rows = parse_jobpostings_from_html(
@@ -125,25 +125,27 @@ def run(
     cleaned = [r for r in rows if isinstance(r, dict)]
     if not cleaned:
         if _heuristics.detect_no_openings(html):
-            source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
-                "browserFallbackRecommended": False,
-                "emptyConfirmed": True,
-                "extractorHint": "explicit_no_openings_marker",
-                "atsLinks": ats_links[:5],
-            }
+            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+                _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
+                browser_fallback_recommended=False,
+                empty_confirmed=True,
+                extractor_hint="explicit_no_openings_marker",
+                ats_links=ats_links,
+            )
         else:
             # If the HTML path yields nothing, escalate to browser fallback for this site.
             # This avoids repeated extract-zero failures on JS-rendered listings.
             likely_js = (
                 _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
             )
-            source_row["_staticPluginMeta"] = {
-                "classification": _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
+            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+                _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
                 if likely_js
                 else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
-                "browserFallbackRecommended": True,
-                "extractorHint": "parse_empty_js_shell_suspected" if likely_js else "parse_empty",
-                "atsLinks": ats_links[:5],
-            }
+                browser_fallback_recommended=True,
+                extractor_hint="parse_empty_js_shell_suspected"
+                if likely_js
+                else "parse_empty",
+                ats_links=ats_links,
+            )
     return cleaned

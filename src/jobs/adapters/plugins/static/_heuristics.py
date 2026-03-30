@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import strip_html_text
@@ -137,3 +138,37 @@ def classify_fetch_exception(exc: Exception) -> tuple[str, bool]:
     if "Network error" in msg or "timed out" in msg or "Timeout" in msg:
         return CLASSIFICATION_TIMEOUT, True
     return CLASSIFICATION_ERROR, False
+
+
+def build_static_plugin_meta(
+    classification: str,
+    *,
+    browser_fallback_recommended: bool | None = None,
+    extractor_hint: str | None = None,
+    ats_links: list[str] | None = None,
+    empty_confirmed: bool | None = None,
+    detail_fetch_required: bool | None = None,
+    detail_traversal_mode: str | None = None,
+    error: str | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Build a consistent _staticPluginMeta payload for static plugins."""
+    meta: dict[str, Any] = {"classification": classification}
+    if browser_fallback_recommended is not None:
+        meta["browserFallbackRecommended"] = browser_fallback_recommended
+    if extractor_hint:
+        meta["extractorHint"] = extractor_hint
+    if ats_links is not None:
+        meta["atsLinks"] = list(ats_links[:5])
+    if empty_confirmed is not None:
+        meta["emptyConfirmed"] = empty_confirmed
+    if detail_fetch_required is not None:
+        meta["detailFetchRequired"] = detail_fetch_required
+    if detail_traversal_mode:
+        meta["detailTraversalMode"] = detail_traversal_mode
+    if error:
+        meta["error"] = error
+    for key, value in extra.items():
+        if value is not None:
+            meta[key] = value
+    return meta
