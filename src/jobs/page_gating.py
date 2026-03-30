@@ -220,7 +220,18 @@ def _looks_like_regular_page(page_url: str, title_text: str, body_text: str) -> 
         )
     ):
         return True
-    if any(token in body_lower for token in ("privacy policy", "terms of use", "cookie policy", "about us", "contact us", "press kit", "media kit")):
+    if any(
+        token in body_lower
+        for token in (
+            "privacy policy",
+            "terms of use",
+            "cookie policy",
+            "about us",
+            "contact us",
+            "press kit",
+            "media kit",
+        )
+    ):
         return True
     return False
 
@@ -228,15 +239,23 @@ def _looks_like_regular_page(page_url: str, title_text: str, body_text: str) -> 
 def _normalize_detail_profile(profile: dict[str, Any] | None) -> dict[str, Any]:
     normalized = dict(profile or {})
     detail_query_keys = normalized.get("detailQueryKeys")
-    if isinstance(detail_query_keys, list) and detail_query_keys and not normalized.get(
-        "include_query_keys"
+    if (
+        isinstance(detail_query_keys, list)
+        and detail_query_keys
+        and not normalized.get("include_query_keys")
     ):
-        normalized["include_query_keys"] = [clean_text(value) for value in detail_query_keys if clean_text(value)]
+        normalized["include_query_keys"] = [
+            clean_text(value) for value in detail_query_keys if clean_text(value)
+        ]
     detail_path_tokens = normalized.get("detailPathTokens")
-    if isinstance(detail_path_tokens, list) and detail_path_tokens and not normalized.get(
-        "include_path_tokens"
+    if (
+        isinstance(detail_path_tokens, list)
+        and detail_path_tokens
+        and not normalized.get("include_path_tokens")
     ):
-        normalized["include_path_tokens"] = [clean_text(value) for value in detail_path_tokens if clean_text(value)]
+        normalized["include_path_tokens"] = [
+            clean_text(value) for value in detail_path_tokens if clean_text(value)
+        ]
     return normalized
 
 
@@ -271,7 +290,11 @@ def _has_positive_job_evidence(
             return True
         if text_hits >= 1 and not looks_like_regular_navigation_text(title_lower):
             return True
-    if "job" in title_lower and text_hits >= 1 and not looks_like_regular_navigation_text(title_lower):
+    if (
+        "job" in title_lower
+        and text_hits >= 1
+        and not looks_like_regular_navigation_text(title_lower)
+    ):
         return True
     return False
 
@@ -295,11 +318,15 @@ def classify_job_page(
         return False, "no_openings"
 
     if _looks_like_regular_page(page_url, title_text, body_text):
-        if _has_positive_job_evidence(html_text, page_url=page_url, title_text=title_text, profile=profile):
+        if _has_positive_job_evidence(
+            html_text, page_url=page_url, title_text=title_text, profile=profile
+        ):
             return True, "job_markers"
         return False, "dead_listing_page"
 
-    if _has_positive_job_evidence(html_text, page_url=page_url, title_text=title_text, profile=profile):
+    if _has_positive_job_evidence(
+        html_text, page_url=page_url, title_text=title_text, profile=profile
+    ):
         return True, "job_markers"
 
     if domain_profiles.is_probable_job_detail_url(page_url, profile or {}):
