@@ -446,12 +446,15 @@ def run_static_studio_pages_source(
                             page_url=page_url,
                             company=company,
                             source_id=clean_text(source.get("id")) or source_name,
-                            allow_any_anchor=False,
+                            allow_any_anchor=True,
                         )
                         if rendered_rows:
                             has_job_like_rendered_title = False
                             for row in rendered_rows:
                                 row = dict(row)
+                                mode = clean_text(row.pop("_renderedCardMode", ""))
+                                if mode == "fallback":
+                                    continue
                                 row["adapter"] = "static"
                                 row["studio"] = (
                                     clean_text(source.get("studio")) or company or source_name

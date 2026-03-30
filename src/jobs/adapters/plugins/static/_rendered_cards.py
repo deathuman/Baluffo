@@ -370,7 +370,11 @@ def extract_rendered_card_jobs(
     seen_links: set[str] = set()
 
     def _append_anchor_candidate(
-        *, anchor: dict[str, str], block_html: str, block_text: str
+        *,
+        anchor: dict[str, str],
+        block_html: str,
+        block_text: str,
+        mode: str,
     ) -> None:
         href = clean_text(anchor.get("href"))
         if not href:
@@ -409,6 +413,7 @@ def extract_rendered_card_jobs(
                 "adapter": "static",
                 "studio": company,
                 "source": "",
+                "_renderedCardMode": mode,
             }
         )
 
@@ -435,10 +440,18 @@ def extract_rendered_card_jobs(
                 if not anchor:
                     continue
                 _append_anchor_candidate(
-                    anchor=anchor, block_html=block_html, block_text=block_text
+                    anchor=anchor,
+                    block_html=block_html,
+                    block_text=block_text,
+                    mode="block",
                 )
     if allow_any_anchor and not jobs:
         page_text = clean_text(strip_html_text(html or ""))
         for anchor in iter_anchor_fragments(html or ""):
-            _append_anchor_candidate(anchor=anchor, block_html=html or "", block_text=page_text)
+            _append_anchor_candidate(
+                anchor=anchor,
+                block_html=html or "",
+                block_text=page_text,
+                mode="fallback",
+            )
     return jobs

@@ -130,6 +130,8 @@ def run(
         )
         source_name = clean_text(source_row.get("name")) or company
         for row in rows:
+            if isinstance(row, dict):
+                row.pop("_renderedCardMode", None)
             row["source"] = source_name
         return rows
 
