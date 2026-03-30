@@ -175,7 +175,7 @@ Saved job record fields:
 
 - Build:
   - `npm run build:ship-bundle`
-  - direct Python entrypoint: `python scripts/build_ship_bundle.py --bundle-version 1.2.3`
+  - direct Python entrypoint: `python scripts/build_ship_bundle.py --bundle-version <version>`
   - default version source: `src/app_version.py`
 - Output:
   - `dist/baluffo-ship`
@@ -195,12 +195,12 @@ Saved job record fields:
 - Install dependencies:
   - `python -m pip install -r requirements.txt`
 - Build:
-  - `npm run build:portable-exe -- --bundle-version 1.2.3`
-  - direct Python entrypoint: `python scripts/build_portable_exe.py --bundle-version 1.2.3`
+  - `npm run build:portable-exe -- --bundle-version <version>`
+  - direct Python entrypoint: `python scripts/build_portable_exe.py --bundle-version <version>`
   - default version source: `src/app_version.py`
 - Output:
   - `dist/baluffo-portable`
-  - `dist/baluffo-portable-1.2.3.zip`
+  - `dist/baluffo-portable-<version>.zip`
 - Dedicated desktop entrypoint:
   - `Baluffo.exe`
 - Runbook:

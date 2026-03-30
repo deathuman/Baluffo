@@ -10,88 +10,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- [`docs/AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) — Comprehensive guide for AI coding assistants
-- [`docs/INDEX.md`](INDEX.md) — Documentation navigation index
-- [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — Common issues and solutions
+- Shared dead-listing gate for static and generic careers extraction so regular pages reject as `dead_listing_page`
+- Provenance-based game-sector normalization instead of a raw source-sector override
+- Admin restore hooks for fetch and discovery progress after navigating away and back
+- Better public-link rewriting for provider rows that exposed raw API URLs
 
 ### Changed
+- Discovery preset semantics swapped in place: `default` now uses the former uncapped-lite behavior, and `uncapped` is the broader exploration preset
+- Static plugin fallback metadata is now centralized in a shared helper to reduce duplicated boilerplate across host adapters
+- Jobs UI link handling normalizes RemoteOK detail URLs to the safer listing page
+- City and country filter normalization was tightened to reject obvious non-location contamination
+- k-ID no longer needs a source-specific suppressor plugin; the shared dead-listing gate now handles it
 - Archived [`docs/archive/scraping-pipeline-run-notes.md`](archive/scraping-pipeline-run-notes.md) — Historical run notes from 2026-03-17 (outdated)
+
+### Fixed
+- SmartRecruiters API links now rewrite to the public posting URL
+- Game-company rows now stay classified as `Game` when provenance or company evidence supports it
+- Misclassified regular pages such as About / Contact / Careers landing pages no longer become synthetic job entries
+- Static extraction now stops leaking a few repeated metadata payload shapes through copy-pasted per-plugin dict construction
 
 ---
 
-## [1.3.0] — 2026-03-22
+## [0.0.10] — 2026-03-23
 
 ### Added
+- Release 0.0.10 with sync, pipeline, and discovery fixes
+
+### Notes
+- The public app release line is `v0.0.x`.
+- Git tags follow `v<app_version>` and the current tagged release is `v0.0.10`.
+
+---
+
+## Legacy notes
+
+The notes below were retained from the earlier draft release history and are now treated as historical implementation notes, not separate shipped release lines.
+
+### Admin bridge and runtime rewrite
 - Admin bridge extracted to modular services (`src/bridge/`)
 - Source check API with Playwright fallback for static sources
 - Task history and run history API
 - Ops health and alerts system
-
-### Changed
 - Jobs pipeline refactored with separate loader selection and runtime phases
 - Static adapter now dispatches to plugins via `AdapterPluginContext`
 - Frontend state-hub for cross-module state management
-
-### Fixed
 - Browser queue URL collapse by source ID
 - Activision canonical listing URL resolution
 
----
-
-## [1.2.0] — 2026-02-15
-
-### Added
+### Shipping and discovery foundation
 - GitHub App-based source sync for multi-PC workflows
 - Desktop portable EXE with PyInstaller
 - Ship bundle (zip-first) release channel
-
-### Changed
 - Source discovery package (`src/source_discovery/`) reorganized
 - Static adapter plugin system for studio-specific parsing
 
----
-
-## [1.1.0] — 2026-01-10
-
-### Added
+### Browser-required and initial release work
 - Playwright fallback for static source discovery and scraping
 - Scrapy-Playwright integration for browser-required sources
 - Admin discovery log live tailing
-
-### Fixed
 - 403/timeout handling in discovery probe
 - Generic static source classification
-
----
-
-## [1.0.0] — 2025-12-01
-
-### Added
-- Initial release
-- Job aggregation from Google Sheets, Remote OK, provider APIs (Greenhouse, Lever, etc.)
+- Initial release: job aggregation from Google Sheets, Remote OK, provider APIs (Greenhouse, Lever, etc.)
 - Static studio page scraping
 - Source discovery with web search and probing
 - Admin console for source management
 - Saved jobs with notes and attachments
 - Local-first storage (IndexedDB + file-based)
-
----
-
-## Migration Notes
-
-### Upgrading to 1.3.0
-- Bridge routes are now in `src/bridge/routes/`
-- Config file `baluffo.config.json` format unchanged
-- Source registry format unchanged
-
-### Upgrading to 1.2.0
-- Source sync now uses GitHub App instead of PAT
-- Run `python scripts/build_sync_app_config.py` to generate config
-
-### Upgrading to 1.1.0
-- Playwright is optional but recommended for better source coverage
-
----
 
 ## Known Issues
 
@@ -105,11 +89,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version History
 
 - [Unreleased] — Current development
-- [1.3.0] — 2026-03-22
-- [1.2.0] — 2026-02-15
-- [1.1.0] — 2026-01-10
-- [1.0.0] — 2025-12-01
+- [0.0.10] — 2026-03-23
+- [0.0.9] — 2026-03-23
+- [0.0.8] — 2026-03-20
+- [0.0.7] — 2026-03-20
 
----
+For older shipped tags, see `v0.0.1` through `v0.0.6`.
 
 *For older releases, see [docs/archive/](archive/)*

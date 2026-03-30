@@ -26,6 +26,8 @@ Every release must track these versions explicitly:
 - `data_schema_version`: version of persisted data expectations and migrations
 - `manifest_schema_version`: version of the update manifest contract
 - The default `app_version` used by local build/package workflows is defined in `src/app_version.py`.
+- Git tags should use the `v<app_version>` form.
+- The public release history should follow the same `app_version` line; updater/schema versions are documented separately and should not introduce a second public version family.
 
 Compatibility rules:
 
@@ -60,7 +62,7 @@ npm run build:ship-bundle
 Direct Python entrypoint for operator/debug use:
 
 ```powershell
-python scripts/build_ship_bundle.py --bundle-version 1.2.3
+python scripts/build_ship_bundle.py --bundle-version <version>
 ```
 
 Default output:
@@ -125,19 +127,19 @@ python -m pip install -r requirements.txt
 Preferred build command:
 
 ```powershell
-npm run build:portable-exe -- --bundle-version 1.2.3
+npm run build:portable-exe -- --bundle-version <version>
 ```
 
 Direct Python entrypoint for operator/debug use:
 
 ```powershell
-python scripts/build_portable_exe.py --bundle-version 1.2.3
+python scripts/build_portable_exe.py --bundle-version <version>
 ```
 
 Optional icon override:
 
 ```powershell
-python scripts/build_portable_exe.py --bundle-version 1.2.3 --icon C:\path\to\Baluffo.ico
+python scripts/build_portable_exe.py --bundle-version <version> --icon C:\path\to\Baluffo.ico
 ```
 
 Current environment baseline:
