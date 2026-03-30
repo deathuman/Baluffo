@@ -748,3 +748,6 @@
 {"ts": "2026-03-30T13:21:45.972362+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
 {"ts": "2026-03-30T13:21:45.972479+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
 {"ts": "2026-03-30T13:21:45.972572+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-30T13:31:41.978617+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-30T13:31:41.978760+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
+{"ts": "2026-03-30T13:31:41.978857+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}

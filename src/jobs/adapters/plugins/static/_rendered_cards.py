@@ -50,9 +50,9 @@ _JOB_HINT_TOKENS = frozenset(
         "careers",
         "position",
         "positions",
+        "role",
         "opening",
         "openings",
-        "role",
         "roles",
         "vacanc",
         "opportunity",
@@ -126,6 +126,36 @@ _JOB_TITLE_HINT_TOKENS = frozenset(
         "localization",
         "monetization",
         "retention",
+    }
+)
+_NON_JOB_TITLE_EXACT_TOKENS = frozenset(
+    {
+        "about",
+        "art",
+        "blog",
+        "career",
+        "careers",
+        "contact",
+        "games",
+        "home",
+        "join us",
+        "news",
+        "privacy",
+        "products",
+        "search faq",
+        "support",
+        "tech",
+        "terms",
+    }
+)
+_NON_JOB_TITLE_PHRASE_TOKENS = frozenset(
+    {
+        "about us",
+        "all games",
+        "cookie policy",
+        "cookies policy",
+        "our games",
+        "privacy policy",
     }
 )
 _JOB_URL_HINT_TOKENS = (
@@ -268,6 +298,15 @@ def _looks_like_job_title(title: str) -> bool:
     return any(token in lowered for token in _JOB_TITLE_HINT_TOKENS)
 
 
+def _looks_like_non_job_title(title: str) -> bool:
+    lowered = clean_text(title).lower()
+    if not lowered:
+        return False
+    if lowered in _NON_JOB_TITLE_EXACT_TOKENS:
+        return True
+    return any(token in lowered for token in _NON_JOB_TITLE_PHRASE_TOKENS)
+
+
 def _has_job_entry_evidence(
     *,
     href: str,
@@ -290,6 +329,12 @@ def _has_job_entry_evidence(
         token in href_lower for token in _JOB_URL_HINT_TOKENS
     )
     open_position_block = any(token in block_lower for token in _OPEN_POSITION_HINTS)
+    if _looks_like_non_job_title(title_lower):
+        return bool(open_position_block and href_has_job_signal)
+    if href_has_job_signal:
+        return True
+    if title_is_job_like:
+        return True
     if any(token in block_lower for token in _JOB_HINT_TOKENS):
         if open_position_block and href_has_job_signal:
             return True
@@ -323,6 +368,48 @@ def extract_rendered_card_jobs(
 ) -> list[RawJob]:
     jobs: list[RawJob] = []
     seen_links: set[str] = set()
+
+    def _append_anchor_candidate(*, anchor: dict[str, str], block_html: str, block_text: str) -> None:
+        href = clean_text(anchor.get("href"))
+        if not href:
+            return
+        link = normalize_url(urljoin(page_url, href))
+        if not link or link in seen_links:
+            return
+        title = _pick_title(block_html, anchor.get("body") or anchor.get("text") or "")
+        if not title:
+            return
+        location, work_type, contract_type = _pick_location_and_terms(block_html, title)
+        if not _has_job_entry_evidence(
+            href=href,
+            anchor_text=anchor.get("text") or "",
+            block_text=block_text,
+            title=title,
+            location=location,
+            work_type=work_type,
+            contract_type=contract_type,
+            href_tokens=href_tokens,
+        ):
+            return
+        seen_links.add(link)
+        jobs.append(
+            {
+                "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
+                "title": title,
+                "company": company,
+                "city": location,
+                "country": "Unknown",
+                "workType": work_type,
+                "contractType": contract_type,
+                "jobLink": link,
+                "sector": "Game",
+                "postedAt": "",
+                "adapter": "static",
+                "studio": company,
+                "source": "",
+            }
+        )
+
     for tag in block_tags:
         for block_html in iter_block_fragments(html or "", tag):
             block_text = clean_text(strip_html_text(block_html))
@@ -345,43 +432,11 @@ def extract_rendered_card_jobs(
             for anchor in anchor_candidates:
                 if not anchor:
                     continue
-                href = clean_text(anchor.get("href"))
-                if not href:
-                    continue
-                link = normalize_url(urljoin(page_url, href))
-                if not link or link in seen_links:
-                    continue
-                title = _pick_title(block_html, anchor.get("body") or anchor.get("text") or "")
-                if not title:
-                    continue
-                location, work_type, contract_type = _pick_location_and_terms(block_html, title)
-                if not _has_job_entry_evidence(
-                    href=href,
-                    anchor_text=anchor.get("text") or "",
-                    block_text=block_text,
-                    title=title,
-                    location=location,
-                    work_type=work_type,
-                    contract_type=contract_type,
-                    href_tokens=href_tokens,
-                ):
-                    continue
-                seen_links.add(link)
-                jobs.append(
-                    {
-                        "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-                        "title": title,
-                        "company": company,
-                        "city": location,
-                        "country": "Unknown",
-                        "workType": work_type,
-                        "contractType": contract_type,
-                        "jobLink": link,
-                        "sector": "Game",
-                        "postedAt": "",
-                        "adapter": "static",
-                        "studio": company,
-                        "source": "",
-                    }
+                _append_anchor_candidate(
+                    anchor=anchor, block_html=block_html, block_text=block_text
                 )
+    if allow_any_anchor and not jobs:
+        page_text = clean_text(strip_html_text(html or ""))
+        for anchor in iter_anchor_fragments(html or ""):
+            _append_anchor_candidate(anchor=anchor, block_html=html or "", block_text=page_text)
     return jobs

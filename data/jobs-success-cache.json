@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-03-30T12:42:24.441498+00:00",
+  "updatedAt": "2026-03-30T13:26:48.051343+00:00",
   "successfulSources": [
     "8bitplay",
     "ashby_sources",
@@ -270,6 +270,7 @@
     "static_source::static:listing_url:https://ndreams.com/careers/",
     "static_source::static:listing_url:https://nekki.com/#vacations",
     "static_source::static:listing_url:https://nextlevelgames.com/jobs-at-next-level-games-subsidiary-of-nintendo-co-ltd/",
+    "static_source::static:listing_url:https://nogoblin.com/about/",
     "static_source::static:listing_url:https://norsfell.com/en/careers/",
     "static_source::static:listing_url:https://nsusgroup.applytojobs.ca/",
     "static_source::static:listing_url:https://offroadgames.co/join-us.html",

@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "runId": "fetch_b21865f36c",
   "startedAt": "2026-03-30T13:21:50.885441+00:00",
-  "finishedAt": "",
+  "finishedAt": "2026-03-30T13:26:37.485902+00:00",
   "runtime": {
     "selectedSourceCount": 654,
     "sourceTtlMinutes": 0,
@@ -30,15 +30,482 @@
     "canonicalStrictUrl": false,
     "lifecycle": {
       "owner": "fetch_report",
-      "heartbeatAt": "2026-03-30T13:25:54.180235+00:00"
+      "heartbeatAt": "2026-03-30T13:26:37.485902+00:00"
+    },
+    "slowestSources": [
+      {
+        "name": "teamtailor_sources",
+        "adapter": "teamtailor",
+        "durationMs": 269387,
+        "keptCount": 53,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "greenhouse_boards",
+        "adapter": "greenhouse",
+        "durationMs": 248565,
+        "keptCount": 779,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "workable_sources",
+        "adapter": "workable",
+        "durationMs": 245844,
+        "keptCount": 105,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "lever_sources",
+        "adapter": "lever",
+        "durationMs": 233845,
+        "keptCount": 292,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "ashby_sources",
+        "adapter": "ashby",
+        "durationMs": 231848,
+        "keptCount": 80,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "static_source::static:listing_url:https://jobs.ea.com/en_us/careers/home/?4538=8369&4538_format=3021&listfiltermode=1",
+        "adapter": "static",
+        "durationMs": 210899,
+        "keptCount": 21,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "static_source::static:listing_url:https://jobs.ea.com/en_us/careers/searchjobs/?4538=[8354]&4538_format=3021",
+        "adapter": "static",
+        "durationMs": 204281,
+        "keptCount": 15,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "gamejobs",
+        "adapter": "html",
+        "durationMs": 82148,
+        "keptCount": 1093,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "static_source::static:listing_url:https://www.linkedin.com/company/1047games/jobs/",
+        "adapter": "static",
+        "durationMs": 72875,
+        "keptCount": 0,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      },
+      {
+        "name": "gracklehq",
+        "adapter": "html",
+        "durationMs": 67448,
+        "keptCount": 0,
+        "detailPagesVisited": 0,
+        "detailYieldPct": 0
+      }
+    ],
+    "timingSummary": {
+      "totalDurationMs": 12812475,
+      "wallClockDurationMs": 295455,
+      "medianSourceDurationMs": 10719,
+      "p95SourceDurationMs": 46224,
+      "stageTotalsMs": {
+        "fetchAndParse": 11938749,
+        "listingFetch": 6254720,
+        "parseCsv": 450,
+        "candidateExtraction": 127059,
+        "detailFetch": 518184,
+        "redirectResolve": 13,
+        "canonicalization": 4103
+      },
+      "stageTop": [
+        {
+          "stage": "fetchAndParse",
+          "durationMs": 11938749
+        },
+        {
+          "stage": "listingFetch",
+          "durationMs": 6254720
+        },
+        {
+          "stage": "detailFetch",
+          "durationMs": 518184
+        },
+        {
+          "stage": "candidateExtraction",
+          "durationMs": 127059
+        },
+        {
+          "stage": "canonicalization",
+          "durationMs": 4103
+        }
+      ],
+      "adapterTimings": [
+        {
+          "adapter": "static",
+          "sourceCount": 628,
+          "durationMs": 10926764,
+          "medianDurationMs": 10667,
+          "fetchedCount": 2287,
+          "keptCount": 2284,
+          "errorCount": 63,
+          "zeroKeptCount": 374
+        },
+        {
+          "adapter": "teamtailor",
+          "sourceCount": 1,
+          "durationMs": 269387,
+          "medianDurationMs": 269387,
+          "fetchedCount": 53,
+          "keptCount": 53,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "html",
+          "sourceCount": 6,
+          "durationMs": 264201,
+          "medianDurationMs": 32961,
+          "fetchedCount": 1232,
+          "keptCount": 1232,
+          "errorCount": 1,
+          "zeroKeptCount": 2
+        },
+        {
+          "adapter": "greenhouse",
+          "sourceCount": 1,
+          "durationMs": 248565,
+          "medianDurationMs": 248565,
+          "fetchedCount": 779,
+          "keptCount": 779,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "workable",
+          "sourceCount": 1,
+          "durationMs": 245844,
+          "medianDurationMs": 245844,
+          "fetchedCount": 105,
+          "keptCount": 105,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "lever",
+          "sourceCount": 1,
+          "durationMs": 233845,
+          "medianDurationMs": 233845,
+          "fetchedCount": 292,
+          "keptCount": 292,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "ashby",
+          "sourceCount": 1,
+          "durationMs": 231848,
+          "medianDurationMs": 231848,
+          "fetchedCount": 80,
+          "keptCount": 80,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "csv",
+          "sourceCount": 3,
+          "durationMs": 159480,
+          "medianDurationMs": 53457,
+          "fetchedCount": 33596,
+          "keptCount": 33578,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "social",
+          "sourceCount": 2,
+          "durationMs": 55692,
+          "medianDurationMs": 0,
+          "fetchedCount": 1,
+          "keptCount": 1,
+          "errorCount": 0,
+          "zeroKeptCount": 1
+        },
+        {
+          "adapter": "personio",
+          "sourceCount": 1,
+          "durationMs": 51749,
+          "medianDurationMs": 51749,
+          "fetchedCount": 2,
+          "keptCount": 0,
+          "errorCount": 0,
+          "zeroKeptCount": 1
+        },
+        {
+          "adapter": "api",
+          "sourceCount": 2,
+          "durationMs": 51622,
+          "medianDurationMs": 22257,
+          "fetchedCount": 165,
+          "keptCount": 165,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "recruitee",
+          "sourceCount": 1,
+          "durationMs": 26493,
+          "medianDurationMs": 26493,
+          "fetchedCount": 80,
+          "keptCount": 80,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "smartrecruiters",
+          "sourceCount": 1,
+          "durationMs": 25711,
+          "medianDurationMs": 25711,
+          "fetchedCount": 108,
+          "keptCount": 108,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "pinpoint",
+          "sourceCount": 1,
+          "durationMs": 21274,
+          "medianDurationMs": 21274,
+          "fetchedCount": 2,
+          "keptCount": 2,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "bamboohr",
+          "sourceCount": 1,
+          "durationMs": 0,
+          "medianDurationMs": 0,
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "errorCount": 0,
+          "zeroKeptCount": 1
+        },
+        {
+          "adapter": "breezy",
+          "sourceCount": 1,
+          "durationMs": 0,
+          "medianDurationMs": 0,
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "errorCount": 0,
+          "zeroKeptCount": 1
+        },
+        {
+          "adapter": "jazzhr",
+          "sourceCount": 1,
+          "durationMs": 0,
+          "medianDurationMs": 0,
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "errorCount": 0,
+          "zeroKeptCount": 1
+        },
+        {
+          "adapter": "workday",
+          "sourceCount": 1,
+          "durationMs": 0,
+          "medianDurationMs": 0,
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "errorCount": 0,
+          "zeroKeptCount": 1
+        },
+        {
+          "adapter": "scrapy_static",
+          "sourceCount": 1,
+          "durationMs": 0,
+          "medianDurationMs": 0,
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "errorCount": 0,
+          "zeroKeptCount": 1
+        }
+      ],
+      "slowestAdapters": [
+        {
+          "adapter": "static",
+          "sourceCount": 628,
+          "durationMs": 10926764,
+          "medianDurationMs": 10667,
+          "fetchedCount": 2287,
+          "keptCount": 2284,
+          "errorCount": 63,
+          "zeroKeptCount": 374
+        },
+        {
+          "adapter": "teamtailor",
+          "sourceCount": 1,
+          "durationMs": 269387,
+          "medianDurationMs": 269387,
+          "fetchedCount": 53,
+          "keptCount": 53,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "html",
+          "sourceCount": 6,
+          "durationMs": 264201,
+          "medianDurationMs": 32961,
+          "fetchedCount": 1232,
+          "keptCount": 1232,
+          "errorCount": 1,
+          "zeroKeptCount": 2
+        },
+        {
+          "adapter": "greenhouse",
+          "sourceCount": 1,
+          "durationMs": 248565,
+          "medianDurationMs": 248565,
+          "fetchedCount": 779,
+          "keptCount": 779,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        },
+        {
+          "adapter": "workable",
+          "sourceCount": 1,
+          "durationMs": 245844,
+          "medianDurationMs": 245844,
+          "fetchedCount": 105,
+          "keptCount": 105,
+          "errorCount": 0,
+          "zeroKeptCount": 0
+        }
+      ],
+      "highCostLowYieldSources": [
+        {
+          "name": "static_source::static:listing_url:https://www.linkedin.com/company/1047games/jobs/",
+          "adapter": "static",
+          "durationMs": 72875,
+          "keptCount": 0
+        },
+        {
+          "name": "gracklehq",
+          "adapter": "html",
+          "durationMs": 67448,
+          "keptCount": 0
+        },
+        {
+          "name": "static_source::static:listing_url:https://jobs.jobvite.com/amberstudiocareers/search?l=worldwide",
+          "adapter": "static",
+          "durationMs": 61020,
+          "keptCount": 0
+        },
+        {
+          "name": "static_source::static:listing_url:https://www.remedygames.com/careers",
+          "adapter": "static",
+          "durationMs": 58672,
+          "keptCount": 0
+        },
+        {
+          "name": "static_source::static:listing_url:https://careers.activision.com",
+          "adapter": "static",
+          "durationMs": 58612,
+          "keptCount": 0
+        }
+      ],
+      "detailHeavySources": [
+        {
+          "name": "static_source::static:listing_url:https://jobs.kevurugames.com/vacancy/",
+          "adapter": "static",
+          "durationMs": 31961,
+          "detailFetchMs": 110607,
+          "keptCount": 0
+        },
+        {
+          "name": "static_source::static:listing_url:https://thirtyfirstunion.com/careers/",
+          "adapter": "static",
+          "durationMs": 31040,
+          "detailFetchMs": 73954,
+          "keptCount": 0
+        },
+        {
+          "name": "static_source::static:listing_url:https://emploi.afjv.com/annonces-societes/12",
+          "adapter": "static",
+          "durationMs": 57550,
+          "detailFetchMs": 47905,
+          "keptCount": 0
+        },
+        {
+          "name": "static_source::static:listing_url:https://explore.jobs.netflix.net/careers?teams=netflix%20games%20studio",
+          "adapter": "static",
+          "durationMs": 12693,
+          "detailFetchMs": 40519,
+          "keptCount": 0
+        },
+        {
+          "name": "static_source::static:listing_url:https://mindstormstudios.simplicant.com/jobs/board",
+          "adapter": "static",
+          "durationMs": 12020,
+          "detailFetchMs": 39397,
+          "keptCount": 6
+        },
+        {
+          "name": "static_source::static:listing_url:https://job.axol.jp/qd/c/marv/job/search",
+          "adapter": "static",
+          "durationMs": 13560,
+          "detailFetchMs": 25913,
+          "keptCount": 0
+        },
+        {
+          "name": "static_source::static:listing_url:https://sandsoft.com/careers-at-sandsoft/",
+          "adapter": "static",
+          "durationMs": 26721,
+          "detailFetchMs": 25447,
+          "keptCount": 6
+        },
+        {
+          "name": "static_source::static:listing_url:https://www.tocaboca.com/careers",
+          "adapter": "static",
+          "durationMs": 27032,
+          "detailFetchMs": 21402,
+          "keptCount": 5
+        },
+        {
+          "name": "static_source::static:listing_url:https://jobs.plaion.com/",
+          "adapter": "static",
+          "durationMs": 25197,
+          "detailFetchMs": 18472,
+          "keptCount": 0
+        },
+        {
+          "name": "static_source::static:listing_url:https://inworld.ai/careers#job-openings",
+          "adapter": "static",
+          "durationMs": 54260,
+          "detailFetchMs": 17539,
+          "keptCount": 10
+        }
+      ]
     }
   },
   "summary": {
-    "inputCount": 37530,
-    "mergedCount": 9559,
-    "outputCount": 27971,
-    "mergedByPrimaryUrl": 2000,
-    "mergedBySecondaryKey": 7559,
+    "inputCount": 38759,
+    "mergedCount": 9874,
+    "outputCount": 28885,
+    "mergedByPrimaryUrl": 2270,
+    "mergedBySecondaryKey": 7604,
     "mergedBySocialKey": 0,
     "collisionSamplesCount": 10,
     "collisionSamples": [
@@ -123,45 +590,45 @@
         "incomingJobLink": "https://careers.activisionblizzard.com/important-scam-warning"
       }
     ],
-    "rawFetched": 37553,
+    "rawFetched": 38782,
     "canonicalDropped": 23,
-    "canonicalKept": 37530,
-    "dedupMerged": 9559,
-    "finalOutput": 27971,
-    "rawFetchedCount": 37530,
-    "uniqueOutputCount": 27971,
-    "sourceBundleCollisions": 5273,
-    "targetRoleCount": 215,
-    "netherlandsCount": 249,
-    "remoteCount": 4898,
+    "canonicalKept": 38759,
+    "dedupMerged": 9874,
+    "finalOutput": 28885,
+    "rawFetchedCount": 38759,
+    "uniqueOutputCount": 28885,
+    "sourceBundleCollisions": 5494,
+    "targetRoleCount": 225,
+    "netherlandsCount": 259,
+    "remoteCount": 4930,
     "targetRoleNetherlandsCount": 0,
     "targetRoleRemoteCount": 43,
     "preservedPreviousOutput": false,
-    "sourceCount": 650,
-    "successfulSources": 586,
+    "sourceCount": 655,
+    "successfulSources": 590,
     "failedSources": 64,
-    "excludedSources": 0,
+    "excludedSources": 1,
     "cacheSkippedCount": 0,
     "revalidatedCount": 0,
     "notModifiedCount": 0,
     "listingOnlyCount": 269,
     "detailSkippedByListingFingerprintCount": 269,
     "cacheDecisionCounts": {
-      "run_now": 331,
+      "run_now": 395,
       "listing_only": 269
     },
     "activeSourceCount": 755,
     "pendingSourceCount": 34,
     "newlyApprovedSinceLastRun": 0,
-    "jsonBytes": 0,
-    "csvBytes": 0,
-    "lightJsonBytes": 0,
+    "jsonBytes": 41650306,
+    "csvBytes": 22645427,
+    "lightJsonBytes": 20498843,
     "sizeGuardrailExceeded": false,
     "recordGuardrailExceeded": false,
-    "lifecycleActiveCount": 30107,
-    "lifecycleLikelyRemovedCount": 31946,
+    "lifecycleActiveCount": 29869,
+    "lifecycleLikelyRemovedCount": 32273,
     "lifecycleArchivedCount": 7121,
-    "lifecycleTrackedCount": 69174,
+    "lifecycleTrackedCount": 69263,
     "blankResidueBreakdown": {
       "byShape": {
         "blank_residue": {
@@ -946,41 +1413,235 @@
       ]
     }
   },
-  "socialSummary": {},
+  "socialSummary": {
+    "pilotWindowStartAt": "2026-03-30T13:21:50.885441+00:00",
+    "pilotWindowEndAt": "2026-03-30T13:26:37.485902+00:00",
+    "scheduledRunCount": 1,
+    "keptCount": 1,
+    "uniqueKeptCount": 1,
+    "officialBoardOverlapCount": 0,
+    "duplicateCount": 0,
+    "duplicateRate": 0.0,
+    "lowConfidenceDropped": 39,
+    "sampleSize": 0,
+    "reviewedCount": 0,
+    "falsePositiveCount": 0,
+    "falsePositiveRate": 0.0,
+    "reviewArtifactPath": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\social-experiment-review.json",
+    "channels": {
+      "reddit": {
+        "keptCount": 0,
+        "uniqueKeptCount": 0,
+        "officialBoardOverlapCount": 0,
+        "duplicateCount": 0,
+        "duplicateRate": 0.0,
+        "lowConfidenceDropped": 0
+      },
+      "mastodon": {
+        "keptCount": 1,
+        "uniqueKeptCount": 1,
+        "officialBoardOverlapCount": 0,
+        "duplicateCount": 0,
+        "duplicateRate": 0.0,
+        "lowConfidenceDropped": 39
+      }
+    }
+  },
   "taskProgress": {
-    "active": true,
-    "phaseKey": "executing_sources",
-    "phaseLabel": "Executing sources",
+    "active": false,
+    "phaseKey": "completed",
+    "phaseLabel": "Completed",
     "mode": "determinate",
-    "ratio": 0.7957186544342507,
+    "ratio": 1.0,
     "counts": {
       "totalTasks": 654,
       "queuedTasks": 0,
-      "runningTasks": 4,
-      "completedTasks": 650,
-      "resolvedSources": 650,
-      "outputCount": 27971,
+      "runningTasks": 0,
+      "completedTasks": 654,
+      "resolvedSources": 655,
+      "outputCount": 28885,
       "failedSources": 64,
-      "excludedSources": 0
+      "excludedSources": 1
     }
   },
   "contaminationAudit": {
-    "totalRows": 0,
+    "totalRows": 28885,
     "contaminatedRows": 0,
     "fieldCounts": {},
     "examples": []
   },
   "locationQualityAudit": {
-    "totalRows": 0,
+    "totalRows": 28885,
     "invalidLocationFieldCount": 0,
     "fieldCounts": {},
     "reasonCounts": {},
     "examples": []
   },
   "sectorQualityAudit": {
-    "totalRows": 0,
-    "downgradedGameSectorCount": 0,
-    "examples": []
+    "totalRows": 28885,
+    "downgradedGameSectorCount": 9656,
+    "examples": [
+      {
+        "company": "Funcom",
+        "title": "We use cookies to ensure that we give you the best experience on our website.",
+        "source": "static_source::static:listing_url:https://www.funcom.com/careers-in-funcom/",
+        "jobLink": "https://www.funcom.com/cookie-policy",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "Amplitude Studios",
+        "title": "Relations sociales et suivi juridique (H/F/NB)",
+        "source": "static_source::static:listing_url:https://www.amplitude-studios.com/careers#careers",
+        "jobLink": "https://careers.flatchr.io/fr/company/amplitudestudios/vacancy/6kzqpnnxjqmp31m0-relations-sociales-et-suivi-juridique-h-f-nb",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "Amplitude Studios",
+        "title": "official website",
+        "source": "static_source::static:listing_url:https://www.amplitude-studios.com/careers#careers",
+        "jobLink": "https://www.endless-space.com/",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "People can Fly Studio",
+        "title": "Artiste Senior, Effets Visuels (VFX) / Senior VFX Artist Montréal, Canada",
+        "source": "static_source::static:listing_url:https://careers.smartrecruiters.com/peoplecanfly",
+        "jobLink": "https://jobs.smartrecruiters.com/PeopleCanFly/744000114050330-artiste-senior-effets-visuels-vfx-senior-vfx-artist",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "People can Fly Studio",
+        "title": "Chef d'équipe, artiste éclairagiste / Lead Lighting Artist - Remote Montréal, Canada",
+        "source": "static_source::static:listing_url:https://careers.smartrecruiters.com/peoplecanfly",
+        "jobLink": "https://jobs.smartrecruiters.com/PeopleCanFly/744000106807780-chef-d-equipe-artiste-eclairagiste-lead-lighting-artist-remote",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "People can Fly Studio",
+        "title": "Concepteur(-trice) de niveau technique senior / Senior Technical Level Designer Montréal, Canada",
+        "source": "static_source::static:listing_url:https://careers.smartrecruiters.com/peoplecanfly",
+        "jobLink": "https://jobs.smartrecruiters.com/PeopleCanFly/744000115967528-concepteur-trice-de-niveau-technique-senior-senior-technical-level-designer",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "People can Fly Studio",
+        "title": "Concepteur technique narratif/ Technical Narrative Designer Montréal, Canada",
+        "source": "static_source::static:listing_url:https://careers.smartrecruiters.com/peoplecanfly",
+        "jobLink": "https://jobs.smartrecruiters.com/PeopleCanFly/744000114985393-concepteur-technique-narratif-technical-narrative-designer",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "People can Fly Studio",
+        "title": "Legal Counsel (General, Corporate & Securities) Warszawa, Poland",
+        "source": "static_source::static:listing_url:https://careers.smartrecruiters.com/peoplecanfly",
+        "jobLink": "https://jobs.smartrecruiters.com/PeopleCanFly/744000102272896-legal-counsel-general-corporate-securities-",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "People can Fly Studio",
+        "title": "Partenaire d’affaires senior - Ressources humaines / Senior HRBP Montréal, Canada",
+        "source": "static_source::static:listing_url:https://careers.smartrecruiters.com/peoplecanfly",
+        "jobLink": "https://jobs.smartrecruiters.com/PeopleCanFly/744000116599329-partenaire-d-affaires-senior-ressources-humaines-senior-hrbp",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "People can Fly Studio",
+        "title": "Office Specialist Warszawa, Poland",
+        "source": "static_source::static:listing_url:https://careers.smartrecruiters.com/peoplecanfly",
+        "jobLink": "https://jobs.smartrecruiters.com/PeopleCanFly/744000115488907-office-specialist",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "People can Fly Studio",
+        "title": "Art Manager Montréal, Canada",
+        "source": "static_source::static:listing_url:https://careers.smartrecruiters.com/peoplecanfly",
+        "jobLink": "https://jobs.smartrecruiters.com/PeopleCanFly/744000114977632-art-manager",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "People can Fly Studio",
+        "title": "Skip content section",
+        "source": "static_source::static:listing_url:https://careers.smartrecruiters.com/peoplecanfly",
+        "jobLink": "https://careers.smartrecruiters.com/PeopleCanFly",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "Keywords Studios",
+        "title": "Career Enquiries",
+        "source": "static_source::static:listing_url:https://www.keywordsstudios.com/en/careers/browse-careers/",
+        "jobLink": "https://www.keywordsstudios.com/en/careers/browse-careers/talk-to-us",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "SEGA",
+        "title": "New Graduate Recruitment",
+        "source": "static_source::static:listing_url:https://www.sega.co.jp/en/recruit/",
+        "jobLink": "https://www.sega.co.jp/en/recruit/fresh",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "SEGA",
+        "title": "Mid-career Recruitment",
+        "source": "static_source::static:listing_url:https://www.sega.co.jp/en/recruit/",
+        "jobLink": "https://www.sega.co.jp/en/recruit/career",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "SEGA",
+        "title": "Part Time Recruitment PART TIME",
+        "source": "static_source::static:listing_url:https://www.sega.co.jp/en/recruit/",
+        "jobLink": "https://www.sega.co.jp/en/recruit/parttime",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "SEGA",
+        "title": "Jet Set Radio Developer Interview",
+        "source": "static_source::static:listing_url:https://www.sega.co.jp/en/recruit/",
+        "jobLink": "https://www.sega.co.jp/en/recruit/episode/episode12",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "SEGA",
+        "title": "Like a Dragon: Infinite Wealth Developer Interview",
+        "source": "static_source::static:listing_url:https://www.sega.co.jp/en/recruit/",
+        "jobLink": "https://www.sega.co.jp/en/recruit/episode/episode14",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "SEGA",
+        "title": "Sonic Frontiers Developer Interview",
+        "source": "static_source::static:listing_url:https://www.sega.co.jp/en/recruit/",
+        "jobLink": "https://www.sega.co.jp/en/recruit/episode/episode15",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      },
+      {
+        "company": "SEGA",
+        "title": "HORI A TALE Developer Interview",
+        "source": "static_source::static:listing_url:https://www.sega.co.jp/en/recruit/",
+        "jobLink": "https://www.sega.co.jp/en/recruit/episode/episode16",
+        "rawSector": "Game",
+        "normalizedSector": "Tech"
+      }
+    ]
   },
   "sources": [
     {
@@ -1122,7 +1783,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 10,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 10,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -1349,7 +2010,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -1804,8 +2465,8 @@
         "rawFetched": 13,
         "canonicalDropped": 0,
         "canonicalKept": 13,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 6,
+        "finalOutput": 7,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -1954,7 +2615,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -2298,7 +2959,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -2675,8 +3336,8 @@
         "rawFetched": 11,
         "canonicalDropped": 0,
         "canonicalKept": 11,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 5,
+        "finalOutput": 6,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -3252,7 +3913,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 7,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 7,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -3362,7 +4023,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -3589,7 +4250,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -3820,7 +4481,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -3930,7 +4591,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -4158,7 +4819,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -4621,7 +5282,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -4734,7 +5395,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -4848,7 +5509,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -5079,7 +5740,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -5193,7 +5854,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 12,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 12,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -5423,7 +6084,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 10,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 10,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -5537,7 +6198,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 9,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 9,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -5767,8 +6428,8 @@
         "rawFetched": 2,
         "canonicalDropped": 0,
         "canonicalKept": 2,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -5880,8 +6541,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -5995,7 +6656,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -6577,8 +7238,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -6809,7 +7470,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 10,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 10,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -6918,8 +7579,8 @@
         "rawFetched": 175,
         "canonicalDropped": 0,
         "canonicalKept": 175,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 173,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -7418,7 +8079,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -7528,7 +8189,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -7760,7 +8421,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -8213,7 +8874,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -8326,7 +8987,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -8544,7 +9205,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -8658,7 +9319,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 46,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 46,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -8771,7 +9432,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -9126,7 +9787,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -9236,7 +9897,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -9503,8 +10164,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -9734,8 +10395,8 @@
         "rawFetched": 7,
         "canonicalDropped": 0,
         "canonicalKept": 7,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 6,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -10039,7 +10700,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -10153,7 +10814,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 13,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 13,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -10653,8 +11314,8 @@
         "rawFetched": 8,
         "canonicalDropped": 0,
         "canonicalKept": 8,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 7,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -10768,7 +11429,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 10,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 10,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -10999,8 +11660,8 @@
         "rawFetched": 12,
         "canonicalDropped": 0,
         "canonicalKept": 12,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 10,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -11227,7 +11888,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 7,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 7,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -11649,7 +12310,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 8,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 8,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -11798,8 +12459,8 @@
         "rawFetched": 9,
         "canonicalDropped": 0,
         "canonicalKept": 9,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 3,
+        "finalOutput": 6,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -12265,8 +12926,8 @@
         "rawFetched": 9,
         "canonicalDropped": 0,
         "canonicalKept": 9,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 7,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -12415,7 +13076,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 5,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 5,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -13000,7 +13661,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -13114,7 +13775,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -13228,8 +13889,8 @@
         "rawFetched": 92,
         "canonicalDropped": 0,
         "canonicalKept": 92,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 91,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -13342,7 +14003,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -13455,7 +14116,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -13565,7 +14226,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -14149,8 +14810,8 @@
         "rawFetched": 2,
         "canonicalDropped": 0,
         "canonicalKept": 2,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -14262,8 +14923,8 @@
         "rawFetched": 26,
         "canonicalDropped": 0,
         "canonicalKept": 26,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 18,
+        "finalOutput": 8,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -14489,8 +15150,8 @@
         "rawFetched": 12,
         "canonicalDropped": 0,
         "canonicalKept": 12,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 4,
+        "finalOutput": 8,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -14953,7 +15614,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -15065,8 +15726,8 @@
         "rawFetched": 37,
         "canonicalDropped": 0,
         "canonicalKept": 37,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 36,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -15182,7 +15843,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -15295,7 +15956,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -15526,7 +16187,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -15873,7 +16534,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -16571,7 +17232,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -16802,7 +17463,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -16916,7 +17577,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -17030,7 +17691,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 22,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 22,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -17256,8 +17917,8 @@
         "rawFetched": 4,
         "canonicalDropped": 0,
         "canonicalKept": 4,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -17488,7 +18149,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -17756,7 +18417,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 6,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 6,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -17870,7 +18531,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -17982,8 +18643,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -18366,8 +19027,8 @@
         "rawFetched": 113,
         "canonicalDropped": 0,
         "canonicalKept": 113,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 3,
+        "finalOutput": 110,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -18410,7 +19071,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -18524,7 +19185,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 13,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 13,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -18639,7 +19300,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -18865,7 +19526,7 @@
         "rawFetched": 2,
         "canonicalDropped": 0,
         "canonicalKept": 2,
-        "dedupMerged": 0,
+        "dedupMerged": 2,
         "finalOutput": 0,
         "canonicalDropReasons": {
           "missing_title": 0,
@@ -19098,7 +19759,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -19211,7 +19872,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 6,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 6,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -19830,8 +20491,8 @@
         "rawFetched": 10,
         "canonicalDropped": 0,
         "canonicalKept": 10,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 4,
+        "finalOutput": 6,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -20062,7 +20723,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -20410,7 +21071,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 10,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 10,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -20520,7 +21181,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 6,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 6,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -20762,8 +21423,8 @@
         "rawFetched": 80,
         "canonicalDropped": 0,
         "canonicalKept": 80,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 4,
+        "finalOutput": 76,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -20898,8 +21559,8 @@
         "rawFetched": 6,
         "canonicalDropped": 0,
         "canonicalKept": 6,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 5,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -21020,7 +21681,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -21374,8 +22035,8 @@
         "rawFetched": 108,
         "canonicalDropped": 0,
         "canonicalKept": 108,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 107,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -21498,7 +22159,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 8,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 8,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -21611,7 +22272,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 12,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 12,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -21726,7 +22387,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 5,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 5,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -22002,7 +22663,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -22121,7 +22782,7 @@
         "rawFetched": 1,
         "canonicalDropped": 0,
         "canonicalKept": 1,
-        "dedupMerged": 0,
+        "dedupMerged": 1,
         "finalOutput": 0,
         "canonicalDropReasons": {
           "missing_title": 0,
@@ -22235,8 +22896,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -22622,7 +23283,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -22889,7 +23550,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 8,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 8,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -23116,8 +23777,8 @@
         "rawFetched": 4,
         "canonicalDropped": 0,
         "canonicalKept": 4,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 3,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -23502,7 +24163,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -23620,8 +24281,8 @@
         "rawFetched": 5,
         "canonicalDropped": 0,
         "canonicalKept": 5,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -23733,8 +24394,8 @@
         "rawFetched": 7,
         "canonicalDropped": 0,
         "canonicalKept": 7,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 3,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -23848,7 +24509,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 8,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 8,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -24079,7 +24740,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -24661,7 +25322,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 39,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 39,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -25171,7 +25832,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -25283,8 +25944,8 @@
         "rawFetched": 5,
         "canonicalDropped": 0,
         "canonicalKept": 5,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 3,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -25550,7 +26211,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -25664,7 +26325,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 7,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 7,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -25781,8 +26442,8 @@
         "rawFetched": 2,
         "canonicalDropped": 0,
         "canonicalKept": 2,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -25997,7 +26658,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 11,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 11,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -26110,8 +26771,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -26504,7 +27165,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -26734,7 +27395,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -26847,7 +27508,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -26960,7 +27621,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -27334,6 +27995,7 @@
       "durationMs": 12570,
       "failureBucket": "site_changed",
       "zeroKeptClassification": "broken_extraction",
+      "listingUrl": "https://glera-games.com/jobs/",
       "loss": {
         "rawFetched": 0,
         "canonicalDropped": 0,
@@ -27418,8 +28080,8 @@
         "rawFetched": 50,
         "canonicalDropped": 0,
         "canonicalKept": 50,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 49,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -27655,8 +28317,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -27885,7 +28547,7 @@
         "rawFetched": 1,
         "canonicalDropped": 0,
         "canonicalKept": 1,
-        "dedupMerged": 0,
+        "dedupMerged": 1,
         "finalOutput": 0,
         "canonicalDropReasons": {
           "missing_title": 0,
@@ -28117,7 +28779,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -28267,7 +28929,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -28500,7 +29162,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -28614,7 +29276,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -29285,7 +29947,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 5,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 5,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -29398,7 +30060,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 8,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 8,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -29661,8 +30323,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -29773,7 +30435,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -29887,7 +30549,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 16,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 16,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -30117,7 +30779,7 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
+        "dedupMerged": 3,
         "finalOutput": 0,
         "canonicalDropReasons": {
           "missing_title": 0,
@@ -30740,7 +31402,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -31588,8 +32250,8 @@
         "rawFetched": 28,
         "canonicalDropped": 0,
         "canonicalKept": 28,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 6,
+        "finalOutput": 22,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -31703,7 +32365,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -31817,7 +32479,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -32165,7 +32827,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -32513,7 +33175,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -32863,7 +33525,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 8,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 8,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -33212,7 +33874,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -33560,8 +34222,8 @@
         "rawFetched": 8,
         "canonicalDropped": 0,
         "canonicalKept": 8,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 6,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -33675,7 +34337,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 5,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 5,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -34175,7 +34837,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -34289,7 +34951,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -34637,7 +35299,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 5,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 5,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -34986,7 +35648,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -35099,8 +35761,8 @@
         "rawFetched": 4,
         "canonicalDropped": 0,
         "canonicalKept": 4,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -35214,7 +35876,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -35328,7 +35990,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 9,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 9,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -35441,7 +36103,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 5,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 5,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -35554,7 +36216,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -35939,7 +36601,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -36319,7 +36981,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -36433,7 +37095,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -36781,7 +37443,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -36930,7 +37592,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -37668,7 +38330,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -38054,7 +38716,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -38322,7 +38984,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -38435,7 +39097,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -38549,7 +39211,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -38898,7 +39560,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -39012,7 +39674,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -39243,8 +39905,8 @@
         "rawFetched": 5,
         "canonicalDropped": 0,
         "canonicalKept": 5,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -39630,7 +40292,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -40208,7 +40870,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 12,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 12,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -40321,7 +40983,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -40434,7 +41096,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 9,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 9,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -41052,8 +41714,8 @@
         "rawFetched": 7,
         "canonicalDropped": 0,
         "canonicalKept": 7,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 5,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -41439,7 +42101,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -41669,7 +42331,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -42054,8 +42716,8 @@
         "rawFetched": 8,
         "canonicalDropped": 0,
         "canonicalKept": 8,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 6,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -43146,8 +43808,8 @@
         "rawFetched": 10,
         "canonicalDropped": 0,
         "canonicalKept": 10,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 8,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -43974,8 +44636,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -44325,7 +44987,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 27,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 27,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -44435,7 +45097,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -44548,8 +45210,8 @@
         "rawFetched": 5,
         "canonicalDropped": 0,
         "canonicalKept": 5,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 3,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -44662,8 +45324,8 @@
         "rawFetched": 14,
         "canonicalDropped": 0,
         "canonicalKept": 14,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 13,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -44895,7 +45557,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -45551,7 +46213,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -45663,8 +46325,8 @@
         "rawFetched": 24,
         "canonicalDropped": 0,
         "canonicalKept": 24,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 4,
+        "finalOutput": 20,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -45707,7 +46369,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -45820,7 +46482,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -45935,7 +46597,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 8,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 8,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -46048,8 +46710,8 @@
         "rawFetched": 7,
         "canonicalDropped": 2,
         "canonicalKept": 5,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 2,
           "missing_company": 0,
@@ -46163,8 +46825,8 @@
         "rawFetched": 7,
         "canonicalDropped": 0,
         "canonicalKept": 7,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 4,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -46662,8 +47324,8 @@
         "rawFetched": 1093,
         "canonicalDropped": 0,
         "canonicalKept": 1093,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 993,
+        "finalOutput": 100,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -46823,8 +47485,8 @@
         "rawFetched": 2,
         "canonicalDropped": 0,
         "canonicalKept": 2,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -46973,7 +47635,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -47205,7 +47867,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -47625,8 +48287,8 @@
         "rawFetched": 12,
         "canonicalDropped": 0,
         "canonicalKept": 12,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 3,
+        "finalOutput": 9,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -48210,7 +48872,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 47,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 47,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -48476,8 +49138,8 @@
         "rawFetched": 6,
         "canonicalDropped": 0,
         "canonicalKept": 6,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 4,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -48590,7 +49252,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -48704,7 +49366,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -48854,7 +49516,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -48969,7 +49631,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 6,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 6,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -49668,7 +50330,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -49780,8 +50442,8 @@
         "rawFetched": 25,
         "canonicalDropped": 0,
         "canonicalKept": 25,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 24,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -49894,8 +50556,8 @@
         "rawFetched": 5,
         "canonicalDropped": 0,
         "canonicalKept": 5,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -50121,7 +50783,7 @@
         "rawFetched": 175,
         "canonicalDropped": 0,
         "canonicalKept": 175,
-        "dedupMerged": 0,
+        "dedupMerged": 175,
         "finalOutput": 0,
         "canonicalDropReasons": {
           "missing_title": 0,
@@ -50695,8 +51357,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -50810,7 +51472,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 7,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 7,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -51193,8 +51855,8 @@
         "rawFetched": 5,
         "canonicalDropped": 0,
         "canonicalKept": 5,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -51421,7 +52083,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 8,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 8,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -52109,7 +52771,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -52219,7 +52881,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 19,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 19,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -52443,7 +53105,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -52556,7 +53218,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -52669,8 +53331,8 @@
         "rawFetched": 6,
         "canonicalDropped": 0,
         "canonicalKept": 6,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 5,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -53432,8 +54094,8 @@
         "rawFetched": 6,
         "canonicalDropped": 0,
         "canonicalKept": 6,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 5,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -53770,8 +54432,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -53885,7 +54547,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -53997,7 +54659,7 @@
         "rawFetched": 1,
         "canonicalDropped": 0,
         "canonicalKept": 1,
-        "dedupMerged": 0,
+        "dedupMerged": 1,
         "finalOutput": 0,
         "canonicalDropReasons": {
           "missing_title": 0,
@@ -54345,7 +55007,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 5,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 5,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -54801,7 +55463,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 33,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 33,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -54915,7 +55577,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -55025,7 +55687,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 7,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 7,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -55253,7 +55915,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -55480,8 +56142,8 @@
         "rawFetched": 7,
         "canonicalDropped": 0,
         "canonicalKept": 7,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 1,
+        "finalOutput": 6,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -55825,8 +56487,8 @@
         "rawFetched": 5,
         "canonicalDropped": 0,
         "canonicalKept": 5,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -56517,7 +57179,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -56631,7 +57293,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -56859,7 +57521,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -57317,7 +57979,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -58238,7 +58900,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 10,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 10,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -58579,8 +59241,8 @@
         "rawFetched": 54,
         "canonicalDropped": 0,
         "canonicalKept": 54,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 29,
+        "finalOutput": 25,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -58696,7 +59358,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 100,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 100,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -58920,7 +59582,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -59260,8 +59922,8 @@
         "rawFetched": 8,
         "canonicalDropped": 0,
         "canonicalKept": 8,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 3,
+        "finalOutput": 5,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -59488,8 +60150,8 @@
         "rawFetched": 27,
         "canonicalDropped": 0,
         "canonicalKept": 27,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 8,
+        "finalOutput": 19,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -59716,7 +60378,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 10,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 10,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -59832,7 +60494,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 38,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 38,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -60320,7 +60982,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -60434,7 +61096,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -60665,7 +61327,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -60892,7 +61554,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 6,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 6,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -61001,8 +61663,8 @@
         "rawFetched": 28,
         "canonicalDropped": 0,
         "canonicalKept": 28,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 3,
+        "finalOutput": 25,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -61236,7 +61898,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 42,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 42,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -61352,7 +62014,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -61697,7 +62359,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -61810,7 +62472,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -61923,8 +62585,8 @@
         "rawFetched": 50,
         "canonicalDropped": 0,
         "canonicalKept": 50,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 4,
+        "finalOutput": 46,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -62192,7 +62854,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 29,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 29,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -62643,7 +63305,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -62976,8 +63638,8 @@
         "rawFetched": 9,
         "canonicalDropped": 0,
         "canonicalKept": 9,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 8,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -63091,7 +63753,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 25,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 25,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -63420,7 +64082,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 7,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 7,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -63879,7 +64541,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -64451,7 +65113,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 9,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 9,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -64561,7 +65223,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 15,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 15,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -64787,8 +65449,8 @@
         "rawFetched": 5,
         "canonicalDropped": 0,
         "canonicalKept": 5,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 4,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -65016,7 +65678,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 2,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 2,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -65166,7 +65828,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 21,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 21,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -65279,8 +65941,8 @@
         "rawFetched": 20,
         "canonicalDropped": 0,
         "canonicalKept": 20,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 16,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -65621,7 +66283,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -65731,7 +66393,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 5,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 5,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -66076,8 +66738,8 @@
         "rawFetched": 3,
         "canonicalDropped": 0,
         "canonicalKept": 3,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -66190,7 +66852,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 52,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 52,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -66350,8 +67012,8 @@
         "rawFetched": 59,
         "canonicalDropped": 0,
         "canonicalKept": 59,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 11,
+        "finalOutput": 48,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -66464,7 +67126,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 4,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 4,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -66925,7 +67587,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -67273,8 +67935,8 @@
         "rawFetched": 21,
         "canonicalDropped": 0,
         "canonicalKept": 21,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 20,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -67388,7 +68050,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 76,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 76,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -67430,8 +68092,8 @@
         "rawFetched": 15,
         "canonicalDropped": 0,
         "canonicalKept": 15,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 2,
+        "finalOutput": 13,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -67541,7 +68203,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -67657,7 +68319,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 3,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 3,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -67881,7 +68543,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -68108,8 +68770,8 @@
         "rawFetched": 4,
         "canonicalDropped": 0,
         "canonicalKept": 4,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 3,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -68463,7 +69125,7 @@
         "canonicalDropped": 0,
         "canonicalKept": 1,
         "dedupMerged": 0,
-        "finalOutput": 0,
+        "finalOutput": 1,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -68769,8 +69431,8 @@
         "rawFetched": 21,
         "canonicalDropped": 0,
         "canonicalKept": 21,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 4,
+        "finalOutput": 17,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -69438,8 +70100,8 @@
         "rawFetched": 2302,
         "canonicalDropped": 18,
         "canonicalKept": 2284,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 603,
+        "finalOutput": 1681,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -69518,8 +70180,8 @@
         "rawFetched": 30928,
         "canonicalDropped": 0,
         "canonicalKept": 30928,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 7667,
+        "finalOutput": 23261,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -69604,8 +70266,8 @@
         "rawFetched": 80,
         "canonicalDropped": 0,
         "canonicalKept": 80,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 25,
+        "finalOutput": 55,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -69857,8 +70519,8 @@
         "rawFetched": 366,
         "canonicalDropped": 0,
         "canonicalKept": 366,
-        "dedupMerged": 0,
-        "finalOutput": 0,
+        "dedupMerged": 41,
+        "finalOutput": 325,
         "canonicalDropReasons": {
           "missing_title": 0,
           "missing_company": 0,
@@ -69946,21 +70608,1272 @@
           }
         }
       ]
+    },
+    {
+      "name": "lever_sources",
+      "status": "ok",
+      "adapter": "lever",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 292,
+      "keptCount": 292,
+      "lowConfidenceDropped": 0,
+      "duplicateRate": 0.0,
+      "error": "",
+      "durationMs": 233845,
+      "boardCount": 13,
+      "boardCacheDecisionCounts": {
+        "run_now": 13
+      },
+      "boardRefreshedCount": 13,
+      "stageTimingsMs": {
+        "fetchAndParse": 233768,
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 28
+      },
+      "loss": {
+        "rawFetched": 292,
+        "canonicalDropped": 0,
+        "canonicalKept": 292,
+        "dedupMerged": 3,
+        "finalOutput": 289,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0,
+        "staticDeadListingPageRejected": 0,
+        "scrapyDeadListingPageRejected": 0
+      },
+      "details": [
+        {
+          "adapter": "lever",
+          "studio": "Jagex",
+          "name": "Jagex (Lever)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "Sandbox VR",
+          "name": "Sandbox VR (Lever)",
+          "status": "ok",
+          "fetchedCount": 31,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "Voodoo",
+          "name": "Voodoo (Lever)",
+          "status": "ok",
+          "fetchedCount": 34,
+          "keptCount": 26,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "Xsolla",
+          "name": "Xsolla (Lever)",
+          "status": "ok",
+          "fetchedCount": 171,
+          "keptCount": 159,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "Animoca Brands",
+          "name": "Animoca Brands (Lever)",
+          "status": "ok",
+          "fetchedCount": 1,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "Big Time Studios",
+          "name": "Big Time Studios (Lever)",
+          "status": "ok",
+          "fetchedCount": 2,
+          "keptCount": 2,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "Age of Learning",
+          "name": "Age of Learning (Lever)",
+          "status": "ok",
+          "fetchedCount": 10,
+          "keptCount": 9,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "Larian Studios",
+          "name": "Larian Studios (Lever)",
+          "status": "ok",
+          "fetchedCount": 62,
+          "keptCount": 62,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "Roof Games",
+          "name": "Roof Games (Lever)",
+          "status": "ok",
+          "fetchedCount": 23,
+          "keptCount": 23,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "Mistplay",
+          "name": "Mistplay (Lever)",
+          "status": "ok",
+          "fetchedCount": 11,
+          "keptCount": 11,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "SkyBox Labs",
+          "name": "SkyBox Labs (Lever)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "Rushdown Studios",
+          "name": "Rushdown Studios (Lever)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "lever",
+          "studio": "PlayVS",
+          "name": "PlayVS (Lever)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        }
+      ]
+    },
+    {
+      "name": "workable_sources",
+      "status": "ok",
+      "adapter": "workable",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 105,
+      "keptCount": 105,
+      "lowConfidenceDropped": 0,
+      "duplicateRate": 0.0,
+      "error": "workable_sources: workable:Big Viking Games (Workable): HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/bigvikinggames3?details=true; workable_sources: workable:Square Enix (Workable): Network error for https://apply.workable.com/api/v1/widget/accounts/squareenixamerica?details=true:; workable_sources: workable:Universally Speaking (Workable): HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/universallyspeaking?details=true; workable_sources: workable:Moonbug Entertainment (Workable): HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/moonbugentertainment?details=true; workable_sources: workable:Jagex (Workable): HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/jagexlimited?details=true",
+      "durationMs": 245844,
+      "failureBucket": "site_changed",
+      "providerUrl": "https://apply.workable.com/api/v1/widget/accounts/bigvikinggames3?details=true",
+      "boardCount": 15,
+      "boardCacheDecisionCounts": {
+        "run_now": 15
+      },
+      "boardRefreshedCount": 15,
+      "stageTimingsMs": {
+        "fetchAndParse": 245834,
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 8
+      },
+      "loss": {
+        "rawFetched": 105,
+        "canonicalDropped": 0,
+        "canonicalKept": 105,
+        "dedupMerged": 44,
+        "finalOutput": 61,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0,
+        "staticDeadListingPageRejected": 0,
+        "scrapyDeadListingPageRejected": 0
+      },
+      "details": [
+        {
+          "adapter": "workable",
+          "studio": "Hutch",
+          "name": "Hutch (Workable)",
+          "status": "ok",
+          "fetchedCount": 10,
+          "keptCount": 10,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Wargaming",
+          "name": "Wargaming (Workable)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Vertigo Games",
+          "name": "Vertigo Games (Workable)",
+          "status": "ok",
+          "fetchedCount": 16,
+          "keptCount": 16,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Sperasoft",
+          "name": "Sperasoft (Workable)",
+          "status": "ok",
+          "fetchedCount": 64,
+          "keptCount": 64,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Goliath Games",
+          "name": "Goliath Games (Workable)",
+          "status": "ok",
+          "fetchedCount": 7,
+          "keptCount": 7,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Velan Studios, Inc.",
+          "name": "Velan Studios, Inc. (Workable)",
+          "status": "ok",
+          "fetchedCount": 7,
+          "keptCount": 7,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "StoryToys",
+          "name": "StoryToys (Workable)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Soulbound",
+          "name": "Soulbound (Workable)",
+          "status": "ok",
+          "fetchedCount": 1,
+          "keptCount": 1,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Carry1st",
+          "name": "Carry1st (Workable)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Big Viking Games",
+          "name": "Big Viking Games (Workable)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/bigvikinggames3?details=true",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Homa Games",
+          "name": "Homa Games (Workable)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Square Enix",
+          "name": "Square Enix (Workable)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "Network error for https://apply.workable.com/api/v1/widget/accounts/squareenixamerica?details=true:",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Universally Speaking",
+          "name": "Universally Speaking (Workable)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/universallyspeaking?details=true",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Moonbug Entertainment",
+          "name": "Moonbug Entertainment (Workable)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/moonbugentertainment?details=true",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "workable",
+          "studio": "Jagex",
+          "name": "Jagex (Workable)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/jagexlimited?details=true",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        }
+      ]
+    },
+    {
+      "name": "greenhouse_boards",
+      "status": "ok",
+      "adapter": "greenhouse",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 779,
+      "keptCount": 779,
+      "lowConfidenceDropped": 0,
+      "duplicateRate": 0.0,
+      "error": "greenhouse_boards: greenhouse:guerrillagames: HTTP 404 for https://boards-api.greenhouse.io/v1/boards/guerrillagames/jobs?content=true; greenhouse_boards: greenhouse:niantic: HTTP 404 for https://boards-api.greenhouse.io/v1/boards/niantic/jobs?content=true",
+      "durationMs": 248565,
+      "failureBucket": "site_changed",
+      "providerUrl": "https://boards-api.greenhouse.io/v1/boards/guerrillagames/jobs?content=true",
+      "boardCount": 28,
+      "boardCacheDecisionCounts": {
+        "run_now": 28
+      },
+      "boardRefreshedCount": 28,
+      "stageTimingsMs": {
+        "fetchAndParse": 248336,
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 208
+      },
+      "loss": {
+        "rawFetched": 779,
+        "canonicalDropped": 0,
+        "canonicalKept": 779,
+        "dedupMerged": 8,
+        "finalOutput": 771,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0,
+        "staticDeadListingPageRejected": 0,
+        "scrapyDeadListingPageRejected": 0
+      },
+      "details": [
+        {
+          "adapter": "greenhouse",
+          "studio": "Guerrilla Games",
+          "name": "Guerrilla Games",
+          "status": "ok",
+          "fetchedCount": 10,
+          "keptCount": 10,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "PlayStation Global",
+          "name": "PlayStation Global",
+          "status": "ok",
+          "fetchedCount": 196,
+          "keptCount": 196,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Scopely",
+          "name": "Scopely (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 165,
+          "keptCount": 165,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Discord",
+          "name": "Discord (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 84,
+          "keptCount": 84,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Atari",
+          "name": "Atari (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 14,
+          "keptCount": 14,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Zynga",
+          "name": "Zynga (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 66,
+          "keptCount": 66,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Easygo Gaming",
+          "name": "Easygo Gaming (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 57,
+          "keptCount": 57,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "HoYoverse",
+          "name": "HoYoverse (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 33,
+          "keptCount": 33,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Good Job Games",
+          "name": "Good Job Games (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 28,
+          "keptCount": 28,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Anchor Point Studios",
+          "name": "Anchor Point Studios (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Penn Interactive",
+          "name": "Penn Interactive (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 22,
+          "keptCount": 22,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "The Pokémon Company International",
+          "name": "The Pokémon Company International (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 26,
+          "keptCount": 26,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Rush Street Interactive",
+          "name": "Rush Street Interactive (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 22,
+          "keptCount": 22,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Mob Entertainment",
+          "name": "Mob Entertainment (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 7,
+          "keptCount": 7,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Trailer Park Group",
+          "name": "Trailer Park Group (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 8,
+          "keptCount": 8,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Visual Concepts",
+          "name": "Visual Concepts (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 7,
+          "keptCount": 7,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Gram Games",
+          "name": "Gram Games (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 8,
+          "keptCount": 8,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Cloud Chamber",
+          "name": "Cloud Chamber (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 12,
+          "keptCount": 12,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Housemarque",
+          "name": "Housemarque (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 7,
+          "keptCount": 7,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "NaturalMotion Games",
+          "name": "NaturalMotion Games (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 3,
+          "keptCount": 3,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Bungie",
+          "name": "Bungie (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 1,
+          "keptCount": 1,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Undead Labs",
+          "name": "Undead Labs (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 2,
+          "keptCount": 2,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Mojang Studios",
+          "name": "Mojang Studios (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 1,
+          "keptCount": 1,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Guerrilla Games",
+          "name": "Guerrilla Games (Greenhouse)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "HTTP 404 for https://boards-api.greenhouse.io/v1/boards/guerrillagames/jobs?content=true",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Niantic, Inc.",
+          "name": "Niantic, Inc. (Greenhouse)",
+          "status": "error",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "HTTP 404 for https://boards-api.greenhouse.io/v1/boards/niantic/jobs?content=true",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Gravity Well",
+          "name": "Gravity Well (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Firesprite",
+          "name": "Firesprite (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "greenhouse",
+          "studio": "Echtra Games",
+          "name": "Echtra Games (Greenhouse)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        }
+      ]
+    },
+    {
+      "name": "teamtailor_sources",
+      "status": "ok",
+      "adapter": "teamtailor",
+      "fetchStrategy": "http",
+      "studio": "multiple",
+      "fetchedCount": 53,
+      "keptCount": 53,
+      "lowConfidenceDropped": 0,
+      "duplicateRate": 0.0,
+      "error": "",
+      "durationMs": 269387,
+      "boardCount": 8,
+      "boardCacheDecisionCounts": {
+        "run_now": 8
+      },
+      "boardRefreshedCount": 8,
+      "stageTimingsMs": {
+        "fetchAndParse": 269381,
+        "listingFetch": 0,
+        "parseCsv": 0,
+        "candidateExtraction": 0,
+        "detailFetch": 0,
+        "redirectResolve": 0,
+        "canonicalization": 5
+      },
+      "loss": {
+        "rawFetched": 53,
+        "canonicalDropped": 0,
+        "canonicalKept": 53,
+        "dedupMerged": 21,
+        "finalOutput": 32,
+        "canonicalDropReasons": {
+          "missing_title": 0,
+          "missing_company": 0,
+          "missing_job_link": 0,
+          "invalid_url": 0,
+          "invalid_payload": 0
+        },
+        "scrapyRunnerRejectedValidation": 0,
+        "scrapyParentInvalidPayload": 0,
+        "staticNonJobUrlRejected": 0,
+        "staticDuplicateLinkRejected": 0,
+        "staticDetailParseEmpty": 0,
+        "staticDeadListingPageRejected": 0,
+        "scrapyDeadListingPageRejected": 0
+      },
+      "details": [
+        {
+          "adapter": "teamtailor",
+          "studio": "Paradox Interactive",
+          "name": "Paradox Careers",
+          "status": "ok",
+          "fetchedCount": 19,
+          "keptCount": 19,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "teamtailor",
+          "studio": "Paradox Interactive",
+          "name": "Paradox Interactive (Teamtailor)",
+          "status": "ok",
+          "fetchedCount": 19,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "teamtailor",
+          "studio": "Stillfront",
+          "name": "Stillfront (Teamtailor)",
+          "status": "ok",
+          "fetchedCount": 20,
+          "keptCount": 20,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "teamtailor",
+          "studio": "Stillfront",
+          "name": "Stillfront (Teamtailor)",
+          "status": "ok",
+          "fetchedCount": 17,
+          "keptCount": 10,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "teamtailor",
+          "studio": "CI Games",
+          "name": "CI Games (Teamtailor)",
+          "status": "ok",
+          "fetchedCount": 2,
+          "keptCount": 2,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "teamtailor",
+          "studio": "New Moon Production",
+          "name": "New Moon Production (Teamtailor)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "teamtailor",
+          "studio": "Section 9 Interactive",
+          "name": "Section 9 Interactive (Teamtailor)",
+          "status": "ok",
+          "fetchedCount": 0,
+          "keptCount": 0,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        },
+        {
+          "adapter": "teamtailor",
+          "studio": "Tanglewood Games",
+          "name": "Tanglewood Games (Teamtailor)",
+          "status": "ok",
+          "fetchedCount": 2,
+          "keptCount": 2,
+          "error": "",
+          "classification": "",
+          "browserFallbackRecommended": false,
+          "cacheDecision": "run_now",
+          "cacheDecisionReason": "force_refresh_all"
+        }
+      ]
+    },
+    {
+      "name": "wellfound",
+      "status": "excluded",
+      "adapter": "html",
+      "fetchStrategy": "browser",
+      "studio": "wellfound",
+      "fetchedCount": 0,
+      "keptCount": 0,
+      "lowConfidenceDropped": 0,
+      "duplicateRate": 0.0,
+      "error": "disabled_by_default: blocked by anti-bot restrictions in non-browser fetch mode",
+      "durationMs": 0,
+      "exclusionReason": "disabled_by_default: blocked by anti-bot restrictions in non-browser fetch mode"
     }
   ],
-  "healthSummary": {},
+  "healthSummary": {
+    "topFailingDomains": [
+      {
+        "name": "Argus Labs (Ashby)",
+        "consecutiveFailures": 97,
+        "lastFailureAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastError": "no jobs extracted from ashby board html",
+        "lastFailureBucket": null
+      },
+      {
+        "name": "Scopely (Ashby)",
+        "consecutiveFailures": 90,
+        "lastFailureAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastError": "no jobs extracted from ashby board html",
+        "lastFailureBucket": null
+      },
+      {
+        "name": "k-ID (Ashby)",
+        "consecutiveFailures": 58,
+        "lastFailureAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastError": "no jobs extracted from ashby board html",
+        "lastFailureBucket": null
+      },
+      {
+        "name": "Tequilaworks (Manual Website)",
+        "consecutiveFailures": 49,
+        "lastFailureAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastError": "Network error for https://tequilaworks.com/en/careers:",
+        "lastFailureBucket": "unknown"
+      },
+      {
+        "name": "Jagex (Ashby)",
+        "consecutiveFailures": 47,
+        "lastFailureAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastError": "no jobs extracted from ashby board html",
+        "lastFailureBucket": null
+      },
+      {
+        "name": "Roblox (Sheet)",
+        "consecutiveFailures": 46,
+        "lastFailureAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastError": "Network error for https://careers.roblox.com/jobs:",
+        "lastFailureBucket": "unknown"
+      },
+      {
+        "name": "Big Viking Games (Workable)",
+        "consecutiveFailures": 44,
+        "lastFailureAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastError": "HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/bigvikinggames3?details=true",
+        "lastFailureBucket": null
+      },
+      {
+        "name": "Guerrilla Games (Greenhouse)",
+        "consecutiveFailures": 43,
+        "lastFailureAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastError": "HTTP 404 for https://boards-api.greenhouse.io/v1/boards/guerrillagames/jobs?content=true",
+        "lastFailureBucket": null
+      },
+      {
+        "name": "Yager (Personio)",
+        "consecutiveFailures": 41,
+        "lastFailureAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastError": "no jobs parsed from personio feed",
+        "lastFailureBucket": null
+      },
+      {
+        "name": "Millions of Monsters (Ashby)",
+        "consecutiveFailures": 39,
+        "lastFailureAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastError": "no jobs extracted from ashby board html",
+        "lastFailureBucket": null
+      }
+    ],
+    "topZeroKeptDomains": [
+      {
+        "name": "personio_sources",
+        "consecutiveZeroKept": 43,
+        "lastRunAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastKeptCount": 0,
+        "lastFailureBucket": "no_openings"
+      },
+      {
+        "name": "breezy_sources",
+        "consecutiveZeroKept": 43,
+        "lastRunAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastKeptCount": 0,
+        "lastFailureBucket": "needs_review"
+      },
+      {
+        "name": "jazzhr_sources",
+        "consecutiveZeroKept": 43,
+        "lastRunAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastKeptCount": 0,
+        "lastFailureBucket": "needs_review"
+      },
+      {
+        "name": "Tripledot Studios (Pinpoint)",
+        "consecutiveZeroKept": 41,
+        "lastRunAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastKeptCount": 0,
+        "lastFailureBucket": null
+      },
+      {
+        "name": "Wargaming (Workable)",
+        "consecutiveZeroKept": 41,
+        "lastRunAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastKeptCount": 0,
+        "lastFailureBucket": null
+      },
+      {
+        "name": "Anchor Point Studios (Greenhouse)",
+        "consecutiveZeroKept": 41,
+        "lastRunAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastKeptCount": 0,
+        "lastFailureBucket": null
+      },
+      {
+        "name": "Jagex (Lever)",
+        "consecutiveZeroKept": 41,
+        "lastRunAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastKeptCount": 0,
+        "lastFailureBucket": null
+      },
+      {
+        "name": "Sandbox VR (Lever)",
+        "consecutiveZeroKept": 41,
+        "lastRunAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastKeptCount": 0,
+        "lastFailureBucket": null
+      },
+      {
+        "name": "SkyBox Labs (Lever)",
+        "consecutiveZeroKept": 41,
+        "lastRunAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastKeptCount": 0,
+        "lastFailureBucket": null
+      },
+      {
+        "name": "New Moon Production (Teamtailor)",
+        "consecutiveZeroKept": 41,
+        "lastRunAt": "2026-03-30T13:26:37.485902+00:00",
+        "lastKeptCount": 0,
+        "lastFailureBucket": null
+      }
+    ],
+    "topSlowDomains": [
+      {
+        "name": "social_reddit",
+        "lastDurationMs": 496309,
+        "recentLatencies": []
+      },
+      {
+        "name": "teamtailor_sources",
+        "lastDurationMs": 269387,
+        "recentLatencies": []
+      },
+      {
+        "name": "greenhouse_boards",
+        "lastDurationMs": 248565,
+        "recentLatencies": []
+      },
+      {
+        "name": "workable_sources",
+        "lastDurationMs": 245844,
+        "recentLatencies": []
+      },
+      {
+        "name": "lever_sources",
+        "lastDurationMs": 233845,
+        "recentLatencies": []
+      },
+      {
+        "name": "ashby_sources",
+        "lastDurationMs": 231848,
+        "recentLatencies": []
+      },
+      {
+        "name": "static_source::static:listing_url:https://jobs.ea.com/en_us/careers/home/?4538=8369&4538_format=3021&listfiltermode=1",
+        "lastDurationMs": 210899,
+        "recentLatencies": []
+      },
+      {
+        "name": "static_source::static:listing_url:https://jobs.ea.com/en_us/careers/searchjobs/?4538=[8354]&4538_format=3021",
+        "lastDurationMs": 204281,
+        "recentLatencies": []
+      },
+      {
+        "name": "gamejobs",
+        "lastDurationMs": 82148,
+        "recentLatencies": []
+      },
+      {
+        "name": "static_source::static:listing_url:https://www.linkedin.com/company/1047games/jobs/",
+        "lastDurationMs": 72875,
+        "recentLatencies": []
+      }
+    ],
+    "quarantinedSources": [],
+    "siteChangedDiagnosedCount": 3,
+    "siteChangedMissingOldUrlCount": 0,
+    "parserRegressionQueueCount": 3
+  },
   "outputs": {
     "json": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-unified.json",
     "csv": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-unified.csv",
     "lightJson": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-unified-light.json",
     "report": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-fetch-report.json",
     "lifecycleState": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-lifecycle-state.json",
-    "browserFallbackQueue": "",
-    "parserRegressionQueue": "",
+    "browserFallbackQueue": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-browser-fallback-queue.json",
+    "parserRegressionQueue": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-parser-regression-queue.json",
     "changed": {
-      "json": false,
-      "csv": false,
-      "lightJson": false
+      "json": true,
+      "csv": true,
+      "lightJson": true
     }
   }
 }

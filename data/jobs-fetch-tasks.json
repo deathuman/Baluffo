@@ -2,25 +2,25 @@
   "schemaVersion": "1.0",
   "runId": "fetch_b21865f36c",
   "startedAt": "2026-03-30T13:21:50.885441+00:00",
-  "finishedAt": "",
-  "heartbeatAt": "2026-03-30T13:25:56.025851+00:00",
+  "finishedAt": "2026-03-30T13:26:37.485902+00:00",
+  "heartbeatAt": "2026-03-30T13:26:48.047527+00:00",
   "summary": {
     "queued": 0,
-    "running": 3,
-    "ok": 587,
+    "running": 0,
+    "ok": 590,
     "error": 64
   },
   "taskProgress": {
-    "active": true,
-    "phaseKey": "executing_sources",
-    "phaseLabel": "Executing sources",
+    "active": false,
+    "phaseKey": "completed",
+    "phaseLabel": "Completed",
     "mode": "determinate",
-    "ratio": 0.796788990825688,
+    "ratio": 1.0,
     "counts": {
       "totalTasks": 654,
       "queuedTasks": 0,
-      "runningTasks": 3,
-      "completedTasks": 651,
+      "runningTasks": 0,
+      "completedTasks": 654,
       "resolvedSources": 0,
       "outputCount": 0,
       "failedSources": 0,
@@ -30,11 +30,11 @@
   "tasks": [
     {
       "name": "teamtailor_sources",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:52.732253+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:25:54.188770+00:00",
+      "finishedAt": "2026-03-30T13:26:22.123416+00:00",
+      "durationMs": 269387,
+      "heartbeatAt": "2026-03-30T13:26:22.123416+00:00",
       "error": ""
     },
     {
@@ -48,21 +48,21 @@
     },
     {
       "name": "greenhouse_boards",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:52.739538+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:25:56.025659+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:26:04.733195+00:00",
+      "durationMs": 248565,
+      "heartbeatAt": "2026-03-30T13:26:04.733195+00:00",
+      "error": "greenhouse_boards: greenhouse:guerrillagames: HTTP 404 for https://boards-api.greenhouse.io/v1/boards/guerrillagames/jobs?content=true; greenhouse_boards: greenhouse:niantic: HTTP 404 for https://boards-api.greenhouse.io/v1/boards/niantic/jobs?content=true"
     },
     {
       "name": "workable_sources",
-      "status": "running",
+      "status": "ok",
       "startedAt": "2026-03-30T13:21:52.742888+00:00",
-      "finishedAt": "",
-      "durationMs": 0,
-      "heartbeatAt": "2026-03-30T13:25:52.200983+00:00",
-      "error": ""
+      "finishedAt": "2026-03-30T13:25:59.606689+00:00",
+      "durationMs": 245844,
+      "heartbeatAt": "2026-03-30T13:25:59.606689+00:00",
+      "error": "workable_sources: workable:Big Viking Games (Workable): HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/bigvikinggames3?details=true; workable_sources: workable:Square Enix (Workable): Network error for https://apply.workable.com/api/v1/widget/accounts/squareenixamerica?details=true:; workable_sources: workable:Universally Speaking (Workable): HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/universallyspeaking?details=true; workable_sources: workable:Moonbug Entertainment (Workable): HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/moonbugentertainment?details=true; workable_sources: workable:Jagex (Workable): HTTP 404 for https://apply.workable.com/api/v1/widget/accounts/jagexlimited?details=true"
     },
     {
       "name": "ashby_sources",

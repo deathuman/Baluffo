@@ -124,6 +124,7 @@ _JOB_TITLE_HINT_TOKENS = (
     "artist",
     "designer",
     "engineer",
+    "role",
     "programmer",
     "developer",
     "manager",

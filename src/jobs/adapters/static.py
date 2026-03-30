@@ -446,7 +446,7 @@ def run_static_studio_pages_source(
                             page_url=page_url,
                             company=company,
                             source_id=clean_text(source.get("id")) or source_name,
-                            allow_any_anchor=True,
+                            allow_any_anchor=False,
                         )
                         if rendered_rows:
                             has_job_like_rendered_title = False
