@@ -102,8 +102,7 @@ jobs:
         run: |
           npm run test:frontend:unit
           npm run test:py
-          # Skip packaged smoke test - it can be flaky in CI
-          # npm run test:frontend:packaged
+          npm run test:frontend:packaged
 
       - name: Build portable executable
         run: python scripts/build_portable_exe.py --bundle-version ${{ env.BALUFFO_VERSION }}

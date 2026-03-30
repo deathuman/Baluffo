@@ -352,7 +352,12 @@ async function main() {
     errors
   };
   await writeReport(report);
-  process.exitCode = report.ok ? 0 : 1;
+  const exitCode = report.ok ? 0 : 1;
+  process.exitCode = exitCode;
+  process.exit(exitCode);
 }
 
-await main();
+await main().catch(err => {
+  console.error("Fatal error in main():", err);
+  process.exit(1);
+});
