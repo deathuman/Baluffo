@@ -1,4 +1,5 @@
 # ruff: noqa: F403,F405
+import hashlib
 from collections import Counter
 
 from scrapy.http import HtmlResponse, Request
@@ -974,6 +975,113 @@ def test_run_static_studio_pages_source_dedupes_candidate_links_before_fetch() -
         assert fetch_counts["detail"] == 0
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
+
+
+def test_run_static_studio_pages_source_force_refresh_all_reprocesses_detail_links() -> None:
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    jf.STUDIO_SOURCE_REGISTRY = [
+        {
+            "name": "Force Refresh Studio",
+            "studio": "Force Refresh Studio",
+            "adapter": "static",
+            "company": "Force Refresh Studio",
+            "pages": ["https://target.example/careers"],
+            "enabledByDefault": True,
+        },
+        {
+            "name": "Control Studio",
+            "studio": "Control Studio",
+            "adapter": "static",
+            "company": "Control Studio",
+            "pages": ["https://control.example/careers"],
+            "enabledByDefault": True,
+        },
+    ]
+    target_listing = (
+        '<html><body><a href="/job/software-engineer">Software Engineer</a></body></html>'
+    )
+    control_listing = (
+        "<html><head>"
+        '<script type="application/ld+json">'
+        '{"@context":"https://schema.org","@type":"JobPosting","title":"Control Role",'
+        '"hiringOrganization":{"name":"Control Studio"},'
+        '"jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},'
+        '"url":"https://control.example/job/control-role"}'
+        "</script>"
+        "</head><body></body></html>"
+    )
+    target_fingerprint = hashlib.sha1(target_listing.encode("utf-8")).hexdigest()
+    source_state_rows = {"Force Refresh Studio": {"lastListingFingerprint": target_fingerprint}}
+    detail_calls = {"count": 0}
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url == "https://target.example/careers":
+            return target_listing
+        if url == "https://control.example/careers":
+            return control_listing
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    def fake_process_detail_link(**kwargs: object) -> dict[str, object]:
+        detail_calls["count"] += 1
+        return {
+            "rows": [
+                {
+                    "sourceJobId": "static:Force Refresh Studio:target",
+                    "title": "Software Engineer",
+                    "company": "Force Refresh Studio",
+                    "city": "",
+                    "country": "Unknown",
+                    "workType": "",
+                    "contractType": "",
+                    "jobLink": "https://target.example/job/software-engineer",
+                    "sector": "Game",
+                    "postedAt": "",
+                    "adapter": "static",
+                    "studio": "Force Refresh Studio",
+                }
+            ],
+            "parseEmpty": False,
+            "fetchMs": 0,
+            "parseMs": 0,
+            "cacheHit": False,
+            "rejectedClassification": "",
+            "rejectedExample": "",
+        }
+
+    try:
+        with mock.patch("src.jobs.adapters.static.extract_rendered_card_jobs", return_value=[]):
+            with mock.patch(
+                "src.jobs.adapters.static.process_detail_link",
+                side_effect=fake_process_detail_link,
+            ):
+                rows_no_refresh = jf.run_static_studio_pages_source(
+                    fetch_text=fake_fetch,
+                    timeout_s=5,
+                    retries=0,
+                    backoff_s=0,
+                    sources=list(jf.STUDIO_SOURCE_REGISTRY),
+                    source_state_rows=source_state_rows,
+                    force_refresh_all=False,
+                )
+                rows_force_refresh = jf.run_static_studio_pages_source(
+                    fetch_text=fake_fetch,
+                    timeout_s=5,
+                    retries=0,
+                    backoff_s=0,
+                    sources=list(jf.STUDIO_SOURCE_REGISTRY),
+                    source_state_rows=source_state_rows,
+                    force_refresh_all=True,
+                )
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+    assert detail_calls["count"] == 1
+    assert len(rows_no_refresh) == 1
+    assert len(rows_force_refresh) == 2
+    assert any(
+        str(row.get("jobLink") or "") == "https://target.example/job/software-engineer"
+        for row in rows_force_refresh
+    )
 
 
 def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
@@ -2980,6 +3088,38 @@ def test_stellar_join_us_page_with_ashby_job_anchors_is_not_dead_listed() -> Non
         "https://jobs.ashbyhq.com/stellarentertainment/8615ea53-9992-489f-b2cd-38ede3434679",
         "https://jobs.ashbyhq.com/stellarentertainment/393927f5-29cd-492c-b091-7a5eaeab7284",
     }
+
+
+def test_extract_rendered_card_jobs_parses_stellar_structured_anchor_cells() -> None:
+    html = """
+        <a href="https://jobs.ashbyhq.com/stellarentertainment/4526ffd2-860e-4e2d-8743-4e637ca0ced6" target="_blank" class="join_row Art United Kingdom">
+          <div class="d-table-cell vacancy ps-1 pe-3 pe-md-0">Technical Artist</div>
+          <div class="d-table-cell vacancy">Art</div>
+          <div class="d-table-cell vacancy text-end pe-1">Guildford, UK | Utrecht, NL</div>
+          <div class="d-table-cell d-none">United Kingdom</div>
+        </a>
+        """
+    rows = extract_rendered_card_jobs(
+        html,
+        page_url="https://stellarentertainment.software/join-us/",
+        company="Stellar Entertainment Software",
+        source_id="stellar_exact_anchor",
+        allow_any_anchor=True,
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == "Technical Artist"
+    assert row["city"] == "Guildford"
+    assert row["country"] == "UK"
+    assert row["locations"] == [
+        {"city": "Guildford", "country": "UK"},
+        {"city": "Utrecht", "country": "NL"},
+    ]
+    assert row["locationSummary"] == "Guildford, UK | Utrecht, NL"
+    assert (
+        row["jobLink"]
+        == "https://jobs.ashbyhq.com/stellarentertainment/4526ffd2-860e-4e2d-8743-4e637ca0ced6"
+    )
 
 
 def test_run_static_studio_pages_source_uses_rendered_card_fallback_for_manual_table_pages() -> (

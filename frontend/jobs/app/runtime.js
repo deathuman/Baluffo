@@ -10,7 +10,6 @@ import {
   bindHandlersMap
 } from "../../shared/ui/index.js";
 import { emitStartupMetric, logError, logInfo, markFirstInteractive } from "../../shared/app-boot.js";
-import { sanitizeUrl as sanitizeUrlValue } from "../../shared/data/index.js";
 import { BaluffoJobsParsing as jobsParsing, parseUnifiedJobsPayload } from "../../../jobs-parsing-utils.js";
 import {
   detectWorkType,
@@ -19,6 +18,8 @@ import {
   classifyCompanyType,
   mapProfession,
   isInternshipJob,
+  isValidCountry,
+  isSemanticallyValidLocationValue,
   getJobLocationCities,
   getJobLocationCountries,
   normalizeJobs,
@@ -28,6 +29,7 @@ import {
 import { isJobsApiReady, jobsAuthService, jobsSavedJobsService, jobsPageService } from "../services.js";
 import { createJobsDispatcher, JOBS_ACTIONS } from "../actions.js";
 import { renderJobRowHtml, showJobsLoading, showJobsError } from "../render.js";
+import { capitalizeFirst, debounce, sanitizeUrl, toContractClass } from "./runtime-utils.js";
 import {
   readAutoRefreshAppliedId,
   readAutoRefreshSignal,
@@ -1807,14 +1809,6 @@ async function renderDataSources() {
   });
 }
 
-function toContractClass(contractType) {
-  const normalized = (contractType || "").toLowerCase();
-  if (normalized === "full-time") return "full-time";
-  if (normalized === "internship") return "internship";
-  if (normalized === "temporary") return "temporary";
-  return "unknown";
-}
-
 function getJobKeyForJobWithService(job) {
   return getJobKeyForJob(job, {
     generateJobKey: row => jobsPageService.generateJobKey(row)
@@ -1854,23 +1848,6 @@ async function toggleSaveJob(job) {
     logJobsError("Could not toggle saved job", err);
     showToast("Could not update saved jobs right now.", "error");
   }
-}
-
-function sanitizeUrl(url) {
-  return sanitizeUrlValue(url);
-}
-
-function capitalizeFirst(str) {
-  if (!str) return "";
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-function debounce(fn, waitMs) {
-  let timeout;
-  return (...args) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), waitMs);
-  };
 }
 
 function setProgress(visible) {

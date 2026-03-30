@@ -35,6 +35,10 @@ LOCATION_SCRIPT_NOISE_RE = re.compile(
 LOCATION_SENTENCE_PREFIX_RE = re.compile(
     r"(?i)^(learn|view|choose|click|if you|to view|document|our)\b"
 )
+LOCATION_TOKEN_PLACEHOLDER_RE = re.compile(r"%(?:LABEL|BUTTON)_[A-Z0-9_]+%", re.IGNORECASE)
+LOCATION_ROLE_BLOB_RE = re.compile(
+    r"(?i)\b(administratif|administration|assistant|assistante|gestion|human resources|hr|office|operations?|coordination|support)\b"
+)
 REMOTEISH_TOKENS = {"remote", "hybrid", "onsite", "on-site", "worldwide"}
 
 
@@ -101,6 +105,10 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
     if LOCATION_SCRIPT_NOISE_RE.search(text):
         return f"invalid_{field_name}_semantic_noise"
     if LOCATION_SENTENCE_PREFIX_RE.search(text):
+        return f"invalid_{field_name}_semantic_noise"
+    if LOCATION_TOKEN_PLACEHOLDER_RE.search(text):
+        return f"invalid_{field_name}_semantic_noise"
+    if text.count(",") >= 3 and LOCATION_ROLE_BLOB_RE.search(text):
         return f"invalid_{field_name}_semantic_noise"
     if text.startswith("#"):
         return f"invalid_{field_name}_semantic_noise"

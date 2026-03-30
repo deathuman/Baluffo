@@ -9,6 +9,7 @@ async function expectJobsPageReady(page, timeout = 90000) {
   await expect(page.locator("#refresh-jobs-btn")).toBeEnabled();
   await expect(page.locator("#auth-sign-in-btn")).toBeEnabled();
   await expect(page.locator("#jobs-list")).not.toContainText(/Loading jobs/i);
+  await expect(page.locator("#source-status")).toContainText(/^Loaded \d[\d,]* jobs/i, { timeout });
 }
 
 async function signInWithProfile(page, buttonSelector, profileName, expectedFocusSelector) {
@@ -39,14 +40,13 @@ test("index entry redirects to jobs", async ({ page }) => {
 });
 
 test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning", async ({ page }) => {
+  test.setTimeout(120000);
   const pageErrors = [];
   page.on("pageerror", error => pageErrors.push(String(error?.message || error)));
 
   await page.goto("/jobs.html");
 
-  await expect(page.locator("#jobs-list")).toBeVisible();
-  await expect(page.locator("#refresh-jobs-btn")).toBeEnabled();
-  await expect(page.locator("#auth-sign-in-btn")).toBeEnabled();
+  await expectJobsPageReady(page);
 
   // Verify admin bridge is running by checking the admin button state
   const adminBtn = page.locator("#admin-page-btn");
@@ -55,8 +55,7 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
 
   await expect(pageErrors).toEqual([]);
   await page.selectOption("#work-type-filter", "Remote");
-  await page.click("#refresh-jobs-btn");
-  await expect(page.locator("#source-status")).toHaveText(/Fetching|Loaded|Could not/i);
+  await expect(page.locator(".save-job-btn").first()).toBeVisible({ timeout: 20000 });
 
   const pageButtons = page.locator("#pagination .page-btn");
   const count = await pageButtons.count();
@@ -78,6 +77,10 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await saveBtn.click();
   await expect(page.locator(".toast").last()).toContainText("Sign in to save jobs");
   await cancelSignIn(page);
+
+  await page.click("#refresh-jobs-btn");
+  await expect(page.locator("#refresh-jobs-btn")).toBeDisabled({ timeout: 10000 });
+  await expect(page.locator("#source-status")).toContainText(/Fetching/i, { timeout: 10000 });
 
   await page.locator(".jobs-sources summary").click();
   await expect(page.locator("#data-sources-list")).toContainText("Google Sheets");

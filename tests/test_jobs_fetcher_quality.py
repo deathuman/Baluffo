@@ -95,6 +95,179 @@ def test_canonicalize_job_with_reason_blanks_metric_and_css_location_noise() -> 
     assert payload["country"] == ""
 
 
+def test_canonicalize_job_with_reason_promotes_first_meaningful_multi_location_entry() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Rendering Engineer",
+            "company": "Stellar Entertainment",
+            "locations": [
+                {"city": "", "country": "Unknown"},
+                {"city": "Guildford", "country": "England"},
+                {"city": "Utrecht", "country": "NL"},
+            ],
+            "jobLink": "https://jobs.ashbyhq.com/stellarentertainment/8615ea53-96d1-4923-9d48-a920639c9fbe",
+            "sector": "Game",
+        },
+        source="ashby_sources",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == "Guildford"
+    assert payload["country"] == "England"
+    assert payload["locationSummary"] == "Guildford, England | Utrecht, NL"
+    assert payload["locations"][0] == {"city": "Guildford", "country": "England"}
+
+
+def test_deduplicate_jobs_merges_sparse_variant_into_richer_multi_location_row() -> None:
+    sparse = jf.canonicalize_job(
+        {
+            "title": "Rendering Engineer Engineering Guildford, UK | Utrecht, NL United Kingdom",
+            "company": "Stellar Entertainment Software",
+            "city": "",
+            "country": "Unknown",
+            "locations": [{"city": "", "country": "Unknown"}],
+            "jobLink": "https://jobs.ashbyhq.com/stellarentertainment/5e067256-96d1-4923-9d48-a920639c9fbe",
+            "sector": "Tech",
+        },
+        source="static_source::static:listing_url:https://stellarentertainment.software/join-us/",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    rich = jf.canonicalize_job(
+        {
+            "title": "Rendering Engineer",
+            "company": "Stellar Entertainment",
+            "city": "Guildford",
+            "country": "England",
+            "locations": [
+                {"city": "", "country": "Unknown"},
+                {"city": "Guildford", "country": "England"},
+                {"city": "Utrecht", "country": "NL"},
+            ],
+            "jobLink": "https://jobs.ashbyhq.com/stellarentertainment/8615ea53-9992-489f-b2cd-38ede3434679",
+            "sector": "Game",
+        },
+        source="google_sheets_1er2oaxo",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert sparse is not None
+    assert rich is not None
+    rows, stats = jf.deduplicate_jobs([sparse, rich])
+    assert int(stats["outputCount"]) == 1
+    assert len(rows) == 1
+    payload = rows[0].to_dict()
+    assert payload["title"] == "Rendering Engineer"
+    assert payload["company"] == "Stellar Entertainment"
+    assert payload["city"] == "Guildford"
+    assert payload["country"] == "England"
+    assert payload["locations"] == [
+        {"city": "Guildford", "country": "England"},
+        {"city": "Utrecht", "country": "NL"},
+    ]
+    assert payload["locationSummary"] == "Guildford, England | Utrecht, NL"
+
+
+def test_deduplicate_jobs_merges_sparse_stellar_technical_artist_variant_into_richer_row() -> None:
+    sparse = jf.canonicalize_job(
+        {
+            "title": "Technical Artist Art Guildford, UK | Utrecht, NL United Kingdom",
+            "company": "Stellar Entertainment Software",
+            "city": "",
+            "country": "Unknown",
+            "locations": [{"city": "", "country": "Unknown"}],
+            "jobLink": "https://jobs.ashbyhq.com/stellarentertainment/4526ffd2-860e-4e2d-8743-4e637ca0ced6",
+            "sector": "Game",
+        },
+        source="static_source::static:listing_url:https://stellarentertainment.software/join-us/",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    rich = jf.canonicalize_job(
+        {
+            "title": "Technical Artist",
+            "company": "Stellar Entertainment",
+            "city": "Guildford",
+            "country": "England",
+            "locations": [
+                {"city": "", "country": "Unknown"},
+                {"city": "Guildford", "country": "England"},
+                {"city": "Utrecht", "country": "NL"},
+            ],
+            "jobLink": "https://jobs.ashbyhq.com/stellarentertainment/8615ea53-9992-489f-b2cd-38ede3434679",
+            "sector": "Game",
+        },
+        source="google_sheets_1er2oaxo",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert sparse is not None
+    assert rich is not None
+    rows, stats = jf.deduplicate_jobs([sparse, rich])
+    assert int(stats["outputCount"]) == 1
+    assert len(rows) == 1
+    payload = rows[0].to_dict()
+    assert payload["title"] == "Technical Artist"
+    assert payload["company"] == "Stellar Entertainment"
+    assert payload["city"] == "Guildford"
+    assert payload["country"] == "England"
+    assert payload["locations"] == [
+        {"city": "Guildford", "country": "England"},
+        {"city": "Utrecht", "country": "NL"},
+    ]
+    assert payload["locationSummary"] == "Guildford, England | Utrecht, NL"
+
+
+def test_canonicalize_job_with_reason_blanks_label_placeholder_location_noise() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Associate QA Coordinator United States",
+            "company": "IllFonic",
+            "city": "%LABEL_POSITION_TYPE_REMOTE_ANY%",
+            "country": "Unknown",
+            "locations": [
+                {"city": "%LABEL_POSITION_TYPE_REMOTE_ANY%", "country": "Unknown"},
+                {"city": "", "country": "US"},
+            ],
+            "jobLink": "https://illfonic.breezy.hr/p/06c96306a484-associate-qa-coordinator",
+            "sector": "Tech",
+        },
+        source="static_source::static",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == ""
+    assert payload["country"] == "US"
+    assert payload["locationSummary"] == "US"
+    assert payload["locations"] == [{"city": "", "country": "US"}]
+
+
+def test_canonicalize_job_with_reason_blanks_role_blob_location_noise() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Lead Level Scripter Montréal CDI",
+            "company": "Don't Nod",
+            "city": "Administratif, Assistant, Gestion, RH...",
+            "country": "Unknown",
+            "locations": [
+                {"city": "Administratif, Assistant, Gestion, RH...", "country": "Unknown"},
+                {"city": "Paris", "country": "FR"},
+            ],
+            "jobLink": "https://jobs.smartrecruiters.com/DONTNOD/744000104833006",
+            "sector": "Game",
+        },
+        source="static_source::static",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == "Paris"
+    assert payload["country"] == "FR"
+    assert payload["locationSummary"] == "Paris, FR"
+    assert payload["locations"] == [{"city": "Paris", "country": "FR"}]
+
+
 def test_canonicalize_job_with_reason_normalizes_sector_from_game_evidence() -> None:
     jobs_canonicalize.reset_sector_quality_audit()
     row, reason = jf.canonicalize_job_with_reason(

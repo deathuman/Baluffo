@@ -595,6 +595,7 @@ def run_static_studio_pages_source(
                 if (
                     previous_listing_fingerprint
                     and listing_fingerprint == previous_listing_fingerprint
+                    and not force_refresh_all
                 ):
                     entry_report["cacheDecision"] = "listing_only"
                     entry_report["cacheDecisionReason"] = "listing_fingerprint_unchanged"

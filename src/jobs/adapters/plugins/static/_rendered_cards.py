@@ -7,11 +7,13 @@ from typing import Any
 from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import (
+    extract_tag_texts,
     html_fragment_lines,
     iter_anchor_fragments,
     iter_block_fragments,
     strip_html_text,
 )
+from src.jobs.adapters.provider_parsers import parse_generic_location_fields
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
 
@@ -209,7 +211,29 @@ def _normalize_title_candidate(text: str) -> str:
     return "" if candidate.lower() in _IGNORED_TOKENS else candidate
 
 
+def _extract_structured_cell_texts(fragment: str) -> list[str]:
+    return [
+        text for text in extract_tag_texts(fragment or "", ("div", "td", "span", "p", "li")) if text
+    ]
+
+
 def _pick_title(block_html: str, anchor_body: str) -> str:
+    for candidate in _extract_structured_cell_texts(anchor_body):
+        normalized = _normalize_title_candidate(candidate)
+        if not normalized:
+            continue
+        lowered = normalized.lower()
+        if lowered in _IGNORED_TOKENS:
+            continue
+        if any(
+            hint in lowered
+            for hint in ("location", "term", "type", "contract", "department", "team")
+        ):
+            continue
+        if _looks_like_non_job_title(lowered):
+            continue
+        if _looks_like_job_title(normalized):
+            return normalized
     anchor_title = _normalize_title_candidate(strip_html_text(anchor_body))
     if anchor_title:
         return anchor_title
@@ -256,6 +280,80 @@ def _pick_location_and_terms(block_html: str, title: str) -> tuple[str, str, str
             contract_type = candidate
             continue
     return location, work_type, contract_type
+
+
+def _looks_like_location_cell(text: str) -> bool:
+    candidate = clean_text(text)
+    if not candidate or candidate.lower() in _IGNORED_TOKENS:
+        return False
+    lower = candidate.lower()
+    if any(hint in lower for hint in _LOCATION_HINTS):
+        return True
+    if any(separator in candidate for separator in ("|", ",", "/", ";")):
+        return True
+    city, country, work_type = parse_generic_location_fields(candidate)
+    if work_type:
+        return True
+    if country != "Unknown" and (city or len(candidate.split()) <= 4):
+        return True
+    return False
+
+
+def _parse_structured_locations(
+    structured_cells: list[str], title: str
+) -> tuple[list[dict[str, str]], str, str]:
+    locations: list[dict[str, str]] = []
+    seen: set[str] = set()
+    fallback_country = ""
+    work_type = ""
+    contract_type = ""
+    for candidate in structured_cells[1:]:
+        candidate = clean_text(candidate)
+        if not candidate or candidate == title or candidate.lower() in _IGNORED_TOKENS:
+            continue
+        lower = candidate.lower()
+        if not work_type and any(
+            token in lower for token in ("full time", "part time", "remote", "hybrid")
+        ):
+            work_type = candidate
+            continue
+        if not contract_type and any(
+            token in lower
+            for token in ("permanent", "contract", "temporary", "fixed term", "fixed-term")
+        ):
+            contract_type = candidate
+            continue
+        if not _looks_like_location_cell(candidate):
+            continue
+        parts = [candidate]
+        if "|" in candidate:
+            parts = [
+                clean_text(part) for part in re.split(r"\s*\|\s*", candidate) if clean_text(part)
+            ]
+        for part in parts:
+            city, country, part_work_type = parse_generic_location_fields(part)
+            if part_work_type and not work_type:
+                work_type = part_work_type
+            if not city and country != "Unknown":
+                fallback_country = country
+                continue
+            if not city and not country and not part_work_type:
+                continue
+            if country == "Unknown" and fallback_country and city:
+                country = fallback_country
+            key = "|".join([clean_text(city).lower(), clean_text(country).lower()])
+            if key in seen:
+                continue
+            seen.add(key)
+            locations.append({"city": city, "country": country})
+    if fallback_country:
+        for item in locations:
+            if (
+                not clean_text(item.get("country"))
+                or clean_text(item.get("country")).lower() == "unknown"
+            ):
+                item["country"] = fallback_country
+    return locations, work_type, contract_type
 
 
 def _pick_job_anchor(
@@ -382,10 +480,47 @@ def extract_rendered_card_jobs(
         link = normalize_url(urljoin(page_url, href))
         if not link or link in seen_links:
             return
-        title = _pick_title(block_html, anchor.get("body") or anchor.get("text") or "")
+        anchor_body = anchor.get("body") or anchor.get("text") or ""
+        structured_cells = _extract_structured_cell_texts(anchor_body)
+        title = _pick_title(block_html, anchor_body)
         if not title:
             return
+        locations: list[dict[str, str]] = []
+        structured_work_type = ""
+        structured_contract_type = ""
+        if structured_cells:
+            locations, structured_work_type, structured_contract_type = _parse_structured_locations(
+                structured_cells, title
+            )
         location, work_type, contract_type = _pick_location_and_terms(block_html, title)
+        if locations:
+            primary_location = next(
+                (
+                    item
+                    for item in locations
+                    if clean_text(item.get("city", "")) or clean_text(item.get("country", ""))
+                ),
+                {},
+            )
+            location = " | ".join(
+                ", ".join(
+                    part
+                    for part in [
+                        clean_text(item.get("city", "")),
+                        clean_text(item.get("country", "")),
+                    ]
+                    if part
+                )
+                for item in locations
+                if clean_text(item.get("city", "")) or clean_text(item.get("country", ""))
+            )
+            city = clean_text(primary_location.get("city", "")) or location
+            country = clean_text(primary_location.get("country", "")) or "Unknown"
+            work_type = structured_work_type or work_type
+            contract_type = structured_contract_type or contract_type
+        else:
+            city = location
+            country = "Unknown"
         if not _has_job_entry_evidence(
             href=href,
             anchor_text=anchor.get("text") or "",
@@ -403,8 +538,8 @@ def extract_rendered_card_jobs(
                 "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
                 "title": title,
                 "company": company,
-                "city": location,
-                "country": "Unknown",
+                "city": city,
+                "country": country,
                 "workType": work_type,
                 "contractType": contract_type,
                 "jobLink": link,
@@ -413,6 +548,8 @@ def extract_rendered_card_jobs(
                 "adapter": "static",
                 "studio": company,
                 "source": "",
+                "locations": locations,
+                "locationSummary": location,
                 "_renderedCardMode": mode,
             }
         )

@@ -751,3 +751,27 @@
 {"ts": "2026-03-30T13:31:41.978617+00:00", "event": "admin_ready", "payload": {"elapsedMs": 3}}
 {"ts": "2026-03-30T13:31:41.978760+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 4}}
 {"ts": "2026-03-30T13:31:41.978857+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 3}}
+{"ts": "2026-03-30T14:19:51.551189+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-03-30T14:19:51.551484+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-03-30T14:19:52.884373+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-30T14:19:52.886349+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-03-30T14:19:52.887075+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-30T14:19:53.038740+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-30T14:19:53.039739+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-03-30T14:19:53.041158+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-03-30T14:35:42.101798+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-30T14:35:42.102081+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-30T14:35:42.102226+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-30T14:48:37.625838+00:00", "event": "desktop_browser_watchdog_started", "fields": {"elapsedMs": 100, "mode": "heartbeat"}}
+{"ts": "2026-03-30T15:01:14.069246+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-30T15:01:14.069310+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-30T15:01:14.069347+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-30T15:19:27.521841+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}
+{"ts": "2026-03-30T15:19:27.521944+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-30T15:19:27.522007+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 5}}
+{"ts": "2026-03-30T15:51:40.478726+00:00", "event": "admin_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-30T15:51:40.478836+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 7}}
+{"ts": "2026-03-30T15:51:40.478886+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 7}}
+{"ts": "2026-03-30T16:32:21.253708+00:00", "event": "admin_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-30T16:32:21.253945+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 6}}
+{"ts": "2026-03-30T16:32:21.256265+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 6}}

@@ -21,9 +21,112 @@ from src.jobs.common import social as common_social
 from src.jobs.common import url as common_url
 from src.jobs.interfaces import JobProcessor
 from src.jobs.models import CanonicalJob
+from src.jobs.page_gating import looks_like_job_title_candidate
+from src.jobs.text_utils import sanitize_location_text
 
 fingerprint_url = common_url.fingerprint_url
 SOCIAL_SOURCE_NAMES = common_social.SOCIAL_SOURCE_NAMES
+_COMPANY_SUFFIX_TOKENS = {
+    "company",
+    "corp",
+    "corp.",
+    "group",
+    "inc",
+    "ltd",
+    "limited",
+    "plc",
+    "software",
+    "studio",
+    "studios",
+    "games",
+    "game",
+    "interactive",
+}
+_TITLE_SUFFIX_NOISE_TOKENS = {
+    "art",
+    "creative",
+    "design",
+    "development",
+    "engineering",
+    "gameplay",
+    "programming",
+    "production",
+    "systems",
+    "technical",
+    "tech",
+    "tools",
+}
+
+
+def _is_meaningful_location_value(value: Any) -> bool:
+    text = clean_text(value)
+    if not text:
+        return False
+    lowered = norm_text(text)
+    return lowered not in {"unknown", "n/a", "na", "none"}
+
+
+def _has_meaningful_locations(job: CanonicalJob | dict[str, Any]) -> bool:
+    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+    entries = payload.get("locations")
+    if isinstance(entries, list):
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            if _is_meaningful_location_value(item.get("city")) or _is_meaningful_location_value(
+                item.get("country")
+            ):
+                return True
+    return _is_meaningful_location_value(payload.get("city")) or _is_meaningful_location_value(
+        payload.get("country")
+    )
+
+
+def _normalize_company_identity(value: Any) -> str:
+    company = norm_text(clean_text(value))
+    if not company:
+        return ""
+    tokens = company.split()
+    while tokens and tokens[-1] in _COMPANY_SUFFIX_TOKENS:
+        tokens.pop()
+    return " ".join(tokens) or company
+
+
+def _normalize_title_identity(value: Any) -> str:
+    title = clean_text(value)
+    if not title:
+        return ""
+    tokens = title.split()
+    best_prefix = ""
+    for end in range(1, len(tokens) + 1):
+        prefix = " ".join(tokens[:end]).strip()
+        if not prefix or not looks_like_job_title_candidate(prefix):
+            continue
+        remainder = " ".join(tokens[end:]).strip()
+        if not remainder:
+            if len(prefix) > len(best_prefix):
+                best_prefix = prefix
+            continue
+        remainder_tokens = remainder.split()
+        if remainder_tokens and remainder_tokens[0].lower() in _TITLE_SUFFIX_NOISE_TOKENS:
+            if len(prefix) > len(best_prefix):
+                best_prefix = prefix
+            break
+        remainder_value, remainder_reason = sanitize_location_text(remainder, field_name="city")
+        if remainder_reason or not remainder_value:
+            continue
+        if len(prefix) > len(best_prefix):
+            best_prefix = prefix
+    return norm_text(best_prefix or title)
+
+
+def _sparse_identity_key(job: CanonicalJob | dict[str, Any]) -> str:
+    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+    company = _normalize_company_identity(payload.get("company"))
+    title = _normalize_title_identity(payload.get("title"))
+    if not company or not title:
+        return ""
+    return "|".join([company, title])
 
 
 def dedup_secondary_key(job: CanonicalJob | dict[str, Any]) -> str:
@@ -91,6 +194,12 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
     merged = dict(base.to_dict())
     other_dict = other.to_dict()
     for field in OUTPUT_FIELDS:
+        if field in {"city", "country"}:
+            base_empty = not _is_meaningful_location_value(merged.get(field))
+            other_value = clean_text(other_dict.get(field))
+            if base_empty and _is_meaningful_location_value(other_value):
+                merged[field] = other_dict[field]
+            continue
         if not clean_text(merged.get(field)) and clean_text(other_dict.get(field)):
             merged[field] = other_dict[field]
     if company_preference_score(other_dict) > company_preference_score(merged):
@@ -130,6 +239,7 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
     merged["sourceBundleCount"] = len(bundle)
 
     location_entries: list[dict[str, Any]] = []
+    placeholder_location_entries: list[dict[str, Any]] = []
     location_seen = set()
     for row in [existing.to_dict(), candidate.to_dict(), merged]:
         entries = row.get("locations")
@@ -142,6 +252,12 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
                 "city": clean_text(item.get("city")),
                 "country": clean_text(item.get("country")),
             }
+            if not _is_meaningful_location_value(
+                normalized_item.get("city")
+            ) and not _is_meaningful_location_value(normalized_item.get("country")):
+                if not placeholder_location_entries:
+                    placeholder_location_entries.append(normalized_item)
+                continue
             key = "|".join(
                 [
                     norm_text(normalized_item.get("city")),
@@ -163,6 +279,8 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
             for item in location_entries
             if clean_text(item.get("city")) or clean_text(item.get("country"))
         )
+    elif placeholder_location_entries:
+        merged["locations"] = placeholder_location_entries
 
     merged["qualityScore"] = compute_quality_score(merged)
     merged["focusScore"] = compute_focus_score(merged)
@@ -225,6 +343,7 @@ def deduplicate_jobs(
     merged_rows: list[CanonicalJob] = []
     by_primary: dict[str, int] = {}
     by_secondary: dict[str, int] = {}
+    by_sparse_identity: dict[str, int] = {}
     by_social: dict[str, int] = {}
     merges = 0
     merged_by_primary = 0
@@ -244,6 +363,8 @@ def deduplicate_jobs(
             social_key = (
                 f"{clean_text(payload.get('source'))}|{clean_text(payload.get('sourceJobId'))}"
             )
+        sparse_identity = _sparse_identity_key(current)
+        current_has_meaningful_locations = _has_meaningful_locations(current)
 
         target_idx: int | None = None
         merge_reason = ""
@@ -256,6 +377,12 @@ def deduplicate_jobs(
         elif social_key and social_key in by_social:
             target_idx = by_social[social_key]
             merge_reason = "social_key"
+        elif sparse_identity and sparse_identity in by_sparse_identity:
+            sparse_target_idx = by_sparse_identity[sparse_identity]
+            sparse_target = merged_rows[sparse_target_idx]
+            if not _has_meaningful_locations(sparse_target) or not current_has_meaningful_locations:
+                target_idx = sparse_target_idx
+                merge_reason = "sparse_identity"
 
         if target_idx is None:
             item = dict(payload)
@@ -279,6 +406,8 @@ def deduplicate_jobs(
                 by_primary[primary] = idx
             if secondary:
                 by_secondary[secondary] = idx
+            if sparse_identity:
+                by_sparse_identity[sparse_identity] = idx
             if social_key:
                 by_social[social_key] = idx
             continue
@@ -327,6 +456,9 @@ def deduplicate_jobs(
             by_secondary[secondary] = target_idx
         if merged_social_key:
             by_social[merged_social_key] = target_idx
+        merged_sparse_identity = _sparse_identity_key(merged_rows[target_idx])
+        if merged_sparse_identity:
+            by_sparse_identity[merged_sparse_identity] = target_idx
 
     merged_rows.sort(
         key=lambda item: (

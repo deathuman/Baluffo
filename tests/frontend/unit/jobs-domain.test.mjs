@@ -53,6 +53,7 @@ test("jobs domain preserves multiple locations for filtering and display", () =>
       city: "",
       country: "Unknown",
       locations: [
+        { city: "", country: "Unknown" },
         { city: "Guildford", country: "UK" },
         { city: "Utrecht", country: "NL" }
       ]
@@ -67,6 +68,54 @@ test("jobs domain preserves multiple locations for filtering and display", () =>
   assert.equal(rows[0].locationSummary, "Guildford, UK | Utrecht, NL");
   assert.deepEqual(getJobLocationCities(rows[0]), ["Guildford", "Utrecht"]);
   assert.deepEqual(getJobLocationCountries(rows[0]), ["UK", "NL"]);
+});
+
+test("jobs domain blanks label placeholder locations and keeps meaningful country fallbacks", () => {
+  const rows = normalizeJobs([
+    {
+      title: "Associate QA Coordinator United States",
+      company: "IllFonic",
+      city: "%LABEL_POSITION_TYPE_REMOTE_ANY%",
+      country: "Unknown",
+      locations: [
+        { city: "%LABEL_POSITION_TYPE_REMOTE_ANY%", country: "Unknown" },
+        { city: "", country: "US" }
+      ]
+    }
+  ], {
+    professionLabels: {},
+    sanitizeUrl: value => value
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].city, "");
+  assert.equal(rows[0].country, "US");
+  assert.equal(rows[0].locationSummary, "US");
+  assert.deepEqual(getJobLocationCities(rows[0]), []);
+  assert.deepEqual(getJobLocationCountries(rows[0]), ["US"]);
+});
+
+test("jobs domain blanks role blob locations and keeps meaningful country fallbacks", () => {
+  const rows = normalizeJobs([
+    {
+      title: "Lead Level Scripter Montréal CDI",
+      company: "Don't Nod",
+      city: "Administratif, Assistant, Gestion, RH...",
+      country: "Unknown",
+      locations: [
+        { city: "Administratif, Assistant, Gestion, RH...", country: "Unknown" },
+        { city: "Paris", country: "FR" }
+      ]
+    }
+  ], {
+    professionLabels: {},
+    sanitizeUrl: value => value
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].city, "");
+  assert.equal(rows[0].country, "FR");
+  assert.equal(rows[0].locationSummary, "Paris, FR");
+  assert.deepEqual(getJobLocationCities(rows[0]), ["Paris"]);
+  assert.deepEqual(getJobLocationCountries(rows[0]), ["FR"]);
 });
 
 test("jobs domain normalizes sector from positive game evidence", () => {
@@ -258,6 +307,7 @@ test("jobs domain blanks semantic location noise but preserves valid locations",
   assert.equal(sanitizeLocationField("A Fast, Fun Quiz Game", "city"), "");
   assert.equal(sanitizeLocationField("Berlin / Hamburg", "city"), "");
   assert.equal(sanitizeLocationField("Cambridge / Hybrid", "city"), "");
+  assert.equal(sanitizeLocationField("%LABEL_POSITION_TYPE_REMOTE_ANY%", "city"), "");
   assert.equal(sanitizeLocationField(".career-btn-primary {", "city"), "");
   assert.equal(sanitizeLocationField("document.addEventListener(\"DOMContentLoaded\", function () {", "city"), "");
   assert.equal(sanitizeLocationField("Learn how talent, purpose, and progress combine to create careers that change the world at our new Careers home .", "city"), "");

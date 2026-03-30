@@ -244,6 +244,8 @@ const LOCATION_ADDRESS_NOISE_RE = /\b\d[^\n]*\b(?:street|st\.?|avenue|ave\.?|roa
 const LOCATION_POSTAL_CODE_RE = /\b\d{2,6}(?:-\d{2,4})?\b/;
 const LOCATION_SCRIPT_NOISE_RE = /(?:document\.|addEventListener|DOMContentLoaded|querySelector|innerHTML|setTimeout|console\.|function\s*\(|\{\{|\}\})/i;
 const LOCATION_SENTENCE_PREFIX_RE = /^(learn|view|choose|click|if you|to view|document|our)\b/i;
+const LOCATION_TOKEN_PLACEHOLDER_RE = /%(?:LABEL|BUTTON)_[A-Z0-9_]+%/i;
+const LOCATION_ROLE_BLOB_RE = /\b(administratif|administration|assistant|assistante|gestion|human resources|hr|office|operations?|coordination|support)\b/i;
 
 export function invalidLocationReason(value, field = "city") {
   const text = sanitizePublicText(value);
@@ -278,6 +280,10 @@ export function invalidLocationReason(value, field = "city") {
   if (text.endsWith(",")) return `invalid_${field}_semantic_noise`;
   if (LOCATION_SCRIPT_NOISE_RE.test(text)) return `invalid_${field}_semantic_noise`;
   if (LOCATION_SENTENCE_PREFIX_RE.test(text)) return `invalid_${field}_semantic_noise`;
+  if (LOCATION_TOKEN_PLACEHOLDER_RE.test(text)) return `invalid_${field}_semantic_noise`;
+  if ((text.match(/,/g) || []).length >= 3 && LOCATION_ROLE_BLOB_RE.test(text)) {
+    return `invalid_${field}_semantic_noise`;
+  }
   if (text.startsWith("#")) return `invalid_${field}_semantic_noise`;
   if (text.includes('"') && text.includes(":")) return `invalid_${field}_semantic_noise`;
   if (text.includes("{") || text.includes("}")) return `invalid_${field}_semantic_noise`;
@@ -299,7 +305,13 @@ function normalizeLocationEntry(entry) {
   const city = sanitizeLocationField(entry.city || entry.addressLocality || "", "city");
   const country = sanitizeLocationField(entry.country || entry.addressCountry || "", "country");
   if (!city && !country) return null;
+  if (!city && isUnknownLocationToken(country)) return null;
   return { city, country };
+}
+
+function isUnknownLocationToken(value) {
+  const lowered = sanitizePublicText(value).trim().toLowerCase();
+  return lowered === "unknown";
 }
 
 export function normalizeJobLocations(value, fallbackCity = "", fallbackCountry = "") {
@@ -439,9 +451,10 @@ export function normalizeJobs(rows, options = {}) {
     const rawCountry = sanitizePublicText(job.country || "");
     job.locations = normalizeJobLocations(job.locations, job.city || "", rawCountry);
     job.locationSummary = sanitizePublicText(job.locationSummary || buildJobLocationSummary(job));
-    const primaryLocation = job.locations.find(location => location?.city || location?.country) || job.locations[0] || {};
-    job.city = sanitizeLocationField(job.city || primaryLocation.city || "", "city");
-    const locationCountry = primaryLocation.country || rawCountry;
+    const meaningfulLocation =
+      job.locations.find(location => location?.city || location?.country) || {};
+    job.city = sanitizeLocationField(job.city || meaningfulLocation.city || "", "city");
+    const locationCountry = meaningfulLocation.country || rawCountry;
     const sanitizedCountry = sanitizeLocationField(locationCountry, "country");
     job.country = sanitizedCountry || (rawCountry ? "" : "Unknown");
     job.workType = detectWorkType(job.workType || "");

@@ -249,6 +249,8 @@ def canonicalize_job_with_reason(
             )
             if not city_value and not country_value:
                 continue
+            if not city_value and norm_text(country_value) in {"", "unknown"}:
+                continue
             normalized_city = city_value
             normalized_country = ""
             if country_value and not country_reason:
@@ -310,7 +312,9 @@ def canonicalize_job_with_reason(
     country_value, country_reason = sanitize_location_text(raw.get("country"), field_name="country")
     if not city_value and primary_location.get("city"):
         city_value = primary_location["city"]
-    if (not country_value or country_reason) and primary_location.get("country"):
+    if (
+        not country_value or country_reason or norm_text(country_value) == "unknown"
+    ) and primary_location.get("country"):
         country_value = primary_location["country"]
         country_reason = ""
     if not normalized_locations and (city_value or country_value):
