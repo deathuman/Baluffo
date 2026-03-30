@@ -77,6 +77,16 @@ def normalize_runtime_payload(
             for row in slowest_sources_raw[:10]
             if isinstance(row, dict)
         ]
+    dead_listing_page_count = _clamped_int(src.get("deadListingPageCount"), 0, 0)
+    if dead_listing_page_count > 0:
+        payload["deadListingPageCount"] = dead_listing_page_count
+    dead_listing_page_examples = src.get("deadListingPageExamples")
+    if isinstance(dead_listing_page_examples, list):
+        cleaned_examples = [
+            clean_text(item) for item in dead_listing_page_examples if clean_text(item)
+        ]
+        if cleaned_examples:
+            payload["deadListingPageExamples"] = cleaned_examples[:5]
     timing_summary_raw = (
         src.get("timingSummary") if isinstance(src.get("timingSummary"), dict) else {}
     )
@@ -237,6 +247,12 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
                 payload.get("staticDuplicateLinkRejected"), 0, 0
             ),
             "staticDetailParseEmpty": _clamped_int(payload.get("staticDetailParseEmpty"), 0, 0),
+            "staticDeadListingPageRejected": _clamped_int(
+                payload.get("staticDeadListingPageRejected"), 0, 0
+            ),
+            "scrapyDeadListingPageRejected": _clamped_int(
+                payload.get("scrapyDeadListingPageRejected"), 0, 0
+            ),
         }
 
     normalized: dict[str, Any] = {
@@ -291,6 +307,16 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         normalized["browserEscalationEligibilityReason"] = browser_reason
     if "browserEscalationEnabled" in src:
         normalized["browserEscalationEnabled"] = bool(src.get("browserEscalationEnabled"))
+    dead_listing_page_count = _clamped_int(src.get("deadListingPageCount"), 0, 0)
+    if dead_listing_page_count > 0:
+        normalized["deadListingPageCount"] = dead_listing_page_count
+    dead_listing_page_examples = src.get("deadListingPageExamples")
+    if isinstance(dead_listing_page_examples, list):
+        cleaned_examples = [
+            clean_text(item) for item in dead_listing_page_examples if clean_text(item)
+        ]
+        if cleaned_examples:
+            normalized["deadListingPageExamples"] = cleaned_examples[:5]
     cache_decision = _clean_label(src.get("cacheDecision"))
     if cache_decision:
         normalized["cacheDecision"] = cache_decision
@@ -518,6 +544,18 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
                     clean_item["detailSkippedByListingFingerprint"] = bool(
                         item.get("detailSkippedByListingFingerprint")
                     )
+                item_dead_listing_count = _clamped_int(item.get("deadListingPageCount"), 0, 0)
+                if item_dead_listing_count > 0:
+                    clean_item["deadListingPageCount"] = item_dead_listing_count
+                item_dead_listing_examples = item.get("deadListingPageExamples")
+                if isinstance(item_dead_listing_examples, list):
+                    cleaned_examples = [
+                        clean_text(example)
+                        for example in item_dead_listing_examples
+                        if clean_text(example)
+                    ]
+                    if cleaned_examples:
+                        clean_item["deadListingPageExamples"] = cleaned_examples[:5]
                 top_reject_reasons = item.get("top_reject_reasons")
                 if isinstance(top_reject_reasons, list):
                     clean_item["top_reject_reasons"] = [
@@ -563,6 +601,9 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
                         "redirect_resolve_ms": _clamped_int(stats.get("redirect_resolve_ms"), 0, 0),
                         "jobs_rejected_validation": _clamped_int(
                             stats.get("jobs_rejected_validation"), 0, 0
+                        ),
+                        "dead_listing_pages_rejected": _clamped_int(
+                            stats.get("dead_listing_pages_rejected"), 0, 0
                         ),
                         "finish_reason": clean_text(stats.get("finish_reason")),
                     }
@@ -683,6 +724,9 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     )
     location_quality_audit = (
         src.get("locationQualityAudit") if isinstance(src.get("locationQualityAudit"), dict) else {}
+    )
+    sector_quality_audit = (
+        src.get("sectorQualityAudit") if isinstance(src.get("sectorQualityAudit"), dict) else {}
     )
     social_summary_raw = (
         src.get("socialSummary") if isinstance(src.get("socialSummary"), dict) else {}
@@ -821,6 +865,28 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 for item in (
                     location_quality_audit.get("examples")
                     if isinstance(location_quality_audit.get("examples"), list)
+                    else []
+                )[:20]
+                if isinstance(item, dict)
+            ],
+        },
+        "sectorQualityAudit": {
+            "totalRows": _clamped_int(sector_quality_audit.get("totalRows"), 0, 0),
+            "downgradedGameSectorCount": _clamped_int(
+                sector_quality_audit.get("downgradedGameSectorCount"), 0, 0
+            ),
+            "examples": [
+                {
+                    "company": clean_text(item.get("company")),
+                    "title": clean_text(item.get("title")),
+                    "source": clean_text(item.get("source")),
+                    "jobLink": clean_text(item.get("jobLink")),
+                    "rawSector": clean_text(item.get("rawSector")),
+                    "normalizedSector": clean_text(item.get("normalizedSector")),
+                }
+                for item in (
+                    sector_quality_audit.get("examples")
+                    if isinstance(sector_quality_audit.get("examples"), list)
                     else []
                 )[:20]
                 if isinstance(item, dict)

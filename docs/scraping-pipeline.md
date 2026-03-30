@@ -28,6 +28,7 @@ Scrapy path (for scrapy_static sources from browser queue)
 - **Discovery:** Candidates that fail probe (403, timeout, challenge-like HTML) can be retried with Playwright so more sources pass and enter the queue.
 - **M5 review snapshot:** Discovery now also writes `data/m5-strategic-backlog.json` as a derived review artifact. It is built from the canonical discovery ledger and should not be treated as the source of truth for discovery state.
 - **Static adapter:** Only the **listing page** fetch per source can use Playwright fallback; detail pages stay HTTP. If the pipeline has Playwright available, it injects `try_playwright` into static loaders.
+  Static extraction now also runs a shared job-page gate so ordinary pages are rejected as `dead_listing_page` instead of becoming synthetic jobs or generic empty misses.
 - **Browser fallback queue:** Sources classified as `blocked_or_challenge` or `needs_review` with `browserFallbackRecommended: true` (and adapter `scrapy_static`) are written to `jobs-browser-fallback-queue.json`. The next pipeline run uses that list as the scrapy_static registry and runs them with **Scrapy-Playwright** (use_browser=True).
 
 ## 2) Where Playwright is used

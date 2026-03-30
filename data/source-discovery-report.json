@@ -1,47 +1,47 @@
 {
   "schemaVersion": 1,
-  "runId": "discovery_533f785621",
+  "runId": "discovery_d167d92f2d",
   "mode": "dynamic",
-  "startedAt": "2026-03-28T21:41:19.241058+00:00",
-  "finishedAt": "2026-03-28T21:44:23.996071+00:00",
+  "startedAt": "2026-03-29T19:02:13.837424+00:00",
+  "finishedAt": "2026-03-29T19:02:48.292626+00:00",
   "summary": {
     "phase": "completed",
     "phaseKey": "completed",
     "phaseLabel": "Discovery completed",
-    "probedCount": 190,
-    "healthyCount": 42,
-    "newCandidateCount": 42,
+    "probedCount": 74,
+    "healthyCount": 22,
+    "newCandidateCount": 22,
     "taEnvCandidateCount": 0,
     "nlCandidateCount": 0,
-    "failedProbeCount": 124,
-    "probeMissCount": 12,
-    "foundEndpointCount": 924,
-    "probedCandidateCount": 190,
-    "queuedCandidateCount": 10,
-    "validatedCandidateCount": 42,
+    "failedProbeCount": 33,
+    "probeMissCount": 8,
+    "foundEndpointCount": 789,
+    "probedCandidateCount": 74,
+    "queuedCandidateCount": 20,
+    "validatedCandidateCount": 22,
     "approvedCandidateCount": 0,
     "liveCandidateCount": 0,
     "quarantinedCandidateCount": 0,
-    "discoverableButDeferredCount": 32,
+    "discoverableButDeferredCount": 2,
     "suppressedStaticCount": 14,
-    "skippedDuplicateCount": 718,
+    "skippedDuplicateCount": 699,
     "skippedInvalidCount": 2,
     "skippedLowEvidenceProbeCount": 0,
     "adapterCounts": {
-      "static": 33,
+      "static": 13,
       "workable": 9
     },
     "queuedByAdapter": {
-      "workable": 2,
-      "static": 8
+      "workable": 8,
+      "static": 12
     },
     "deferredByAdapter": {
-      "workable": 7,
-      "static": 25
+      "workable": 1,
+      "static": 1
     },
     "healthyButDeferredByAdapter": {
-      "workable": 7,
-      "static": 25
+      "workable": 1,
+      "static": 1
     },
     "suppressedStaticByReason": {
       "blocked_domain": 14
@@ -49,48 +49,46 @@
     "suppressedStaticByStage": {
       "sheet_directory": 14
     },
-    "queuedProviderCount": 2,
-    "queuedStaticCount": 8,
+    "queuedProviderCount": 8,
+    "queuedStaticCount": 12,
     "methodCounts": {
-      "sheet_directory": 22,
-      "gameprog": 20
+      "sheet_directory": 22
     },
     "generatedCountByStage": {
       "curated_seed": 10,
       "sheet_directory": 726,
       "provider_pattern": 24,
       "web_provider": 13,
-      "generic_static": 151
+      "generic_static": 16
     },
     "survivedDedupeCountByStage": {
       "curated_seed": 1,
       "sheet_directory": 77,
       "provider_pattern": 11,
       "web_provider": 0,
-      "generic_static": 117
+      "generic_static": 1
     },
     "probedCountByStage": {
       "curated_seed": 1,
       "sheet_directory": 61,
       "provider_pattern": 11,
       "web_provider": 0,
-      "generic_static": 117
+      "generic_static": 1
     },
     "queuedCountByStage": {
       "curated_seed": 0,
-      "sheet_directory": 6,
+      "sheet_directory": 20,
       "provider_pattern": 0,
       "web_provider": 0,
-      "generic_static": 4
+      "generic_static": 0
     },
     "duplicateReasons": {
-      "existing_id": 699,
-      "existing_domain": 18,
+      "existing_id": 683,
+      "existing_domain": 15,
       "run_domain": 1
     },
     "deferredReasons": {
-      "domain_cap": 16,
-      "adapter_cap": 16
+      "domain_cap": 2
     },
     "thresholds": {
       "minProviderEvidenceToProbe": 18,
@@ -102,73 +100,73 @@
       "patternProviderQueueThreshold": 40
     },
     "lossAccounting": {
-      "generated": 924,
-      "dedupSkipped": 718,
+      "generated": 789,
+      "dedupSkipped": 699,
       "dedupSkippedReasons": {
-        "existing_id": 699,
-        "existing_domain": 18,
+        "existing_id": 683,
+        "existing_domain": 15,
         "run_domain": 1
       },
       "validationSkipped": 2,
       "lowEvidenceSkipped": 0,
-      "probeFailed": 136,
-      "queueFiltered": 12,
-      "deferredByCap": 32,
-      "queued": 10
+      "probeFailed": 41,
+      "queueFiltered": 11,
+      "deferredByCap": 2,
+      "queued": 20
     }
   },
   "runtime": {
-    "totalDurationMs": 184421,
+    "totalDurationMs": 34072,
     "preset": "uncapped",
     "topCapBypassed": true,
     "sheetStaticProbeCapBypassed": true,
     "stageTimingsMs": {
       "curatedSeed": 0,
-      "sheetDirectory": 579,
+      "sheetDirectory": 606,
       "providerPatterns": 0,
-      "seedCareersScan": 19373,
-      "gamesmap": 532,
-      "gameprog": 144131,
-      "webSearch": 4153,
-      "dedupeFilter": 6,
-      "probe": 15079,
+      "seedCareersScan": 15985,
+      "gamesmap": 0,
+      "gameprog": 0,
+      "webSearch": 4062,
+      "dedupeFilter": 7,
+      "probe": 12985,
       "queueBalancing": 0
     },
     "stageTop": [
       {
-        "stage": "gameprog",
-        "durationMs": 144131
-      },
-      {
         "stage": "seedCareersScan",
-        "durationMs": 19373
+        "durationMs": 15985
       },
       {
         "stage": "probe",
-        "durationMs": 15079
+        "durationMs": 12985
       },
       {
         "stage": "webSearch",
-        "durationMs": 4153
+        "durationMs": 4062
       },
       {
         "stage": "sheetDirectory",
-        "durationMs": 579
+        "durationMs": 606
+      },
+      {
+        "stage": "dedupeFilter",
+        "durationMs": 7
       }
     ],
     "adapterTimings": [
       {
         "adapter": "static",
-        "durationMs": 243308,
-        "generatedCount": 800,
-        "failureCount": 127,
-        "probedCount": 166,
-        "healthyCount": 33,
-        "queuedCount": 33
+        "durationMs": 72352,
+        "generatedCount": 665,
+        "failureCount": 32,
+        "probedCount": 50,
+        "healthyCount": 13,
+        "queuedCount": 13
       },
       {
         "adapter": "workable",
-        "durationMs": 8429,
+        "durationMs": 8494,
         "generatedCount": 27,
         "failureCount": 0,
         "probedCount": 9,
@@ -176,17 +174,8 @@
         "queuedCount": 9
       },
       {
-        "adapter": "gameprog",
-        "durationMs": 7007,
-        "generatedCount": 0,
-        "failureCount": 7,
-        "probedCount": 0,
-        "healthyCount": 0,
-        "queuedCount": 0
-      },
-      {
         "adapter": "greenhouse",
-        "durationMs": 5594,
+        "durationMs": 6381,
         "generatedCount": 41,
         "failureCount": 6,
         "probedCount": 11,
@@ -195,7 +184,7 @@
       },
       {
         "adapter": "lever",
-        "durationMs": 4168,
+        "durationMs": 5252,
         "generatedCount": 16,
         "failureCount": 2,
         "probedCount": 2,
@@ -203,17 +192,8 @@
         "queuedCount": 0
       },
       {
-        "adapter": "seed_careers_page",
-        "durationMs": 1942,
-        "generatedCount": 0,
-        "failureCount": 3,
-        "probedCount": 0,
-        "healthyCount": 0,
-        "queuedCount": 0
-      },
-      {
         "adapter": "personio",
-        "durationMs": 1937,
+        "durationMs": 1598,
         "generatedCount": 5,
         "failureCount": 0,
         "probedCount": 0,
@@ -222,7 +202,7 @@
       },
       {
         "adapter": "smartrecruiters",
-        "durationMs": 1413,
+        "durationMs": 1221,
         "generatedCount": 8,
         "failureCount": 0,
         "probedCount": 1,
@@ -230,8 +210,17 @@
         "queuedCount": 0
       },
       {
+        "adapter": "seed_careers_page",
+        "durationMs": 1071,
+        "generatedCount": 0,
+        "failureCount": 2,
+        "probedCount": 0,
+        "healthyCount": 0,
+        "queuedCount": 0
+      },
+      {
         "adapter": "teamtailor",
-        "durationMs": 765,
+        "durationMs": 630,
         "generatedCount": 7,
         "failureCount": 1,
         "probedCount": 1,
@@ -240,7 +229,7 @@
       },
       {
         "adapter": "ashby",
-        "durationMs": 649,
+        "durationMs": 537,
         "generatedCount": 8,
         "failureCount": 0,
         "probedCount": 0,
@@ -249,7 +238,7 @@
       },
       {
         "adapter": "recruitee",
-        "durationMs": 4,
+        "durationMs": 5,
         "generatedCount": 7,
         "failureCount": 0,
         "probedCount": 0,
@@ -264,21 +253,30 @@
         "probedCount": 0,
         "healthyCount": 0,
         "queuedCount": 0
+      },
+      {
+        "adapter": "gameprog",
+        "durationMs": 0,
+        "generatedCount": 0,
+        "failureCount": 1,
+        "probedCount": 0,
+        "healthyCount": 0,
+        "queuedCount": 0
       }
     ],
     "slowestAdapters": [
       {
         "adapter": "static",
-        "durationMs": 243308,
-        "generatedCount": 800,
-        "failureCount": 127,
-        "probedCount": 166,
-        "healthyCount": 33,
-        "queuedCount": 33
+        "durationMs": 72352,
+        "generatedCount": 665,
+        "failureCount": 32,
+        "probedCount": 50,
+        "healthyCount": 13,
+        "queuedCount": 13
       },
       {
         "adapter": "workable",
-        "durationMs": 8429,
+        "durationMs": 8494,
         "generatedCount": 27,
         "failureCount": 0,
         "probedCount": 9,
@@ -286,17 +284,8 @@
         "queuedCount": 9
       },
       {
-        "adapter": "gameprog",
-        "durationMs": 7007,
-        "generatedCount": 0,
-        "failureCount": 7,
-        "probedCount": 0,
-        "healthyCount": 0,
-        "queuedCount": 0
-      },
-      {
         "adapter": "greenhouse",
-        "durationMs": 5594,
+        "durationMs": 6381,
         "generatedCount": 41,
         "failureCount": 6,
         "probedCount": 11,
@@ -305,23 +294,32 @@
       },
       {
         "adapter": "lever",
-        "durationMs": 4168,
+        "durationMs": 5252,
         "generatedCount": 16,
         "failureCount": 2,
         "probedCount": 2,
+        "healthyCount": 0,
+        "queuedCount": 0
+      },
+      {
+        "adapter": "personio",
+        "durationMs": 1598,
+        "generatedCount": 5,
+        "failureCount": 0,
+        "probedCount": 0,
         "healthyCount": 0,
         "queuedCount": 0
       }
     ],
     "lifecycle": {
       "owner": "discovery_report",
-      "heartbeatAt": "2026-03-28T21:44:23.996109+00:00"
+      "heartbeatAt": "2026-03-29T19:02:48.292658+00:00"
     },
     "urlPatchStats": {
-      "loaded": 192,
-      "added": 2,
+      "loaded": 194,
+      "added": 0,
       "updated": 0,
-      "reprobed": 5
+      "reprobed": 1
     },
     "urlPatchRecoveredCount": 0,
     "autoApproval": {
@@ -336,12 +334,12 @@
     "mode": "determinate",
     "ratio": 1.0,
     "counts": {
-      "foundEndpoints": 924,
-      "probedCandidates": 190,
-      "probeTotal": 190,
-      "queuedCandidates": 10,
-      "deferredCandidates": 32,
-      "failedProbes": 124
+      "foundEndpoints": 789,
+      "probedCandidates": 74,
+      "probeTotal": 74,
+      "queuedCandidates": 20,
+      "deferredCandidates": 2,
+      "failedProbes": 33
     }
   },
   "candidates": [
@@ -368,7 +366,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/high-voltage-software/#jobs",
       "weakSignal": false,
       "id": "workable:account:highvoltagesoftware",
-      "discoveredAt": "2026-03-28T21:44:08.373497+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898559+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -376,7 +374,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.268176+00:00",
+      "lastProbedAt": "2026-03-29T19:02:47.926172+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 28,
@@ -421,7 +419,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/funkitron/",
       "weakSignal": false,
       "id": "workable:account:funkitron",
-      "discoveredAt": "2026-03-28T21:44:08.373483+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898536+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -429,7 +427,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.244987+00:00",
+      "lastProbedAt": "2026-03-29T19:02:47.904389+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 28,
@@ -474,7 +472,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/forgotten-empires/#jobs",
       "weakSignal": false,
       "id": "workable:account:forgottenempires",
-      "discoveredAt": "2026-03-28T21:44:08.373479+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898528+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -482,30 +480,27 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.267780+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.926409+00:00",
+      "deferred": false,
       "candidateState": "validated",
-      "rankScore": 49,
+      "rankScore": 37,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
         "structured_family",
-        "existing_family_match",
+        "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Devoted Studios (Workable)",
@@ -530,7 +525,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/devoted-studios-1/",
       "weakSignal": false,
       "id": "workable:account:devotedstudios1",
-      "discoveredAt": "2026-03-28T21:44:08.373467+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898509+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -538,30 +533,27 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.267417+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.922336+00:00",
+      "deferred": false,
       "candidateState": "validated",
-      "rankScore": 49,
+      "rankScore": 37,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
         "structured_family",
-        "existing_family_match",
+        "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Arkadium (Workable)",
@@ -586,7 +578,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/arkadium-1/",
       "weakSignal": false,
       "id": "workable:account:arkadium1",
-      "discoveredAt": "2026-03-28T21:44:08.373448+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898477+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -594,30 +586,27 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.267067+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.948950+00:00",
+      "deferred": false,
       "candidateState": "validated",
-      "rankScore": 49,
+      "rankScore": 37,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
         "structured_family",
-        "existing_family_match",
+        "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Team 17 (Workable)",
@@ -642,7 +631,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/team-17-digital/#jobs",
       "weakSignal": true,
       "id": "workable:account:team17digital",
-      "discoveredAt": "2026-03-28T21:44:08.373621+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898763+00:00",
       "score": 22,
       "reasons": [
         "evidence_signal"
@@ -650,30 +639,27 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.315615+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.934243+00:00",
+      "deferred": false,
       "candidateState": "validated",
-      "rankScore": 48,
+      "rankScore": 36,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
         "structured_family",
-        "existing_family_match",
+        "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Spectarium (Workable)",
@@ -698,7 +684,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/spectarium/",
       "weakSignal": true,
       "id": "workable:account:spectarium",
-      "discoveredAt": "2026-03-28T21:44:08.373616+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898755+00:00",
       "score": 20,
       "reasons": [
         "evidence_signal"
@@ -706,8 +692,8 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.266674+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.912520+00:00",
+      "deferred": false,
       "candidateState": "validated",
       "rankScore": 34,
       "rankReasons": [
@@ -717,19 +703,16 @@
         "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Snowed In Studios (Workable)",
@@ -754,7 +737,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/snowed-in-studios-3/?lng=en",
       "weakSignal": true,
       "id": "workable:account:snowedinstudios3",
-      "discoveredAt": "2026-03-28T21:44:08.373613+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898751+00:00",
       "score": 20,
       "reasons": [
         "evidence_signal"
@@ -762,30 +745,27 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.316094+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.941647+00:00",
+      "deferred": false,
       "candidateState": "validated",
-      "rankScore": 46,
+      "rankScore": 34,
       "rankReasons": [
         "medium_confidence",
         "evidence_rank_bonus",
         "structured_family",
-        "existing_family_match",
+        "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Astrid Entertainment (Workable)",
@@ -810,7 +790,7 @@
       "sourceDirectoryEntryUrl": "https://apply.workable.com/astrid-entertainment/",
       "weakSignal": true,
       "id": "workable:account:astridentertainment",
-      "discoveredAt": "2026-03-28T21:44:08.373601+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898729+00:00",
       "score": 20,
       "reasons": [
         "evidence_signal"
@@ -818,7 +798,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.292464+00:00",
+      "lastProbedAt": "2026-03-29T19:02:47.937415+00:00",
       "deferred": true,
       "candidateState": "validated",
       "rankScore": 46,
@@ -835,9 +815,9 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 18,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
+      "lastDeferredAt": "2026-03-29T19:02:48.264919+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
@@ -868,7 +848,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://lemonskystudios.bamboohr.com/careers",
       "id": "static:listing_url:https://lemonskystudios.bamboohr.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.374276+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.899872+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -876,7 +856,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.368079+00:00",
+      "lastProbedAt": "2026-03-29T19:02:47.949325+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 14,
@@ -921,7 +901,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://tencent.wd1.myworkdayjobs.com/Lightspeed",
       "id": "static:listing_url:https://tencent.wd1.myworkdayjobs.com/lightspeed",
-      "discoveredAt": "2026-03-28T21:44:08.374286+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.899886+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -929,7 +909,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.268586+00:00",
+      "lastProbedAt": "2026-03-29T19:02:47.917506+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 14,
@@ -974,7 +954,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://intel.wd1.myworkdayjobs.com/en-US/External?q=game",
       "id": "static:listing_url:https://intel.wd1.myworkdayjobs.com/en-us/external?q=game",
-      "discoveredAt": "2026-03-28T21:44:08.374196+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.899741+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -982,7 +962,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.261657+00:00",
+      "lastProbedAt": "2026-03-29T19:02:47.912739+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 14,
@@ -1027,7 +1007,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://flyingbark.bamboohr.com/careers",
       "id": "static:listing_url:https://flyingbark.bamboohr.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.374010+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.899424+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1035,7 +1015,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.295839+00:00",
+      "lastProbedAt": "2026-03-29T19:02:47.942032+00:00",
       "deferred": false,
       "candidateState": "validated",
       "rankScore": 14,
@@ -1080,7 +1060,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://expressiongames.bamboohr.com/careers",
       "id": "static:listing_url:https://expressiongames.bamboohr.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.373980+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.899378+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1088,8 +1068,8 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.254109+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.909875+00:00",
+      "deferred": false,
       "candidateState": "validated",
       "rankScore": 23,
       "rankReasons": [
@@ -1097,19 +1077,16 @@
         "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Eleventh Hour Games (Sheet)",
@@ -1136,7 +1113,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://eleventhhourgames.bamboohr.com/careers",
       "id": "static:listing_url:https://eleventhhourgames.bamboohr.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.373952+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.899331+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1144,8 +1121,8 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.292890+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.934581+00:00",
+      "deferred": false,
       "candidateState": "validated",
       "rankScore": 23,
       "rankReasons": [
@@ -1153,19 +1130,16 @@
         "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Dinosaur Polo Club (Sheet)",
@@ -1192,7 +1166,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://dinopoloclub.bamboohr.com/careers",
       "id": "static:listing_url:https://dinopoloclub.bamboohr.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.373923+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.899279+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1200,8 +1174,8 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.287071+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.937639+00:00",
+      "deferred": false,
       "candidateState": "validated",
       "rankScore": 23,
       "rankReasons": [
@@ -1209,19 +1183,16 @@
         "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "CatFace (Sheet)",
@@ -1248,7 +1219,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://catface.bamboohr.com/careers",
       "id": "static:listing_url:https://catface.bamboohr.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.373827+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.899101+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1256,8 +1227,8 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.273618+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.926604+00:00",
+      "deferred": false,
       "candidateState": "validated",
       "rankScore": 23,
       "rankReasons": [
@@ -1265,19 +1236,16 @@
         "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Blazing Griffin (Sheet)",
@@ -1304,7 +1272,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://blazinggriffin.bamboohr.com/careers",
       "id": "static:listing_url:https://blazinggriffin.bamboohr.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.373797+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.899050+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1312,8 +1280,8 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.247571+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.901364+00:00",
+      "deferred": false,
       "candidateState": "validated",
       "rankScore": 23,
       "rankReasons": [
@@ -1321,19 +1289,16 @@
         "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Beamdog (Sheet)",
@@ -1360,7 +1325,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://beamdog.bamboohr.com/careers",
       "id": "static:listing_url:https://beamdog.bamboohr.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.373760+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898989+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1368,8 +1333,8 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.282763+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.929659+00:00",
+      "deferred": false,
       "candidateState": "validated",
       "rankScore": 23,
       "rankReasons": [
@@ -1377,19 +1342,16 @@
         "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Avalanche (WB Studios) (Sheet)",
@@ -1416,7 +1378,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://warnerbros.wd5.myworkdayjobs.com/en-US/global?q=Avalanche",
       "id": "static:listing_url:https://warnerbros.wd5.myworkdayjobs.com/en-us/global?q=avalanche",
-      "discoveredAt": "2026-03-28T21:44:08.373736+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898949+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1424,8 +1386,8 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.250898+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.906447+00:00",
+      "deferred": false,
       "candidateState": "validated",
       "rankScore": 23,
       "rankReasons": [
@@ -1433,19 +1395,16 @@
         "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Aristocrat Gaming (Sheet)",
@@ -1472,7 +1431,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://aristocrat.wd3.myworkdayjobs.com/AristocratExternalCareersSite",
       "id": "static:listing_url:https://aristocrat.wd3.myworkdayjobs.com/aristocratexternalcareerssite",
-      "discoveredAt": "2026-03-28T21:44:08.373714+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898915+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1480,8 +1439,8 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.241297+00:00",
-      "deferred": true,
+      "lastProbedAt": "2026-03-29T19:02:47.894667+00:00",
+      "deferred": false,
       "candidateState": "validated",
       "rankScore": 23,
       "rankReasons": [
@@ -1489,19 +1448,16 @@
         "existing_registry_match",
         "deferred_backlog_age"
       ],
-      "promotionLane": "domain_cap_review",
+      "promotionLane": "manual_review",
       "approvedAt": "",
       "approvedBy": "",
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 16,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "domain_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "domain_cap",
-      "promotionReason": "deferred_candidate"
+      "lastDeferredAt": "2026-03-29T18:06:43.083607+00:00",
+      "promotionReason": "manual_review_only"
     },
     {
       "name": "Activate Games (Sheet)",
@@ -1528,7 +1484,7 @@
       "sourceDirectoryUrl": "https://docs.google.com/spreadsheets/d/1nHKWmwElNhap2It0jY7QHaRIdWojhaKt6Mll4UBOTT4/edit?gid=567781753",
       "sourceDirectoryEntryUrl": "https://activategames.bamboohr.com/careers",
       "id": "static:listing_url:https://activategames.bamboohr.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.373663+00:00",
+      "discoveredAt": "2026-03-29T19:02:34.898831+00:00",
       "score": 23,
       "reasons": [
         "evidence_signal"
@@ -1536,7 +1492,7 @@
       "sampleCount": 0,
       "jobsFound": 0,
       "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.279949+00:00",
+      "lastProbedAt": "2026-03-29T19:02:47.922814+00:00",
       "deferred": true,
       "candidateState": "validated",
       "rankScore": 23,
@@ -1551,1163 +1507,16 @@
       "liveAt": "",
       "quarantinedAt": "",
       "quarantineReason": "",
-      "deferCount": 15,
+      "deferCount": 18,
       "firstDeferredAt": "2026-03-26T21:29:13.492171+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
+      "lastDeferredAt": "2026-03-29T19:02:48.264919+00:00",
       "deferReason": "domain_cap",
       "dropStage": "deferred_by_cap",
       "dropReason": "domain_cap",
       "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Studio Daimon Games (Gameprog)",
-      "studio": "Studio Daimon Games",
-      "company": "Studio Daimon Games",
-      "adapter": "static",
-      "pages": [
-        "https://linktr.ee/careers"
-      ],
-      "listing_url": "https://linktr.ee/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://linktr.ee/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://linktr.ee/studiodaimongames",
-      "sourceDirectoryLocation": "Milano",
-      "manualOnly": false,
-      "id": "static:listing_url:https://linktr.ee/careers",
-      "discoveredAt": "2026-03-28T21:44:08.375801+00:00",
-      "score": 22,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 2,
-      "jobsFound": 2,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.374584+00:00",
-      "deferred": false,
-      "candidateState": "validated",
-      "rankScore": 43,
-      "rankReasons": [
-        "medium_confidence",
-        "jobs_found_bonus",
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 0,
-      "firstDeferredAt": "",
-      "lastDeferredAt": "",
-      "promotionReason": "manual_review_only"
-    },
-    {
-      "name": "One-O-One (Gameprog)",
-      "studio": "One-O-One",
-      "company": "One-O-One",
-      "adapter": "static",
-      "pages": [
-        "https://www.oneoonegames.com/careers"
-      ],
-      "listing_url": "https://www.oneoonegames.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://www.oneoonegames.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://www.oneoonegames.com/",
-      "sourceDirectoryLocation": "Roma",
-      "manualOnly": false,
-      "id": "static:listing_url:https://www.oneoonegames.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.376563+00:00",
-      "score": 22,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 2,
-      "jobsFound": 2,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.445493+00:00",
-      "deferred": false,
-      "candidateState": "validated",
-      "rankScore": 43,
-      "rankReasons": [
-        "medium_confidence",
-        "jobs_found_bonus",
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 0,
-      "firstDeferredAt": "",
-      "lastDeferredAt": "",
-      "promotionReason": "manual_review_only"
-    },
-    {
-      "name": "Gamera Interactive (Gameprog)",
-      "studio": "Gamera Interactive",
-      "company": "Gamera Interactive",
-      "adapter": "static",
-      "pages": [
-        "http://www.gamerainteractive.it/careers"
-      ],
-      "listing_url": "http://www.gamerainteractive.it/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "http://www.gamerainteractive.it/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "http://www.gamerainteractive.it",
-      "sourceDirectoryLocation": "Padova",
-      "manualOnly": false,
-      "id": "static:listing_url:http://www.gamerainteractive.it/careers",
-      "discoveredAt": "2026-03-28T21:44:08.376335+00:00",
-      "score": 21,
-      "reasons": [
-        "evidence_signal",
-        "live_jobs_detected"
-      ],
-      "sampleCount": 1,
-      "jobsFound": 1,
-      "confidence": "medium",
-      "lastProbedAt": "2026-03-28T21:44:23.429198+00:00",
-      "deferred": false,
-      "candidateState": "validated",
-      "rankScore": 39,
-      "rankReasons": [
-        "medium_confidence",
-        "jobs_found_bonus",
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 0,
-      "firstDeferredAt": "",
-      "lastDeferredAt": "",
-      "promotionReason": "manual_review_only"
-    },
-    {
-      "name": "Ubisoft Milan (Gameprog)",
-      "studio": "Ubisoft Milan",
-      "company": "Ubisoft Milan",
-      "adapter": "static",
-      "pages": [
-        "https://www.ubisoft.com/careers"
-      ],
-      "listing_url": "https://www.ubisoft.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://www.ubisoft.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://www.ubisoft.com/en-US/studio/milan.aspx",
-      "sourceDirectoryLocation": "Milano",
-      "manualOnly": false,
-      "id": "static:listing_url:https://www.ubisoft.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.376816+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.493979+00:00",
-      "deferred": false,
-      "candidateState": "validated",
-      "rankScore": 17,
-      "rankReasons": [
-        "evidence_rank_bonus",
-        "existing_family_match"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 0,
-      "firstDeferredAt": "",
-      "lastDeferredAt": "",
-      "promotionReason": "manual_review_only"
-    },
-    {
-      "name": "Theta Division (Gameprog)",
-      "studio": "Theta Division",
-      "company": "Theta Division",
-      "adapter": "static",
-      "pages": [
-        "https://www.thetadivision.com/careers"
-      ],
-      "listing_url": "https://www.thetadivision.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://www.thetadivision.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://www.thetadivision.com/",
-      "sourceDirectoryLocation": "Roma",
-      "manualOnly": false,
-      "id": "static:listing_url:https://www.thetadivision.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.376755+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.456489+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Studio V (Gameprog)",
-      "studio": "Studio V",
-      "company": "Studio V",
-      "adapter": "static",
-      "pages": [
-        "https://www.studiovgames.com/lavora-con-noi/"
-      ],
-      "listing_url": "https://www.studiovgames.com/lavora-con-noi/",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://www.studiovgames.com/lavora-con-noi/",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "http://www.studiovgames.com/",
-      "sourceDirectoryLocation": "Roma",
-      "manualOnly": false,
-      "id": "static:listing_url:https://www.studiovgames.com/lavora-con-noi/",
-      "discoveredAt": "2026-03-28T21:44:08.376732+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.488733+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Strobetano (Gameprog)",
-      "studio": "Strobetano",
-      "company": "Strobetano",
-      "adapter": "static",
-      "pages": [
-        "http://strobetano.com/careers"
-      ],
-      "listing_url": "http://strobetano.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "http://strobetano.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "http://strobetano.com/",
-      "sourceDirectoryLocation": "Como",
-      "manualOnly": false,
-      "id": "static:listing_url:http://strobetano.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.375894+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.436849+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Sedleo (Gameprog)",
-      "studio": "Sedleo",
-      "company": "Sedleo",
-      "adapter": "static",
-      "pages": [
-        "https://www.sedleo.com/jobs"
-      ],
-      "listing_url": "https://www.sedleo.com/jobs",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://www.sedleo.com/jobs",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://www.sedleo.com",
-      "sourceDirectoryLocation": "Roma",
-      "manualOnly": false,
-      "id": "static:listing_url:https://www.sedleo.com/jobs",
-      "discoveredAt": "2026-03-28T21:44:08.375997+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.380556+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Rortos (Gameprog)",
-      "studio": "Rortos",
-      "company": "Rortos",
-      "adapter": "static",
-      "pages": [
-        "http://www.rortos.it/careers"
-      ],
-      "listing_url": "http://www.rortos.it/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "http://www.rortos.it/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "http://www.rortos.it/",
-      "sourceDirectoryLocation": "Verona",
-      "manualOnly": false,
-      "id": "static:listing_url:http://www.rortos.it/careers",
-      "discoveredAt": "2026-03-28T21:44:08.376638+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.473497+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "MONOGRID (Gameprog)",
-      "studio": "MONOGRID",
-      "company": "MONOGRID",
-      "adapter": "static",
-      "pages": [
-        "https://mono-grid.com/careers"
-      ],
-      "listing_url": "https://mono-grid.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://mono-grid.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://mono-grid.com/",
-      "sourceDirectoryLocation": "Firenze",
-      "manualOnly": false,
-      "id": "static:listing_url:https://mono-grid.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.376544+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.451279+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Lullabyte Games (Gameprog)",
-      "studio": "Lullabyte Games",
-      "company": "Lullabyte Games",
-      "adapter": "static",
-      "pages": [
-        "https://x.com/careers"
-      ],
-      "listing_url": "https://x.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://x.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://x.com/LullabyteGames",
-      "sourceDirectoryLocation": "Torino",
-      "manualOnly": false,
-      "id": "static:listing_url:https://x.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.375716+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.371184+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Late Night Artisans (Gameprog)",
-      "studio": "Late Night Artisans",
-      "company": "Late Night Artisans",
-      "adapter": "static",
-      "pages": [
-        "https://www.instagram.com/careers"
-      ],
-      "listing_url": "https://www.instagram.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://www.instagram.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://www.instagram.com/lna_dev_team/",
-      "sourceDirectoryLocation": "Milano",
-      "manualOnly": false,
-      "id": "static:listing_url:https://www.instagram.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.375811+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.387681+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Jyamma Games (Gameprog)",
-      "studio": "Jyamma Games",
-      "company": "Jyamma Games",
-      "adapter": "static",
-      "pages": [
-        "https://jyammagames.com/wp-content/cache/min/1/wp-content/plugins/wp-job-manager/assets/dist/css/job-listings-66bf166d681b588d1b588d444a19c5bf.css"
-      ],
-      "listing_url": "https://jyammagames.com/wp-content/cache/min/1/wp-content/plugins/wp-job-manager/assets/dist/css/job-listings-66bf166d681b588d1b588d444a19c5bf.css",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://jyammagames.com/wp-content/cache/min/1/wp-content/plugins/wp-job-manager/assets/dist/css/job-listings-66bf166d681b588d1b588d444a19c5bf.css",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://jyammagames.com/",
-      "sourceDirectoryLocation": "Milano",
-      "manualOnly": false,
-      "id": "static:listing_url:https://jyammagames.com/wp-content/cache/min/1/wp-content/plugins/wp-job-manager/assets/dist/css/job-listings-66bf166d681b588d1b588d444a19c5bf.css",
-      "discoveredAt": "2026-03-28T21:44:08.376439+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.425108+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 17,
-      "rankReasons": [
-        "evidence_rank_bonus",
-        "existing_family_match"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "High Stone Games (Gameprog)",
-      "studio": "High Stone Games",
-      "company": "High Stone Games",
-      "adapter": "static",
-      "pages": [
-        "https://highstonegames.com/careers"
-      ],
-      "listing_url": "https://highstonegames.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://highstonegames.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://highstonegames.com/",
-      "sourceDirectoryLocation": "Treviso",
-      "manualOnly": false,
-      "id": "static:listing_url:https://highstonegames.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.375953+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.383866+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Dynamight Studios (Gameprog)",
-      "studio": "Dynamight Studios",
-      "company": "Dynamight Studios",
-      "adapter": "static",
-      "pages": [
-        "http://www.dynamight-studios.com/careers"
-      ],
-      "listing_url": "http://www.dynamight-studios.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "http://www.dynamight-studios.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "http://www.dynamight-studios.com",
-      "sourceDirectoryLocation": "Bareggio (MI)",
-      "manualOnly": false,
-      "id": "static:listing_url:http://www.dynamight-studios.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.376265+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.479291+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Demigiant (Gameprog)",
-      "studio": "Demigiant",
-      "company": "Demigiant",
-      "adapter": "static",
-      "pages": [
-        "http://www.demigiant.com/careers"
-      ],
-      "listing_url": "http://www.demigiant.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "http://www.demigiant.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "http://www.demigiant.com",
-      "sourceDirectoryLocation": "Roma",
-      "manualOnly": false,
-      "id": "static:listing_url:http://www.demigiant.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.376222+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.416105+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "CyberLab Studios (Gameprog)",
-      "studio": "CyberLab Studios",
-      "company": "CyberLab Studios",
-      "adapter": "static",
-      "pages": [
-        "https://cyberlabstudios.dev/careers"
-      ],
-      "listing_url": "https://cyberlabstudios.dev/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://cyberlabstudios.dev/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://cyberlabstudios.dev/",
-      "sourceDirectoryLocation": "Catania",
-      "manualOnly": false,
-      "id": "static:listing_url:https://cyberlabstudios.dev/careers",
-      "discoveredAt": "2026-03-28T21:44:08.376212+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.394729+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Curiosity Killed The Cat (Gameprog)",
-      "studio": "Curiosity Killed The Cat",
-      "company": "Curiosity Killed The Cat",
-      "adapter": "static",
-      "pages": [
-        "http://www.michelepirovano.com/careers"
-      ],
-      "listing_url": "http://www.michelepirovano.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "http://www.michelepirovano.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "http://www.michelepirovano.com/",
-      "sourceDirectoryLocation": "Bergamo",
-      "manualOnly": false,
-      "id": "static:listing_url:http://www.michelepirovano.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.376191+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.399709+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "Baryonix (Gameprog)",
-      "studio": "Baryonix",
-      "company": "Baryonix",
-      "adapter": "static",
-      "pages": [
-        "https://twitter.com/careers"
-      ],
-      "listing_url": "https://twitter.com/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://twitter.com/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://twitter.com/BaryonyxGames",
-      "sourceDirectoryLocation": "Roma",
-      "manualOnly": false,
-      "id": "static:listing_url:https://twitter.com/careers",
-      "discoveredAt": "2026-03-28T21:44:08.375972+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.409633+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
-    },
-    {
-      "name": "AC Games (Gameprog)",
-      "studio": "AC Games",
-      "company": "AC Games",
-      "adapter": "static",
-      "pages": [
-        "https://acgames.it/careers"
-      ],
-      "listing_url": "https://acgames.it/careers",
-      "nlPriority": false,
-      "enabledByDefault": false,
-      "discoveryMethod": "gameprog",
-      "discoveryStage": "generic_static",
-      "careersUrl": "https://acgames.it/careers",
-      "evidenceSource": "gameprog",
-      "evidenceTypes": [
-        "gameprog_directory",
-        "gameprog_careers_url",
-        "gameprog_location"
-      ],
-      "evidenceScore": 40,
-      "weakSignal": false,
-      "sourceDirectory": "gameprog",
-      "sourceDirectoryUrl": "https://gameprog.it/",
-      "sourceDirectoryEntryUrl": "https://acgames.it/",
-      "sourceDirectoryLocation": "Lamezia Terme",
-      "manualOnly": false,
-      "id": "static:listing_url:https://acgames.it/careers",
-      "discoveredAt": "2026-03-28T21:44:08.375642+00:00",
-      "score": 20,
-      "reasons": [
-        "evidence_signal"
-      ],
-      "sampleCount": 0,
-      "jobsFound": 0,
-      "confidence": "low",
-      "lastProbedAt": "2026-03-28T21:44:23.319379+00:00",
-      "deferred": true,
-      "candidateState": "validated",
-      "rankScore": 25,
-      "rankReasons": [
-        "evidence_rank_bonus"
-      ],
-      "promotionLane": "manual_review",
-      "approvedAt": "",
-      "approvedBy": "",
-      "liveAt": "",
-      "quarantinedAt": "",
-      "quarantineReason": "",
-      "deferCount": 1,
-      "firstDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "lastDeferredAt": "2026-03-28T21:44:23.965243+00:00",
-      "deferReason": "adapter_cap",
-      "dropStage": "deferred_by_cap",
-      "dropReason": "adapter_cap",
-      "promotionReason": "deferred_candidate"
     }
   ],
   "failures": [
-    {
-      "name": "https://www.epicgames.com/site/careers/jobs",
-      "adapter": "seed_careers_page",
-      "error": "HTTP Error 403: Forbidden",
-      "stage": "page_fetch",
-      "dropStage": "page_fetch",
-      "dropReason": "page_fetch"
-    },
     {
       "name": "https://careers.rebellion.com/",
       "adapter": "seed_careers_page",
@@ -2725,57 +1534,9 @@
       "dropReason": "page_fetch"
     },
     {
-      "name": "https://www.sirioartgames.com/",
+      "name": "https://example.com/",
       "adapter": "gameprog",
-      "error": "<urlopen error [Errno 11002] getaddrinfo failed>",
-      "stage": "website_fetch",
-      "dropStage": "page_fetch",
-      "dropReason": "page_fetch"
-    },
-    {
-      "name": "https://doublefourteen.io/",
-      "adapter": "gameprog",
-      "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'doublefourteen.io'. (_ssl.c:1032)>",
-      "stage": "website_fetch",
-      "dropStage": "page_fetch",
-      "dropReason": "page_fetch"
-    },
-    {
-      "name": "https://codemount.studio",
-      "adapter": "gameprog",
-      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
-      "stage": "website_fetch",
-      "dropStage": "page_fetch",
-      "dropReason": "page_fetch"
-    },
-    {
-      "name": "http://blackrobotgames.com/",
-      "adapter": "gameprog",
-      "error": "<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1032)>",
-      "stage": "website_fetch",
-      "dropStage": "page_fetch",
-      "dropReason": "page_fetch"
-    },
-    {
-      "name": "https://kibouentertainment.wixsite.com/",
-      "adapter": "gameprog",
-      "error": "HTTP Error 404: Not Found",
-      "stage": "website_fetch",
-      "dropStage": "page_fetch",
-      "dropReason": "page_fetch"
-    },
-    {
-      "name": "https://www.facebook.com/glipsychotronici/",
-      "adapter": "gameprog",
-      "error": "HTTP Error 400: Bad Request",
-      "stage": "website_fetch",
-      "dropStage": "page_fetch",
-      "dropReason": "page_fetch"
-    },
-    {
-      "name": "http://www.reddollgames.it/",
-      "adapter": "gameprog",
-      "error": "<urlopen error [Errno 11001] getaddrinfo failed>",
+      "error": "unexpected URL: https://example.com/",
       "stage": "website_fetch",
       "dropStage": "page_fetch",
       "dropReason": "page_fetch"
@@ -8277,6 +7038,14 @@
       "dropReason": "existing_id"
     },
     {
+      "name": "Epic Games (Manual Website)",
+      "adapter": "static",
+      "stage": "dedupe_skipped",
+      "error": "existing_id",
+      "dropStage": "dedupe_skipped",
+      "dropReason": "existing_id"
+    },
+    {
       "name": "Riot Games (Manual Website)",
       "adapter": "static",
       "stage": "dedupe_skipped",
@@ -8363,166 +7132,6 @@
       "error": "existing_id",
       "dropStage": "dedupe_skipped",
       "dropReason": "existing_id"
-    },
-    {
-      "name": "34BigThings (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "AnotheReality (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "AvantGarden (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Curtel Games (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_domain",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_domain"
-    },
-    {
-      "name": "Funny Tales (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Forge Reply (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Forge Studios (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Italian Games Factory (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Milestone (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_domain",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_domain"
-    },
-    {
-      "name": "Miniclip (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Memorable Games (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "RaceWard (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Raylight Games (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "redBit Games (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Storm in a Teacup (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Stormind Games (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Strange Beat Games (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Tiny Bull Studios (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "WhatWapp Entertainment (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_id",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_id"
-    },
-    {
-      "name": "Nacon Studio Milan (Gameprog)",
-      "adapter": "static",
-      "stage": "dedupe_skipped",
-      "error": "existing_domain",
-      "dropStage": "dedupe_skipped",
-      "dropReason": "existing_domain"
     },
     {
       "name": "2K (Greenhouse)",
@@ -8678,10 +7287,10 @@
       "dropReason": "probe"
     },
     {
-      "name": "Black Soup (Sheet)",
+      "name": "Crate Entertainment (Sheet)",
       "adapter": "static",
-      "domain": "careers.blacksoup.gg",
-      "error": "https://careers.blacksoup.gg: [Errno 11001] getaddrinfo failed",
+      "domain": "careers.crateentertainment.com",
+      "error": "https://careers.crateentertainment.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -8696,19 +7305,19 @@
       "dropReason": "probe"
     },
     {
-      "name": "Crate Entertainment (Sheet)",
+      "name": "Chillchat (Sheet)",
       "adapter": "static",
-      "domain": "careers.crateentertainment.com",
-      "error": "https://careers.crateentertainment.com: [Errno 11001] getaddrinfo failed",
+      "domain": "careers.chillchat.com",
+      "error": "https://careers.chillchat.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "Chillchat (Sheet)",
+      "name": "Datcroft Games (Sheet)",
       "adapter": "static",
-      "domain": "careers.chillchat.com",
-      "error": "https://careers.chillchat.com: [Errno 11001] getaddrinfo failed",
+      "domain": "datcroft.com",
+      "error": "https://datcroft.com/careers/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1032)",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -8741,6 +7350,15 @@
       "dropReason": "probe"
     },
     {
+      "name": "Black Soup (Sheet)",
+      "adapter": "static",
+      "domain": "careers.blacksoup.gg",
+      "error": "https://careers.blacksoup.gg: [Errno 11001] getaddrinfo failed",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
       "name": "Fumb Games (Sheet)",
       "adapter": "static",
       "domain": "careers.fumbgames.com",
@@ -8759,10 +7377,10 @@
       "dropReason": "probe"
     },
     {
-      "name": "Datcroft Games (Sheet)",
+      "name": "GameChanger (Sheet)",
       "adapter": "static",
-      "domain": "datcroft.com",
-      "error": "https://datcroft.com/careers/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1032)",
+      "domain": "gc.com",
+      "error": "https://gc.com/careers#Job-Openings: Client error '487 ' for url 'https://gc.com/careers#Job-Openings'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/487",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -8777,19 +7395,10 @@
       "dropReason": "probe"
     },
     {
-      "name": "GameChanger (Sheet)",
+      "name": "Jam City (Sheet)",
       "adapter": "static",
-      "domain": "gc.com",
-      "error": "https://gc.com/careers#Job-Openings: Client error '487 ' for url 'https://gc.com/careers#Job-Openings'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/487",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Intrepid Studios, Inc (Sheet)",
-      "adapter": "static",
-      "domain": "intrepidstudios.com",
-      "error": "https://intrepidstudios.com/careers: [Errno 11002] getaddrinfo failed",
+      "domain": "www.jamcity.com",
+      "error": "https://www.jamcity.com/job-openings/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -8804,10 +7413,46 @@
       "dropReason": "probe"
     },
     {
-      "name": "Jam City (Sheet)",
+      "name": "Intrepid Studios, Inc (Sheet)",
       "adapter": "static",
-      "domain": "www.jamcity.com",
-      "error": "https://www.jamcity.com/job-openings/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
+      "domain": "intrepidstudios.com",
+      "error": "https://intrepidstudios.com/careers: [Errno 11002] getaddrinfo failed",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
+    },
+    {
+      "name": "Ubisoft (SmartRecruiters)",
+      "adapter": "smartrecruiters",
+      "domain": "api.smartrecruiters.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
+      "name": "Remedy Entertainment (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "www.remedygames.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
+      "name": "Remedy Entertainment (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "www.remedygames.com",
+      "error": "candidate passed probe but evidence 24 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
+      "name": "Digital Happiness (Sheet)",
+      "adapter": "static",
+      "domain": "www.digitalhappiness.net",
+      "error": "https://www.digitalhappiness.net/career/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -8831,10 +7476,10 @@
       "dropReason": "probe"
     },
     {
-      "name": "Rebelpug (Gameprog)",
+      "name": "VR Factory (Sheet)",
       "adapter": "static",
-      "domain": "careers.rebelpug.com",
-      "error": "https://careers.rebelpug.com: [Errno 11001] getaddrinfo failed",
+      "domain": "www.vrfactory.pro",
+      "error": "https://www.vrfactory.pro/careers: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'www.vrfactory.pro'. (_ssl.c:1032)",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -8849,91 +7494,46 @@
       "dropReason": "probe"
     },
     {
-      "name": "Studio Pizza (Gameprog)",
+      "name": "Test Studio (Gameprog)",
       "adapter": "static",
-      "domain": "careers.studiopizza.net",
-      "error": "https://careers.studiopizza.net: [Errno 11001] getaddrinfo failed",
+      "domain": "example.com",
+      "error": "https://example.com/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "Fade Realms (Gameprog)",
+      "name": "Mojiworks (Sheet)",
       "adapter": "static",
-      "domain": "careers.faderealms.it",
-      "error": "https://careers.faderealms.it: [Errno 11001] getaddrinfo failed",
+      "domain": "careers.mojiworks.com",
+      "error": "https://careers.mojiworks.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "Volcanite Games (Gameprog)",
+      "name": "Lava Labs (Sheet)",
       "adapter": "static",
-      "domain": "careers.volcanite.games",
-      "error": "https://careers.volcanite.games: [Errno 11001] getaddrinfo failed",
+      "domain": "www.lavalabs.gg",
+      "error": "candidate passed probe but evidence 18 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
+    },
+    {
+      "name": "Fantastic Pixel Castle (Sheet)",
+      "adapter": "static",
+      "domain": "fantasticpixelcastle.com",
+      "error": "https://fantasticpixelcastle.com/: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
     },
     {
-      "name": "Kibe Software House (Gameprog)",
+      "name": "Farcana (Sheet)",
       "adapter": "static",
-      "domain": "careers.kibesh.com",
-      "error": "https://careers.kibesh.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Tunnel Vision (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.tunnelvision.it",
-      "error": "https://careers.tunnelvision.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Dreambits Studio (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.dreambitsstudio.com",
-      "error": "https://careers.dreambitsstudio.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Digital Happiness (Sheet)",
-      "adapter": "static",
-      "domain": "www.digitalhappiness.net",
-      "error": "https://www.digitalhappiness.net/career/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Falling Saints (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.fallingsaints.com",
-      "error": "https://careers.fallingsaints.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "True Colors (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.truecolors.studio",
-      "error": "https://careers.truecolors.studio: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Deep Monolith (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.deepmonolith.com",
-      "error": "https://careers.deepmonolith.com: [Errno 11001] getaddrinfo failed",
+      "domain": "careers.farcana.com",
+      "error": "https://careers.farcana.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -8949,737 +7549,6 @@
       "urlPatchRetried": true
     },
     {
-      "name": "VR Factory (Sheet)",
-      "adapter": "static",
-      "domain": "www.vrfactory.pro",
-      "error": "https://www.vrfactory.pro/careers: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'www.vrfactory.pro'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Little Sewing Machine (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.littlesewingmachine.com",
-      "error": "https://careers.littlesewingmachine.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Panik Arcade (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.panikarcade.games",
-      "error": "https://careers.panikarcade.games: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Marslit Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.marslitgames.com",
-      "error": "https://careers.marslitgames.com: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'careers.marslitgames.com'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "PlaySyS (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.playsys.games",
-      "error": "https://careers.playsys.games: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Stigma Studios (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.stigmastudios.com",
-      "error": "https://careers.stigmastudios.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Tmesis Studio (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.tmesistudio.com",
-      "error": "https://careers.tmesistudio.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Futurats (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.futurats.com",
-      "error": "https://careers.futurats.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Dotlabs (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.dotlabs.it",
-      "error": "https://careers.dotlabs.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "InfinityDev Studio (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.infinitydev.it",
-      "error": "https://careers.infinitydev.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Epochal Storm (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.epochalstorm.com",
-      "error": "https://careers.epochalstorm.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Hypothermic Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.hypothermicgames.com",
-      "error": "https://careers.hypothermicgames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Safe Place Studio (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.safeplacestudio.wordpress.com",
-      "error": "https://careers.safeplacestudio.wordpress.com: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'careers.safeplacestudio.wordpress.com'. (_ssl.c:1032)",
-      "stage": "probe_miss",
-      "dropStage": "probe_failed",
-      "dropReason": "probe_miss",
-      "urlPatchRetried": true
-    },
-    {
-      "name": "Commuter Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.commuter.games",
-      "error": "https://careers.commuter.games: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Dramatic Iceberg (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.dramaticiceberg.it",
-      "error": "https://careers.dramaticiceberg.it: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'careers.dramaticiceberg.it'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "906 Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.906games.com",
-      "error": "https://careers.906games.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Iter Research (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.iter-research.com",
-      "error": "https://careers.iter-research.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Team SolEtude (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.teamsoletude.carrd.co",
-      "error": "https://careers.teamsoletude.carrd.co: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "RedMagicBlue games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.redmagicblue.github.io",
-      "error": "https://careers.redmagicblue.github.io: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'careers.redmagicblue.github.io'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Ta2 Games Studio (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.ta2gamesstudio.com",
-      "error": "https://careers.ta2gamesstudio.com: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'careers.ta2gamesstudio.com'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Mad Pumpkins (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.madpumpkins.com",
-      "error": "https://careers.madpumpkins.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "3DClouds (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.3dclouds.it",
-      "error": "https://careers.3dclouds.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "68K Studios (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.68kstudios.com",
-      "error": "https://careers.68kstudios.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Abyte Entertainment (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.abyteentertainment.com",
-      "error": "https://careers.abyteentertainment.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "MAV Reality (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.mavreality.it",
-      "error": "https://careers.mavreality.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe_miss",
-      "dropStage": "probe_failed",
-      "dropReason": "probe_miss",
-      "urlPatchRetried": true
-    },
-    {
-      "name": "Broken Arms Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.brokenarmsgames.com",
-      "error": "https://careers.brokenarmsgames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Antab Studio (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.antabstudio.com",
-      "error": "https://careers.antabstudio.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Caracal Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.caracalgames.com",
-      "error": "https://careers.caracalgames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Dragonkin Studios (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.dragonkinstudios.com",
-      "error": "https://careers.dragonkinstudios.com: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'careers.dragonkinstudios.com'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Cordens Interactive (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.cordensinteractive.com",
-      "error": "https://careers.cordensinteractive.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "CyberCoconut (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.cybercoconut.com",
-      "error": "https://careers.cybercoconut.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Code This Lab (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.codethislab.com",
-      "error": "https://careers.codethislab.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "DESTINYbit (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.destinybit.com",
-      "error": "https://careers.destinybit.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Drakkar Dev (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.drakkardev.com",
-      "error": "https://careers.drakkardev.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Elf Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.elfgames.com",
-      "error": "https://careers.elfgames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Event Horizon Studios (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.eventhorizonstudios.games",
-      "error": "https://careers.eventhorizonstudios.games: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Bad Seed (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.badseed.it",
-      "error": "https://careers.badseed.it: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'careers.badseed.it'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "QUANTIC DREAM (Lever)",
-      "adapter": "lever",
-      "domain": "careers.jobs.lever.co",
-      "error": "https://jobs.lever.co/quanticdream: Client error '404 Not Found' for url 'https://jobs.lever.co/quanticdream'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe_miss",
-      "dropStage": "probe_failed",
-      "dropReason": "probe_miss"
-    },
-    {
-      "name": "Fantastico Studio (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.fantasticostudio.it",
-      "error": "https://careers.fantasticostudio.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "GhostShark Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.ghostshark.games",
-      "error": "https://careers.ghostshark.games: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Footprint Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.footprintsgames.com",
-      "error": "https://careers.footprintsgames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "HeartBit Interactive (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.heartbit-interactive.com",
-      "error": "https://careers.heartbit-interactive.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Imaginarylab (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.imaginarylab.it",
-      "error": "https://careers.imaginarylab.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "CINIC Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.cinicgames.com",
-      "error": "https://careers.cinicgames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Guzzo Production (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.guzzoproductions.com",
-      "error": "https://careers.guzzoproductions.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Invader Studios (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.invaderstudiosofficial.com",
-      "error": "https://careers.invaderstudiosofficial.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Italo Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.italogames.com",
-      "error": "https://careers.italogames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "La-Boite (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.la-boite.it",
-      "error": "https://careers.la-boite.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Kunos Simulazioni (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.kunos-simulazioni.com",
-      "error": "https://careers.kunos-simulazioni.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Midnite (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.midnite.games",
-      "error": "https://careers.midnite.games: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "LKA Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.lka.it",
-      "error": "https://careers.lka.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Melazeta (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.melazeta.com",
-      "error": "https://careers.melazeta.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Monkeys Tales Studio (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.monkeystales.xyz",
-      "error": "https://careers.monkeystales.xyz: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Chubby Pixel (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.chubbypixel.com",
-      "error": "https://careers.chubbypixel.com: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Naps Team (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.napsteam.com",
-      "error": "https://careers.napsteam.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "OpenLab (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.open-lab.com",
-      "error": "https://careers.open-lab.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Stoic (Lever)",
-      "adapter": "lever",
-      "domain": "careers.jobs.lever.co",
-      "error": "https://jobs.lever.co/stoic: Client error '404 Not Found' for url 'https://jobs.lever.co/stoic'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe_miss",
-      "dropStage": "probe_failed",
-      "dropReason": "probe_miss"
-    },
-    {
-      "name": "Polygon Moon (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.polygonmoon.it",
-      "error": "https://careers.polygonmoon.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "RedEvo Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.redevogames.com",
-      "error": "https://careers.redevogames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Red Koi Box (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.redkoibox.it",
-      "error": "https://careers.redkoibox.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Inner Void (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.innervoid.net",
-      "error": "https://careers.innervoid.net: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "SbargiSoft (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.sbargisoft.com",
-      "error": "https://careers.sbargisoft.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "RuneHeads (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.runeheads.com",
-      "error": "https://careers.runeheads.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Remedy Entertainment (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "www.remedygames.com",
-      "error": "candidate passed probe but evidence 24 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
-    },
-    {
-      "name": "Remedy Entertainment (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "www.remedygames.com",
-      "error": "candidate passed probe but evidence 24 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
-    },
-    {
-      "name": "Ubisoft (SmartRecruiters)",
-      "adapter": "smartrecruiters",
-      "domain": "api.smartrecruiters.com",
-      "error": "candidate passed probe but evidence 24 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
-    },
-    {
-      "name": "Santa Ragione (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.santaragione.com",
-      "error": "https://careers.santaragione.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Studio Evil (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.studioevil.com",
-      "error": "https://careers.studioevil.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "StupidiPixel (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.stupidipixel.com",
-      "error": "https://careers.stupidipixel.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Indomitus Games (Gameprog)",
-      "adapter": "static",
-      "domain": "www.indomitusgames.com",
-      "error": "http://www.indomitusgames.com/careers: Server error '500 Internal Server Error' for url 'https://www.indomitusgames.com/careers'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Sylphe Labs (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.sylphelabs.com",
-      "error": "https://careers.sylphelabs.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "TriBit Studio (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.tribitstudio.com",
-      "error": "https://careers.tribitstudio.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Trinity Team Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.trinityteamgames.com",
-      "error": "https://careers.trinityteamgames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Twin Wolves (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.twinwolves-studio.com",
-      "error": "https://careers.twinwolves-studio.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Seep Production (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.seeproduction.blogspot.com",
-      "error": "https://careers.seeproduction.blogspot.com: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'careers.seeproduction.blogspot.com'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Untold Games (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.untoldgames.com",
-      "error": "https://careers.untoldgames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Bandai Namco Entertainment (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "careers.boards.greenhouse.io",
-      "error": "https://boards.greenhouse.io/bandainamcoentertainment: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/bandainamcoentertainment'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe_miss",
-      "dropStage": "probe_failed",
-      "dropReason": "probe_miss"
-    },
-    {
-      "name": "We Are Muesli (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.wearemuesli.it",
-      "error": "https://careers.wearemuesli.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "IO Interactive (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "careers.boards.greenhouse.io",
-      "error": "https://boards.greenhouse.io/io-interactive: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/io-interactive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe_miss",
-      "dropStage": "probe_failed",
-      "dropReason": "probe_miss"
-    },
-    {
-      "name": "Picaresque Studio (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.picaresquestudio.com",
-      "error": "https://careers.picaresquestudio.com: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Yonder (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.fromyonder.net",
-      "error": "https://careers.fromyonder.net: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
       "name": "Larian Studios (Greenhouse)",
       "adapter": "greenhouse",
       "domain": "larian.com",
@@ -9689,102 +7558,10 @@
       "dropReason": "queue_threshold"
     },
     {
-      "name": "Smallthing Studios (Gameprog)",
+      "name": "Giant Enemy Crab (Sheet)",
       "adapter": "static",
-      "domain": "careers.careers.smallthingstudios.com",
-      "error": "https://careers.careers.smallthingstudios.com: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1032)",
-      "stage": "probe_miss",
-      "dropStage": "probe_failed",
-      "dropReason": "probe_miss",
-      "urlPatchRetried": true
-    },
-    {
-      "name": "Steam Factory (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.steamfactory.it",
-      "error": "https://careers.steamfactory.it: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'careers.steamfactory.it'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Codemount Studio (Gameprog)",
-      "adapter": "static",
-      "domain": "codemount.studio",
-      "error": "https://codemount.studio: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "dpstudios (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.dpstudios.it",
-      "error": "https://careers.dpstudios.it: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "DoubleFourteen Code Forge (Gameprog)",
-      "adapter": "static",
-      "domain": "doublefourteen.io",
-      "error": "https://doublefourteen.io/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'doublefourteen.io'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Indiegala (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.careers.indiegala.com",
-      "error": "https://careers.careers.indiegala.com: [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1032)",
-      "stage": "probe_miss",
-      "dropStage": "probe_failed",
-      "dropReason": "probe_miss",
-      "urlPatchRetried": true
-    },
-    {
-      "name": "Xplored (Gameprog)",
-      "adapter": "static",
-      "domain": "www.xplored.com",
-      "error": "http://www.xplored.com/careers: Server error '500 Internal Server Error' for url 'https://www.xplored.com/careers'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Reddoll Games (Gameprog)",
-      "adapter": "static",
-      "domain": "www.reddollgames.it",
-      "error": "http://www.reddollgames.it/: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "IO Interactive (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "careers.boards.greenhouse.io",
-      "error": "https://boards.greenhouse.io/iointeractive: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/iointeractive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
-      "stage": "probe_miss",
-      "dropStage": "probe_failed",
-      "dropReason": "probe_miss"
-    },
-    {
-      "name": "Kibou Entertainment (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.kibouentertainment.wixsite.com",
-      "error": "https://careers.kibouentertainment.wixsite.com: ",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "Village Bench (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.villagebench.com",
-      "error": "https://careers.villagebench.com: Server error '526 <none>' for url 'https://careers.villagebench.com'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/526",
+      "domain": "careers.giantenemycrab.net",
+      "error": "https://careers.giantenemycrab.net: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -9799,19 +7576,19 @@
       "dropReason": "probe_miss"
     },
     {
-      "name": "PlayStation Global (Greenhouse)",
-      "adapter": "greenhouse",
-      "domain": "careers.playstation.com",
-      "error": "candidate passed probe but evidence 24 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
+      "name": "Secret Dimension (Sheet)",
+      "adapter": "static",
+      "domain": "careers.secretdimension.com",
+      "error": "https://careers.secretdimension.com: [Errno 11001] getaddrinfo failed",
+      "stage": "probe",
+      "dropStage": "probe_failed",
+      "dropReason": "probe"
     },
     {
-      "name": "Psychodev (Gameprog)",
+      "name": "Thunderful Games (Sheet)",
       "adapter": "static",
-      "domain": "www.facebook.com",
-      "error": "https://www.facebook.com/glipsychotronici/: Client error '400 Bad Request' for url 'https://www.facebook.com/glipsychotronici/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "domain": "careers.career.thunderfulgames.com",
+      "error": "https://careers.career.thunderfulgames.com: [Errno 11001] getaddrinfo failed",
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
@@ -9826,55 +7603,55 @@
       "dropReason": "queue_threshold"
     },
     {
-      "name": "Sirio Art Games (Gameprog)",
-      "adapter": "static",
-      "domain": "www.sirioartgames.com",
+      "name": "PlayStation Global (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.playstation.com",
       "error": "candidate passed probe but evidence 24 is below queue threshold",
       "stage": "queue_filtered",
       "dropStage": "queue_filtered",
       "dropReason": "queue_threshold"
     },
     {
-      "name": "Fantastic Pixel Castle (Sheet)",
-      "adapter": "static",
-      "domain": "fantasticpixelcastle.com",
-      "error": "https://fantasticpixelcastle.com/: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
+      "name": "Bandai Namco Entertainment (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.boards.greenhouse.io",
+      "error": "https://boards.greenhouse.io/bandainamcoentertainment: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/bandainamcoentertainment'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
       "dropStage": "probe_failed",
-      "dropReason": "probe"
+      "dropReason": "probe_miss"
     },
     {
-      "name": "Mojiworks (Sheet)",
-      "adapter": "static",
-      "domain": "careers.mojiworks.com",
-      "error": "https://careers.mojiworks.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
+      "name": "IO Interactive (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.boards.greenhouse.io",
+      "error": "https://boards.greenhouse.io/io-interactive: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/io-interactive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
       "dropStage": "probe_failed",
-      "dropReason": "probe"
+      "dropReason": "probe_miss"
     },
     {
-      "name": "Farcana (Sheet)",
+      "name": "Made on Earth Games (Sheet)",
       "adapter": "static",
-      "domain": "careers.farcana.com",
-      "error": "https://careers.farcana.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
+      "domain": "madeonearthgames.notion.site",
+      "error": "candidate passed probe but evidence 12 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
     },
     {
-      "name": "Giant Enemy Crab (Sheet)",
-      "adapter": "static",
-      "domain": "careers.giantenemycrab.net",
-      "error": "https://careers.giantenemycrab.net: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
+      "name": "IO Interactive (Greenhouse)",
+      "adapter": "greenhouse",
+      "domain": "careers.boards.greenhouse.io",
+      "error": "https://boards.greenhouse.io/iointeractive: Client error '404 Not Found' for url 'https://job-boards.greenhouse.io/iointeractive'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
       "dropStage": "probe_failed",
-      "dropReason": "probe"
+      "dropReason": "probe_miss"
     },
     {
-      "name": "Lava Labs (Sheet)",
+      "name": "The Game Band (Sheet)",
       "adapter": "static",
-      "domain": "www.lavalabs.gg",
-      "error": "candidate passed probe but evidence 18 is below queue threshold",
+      "domain": "thegameband.notion.site",
+      "error": "candidate passed probe but evidence 12 is below queue threshold",
       "stage": "queue_filtered",
       "dropStage": "queue_filtered",
       "dropReason": "queue_threshold"
@@ -9889,13 +7666,13 @@
       "dropReason": "probe_miss"
     },
     {
-      "name": "Secret Dimension (Sheet)",
+      "name": "ScansMatter (Sheet)",
       "adapter": "static",
-      "domain": "careers.secretdimension.com",
-      "error": "https://careers.secretdimension.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
+      "domain": "www.artstation.com",
+      "error": "candidate passed probe but evidence 12 is below queue threshold",
+      "stage": "queue_filtered",
+      "dropStage": "queue_filtered",
+      "dropReason": "queue_threshold"
     },
     {
       "name": "Ironwood Studios (Sheet)",
@@ -9907,40 +7684,22 @@
       "dropReason": "queue_threshold"
     },
     {
-      "name": "Thunderful Games (Sheet)",
-      "adapter": "static",
-      "domain": "careers.career.thunderfulgames.com",
-      "error": "https://careers.career.thunderfulgames.com: [Errno 11001] getaddrinfo failed",
-      "stage": "probe",
+      "name": "Stoic (Lever)",
+      "adapter": "lever",
+      "domain": "careers.jobs.lever.co",
+      "error": "https://jobs.lever.co/stoic: Client error '404 Not Found' for url 'https://jobs.lever.co/stoic'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
       "dropStage": "probe_failed",
-      "dropReason": "probe"
+      "dropReason": "probe_miss"
     },
     {
-      "name": "Made on Earth Games (Sheet)",
-      "adapter": "static",
-      "domain": "madeonearthgames.notion.site",
-      "error": "candidate passed probe but evidence 12 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
-    },
-    {
-      "name": "Black Robot Games (Gameprog)",
-      "adapter": "static",
-      "domain": "blackrobotgames.com",
-      "error": "http://blackrobotgames.com/: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired (_ssl.c:1032)",
-      "stage": "probe",
+      "name": "QUANTIC DREAM (Lever)",
+      "adapter": "lever",
+      "domain": "careers.jobs.lever.co",
+      "error": "https://jobs.lever.co/quanticdream: Client error '404 Not Found' for url 'https://jobs.lever.co/quanticdream'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "stage": "probe_miss",
       "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "The Game Band (Sheet)",
-      "adapter": "static",
-      "domain": "thegameband.notion.site",
-      "error": "candidate passed probe but evidence 12 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
+      "dropReason": "probe_miss"
     },
     {
       "name": "Skymap Games (Sheet)",
@@ -9950,24 +7709,6 @@
       "stage": "probe",
       "dropStage": "probe_failed",
       "dropReason": "probe"
-    },
-    {
-      "name": "Keiron Interactive (Gameprog)",
-      "adapter": "static",
-      "domain": "careers.keiron.fit",
-      "error": "https://careers.keiron.fit: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, certificate is not valid for 'careers.keiron.fit'. (_ssl.c:1032)",
-      "stage": "probe",
-      "dropStage": "probe_failed",
-      "dropReason": "probe"
-    },
-    {
-      "name": "ScansMatter (Sheet)",
-      "adapter": "static",
-      "domain": "www.artstation.com",
-      "error": "candidate passed probe but evidence 12 is below queue threshold",
-      "stage": "queue_filtered",
-      "dropStage": "queue_filtered",
-      "dropReason": "queue_threshold"
     },
     {
       "name": "Cult of the North (Sheet)",
@@ -10009,7 +7750,7 @@
   "topFailures": [
     {
       "key": "static",
-      "count": 620
+      "count": 601
     },
     {
       "key": "greenhouse",

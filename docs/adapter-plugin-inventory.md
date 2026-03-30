@@ -50,7 +50,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
   - static studio page crawling (listing + detail heuristics)
   - detail-link heuristics / filtering
   - per-source concurrency tuning
-  - HTML parsing + fallback title synthesis
+  - HTML parsing + fallback title synthesis, guarded by the shared job-page gate so regular pages are rejected as `dead_listing_page` before any synthetic row is created
   - scrapy-runner integration (`scrapy_static`)
   - note: this is now narrower than the initial plugin-rollout snapshot because report/config/fetch/detail internals live in `src/jobs/adapters/static_helpers.py`
 

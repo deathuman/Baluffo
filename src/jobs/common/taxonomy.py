@@ -380,6 +380,9 @@ def map_error_to_failure_bucket(context: ClassificationContext) -> FailureBucket
     if classification in ("parse_error", "parser_stale"):
         return FailureBucket.PARSER_EMPTY
 
+    if classification == "dead_listing_page":
+        return FailureBucket.NEEDS_REVIEW
+
     if not error_lower and not classification:
         return FailureBucket.UNKNOWN
 
@@ -393,6 +396,8 @@ def classify_zero_kept(
     status = _normalized_text(context.status)
     error_lower = _normalized_text(context.error)
     classification = _normalized_text(context.classification)
+    if classification == "dead_listing_page":
+        return ZeroKeptClassification.NEEDS_REVIEW
     if context.fetched_count > 0:
         return ZeroKeptClassification.LEGIT_EMPTY
     assessment = assess_zero_extract(context)

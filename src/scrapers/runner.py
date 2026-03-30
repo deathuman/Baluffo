@@ -33,7 +33,12 @@ def _source_id(name: str, studio: str, pages: list[str]) -> str:
 
 
 def _classify_result(
-    *, ok: bool, fetched_count: int, kept_count: int, partial_errors: list[str]
+    *,
+    ok: bool,
+    fetched_count: int,
+    kept_count: int,
+    partial_errors: list[str],
+    reject_reasons: Counter[str] | None = None,
 ) -> str:
     if not ok:
         return "parse_error"
@@ -41,6 +46,9 @@ def _classify_result(
         return "ok_with_jobs"
     if fetched_count <= 0:
         return "blocked_or_challenge"
+    reject_reasons = reject_reasons or Counter()
+    if int(reject_reasons.get("dead_listing_page") or 0) > 0:
+        return "dead_listing_page"
     lower_errors = " ".join(item.lower() for item in partial_errors)
     if (
         "captcha" in lower_errors
@@ -70,6 +78,7 @@ def _stats_subset(stats: dict[str, Any]) -> dict[str, Any]:
         "detail_pages_visited": _to_int(stats.get("detail_pages_visited")),
         "jobs_emitted": _to_int(stats.get("jobs_emitted")),
         "jobs_rejected_validation": _to_int(stats.get("jobs_rejected_validation")),
+        "dead_listing_pages_rejected": _to_int(stats.get("dead_listing_pages_rejected")),
     }
 
 
@@ -217,7 +226,9 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
         "detail_pages_visited": 0,
         "jobs_emitted": 0,
         "jobs_rejected_validation": 0,
+        "dead_listing_pages_rejected": 0,
     }
+    dead_listing_page_examples: list[str] = []
 
     # Test-only deterministic path that avoids network and Scrapy runtime.
     if _clean_text(os.getenv("BALUFFO_SCRAPY_RUNNER_SELFTEST")) == "1":
@@ -236,6 +247,8 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
                     "classification": "needs_review",
                     "browserFallbackRecommended": False,
                     "top_reject_reasons": [],
+                    "deadListingPageCount": 0,
+                    "deadListingPageExamples": [],
                     "sourceId": source_id_value,
                     "pages": list(pages),
                 }
@@ -250,6 +263,7 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
         "reject_reasons": reject_reasons,
         "extraction_stats": extraction_stats,
         "partial_errors": partial_errors,
+        "dead_listing_page_examples": dead_listing_page_examples,
     }
 
     job_provider = _clean_text(domain_profile.get("job_provider"))
@@ -348,7 +362,11 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
     fetched_count = _to_int(stats.get("downloader/response_count"))
     kept_count = len(jobs)
     classification = _classify_result(
-        ok=ok, fetched_count=fetched_count, kept_count=kept_count, partial_errors=partial_errors
+        ok=ok,
+        fetched_count=fetched_count,
+        kept_count=kept_count,
+        partial_errors=partial_errors,
+        reject_reasons=reject_reasons,
     )
     top_reject_reasons = [f"{key}:{count}" for key, count in reject_reasons.most_common(5)]
     browser_fallback_recommended = classification in {
@@ -367,6 +385,8 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
             "classification": classification,
             "browserFallbackRecommended": browser_fallback_recommended,
             "top_reject_reasons": top_reject_reasons,
+            "deadListingPageCount": int(reject_reasons.get("dead_listing_page") or 0),
+            "deadListingPageExamples": list(dead_listing_page_examples[:5]),
             "sourceId": source_id_value,
             "pages": list(pages),
         }

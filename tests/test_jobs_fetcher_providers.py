@@ -202,6 +202,25 @@ def test_parse_smartrecruiters_jobs_payload_fixture() -> None:
     assert len(rows) == 1
     assert rows[0]["title"] == "Environment Artist"
     assert rows[0]["company"] == "CD PROJEKT RED"
+    assert rows[0]["jobLink"] == "https://jobs.smartrecruiters.com/CDPROJEKTRED/environment-artist"
+
+
+def test_parse_smartrecruiters_jobs_payload_rewrites_api_ref_to_public_job_url() -> None:
+    payload = {
+        "content": [
+            {
+                "id": "744000115751281",
+                "name": "[Dungeons & Dragons PC-Console] Artiste d'éclairage de niveaux - Lighter level artist",
+                "ref": "https://api.smartrecruiters.com/v1/companies/Gameloft/postings/744000115751281",
+                "releasedDate": "2026-02-20T10:00:00Z",
+                "location": {"city": "Montreal", "country": "CA"},
+                "department": "Art",
+            }
+        ]
+    }
+    rows = jf.parse_smartrecruiters_jobs_payload(payload, "Gameloft", fallback_company="Gameloft")
+    assert len(rows) == 1
+    assert rows[0]["jobLink"] == "https://jobs.smartrecruiters.com/Gameloft/744000115751281"
 
 
 def test_parse_workable_jobs_payload_fixture() -> None:

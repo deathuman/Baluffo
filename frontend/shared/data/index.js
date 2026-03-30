@@ -20,11 +20,24 @@ const COUNTRY_NAME_BY_CODE = {
   Remote: "Remote"
 };
 
+const REMOTE_OK_HOSTS = new Set(["remoteok.com", "remoteok.io"]);
+const REMOTE_OK_LISTING_URL = "https://remoteok.com/jobs";
+
+function isRemoteOkJobDetailUrl(parsed) {
+  if (!parsed || !REMOTE_OK_HOSTS.has(String(parsed.hostname || "").toLowerCase())) {
+    return false;
+  }
+  return String(parsed.pathname || "").toLowerCase().startsWith("/remote-jobs/");
+}
+
 export function sanitizeUrl(url) {
   if (!url) return "";
   try {
     const parsed = new URL(url);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      if (isRemoteOkJobDetailUrl(parsed)) {
+        return REMOTE_OK_LISTING_URL;
+      }
       return parsed.href;
     }
     return "";

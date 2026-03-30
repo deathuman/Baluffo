@@ -32,6 +32,7 @@ TIMEOUT_BUCKET_SOURCE_NAMES = {
 
 def _update_taxonomy_fields(source_detail: dict[str, Any]) -> dict[str, Any]:
     """Update failureBucket and zeroKeptClassification based on current state."""
+    original_classification = norm_text(source_detail.get("classification"))
     context = classification_context_from_source_detail(source_detail)
     if int(source_detail.get("keptCount", 0)) == 0 and source_detail.get("status") != "excluded":
         assessment = assess_zero_extract(context)
@@ -48,7 +49,7 @@ def _update_taxonomy_fields(source_detail: dict[str, Any]) -> dict[str, Any]:
                 "empty_confirmed",
             }
             or assessment.diagnosis.value != "needs_review"
-        )
+        ) and original_classification != "dead_listing_page"
         if should_migrate:
             source_detail["classification"] = assessment.diagnosis.value
             source_detail["browserFallbackRecommended"] = assessment.browser_fallback_recommended
@@ -106,6 +107,8 @@ def _base_detail(
         "failureBucket": failure_bucket.value,
         "zeroKeptClassification": zero_kept_classification,
         "top_reject_reasons": [],
+        "deadListingPageCount": 0,
+        "deadListingPageExamples": [],
         "browserFallbackRecommended": False,
         "signalQuality": clean_text(signal_quality) or "weak",
         "sourceId": source_id,
@@ -113,6 +116,7 @@ def _base_detail(
         "loss": {
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
+            "scrapyDeadListingPageRejected": 0,
         },
     }
 
@@ -310,6 +314,12 @@ def run_scrapy_static_source(
                             "top_reject_reasons": detail_0.get("top_reject_reasons")
                             if isinstance(detail_0.get("top_reject_reasons"), list)
                             else [],
+                            "deadListingPageCount": _coerce_int(
+                                detail_0.get("deadListingPageCount")
+                            ),
+                            "deadListingPageExamples": detail_0.get("deadListingPageExamples")
+                            if isinstance(detail_0.get("deadListingPageExamples"), list)
+                            else [],
                             "sourceId": clean_text(detail_0.get("sourceId"))
                             or source_detail.get("sourceId"),
                             "pages": detail_0.get("pages")
@@ -376,6 +386,9 @@ def run_scrapy_static_source(
                 )
                 source_detail_loss["scrapyRunnerRejectedValidation"] = _coerce_int(
                     stats.get("jobs_rejected_validation")
+                )
+                source_detail_loss["scrapyDeadListingPageRejected"] = _coerce_int(
+                    stats.get("dead_listing_pages_rejected")
                 )
                 source_detail["loss"] = source_detail_loss
                 if int(source_detail.get("fetchedCount") or 0) <= 0:

@@ -42,6 +42,7 @@ from src.jobs.common import config as common_config
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import RawJob
+from src.jobs.page_gating import classify_job_page
 from src.jobs.registry import registry_entries
 from src.jobs.state import (
     get_incremental_cache_decision,
@@ -102,6 +103,7 @@ def run_static_studio_pages_source(
         "view details",
         "view job",
     }
+    dead_listing_page_examples: list[str] = []
 
     static_runtime = build_static_source_runtime_config(static_detail_concurrency)
     static_detail_concurrency = static_runtime.static_detail_concurrency
@@ -241,30 +243,77 @@ def run_static_studio_pages_source(
                     entry_report["atsLinks"] = [clean_text(v) for v in ats_links if clean_text(v)][
                         :5
                     ]
+                dead_listing_count = int(plugin_meta.get("deadListingPageCount") or 0)
+                if dead_listing_count > 0:
+                    entry_report["deadListingPageCount"] = dead_listing_count
+                dead_listing_examples = plugin_meta.get("deadListingPageExamples")
+                if isinstance(dead_listing_examples, list) and dead_listing_examples:
+                    entry_report["deadListingPageExamples"] = [
+                        clean_text(v) for v in dead_listing_examples if clean_text(v)
+                    ][:5]
                 meta_error = clean_text(plugin_meta.get("error"))
                 if meta_error and not entry_report.get("error"):
                     entry_report["error"] = meta_error
 
-            # If plugin extracted nothing, treat as error unless it proved an explicit empty state
-            # or a non-fatal browser escalation classification.
-            if not plugin_jobs:
-                emit_heartbeat()
-                classification = clean_text(entry_report.get("classification"))
-                empty_confirmed = (
-                    bool(entry_report.get("emptyConfirmed")) or classification == "empty_confirmed"
-                )
-                browser_recommended = bool(entry_report.get("browserFallbackRecommended"))
-                if not empty_confirmed:
-                    entry_report["status"] = "error"
-                    if not entry_report.get("error"):
-                        entry_report["error"] = "no jobs extracted from source pages"
-                    if browser_recommended:
-                        warn_page = clean_text(pages[0]) if pages else ""
-                        warnings.append(
-                            f"static:{source_name}:{warn_page}: {entry_report.get('error')}"
-                        )
-                    else:
-                        errors.append(f"static:{source_name}: {entry_report.get('error')}")
+                # If plugin extracted nothing, treat as error unless it proved an explicit empty state
+                # or a non-fatal browser escalation classification.
+                if not plugin_jobs:
+                    emit_heartbeat()
+                    classification = clean_text(entry_report.get("classification"))
+                    empty_confirmed = (
+                        bool(entry_report.get("emptyConfirmed"))
+                        or classification == "empty_confirmed"
+                    )
+                    browser_recommended = bool(entry_report.get("browserFallbackRecommended"))
+                    if classification not in {"dead_listing_page", "empty_confirmed"} and pages:
+                        probe_page = clean_text(pages[0])
+                        if probe_page:
+                            try:
+                                probe_html, _ = fetch_html_cached(
+                                    probe_page, remaining_budget_s=float(timeout_s or 1)
+                                )
+                            except Exception:  # noqa: BLE001
+                                probe_html = ""
+                            if probe_html:
+                                job_like, gate_reason = classify_job_page(
+                                    probe_html,
+                                    probe_page,
+                                    profile=source if isinstance(source, dict) else None,
+                                )
+                                if not job_like and gate_reason == "dead_listing_page":
+                                    classification = "dead_listing_page"
+                                    entry_report["classification"] = classification
+                                    entry_report["browserFallbackRecommended"] = False
+                                    entry_report["browserEscalationEligible"] = False
+                                    entry_report.pop("browserEscalationEligibilityReason", None)
+                                    entry_report["deadListingPageCount"] = max(
+                                        1, int(entry_report.get("deadListingPageCount") or 0)
+                                    )
+                                    if len(dead_listing_page_examples) < 5:
+                                        dead_listing_page_examples.append(
+                                            f"{probe_page} | {company}"
+                                        )
+                                    entry_report["deadListingPageExamples"] = (
+                                        dead_listing_page_examples
+                                    )
+                                    empty_confirmed = True
+                    if int(entry_report.get("deadListingPageCount") or 0) > 0:
+                        classification = "dead_listing_page"
+                        entry_report["classification"] = classification
+                    if classification == "dead_listing_page":
+                        entry_report["status"] = "ok"
+                        entry_report["error"] = ""
+                    elif not empty_confirmed:
+                        entry_report["status"] = "error"
+                        if not entry_report.get("error"):
+                            entry_report["error"] = "no jobs extracted from source pages"
+                        if browser_recommended:
+                            warn_page = clean_text(pages[0]) if pages else ""
+                            warnings.append(
+                                f"static:{source_name}:{warn_page}: {entry_report.get('error')}"
+                            )
+                        else:
+                            errors.append(f"static:{source_name}: {entry_report.get('error')}")
                 else:
                     entry_report["status"] = "ok"
                     entry_report["error"] = ""
@@ -595,7 +644,17 @@ def run_static_studio_pages_source(
                             continue
                         stats["fetch_cache_hits"] += 1 if detail_result.get("cacheHit") else 0
                         stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
-                        if detail_result.get("parseEmpty"):
+                        rejected_classification = clean_text(
+                            detail_result.get("rejectedClassification")
+                        )
+                        if rejected_classification == "dead_listing_page":
+                            link_rejections["dead_listing_page"] += 1
+                            stats["dead_listing_pages_rejected"] += 1
+                            if len(dead_listing_page_examples) < 5:
+                                example = clean_text(detail_result.get("rejectedExample"))
+                                if example:
+                                    dead_listing_page_examples.append(example)
+                        elif detail_result.get("parseEmpty"):
                             link_rejections["detail_parse_empty"] += 1
                         for row in detail_result.get("rows") or []:
                             link = normalize_url(row.get("jobLink"))
@@ -639,11 +698,15 @@ def run_static_studio_pages_source(
             "staticNonJobUrlRejected": int(link_rejections.get("non_job_url", 0)),
             "staticDuplicateLinkRejected": int(link_rejections.get("duplicate_link", 0)),
             "staticDetailParseEmpty": int(link_rejections.get("detail_parse_empty", 0)),
+            "staticDeadListingPageRejected": int(link_rejections.get("dead_listing_page", 0)),
         }
+        entry_report["deadListingPageCount"] = int(link_rejections.get("dead_listing_page", 0))
+        entry_report["deadListingPageExamples"] = dead_listing_page_examples
         if (
             entry_report["keptCount"] == 0
             and pages
             and not clean_text(entry_report.get("classification"))
+            and int(link_rejections.get("dead_listing_page", 0)) <= 0
         ):
             entry_report["status"] = "error"
             entry_report["error"] = "no jobs extracted from source pages"
@@ -653,6 +716,14 @@ def run_static_studio_pages_source(
                 errors.append(f"static:{source_name}: no jobs extracted from source pages")
         emit_heartbeat()
         update_source_detail_taxonomy(entry_report)
+        if (
+            entry_report["keptCount"] == 0
+            and int(entry_report.get("deadListingPageCount") or 0) > 0
+        ):
+            entry_report["classification"] = "dead_listing_page"
+            entry_report["browserFallbackRecommended"] = False
+            entry_report["browserEscalationEligible"] = False
+            entry_report.pop("browserEscalationEligibilityReason", None)
         details.append(entry_report)
 
     diag_studio = "multiple"

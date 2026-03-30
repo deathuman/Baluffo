@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlparse
 import scrapy
 from scrapy.loader import ItemLoader
 
+from src.jobs.page_gating import classify_job_page
 from src.scrapers import domain_profiles
 from src.scrapers.helpers import build_job, clean_text, safe_id, to_int
 from src.scrapers.items import JobItem, item_to_job_dict
@@ -117,6 +118,21 @@ class GenericCareersSpider(scrapy.Spider):
             self._container["reject_reasons"]["missing_title"] += 1
             return
         job_link = clean_text(response.url)
+        job_like, gate_reason = classify_job_page(
+            response.text or "",
+            job_link,
+            page_title=title,
+            profile=self.profile,
+        )
+        if not job_like:
+            reject_reason = "no_openings" if gate_reason == "no_openings" else "dead_listing_page"
+            self._container["reject_reasons"][reject_reason] += 1
+            self._container["extraction_stats"]["dead_listing_pages_rejected"] += 1
+            if reject_reason == "dead_listing_page":
+                examples = self._container.get("dead_listing_page_examples")
+                if isinstance(examples, list) and len(examples) < 5:
+                    examples.append(f"{job_link} | {title}")
+            return
         if not domain_profiles.is_probable_job_detail_url(job_link, self.profile):
             self._container["reject_reasons"]["non_job_url"] += 1
             return

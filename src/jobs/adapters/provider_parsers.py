@@ -52,6 +52,37 @@ def parse_greenhouse_location(location_name: Any) -> tuple[str, str, str]:
     return first, last, ""
 
 
+def _smartrecruiters_public_job_link(company_id: str, posting_id: str, ref_value: Any) -> str:
+    raw_link = clean_text(ref_value)
+    normalized_company = clean_text(company_id)
+    normalized_posting_id = clean_text(posting_id)
+    if not raw_link:
+        if normalized_company and normalized_posting_id:
+            return f"https://jobs.smartrecruiters.com/{normalized_company}/{normalized_posting_id}"
+        return ""
+    parsed = urlparse(raw_link)
+    host = parsed.netloc.lower()
+    path = parsed.path or ""
+    if host == "api.smartrecruiters.com":
+        api_match = re.match(r"^/v1/companies/([^/]+)/postings/(\d+)$", path)
+        if api_match:
+            api_company_id, api_posting_id = api_match.groups()
+            public_company = normalized_company or api_company_id
+            public_posting_id = normalized_posting_id or api_posting_id
+            if public_company and public_posting_id:
+                return f"https://jobs.smartrecruiters.com/{public_company}/{public_posting_id}"
+        if normalized_company and normalized_posting_id:
+            return f"https://jobs.smartrecruiters.com/{normalized_company}/{normalized_posting_id}"
+        return raw_link
+    if raw_link.startswith("http"):
+        return raw_link
+    if normalized_company and raw_link:
+        return f"https://jobs.smartrecruiters.com/{normalized_company}/{raw_link}"
+    if normalized_company and normalized_posting_id:
+        return f"https://jobs.smartrecruiters.com/{normalized_company}/{normalized_posting_id}"
+    return raw_link
+
+
 def parse_generic_location_fields(location_value: Any) -> tuple[str, str, str]:
     text = clean_text(location_value)
     if not text:
@@ -169,9 +200,7 @@ def parse_smartrecruiters_jobs_payload(
             continue
         title = clean_text(row.get("name"))
         posting_id = clean_text(row.get("id") or row.get("ref"))
-        link = clean_text(row.get("ref"))
-        if link and not link.startswith("http"):
-            link = f"https://jobs.smartrecruiters.com/{company_id}/{link}"
+        link = _smartrecruiters_public_job_link(company_id, posting_id, row.get("ref"))
         if not title or not (posting_id or link):
             continue
         location_obj = row.get("location") if isinstance(row.get("location"), dict) else {}

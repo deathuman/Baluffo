@@ -98,6 +98,8 @@ read_approved_since_last_run = common_sources.read_approved_since_last_run
 canonicalize_job = canonicalize_pkg.canonicalize_job
 CanonicalNormalizer = canonicalize_pkg.CanonicalNormalizer
 reset_location_quality_audit = canonicalize_pkg.reset_location_quality_audit
+reset_sector_quality_audit = canonicalize_pkg.reset_sector_quality_audit
+snapshot_sector_quality_audit = canonicalize_pkg.snapshot_sector_quality_audit
 CanonicalDeduplicator = dedup_pkg.CanonicalDeduplicator
 format_source_error = reporting_pkg.format_source_error
 build_pipeline_summary = reporting_pkg.build_pipeline_summary
@@ -451,6 +453,7 @@ def run_pipeline(
     paths = build_pipeline_paths(output_dir)
     SOURCE_DIAGNOSTICS.clear()
     reset_location_quality_audit()
+    reset_sector_quality_audit()
 
     started_at = clean_text(started_at_override) or now_iso()
     source_reports: list[dict[str, Any]] = []
@@ -752,6 +755,7 @@ def run_pipeline(
     dedup_stats["outputCount"] = len(deduped_rows)
     deduped_payload_rows = [row.to_dict() for row in deduped_rows]
     location_quality_audit = _apply_final_location_quality_guardrail(deduped_payload_rows)
+    sector_quality_audit = snapshot_sector_quality_audit(total_rows=len(deduped_payload_rows))
     contamination_report = build_public_text_quality_report(deduped_payload_rows)
     contamination_rows = int(contamination_report.get("contaminatedRows") or 0)
     if contamination_rows > 0:
@@ -929,6 +933,7 @@ def run_pipeline(
             "sources": source_reports,
             "contaminationAudit": contamination_report,
             "locationQualityAudit": location_quality_audit,
+            "sectorQualityAudit": sector_quality_audit,
             "outputs": {
                 "json": str(paths.json_path),
                 "csv": str(paths.csv_path),

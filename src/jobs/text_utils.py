@@ -16,7 +16,24 @@ LOCATION_NOISE_PATTERNS = (
         r"(?i)\b(requirements?|responsibilit(?:y|ies)|qualifications?|experience|register|registration|apply|position|positions)\b"
     ),
     re.compile(r"(?i)\b(business level|job description|preferred|benefits?|contact us)\b"),
+    re.compile(r"(?i)\b(open jobs?|followers?|following|connections?|employees?)\b"),
+    re.compile(r"(?i)\b(report this post|view all jobs|job postings?|all jobs)\b"),
+    re.compile(
+        r"(?i)\b(job|jobs|career|careers|hiring|quiz|game|artist|animator|designer|developer|engineer|programmer|producer|director|writer|specialist|manager|intern|freelanc(?:e|ing)|technical)\b"
+    ),
+    re.compile(r"(?i)(?:https?://|www\.)"),
     re.compile(r"(キャリア登録|ポジション|ご案内|応募|職務経歴|ビジネスレベルの日本語能力)"),
+)
+LOCATION_CSS_NOISE_RE = re.compile(r"(?i)(?:--|var\(|calc\(|box-shadow|grid-gutter)")
+LOCATION_ADDRESS_NOISE_RE = re.compile(
+    r"(?i)\b\d[^\n]*\b(?:street|st\.?|avenue|ave\.?|road|rd\.?|boulevard|blvd\.?|drive|dr\.?|lane|ln\.?|way|parkway|pkwy\.?|suite|ste\.?|apt\.?|unit|floor|fl\.?|building|bldg\.?)\b"
+)
+LOCATION_POSTAL_CODE_RE = re.compile(r"\b\d{2,6}(?:-\d{2,4})?\b")
+LOCATION_SCRIPT_NOISE_RE = re.compile(
+    r"(?i)(?:document\.|addEventListener|DOMContentLoaded|querySelector|innerHTML|setTimeout|console\.|function\s*\(|\{\{|\}\})"
+)
+LOCATION_SENTENCE_PREFIX_RE = re.compile(
+    r"(?i)^(learn|view|choose|click|if you|to view|document|our)\b"
 )
 REMOTEISH_TOKENS = {"remote", "hybrid", "onsite", "on-site", "worldwide"}
 
@@ -69,7 +86,27 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
         return f"invalid_{field_name}_semantic_bullet_noise"
     if len(text) > 48 and len(SENTENCE_BREAK_RE.findall(text)) >= 2:
         return f"invalid_{field_name}_semantic_sentence_noise"
+    if LOCATION_CSS_NOISE_RE.search(text):
+        return f"invalid_{field_name}_semantic_noise"
     if any(pattern.search(text) for pattern in LOCATION_NOISE_PATTERNS):
+        return f"invalid_{field_name}_semantic_noise"
+    if LOCATION_ADDRESS_NOISE_RE.search(text):
+        return f"invalid_{field_name}_semantic_noise"
+    if "," in text and LOCATION_POSTAL_CODE_RE.search(text):
+        return f"invalid_{field_name}_semantic_noise"
+    if "/" in text:
+        return f"invalid_{field_name}_semantic_noise"
+    if text.endswith(","):
+        return f"invalid_{field_name}_semantic_noise"
+    if LOCATION_SCRIPT_NOISE_RE.search(text):
+        return f"invalid_{field_name}_semantic_noise"
+    if LOCATION_SENTENCE_PREFIX_RE.search(text):
+        return f"invalid_{field_name}_semantic_noise"
+    if text.startswith("#"):
+        return f"invalid_{field_name}_semantic_noise"
+    if '"' in text and ":" in text:
+        return f"invalid_{field_name}_semantic_noise"
+    if "{" in text or "}" in text:
         return f"invalid_{field_name}_semantic_noise"
     return ""
 

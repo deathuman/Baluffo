@@ -9,6 +9,7 @@ from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.jobs.page_gating import classify_job_page
 from src.jobs.text_utils import clean_text
 
 # Hosts (netloc, lower) for which this plugin handles static extraction.
@@ -152,17 +153,34 @@ def run(
                 "atsLinks": ats_links[:5],
             }
         else:
-            likely_js = (
-                _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+            job_like, gate_reason = classify_job_page(
+                html,
+                page_url,
+                profile=source_row if isinstance(source_row, dict) else None,
             )
-            source_row["_staticPluginMeta"] = {
-                "classification": (
-                    _heuristics.CLASSIFICATION_JS_REQUIRED
+            if not job_like and gate_reason == "dead_listing_page":
+                source_row["_staticPluginMeta"] = {
+                    "classification": "dead_listing_page",
+                    "browserFallbackRecommended": False,
+                    "deadListingPageCount": 1,
+                    "deadListingPageExamples": [f"{page_url} | {company}"],
+                    "extractorHint": "regular_page_rejected",
+                    "atsLinks": ats_links[:5],
+                }
+            else:
+                likely_js = (
+                    _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+                )
+                source_row["_staticPluginMeta"] = {
+                    "classification": (
+                        _heuristics.CLASSIFICATION_JS_REQUIRED
+                        if likely_js
+                        else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO
+                    ),
+                    "browserFallbackRecommended": bool(likely_js),
+                    "extractorHint": "parse_empty_js_shell_suspected"
                     if likely_js
-                    else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO
-                ),
-                "browserFallbackRecommended": bool(likely_js),
-                "extractorHint": "parse_empty_js_shell_suspected" if likely_js else "parse_empty",
-                "atsLinks": ats_links[:5],
-            }
+                    else "parse_empty",
+                    "atsLinks": ats_links[:5],
+                }
     return cleaned

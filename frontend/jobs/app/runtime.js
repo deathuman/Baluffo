@@ -1398,18 +1398,19 @@ function bindRenderedJobEvents(pageJobs) {
     const link = row.dataset.jobLink;
     if (!link) return;
     const jobKey = String(row.dataset.jobKey || "").trim();
+    const openLink = sanitizeUrl(link) || link;
 
     row.tabIndex = 0;
     row.setAttribute("role", "link");
     row.addEventListener("click", e => {
       if (e.target.closest(ui(t.saveJobBtn))) return;
-      window.open(link, "_blank", "noopener,noreferrer");
+      window.open(openLink, "_blank", "noopener,noreferrer");
       markJobSeenFromInteraction(jobKey).catch(() => {});
     });
     row.addEventListener("keydown", e => {
       if (e.key !== "Enter") return;
       if (e.target.closest(ui(t.saveJobBtn))) return;
-      window.open(link, "_blank", "noopener,noreferrer");
+      window.open(openLink, "_blank", "noopener,noreferrer");
       markJobSeenFromInteraction(jobKey).catch(() => {});
     });
   });

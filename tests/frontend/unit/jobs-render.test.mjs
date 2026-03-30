@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderJobRowHtml } from "../../../frontend/jobs/render.js";
+import { sanitizeUrl } from "../../../frontend/shared/data/index.js";
 
 function render(job, options = {}) {
   return renderJobRowHtml(job, {
@@ -88,6 +89,23 @@ test("jobs render shows lifecycle badge with removed date tooltip", () => {
   });
   assert.match(html, /job-lifecycle-badge likely-removed/);
   assert.match(html, /title="Likely removed since Mar 7, 2026"/);
+});
+
+test("jobs render rewrites remoteok detail links to the listing page", () => {
+  const html = render({
+    id: "4a",
+    title: "Gameplay Programmer",
+    company: "Nebula Games",
+    sector: "Game",
+    city: "Remote",
+    country: "Remote",
+    workType: "Remote",
+    contractType: "Full-time",
+    jobLink: "https://remoteok.com/remote-jobs/remote-gameplay-programmer-nebula-1234567"
+  }, { sanitizeUrl });
+
+  assert.match(html, /data-job-link="https:\/\/remoteok\.com\/jobs"/);
+  assert.doesNotMatch(html, /remote-jobs\/remote-gameplay-programmer-nebula-1234567/);
 });
 
 test("jobs render marks unseen rows with New badge and seen rows with class", () => {

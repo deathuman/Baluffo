@@ -9,6 +9,7 @@ from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
+from src.jobs.page_gating import classify_job_page
 from src.jobs.text_utils import clean_text
 
 _HOSTS = frozenset(
@@ -33,8 +34,6 @@ _HOSTS = frozenset(
         "www.smokingguninc.com",
         "sybogames.com",
         "www.sybogames.com",
-        "k-id.com",
-        "www.k-id.com",
         "whatwapp.com",
         "www.whatwapp.com",
         "kinaliworks.com",
@@ -140,6 +139,24 @@ def run(
             "browserFallbackRecommended": False,
             "emptyConfirmed": True,
             "extractorHint": "explicit_no_openings_marker",
+            "atsLinks": ats_links[:5],
+            "detailFetchRequired": False,
+            "detailTraversalMode": "listing_only",
+        }
+        return []
+
+    job_like, gate_reason = classify_job_page(
+        html,
+        page_url,
+        profile=source_row if isinstance(source_row, dict) else None,
+    )
+    if not job_like and gate_reason == "dead_listing_page":
+        source_row["_staticPluginMeta"] = {
+            "classification": "dead_listing_page",
+            "browserFallbackRecommended": False,
+            "deadListingPageCount": 1,
+            "deadListingPageExamples": [f"{page_url} | {company}"],
+            "extractorHint": "regular_page_rejected",
             "atsLinks": ats_links[:5],
             "detailFetchRequired": False,
             "detailTraversalMode": "listing_only",
