@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.15] - 2026-03-30
+
+### Added
+- Full Milestone 1-6 roadmap delivery (health scoring, taxonomy, discovery promotion, static adapter hardening)
+- Enhanced static adapter with generic fallback heuristics and location fixes
+- Provenance-based game classification
+- Discovery promotion pipeline with structured migration
+- Browser fallback circuit breaker
+- Admin bridge refactoring with improved task lifecycle and busy-state handling
+- M4-M6 social experiment reporting
+- Complete lint infrastructure (Python + JavaScript/ESLint + pre-commit)
+- Fetch artifacts refresh and audit tooling
+
+### Changed
+- Various bug fixes and code quality improvements
+
+### Fixed
+- Multiple bug fixes from M1-M6 delivery
+
 ## [Unreleased]
 
 ### Added

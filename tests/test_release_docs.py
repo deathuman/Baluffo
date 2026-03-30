@@ -16,7 +16,7 @@ def test_release_docs_stay_on_the_public_0_0_x_line(repo_root: Path) -> None:
 
     assert "src/app_version.py" in release_text
     assert "v<app_version>" in release_text
-    assert "0.0.10" in changelog_text
+    assert "0.0.15" in changelog_text
     assert "## [1.3.0]" not in changelog_text
     assert "[1.3.0] — 2026-03-22" not in changelog_text
 
