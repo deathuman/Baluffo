@@ -369,7 +369,9 @@ def extract_rendered_card_jobs(
     jobs: list[RawJob] = []
     seen_links: set[str] = set()
 
-    def _append_anchor_candidate(*, anchor: dict[str, str], block_html: str, block_text: str) -> None:
+    def _append_anchor_candidate(
+        *, anchor: dict[str, str], block_html: str, block_text: str
+    ) -> None:
         href = clean_text(anchor.get("href"))
         if not href:
             return
