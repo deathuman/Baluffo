@@ -27,6 +27,7 @@ data/local-user-data/
 !data/source-discovery-config.json
 !data/jobs-unified.json
 !data/jobs-unified-light.json
+!data/source-registry-active.json
 
 # Phantom/temp files
 nul

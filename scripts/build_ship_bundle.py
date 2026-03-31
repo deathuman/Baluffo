@@ -211,7 +211,7 @@ def _seed_runtime_data(data_dir: Path) -> None:
         _write_text(target, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
-def _require_packaged_sync_config() -> Path:
+def _resolve_packaged_sync_config() -> Path | None:
     if PACKAGED_SYNC_CONFIG_PATH.exists():
         return PACKAGED_SYNC_CONFIG_PATH
     restored_path = _maybe_restore_packaged_sync_config_from_local()
@@ -221,17 +221,18 @@ def _require_packaged_sync_config() -> Path:
     if generated_path is not None and generated_path.exists():
         return generated_path
     searched_paths = ", ".join(str(path) for path in _candidate_local_packaged_sync_config_paths())
-    raise RuntimeError(
-        "Missing required packaged GitHub App sync config for packaged builds. "
-        f"Expected {PACKAGED_SYNC_CONFIG_PATH}. "
-        f"Build also searched local secret paths ({PACKAGED_SYNC_LOCAL_CONFIG_ENV} + defaults): {searched_paths}. "
-        "Provide either a prebuilt config file or these build-time inputs: "
-        f"{PACKAGED_SYNC_BUILD_ENV['app_id']}, "
-        f"{PACKAGED_SYNC_BUILD_ENV['installation_id']}, "
-        f"{PACKAGED_SYNC_BUILD_ENV['repo']}, and one of "
-        f"{PACKAGED_SYNC_BUILD_ENV['private_key_path']} or {PACKAGED_SYNC_BUILD_ENV['private_key_pem']}. "
-        f"See {PACKAGED_SYNC_CONFIG_TEMPLATE_PATH} and scripts/build_sync_app_config.py."
+    print(
+        f"WARNING: Packaged GitHub App sync config not found. "
+        f"Sync will be disabled in this build. "
+        f"Searched: {PACKAGED_SYNC_CONFIG_PATH}, "
+        f"{PACKAGED_SYNC_LOCAL_CONFIG_ENV} + defaults: {searched_paths}. "
+        f"To enable sync, provide a config file or build env vars "
+        f"({PACKAGED_SYNC_BUILD_ENV['app_id']}, {PACKAGED_SYNC_BUILD_ENV['installation_id']}, "
+        f"{PACKAGED_SYNC_BUILD_ENV['repo']}, and {PACKAGED_SYNC_BUILD_ENV['private_key_path']} or "
+        f"{PACKAGED_SYNC_BUILD_ENV['private_key_pem']}). "
+        f"See {PACKAGED_SYNC_CONFIG_TEMPLATE_PATH}."
     )
+    return None
 
 
 def _env_value(name: str) -> str:
@@ -384,7 +385,7 @@ def _maybe_generate_packaged_sync_config() -> Path | None:
 
 
 def _copy_app_version(version_dir: Path) -> None:
-    packaged_sync_config = _require_packaged_sync_config()
+    packaged_sync_config = _resolve_packaged_sync_config()
     _write_text(
         version_dir / "frontend-runtime-config.js",
         render_frontend_runtime_config_js(build_frontend_runtime_config_payload()),
@@ -403,7 +404,8 @@ def _copy_app_version(version_dir: Path) -> None:
     _copy_file(ROOT / "src" / "ship" / "__init__.py", version_dir / "src" / "ship" / "__init__.py")
     for rel in PACKAGING_FILES:
         _copy_file(ROOT / "packaging" / rel, version_dir / "packaging" / rel)
-    _copy_file(packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json")
+    if packaged_sync_config is not None:
+        _copy_file(packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json")
 
     for rel in APP_RUNTIME_DATA_FILES:
         src = ROOT / "data" / rel

@@ -19,7 +19,7 @@ def test_portable_layout_wraps_ship_bundle_in_ship_folder() -> None:
     with workspace_tmpdir("build-portable-exe") as tmp:
         with mock.patch.object(
             build_ship_bundle,
-            "_require_packaged_sync_config",
+            "_resolve_packaged_sync_config",
             return_value=build_ship_bundle.PACKAGED_SYNC_CONFIG_TEMPLATE_PATH,
         ):
             output = build_portable_layout(Path(tmp) / "dist" / "baluffo-portable", "9.9.9")

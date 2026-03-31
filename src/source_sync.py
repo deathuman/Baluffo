@@ -1105,6 +1105,26 @@ def read_remote_snapshot(
         message = str(payload.get("message") or f"GitHub GET failed with HTTP {status}")
         raise RuntimeError(message)
     encoded_content = str(payload.get("content") or "").strip()
+
+    # GitHub Contents API truncates files >1 MB, returning empty content.
+    # Fall back to download_url which returns raw JSON (not base64).
+    if not encoded_content:
+        download_url = str(payload.get("download_url") or "").strip()
+        if download_url:
+            raw_status, raw_body, _raw_headers = _request_raw_json(
+                method="GET",
+                url=download_url,
+                headers=_github_json_headers(
+                    f"Bearer {_get_auth_manager(config).get_installation_token(opener=opener)}"
+                ),
+                timeout_s=config.timeout_s,
+                opener=opener,
+            )
+            if raw_status == 200 and isinstance(raw_body, dict):
+                snapshot = normalize_snapshot(raw_body)
+                _clear_runtime_state(RUNTIME_STATE_REMOTE_CONFLICT)
+                return {"exists": True, "sha": str(payload.get("sha") or ""), "snapshot": snapshot}
+
     if not encoded_content:
         return {"exists": False, "sha": str(payload.get("sha") or ""), "snapshot": None}
     normalized_b64 = encoded_content.replace("\n", "")

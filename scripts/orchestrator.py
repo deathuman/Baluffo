@@ -160,6 +160,9 @@ def run_proc(command: list[str], name: str, allow_stream: bool = False) -> tuple
 
         if process.returncode != 0:
             _safe_print(color_msg(f"X [{name}] Failed with exit code {process.returncode}", C_RED))
+            if output_str.strip():
+                for line in output_str.strip().splitlines()[-30:]:
+                    _safe_print(f"    {line}")
             return False, output_str
         _safe_print(color_msg(f"OK [{name}] Success", C_GREEN))
         return True, output_str
