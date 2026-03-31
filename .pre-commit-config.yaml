@@ -1,8 +1,7 @@
 minimum_pre_commit_version: "4.0.0"
 exclude: >
   (?x)^(
-    data/jobs-fetch-report\.json|
-    data/jobs-fetch-tasks\.json
+    data/
   )$
 
 default_install_hook_types:
