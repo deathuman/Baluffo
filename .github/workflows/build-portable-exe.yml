@@ -99,10 +99,21 @@ jobs:
         run: npm run sync:test-manifest
 
       - name: Run release gates
+        id: release_gates
         run: |
           npm run test:frontend:unit
           npm run test:py
           npm run test:frontend:packaged
+
+      - name: Upload smoke test artifacts on failure
+        if: failure() && steps.release_gates.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-artifacts-${{ github.run_number }}
+          path: |
+            .codex-tmp/packaged-desktop-smoke
+            data/packaged-desktop-smoke-report.json
+          retention-days: 7
 
       - name: Build portable executable
         run: python scripts/build_portable_exe.py --bundle-version ${{ env.BALUFFO_VERSION }}
