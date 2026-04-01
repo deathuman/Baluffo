@@ -495,6 +495,7 @@ def test_watch_browser_session_uses_heartbeat_when_no_browser_process() -> None:
         mock.patch.object(desktop_app.time, "time", side_effect=[110.0, 120.0, 140.5]),
         mock.patch.object(desktop_app.time, "sleep"),
         mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(desktop_app, "_is_baluffo_browser_window_open", return_value=True),
     ):
         result = desktop_app.watch_browser_session(
             Path("C:/tmp"),
@@ -505,6 +506,26 @@ def test_watch_browser_session_uses_heartbeat_when_no_browser_process() -> None:
         )
 
     assert result == "heartbeat_timeout"
+
+
+def test_watch_browser_session_detects_window_close_in_detached_mode() -> None:
+    with (
+        mock.patch.object(
+            desktop_app, "_is_baluffo_browser_window_open", side_effect=[True, True, False]
+        ),
+        mock.patch.object(desktop_app, "latest_browser_heartbeat_ts", return_value=0.0),
+        mock.patch.object(desktop_app, "bridge_last_activity_ts", return_value=0.0),
+        mock.patch.object(desktop_app.time, "sleep"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+    ):
+        result = desktop_app.watch_browser_session(
+            Path("C:/tmp"),
+            5.0,
+            bridge_port=8877,
+            browser_process=None,
+        )
+
+    assert result == "window_closed"
 
 
 def test_main_surfaces_native_error_without_installer_prompt() -> None:

@@ -687,6 +687,29 @@ def _windows_close_desktop_job(job_handle: int | None) -> None:
     ctypes.windll.kernel32.CloseHandle(ctypes.wintypes.HANDLE(job_handle))
 
 
+def _is_baluffo_browser_window_open() -> bool:
+    """Return True if any top-level window contains 'Baluffo' in its title."""
+    if os.name != "nt":
+        return True
+    found = False
+
+    def _enum_callback(hwnd: int, _lparam: int) -> bool:
+        nonlocal found
+        title = ctypes.create_unicode_buffer(512)
+        length = ctypes.windll.user32.GetWindowTextW(hwnd, title, 512)
+        if length > 0 and "Baluffo" in title.value:
+            found = True
+            return False
+        return True
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    try:
+        ctypes.windll.user32.EnumWindows(WNDENUMPROC(_enum_callback), 0)
+    except Exception:
+        return True
+    return found
+
+
 def _process_identity_matches(lock_payload: dict[str, object]) -> bool:
     """True if lock/session record still refers to a live process whose image matches exePath.
 
@@ -1201,9 +1224,30 @@ def watch_browser_session(
         data_dir,
         "desktop_browser_watchdog_started",
         elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-        mode="heartbeat",
+        mode="detached",
     )
-    return _watch_heartbeat_loop()
+    while True:
+        if not _is_baluffo_browser_window_open():
+            _append_startup_trace(
+                data_dir,
+                "desktop_browser_window_closed",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            )
+            return "window_closed"
+        last_heartbeat = max(
+            latest_browser_heartbeat_ts(data_dir), bridge_last_activity_ts(bridge_port)
+        )
+        if last_heartbeat > 0.0:
+            idle_for = time.time() - last_heartbeat
+            if idle_for > 30.0:
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_browser_heartbeat_timeout",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    idleSeconds=int(idle_for),
+                )
+                return "heartbeat_timeout"
+        time.sleep(2.0)
 
 
 def show_native_message(title: str, message: str, *, ask_to_install: bool = False) -> bool:
