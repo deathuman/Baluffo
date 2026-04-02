@@ -42,6 +42,7 @@ export function cacheAdminDom(doc = document) {
     adminRejectedSourcesEl: doc.querySelector(ui(t.rejectedSources)),
     adminRejectedSourcesSelectAllEl: doc.querySelector(ui(t.rejectedSourcesSelectAll)),
     adminRestoreRejectedBtnEl: doc.querySelector(ui(t.restoreRejectedBtn)),
+    adminDemoteActiveBtnEl: doc.querySelector(ui(t.demoteActiveBtn)),
     adminDiscoveryLogEl: doc.querySelector(ui(t.discoveryLog)),
     adminDiscoveryProgressEl: doc.querySelector(ui(t.discoveryProgress)),
     adminDiscoveryProgressBarEl: doc.querySelector(ui(t.discoveryProgressBar)),

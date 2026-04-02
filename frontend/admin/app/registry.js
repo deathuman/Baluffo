@@ -265,6 +265,27 @@ export function createAdminRegistryController({
     }
   }
 
+  async function demoteActiveSources() {
+    if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
+      showToast("Another discovery operation is running.", "info");
+      return;
+    }
+    const ids = selectedIds(".active-source-checkbox");
+    setBusyFlag("discoveryWrite", true);
+    try {
+      const result = await postBridge("/registry/demote-active", { ids: ids.length ? ids : [] });
+      appendDiscoveryLog(`Demoted ${Number(result?.demoted || 0)} zero-job source(s) to pending.`, "success");
+      showToast("Sources demoted to pending.", "success");
+      await loadDiscoveryData();
+      await loadOpsHealthData();
+    } catch (err) {
+      appendDiscoveryLog(`Demote failed: ${getErrorMessage(err)}`, "error");
+      showToast("Could not demote sources.", "error");
+    } finally {
+      setBusyFlag("discoveryWrite", false);
+    }
+  }
+
   async function deleteSelectedSources() {
     if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
       showToast("Another discovery operation is running.", "info");
@@ -379,6 +400,7 @@ export function createAdminRegistryController({
     approveSelectedSources,
     rejectSelectedSources,
     restoreRejectedSources,
+    demoteActiveSources,
     deleteSelectedSources,
     toggleSelectAllSources
   };

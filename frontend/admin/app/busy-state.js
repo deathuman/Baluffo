@@ -100,6 +100,7 @@ export function syncAdminBusyUi({
   setButtonBusy(refs.adminRejectSourcesBtnEl, discoveryBusy || lockBusy, "Working...");
   setButtonBusy(refs.adminDeleteSourcesBtnEl, discoveryBusy || lockBusy, "Working...");
   setButtonBusy(refs.adminRestoreRejectedBtnEl, discoveryBusy || lockBusy, "Working...");
+  setButtonBusy(refs.adminDemoteActiveBtnEl, discoveryBusy || lockBusy, "Working...");
   setButtonBusy(refs.adminAddManualSourceBtnEl, discoveryBusy || lockBusy, "Adding...");
   if (refs.adminManualSourceUrlEl) {
     refs.adminManualSourceUrlEl.disabled = discoveryBusy || lockBusy;

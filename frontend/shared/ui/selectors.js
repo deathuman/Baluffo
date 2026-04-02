@@ -160,6 +160,7 @@ export const UI_TOKENS = Object.freeze({
     rejectedSources: "admin-rejected-sources",
     rejectedSourcesSelectAll: "admin-rejected-sources-select-all",
     restoreRejectedBtn: "admin-restore-rejected-btn",
+    demoteActiveBtn: "admin-demote-active-btn",
     discoveryLog: "admin-discovery-log",
     discoveryProgress: "admin-discovery-progress",
     discoveryProgressBar: "admin-discovery-progress-bar",

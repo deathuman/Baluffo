@@ -298,6 +298,30 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         handler._send_json({"rolledBack": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
         return True
 
+    if path == "/registry/demote-active":
+        ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
+        selected = set(str(item) for item in ids)
+        moved = []
+        active_remaining = []
+        for row in state["active"]:
+            row_id = api.source_identity(row)
+            jobs_found = max(0, int(row.get("jobsFound") or 0))
+            if selected:
+                if row_id in selected:
+                    moved.append(_transition_registry_row(api, row, candidate_state="validated"))
+                else:
+                    active_remaining.append(row)
+            else:
+                if jobs_found == 0:
+                    moved.append(_transition_registry_row(api, row, candidate_state="validated"))
+                else:
+                    active_remaining.append(row)
+        state["active"] = active_remaining
+        state["pending"] = api.unique_sources([*state["pending"], *moved])
+        state = api.persist_state_and_auto_sync(state, reason="registry_demote_active")
+        handler._send_json({"demoted": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
+        return True
+
     if path == "/registry/restore-rejected":
         ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
         moved, remaining = api.move_entries(state["rejected"], [str(item) for item in ids])

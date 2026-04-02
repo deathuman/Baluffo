@@ -519,6 +519,7 @@ function bindEvents() {
   bindAsyncClick(refs.adminRejectSourcesBtnEl, () => registryController.rejectSelectedSources());
   bindAsyncClick(refs.adminDeleteSourcesBtnEl, () => registryController.deleteSelectedSources());
   bindAsyncClick(refs.adminRestoreRejectedBtnEl, () => registryController.restoreRejectedSources());
+  bindAsyncClick(refs.adminDemoteActiveBtnEl, () => registryController.demoteActiveSources());
   bindAsyncClick(refs.adminAddManualSourceBtnEl, () => registryController.addManualSource());
 
   function bindSelectAllCheckbox(checkboxEl, type) {
