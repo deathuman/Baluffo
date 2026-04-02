@@ -6,98 +6,26 @@ migrated behind the adapter plugin framework incrementally.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlparse
 
-from src.exceptions import AdapterValidationError
-from src.jobs.adapters import provider_migration as _provider_migration
+from src.jobs.adapters import provider_structured_listing as _provider_structured_listing
 from src.jobs.adapters import provider_personio as _provider_personio
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.common.config import SOURCE_DIAGNOSTICS
-from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
-from src.jobs.parsers import parse_ashby_jobs_from_html
 from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
 
-
-def _provider_body_has_text(text: str, *needles: str) -> bool:
-    lower = clean_text(text).lower()
-    return any(needle.lower() in lower for needle in needles if needle)
-
-
+# Personio private helpers — kept for test compatibility
+# (tests/test_jobs_fetcher_providers.py calls provider_api._personio_rate_limit_cutoff)
 _personio_rate_limit_cutoff = _provider_personio._personio_rate_limit_cutoff
 _should_skip_rate_limited_personio_source = (
     _provider_personio._should_skip_rate_limited_personio_source
 )
 _personio_classification_from_error = _provider_personio._personio_classification_from_error
 _parse_state_timestamp = _provider_personio._parse_state_timestamp
-
-
-def _ashby_result_from_markup(
-    text: str, source: dict[str, object], studio: str
-) -> tuple[list[RawJob], str, str]:
-    parsed = parse_ashby_jobs_from_html(
-        text, clean_text(source.get("board_url")), fallback_company=studio
-    )
-    if parsed:
-        return parsed, "ok_with_jobs", ""
-    if _provider_body_has_text(
-        text, "page not found", "job not found", "the page you requested was not found"
-    ):
-        return [], "dead_listing_page", "ashby board page not found"
-    return [], "parser_stale", "no jobs extracted from ashby page"
-
-
-def _normalize_ashby_board_url(url: str) -> str:
-    text = clean_text(url)
-    if not text:
-        return ""
-    parsed = urlparse(text)
-    path = parsed.path.rstrip("/")
-    if path.lower().endswith("/jobs"):
-        normalized = parsed._replace(path=path[:-5] or "/", query="", fragment="")
-        return normalized.geturl().rstrip("/")
-    return text
-
-
-def _iter_ashby_candidate_urls(source: dict[str, object]) -> list[str]:
-    candidates = [
-        clean_text(source.get("board_url")),
-        _normalize_ashby_board_url(clean_text(source.get("board_url"))),
-        clean_text(source.get("careersUrl")),
-        clean_text(source.get("sourceDirectoryEntryUrl")),
-    ]
-    rows: list[str] = []
-    seen = set()
-    for item in candidates:
-        if not item or item in seen:
-            continue
-        seen.add(item)
-        rows.append(item)
-    return rows
-
-
-def set_source_diagnostics(
-    source_name: str,
-    *,
-    adapter: str,
-    studio: str,
-    provider_url: str = "",
-    details: list[dict[str, object]] | None = None,
-    partial_errors: list[str] | None = None,
-) -> None:
-    SOURCE_DIAGNOSTICS[source_name] = {
-        "adapter": clean_text(adapter) or "unknown",
-        "studio": clean_text(studio) or "multiple",
-        "providerUrl": clean_text(provider_url),
-        "details": details or [],
-        "partialErrors": partial_errors or [],
-    }
 
 
 def _dispatch_provider_api(
@@ -167,70 +95,6 @@ def run_teamtailor_sources_source(
         source_state_rows=source_state_rows,
         force_refresh_all=force_refresh_all,
     )
-
-
-def _run_json_feed_sources(
-    *,
-    adapter_name: str,
-    registry_adapter: str,
-    default_error: str,
-    parse_payload,
-    build_url,
-    payload_count,
-    fetch_text: Callable[[str, int], str],
-    timeout_s: int,
-    retries: int,
-    backoff_s: float,
-) -> list[RawJob]:
-    jobs: list[RawJob] = []
-    errors: list[str] = []
-    details: list[dict[str, object]] = []
-    for source in registry_entries(registry_adapter):
-        source_name = clean_text(source.get("name")) or f"{registry_adapter}_source"
-        studio = clean_text(source.get("studio")) or source_name
-        endpoint = build_url(source)
-        entry_report = {
-            "adapter": adapter_name,
-            "studio": studio,
-            "name": source_name,
-            "status": "ok",
-            "fetchedCount": 0,
-            "keptCount": 0,
-            "error": "",
-        }
-        if not endpoint:
-            entry_report["status"] = "error"
-            entry_report["error"] = default_error
-            details.append(entry_report)
-            continue
-        try:
-            text = fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
-            payload = json.loads(text)
-            parsed = parse_payload(source, payload, studio)
-            entry_report["fetchedCount"] = payload_count(payload, parsed)
-            entry_report["keptCount"] = len(parsed)
-            for row in parsed:
-                row["adapter"] = adapter_name
-                row["studio"] = studio
-            jobs.extend(parsed)
-        except Exception as exc:  # noqa: BLE001
-            entry_report["status"] = "error"
-            entry_report["error"] = str(exc)
-            errors.append(f"{registry_adapter}:{source_name}: {exc}")
-        details.append(entry_report)
-
-    set_source_diagnostics(
-        f"{registry_adapter}_sources",
-        adapter=adapter_name,
-        studio="multiple",
-        details=details,
-        partial_errors=errors,
-    )
-    if jobs:
-        return jobs
-    if errors:
-        raise AdapterValidationError.from_errors(errors)
-    return []
 
 
 def run_lever_sources_source(
@@ -423,7 +287,7 @@ def run_bamboohr_sources_source(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
-    return _provider_migration.run_bamboohr_sources_source(
+    return _provider_structured_listing.run_bamboohr_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
         retries=retries,
@@ -442,7 +306,7 @@ def run_workday_sources_source(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
-    return _provider_migration.run_workday_sources_source(
+    return _provider_structured_listing.run_workday_sources_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
         retries=retries,

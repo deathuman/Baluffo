@@ -62,7 +62,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
   - `teamtailor` (listing HTML + detail parsing)
   - `lever`, `smartrecruiters`, `workable` (similar registry-driven flow)
   - `recruitee`, `pinpoint` (registry-driven JSON feeds)
-  - `ashby`, `bamboohr`, `breezy`, `jazzhr`, `personio`, `workday` (provider-specific HTML/XML board flows and structured migration loaders; BambooHR/Workday share `src/jobs/adapters/provider_migration.py`)
+  - `ashby`, `bamboohr`, `breezy`, `jazzhr`, `personio`, `workday` (provider-specific HTML/XML board flows and structured listing loaders; BambooHR/Workday share `src/jobs/adapters/provider_structured_listing.py`)
 
 - **`src/jobs/adapters/community/__init__.py`**
   Community-board loaders now include:

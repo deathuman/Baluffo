@@ -1,4 +1,9 @@
-"""Extraction-only parsers for jobs content."""
+"""Extraction-only parsers for jobs content.
+
+This module is a re-export shim. Provider parser functions are re-exported via
+src.jobs.adapters.provider_parsers, which itself is a compat shim pointing to
+the canonical location: src.jobs.adapters.parsers
+"""
 
 from __future__ import annotations
 

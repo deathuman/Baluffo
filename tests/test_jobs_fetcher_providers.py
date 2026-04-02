@@ -377,7 +377,7 @@ def test_parse_personio_feed_xml_fixture() -> None:
 
 
 def test_run_ashby_sources_source_falls_back_to_careers_page_when_board_is_stale() -> None:
-    from src.jobs.adapters.plugins.provider_api import register as provider_register
+    from src.jobs.adapters.plugins.provider_api import html_board as html_board_module
 
     source_rows = [
         {
@@ -403,7 +403,7 @@ def test_run_ashby_sources_source_falls_back_to_careers_page_when_board_is_stale
         def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
             return None
 
-    with mock.patch.object(provider_register.runtime_deps, "facade", return_value=_Deps()):
+    with mock.patch.object(html_board_module.runtime_deps, "facade", return_value=_Deps()):
 
         def fake_fetch(url: str, _: int) -> str:
             if url == "https://jobs.ashbyhq.com/thatgamecompany/jobs":
@@ -426,7 +426,7 @@ def test_run_ashby_sources_source_falls_back_to_careers_page_when_board_is_stale
 
 
 def test_run_ashby_sources_source_normalizes_stale_jobs_url_to_board_root() -> None:
-    from src.jobs.adapters.plugins.provider_api import register as provider_register
+    from src.jobs.adapters.plugins.provider_api import html_board as html_board_module
 
     source_rows = [
         {
@@ -451,7 +451,7 @@ def test_run_ashby_sources_source_normalizes_stale_jobs_url_to_board_root() -> N
         def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
             return None
 
-    with mock.patch.object(provider_register.runtime_deps, "facade", return_value=_Deps()):
+    with mock.patch.object(html_board_module.runtime_deps, "facade", return_value=_Deps()):
 
         def fake_fetch(url: str, _: int) -> str:
             # The code tries multiple candidate URLs - first the original, then normalized

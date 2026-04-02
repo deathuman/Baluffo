@@ -9,7 +9,7 @@ from typing import Any
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import _runtime as runtime_deps
-from src.jobs.parsers import parse_personio_feed_xml
+from src.jobs.adapters.parsers.personio import parse_personio_feed_xml
 from src.jobs.text_utils import clean_text
 
 RawJob = dict[str, Any]

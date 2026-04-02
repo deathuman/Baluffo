@@ -922,7 +922,7 @@ def test_apply_incremental_cache_exclusions_keeps_provider_family_loader_for_boa
 
 
 def test_provider_family_json_sources_refresh_only_stale_boards() -> None:
-    from src.jobs.adapters.plugins.provider_api import register as provider_register
+    from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_module
 
     calls = []
     captured = {}
@@ -973,8 +973,8 @@ def test_provider_family_json_sources_refresh_only_stale_boards() -> None:
         },
     }
 
-    with mock.patch.object(provider_register.runtime_deps, "facade", return_value=_Deps()):
-        rows = provider_register._run_json_feed_sources(
+    with mock.patch.object(json_feed_module.runtime_deps, "facade", return_value=_Deps()):
+        rows = json_feed_module._run_json_feed_sources(
             adapter_name="greenhouse",
             registry_adapter="greenhouse",
             default_error="missing endpoint",
@@ -1013,7 +1013,7 @@ def test_provider_family_json_sources_refresh_only_stale_boards() -> None:
 
 
 def test_provider_family_revalidate_only_board_skips_fetch_on_not_modified() -> None:
-    from src.jobs.adapters.plugins.provider_api import register as provider_register
+    from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_module
 
     calls = []
     captured = {}
@@ -1051,9 +1051,9 @@ def test_provider_family_revalidate_only_board_skips_fetch_on_not_modified() -> 
     }
 
     with (
-        mock.patch.object(provider_register.runtime_deps, "facade", return_value=_Deps()),
+        mock.patch.object(json_feed_module.runtime_deps, "facade", return_value=_Deps()),
         mock.patch.object(
-            provider_register,
+            json_feed_module,
             "conditional_revalidate_url",
             return_value={
                 "supported": True,
@@ -1064,7 +1064,7 @@ def test_provider_family_revalidate_only_board_skips_fetch_on_not_modified() -> 
             },
         ),
     ):
-        rows = provider_register._run_json_feed_sources(
+        rows = json_feed_module._run_json_feed_sources(
             adapter_name="lever",
             registry_adapter="lever",
             default_error="missing endpoint",
@@ -1089,7 +1089,7 @@ def test_provider_family_revalidate_only_board_skips_fetch_on_not_modified() -> 
 
 
 def test_teamtailor_sources_skip_fresh_listing_without_fetching() -> None:
-    from src.jobs.adapters.plugins.provider_api import register as provider_register
+    from src.jobs.adapters.plugins.provider_api import teamtailor_runner as teamtailor_module
 
     calls = []
     captured = {}
@@ -1129,8 +1129,8 @@ def test_teamtailor_sources_skip_fresh_listing_without_fetching() -> None:
         }
     }
 
-    with mock.patch.object(provider_register.runtime_deps, "facade", return_value=_Deps()):
-        rows = provider_register._run_teamtailor_sources(
+    with mock.patch.object(teamtailor_module.runtime_deps, "facade", return_value=_Deps()):
+        rows = teamtailor_module._run_teamtailor_sources(
             fetch_text=lambda url, timeout: "",
             timeout_s=5,
             retries=0,

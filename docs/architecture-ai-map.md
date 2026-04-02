@@ -322,7 +322,7 @@ Frontend (jobs.html) ← reads unified feed
 Key stages:
 - **Sources:** Defined in `source-registry-active.json`, fetched by adapter type
 - **Adapters:** `src/jobs/adapters/` - fetch and parse each source type
-- **Provider API loaders:** `src/jobs/adapters/provider_api.py`, `src/jobs/adapters/provider_migration.py`, and `src/jobs/adapters/plugins/provider_api/register.py` now cover greenhouse, teamtailor, lever, workable, smartrecruiters, recruitee, pinpoint, ashby, bamboohr, breezy, jazzhr, personio, and workday sources, including BambooHR/Workday migration loaders that can shadow static rows.
+- **Provider API loaders:** `src/jobs/adapters/provider_api.py`, `src/jobs/adapters/provider_structured_listing.py`, and `src/jobs/adapters/plugins/provider_api/register.py` now cover greenhouse, teamtailor, lever, workable, smartrecruiters, recruitee, pinpoint, ashby, bamboohr, breezy, jazzhr, personio, and workday sources, including BambooHR/Workday structured listing loaders that can shadow static rows.
 - **Pipeline:** `src/jobs/pipeline.py` - core processing
 - **Pipeline helpers:** `src/jobs/pipeline_bootstrap.py`, `src/jobs/pipeline_loader_selection.py`, `src/jobs/pipeline_runtime.py`, `src/jobs/pipeline_stage_source_execution.py` - package-private orchestration support
 - **Jobs package:** `src/jobs/` - main jobs module
