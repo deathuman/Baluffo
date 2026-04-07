@@ -9,8 +9,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from src.jobs.adapters import provider_structured_listing as _provider_structured_listing
 from src.jobs.adapters import provider_personio as _provider_personio
+from src.jobs.adapters import provider_structured_listing as _provider_structured_listing
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext

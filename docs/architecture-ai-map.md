@@ -48,7 +48,7 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 
 ---
 
-## 3) Task → minimal files
+## 3) Task→ minimal files
 
 | Task | Start here | Then only if needed |
 |------|------------|---------------------|

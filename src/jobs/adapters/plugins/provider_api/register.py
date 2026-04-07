@@ -9,8 +9,8 @@ All runner logic has been extracted into focused modules:
 
 from __future__ import annotations
 
-from src.jobs.adapters import provider_structured_listing as _provider_structured_listing
 from src.jobs.adapters import provider_personio as _provider_personio
+from src.jobs.adapters import provider_structured_listing as _provider_structured_listing
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
 
