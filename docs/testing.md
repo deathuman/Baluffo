@@ -126,12 +126,8 @@ python -m pytest tests -q -m "not slow" --cov=src --cov-report=term-missing --co
 
 - Small Python logic change: `npm run test:py`
 - Before pushing or merging: `npm run lint:precommit` or `npm run verify`
-- When you want repo-wide lint parity: `npm run lint:precommit:all`
-- When you want the CI-style sweep that skips generated `data/*` artifacts: `npm run lint:precommit:ci`
-- When you want the quick changed-files gate: `npm run lint:precommit:changed`
-- Python logic change with coverage review: `npm run test:py:cov`
 - JavaScript/frontend unit change: `npm run test:unit`
 - Browser or page-flow change: `npm run test:smoke`
 - Broad or risky change: `npm run verify`
 
-`npm run lint:precommit` now runs the CI-parity sweep, which checks the full guardrail set while skipping generated `data/*` artifacts. Use `npm run lint:precommit:changed` when you want the faster changed-files gate. The lint gate treats `ruff format` as a check-only step, so it will report formatting drift without rewriting files during CI. The current `mypy` hook is intentionally scoped to `src/python_version_guard.py` and `src/pipeline_io.py` until the broader typed surface is cleaned up. Local runs need `pre-commit`, `ruff`, `mypy`, and the repo's Node lint dependencies available in the active environment.
+For the full command list, see [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md#high-signal-commands).

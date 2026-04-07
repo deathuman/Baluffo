@@ -12,7 +12,7 @@ Baluffo aggregates game development job listings from across the web into one fa
 
 ## Quick Start
 
-1. **Download** the portable EXE from [Releases](https://github.com/your-repo/baluffo/releases)
+1. **Download** the portable EXE from [Releases](https://github.com/deathuman/Baluffo/releases)
 2. **Run** — double-click `Baluffo.exe`, it opens automatically in your browser
 3. **Browse** — filter by region, work type, or search text, then save jobs you like
 
@@ -54,19 +54,17 @@ That's it. Your data stays on your machine.
 ### Quick Development Setup
 
 ```powershell
-# Serve locally
-python -m http.server 8080 --directory .
+# Serve locally + start admin bridge (recommended)
+npm run dev:bridge
 
 # Generate jobs feed
-python src/jobs_fetcher.py
-
-# Run admin bridge (for discovery/actions)
-python src/admin_bridge.py
+npm run dev:pipeline
 ```
 
 ### Documentation
 
 - [Architecture Map](docs/architecture-ai-map.md) — scan-first guide for AI-assisted coding
+- [AI Assistant Guide](docs/AI_ASSISTANT_GUIDE.md) — primary entry point for AI coders
 - [Admin Bridge API](docs/admin-bridge-api.md) — endpoint reference
 - [Release Process](docs/RELEASE.md) — build and release guide
 - [Testing Guide](docs/testing.md) — test layout and run commands

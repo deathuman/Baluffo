@@ -50,22 +50,19 @@ Saved job record fields:
 ## Future migration note
 `local-data-client.js` intentionally keeps a stable abstraction boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
 
-## Unified jobs feed generation
-- Run `python src/jobs_fetcher.py` to aggregate listings into:
-  - `data/jobs-unified.json` (primary feed used by Jobs page modules)
-  - `data/jobs-unified.csv` (CSV fallback + inspection)
-  - `data/jobs-fetch-report.json` (per-source diagnostics)
-- Active source configuration is file-backed:
-  - `data/source-registry-active.json` (used by fetcher at runtime)
-  - `data/source-registry-pending.json` (awaiting approval)
-  - `data/source-registry-rejected.json` (rejected history)
-- The fetch runner pulls from:
-  - Google Sheets (current curated source + mirror fallback)
-  - Remote OK API
-  - GamesIndustry HTML
-  - Greenhouse, Teamtailor, Lever, SmartRecruiters, Workable, Ashby, Personio, static studio pages
-- Social-source loaders are opt-in at the CLI (`--social-enabled`), but bridge-started fetch runs from the Jobs page pipeline action and Admin Fetcher actions enable social by default unless explicitly disabled in the payload.
-- If the current run yields zero jobs, the runner keeps the previous `jobs-unified.json` output by default.
+## Commands reference
+
+| Goal | Command |
+|------|---------|
+| Start Baluffo (site + bridge + browser) | `npm run dev:bridge` |
+| Run jobs pipeline | `npm run dev:pipeline` |
+| Full build | `npm run build` |
+| Portable EXE | `npm run build:portable-exe -- --bundle-version <version>` |
+| Full verification | `npm run verify` |
+| Run tests | `npm run test:py`, `npm run test:unit`, `npm run test:smoke` |
+| Pre-commit lint | `npm run lint:precommit:changed` |
+
+See [`testing.md`](testing.md) and [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) for more commands.
 
 ## Source discovery and approval
 - Run `python src/source_discovery.py` (dynamic mode by default) to discover new candidate sources into:
