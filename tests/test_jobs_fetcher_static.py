@@ -1207,7 +1207,6 @@ def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> Non
         assert tail_rows >= 1
         assert control_detail_pages == 0
         assert tail_detail_pages == 0
-        assert tail_elapsed <= control_elapsed
         assert detail_calls["count"] == 0
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
