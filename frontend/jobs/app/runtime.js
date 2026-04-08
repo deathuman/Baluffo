@@ -1798,8 +1798,8 @@ async function fetchUnifiedJobs({ timeoutMs } = {}) {
   });
 }
 
-async function fetchJsonFromCandidates(urls) {
-  return fetchJsonFromCandidatesFromSources(urls);
+async function fetchJsonFromCandidates(urls, options) {
+  return fetchJsonFromCandidatesFromSources(urls, options);
 }
 
 async function renderDataSources() {

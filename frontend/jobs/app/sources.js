@@ -61,8 +61,8 @@ export async function fetchUnifiedJobs({
   });
 }
 
-export async function fetchJsonFromCandidates(urls) {
-  return fetchJsonFromCandidatesFromData(urls);
+export async function fetchJsonFromCandidates(urls, options) {
+  return fetchJsonFromCandidatesFromData(urls, options);
 }
 
 export async function renderDataSources({
