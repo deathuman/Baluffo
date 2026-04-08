@@ -134,7 +134,6 @@ The Admin Bridge (`src/admin_bridge.py`) follows a strict precedence:
 | **bridge.log_level** | `"info"` | Log level (`info` or `debug`) |
 | **bridge.quiet_requests** | `false` | Suppress request logging |
 | **storage.data_dir** | `"data"` | Runtime data directory |
-| **security.admin_pin_default** | `"1234"` | Default admin PIN |
 | **security.github_app_enabled_default** | `true` | GitHub App sync enabled by default |
 | **sync.packaged_config_path** | `"packaging/github-app-sync-config.json"` | GitHub App sync config |
 | **sync.local_enabled_default** | `true` | Source sync enabled by default |

@@ -43,7 +43,7 @@ Saved job record fields:
   - `baluffo.config.json`
   - code fallback
 - Browser-safe frontend defaults are generated into `frontend-runtime-config.js`.
-- If you change `bridge.host`, `bridge.port`, `security.admin_pin_default`, or `security.github_app_enabled_default`,
+- If you change `bridge.host`, `bridge.port`, or `security.github_app_enabled_default`,
   run `npm run build:frontend-runtime-config` before testing or packaging browser pages.
 - Run `npm run setup:hooks` once per clone to point Git at the tracked repo hook directory in `.githooks/`.
 

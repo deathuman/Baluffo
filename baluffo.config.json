@@ -10,7 +10,6 @@
     "data_dir": "data"
   },
   "security": {
-    "admin_pin_default": "1234",
     "github_app_enabled_default": true
   },
   "sync": {
