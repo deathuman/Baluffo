@@ -1,6 +1,8 @@
 # Documentation Index
 
 > **Navigation guide for Baluffo project documentation.** Use this page to find the smallest authoritative document set for your task.
+>
+> For AI coding tasks, start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) and only add [`architecture-ai-map.md`](architecture-ai-map.md) when you need routing or ownership details.
 
 ---
 
@@ -86,10 +88,10 @@ Useful as context, but **not authoritative** for current implementation unless e
 For most coding tasks, load only this minimal set:
 
 1. [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md)
-2. [`architecture-ai-map.md`](architecture-ai-map.md)
+2. [`architecture-ai-map.md`](architecture-ai-map.md) when you need file routing or subsystem boundaries
 3. One canonical contract doc relevant to the task
-4. One subsystem deep dive only if needed
-5. [`../AGENTS.md`](../AGENTS.md) for repo workflow guardrails
+4. [`testing.md`](testing.md) when you need verification commands, fixtures, or test layout
+5. One subsystem deep dive only if needed
 
 This keeps context tight and reduces hallucinations from loading too many overlapping docs.
 

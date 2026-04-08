@@ -209,8 +209,10 @@ npm run test:frontend:packaged
 Optional rebuild-backed smoke validation:
 
 ```powershell
-python scripts/packaged_desktop_smoke.py --rebuild
+npm run probe:desktop:startup:cold
 ```
+
+For a warmer startup path, use `npm run probe:desktop:startup:warm`.
 
 4. Confirm desktop startup, bridge readiness, and admin page readiness all pass in the smoke output.
 5. If sync credentials are packaged, confirm the packaged runtime still resolves the expected sync config and smoke remains green.

@@ -6,6 +6,8 @@
 > - **Not canonical for:** runtime architecture or data contracts
 > - **Then inspect:** the nearest `tests/` module for the subsystem you changed
 
+This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
+
 ## Python tests (pytest)
 
 Run the Python test suite:
@@ -52,6 +54,12 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Local pre-commit gate | `npm run lint:precommit:changed` |
 | Full pre-commit sweep | `npm run lint:precommit:all` |
 | CI pre-commit sweep | `npm run lint:precommit:ci` |
+| Build ship bundle | `npm run build:ship-bundle` |
+| Build portable EXE | `npm run build:portable-exe` |
+| Ship bundle leaf builder | `python scripts/build_ship_bundle.py --bundle-version <version>` |
+| Portable EXE leaf builder | `python scripts/build_portable_exe.py --bundle-version <version>` |
+| Packaged desktop smoke gate | `npm run test:frontend:packaged` |
+| Rebuild-backed packaged diagnostic | `npm run probe:desktop:startup:cold` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
 | Exclude slow | `python -m pytest tests -q -m "not slow" --color=no` |
@@ -130,4 +138,4 @@ python -m pytest tests -q -m "not slow" --cov=src --cov-report=term-missing --co
 - Browser or page-flow change: `npm run test:smoke`
 - Broad or risky change: `npm run verify`
 
-For the full command list, see [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md#high-signal-commands).
+For the AI bootstrap and task-routing summary, see [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md).

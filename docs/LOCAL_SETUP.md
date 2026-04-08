@@ -62,7 +62,7 @@ Saved job record fields:
 | Run tests | `npm run test:py`, `npm run test:unit`, `npm run test:smoke` |
 | Pre-commit lint | `npm run lint:precommit:changed` |
 
-See [`testing.md`](testing.md) and [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) for more commands.
+See [`testing.md`](testing.md) for verification commands and [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) for edit routing.
 
 ## Source discovery and approval
 - Run `python src/source_discovery.py` (dynamic mode by default) to discover new candidate sources into:

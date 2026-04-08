@@ -63,11 +63,12 @@ npm run dev:pipeline
 
 ### Documentation
 
-- [Architecture Map](docs/architecture-ai-map.md) — scan-first guide for AI-assisted coding
-- [AI Assistant Guide](docs/AI_ASSISTANT_GUIDE.md) — primary entry point for AI coders
+- [Docs Index](docs/INDEX.md) — navigation hub for the documentation set
+- [AI Assistant Guide](docs/AI_ASSISTANT_GUIDE.md) — AI coding workflow and edit routing
+- [Architecture Map](docs/architecture-ai-map.md) — subsystem boundaries and file routing
+- [Testing Guide](docs/testing.md) — verification commands and fixture guidance
 - [Admin Bridge API](docs/admin-bridge-api.md) — endpoint reference
 - [Release Process](docs/RELEASE.md) — build and release guide
-- [Testing Guide](docs/testing.md) — test layout and run commands
 - [Scraping Pipeline](docs/scraping-pipeline.md) — Playwright and Scrapy flow
 - [Adapter Plugin Inventory](docs/adapter-plugin-inventory.md) — source loaders and static plugins
 - [Data Contracts](docs/DATA_CONTRACT.md) — data structures between Python and JS

@@ -125,7 +125,7 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 
 | Change area | Fastest verification |
 |-------------|----------------------|
-| Frontend syntax | `node --check frontend/*/app.js` |
+| Frontend syntax | `node --check frontend/jobs/app.js` |
 | Frontend unit | `npm run test:unit` |
 | Bridge behavior | `python -m pytest tests/admin/ -q` |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |

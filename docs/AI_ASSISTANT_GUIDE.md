@@ -27,14 +27,14 @@
 
 ## Read order
 
-1. [`README.md`](../README.md) — product overview
-2. This guide — task routing and edit boundaries
+1. This guide — task routing and edit boundaries
+2. [`architecture-ai-map.md`](architecture-ai-map.md) — system boundaries and file ownership
 3. One contract doc if data/shape changes:
    - [`DATA_CONTRACT.md`](DATA_CONTRACT.md) — payload/schema
    - [`admin-bridge-api.md`](admin-bridge-api.md) — bridge endpoints
    - [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md) — fetcher presets
 4. One deep-dive if needed: [`testing.md`](testing.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), [`scraping-pipeline.md`](scraping-pipeline.md)
-5. [`AGENTS.md`](../AGENTS.md) — repo guardrails
+5. [`AGENTS.md`](../AGENTS.md) only when you need hard repo guardrails
 
 ---
 
@@ -83,7 +83,7 @@
 
 | Change area | Fastest check |
 |-------------|----------------|
-| Frontend syntax/wiring | `node --check frontend/*/app.js` |
+| Frontend syntax/wiring | `node --check frontend/jobs/app.js` |
 | Bridge changes | `python -m pytest tests/admin/ -q` |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Full verification | `npm run verify` |
@@ -94,18 +94,11 @@ See [`testing.md`](testing.md) for full test commands.
 
 ## High-signal commands
 
-| Goal | Command |
-|------|---------|
-| Start Baluffo | `npm run dev:bridge` |
-| Run jobs pipeline | `npm run dev:pipeline` |
-| Full build | `npm run build` |
-| Full verification | `npm run verify` |
-| Python tests | `npm run test:py` |
-| Frontend unit | `npm run test:unit` |
-| Frontend smoke | `npm run test:smoke` |
-| Local pre-commit | `npm run lint:precommit:changed` |
+- `npm run dev:bridge`
+- `npm run dev:pipeline`
+- `npm run verify`
 
-`npm run verify` = CI-parity gate, safest before pushing.
+For the narrowest verification matrix, fixture layout, and test-to-source map, see [`testing.md`](testing.md).
 
 ---
 
@@ -115,7 +108,7 @@ See [`testing.md`](testing.md) for full test commands.
 - Prefer leaf modules over composition roots
 - Update implementation + schemas + tests + docs together
 - Follow task-to-files table before guessing
-- When uncertain about ownership, check [`architecture-ai-map.md`](architecture-ai-map.md)
+- When uncertain about ownership after reading this guide, check [`architecture-ai-map.md`](architecture-ai-map.md)
 
 ---
 
