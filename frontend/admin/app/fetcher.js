@@ -1,4 +1,17 @@
 import { deriveFetcherFailureSummary, deriveFetcherProgressModel, deriveFetcherTaskProgress } from "../domain.js";
+import {
+  attachToActiveRun,
+  clearOptimisticRun,
+  getRestorableRunMeta,
+  loadLiveTaskLogChunk,
+  maybeUnrefTimer,
+  parseReportTimestampMs,
+  resetLiveTaskPlaceholder,
+  restartCompletionWatch,
+  setOptimisticRun,
+  startLiveTaskWatch,
+  stopLiveTaskWatch
+} from "./live-task.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
 
 export const FETCHER_FALLBACK_MESSAGES = {
@@ -72,11 +85,6 @@ export function createAdminFetcherController({
   createLogEvent,
   appendLogRow
 }) {
-  function maybeUnrefTimer(timer) {
-    timer?.unref?.();
-    return timer;
-  }
-
   function formatDurationCompact(ms) {
     const value = Math.max(0, Number(ms) || 0);
     if (value < 1000) return `${value}ms`;
@@ -111,25 +119,16 @@ export function createAdminFetcherController({
   }
 
   function getRestorableFetcherRunMeta(report = null) {
-    const hasLiveFetcherState = Boolean(
-      state.fetcherLiveProgressState
-      || state.fetchOptimisticRun
-      || state.adminBusyState.fetcherWatch
-      || state.adminBusyState.liveFetchRunning
-    );
-    if (!hasLiveFetcherState) {
-      return null;
-    }
-    const finishedMs = parseReportTimestampMs(report?.finishedAt);
-    if (finishedMs >= (state.fetcherLaunchAtMs - 1000)) {
-      return null;
-    }
-    const runId = String(report?.runId || state.fetchOptimisticRun?.runId || "").trim();
-    const startedAt = String(report?.startedAt || state.fetchOptimisticRun?.startedAt || "").trim();
-    if (!runId && !startedAt) {
-      return null;
-    }
-    return { runId, startedAt };
+    return getRestorableRunMeta(report, {
+      hasLiveState: Boolean(
+        state.fetcherLiveProgressState
+        || state.fetchOptimisticRun
+        || state.adminBusyState.fetcherWatch
+        || state.adminBusyState.liveFetchRunning
+      ),
+      optimisticRun: state.fetchOptimisticRun,
+      launchAtMs: state.fetcherLaunchAtMs
+    });
   }
 
   function updateFetcherProgressFromReport(report, { running = false } = {}) {
@@ -215,50 +214,46 @@ export function createAdminFetcherController({
   }
 
   function setFetcherLogPlaceholder(message) {
-    if (!refs.adminFetcherLogEl) return;
-    refs.adminFetcherLogEl.innerHTML = "";
-    state.fetcherLogRemoteOffset = 0;
-    setFetcherProgress({ active: false });
-    appendFetcherLog(message, "muted");
+    resetLiveTaskPlaceholder({
+      logEl: refs.adminFetcherLogEl,
+      clearOffset: () => {
+        state.fetcherLogRemoteOffset = 0;
+      },
+      setProgress: view => setFetcherProgress(view),
+      appendLog: appendFetcherLog,
+      message
+    });
   }
 
   function setOptimisticFetchRun(runMeta) {
-    const startedAt = String(runMeta?.startedAt || "").trim();
-    if (!startedAt) {
-      state.fetchOptimisticRun = null;
-      return;
-    }
-    state.fetchOptimisticRun = {
-      runId: String(runMeta?.runId || ""),
-      startedAt
-    };
+    setOptimisticRun(state, "fetchOptimisticRun", runMeta);
   }
 
   function clearOptimisticFetchRun() {
-    state.fetchOptimisticRun = null;
+    clearOptimisticRun(state, "fetchOptimisticRun");
   }
 
   function attachToActiveFetchRun(runMeta = null) {
-    if (state.adminBusyState.fetcherWatch) return;
-    if (runMeta && typeof runMeta === "object" && !Array.isArray(runMeta)) {
-      setOptimisticFetchRun(runMeta);
-    }
-    startFetcherCompletionWatch();
+    attachToActiveRun({
+      isWatching: () => state.adminBusyState.fetcherWatch,
+      setOptimisticRun: setOptimisticFetchRun,
+      startWatch: () => startFetcherCompletionWatch()
+    }, runMeta);
   }
 
   function restartFetcherCompletionWatch(runMeta = null) {
-    stopFetcherCompletionWatch();
-    attachToActiveFetchRun(runMeta);
+    restartCompletionWatch(stopFetcherCompletionWatch, attachToActiveFetchRun, runMeta);
   }
 
   async function loadFetcherLogChunk(options = {}) {
-    const reset = Boolean(options?.reset);
-    const offset = reset ? 0 : Math.max(0, Number(state.fetcherLogRemoteOffset) || 0);
-    const payload = await getBridge(`/fetcher/log?offset=${offset}`);
-    if (reset) state.fetcherLogRemoteOffset = 0;
-    appendFetcherServerLogText(String(payload?.text || ""));
-    state.fetcherLogRemoteOffset = Math.max(0, Number(payload?.nextOffset) || 0);
-    return payload || null;
+    return loadLiveTaskLogChunk({
+      getBridge,
+      path: "/fetcher/log",
+      state,
+      offsetKey: "fetcherLogRemoteOffset",
+      reset: Boolean(options?.reset),
+      onText: appendFetcherServerLogText
+    });
   }
 
   function stopFetcherLogPolling() {
@@ -475,12 +470,6 @@ export function createAdminFetcherController({
     showToast("Could not access clipboard. Summary logged.", "warn");
   }
 
-  function parseReportTimestampMs(value) {
-    if (!value) return 0;
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
   function emitJobsAutoRefreshSignal(report) {
     const signal = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -608,39 +597,42 @@ export function createAdminFetcherController({
 
   function startFetcherCompletionWatch() {
     stopFetcherCompletionWatch();
-    setBusyFlag("fetcherWatch", true);
-    state.fetcherLaunchAtMs = Date.now();
-    const optimisticStartedAtMs = parseReportTimestampMs(state.fetchOptimisticRun?.startedAt);
-    if (optimisticStartedAtMs > 0) {
-      state.fetcherLaunchAtMs = optimisticStartedAtMs;
-    }
-    state.fetcherLogRemoteOffset = 0;
-    state.fetcherLiveProgressState = {
-      summarySignature: "",
-      sourceSignatures: new Map(),
-      reportedSlowSources: new Set(),
-      serverLogSignatures: new Set(),
-      slowSourceSummarySignature: "",
-      slowStageSummarySignature: "",
-      lastHeartbeatAtMs: 0,
-      lastActivityAtMs: Date.now()
-    };
-    updateFetcherProgressFromReport(null, { running: true });
-    appendFetcherLog("Fetcher started. Watching live progress...", "info");
-    loadFetcherLogChunk({ reset: true }).catch(() => {});
-    scheduleFetcherLogPoll(700);
-    scheduleFetcherCompletionPoll(900);
+    startLiveTaskWatch({
+      state,
+      setBusyFlag,
+      watchKey: "fetcherWatch",
+      launchAtKey: "fetcherLaunchAtMs",
+      optimisticRunKey: "fetchOptimisticRun",
+      logOffsetKey: "fetcherLogRemoteOffset",
+      liveStateKey: "fetcherLiveProgressState",
+      createLiveState: () => ({
+        summarySignature: "",
+        sourceSignatures: new Map(),
+        reportedSlowSources: new Set(),
+        serverLogSignatures: new Set(),
+        slowSourceSummarySignature: "",
+        slowStageSummarySignature: "",
+        lastHeartbeatAtMs: 0,
+        lastActivityAtMs: Date.now()
+      }),
+      setProgress: () => updateFetcherProgressFromReport(null, { running: true }),
+      onStart: () => appendFetcherLog("Fetcher started. Watching live progress...", "info"),
+      loadInitialLogChunk: () => loadFetcherLogChunk({ reset: true }).catch(() => {}),
+      scheduleLogPoll: () => scheduleFetcherLogPoll(700),
+      scheduleCompletionPoll: () => scheduleFetcherCompletionPoll(900)
+    });
   }
 
   function stopFetcherCompletionWatch() {
-    if (state.fetcherCompletionPollTimer) {
-      clearTimeout(state.fetcherCompletionPollTimer);
-      state.fetcherCompletionPollTimer = null;
-    }
-    stopFetcherLogPolling();
-    state.fetcherLiveProgressState = null;
-    setFetcherProgress({ active: false });
-    setBusyFlag("fetcherWatch", false);
+    stopLiveTaskWatch({
+      state,
+      setBusyFlag,
+      watchKey: "fetcherWatch",
+      completionPollTimerKey: "fetcherCompletionPollTimer",
+      logPollTimerKey: "fetcherLogPollTimer",
+      liveStateKey: "fetcherLiveProgressState",
+      setProgress: view => setFetcherProgress(view)
+    });
   }
 
   function scheduleFetcherCompletionPoll(delayMs) {

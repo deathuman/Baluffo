@@ -81,6 +81,7 @@ import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";
 import { bindWindowResize } from "./runtime/events.js";
+import { createRestoreActiveRunWatches } from "./live-task.js";
 
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";
 const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python -m src.jobs_fetcher --social-enabled";
@@ -112,6 +113,7 @@ let opsController;
 let fetcherController;
 let discoveryController;
 let registryController;
+let restoreActiveRunWatches;
 const startupMetrics = createAdminStartupMetrics({
   emitStartupMetric: (event, payload) => emitAdminStartupMetricFromData(ADMIN_BRIDGE_BASE, event, payload)
 });
@@ -413,6 +415,13 @@ function composeControllers() {
     _loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args)
   });
 
+  restoreActiveRunWatches = createRestoreActiveRunWatches({
+    loadLatestFetcherReport: options => fetcherController.loadLatestFetcherReport(options),
+    fetcherController,
+    loadLatestDiscoveryReport: options => discoveryController.loadLatestDiscoveryReport(options),
+    discoveryController
+  });
+
   registryController = createAdminRegistryController({
     state,
     refs,
@@ -446,13 +455,10 @@ function composeControllers() {
     setSourceFilter,
     setSourceStatus,
     setFetcherLogPlaceholder: (...args) => fetcherController.setFetcherLogPlaceholder(...args),
-    getRestorableFetcherRunMeta: (...args) => fetcherController.getRestorableFetcherRunMeta(...args),
     clearOptimisticFetchRun: (...args) => fetcherController.clearOptimisticFetchRun(...args),
-    attachToActiveFetchRun: (...args) => fetcherController.attachToActiveFetchRun(...args),
+    restoreActiveRunWatches,
     setDiscoveryLogPlaceholder: (...args) => discoveryController.setDiscoveryLogPlaceholder(...args),
     clearOptimisticDiscoveryRun: (...args) => discoveryController.clearOptimisticDiscoveryRun(...args),
-    loadLatestDiscoveryReport: (...args) => discoveryController.loadLatestDiscoveryReport(...args),
-    attachToActiveDiscoveryRun: (...args) => discoveryController.attachToActiveDiscoveryRun(...args),
     setManualSourceFeedback: (...args) => registryController.setManualSourceFeedback(...args),
     setOpsPlaceholders: (...args) => opsController.setOpsPlaceholders(...args),
     setBridgeStatusBadge: (...args) => opsController.setBridgeStatusBadge(...args),
@@ -462,7 +468,6 @@ function composeControllers() {
     scheduleOpsHealthPolling: (...args) => opsController.scheduleOpsHealthPolling(...args),
     stopOpsHealthPolling: (...args) => opsController.stopOpsHealthPolling(...args),
     refreshOverview,
-    loadLatestFetcherReport: (...args) => fetcherController.loadLatestFetcherReport(...args),
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
     loadDiscoveryConfig: (...args) => discoveryController.loadDiscoveryConfig(...args),
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
@@ -477,60 +482,65 @@ function cacheDom() {
 }
 
 function bindEvents() {
-  window.addEventListener("pageshow", event => {
-    if (!event?.persisted) return;
-    authController?.restoreActiveRunWatches?.().catch(() => {});
-  });
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") return;
-    authController?.restoreActiveRunWatches?.().catch(() => {});
-  });
-  window.addEventListener("focus", () => {
-    authController?.restoreActiveRunWatches?.().catch(() => {});
-  });
-  bindUi(refs.adminJobsBtnEl, "click", () => {
-    window.location.href = getLastJobsUrl();
-  });
-  bindUi(refs.adminSavedBtnEl, "click", () => {
-    window.location.href = "saved.html";
-  });
-  bindAsyncClick(refs.adminRefreshBtnEl, refreshOverview);
-  bindAsyncClick(refs.adminRunFetcherBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "default" }));
-  bindAsyncClick(refs.adminRunFetcherIncrementalBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "incremental" }));
-  bindAsyncClick(refs.adminRunFetcherUncappedBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "uncapped" }));
-  bindAsyncClick(refs.adminRunFetcherForceBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "force_full" }));
-  bindAsyncClick(refs.adminRefreshReportBtnEl, () => fetcherController.loadLatestFetcherReport());
-  bindUi(refs.adminClearLogBtnEl, "click", () => fetcherController.setFetcherLogPlaceholder("Output log cleared."));
-  bindAsyncClick(refs.adminRetryFailedBtnEl, async () => {
-    fetcherController.appendFetcherLog(fetcherController.getFetcherPresetMeta("retry_failed").requestedLog, "warn");
-    await fetcherController.triggerJobsFetcherTask({ preset: "retry_failed" });
-  });
-  bindAsyncClick(refs.adminCopyFailuresBtnEl, () => fetcherController.copyLatestFailureSummary());
+  const restoreWatch = () => Promise.resolve(restoreActiveRunWatches?.()).catch(() => {});
+  [
+    ["pageshow", event => {
+      if (event?.persisted) restoreWatch();
+    }, window],
+    ["visibilitychange", () => {
+      if (document.visibilityState === "visible") restoreWatch();
+    }, document],
+    ["focus", restoreWatch, window]
+  ].forEach(([eventName, handler, target]) => target.addEventListener(eventName, handler));
 
-  bindAsyncClick(refs.adminRunDiscoveryBtnEl, () => discoveryController.runDiscoveryTask());
-  bindAsyncClick(refs.adminRunDiscoveryUncappedBtnEl, () => discoveryController.runDiscoveryTask({ preset: "uncapped" }));
-  bindAsyncClick(refs.adminLoadDiscoveryBtnEl, () => registryController.loadDiscoveryData());
-  bindUi(refs.adminClearDiscoveryLogBtnEl, "click", event => {
-    event.preventDefault();
-    event.stopPropagation();
-    discoveryController.setDiscoveryLogPlaceholder("Discovery log cleared.");
-  });
-  bindAsyncClick(refs.adminApproveSourcesBtnEl, () => registryController.approveSelectedSources());
-  bindAsyncClick(refs.adminRejectSourcesBtnEl, () => registryController.rejectSelectedSources());
-  bindAsyncClick(refs.adminDeleteSourcesBtnEl, () => registryController.deleteSelectedSources());
-  bindAsyncClick(refs.adminRestoreRejectedBtnEl, () => registryController.restoreRejectedSources());
-  bindAsyncClick(refs.adminDemoteActiveBtnEl, () => registryController.demoteActiveSources());
-  bindAsyncClick(refs.adminAddManualSourceBtnEl, () => registryController.addManualSource());
+  [
+    [refs.adminJobsBtnEl, () => { window.location.href = getLastJobsUrl(); }],
+    [refs.adminSavedBtnEl, () => { window.location.href = "saved.html"; }],
+    [refs.adminClearLogBtnEl, () => { fetcherController.setFetcherLogPlaceholder("Output log cleared."); }],
+    [refs.adminClearDiscoveryLogBtnEl, event => {
+      event.preventDefault();
+      event.stopPropagation();
+      discoveryController.setDiscoveryLogPlaceholder("Discovery log cleared.");
+    }]
+  ].forEach(([el, handler]) => bindUi(el, "click", handler));
 
-  function bindSelectAllCheckbox(checkboxEl, type) {
+  [
+    [refs.adminRefreshBtnEl, refreshOverview],
+    [refs.adminRunFetcherBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "default" })],
+    [refs.adminRunFetcherIncrementalBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "incremental" })],
+    [refs.adminRunFetcherUncappedBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "uncapped" })],
+    [refs.adminRunFetcherForceBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "force_full" })],
+    [refs.adminRefreshReportBtnEl, () => fetcherController.loadLatestFetcherReport()],
+    [refs.adminRetryFailedBtnEl, async () => {
+      fetcherController.appendFetcherLog(fetcherController.getFetcherPresetMeta("retry_failed").requestedLog, "warn");
+      await fetcherController.triggerJobsFetcherTask({ preset: "retry_failed" });
+    }],
+    [refs.adminCopyFailuresBtnEl, () => fetcherController.copyLatestFailureSummary()],
+    [refs.adminRunDiscoveryBtnEl, () => discoveryController.runDiscoveryTask()],
+    [refs.adminRunDiscoveryUncappedBtnEl, () => discoveryController.runDiscoveryTask({ preset: "uncapped" })],
+    [refs.adminLoadDiscoveryBtnEl, () => registryController.loadDiscoveryData()],
+    [refs.adminApproveSourcesBtnEl, () => registryController.approveSelectedSources()],
+    [refs.adminRejectSourcesBtnEl, () => registryController.rejectSelectedSources()],
+    [refs.adminDeleteSourcesBtnEl, () => registryController.deleteSelectedSources()],
+    [refs.adminRestoreRejectedBtnEl, () => registryController.restoreRejectedSources()],
+    [refs.adminDemoteActiveBtnEl, () => registryController.demoteActiveSources()],
+    [refs.adminAddManualSourceBtnEl, () => registryController.addManualSource()],
+    [refs.adminRefreshOpsBtnEl, () => opsController.loadOpsHealthData()],
+    [refs.adminSyncTestBtnEl, () => syncController.testSyncConfig()],
+    [refs.adminSyncPullBtnEl, () => syncController.pullSourcesSync()],
+    [refs.adminSyncPushBtnEl, () => syncController.pushSourcesSync()]
+  ].forEach(([el, handler]) => bindAsyncClick(el, handler));
+
+  [
+    [refs.adminPendingSourcesSelectAllEl, "pending"],
+    [refs.adminActiveSourcesSelectAllEl, "active"],
+    [refs.adminRejectedSourcesSelectAllEl, "rejected"]
+  ].forEach(([checkboxEl, type]) => {
     if (!checkboxEl) return;
     checkboxEl.addEventListener("change", () => {
       registryController.toggleSelectAllSources(type, checkboxEl.checked);
     });
-  }
-  bindSelectAllCheckbox(refs.adminPendingSourcesSelectAllEl, "pending");
-  bindSelectAllCheckbox(refs.adminActiveSourcesSelectAllEl, "active");
-  bindSelectAllCheckbox(refs.adminRejectedSourcesSelectAllEl, "rejected");
+  });
 
   if (refs.adminDiscoveryLogDetailsEl) {
     refs.adminDiscoveryLogDetailsEl.addEventListener("toggle", () => {
@@ -561,32 +571,25 @@ function bindEvents() {
     });
   }
 
-  [refs.adminDiscoveryAutoApproveToggleEl].forEach(el => {
-    if (!el) return;
-    el.addEventListener("input", () => {
+  if (refs.adminDiscoveryAutoApproveToggleEl) {
+    refs.adminDiscoveryAutoApproveToggleEl.addEventListener("input", () => {
       state.discoveryConfigDirty = true;
     });
-    el.addEventListener("change", () => {
+    refs.adminDiscoveryAutoApproveToggleEl.addEventListener("change", () => {
       state.discoveryConfigDirty = true;
       discoveryController.saveDiscoveryConfig().catch(() => {});
     });
-  });
+  }
 
-  bindAsyncClick(refs.adminRefreshOpsBtnEl, () => opsController.loadOpsHealthData());
-  bindAsyncClick(refs.adminSyncTestBtnEl, () => syncController.testSyncConfig());
-  bindAsyncClick(refs.adminSyncPullBtnEl, () => syncController.pullSourcesSync());
-  bindAsyncClick(refs.adminSyncPushBtnEl, () => syncController.pushSourcesSync());
-
-  [refs.adminSyncEnabledEl].forEach(el => {
-    if (!el) return;
-    el.addEventListener("input", () => {
+  if (refs.adminSyncEnabledEl) {
+    refs.adminSyncEnabledEl.addEventListener("input", () => {
       state.syncConfigDirty = true;
     });
-    el.addEventListener("change", () => {
+    refs.adminSyncEnabledEl.addEventListener("change", () => {
       state.syncConfigDirty = true;
       syncController.saveSyncConfig().catch(() => {});
     });
-  });
+  }
 
   refs.adminSourceFilterBtnEls.forEach(btn => {
     btn.addEventListener("click", () => {
@@ -603,6 +606,7 @@ function bootAdminPage() {
   fetcherController.applyFetcherPresetMetadata();
   bindEvents();
   authController.initAdminPage();
+  Promise.resolve(restoreActiveRunWatches?.()).catch(() => {});
 }
 
 export { bootAdminPage as boot };

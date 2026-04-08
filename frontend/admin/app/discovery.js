@@ -1,4 +1,17 @@
 import { deriveDiscoveryProgressModel, deriveDiscoveryQueuedCount, deriveDiscoveryTaskProgress } from "../domain.js";
+import {
+  attachToActiveRun,
+  clearOptimisticRun,
+  loadLiveTaskLogChunk,
+  maybeUnrefTimer,
+  parseReportTimestampMs,
+  resetLiveTaskPlaceholder,
+  restartCompletionWatch,
+  setOptimisticRun,
+  shouldApplyTimestampGate,
+  startLiveTaskWatch,
+  stopLiveTaskWatch
+} from "./live-task.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
 
 export function isDiscoveryMobileViewport(width = window.innerWidth) {
@@ -55,11 +68,6 @@ export function createAdminDiscoveryController({
   _loadDiscoveryData,
   loadDiscoveryData
 }) {
-  function maybeUnrefTimer(timer) {
-    timer?.unref?.();
-    return timer;
-  }
-
   function populateDiscoveryConfigForm(savedConfig = {}, { force = false } = {}) {
     if (!refs.adminDiscoveryAutoApproveToggleEl) return;
     if (state.discoveryConfigDirty && !force) return;
@@ -158,19 +166,11 @@ export function createAdminDiscoveryController({
   }
 
   function setOptimisticDiscoveryRun(runMeta) {
-    const startedAt = String(runMeta?.startedAt || "").trim();
-    if (!startedAt) {
-      state.discoveryOptimisticRun = null;
-      return;
-    }
-    state.discoveryOptimisticRun = {
-      runId: String(runMeta?.runId || ""),
-      startedAt
-    };
+    setOptimisticRun(state, "discoveryOptimisticRun", runMeta);
   }
 
   function clearOptimisticDiscoveryRun() {
-    state.discoveryOptimisticRun = null;
+    clearOptimisticRun(state, "discoveryOptimisticRun");
   }
 
   function inferDiscoveryPhaseLabelFromServerMessage(message) {
@@ -246,16 +246,15 @@ export function createAdminDiscoveryController({
   }
 
   function attachToActiveDiscoveryRun(runMeta = null) {
-    if (state.adminBusyState.discoveryWatch) return;
-    if (runMeta && typeof runMeta === "object" && !Array.isArray(runMeta)) {
-      setOptimisticDiscoveryRun(runMeta);
-    }
-    startDiscoveryCompletionWatch();
+    attachToActiveRun({
+      isWatching: () => state.adminBusyState.discoveryWatch,
+      setOptimisticRun: setOptimisticDiscoveryRun,
+      startWatch: () => startDiscoveryCompletionWatch()
+    }, runMeta);
   }
 
   function restartDiscoveryCompletionWatch(runMeta = null) {
-    stopDiscoveryCompletionWatch();
-    attachToActiveDiscoveryRun(runMeta);
+    restartCompletionWatch(stopDiscoveryCompletionWatch, attachToActiveDiscoveryRun, runMeta);
   }
 
   function appendDiscoveryLog(message, level = "info") {
@@ -307,21 +306,26 @@ export function createAdminDiscoveryController({
   }
 
   function setDiscoveryLogPlaceholder(message) {
-    if (!refs.adminDiscoveryLogEl) return;
-    refs.adminDiscoveryLogEl.innerHTML = "";
-    state.discoveryLogRemoteOffset = 0;
-    setDiscoveryProgress({ active: false });
-    appendDiscoveryLog(message, "muted");
+    resetLiveTaskPlaceholder({
+      logEl: refs.adminDiscoveryLogEl,
+      clearOffset: () => {
+        state.discoveryLogRemoteOffset = 0;
+      },
+      setProgress: view => setDiscoveryProgress(view),
+      appendLog: appendDiscoveryLog,
+      message
+    });
   }
 
   async function loadDiscoveryLogChunk(options = {}) {
-    const reset = Boolean(options?.reset);
-    const offset = reset ? 0 : Math.max(0, Number(state.discoveryLogRemoteOffset) || 0);
-    const payload = await getBridge(`/discovery/log?offset=${offset}`);
-    if (reset) state.discoveryLogRemoteOffset = 0;
-    appendDiscoveryServerLogText(String(payload?.text || ""));
-    state.discoveryLogRemoteOffset = Math.max(0, Number(payload?.nextOffset) || 0);
-    return payload || null;
+    return loadLiveTaskLogChunk({
+      getBridge,
+      path: "/discovery/log",
+      state,
+      offsetKey: "discoveryLogRemoteOffset",
+      reset: Boolean(options?.reset),
+      onText: appendDiscoveryServerLogText
+    });
   }
 
   function runProgressAppend(report, nowMs) {
@@ -416,58 +420,52 @@ export function createAdminDiscoveryController({
     }
   }
 
-  function parseReportTimestampMs(value) {
-    if (!value) return 0;
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
   /** Avoid dropping live progress when report.startedAt lags discoveryLaunchAtMs (slow POST, skew, etc.). */
   function shouldApplyDiscoveryLiveProgressGate(report) {
-    const runId = String(report?.runId || "").trim();
-    const optimisticRunId = String(state.discoveryOptimisticRun?.runId || "").trim();
-    if (optimisticRunId && runId && runId === optimisticRunId) {
-      return true;
-    }
-    const startedMs = parseReportTimestampMs(report?.startedAt);
-    return startedMs >= (state.discoveryLaunchAtMs - 60000);
+    return shouldApplyTimestampGate(report, {
+      optimisticRun: state.discoveryOptimisticRun,
+      launchAtMs: state.discoveryLaunchAtMs,
+      timestampField: "startedAt",
+      skewMs: 60000
+    });
   }
 
   /** Same idea for completion: match runId or allow modest clock skew vs launch anchor. */
   function shouldApplyDiscoveryFinishedGate(report) {
-    const runId = String(report?.runId || "").trim();
-    const optimisticRunId = String(state.discoveryOptimisticRun?.runId || "").trim();
-    if (optimisticRunId && runId && runId === optimisticRunId) {
-      return true;
-    }
-    const finishedMs = parseReportTimestampMs(report?.finishedAt);
-    return finishedMs >= (state.discoveryLaunchAtMs - 60000);
+    return shouldApplyTimestampGate(report, {
+      optimisticRun: state.discoveryOptimisticRun,
+      launchAtMs: state.discoveryLaunchAtMs,
+      timestampField: "finishedAt",
+      skewMs: 60000
+    });
   }
 
   function startDiscoveryCompletionWatch() {
     stopDiscoveryCompletionWatch();
-    setBusyFlag("discoveryWatch", true);
-    state.discoveryLaunchAtMs = Date.now();
-    const optimisticStartedAtMs = parseReportTimestampMs(state.discoveryOptimisticRun?.startedAt);
-    if (optimisticStartedAtMs > 0) {
-      state.discoveryLaunchAtMs = optimisticStartedAtMs;
-    }
-    state.discoveryLogRemoteOffset = 0;
-    state.discoveryLiveProgressState = {
-      phaseLabel: "",
-      summarySignature: "",
-      registryRefreshSignature: "",
-      candidateCount: 0,
-      failureCount: 0,
-      serverPhaseLabel: "",
-      serverLogSignatures: new Set(),
-      lastHeartbeatAtMs: 0,
-      lastActivityAtMs: Date.now()
-    };
-    updateDiscoveryProgressFromReport(null, { running: true });
-    appendDiscoveryLog("Discovery started. Watching live progress...", "info");
-    loadDiscoveryLogChunk({ reset: true }).catch(() => {});
-    scheduleDiscoveryCompletionPoll(250);
+    startLiveTaskWatch({
+      state,
+      setBusyFlag,
+      watchKey: "discoveryWatch",
+      launchAtKey: "discoveryLaunchAtMs",
+      optimisticRunKey: "discoveryOptimisticRun",
+      logOffsetKey: "discoveryLogRemoteOffset",
+      liveStateKey: "discoveryLiveProgressState",
+      createLiveState: () => ({
+        phaseLabel: "",
+        summarySignature: "",
+        registryRefreshSignature: "",
+        candidateCount: 0,
+        failureCount: 0,
+        serverPhaseLabel: "",
+        serverLogSignatures: new Set(),
+        lastHeartbeatAtMs: 0,
+        lastActivityAtMs: Date.now()
+      }),
+      setProgress: () => updateDiscoveryProgressFromReport(null, { running: true }),
+      onStart: () => appendDiscoveryLog("Discovery started. Watching live progress...", "info"),
+      loadInitialLogChunk: () => loadDiscoveryLogChunk({ reset: true }).catch(() => {}),
+      scheduleCompletionPoll: () => scheduleDiscoveryCompletionPoll(250)
+    });
   }
 
   function refreshDiscoveryDataIfNeeded(report) {
@@ -494,13 +492,14 @@ export function createAdminDiscoveryController({
   }
 
   function stopDiscoveryCompletionWatch() {
-    if (state.discoveryCompletionPollTimer) {
-      clearTimeout(state.discoveryCompletionPollTimer);
-      state.discoveryCompletionPollTimer = null;
-    }
-    state.discoveryLiveProgressState = null;
-    setDiscoveryProgress({ active: false });
-    setBusyFlag("discoveryWatch", false);
+    stopLiveTaskWatch({
+      state,
+      setBusyFlag,
+      watchKey: "discoveryWatch",
+      completionPollTimerKey: "discoveryCompletionPollTimer",
+      liveStateKey: "discoveryLiveProgressState",
+      setProgress: view => setDiscoveryProgress(view)
+    });
   }
 
   function scheduleDiscoveryCompletionPoll(delayMs) {

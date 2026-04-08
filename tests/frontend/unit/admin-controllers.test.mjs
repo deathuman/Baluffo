@@ -7,6 +7,7 @@ import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import { applyAdminTaskProgress } from "../../../frontend/admin/app/progress-ui.js";
 import { createAdminRegistryController } from "../../../frontend/admin/app/registry.js";
 import { createAdminSyncController } from "../../../frontend/admin/app/sync.js";
+import { createRestoreActiveRunWatches } from "../../../frontend/admin/app/live-task.js";
 import { appendAdminLogRow } from "../../../frontend/admin/render.js";
 
 class FakeInputElement {
@@ -210,297 +211,12 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.equal(toasts.length, 0);
 });
 
-test("admin auth controller reattaches fetch progress when report is still active", async () => {
-  const calls = [];
-  const refs = {
-    adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminSyncStatusEl: createElement()
-  };
-
-  const controller = createAdminAuthController({
-    refs,
-    emitAdminStartupMetric() {},
-    markAdminFirstInteractive() {},
-    syncAdminBusyUi() {},
-    syncDiscoveryLogDisclosure() {},
-    resetBusyFlags() {},
-    setSourceFilter() {},
-    setSourceStatus() {},
-    setFetcherLogPlaceholder() {},
-    attachToActiveFetchRun(runMeta) {
-      calls.push(`attachToActiveFetchRun:${String(runMeta?.runId || "")}`);
-    },
-    setDiscoveryLogPlaceholder() {},
-    clearOptimisticFetchRun() {},
-    clearOptimisticDiscoveryRun() {},
-    setManualSourceFeedback() {},
-    setOpsPlaceholders() {},
-    setBridgeStatusBadge() {},
-    renderUsersEmpty() {},
-    startBridgeStatusWatch() {},
-    stopBridgeStatusWatch() {},
-    scheduleOpsHealthPolling() {},
-    stopOpsHealthPolling() {},
-    refreshOverview: async () => {},
-    loadLatestFetcherReport: async () => ({
-      runId: "fetch_reattach_1",
-      startedAt: "2026-03-29T11:49:22+02:00",
-      finishedAt: "",
-      taskProgress: { active: true, phaseKey: "executing_sources", phaseLabel: "Executing sources" },
-      summary: { outputCount: 10, failedSources: 1, sourceCount: 10 }
-    }),
-    loadDiscoveryData: async () => {},
-    loadOpsHealthData: async () => {},
-    loadSyncStatus: async () => {},
-    loadDiscoveryConfig: async () => {},
-    logAdminError() {},
-    showToast() {}
-  });
-
-  controller.initAdminPage();
-  await new Promise(resolve => setTimeout(resolve, 0));
-
-  assert.ok(calls.includes("attachToActiveFetchRun:fetch_reattach_1"));
-});
-
-test("admin auth controller reattaches discovery progress when report is still active", async () => {
-  const calls = [];
-  const refs = {
-    adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminSyncStatusEl: createElement()
-  };
-
-  const controller = createAdminAuthController({
-    refs,
-    emitAdminStartupMetric() {},
-    markAdminFirstInteractive() {},
-    syncAdminBusyUi() {},
-    syncDiscoveryLogDisclosure() {},
-    resetBusyFlags() {},
-    setSourceFilter() {},
-    setSourceStatus() {},
-    setFetcherLogPlaceholder() {},
-    attachToActiveFetchRun() {},
-    setDiscoveryLogPlaceholder() {},
-    clearOptimisticFetchRun() {},
-    clearOptimisticDiscoveryRun() {},
-    loadLatestDiscoveryReport: async () => ({
-      runId: "discovery_reattach_1",
-      startedAt: "2026-03-29T11:49:22+02:00",
-      finishedAt: "",
-      taskProgress: { active: true, phaseKey: "scanning_sources", phaseLabel: "Scanning sources" },
-      summary: { queuedCandidateCount: 3 }
-    }),
-    attachToActiveDiscoveryRun(runMeta) {
-      calls.push(`attachToActiveDiscoveryRun:${String(runMeta?.runId || "")}`);
-    },
-    setManualSourceFeedback() {},
-    setOpsPlaceholders() {},
-    setBridgeStatusBadge() {},
-    renderUsersEmpty() {},
-    startBridgeStatusWatch() {},
-    stopBridgeStatusWatch() {},
-    scheduleOpsHealthPolling() {},
-    stopOpsHealthPolling() {},
-    refreshOverview: async () => {},
-    loadLatestFetcherReport: async () => null,
-    loadDiscoveryData: async () => {},
-    loadDiscoveryConfig: async () => {},
-    loadOpsHealthData: async () => {},
-    loadSyncStatus: async () => {},
-    logAdminError() {},
-    showToast() {}
-  });
-
-  controller.initAdminPage();
-  await new Promise(resolve => setTimeout(resolve, 0));
-
-  assert.ok(calls.includes("attachToActiveDiscoveryRun:discovery_reattach_1"));
-});
-
-test("admin auth controller restores active fetch and discovery watches on page restore", async () => {
-  const calls = [];
-  const refs = {
-    adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminSyncStatusEl: createElement()
-  };
-
-  const controller = createAdminAuthController({
-    refs,
-    emitAdminStartupMetric() {},
-    markAdminFirstInteractive() {},
-    syncAdminBusyUi() {},
-    syncDiscoveryLogDisclosure() {},
-    resetBusyFlags() {},
-    setSourceFilter() {},
-    setSourceStatus() {},
-    setFetcherLogPlaceholder() {},
-    attachToActiveFetchRun() {},
-    restartFetcherCompletionWatch(runMeta) {
-      calls.push(`restartFetcherCompletionWatch:${String(runMeta?.runId || "")}`);
-    },
-    setDiscoveryLogPlaceholder() {},
-    clearOptimisticFetchRun() {},
-    clearOptimisticDiscoveryRun() {},
-    loadLatestDiscoveryReport: async () => ({
-      runId: "discovery_restore_1",
-      startedAt: "2026-03-29T11:49:22+02:00",
-      finishedAt: "",
-      taskProgress: { active: true, phaseKey: "scanning_sources", phaseLabel: "Scanning sources" },
-      summary: { queuedCandidateCount: 3 }
-    }),
-    attachToActiveDiscoveryRun() {},
-    restartDiscoveryCompletionWatch(runMeta) {
-      calls.push(`restartDiscoveryCompletionWatch:${String(runMeta?.runId || "")}`);
-    },
-    setManualSourceFeedback() {},
-    setOpsPlaceholders() {},
-    setBridgeStatusBadge() {},
-    renderUsersEmpty() {},
-    startBridgeStatusWatch() {},
-    stopBridgeStatusWatch() {},
-    scheduleOpsHealthPolling() {},
-    stopOpsHealthPolling() {},
-    refreshOverview: async () => {},
-    loadLatestFetcherReport: async () => ({
-      runId: "fetch_restore_1",
-      startedAt: "2026-03-29T11:49:22+02:00",
-      finishedAt: "",
-      taskProgress: { active: true, phaseKey: "executing_sources", phaseLabel: "Executing sources" },
-      summary: { outputCount: 10, failedSources: 1, sourceCount: 10 }
-    }),
-    loadDiscoveryData: async () => {},
-    loadDiscoveryConfig: async () => {},
-    loadOpsHealthData: async () => {},
-    loadSyncStatus: async () => {},
-    logAdminError() {},
-    showToast() {}
-  });
-
-  await controller.restoreActiveRunWatches();
-
-  assert.ok(calls.includes("restartFetcherCompletionWatch:fetch_restore_1"));
-  assert.ok(calls.includes("restartDiscoveryCompletionWatch:discovery_restore_1"));
-});
-
-test("admin auth controller restores fetch watch from live state when the latest report is stale", async () => {
-  const calls = [];
-  const refs = {
-    adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminSyncStatusEl: createElement()
-  };
-
-  const controller = createAdminAuthController({
-    refs,
-    emitAdminStartupMetric() {},
-    markAdminFirstInteractive() {},
-    syncAdminBusyUi() {},
-    syncDiscoveryLogDisclosure() {},
-    resetBusyFlags() {},
-    setSourceFilter() {},
-    setSourceStatus() {},
-    setFetcherLogPlaceholder() {},
-    attachToActiveFetchRun() {},
-    restartFetcherCompletionWatch(runMeta) {
-      calls.push(`restartFetcherCompletionWatch:${String(runMeta?.runId || "")}`);
-    },
-    getRestorableFetcherRunMeta(report) {
-      calls.push(`restoreMeta:${String(report?.runId || "")}`);
-      return {
-        runId: "fetch_stale_1",
-        startedAt: "2026-03-29T11:49:22+02:00"
-      };
-    },
-    setDiscoveryLogPlaceholder() {},
-    clearOptimisticFetchRun() {},
-    clearOptimisticDiscoveryRun() {},
-    loadLatestDiscoveryReport: async () => null,
-    attachToActiveDiscoveryRun() {},
-    restartDiscoveryCompletionWatch() {},
-    setManualSourceFeedback() {},
-    setOpsPlaceholders() {},
-    setBridgeStatusBadge() {},
-    renderUsersEmpty() {},
-    startBridgeStatusWatch() {},
-    stopBridgeStatusWatch() {},
-    scheduleOpsHealthPolling() {},
-    stopOpsHealthPolling() {},
-    refreshOverview: async () => {},
-    loadLatestFetcherReport: async () => ({
-      runId: "fetch_stale_1",
-      startedAt: "2026-03-29T11:49:22+02:00",
-      finishedAt: "",
-      taskProgress: { active: false, phaseKey: "executing_sources", phaseLabel: "Executing sources" },
-      summary: { outputCount: 10, failedSources: 1, sourceCount: 10 }
-    }),
-    loadDiscoveryData: async () => {},
-    loadDiscoveryConfig: async () => {},
-    loadOpsHealthData: async () => {},
-    loadSyncStatus: async () => {},
-    logAdminError() {},
-    showToast() {}
-  });
-
-  await controller.restoreActiveRunWatches();
-
-  assert.ok(calls.includes("restoreMeta:fetch_stale_1"));
-  assert.ok(calls.includes("restartFetcherCompletionWatch:fetch_stale_1"));
-});
-
-test("admin auth controller dedupes concurrent restore requests for active runs", async () => {
+test("admin live-task restore helper restarts active fetch and discovery watches", async () => {
   const calls = [];
   let fetchReportLoads = 0;
   let discoveryReportLoads = 0;
-  const refs = {
-    adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
-    adminSyncStatusEl: createElement()
-  };
 
-  const controller = createAdminAuthController({
-    refs,
-    emitAdminStartupMetric() {},
-    markAdminFirstInteractive() {},
-    syncAdminBusyUi() {},
-    syncDiscoveryLogDisclosure() {},
-    resetBusyFlags() {},
-    setSourceFilter() {},
-    setSourceStatus() {},
-    setFetcherLogPlaceholder() {},
-    attachToActiveFetchRun() {},
-    restartFetcherCompletionWatch(runMeta) {
-      calls.push(`restartFetcherCompletionWatch:${String(runMeta?.runId || "")}`);
-    },
-    setDiscoveryLogPlaceholder() {},
-    clearOptimisticFetchRun() {},
-    clearOptimisticDiscoveryRun() {},
-    loadLatestDiscoveryReport: async () => {
-      discoveryReportLoads += 1;
-      return {
-        runId: "discovery_restore_2",
-        startedAt: "2026-03-29T11:49:22+02:00",
-        finishedAt: "",
-        taskProgress: { active: true, phaseKey: "scanning_sources", phaseLabel: "Scanning sources" },
-        summary: { queuedCandidateCount: 3 }
-      };
-    },
-    attachToActiveDiscoveryRun() {},
-    restartDiscoveryCompletionWatch(runMeta) {
-      calls.push(`restartDiscoveryCompletionWatch:${String(runMeta?.runId || "")}`);
-    },
-    setManualSourceFeedback() {},
-    setOpsPlaceholders() {},
-    setBridgeStatusBadge() {},
-    renderUsersEmpty() {},
-    startBridgeStatusWatch() {},
-    stopBridgeStatusWatch() {},
-    scheduleOpsHealthPolling() {},
-    stopOpsHealthPolling() {},
-    refreshOverview: async () => {},
+  const restoreActiveRunWatches = createRestoreActiveRunWatches({
     loadLatestFetcherReport: async () => {
       fetchReportLoads += 1;
       return {
@@ -511,18 +227,40 @@ test("admin auth controller dedupes concurrent restore requests for active runs"
         summary: { outputCount: 10, failedSources: 1, sourceCount: 10 }
       };
     },
-    loadDiscoveryData: async () => {},
-    loadDiscoveryConfig: async () => {},
-    loadOpsHealthData: async () => {},
-    loadSyncStatus: async () => {},
-    logAdminError() {},
-    showToast() {}
+    fetcherController: {
+      getRestorableFetcherRunMeta(report) {
+        calls.push(`restoreMeta:${String(report?.runId || "")}`);
+        return {
+          runId: "fetch_restore_2",
+          startedAt: String(report?.startedAt || "")
+        };
+      },
+      restartFetcherCompletionWatch(runMeta) {
+        calls.push(`restartFetcherCompletionWatch:${String(runMeta?.runId || "")}`);
+      }
+    },
+    loadLatestDiscoveryReport: async () => {
+      discoveryReportLoads += 1;
+      return {
+        runId: "discovery_restore_2",
+        startedAt: "2026-03-29T11:49:22+02:00",
+        finishedAt: "",
+        taskProgress: { active: true, phaseKey: "scanning_sources", phaseLabel: "Scanning sources" },
+        summary: { queuedCandidateCount: 3 }
+      };
+    },
+    discoveryController: {
+      restartDiscoveryCompletionWatch(runMeta) {
+        calls.push(`restartDiscoveryCompletionWatch:${String(runMeta?.runId || "")}`);
+      }
+    }
   });
 
-  await Promise.all([controller.restoreActiveRunWatches(), controller.restoreActiveRunWatches()]);
+  await Promise.all([restoreActiveRunWatches(), restoreActiveRunWatches()]);
 
   assert.equal(fetchReportLoads, 1);
   assert.equal(discoveryReportLoads, 1);
+  assert.ok(calls.includes("restoreMeta:fetch_restore_2"));
   assert.equal(
     calls.filter(line => line === "restartFetcherCompletionWatch:fetch_restore_2").length,
     1
@@ -877,7 +615,9 @@ test("admin registry controller approves selected pending rows", async () => {
         refs: {
           adminManualSourceFeedbackEl: createElement(),
           adminDiscoverySummaryEl: createElement(),
-          adminPendingSourcesEl: createElement(),
+          adminPendingSourcesEl: createElement({
+            querySelectorAll: selector => global.document.querySelectorAll(selector)
+          }),
           adminActiveSourcesEl: createElement(),
           adminRejectedSourcesEl: createElement()
         },

@@ -1,6 +1,49 @@
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
 import { deriveDiscoveryLifecycleCounts, deriveDiscoveryQueuedCount } from "../domain.js";
 
+const DISCOVERY_OPERATION_BLOCKED_MESSAGE = "Another discovery operation is running.";
+
+function isDiscoveryOperationBlocked(state) {
+  return Boolean(
+    state.adminBusyState.discoveryRun
+    || state.adminBusyState.discoveryWatch
+    || state.adminBusyState.discoveryLoad
+    || state.adminBusyState.discoveryWrite
+    || state.adminBusyState.manualAdd
+    || state.adminBusyState.manualCheck
+    || state.adminBusyState.liveDiscoveryRunning
+  );
+}
+
+async function runRegistryMutation({
+  state,
+  busyKey,
+  setBusyFlag,
+  showToast,
+  execute,
+  onError
+}) {
+  if (isDiscoveryOperationBlocked(state)) {
+    showToast(DISCOVERY_OPERATION_BLOCKED_MESSAGE, "info");
+    return null;
+  }
+  if (state.adminBusyState[busyKey]) {
+    showToast("This registry action is already in progress.", "info");
+    return null;
+  }
+  setBusyFlag(busyKey, true);
+  try {
+    return await execute();
+  } catch (err) {
+    if (typeof onError === "function") {
+      return onError(err);
+    }
+    throw err;
+  } finally {
+    setBusyFlag(busyKey, false);
+  }
+}
+
 export function createAdminRegistryController({
   state,
   refs,
@@ -41,8 +84,22 @@ export function createAdminRegistryController({
     }, deriveSourceStatus);
   }
 
-  function selectedIds(selector) {
-    return Array.from(document.querySelectorAll(selector))
+  function getBucketContainer(type) {
+    if (type === "pending") return refs.adminPendingSourcesEl;
+    if (type === "active") return refs.adminActiveSourcesEl;
+    if (type === "rejected") return refs.adminRejectedSourcesEl;
+    return null;
+  }
+
+  function queryScopedSelector(container, selector) {
+    if (container && typeof container.querySelectorAll === "function") {
+      return Array.from(container.querySelectorAll(selector));
+    }
+    return [];
+  }
+
+  function selectedIds(container, selector) {
+    return queryScopedSelector(container, selector)
       .filter(el => el instanceof HTMLInputElement && el.checked)
       .map(el => String(el.dataset.sourceId || ""))
       .filter(Boolean);
@@ -51,19 +108,25 @@ export function createAdminRegistryController({
   function selectedSourcesAcrossDiscoveryBuckets() {
     const out = [];
     const seen = new Set();
-    const rows = [".pending-source-checkbox", ".active-source-checkbox", ".rejected-source-checkbox"]
-      .flatMap(selector => Array.from(document.querySelectorAll(selector)))
-      .filter(el => el instanceof HTMLInputElement && el.checked)
-      .map(el => ({
-        id: String(el.dataset.sourceId || "").trim(),
-        url: String(el.dataset.sourceUrl || "").trim()
-      }))
-      .filter(item => item.id || item.url);
-    rows.forEach(item => {
-      const key = `${item.id}|${item.url}`;
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      out.push(item);
+    [
+      ["pending", ".pending-source-checkbox"],
+      ["active", ".active-source-checkbox"],
+      ["rejected", ".rejected-source-checkbox"]
+    ].forEach(([type, selector]) => {
+      const container = getBucketContainer(type);
+      queryScopedSelector(container, selector)
+        .filter(el => el instanceof HTMLInputElement && el.checked)
+        .map(el => ({
+          id: String(el.dataset.sourceId || "").trim(),
+          url: String(el.dataset.sourceUrl || "").trim()
+        }))
+        .filter(item => item.id || item.url)
+        .forEach(item => {
+          const key = `${item.id}|${item.url}`;
+          if (!key || seen.has(key)) return;
+          seen.add(key);
+          out.push(item);
+        });
     });
     return out;
   }
@@ -76,7 +139,7 @@ export function createAdminRegistryController({
     };
     const selector = classMap[type];
     if (!selector) return;
-    document.querySelectorAll(selector).forEach(cb => {
+    queryScopedSelector(getBucketContainer(type), selector).forEach(cb => {
       cb.checked = Boolean(checkAll);
     });
   }
@@ -114,211 +177,229 @@ export function createAdminRegistryController({
   }
 
   async function addManualSource() {
-    if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
-      showToast("Another discovery operation is running.", "info");
-      return;
-    }
-    setBusyFlag("manualAdd", true);
-    const url = String(refs.adminManualSourceUrlEl?.value || "").trim();
-    if (!url) {
-      setManualSourceFeedback("invalid URL", "error");
-      showToast("Enter a source URL.", "error");
-      setBusyFlag("manualAdd", false);
-      return;
-    }
-    try {
-      const addResult = await postBridge("/sources/manual", { url });
-      const status = String(addResult?.status || "").toLowerCase();
-
-      if (status === "invalid") {
-        setManualSourceFeedback("invalid URL", "error");
-        appendDiscoveryLog(`Manual source invalid: ${String(addResult?.message || "invalid URL")}`, "error");
-        showToast(String(addResult?.message || "Invalid source URL."), "error");
-        return;
-      }
-      if (status === "duplicate") {
-        setManualSourceFeedback("duplicate skipped", "warn");
-        appendDiscoveryLog("Manual source duplicate skipped.", "warn");
-        showToast("Source already exists. Skipped duplicate.", "info");
-        return;
-      }
-      if (status !== "added") {
-        setManualSourceFeedback("check failed", "error");
+    return runRegistryMutation({
+      state,
+      busyKey: "manualAdd",
+      setBusyFlag,
+      showToast,
+      onError: err => {
+        appendDiscoveryLog(`Manual source add failed: ${getErrorMessage(err)}`, "error");
         showToast("Could not add manual source.", "error");
-        return;
-      }
-
-      if (refs.adminManualSourceUrlEl) refs.adminManualSourceUrlEl.value = "";
-      setManualSourceFeedback("added", "success");
-      if (String(addResult?.source?.adapter || "").toLowerCase() === "static") {
-        appendDiscoveryLog("No known provider detected, using generic website scraping.", "warn");
-      }
-      appendDiscoveryLog("Manual source added.", "success");
-
-      const sourceId = String(addResult?.sourceId || "");
-      if (sourceId) {
-        setBusyFlag("manualCheck", true);
-        setManualSourceFeedback("check started", "muted");
-        const checkResult = await postBridge("/discovery/check-source", { sourceId });
-        if (!checkResult?.started || checkResult?.ok === false) {
-          setManualSourceFeedback("check failed", "error");
-          appendDiscoveryLog(`Manual source check failed: ${String(checkResult?.error || "unknown error")}`, "error");
-          if (Array.isArray(checkResult?.suggestedUrls) && checkResult.suggestedUrls.length) {
-            appendDiscoveryLog(`Try alternate URL(s): ${checkResult.suggestedUrls.join(" | ")}`, "warn");
-          }
-          if (checkResult?.browserFallbackAttempted) {
-            appendDiscoveryLog("Browser fallback was attempted during this check.", "muted");
-          }
-          showToast(formatManualCheckFailureMessage(checkResult), "error");
-        } else {
-          appendDiscoveryLog(
-            `Manual source check completed (jobs found: ${Number(checkResult?.jobsFound || 0)}${checkResult?.weakSignal ? ", weak signal" : ""}).`,
-            "success"
-          );
-          if (checkResult?.browserFallbackUsed) {
-            appendDiscoveryLog("Generic browser fallback was used to bypass a blocked page.", "warn");
-          }
-          showToast("Manual source added and checked.", "success");
+        return null;
+      },
+      execute: async () => {
+        const url = String(refs.adminManualSourceUrlEl?.value || "").trim();
+        if (!url) {
+          setManualSourceFeedback("invalid URL", "error");
+          showToast("Enter a source URL.", "error");
+          return null;
         }
-      }
 
-      await loadDiscoveryData();
-      await loadOpsHealthData();
-    } finally {
-      setBusyFlag("manualCheck", false);
-      setBusyFlag("manualAdd", false);
-    }
+        const addResult = await postBridge("/sources/manual", { url });
+        const status = String(addResult?.status || "").toLowerCase();
+
+        if (status === "invalid") {
+          setManualSourceFeedback("invalid URL", "error");
+          appendDiscoveryLog(`Manual source invalid: ${String(addResult?.message || "invalid URL")}`, "error");
+          showToast(String(addResult?.message || "Invalid source URL."), "error");
+          return null;
+        }
+        if (status === "duplicate") {
+          setManualSourceFeedback("duplicate skipped", "warn");
+          appendDiscoveryLog("Manual source duplicate skipped.", "warn");
+          showToast("Source already exists. Skipped duplicate.", "info");
+          return null;
+        }
+        if (status !== "added") {
+          setManualSourceFeedback("check failed", "error");
+          showToast("Could not add manual source.", "error");
+          return null;
+        }
+
+        if (refs.adminManualSourceUrlEl) refs.adminManualSourceUrlEl.value = "";
+        setManualSourceFeedback("added", "success");
+        if (String(addResult?.source?.adapter || "").toLowerCase() === "static") {
+          appendDiscoveryLog("No known provider detected, using generic website scraping.", "warn");
+        }
+        appendDiscoveryLog("Manual source added.", "success");
+
+        const sourceId = String(addResult?.sourceId || "");
+        if (sourceId) {
+          setBusyFlag("manualCheck", true);
+          try {
+            setManualSourceFeedback("check started", "muted");
+            const checkResult = await postBridge("/discovery/check-source", { sourceId });
+            if (!checkResult?.started || checkResult?.ok === false) {
+              setManualSourceFeedback("check failed", "error");
+              appendDiscoveryLog(`Manual source check failed: ${String(checkResult?.error || "unknown error")}`, "error");
+              if (Array.isArray(checkResult?.suggestedUrls) && checkResult.suggestedUrls.length) {
+                appendDiscoveryLog(`Try alternate URL(s): ${checkResult.suggestedUrls.join(" | ")}`, "warn");
+              }
+              if (checkResult?.browserFallbackAttempted) {
+                appendDiscoveryLog("Browser fallback was attempted during this check.", "muted");
+              }
+              showToast(formatManualCheckFailureMessage(checkResult), "error");
+            } else {
+              appendDiscoveryLog(
+                `Manual source check completed (jobs found: ${Number(checkResult?.jobsFound || 0)}${checkResult?.weakSignal ? ", weak signal" : ""}).`,
+                "success"
+              );
+              if (checkResult?.browserFallbackUsed) {
+                appendDiscoveryLog("Generic browser fallback was used to bypass a blocked page.", "warn");
+              }
+              showToast("Manual source added and checked.", "success");
+            }
+          } finally {
+            setBusyFlag("manualCheck", false);
+          }
+        }
+
+        await loadDiscoveryData();
+        await loadOpsHealthData();
+        return addResult || null;
+      }
+    });
   }
 
   async function approveSelectedSources() {
-    if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
-      showToast("Another discovery operation is running.", "info");
-      return;
-    }
-    const ids = selectedIds(".pending-source-checkbox");
-    if (!ids.length) {
-      showToast("Select pending sources to approve.", "info");
-      return;
-    }
-    setBusyFlag("discoveryWrite", true);
-    try {
-      const result = await postBridge("/registry/approve", { ids });
-      appendDiscoveryLog(`Approved ${Number(result?.approved || 0)} source(s).`, "success");
-      showToast("Sources approved.", "success");
-      await loadDiscoveryData();
-      await loadOpsHealthData();
-    } catch (err) {
-      appendDiscoveryLog(`Approve failed: ${getErrorMessage(err)}`, "error");
-      showToast("Could not approve sources.", "error");
-    } finally {
-      setBusyFlag("discoveryWrite", false);
-    }
+    return runRegistryMutation({
+      state,
+      busyKey: "discoveryWrite",
+      setBusyFlag,
+      showToast,
+      onError: err => {
+        appendDiscoveryLog(`Approve failed: ${getErrorMessage(err)}`, "error");
+        showToast("Could not approve sources.", "error");
+        return null;
+      },
+      execute: async () => {
+        const ids = selectedIds(getBucketContainer("pending"), ".pending-source-checkbox");
+        if (!ids.length) {
+          showToast("Select pending sources to approve.", "info");
+          return null;
+        }
+        const result = await postBridge("/registry/approve", { ids });
+        appendDiscoveryLog(`Approved ${Number(result?.approved || 0)} source(s).`, "success");
+        showToast("Sources approved.", "success");
+        await loadDiscoveryData();
+        await loadOpsHealthData();
+        return result || null;
+      }
+    });
   }
 
   async function rejectSelectedSources() {
-    if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
-      showToast("Another discovery operation is running.", "info");
-      return;
-    }
-    const ids = selectedIds(".pending-source-checkbox");
-    if (!ids.length) {
-      showToast("Select pending sources to reject.", "info");
-      return;
-    }
-    setBusyFlag("discoveryWrite", true);
-    try {
-      const result = await postBridge("/registry/reject", { ids });
-      appendDiscoveryLog(`Rejected ${Number(result?.rejected || 0)} source(s).`, "warn");
-      showToast("Sources rejected.", "success");
-      await loadDiscoveryData();
-      await loadOpsHealthData();
-    } catch (err) {
-      appendDiscoveryLog(`Reject failed: ${getErrorMessage(err)}`, "error");
-      showToast("Could not reject sources.", "error");
-    } finally {
-      setBusyFlag("discoveryWrite", false);
-    }
+    return runRegistryMutation({
+      state,
+      busyKey: "discoveryWrite",
+      setBusyFlag,
+      showToast,
+      onError: err => {
+        appendDiscoveryLog(`Reject failed: ${getErrorMessage(err)}`, "error");
+        showToast("Could not reject sources.", "error");
+        return null;
+      },
+      execute: async () => {
+        const ids = selectedIds(getBucketContainer("pending"), ".pending-source-checkbox");
+        if (!ids.length) {
+          showToast("Select pending sources to reject.", "info");
+          return null;
+        }
+        const result = await postBridge("/registry/reject", { ids });
+        appendDiscoveryLog(`Rejected ${Number(result?.rejected || 0)} source(s).`, "warn");
+        showToast("Sources rejected.", "success");
+        await loadDiscoveryData();
+        await loadOpsHealthData();
+        return result || null;
+      }
+    });
   }
 
   async function restoreRejectedSources() {
-    if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
-      showToast("Another discovery operation is running.", "info");
-      return;
-    }
-    const ids = selectedIds(".rejected-source-checkbox");
-    if (!ids.length) {
-      showToast("Select rejected sources to restore.", "info");
-      return;
-    }
-    setBusyFlag("discoveryWrite", true);
-    try {
-      const result = await postBridge("/registry/restore-rejected", { ids });
-      appendDiscoveryLog(`Restored ${Number(result?.restored || 0)} rejected source(s) to pending.`, "success");
-      showToast("Rejected sources restored to pending.", "success");
-      await loadDiscoveryData();
-      await loadOpsHealthData();
-    } catch (err) {
-      appendDiscoveryLog(`Restore failed: ${getErrorMessage(err)}`, "error");
-      showToast("Could not restore rejected sources.", "error");
-    } finally {
-      setBusyFlag("discoveryWrite", false);
-    }
+    return runRegistryMutation({
+      state,
+      busyKey: "discoveryWrite",
+      setBusyFlag,
+      showToast,
+      onError: err => {
+        appendDiscoveryLog(`Restore failed: ${getErrorMessage(err)}`, "error");
+        showToast("Could not restore rejected sources.", "error");
+        return null;
+      },
+      execute: async () => {
+        const ids = selectedIds(getBucketContainer("rejected"), ".rejected-source-checkbox");
+        if (!ids.length) {
+          showToast("Select rejected sources to restore.", "info");
+          return null;
+        }
+        const result = await postBridge("/registry/restore-rejected", { ids });
+        appendDiscoveryLog(`Restored ${Number(result?.restored || 0)} rejected source(s) to pending.`, "success");
+        showToast("Rejected sources restored to pending.", "success");
+        await loadDiscoveryData();
+        await loadOpsHealthData();
+        return result || null;
+      }
+    });
   }
 
   async function demoteActiveSources() {
-    if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
-      showToast("Another discovery operation is running.", "info");
-      return;
-    }
-    const ids = selectedIds(".active-source-checkbox");
-    setBusyFlag("discoveryWrite", true);
-    try {
-      const result = await postBridge("/registry/demote-active", { ids: ids.length ? ids : [] });
-      appendDiscoveryLog(`Demoted ${Number(result?.demoted || 0)} zero-job source(s) to pending.`, "success");
-      showToast("Sources demoted to pending.", "success");
-      await loadDiscoveryData();
-      await loadOpsHealthData();
-    } catch (err) {
-      appendDiscoveryLog(`Demote failed: ${getErrorMessage(err)}`, "error");
-      showToast("Could not demote sources.", "error");
-    } finally {
-      setBusyFlag("discoveryWrite", false);
-    }
+    return runRegistryMutation({
+      state,
+      busyKey: "discoveryWrite",
+      setBusyFlag,
+      showToast,
+      onError: err => {
+        appendDiscoveryLog(`Demote failed: ${getErrorMessage(err)}`, "error");
+        showToast("Could not demote sources.", "error");
+        return null;
+      },
+      execute: async () => {
+        const ids = selectedIds(getBucketContainer("active"), ".active-source-checkbox");
+        const result = await postBridge("/registry/demote-active", { ids: ids.length ? ids : [] });
+        appendDiscoveryLog(`Demoted ${Number(result?.demoted || 0)} zero-job source(s) to pending.`, "success");
+        showToast("Sources demoted to pending.", "success");
+        await loadDiscoveryData();
+        await loadOpsHealthData();
+        return result || null;
+      }
+    });
   }
 
   async function deleteSelectedSources() {
-    if (state.adminBusyState.discoveryRun || state.adminBusyState.discoveryWatch || state.adminBusyState.discoveryLoad || state.adminBusyState.discoveryWrite || state.adminBusyState.manualAdd || state.adminBusyState.manualCheck || state.adminBusyState.liveDiscoveryRunning) {
-      showToast("Another discovery operation is running.", "info");
-      return;
-    }
-    const sources = selectedSourcesAcrossDiscoveryBuckets();
-    const ids = Array.from(new Set(sources.map(item => item.id).filter(Boolean)));
-    const urls = Array.from(new Set(sources.map(item => item.url).filter(Boolean)));
-    if (!ids.length && !urls.length) {
-      showToast("Select sources to delete.", "info");
-      return;
-    }
-    const confirmed = await requestConfirmationDialog({
-      title: "Delete selected sources?",
-      description: `Delete ${sources.length} selected source(s) from registry? This cannot be undone.`,
-      confirmLabel: "Delete sources"
+    return runRegistryMutation({
+      state,
+      busyKey: "discoveryWrite",
+      setBusyFlag,
+      showToast,
+      onError: err => {
+        appendDiscoveryLog(`Delete failed: ${getErrorMessage(err)}`, "error");
+        showToast("Could not delete selected sources.", "error");
+        return null;
+      },
+      execute: async () => {
+        const sources = selectedSourcesAcrossDiscoveryBuckets();
+        const ids = Array.from(new Set(sources.map(item => item.id).filter(Boolean)));
+        const urls = Array.from(new Set(sources.map(item => item.url).filter(Boolean)));
+        if (!ids.length && !urls.length) {
+          showToast("Select sources to delete.", "info");
+          return null;
+        }
+        const confirmed = await requestConfirmationDialog({
+          title: "Delete selected sources?",
+          description: `Delete ${sources.length} selected source(s) from registry? This cannot be undone.`,
+          confirmLabel: "Delete sources"
+        });
+        if (!confirmed) {
+          return null;
+        }
+        const result = await postBridge("/registry/delete", { ids, urls });
+        appendDiscoveryLog(`Deleted ${Number(result?.deleted || 0)} source(s).`, "warn");
+        showToast("Selected sources deleted.", "success");
+        await loadDiscoveryData();
+        await loadOpsHealthData();
+        return result || null;
+      }
     });
-    if (!confirmed) {
-      return;
-    }
-    setBusyFlag("discoveryWrite", true);
-    try {
-      const result = await postBridge("/registry/delete", { ids, urls });
-      appendDiscoveryLog(`Deleted ${Number(result?.deleted || 0)} source(s).`, "warn");
-      showToast("Selected sources deleted.", "success");
-      await loadDiscoveryData();
-      await loadOpsHealthData();
-    } catch (err) {
-      appendDiscoveryLog(`Delete failed: ${getErrorMessage(err)}`, "error");
-      showToast("Could not delete selected sources.", "error");
-    } finally {
-      setBusyFlag("discoveryWrite", false);
-    }
   }
 
   async function loadDiscoveryData() {
