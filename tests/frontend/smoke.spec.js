@@ -42,9 +42,28 @@ test("index entry redirects to jobs", async ({ page }) => {
 test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning", async ({ page }) => {
   test.setTimeout(120000);
   const pageErrors = [];
-  page.on("pageerror", error => pageErrors.push(String(error?.message || error)));
+  page.on("pageerror", error => {
+    const msg = String(error?.message || error);
+    pageErrors.push(msg);
+    console.error("[pageerror]", msg);
+  });
+  page.on("console", msg => {
+    if (msg.type() === "error") console.error("[page:error]", msg.text());
+  });
 
   await page.goto("/jobs.html");
+
+  // Diagnostic: poll startup state and log progress until resolved or timeout
+  const startupState = await page.waitForFunction(() => {
+    const state = document.body?.getAttribute("data-jobs-startup-state") || "loading";
+    if (state !== "loading") return state;
+    return false;
+  }, null, { timeout: 90000 }).catch(async () => {
+    const state = await page.evaluate(() => document.body?.getAttribute("data-jobs-startup-state") || "missing");
+    console.error(`[startup] state at timeout: ${state}`);
+    throw new Error(`Jobs startup state never left 'loading'. Final state: ${state}. Page errors: ${JSON.stringify(pageErrors)}`);
+  });
+  console.log(`[startup] resolved to: ${startupState}`);
 
   await expectJobsPageReady(page);
 
