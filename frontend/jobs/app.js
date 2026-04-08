@@ -1,1 +1,5 @@
-export { boot } from "./app/runtime.js";
+import "./app/runtime.js";
+
+export function boot() {
+  globalThis.__baluffoBootJobsPage?.();
+}

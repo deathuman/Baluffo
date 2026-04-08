@@ -32,6 +32,8 @@ def test_render_js_exports_frozen_payload() -> None:
     assert "BALUFFO_FRONTEND_RUNTIME_CONFIG" in text
     assert '"github_app_enabled_default": true' in text
     assert "Object.freeze" in text
+    assert "globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG" in text
+    assert "export const" not in text
 
 
 def test_checked_in_generated_file_matches_current_render() -> None:

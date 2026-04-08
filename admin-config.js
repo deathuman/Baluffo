@@ -1,5 +1,3 @@
-import { BALUFFO_FRONTEND_RUNTIME_CONFIG } from "./frontend-runtime-config.js";
-
 const RUNTIME_BRIDGE_BASE_KEY = "baluffo_runtime_bridge_base";
 const DEFAULT_CONFIG = {
   bridge: {
@@ -10,6 +8,10 @@ const DEFAULT_CONFIG = {
     github_app_enabled_default: true
   }
 };
+
+const BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze(
+  globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG || {}
+);
 
 const BALUFFO_RUNTIME_CONFIG = {
   ...DEFAULT_CONFIG,

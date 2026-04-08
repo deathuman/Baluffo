@@ -43,12 +43,30 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   test.setTimeout(120000);
   const pageErrors = [];
   page.on("pageerror", error => {
-    const msg = String(error?.message || error);
+    const msg = String(error?.stack || error?.message || error);
     pageErrors.push(msg);
     console.error("[pageerror]", msg);
   });
   page.on("console", msg => {
-    if (msg.type() === "error") console.error("[page:error]", msg.text());
+    if (msg.type() === "error") {
+      const location = msg.location();
+      const where = location?.url
+        ? `${location.url}:${location.lineNumber || 0}:${location.columnNumber || 0}`
+        : "unknown";
+      console.error(`[page:error] ${where} ${msg.text()}`);
+    }
+  });
+  await page.addInitScript(() => {
+    window.__baluffoSmokeErrors = [];
+    window.onerror = (message, source, line, column, error) => {
+      window.__baluffoSmokeErrors.push({
+        message: String(message || ""),
+        source: String(source || ""),
+        line: Number(line || 0),
+        column: Number(column || 0),
+        stack: String(error?.stack || ""),
+      });
+    };
   });
 
   await page.goto("/jobs.html");
@@ -60,8 +78,13 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
     return false;
   }, null, { timeout: 90000 }).catch(async () => {
     const state = await page.evaluate(() => document.body?.getAttribute("data-jobs-startup-state") || "missing");
+    const smokeErrors = await page.evaluate(() => window.__baluffoSmokeErrors || []);
     console.error(`[startup] state at timeout: ${state}`);
-    throw new Error(`Jobs startup state never left 'loading'. Final state: ${state}. Page errors: ${JSON.stringify(pageErrors)}`);
+    throw new Error(
+      `Jobs startup state never left 'loading'. Final state: ${state}. ` +
+      `Page errors: ${JSON.stringify(pageErrors)}. ` +
+      `Window errors: ${JSON.stringify(smokeErrors)}`
+    );
   });
   console.log(`[startup] resolved to: ${startupState}`);
 

@@ -1433,6 +1433,41 @@ function renderJobRow(job) {
 
 function bindRenderedJobEvents(pageJobs) {
   if (!jobsList) return;
+  const pageById = new Map(pageJobs.map(job => [String(job.id), job]));
+
+  const t = UI_TOKENS.jobs;
+  jobsList.querySelectorAll(`${ui(t.jobRow)}[data-job-link]`).forEach(row => {
+    const link = row.dataset.jobLink;
+    if (!link) return;
+    const jobKey = String(row.dataset.jobKey || "").trim();
+    const openLink = sanitizeUrl(link) || link;
+
+    row.tabIndex = 0;
+    row.setAttribute("role", "link");
+    row.addEventListener("click", e => {
+      if (e.target.closest(ui(t.saveJobBtn))) return;
+      window.open(openLink, "_blank", "noopener,noreferrer");
+      markJobSeenFromInteraction(jobKey).catch(() => {});
+    });
+    row.addEventListener("keydown", e => {
+      if (e.key !== "Enter") return;
+      if (e.target.closest(ui(t.saveJobBtn))) return;
+      window.open(openLink, "_blank", "noopener,noreferrer");
+      markJobSeenFromInteraction(jobKey).catch(() => {});
+    });
+  });
+
+  jobsList.querySelectorAll(ui(t.saveJobBtn)).forEach(btn => {
+    btn.addEventListener("click", async e => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const job = pageById.get(btn.dataset.jobId || "");
+      if (!job) return;
+      await toggleSaveJob(job);
+    });
+  });
+}
 
 function renderPagination(totalPages) {
   let html = "";
@@ -1894,4 +1929,4 @@ function handleJobsStartupFailure(context, err, options = {}) {
   showError("Unable to load job listings right now.", retry);
 }
 
-export { bootJobsPage as boot };
+globalThis.__baluffoBootJobsPage = bootJobsPage;
