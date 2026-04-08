@@ -1782,16 +1782,16 @@ function updateActiveFiltersSummary() {
   activeFiltersSummaryEl.textContent = active.length ? `Active filters: ${active.join(" • ")}` : "No active filters";
 }
 
-async function fetchUnifiedJobs() {
+async function fetchUnifiedJobs({ timeoutMs } = {}) {
   return fetchUnifiedJobsFromSources({
     setSourceStatus,
     jobsParsing,
+    timeoutMs,
     parserDeps: {
       mapProfession,
       normalizeSector,
       classifyCompanyType,
       detectWorkType,
-      detectContractType,
       logInfo: logJobsInfo,
       logError: logJobsError
     }

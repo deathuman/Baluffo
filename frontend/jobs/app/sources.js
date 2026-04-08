@@ -44,13 +44,15 @@ const JOBS_FETCH_REPORT_URLS = [
 export async function fetchUnifiedJobs({
   setSourceStatus,
   jobsParsing,
-  parserDeps
+  parserDeps,
+  timeoutMs
 }) {
   return fetchUnifiedJobsFromData({
     unifiedJsonSources: UNIFIED_JSON_SOURCES,
     unifiedCsvSources: UNIFIED_CSV_SOURCES,
     sheetsFallbackSources: SHEETS_FALLBACK_SOURCES,
     setSourceStatus,
+    timeoutMs,
     parseUnifiedPayload: payload => parseUnifiedJobsPayload(payload, jobsParsing),
     parseCSV: csv => parseCSVLargeFromData(csv, {
       jobsParsing,
