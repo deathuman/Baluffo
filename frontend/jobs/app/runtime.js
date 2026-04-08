@@ -29,7 +29,7 @@ import {
 import { isJobsApiReady, jobsAuthService, jobsSavedJobsService, jobsPageService } from "../services.js";
 import { createJobsDispatcher, JOBS_ACTIONS } from "../actions.js";
 import { renderJobRowHtml, showJobsLoading, showJobsError } from "../render.js";
-import { capitalizeFirst, debounce, sanitizeUrl, toContractClass } from "./runtime-utils.js";
+import { debounce, sanitizeUrl } from "./runtime-utils.js";
 import {
   readAutoRefreshAppliedId,
   readAutoRefreshSignal,
@@ -44,18 +44,7 @@ import { createAdminBridgeButtonWatcher } from "../../shared/admin-bridge-button
 import { createAuthReadyPoller } from "../../shared/auth-ready-poll.js";
 import { normalizeToken } from "../../shared/text-utils.js";
 import { cacheJobsDom } from "./dom.js";
-import {
-  toggleJobsAuthButtons,
-  setJobsAuthControlsReady,
-  setJobsAuthStatus
-} from "./auth.js";
-import {
-  getPipelineRunningLabel,
-  updateJobsPipelineUi as updateJobsPipelineUiFromModule,
-  clearJobsPipelinePolling as clearJobsPipelinePollingFromModule,
-  scheduleJobsPipelineStatusPoll as scheduleJobsPipelineStatusPollFromModule,
-  callJobsBridge as callJobsBridgeFromModule
-} from "./pipeline.js";
+import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js";
 import {
   buildSeenRowKey,
   openJobsCacheDb as openJobsCacheDbFromModule,
@@ -70,18 +59,12 @@ import {
   optionExists,
   normalizeSelectedCountries,
   getCountrySelectionBadgeText,
-  renderCountryPickerOptionsHtml,
-  getCountryPickerTriggerText,
   getDefaultQuickFilterKeys,
   sanitizeQuickFilterKeys,
   renderQuickFiltersHtml,
   renderQuickFilterOptionsHtml,
   getNextQuickFilterKeys,
-  applyQuickFilterToState,
-  isQuickFilterActive,
-  getActiveFilterSummaryItems
 } from "./filters.js";
-import { getVisiblePages } from "./pagination.js";
 import {
   isDesktopRuntimeMode as isDesktopRuntimeModeFromStartup,
   scheduleNonCriticalStartup,
@@ -91,6 +74,18 @@ import {
   parseAutoRefreshSignal as parseAutoRefreshSignalFromStartup,
   getAutoRefreshStatusText
 } from "./startup.js";
+import {
+  buildFilterOptions,
+  filterJobs,
+  sortJobs as sortJobsFromQuery
+} from "./runtime/query.js";
+import {
+  displayJobs as displayJobsFromView,
+  goToPage as goToPageFromView,
+  updateResultsSummary as updateResultsSummaryFromView
+} from "./runtime/list-view.js";
+import { setupJobsListDelegation as setupJobsListDelegationFromEvents } from "./runtime/jobs-list-events.js";
+import { createJobsUrlPersistence } from "./runtime/url-persistence.js";
 import {
   initJobsFeed,
   refreshJobsFeed,
@@ -104,12 +99,14 @@ import { createJobsStartupMetrics } from "./runtime/effects.js";
 import { createJobsBridgeRequest } from "./runtime/actions.js";
 import { setProgressVisibility, setStatusText } from "./runtime/view.js";
 import { bindWindowResize } from "./runtime/events.js";
+import { createJobsAuthController } from "./runtime/auth-controller.js";
+import { createJobsPipelineController } from "./runtime/pipeline-controller.js";
+import { createJobsFiltersController } from "./runtime/filters-ui.js";
 import {
   fullCountryName as fullCountryNameForJobs,
   getAvailableRegionOptions as getAvailableRegionOptionsForJobs,
   getCountryFilterOptionLabel as getCountryFilterOptionLabelForJobs,
-  matchesCountrySelection as matchesCountrySelectionForJobs,
-  resolveCountryCode as resolveCountryCodeForJobs
+  matchesCountrySelection as matchesCountrySelectionForJobs
 } from "./countries.js";
 import {
   STARTUP_PREVIEW_JSON_URLS,
@@ -221,9 +218,12 @@ let dataSourcesListEl;
 let dataSourcesCaptionEl;
 let jobsPipelineRunBtn;
 
-let currentUser = null;
-let savedJobKeys = new Set();
-let seenJobKeys = new Set();
+const userState = {
+  currentUser: null,
+  savedJobKeys: new Set(),
+  seenJobKeys: new Set(),
+  authStateListenerBound: false
+};
 
 const JOBS_CACHE_DB = "baluffo_jobs_cache";
 const JOBS_CACHE_DB_VERSION = 2;
@@ -243,15 +243,10 @@ const JOBS_FIRST_LOAD_REQUEST_TIMEOUT_MS = 4500;
 
 const QUICK_FILTERS = Array.isArray(jobsStateModule.QUICK_FILTERS) ? jobsStateModule.QUICK_FILTERS : [];
 let refreshInFlight = false;
-let availableProfessions = [];
-let availableCountries = [];
-let availableCountryFilterValues = [];
-let visibleQuickFilterKeys = [];
 let hasInitializedJobsFeed = false;
 let pendingAutoRefreshSignal = null;
 let lastHandledAutoRefreshSignalId = readAppliedAutoRefreshId();
 let _lastFilterOptionsSignature = "";
-let authStateListenerBound = false;
 const authReadyPoller = createAuthReadyPoller({
   isReady: () => isJobsApiReady() && jobsPageService.isAvailable(),
   onReady: () => initAuth()
@@ -262,6 +257,113 @@ let secondaryEventsBound = false;
 let adminBridgeButtonState = "checking";
 let adminBridgeWatcher = null;
 const jobsPipelineUiState = createJobsPipelineUiState();
+const jobsControllerRefs = {
+  get authStatus() {
+    return authStatus;
+  },
+  get authStatusHint() {
+    return authStatusHint;
+  },
+  get authAvatar() {
+    return authAvatar;
+  },
+  get authSignInBtn() {
+    return authSignInBtn;
+  },
+  get authSignOutBtn() {
+    return authSignOutBtn;
+  },
+  get savedJobsBtn() {
+    return savedJobsBtn;
+  },
+  get jobsPipelineRunBtn() {
+    return jobsPipelineRunBtn;
+  },
+  get workTypeFilter() {
+    return workTypeFilter;
+  },
+  get lifecycleStatusFilter() {
+    return lifecycleStatusFilter;
+  },
+  get countryFilter() {
+    return countryFilter;
+  },
+  get countryPickerBtn() {
+    return countryPickerBtn;
+  },
+  get countryPickerPanel() {
+    return countryPickerPanel;
+  },
+  get countryPickerSearch() {
+    return countryPickerSearch;
+  },
+  get countryPickerOptions() {
+    return countryPickerOptions;
+  },
+  get countryPickerClearBtn() {
+    return countryPickerClearBtn;
+  },
+  get cityFilter() {
+    return cityFilter;
+  },
+  get sectorFilter() {
+    return sectorFilter;
+  },
+  get professionFilter() {
+    return professionFilter;
+  },
+  get professionSearchFilter() {
+    return professionSearchFilter;
+  },
+  get searchFilter() {
+    return searchFilter;
+  },
+  get sortFilter() {
+    return sortFilter;
+  },
+  get countrySelectionBadge() {
+    return countrySelectionBadge;
+  },
+  get activeFiltersSummaryEl() {
+    return activeFiltersSummaryEl;
+  },
+  get quickActionsEl() {
+    return quickActionsEl;
+  },
+  get customizeQuickFiltersBtn() {
+    return customizeQuickFiltersBtn;
+  },
+  get quickFiltersPanel() {
+    return quickFiltersPanel;
+  },
+  get quickFiltersOptionsEl() {
+    return quickFiltersOptionsEl;
+  },
+  get quickFiltersResetBtn() {
+    return quickFiltersResetBtn;
+  }
+};
+const filtersController = createJobsFiltersController({
+  refs: jobsControllerRefs,
+  state,
+  defaultFilters,
+  quickFilters: QUICK_FILTERS,
+  professionLabels: PROFESSION_LABELS,
+  jobsDispatch,
+  JOBS_ACTIONS,
+  applyFiltersAndRender,
+  buildFilterOptions,
+  getJobLocationCities,
+  getJobLocationCountries,
+  isInternshipJob,
+  isValidCountry,
+  isSemanticallyValidLocationValue,
+  readQuickFilterPreferences,
+  writeQuickFilterPreferences,
+  QUICK_FILTER_PREFS_KEY,
+  escapeHtml,
+  normalizeLifecycleStatus
+});
 const startupMetrics = createJobsStartupMetrics({
   emitMetric: (event, payload) => {
     if (!isDesktopRuntimeMode()) return;
@@ -275,6 +377,65 @@ const callJobsBridge = createJobsBridgeRequest({
   baseUrl: ADMIN_BRIDGE_BASE,
   timeoutMs: JOBS_BRIDGE_REQUEST_TIMEOUT_MS,
   request: callJobsBridgeFromModule
+});
+
+const authController = createJobsAuthController({
+  refs: jobsControllerRefs,
+  userState,
+  authReadyPoller,
+  jobsAuthService,
+  jobsSavedJobsService,
+  jobsPageService,
+  jobsDispatch,
+  JOBS_ACTIONS,
+  isJobsApiReady,
+  emitDesktopStartupMetric,
+  showToast,
+  logJobsError,
+  getAllJobs: () => allJobs,
+  applyFiltersAndRender,
+  loadSeenJobKeys,
+  markSeenJob,
+  buildSeenRowKey,
+  getJobKeyForJob: getJobKeyForJobWithService,
+  openJobsCacheDb,
+  JOBS_SEEN_STORE,
+  toJobSnapshot,
+  sanitizeUrl
+});
+
+const pipelineController = createJobsPipelineController({
+  refs: jobsControllerRefs,
+  jobsPipelineUiState,
+  callJobsBridge,
+  getAllJobs: () => allJobs,
+  showToast,
+  setRefreshJobsNeedsAttention,
+  isErrorStage: payload => Boolean(payload?.error) || normalizeToken(payload?.stage) === "error",
+  pollDelayMs: JOBS_PIPELINE_STATUS_POLL_MS,
+  idlePollDelayMs: JOBS_PIPELINE_STATUS_IDLE_POLL_MS
+});
+
+const jobsUrlPersistence = createJobsUrlPersistence({
+  windowObject: window,
+  buildJobsPageUrl,
+  resolveStartupProbeEnabled,
+  isDesktopRuntimeMode: () => isDesktopRuntimeMode(),
+  rememberJobsUrl,
+  emitMetric: (event, payload = {}) => emitDesktopStartupMetric(event, payload),
+  getDesktopUrlStateReady: () => desktopUrlStateReady,
+  setDesktopUrlStateReady: value => {
+    desktopUrlStateReady = Boolean(value);
+  },
+  getDesktopPendingRememberJobsUrl: () => desktopPendingRememberJobsUrl,
+  setDesktopPendingRememberJobsUrl: value => {
+    desktopPendingRememberJobsUrl = Boolean(value);
+  },
+  getDesktopPendingJobsUrl: () => desktopPendingJobsUrl,
+  setDesktopPendingJobsUrl: value => {
+    desktopPendingJobsUrl = String(value || "");
+  },
+  lastUrlKey: JOBS_LAST_URL_KEY
 });
 
 /**
@@ -320,50 +481,14 @@ function applyJobsAdminBridgeState({ buttonEl, state, label, title }) {
  * Called once during boot to avoid reattaching listeners after each render.
  */
 function setupJobsListDelegation() {
-  if (!jobsList) return;
-  const t = UI_TOKENS.jobs;
-
-  jobsList.addEventListener("click", event => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-
-    const saveJobBtn = target.closest(ui(t.saveJobBtn));
-    if (saveJobBtn) {
-      event.preventDefault();
-      event.stopPropagation();
-      const jobId = saveJobBtn.dataset.jobId || "";
-      const job = allJobs.find(j => String(j.id) === jobId);
-      if (job) {
-        toggleSaveJob(job).catch(() => {});
-      }
-      return;
-    }
-
-    const jobRow = target.closest(`${ui(t.jobRow)}[data-job-link]`);
-    if (jobRow && !target.closest(ui(t.saveJobBtn))) {
-      const link = jobRow.dataset.jobLink;
-      if (!link) return;
-      const jobKey = String(jobRow.dataset.jobKey || "").trim();
-      const openLink = sanitizeUrl(link) || link;
-      window.open(openLink, "_blank", "noopener,noreferrer");
-      markJobSeenFromInteraction(jobKey).catch(() => {});
-    }
-  });
-
-  jobsList.addEventListener("keydown", event => {
-    if (event.key !== "Enter") return;
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-
-    const jobRow = target.closest(`${ui(t.jobRow)}[data-job-link]`);
-    if (jobRow && !target.closest(ui(t.saveJobBtn))) {
-      const link = jobRow.dataset.jobLink;
-      if (!link) return;
-      const jobKey = String(jobRow.dataset.jobKey || "").trim();
-      const openLink = sanitizeUrl(link) || link;
-      window.open(openLink, "_blank", "noopener,noreferrer");
-      markJobSeenFromInteraction(jobKey).catch(() => {});
-    }
+  setupJobsListDelegationFromEvents({
+    jobsList,
+    jobRowSelector: `${ui(UI_TOKENS.jobs.jobRow)}[data-job-link]`,
+    saveJobBtnSelector: ui(UI_TOKENS.jobs.saveJobBtn),
+    sanitizeUrl,
+    getJobById: jobId => allJobs.find(job => String(job.id) === String(jobId || "")),
+    onToggleSaveJob: toggleSaveJob,
+    onMarkJobSeen: jobKey => authController.markJobSeenFromInteraction(jobKey)
   });
 }
 
@@ -379,10 +504,10 @@ function bootJobsPage() {
   setupJobsListDelegation();  setJobsStartupState("loading", "booting");
   bindCoreEvents();
   try {
-    initializeQuickFilters();
+    filtersController.initializeQuickFilters();
     bindEvents();
     readStateFromUrl();
-    applyStateToStaticFilters();
+    filtersController.applyStateToStaticFilters();
   } catch (err) {
     handleJobsStartupFailure("Jobs page boot failed", err, { allowRetryReload: true });
     return;
@@ -495,11 +620,11 @@ function bindCoreEvents() {
     }],
     [countryPickerClearBtn, () => {
       state.filters.countries = [];
-      applyStateToFilters();
+      filtersController.applyStateToFilters();
       applyFiltersAndRender({ resetPage: true });
     }],
     [quickFiltersResetBtn, () => {
-      resetQuickFilterPreferences();
+      filtersController.resetQuickFilterPreferences();
     }]
   ]);
   bindHandlersMap(clickHandlers);
@@ -522,23 +647,23 @@ function bindEvents() {
     sectorFilter,
     professionFilter,
     sortFilter
-  ].forEach(el => bindUi(el, "change", () => onFilterChange()));
+  ].forEach(el => bindUi(el, "change", () => filtersController.onFilterChange()));
 
   if (professionSearchFilter) {
     professionSearchFilter.addEventListener("input", () => {
-      renderProfessionOptions(professionSearchFilter.value);
+      filtersController.renderProfessionOptions(professionSearchFilter.value);
     });
   }
 
   if (countryPickerBtn) {
     countryPickerBtn.addEventListener("click", e => {
       e.stopPropagation();
-      toggleCountryPickerPanel();
+      filtersController.toggleCountryPickerPanel();
     });
   }
   if (countryPickerSearch) {
     countryPickerSearch.addEventListener("input", () => {
-      renderCountryPickerOptions(countryPickerSearch.value);
+      filtersController.renderCountryPickerOptions(countryPickerSearch.value);
     });
   }
   if (countryPickerOptions) {
@@ -549,7 +674,7 @@ function bindEvents() {
       if (target.checked) current.add(target.value);
       else current.delete(target.value);
       state.filters.countries = Array.from(current);
-      applyStateToFilters();
+      filtersController.applyStateToFilters();
       applyFiltersAndRender({ resetPage: true });
     });
   }
@@ -580,7 +705,7 @@ function bindEvents() {
 
   if (searchFilter) {
     bindUi(searchFilter, "input", debounce(() => {
-      onFilterChange();
+      filtersController.onFilterChange();
     }, 180));
   }
 
@@ -598,8 +723,8 @@ function bindEvents() {
       if (!btn) return;
       const quick = btn.dataset.quick;
       if (!quick) return;
-      applyQuickFilter(quick);
-      applyStateToFilters();
+      filtersController.applyQuickFilter(quick);
+      filtersController.applyStateToFilters();
       applyFiltersAndRender({ resetPage: true });
     });
   }
@@ -607,7 +732,7 @@ function bindEvents() {
   if (customizeQuickFiltersBtn) {
     customizeQuickFiltersBtn.addEventListener("click", event => {
       event.stopPropagation();
-      toggleQuickFiltersPanel();
+      filtersController.toggleQuickFiltersPanel();
     });
   }
 
@@ -617,7 +742,7 @@ function bindEvents() {
       if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
       const { quick } = target.dataset;
       if (!quick) return;
-      setQuickFilterVisibility(quick, target.checked);
+      filtersController.setQuickFilterVisibility(quick, target.checked);
     });
   }
 
@@ -645,8 +770,8 @@ async function init() {
       return allJobs;
     },
     recalculateItemsPerPage,
-    updateFilterOptions,
-    applyStateToFilters,
+    updateFilterOptions: () => filtersController.updateFilterOptions(allJobs),
+    applyStateToFilters: () => filtersController.applyStateToFilters(),
     applyFiltersAndRender,
     markStartupRendered,
     markJobsFirstInteractive,
@@ -666,151 +791,32 @@ async function init() {
   });
 }
 
-function updateJobsPipelineUi({ running = false, disabled = false, buttonLabel = "", progressLabel = "", isError = false } = {}) {
-  updateJobsPipelineUiFromModule(
-    { jobsPipelineRunBtn },
-    { running, disabled, buttonLabel, progressLabel, isError }
-  );
+function updateJobsPipelineUi(options = {}) {
+  return pipelineController.updateJobsPipelineUi(options);
 }
 
 function _clearJobsPipelinePolling() {
-  clearJobsPipelinePollingFromModule(jobsPipelineUiState);
+  return pipelineController.clearJobsPipelinePolling();
 }
 
 function scheduleJobsPipelineStatusPoll(delayMs) {
-  scheduleJobsPipelineStatusPollFromModule(
-    jobsPipelineUiState,
-    delayMs,
-    pollJobsPipelineStatus,
-    JOBS_PIPELINE_STATUS_POLL_MS
-  );
+  return pipelineController.scheduleJobsPipelineStatusPoll(delayMs);
 }
 
 function handlePipelineCompletionStatus(payload) {
-  const updatesFound = Boolean(payload?.updatesFound || payload?.refreshRecommended);
-  const hasError = Boolean(payload?.error) || normalizeToken(payload?.stage) === "error";
-  setRefreshJobsNeedsAttention(updatesFound);
-  jobsPipelineUiState.active = false;
-  jobsPipelineUiState.runId = "";
-  jobsPipelineUiState.startedAt = "";
-  updateJobsPipelineUi({
-    running: false,
-    disabled: !jobsPipelineUiState.bridgeOnline,
-    buttonLabel: hasError ? "Error" : "",
-    isError: hasError
-  });
-  if (updatesFound) {
-    showToast("Pipeline completed. Refresh jobs to load new updates.", "success");
-  } else if (payload?.error) {
-    showToast(`Pipeline failed: ${String(payload.error)}`, "error");
-  }
+  return pipelineController.handlePipelineCompletionStatus(payload);
 }
 
 async function pollJobsPipelineStatus() {
-  try {
-    const payload = await callJobsBridge("/tasks/run-jobs-pipeline-status");
-    jobsPipelineUiState.bridgeOnline = true;
-
-    const active = Boolean(payload?.active);
-    const runId = String(payload?.runId || "");
-    if (active) {
-      jobsPipelineUiState.active = true;
-      jobsPipelineUiState.runId = runId || jobsPipelineUiState.runId;
-      jobsPipelineUiState.startedAt = String(payload?.startedAt || jobsPipelineUiState.startedAt || "");
-      updateJobsPipelineUi({
-        running: true,
-        disabled: true,
-        buttonLabel: getPipelineRunningLabel({
-          ...payload,
-          startedAt: jobsPipelineUiState.startedAt
-        })
-      });
-      scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_POLL_MS);
-      return;
-    }
-
-    const trackedRunId = String(jobsPipelineUiState.runId || "");
-    if ((trackedRunId && trackedRunId === runId) || jobsPipelineUiState.active) {
-      handlePipelineCompletionStatus(payload);
-    } else {
-      updateJobsPipelineUi({
-        running: false,
-        disabled: false,
-        buttonLabel: ""
-      });
-    }
-    scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_IDLE_POLL_MS);
-  } catch {
-    jobsPipelineUiState.bridgeOnline = false;
-    jobsPipelineUiState.active = false;
-    jobsPipelineUiState.runId = "";
-    jobsPipelineUiState.startedAt = "";
-    updateJobsPipelineUi({
-      running: false,
-      disabled: true,
-      buttonLabel: "Error",
-      isError: true
-    });
-    scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_IDLE_POLL_MS);
-  }
+  return pipelineController.pollJobsPipelineStatus();
 }
 
 function ensureJobsPipelineStatusWatch() {
-  updateJobsPipelineUi({
-    running: false,
-    disabled: true,
-    buttonLabel: "Checking..."
-  });
-  pollJobsPipelineStatus().catch(() => {});
+  return pipelineController.ensureJobsPipelineStatusWatch();
 }
 
 async function triggerJobsPipelineRun() {
-  if (!jobsPipelineRunBtn || jobsPipelineRunBtn.disabled || jobsPipelineUiState.active) return;
-
-  updateJobsPipelineUi({
-    running: true,
-    disabled: true,
-    buttonLabel: "Starting Pipeline...",
-  });
-  try {
-    const payload = await callJobsBridge("/tasks/run-jobs-pipeline", {
-      method: "POST",
-      body: {
-        jobsPageLoadedCount: Array.isArray(allJobs) ? allJobs.length : 0
-      }
-    });
-    const started = Boolean(payload?.started);
-    if (!started) {
-      throw new Error(String(payload?.error || "pipeline did not start"));
-    }
-    jobsPipelineUiState.bridgeOnline = true;
-    jobsPipelineUiState.active = true;
-    jobsPipelineUiState.runId = String(payload?.runId || "");
-    jobsPipelineUiState.startedAt = String(payload?.startedAt || new Date().toISOString());
-    updateJobsPipelineUi({
-      running: true,
-      disabled: true,
-      buttonLabel: getPipelineRunningLabel({
-        ...payload,
-        startedAt: jobsPipelineUiState.startedAt
-      })
-    });
-    showToast("Jobs pipeline started.", "success");
-    scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_POLL_MS);
-  } catch (err) {
-    const message = String(err?.message || "Could not start jobs pipeline.");
-    jobsPipelineUiState.active = false;
-    jobsPipelineUiState.runId = "";
-    jobsPipelineUiState.startedAt = "";
-    updateJobsPipelineUi({
-      running: false,
-      disabled: true,
-      buttonLabel: "Error",
-      isError: true
-    });
-    showToast(message.toLowerCase().includes("409") ? "Pipeline already running." : "Could not start jobs pipeline.", "error");
-    scheduleJobsPipelineStatusPoll(JOBS_PIPELINE_STATUS_IDLE_POLL_MS);
-  }
+  return pipelineController.triggerJobsPipelineRun();
 }
 
 function readAppliedAutoRefreshId() {
@@ -861,110 +867,15 @@ async function triggerAutoRefreshFromSignal(signal) {
 }
 
 function initAuth() {
-  if (!isJobsApiReady() || !jobsPageService.isAvailable()) {
-    emitDesktopStartupMetric("jobs_auth_waiting");
-    setAuthStatus("Local auth starting...");
-    toggleAuthButtons(false);
-    setAuthControlsReady(false);
-    authReadyPoller.schedulePoll();
-    return;
-  }
-  authReadyPoller.stopPoll();
-  emitDesktopStartupMetric("jobs_auth_ready");
-  setAuthControlsReady(true);
-  if (authStateListenerBound) return;
-  authStateListenerBound = true;
-
-  jobsAuthService.onAuthStateChanged(async user => {
-    currentUser = user || null;
-    jobsDispatch.dispatch({
-      type: JOBS_ACTIONS.AUTH_CHANGED,
-      payload: { uid: currentUser?.uid || "" }
-    });
-    if (!currentUser) {
-      savedJobKeys = new Set();
-      seenJobKeys = new Set();
-      setAuthStatus("Browsing as guest");
-      toggleAuthButtons(false);
-      if (allJobs.length) applyFiltersAndRender({ resetPage: false });
-      return;
-    }
-
-    setAuthStatus(`Signed in as ${currentUser.displayName || currentUser.email || "user"}`);
-    toggleAuthButtons(true);
-
-    try {
-      const [savedKeysResult, loadedSeenJobKeys] = await Promise.all([
-        jobsSavedJobsService.getSavedJobKeys(currentUser.uid),
-        loadSeenJobKeys(currentUser.uid)
-      ]);
-      savedJobKeys = new Set(savedKeysResult.data || []);
-      seenJobKeys = loadedSeenJobKeys;
-    } catch (err) {
-      logJobsError("Failed to load saved jobs", err);
-      showToast("Could not load profile job state.", "error");
-      savedJobKeys = new Set();
-      seenJobKeys = new Set();
-    }
-
-    if (allJobs.length) applyFiltersAndRender({ resetPage: false });
-  });
-}
-
-function setAuthControlsReady(ready) {
-  setJobsAuthControlsReady({ authSignInBtn, authSignOutBtn }, ready);
-}
-
-function setAuthStatus(text) {
-  setJobsAuthStatus({ authStatus, authStatusHint, authAvatar }, text);
-}
-
-function toggleAuthButtons(isSignedIn) {
-  toggleJobsAuthButtons({ authSignInBtn, authSignOutBtn, savedJobsBtn }, isSignedIn);
+  return authController.initAuth();
 }
 
 async function signInUser() {
-  if (!isJobsApiReady() || !jobsPageService.isAvailable()) {
-    setAuthControlsReady(false);
-    authReadyPoller.schedulePoll();
-    showToast("Local auth provider is starting. Try again in a moment.", "info");
-    return;
-  }
-  if (!authStateListenerBound) {
-    initAuth();
-  }
-  setAuthControlsReady(true);
-  const result = await jobsAuthService.signIn();
-  if (!result.ok) {
-    if (String(result.error || "").toLowerCase().includes("cancel")) return;
-    logJobsError("Sign-in failed", new Error(result.error));
-    showToast("Sign-in failed. Please try again.", "error");
-    return;
-  }
-  if (savedJobsBtn && !savedJobsBtn.classList.contains("hidden")) {
-    try {
-      savedJobsBtn.focus({ preventScroll: true });
-    } catch {
-      savedJobsBtn.focus();
-    }
-  }
+  return authController.signInUser();
 }
 
 async function signOutUser() {
-  if (!isJobsApiReady() || !jobsPageService.isAvailable()) {
-    setAuthControlsReady(false);
-    authReadyPoller.schedulePoll();
-    return;
-  }
-  if (!authStateListenerBound) {
-    initAuth();
-  }
-  setAuthControlsReady(true);
-  const result = await jobsAuthService.signOut();
-  if (!result.ok) {
-    logJobsError("Sign-out failed", new Error(result.error));
-    showToast("Sign-out failed. Please try again.", "error");
-  }
+  return authController.signOutUser();
 }
 
 function readStateFromUrl() {
@@ -981,58 +892,15 @@ function readStateFromUrl() {
 }
 
 function writeStateToUrl() {
-  emitDesktopStartupMetric("jobs_write_state_params_start");
-  const url = buildJobsPageUrl(window.location.pathname, state);
-  emitDesktopStartupMetric("jobs_write_state_params_complete");
-  if (resolveStartupProbeEnabled()) {
-    emitDesktopStartupMetric("jobs_write_state_probe_skip", { url });
-    return;
-  }
-  if (isDesktopRuntimeMode()) {
-    if (!desktopUrlStateReady) {
-      desktopPendingRememberJobsUrl = true;
-      desktopPendingJobsUrl = url;
-      emitDesktopStartupMetric("jobs_write_state_desktop_deferred", { url });
-      return;
-    }
-    emitDesktopStartupMetric("jobs_write_state_desktop_flush", { url });
-    window.setTimeout(() => {
-      persistDesktopJobsUrlState(url);
-    }, 0);
-    return;
-  }
-  emitDesktopStartupMetric("jobs_write_state_replace_state_start", { url });
-  window.history.replaceState({}, "", url);
-  emitDesktopStartupMetric("jobs_write_state_replace_state_complete");
-  emitDesktopStartupMetric("jobs_write_state_remember_url_start");
-  rememberCurrentJobsUrl();
-  emitDesktopStartupMetric("jobs_write_state_remember_url_complete");
+  jobsUrlPersistence.writeStateToUrl(state);
 }
 
 function persistDesktopJobsUrlState(url) {
-  try {
-    emitDesktopStartupMetric("jobs_write_state_remember_url_start");
-    rememberJobsUrl(JOBS_LAST_URL_KEY, String(url || ""));
-    emitDesktopStartupMetric("jobs_write_state_remember_url_complete");
-  } catch {
-    emitDesktopStartupMetric("jobs_write_state_remember_url_failed");
-  }
+  jobsUrlPersistence.persistDesktopJobsUrlState(url);
 }
 
 function rememberCurrentJobsUrl() {
-  const url = `${window.location.pathname}${window.location.search}`;
-  if (isDesktopRuntimeMode()) {
-    if (!desktopUrlStateReady) {
-      desktopPendingRememberJobsUrl = true;
-      desktopPendingJobsUrl = url;
-      return;
-    }
-    window.setTimeout(() => {
-      persistDesktopJobsUrlState(url);
-    }, 0);
-    return;
-  }
-  rememberJobsUrl(JOBS_LAST_URL_KEY, url);
+  jobsUrlPersistence.rememberCurrentJobsUrl();
 }
 
 function openJobsCacheDb() {
@@ -1095,8 +963,8 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
     writeCachedJobs,
     updateLastUpdatedText,
     recalculateItemsPerPage,
-    updateFilterOptions,
-    applyStateToFilters,
+    updateFilterOptions: () => filtersController.updateFilterOptions(allJobs),
+    applyStateToFilters: () => filtersController.applyStateToFilters(),
     applyFiltersAndRender,
     markStartupRendered,
     markJobsFirstInteractive,
@@ -1135,8 +1003,8 @@ async function loadStartupPreviewJobs() {
     },
     updateLastUpdatedText,
     recalculateItemsPerPage,
-    updateFilterOptions,
-    applyStateToFilters,
+    updateFilterOptions: () => filtersController.updateFilterOptions(allJobs),
+    applyStateToFilters: () => filtersController.applyStateToFilters(),
     applyFiltersAndRender,
     markStartupRendered,
     markJobsFirstInteractive,
@@ -1155,102 +1023,6 @@ function setRefreshJobsNeedsAttention(needsRefresh) {
   }
 }
 
-async function markJobSeenFromInteraction(jobKey) {
-  const safeJobKey = String(jobKey || "").trim();
-  if (!currentUser?.uid || !safeJobKey) return;
-  if (seenJobKeys.has(safeJobKey)) return;
-
-  seenJobKeys.add(safeJobKey);
-  await markSeenJob(currentUser.uid, safeJobKey, {
-    openDb: openJobsCacheDb,
-    seenStore: JOBS_SEEN_STORE,
-    seenAt: Date.now(),
-    buildKey: buildSeenRowKey
-  });
-  if (allJobs.length) applyFiltersAndRender({ resetPage: false });
-}
-
-function applyStateToStaticFilters() {
-  if (workTypeFilter) workTypeFilter.value = state.filters.workType;
-  if (lifecycleStatusFilter) lifecycleStatusFilter.value = state.filters.lifecycleStatus || "active";
-  if (searchFilter) searchFilter.value = state.filters.search;
-  if (sortFilter) sortFilter.value = state.filters.sort;
-}
-
-function applyStateToFilters() {
-  applyStateToStaticFilters();
-  state.filters.countries = normalizeSelectedCountries(state.filters.countries, {
-    resolveCountryCode,
-    availableCountryFilterValues
-  });
-
-  if (countryFilter) {
-    const selected = new Set(state.filters.countries || []);
-    Array.from(countryFilter.options).forEach(option => {
-      option.selected = selected.has(option.value);
-    });
-  }
-  syncCountryPickerChecks();
-
-  if (cityFilter && optionExists(cityFilter, state.filters.city)) {
-    cityFilter.value = state.filters.city;
-  } else {
-    state.filters.city = "";
-  }
-
-  if (sectorFilter && optionExists(sectorFilter, state.filters.sector)) {
-    sectorFilter.value = state.filters.sector;
-  } else {
-    state.filters.sector = "";
-  }
-
-  if (professionFilter && optionExists(professionFilter, state.filters.profession)) {
-    professionFilter.value = state.filters.profession;
-  } else if (state.filters.profession && state.filters.profession !== "") {
-    state.filters.profession = "";
-  }
-
-  updateCountrySelectionBadge();
-  updateCountryPickerTrigger();
-  updateQuickChipStates();
-  updateActiveFiltersSummary();
-}
-
-function onFilterChange() {
-  jobsDispatch.dispatch({
-    type: JOBS_ACTIONS.FILTERS_CHANGED,
-    payload: { signature: JSON.stringify(state.filters || {}) }
-  });
-  syncStateFromFilters();
-  applyFiltersAndRender({ resetPage: true });
-}
-
-function syncStateFromFilters() {
-  state.filters.workType = workTypeFilter ? workTypeFilter.value : "";
-  state.filters.lifecycleStatus = normalizeLifecycleStatus(lifecycleStatusFilter ? lifecycleStatusFilter.value : "active", "active");
-  state.filters.countries = countryFilter
-    ? Array.from(countryFilter.selectedOptions).map(option => option.value)
-    : [];
-  state.filters.city = cityFilter ? cityFilter.value : "";
-  state.filters.sector = sectorFilter ? sectorFilter.value : "";
-  state.filters.profession = professionFilter ? professionFilter.value : "";
-  state.filters.newOnly = Boolean(state.filters.newOnly);
-  state.filters.excludeInternship = Boolean(state.filters.excludeInternship);
-  state.filters.search = searchFilter ? searchFilter.value.trim() : "";
-  state.filters.sort = sortFilter ? sortFilter.value : "relevance";
-  updateCountrySelectionBadge();
-  updateCountryPickerTrigger();
-  updateQuickChipStates();
-  updateActiveFiltersSummary();
-}
-
-function resetFilters() {
-  state.filters = { ...defaultFilters, countries: Array.from(defaultFilters.countries || []) };
-  if (professionSearchFilter) professionSearchFilter.value = "";
-  renderProfessionOptions("");
-  applyStateToFilters();
-}
-
 function applyFiltersAndRender({ resetPage }) {
   if (resetPage) {
     state.currentPage = 1;
@@ -1260,49 +1032,23 @@ function applyFiltersAndRender({ resetPage }) {
     resetPage: Boolean(resetPage),
     totalJobs: allJobs.length
   });
-  syncStateFromFilters();
-
-  const searchTerm = state.filters.search.toLowerCase();
-
-  filteredJobs = allJobs.filter(job => {
-    const matchesWorkType = !state.filters.workType || job.workType === state.filters.workType;
-    const lifecycleStatus = String(job.status || "active").toLowerCase() || "active";
-    const matchesLifecycle = !state.filters.lifecycleStatus || lifecycleStatus === state.filters.lifecycleStatus;
-    const locationCities = getJobLocationCities(job);
-    const locationCountries = getJobLocationCountries(job);
-    const matchesCountry = state.filters.countries.length === 0
-      || locationCountries.some(country => matchesCountrySelection(country, state.filters.countries));
-    const matchesCity = !state.filters.city || locationCities.includes(state.filters.city);
-    const matchesSector = !state.filters.sector || job.sector === state.filters.sector;
-    const matchesProfession = !state.filters.profession || job.profession === state.filters.profession;
-    const jobKey = getJobKeyForJobWithService(job);
-    const matchesNewOnly = !state.filters.newOnly || !currentUser || !seenJobKeys.has(jobKey);
-    const matchesInternship = !state.filters.excludeInternship || !isInternshipJob(job);
-    const matchesSearch =
-      !searchTerm ||
-      job.title.toLowerCase().includes(searchTerm) ||
-      job.company.toLowerCase().includes(searchTerm) ||
-      (job.city || "").toLowerCase().includes(searchTerm) ||
-      (job.sector || "").toLowerCase().includes(searchTerm) ||
-      (job.locationSummary || "").toLowerCase().includes(searchTerm) ||
-      locationCities.some(value => value.toLowerCase().includes(searchTerm)) ||
-      locationCountries.some(value => value.toLowerCase().includes(searchTerm));
-
-    return matchesWorkType
-      && matchesLifecycle
-      && matchesCountry
-      && matchesCity
-      && matchesSector
-      && matchesProfession
-      && matchesNewOnly
-      && matchesInternship
-      && matchesSearch;
+  filtersController.syncStateFromFilters();
+  filteredJobs = filterJobs(allJobs, state.filters, {
+    currentUser: userState.currentUser,
+    seenJobKeys: userState.seenJobKeys,
+    getJobKeyForJob: getJobKeyForJobWithService,
+    getJobLocationCities,
+    getJobLocationCountries,
+    isInternshipJob,
+    matchesCountrySelection: matchesCountrySelectionForJobs
   });
 
   emitDesktopStartupMetric("jobs_apply_filters_complete", {
     filteredCount: filteredJobs.length
   });
-  sortJobs(filteredJobs, state.filters.sort);
+  filteredJobs = sortJobsFromQuery(filteredJobs, state.filters.sort, {
+    fullCountryName: fullCountryNameForJobs
+  });
   emitDesktopStartupMetric("jobs_sort_complete", {
     filteredCount: filteredJobs.length,
     sortMode: String(state.filters.sort || "relevance")
@@ -1313,180 +1059,32 @@ function applyFiltersAndRender({ resetPage }) {
   emitDesktopStartupMetric("jobs_write_state_complete");
 }
 
-function sortJobs(jobs, sortMode) {
-  if (sortMode === "relevance") {
-    jobs.sort((a, b) => {
-      const aScore = a.freshnessScore ?? 101;
-      const bScore = b.freshnessScore ?? 101;
-      if (aScore !== bScore) return aScore - bScore; // Ascending (lower score = fresher)
-      return a.title.localeCompare(b.title); // Tie-breaker by title
-    });
-    return;
-  }
-  if (sortMode === "title-asc") {
-    jobs.sort((a, b) => a.title.localeCompare(b.title));
-    return;
-  }
-  if (sortMode === "company-asc") {
-    jobs.sort((a, b) => a.company.localeCompare(b.company));
-    return;
-  }
-  if (sortMode === "country-asc") {
-    jobs.sort((a, b) =>
-      fullCountryNameForJobs(a.country)
-        .localeCompare(fullCountryNameForJobs(b.country))
-    );
-    return;
-  }
-  if (sortMode === "remote-first") {
-    const order = { Remote: 0, Hybrid: 1, Onsite: 2 };
-    jobs.sort((a, b) => {
-      const diff = (order[a.workType] ?? 99) - (order[b.workType] ?? 99);
-      if (diff !== 0) return diff;
-      return a.title.localeCompare(b.title);
-    });
-  }
-}
-
 function displayJobs(jobs) {
-  if (!jobsList || !pagination) return;
-  emitDesktopStartupMetric("jobs_display_start", {
-    totalCount: jobs.length,
-    currentPage: state.currentPage
-  });
-
-  if (jobs.length === 0) {
-    jobsList.innerHTML = '<div class="no-results">No jobs found matching your filters.</div>';
-    pagination.innerHTML = "";
-    updateResultsSummary(0, 0, 0, allJobs.length);
-    emitDesktopStartupMetric("jobs_display_empty");
-    return;
-  }
-
-  const totalPages = Math.ceil(jobs.length / state.itemsPerPage);
-  if (state.currentPage > totalPages) state.currentPage = totalPages;
-
-  const startIndex = (state.currentPage - 1) * state.itemsPerPage;
-  const pageJobs = jobs.slice(startIndex, startIndex + state.itemsPerPage);
-  emitDesktopStartupMetric("jobs_display_markup_start", {
-    pageJobs: pageJobs.length,
-    totalPages
-  });
-
-  jobsList.innerHTML = `
-    <div class="jobs-table-header">
-      <div class="job-row-header">
-        <div class="col-freshness" title="Freshness (posted/fetched recency)" aria-hidden="true"></div>
-        <div class="col-title">Position</div>
-        <div class="col-company">Company</div>
-        <div class="col-sector">Sector</div>
-        <div class="col-city">City</div>
-        <div class="col-country">Country</div>
-        <div class="col-contract">Contract</div>
-        <div class="col-type">Type</div>
-      </div>
-    </div>
-    <div class="jobs-table-body">
-      ${pageJobs.map(renderJobRow).join("")}
-    </div>
-  `;
-  emitDesktopStartupMetric("jobs_display_dom_committed", {
-    pageJobs: pageJobs.length
-  });
-
-  renderPagination(totalPages);
-  emitDesktopStartupMetric("jobs_display_pagination_complete", {
-    totalPages
-  });
-  bindRenderedJobEvents(pageJobs);
-  emitDesktopStartupMetric("jobs_display_bind_complete", {
-    pageJobs: pageJobs.length
-  });
-  updateResultsSummary(jobs.length, startIndex + 1, startIndex + pageJobs.length, allJobs.length);
-  emitDesktopStartupMetric("jobs_display_complete", {
-    startIndex: startIndex + 1,
-    endIndex: startIndex + pageJobs.length,
-    totalCount: jobs.length
-  });
-  window.requestAnimationFrame(() => {
-    emitDesktopStartupMetric("jobs_display_frame_presented", {
-      pageJobs: pageJobs.length
-    });
-  });
-}
-
-function renderJobRow(job) {
-  const jobKey = getJobKeyForJobWithService(job);
-  const isSeen = Boolean(currentUser && seenJobKeys.has(jobKey));
-  return renderJobRowHtml(job, {
-    fullCountryName: fullCountryNameForJobs,
-    sanitizeUrl,
-    getJobKeyForJob: getJobKeyForJobWithService,
-    savedJobKeys,
-    isSeen,
-    isNew: Boolean(currentUser && !isSeen),
+  return displayJobsFromView(jobs, {
+    jobsList,
+    pagination,
+    resultsSummary,
+    state,
+    allJobs,
+    currentUser: userState.currentUser,
+    seenJobKeys: userState.seenJobKeys,
+    savedJobKeys: userState.savedJobKeys,
     isJobsApiReady,
-    toContractClass,
-    capitalizeFirst
-  });
-}
-
-function bindRenderedJobEvents(pageJobs) {
-  if (!jobsList) return;
-  const pageById = new Map(pageJobs.map(job => [String(job.id), job])), t = UI_TOKENS.jobs;
-  jobsList.querySelectorAll(`${ui(t.jobRow)}[data-job-link]`).forEach(row => {
-    const link = row.dataset.jobLink;
-    if (!link) return;
-    const openLink = sanitizeUrl(link) || link, jobKey = String(row.dataset.jobKey || "").trim(), openJob = () => { window.open(openLink, "_blank", "noopener,noreferrer"); markJobSeenFromInteraction(jobKey).catch(() => {}); };
-    row.tabIndex = 0; row.setAttribute("role", "link");
-    row.addEventListener("click", e => { if (!e.target.closest(ui(t.saveJobBtn))) openJob(); });
-    row.addEventListener("keydown", e => { if (e.key === "Enter" && !e.target.closest(ui(t.saveJobBtn))) openJob(); });
-  });
-  jobsList.querySelectorAll(ui(t.saveJobBtn)).forEach(btn => btn.addEventListener("click", async e => { e.preventDefault(); e.stopPropagation(); const job = pageById.get(btn.dataset.jobId || ""); if (job) await toggleSaveJob(job); }));
-}
-
-function renderPagination(totalPages) {
-  let html = "";
-
-  if (totalPages > 1) {
-    if (state.currentPage > 1) {
-      html += `<button class="page-btn" data-page="${state.currentPage - 1}" aria-label="Previous page">Prev</button>`;
-    }
-
-    const visiblePages = getVisiblePages(totalPages, state.currentPage);
-    visiblePages.forEach(item => {
-      if (item === "...") {
-        html += '<span class="page-ellipsis">...</span>';
-      } else {
-        html += `<button class="page-btn ${item === state.currentPage ? "active" : ""}" data-page="${item}">${item}</button>`;
-      }
-    });
-
-    if (state.currentPage < totalPages) {
-      html += `<button class="page-btn" data-page="${state.currentPage + 1}" aria-label="Next page">Next</button>`;
-    }
-  }
-
-  pagination.innerHTML = html;
-
-  pagination.querySelectorAll(".page-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const page = parseInt(btn.dataset.page, 10);
-      if (!isNaN(page)) {
-        goToPage(page);
-      }
-    });
+    getJobKeyForJob: getJobKeyForJobWithService,
+    fullCountryName: fullCountryNameForJobs,
+    goToPage,
+    emitDesktopStartupMetric,
+    renderJobRowHtml
   });
 }
 
 function goToPage(page) {
-  const totalPages = Math.max(1, Math.ceil(filteredJobs.length / state.itemsPerPage));
-  const nextPage = Math.min(Math.max(page, 1), totalPages);
-  if (nextPage === state.currentPage) return;
-
-  state.currentPage = nextPage;
-  displayJobs(filteredJobs);
-  writeStateToUrl();
+  return goToPageFromView(page, {
+    filteredJobs,
+    state,
+    displayJobs,
+    writeStateToUrl
+  });
 }
 
 
@@ -1523,274 +1121,7 @@ function enableKeyboardNav() {
 }
 
 function updateResultsSummary(total, from, to, loadedTotal = total) {
-  if (!resultsSummary) return;
-  const loaded = Number.isFinite(Number(loadedTotal)) ? Number(loadedTotal) : total;
-  if (total === 0) {
-    if (loaded > 0) {
-      resultsSummary.textContent = `Showing 0 jobs (${loaded.toLocaleString()} loaded)`;
-      return;
-    }
-    resultsSummary.textContent = "0 jobs";
-    return;
-  }
-  const filteredText = `Showing ${from}-${to} of ${total.toLocaleString()} jobs`;
-  const pageText = loaded > total
-    ? `${filteredText} (${loaded.toLocaleString()} loaded)`
-    : filteredText;
-  resultsSummary.textContent = pageText;
-}
-
-function isCleanFilterOptionValue(value) {
-  const text = String(value || "").trim();
-  if (!text) return false;
-  if (text.includes("<") || text.includes(">")) return false;
-  return isSemanticallyValidLocationValue(text, "city");
-}
-
-function updateFilterOptions() {
-  if (!workTypeFilter || !countryFilter || !professionFilter || !cityFilter || !sectorFilter) return;
-
-  const countries = new Set();
-  const professions = new Set();
-  const cities = new Set();
-  const sectors = new Set();
-
-  allJobs.forEach(job => {
-    getJobLocationCountries(job).forEach(country => {
-      if (isValidCountry(country)) countries.add(country);
-    });
-    if (job.profession) professions.add(job.profession);
-    getJobLocationCities(job).forEach(city => {
-      if (city && isCleanFilterOptionValue(city)) cities.add(city);
-    });
-    if (job.sector) sectors.add(job.sector);
-  });
-
-  availableCountries = Array.from(countries).sort((a, b) =>
-    fullCountryNameForJobs(a)
-      .localeCompare(fullCountryNameForJobs(b))
-  );
-  const availableRegions = getAvailableRegionOptionsForJobs(availableCountries);
-  availableCountryFilterValues = [
-    ...availableRegions.map(region => region.value),
-    ...availableCountries
-  ];
-
-  countryFilter.innerHTML = "";
-  availableCountryFilterValues.forEach(country => {
-    const opt = document.createElement("option");
-    opt.value = country;
-    opt.textContent = getCountryFilterOptionLabelForJobs(country);
-    countryFilter.appendChild(opt);
-  });
-  renderCountryPickerOptions(countryPickerSearch ? countryPickerSearch.value : "");
-
-  cityFilter.innerHTML = '<option value="">All Cities</option>';
-  Array.from(cities).sort().forEach(city => {
-    if (!isCleanFilterOptionValue(city)) return;
-    const opt = document.createElement("option");
-    opt.value = city;
-    opt.textContent = city;
-    cityFilter.appendChild(opt);
-  });
-
-  sectorFilter.innerHTML = '<option value="">All Sectors</option>';
-  Array.from(sectors).sort((a, b) => a.localeCompare(b)).forEach(sector => {
-    const opt = document.createElement("option");
-    opt.value = sector;
-    opt.textContent = sector;
-    sectorFilter.appendChild(opt);
-  });
-
-  availableProfessions = Array.from(professions).sort();
-  renderProfessionOptions(professionSearchFilter ? professionSearchFilter.value : "");
-  updateCountrySelectionBadge();
-  updateCountryPickerTrigger();
-}
-
-function renderProfessionOptions(query = "") {
-  if (!professionFilter) return;
-  const normalized = normalizeToken(query);
-  const current = state.filters.profession;
-
-  professionFilter.innerHTML = '<option value="">All Roles</option>';
-  availableProfessions.forEach(profession => {
-    const label = PROFESSION_LABELS[profession] || capitalizeFirst(profession);
-    if (normalized && !label.toLowerCase().includes(normalized) && profession !== current) {
-      return;
-    }
-    const opt = document.createElement("option");
-    opt.value = profession;
-    opt.textContent = label;
-    professionFilter.appendChild(opt);
-  });
-
-  if (optionExists(professionFilter, current)) {
-    professionFilter.value = current;
-  } else if (current) {
-    state.filters.profession = "";
-    professionFilter.value = "";
-  }
-}
-
-function updateCountrySelectionBadge() {
-  if (!countrySelectionBadge) return;
-  countrySelectionBadge.textContent = getCountrySelectionBadgeText(state.filters.countries);
-}
-
-function matchesCountrySelection(jobCountry, selections) {
-  return matchesCountrySelectionForJobs(jobCountry, selections);
-}
-
-function toggleCountrySelection(countryCode) {
-  const mapped = resolveCountryCode(countryCode);
-  if (!mapped) return;
-  const selected = new Set(state.filters.countries || []);
-  if (selected.has(mapped)) {
-    selected.delete(mapped);
-  } else {
-    selected.add(mapped);
-  }
-  state.filters.countries = Array.from(selected);
-}
-
-function resolveCountryCode(countryCode) {
-  return resolveCountryCodeForJobs(countryCode, {
-    availableCountries,
-    availableCountryFilterValues
-  });
-}
-
-function syncCountryPickerChecks() {
-  if (!countryPickerOptions) return;
-  const selected = new Set(state.filters.countries || []);
-  countryPickerOptions.querySelectorAll('input[type="checkbox"]').forEach(input => {
-    input.checked = selected.has(input.value);
-  });
-}
-
-function renderCountryPickerOptions(query = "") {
-  if (!countryPickerOptions) return;
-  countryPickerOptions.innerHTML = renderCountryPickerOptionsHtml({
-    availableCountryFilterValues,
-    selectedCountries: state.filters.countries,
-    query,
-    getCountryFilterOptionLabel: getCountryFilterOptionLabelForJobs,
-    escapeHtml
-  });
-}
-
-function toggleCountryPickerPanel() {
-  if (!countryPickerPanel) return;
-  const isHidden = countryPickerPanel.classList.contains("hidden");
-  if (isHidden) {
-    countryPickerPanel.classList.remove("hidden");
-    if (countryPickerBtn) countryPickerBtn.setAttribute("aria-expanded", "true");
-    if (countryPickerSearch) countryPickerSearch.focus();
-    return;
-  }
-  closeCountryPickerPanel();
-}
-
-function closeCountryPickerPanel() {
-  if (!countryPickerPanel) return;
-  countryPickerPanel.classList.add("hidden");
-  if (countryPickerBtn) countryPickerBtn.setAttribute("aria-expanded", "false");
-}
-
-function initializeQuickFilters() {
-  visibleQuickFilterKeys = loadQuickFilterPreferences();
-  renderQuickFilters();
-  renderQuickFilterOptions();
-}
-
-function loadQuickFilterPreferences() {
-  const defaults = getDefaultQuickFilterKeys(QUICK_FILTERS);
-  const parsed = readQuickFilterPreferences(QUICK_FILTER_PREFS_KEY, defaults);
-  return sanitizeQuickFilterKeys(parsed, QUICK_FILTERS);
-}
-
-function saveQuickFilterPreferences() {
-  writeQuickFilterPreferences(QUICK_FILTER_PREFS_KEY, visibleQuickFilterKeys);
-}
-
-function renderQuickFilters() {
-  if (!quickActionsEl) return;
-  quickActionsEl.innerHTML = renderQuickFiltersHtml(visibleQuickFilterKeys, QUICK_FILTERS);
-  updateQuickChipStates();
-}
-
-function renderQuickFilterOptions() {
-  if (!quickFiltersOptionsEl) return;
-  quickFiltersOptionsEl.innerHTML = renderQuickFilterOptionsHtml(visibleQuickFilterKeys, QUICK_FILTERS);
-}
-
-function setQuickFilterVisibility(key, visible) {
-  visibleQuickFilterKeys = getNextQuickFilterKeys(visibleQuickFilterKeys, key, visible, QUICK_FILTERS);
-  saveQuickFilterPreferences();
-  renderQuickFilters();
-  renderQuickFilterOptions();
-}
-
-function resetQuickFilterPreferences() {
-  visibleQuickFilterKeys = getDefaultQuickFilterKeys(QUICK_FILTERS);
-  saveQuickFilterPreferences();
-  renderQuickFilters();
-  renderQuickFilterOptions();
-}
-
-function toggleQuickFiltersPanel() {
-  if (!quickFiltersPanel) return;
-  const hidden = quickFiltersPanel.classList.contains("hidden");
-  if (hidden) {
-    renderQuickFilterOptions();
-    quickFiltersPanel.classList.remove("hidden");
-    if (customizeQuickFiltersBtn) customizeQuickFiltersBtn.setAttribute("aria-expanded", "true");
-    return;
-  }
-  closeQuickFiltersPanel();
-}
-
-function closeQuickFiltersPanel() {
-  if (!quickFiltersPanel) return;
-  quickFiltersPanel.classList.add("hidden");
-  if (customizeQuickFiltersBtn) customizeQuickFiltersBtn.setAttribute("aria-expanded", "false");
-}
-
-function applyQuickFilter(quick) {
-  const item = QUICK_FILTERS.find(filter => filter.key === quick);
-  if (!item) return;
-
-  if (item.type === "clear") {
-    resetFilters();
-    return;
-  }
-  applyQuickFilterToState(quick, state.filters, QUICK_FILTERS, { toggleCountrySelection });
-}
-
-function updateCountryPickerTrigger() {
-  if (!countryPickerBtn) return;
-  countryPickerBtn.textContent = getCountryPickerTriggerText(state.filters.countries);
-}
-
-function updateQuickChipStates() {
-  if (!quickActionsEl) return;
-  quickActionsEl.querySelectorAll(".quick-chip").forEach(chip => {
-    const key = chip.dataset.quick;
-    const item = QUICK_FILTERS.find(filter => filter.key === key);
-    if (!item) return;
-    const active = isQuickFilterActive(item, state.filters, { resolveCountryCode });
-    chip.classList.toggle("active", active);
-    chip.setAttribute("aria-pressed", active ? "true" : "false");
-  });
-}
-
-function updateActiveFiltersSummary() {
-  if (!activeFiltersSummaryEl) return;
-  const active = getActiveFilterSummaryItems(state.filters, {
-    professionLabels: PROFESSION_LABELS
-  });
-  activeFiltersSummaryEl.textContent = active.length ? `Active filters: ${active.join(" • ")}` : "No active filters";
+  return updateResultsSummaryFromView(resultsSummary, total, from, to, loadedTotal);
 }
 
 async function fetchUnifiedJobs({ timeoutMs } = {}) {
@@ -1827,38 +1158,7 @@ function getJobKeyForJobWithService(job) {
 }
 
 async function toggleSaveJob(job) {
-  if (!isJobsApiReady()) {
-    showToast("Local storage provider unavailable.", "error");
-    return;
-  }
-
-  if (!currentUser) {
-    showToast("Sign in to save jobs.", "info");
-    await signInUser();
-    return;
-  }
-
-  const jobKey = getJobKeyForJobWithService(job);
-  const isSaved = savedJobKeys.has(jobKey);
-
-  try {
-    if (isSaved) {
-      const removeResult = await jobsSavedJobsService.removeSavedJobForUser(currentUser.uid, jobKey);
-      if (!removeResult.ok) throw new Error(removeResult.error);
-      savedJobKeys.delete(jobKey);
-      showToast("Removed from saved jobs.", "success");
-    } else {
-      const saveResult = await jobsSavedJobsService.saveJobForUser(currentUser.uid, toJobSnapshot(job, { sanitizeUrl }));
-      if (!saveResult.ok) throw new Error(saveResult.error);
-      savedJobKeys.add(jobKey);
-      showToast("Saved job to your profile.", "success");
-    }
-    jobsDispatch.dispatch({ type: JOBS_ACTIONS.SAVE_TOGGLED, payload: { jobKey } });
-    applyFiltersAndRender({ resetPage: false });
-  } catch (err) {
-    logJobsError("Could not toggle saved job", err);
-    showToast("Could not update saved jobs right now.", "error");
-  }
+  return authController.toggleSaveJob(job);
 }
 
 function setProgress(visible) {
