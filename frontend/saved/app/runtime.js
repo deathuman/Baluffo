@@ -46,6 +46,9 @@ import {
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { set as stateHubSet } from "../../shared/state-hub.js";
 import { fetchJson, postJson } from "../../shared/api-client.js";
+import { createAdminBridgeButtonWatcher } from "../../shared/admin-bridge-button.js";
+import { createAuthReadyPoller } from "../../shared/auth-ready-poll.js";
+import { normalizeToken } from "../../shared/text-utils.js";
 import { cacheSavedDom } from "./dom.js";
 import { setSavedAuthControlsReady, setSavedAuthStatus, toggleSavedAuthButtons } from "./auth.js";
 import { requestConfirmationDialog, requestTextInputDialog } from "../../local-data/profile-name-dialog.js";
@@ -171,11 +174,14 @@ let lastSavedJobsByKey = new Map();
 let selectedJobKey = "";
 let timelineScope = "all";
 let lastActivityPulse = null;
-let savedAuthReadyPollTimer = null;
+const savedAuthReadyPoller = createAuthReadyPoller({
+  isReady: () => savedPageService.isAvailable() && isSavedApiReady(),
+  onReady: () => initSavedJobsPage()
+});
 let savedAuthListenerBound = false;
 let savedInteractiveMetricSent = false; // eslint-disable-line no-unused-vars -- used in markSavedFirstInteractive
-let adminBridgeStatusPollTimer = null;
 let adminBridgeButtonState = "checking";
+let adminBridgeWatcher = null;
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const TIMELINE_PREF_PREFIX = "baluffo_saved_timeline_prefs";
 const CUSTOM_SOURCE_LABEL = "Custom";
@@ -247,48 +253,43 @@ const startupMetrics = createSavedStartupMetrics({
  * - events concern: ./runtime/events.js
  */
 
-function setAdminPageButtonState(stateValue, label, title) {
-  const normalized = String(stateValue || "checking").toLowerCase();
-  adminBridgeButtonState = normalized;
-  if (!adminPageBtnEl) return;
-  adminPageBtnEl.dataset.bridgeState = normalized;
-  adminPageBtnEl.classList.remove("online", "offline", "checking");
-  adminPageBtnEl.classList.add(normalized);
-  adminPageBtnEl.textContent = label || "Admin Checking...";
-  adminPageBtnEl.title = title || label || "Checking admin bridge status";
-  const enabled = normalized === "online";
-  adminPageBtnEl.disabled = !enabled;
-  adminPageBtnEl.setAttribute("aria-disabled", enabled ? "false" : "true");
-}
-
-async function pollAdminBridgeButtonState() {
-  if (!adminPageBtnEl) return;
-  if (adminBridgeButtonState !== "online") {
-    setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
-  }
-  try {
-    const payload = await fetchJson(adminConfig.ADMIN_BRIDGE_BASE, "/ops/health");
-    const summary = payload?.summary || {};
-    const activeAlerts = Number(summary?.activeAlertCount || 0);
-    const label = activeAlerts > 0 ? `Admin Online (${activeAlerts} alerts)` : "Admin Online";
-    setAdminPageButtonState("online", label, "Open admin panel");
-  } catch {
-    setAdminPageButtonState("offline", "Admin Offline", "Admin bridge is offline");
-  }
+/**
+ * Applies page-specific presentation for admin bridge button state.
+ * @param {Object} params
+ * @param {HTMLElement} params.buttonEl
+ * @param {string} params.state - "online", "offline", or "checking"
+ * @param {string} params.label
+ * @param {string} params.title
+ * @param {number} params.activeAlerts
+ */
+function applySavedAdminBridgeState({ buttonEl, state, label, title }) {
+  if (!buttonEl) return;
+  adminBridgeButtonState = state;
+  buttonEl.dataset.bridgeState = state;
+  buttonEl.classList.remove("online", "offline", "checking");
+  buttonEl.classList.add(state);
+  buttonEl.textContent = label || "Admin Checking...";
+  buttonEl.title = title || label || "Checking admin bridge status";
+  const enabled = state === "online";
+  buttonEl.disabled = !enabled;
+  buttonEl.setAttribute("aria-disabled", enabled ? "false" : "true");
 }
 
 function startAdminBridgeButtonWatch() {
-  if (!adminPageBtnEl || adminBridgeStatusPollTimer) return;
-  setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
-  pollAdminBridgeButtonState().catch(() => {});
-  adminBridgeStatusPollTimer = window.setInterval(() => {
-    pollAdminBridgeButtonState().catch(() => {});
-  }, 5000);
+  if (!adminBridgeWatcher) return;
+  adminBridgeWatcher.startAdminBridgeButtonWatch();
 }
 
 function bootSavedPage() {
   cacheDom();
+  adminBridgeWatcher = createAdminBridgeButtonWatcher({
+    buttonEl: adminPageBtnEl,
+    baseUrl: adminConfig.ADMIN_BRIDGE_BASE,
+    fetchJson,
+    applyState: applySavedAdminBridgeState
+  });
   startAdminBridgeButtonWatch();
+  setupSavedJobsListDelegation();
   bindEvents();
   initSavedJobsPage();
 }
@@ -474,14 +475,14 @@ function initSavedJobsPage() {
     setActivityStatus("Local provider is starting...");
     toggleAuthButtons(false);
     setAuthControlsReady(false);
-    scheduleSavedAuthReadyPoll();
+    savedAuthReadyPoller.schedulePoll();
     setCustomJobAvailability(false);
     setSavedSortBarVisible(false);
     renderAuthRequired("Local auth provider is starting. Please wait...");
     renderTimeline();
     return;
   }
-  stopSavedAuthReadyPoll();
+  savedAuthReadyPoller.stopPoll();
   emitSavedStartupMetric("saved_auth_ready");
   setAuthControlsReady(true);
   markSavedFirstInteractive("auth_ready");
@@ -545,24 +546,6 @@ function initSavedJobsPage() {
   });
 }
 
-function stopSavedAuthReadyPoll() {
-  if (!savedAuthReadyPollTimer) return;
-  clearTimeout(savedAuthReadyPollTimer);
-  savedAuthReadyPollTimer = null;
-}
-
-function scheduleSavedAuthReadyPoll(delayMs = 600) {
-  stopSavedAuthReadyPoll();
-  savedAuthReadyPollTimer = setTimeout(() => {
-    savedAuthReadyPollTimer = null;
-    if (savedPageService.isAvailable() && isSavedApiReady()) {
-      initSavedJobsPage();
-      return;
-    }
-    scheduleSavedAuthReadyPoll(delayMs);
-  }, Math.max(250, Number(delayMs) || 600));
-}
-
 function subscribeToSavedJobs(uid) {
   unsubscribeSavedJobs = savedPageService.subscribeSavedJobs(
     uid,
@@ -605,6 +588,125 @@ function subscribeToSavedJobs(uid) {
 function renderAuthRequired(message) {
   if (!savedJobsListEl) return;
   savedJobsListEl.innerHTML = `<div class="no-results">${escapeHtml(message)}</div>`;
+}
+
+/**
+ * Sets up event delegation on the saved jobs list container.
+ * Called once during boot to avoid reattaching listeners after each render.
+ */
+function setupSavedJobsListDelegation() {
+  if (!savedJobsListEl) return;
+  const t = UI_TOKENS.saved;
+
+  savedJobsListEl.addEventListener("click", event => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const removeBtn = target.closest(ui(t.removeBtn));
+    if (removeBtn) {
+      const jobKey = removeBtn.dataset.jobKey || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      removeSavedJob(jobKey).catch(() => {});
+      return;
+    }
+
+    const phaseBtn = target.closest(ui(t.phaseBtn));
+    if (phaseBtn) {
+      const jobKey = phaseBtn.dataset.jobKey || "";
+      const phase = phaseBtn.dataset.phase || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      updatePhase(jobKey, phase).catch(() => {});
+      return;
+    }
+
+    const detailsToggle = target.closest(ui(t.detailsToggle));
+    if (detailsToggle) {
+      const jobKey = detailsToggle.dataset.jobKey || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      toggleDetailsForJob(jobKey);
+      return;
+    }
+
+    const personalEditBtn = target.closest(ui(t.personalEditBtn));
+    if (personalEditBtn) {
+      const jobKey = personalEditBtn.dataset.jobKey || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      openCustomJobEditor(jobKey, false);
+      return;
+    }
+
+    const personalDuplicateBtn = target.closest(ui(t.personalDuplicateBtn));
+    if (personalDuplicateBtn) {
+      const jobKey = personalDuplicateBtn.dataset.jobKey || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      openCustomJobEditor(jobKey, true);
+      return;
+    }
+
+    const detailsTabBtn = target.closest(ui(t.detailsTabBtn));
+    if (detailsTabBtn) {
+      const jobKey = detailsTabBtn.dataset.jobKey || "";
+      const tab = detailsTabBtn.dataset.detailsTab || "notes";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      setJobDetailsTab(jobKey, tab);
+      applyJobDetailsTab(jobKey, tab);
+      return;
+    }
+
+    const historyRefreshBtn = target.closest(ui(t.historyRefreshBtn));
+    if (historyRefreshBtn) {
+      const jobKey = historyRefreshBtn.dataset.jobKey || "";
+      setSelectedJobKey(jobKey, { rerenderTimeline: false });
+      refreshActivityLog().then(() => {
+        renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
+      }).catch(() => {});
+      return;
+    }
+
+    const attachUploadBtn = target.closest(ui(t.attachUploadBtn));
+    if (attachUploadBtn) {
+      const key = attachUploadBtn.dataset.jobKey || "";
+      setSelectedJobKey(key, { rerenderTimeline: false });
+      const input = savedJobsListEl.querySelector(`.attach-file-input[data-job-key="${cssEscape(key)}"]`);
+      if (input) input.click();
+      return;
+    }
+
+    const itemBlock = target.closest(ui(t.itemBlock));
+    if (itemBlock && !target.closest("button,a,input,textarea,select,label")) {
+      setSelectedJobKey(itemBlock.dataset.jobKey || "", { rerenderTimeline: false });
+    }
+  });
+
+  savedJobsListEl.addEventListener("input", event => {
+    const target = event.target;
+    if (!(target instanceof HTMLTextAreaElement)) return;
+    if (!target.classList.contains("job-notes-input")) return;
+    const jobKey = target.dataset.jobKey || "";
+    setSelectedJobKey(jobKey, { rerenderTimeline: false });
+    queueNotesSave(jobKey, target.value);
+  });
+
+  savedJobsListEl.addEventListener("focusout", event => {
+    const target = event.target;
+    if (!(target instanceof HTMLTextAreaElement)) return;
+    if (!target.classList.contains("job-notes-input")) return;
+    const jobKey = target.dataset.jobKey || "";
+    setSelectedJobKey(jobKey, { rerenderTimeline: false });
+    flushNotesSave(jobKey, target.value).catch(() => {});
+  });
+
+  savedJobsListEl.addEventListener("change", event => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.classList.contains("attach-file-input")) return;
+    const files = target.files ? Array.from(target.files) : [];
+    if (files.length === 0) return;
+    const jobKey = target.dataset.jobKey || "";
+    setSelectedJobKey(jobKey, { rerenderTimeline: false });
+    uploadAttachments(jobKey, files).catch(() => {});
+    target.value = "";
+  });
 }
 
 function renderSavedJobs(jobs) {
@@ -662,105 +764,6 @@ function renderSavedJobs(jobs) {
       ${filteredJobs.map(renderSavedJobBlock).join("")}
     </div>
   `;
-
-  const t = UI_TOKENS.saved;
-
-  savedJobsListEl.querySelectorAll(ui(t.removeBtn)).forEach(btn => {
-    btn.addEventListener("click", async () => {
-      setSelectedJobKey(btn.dataset.jobKey || "", { rerenderTimeline: false });
-      await removeSavedJob(btn.dataset.jobKey || "");
-    });
-  });
-
-  savedJobsListEl.querySelectorAll(ui(t.phaseBtn)).forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const jobKey = btn.dataset.jobKey || "";
-      const phase = btn.dataset.phase || "";
-      setSelectedJobKey(jobKey, { rerenderTimeline: false });
-      await updatePhase(jobKey, phase);
-    });
-  });
-
-  savedJobsListEl.querySelectorAll(ui(t.detailsToggle)).forEach(btn => {
-    btn.addEventListener("click", () => {
-      const jobKey = btn.dataset.jobKey || "";
-      setSelectedJobKey(jobKey, { rerenderTimeline: false });
-      toggleDetailsForJob(jobKey);
-    });
-  });
-
-  savedJobsListEl.querySelectorAll(ui(t.personalEditBtn)).forEach(btn => {
-    btn.addEventListener("click", () => {
-      const jobKey = btn.dataset.jobKey || "";
-      setSelectedJobKey(jobKey, { rerenderTimeline: false });
-      openCustomJobEditor(jobKey, false);
-    });
-  });
-
-  savedJobsListEl.querySelectorAll(ui(t.personalDuplicateBtn)).forEach(btn => {
-    btn.addEventListener("click", () => {
-      const jobKey = btn.dataset.jobKey || "";
-      setSelectedJobKey(jobKey, { rerenderTimeline: false });
-      openCustomJobEditor(jobKey, true);
-    });
-  });
-
-  savedJobsListEl.querySelectorAll(ui(t.detailsTabBtn)).forEach(btn => {
-    btn.addEventListener("click", () => {
-      const jobKey = btn.dataset.jobKey || "";
-      const tab = btn.dataset.detailsTab || "notes";
-      setSelectedJobKey(jobKey, { rerenderTimeline: false });
-      setJobDetailsTab(jobKey, tab);
-      applyJobDetailsTab(jobKey, tab);
-    });
-  });
-
-  savedJobsListEl.querySelectorAll(ui(t.historyRefreshBtn)).forEach(btn => {
-    btn.addEventListener("click", async () => {
-      setSelectedJobKey(btn.dataset.jobKey || "", { rerenderTimeline: false });
-      await refreshActivityLog();
-      renderSavedJobs(Array.from(lastSavedJobsByKey.values()));
-    });
-  });
-
-  savedJobsListEl.querySelectorAll(ui(t.noteInput)).forEach(textarea => {
-    textarea.addEventListener("input", () => {
-      setSelectedJobKey(textarea.dataset.jobKey || "", { rerenderTimeline: false });
-      queueNotesSave(textarea.dataset.jobKey || "", textarea.value);
-    });
-    textarea.addEventListener("blur", async () => {
-      setSelectedJobKey(textarea.dataset.jobKey || "", { rerenderTimeline: false });
-      await flushNotesSave(textarea.dataset.jobKey || "", textarea.value);
-    });
-  });
-
-  savedJobsListEl.querySelectorAll(ui(t.attachUploadBtn)).forEach(btn => {
-    btn.addEventListener("click", () => {
-      const key = btn.dataset.jobKey || "";
-      setSelectedJobKey(key, { rerenderTimeline: false });
-      const input = savedJobsListEl.querySelector(`.attach-file-input[data-job-key="${cssEscape(key)}"]`);
-      if (input) input.click();
-    });
-  });
-
-  savedJobsListEl.querySelectorAll(".attach-file-input").forEach(input => {
-    input.addEventListener("change", async () => {
-      const files = input.files ? Array.from(input.files) : [];
-      if (files.length === 0) return;
-      setSelectedJobKey(input.dataset.jobKey || "", { rerenderTimeline: false });
-      await uploadAttachments(input.dataset.jobKey || "", files);
-      input.value = "";
-    });
-  });
-
-  savedJobsListEl.querySelectorAll(ui(t.itemBlock)).forEach(block => {
-    block.addEventListener("click", event => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (target.closest("button,a,input,textarea,select,label")) return;
-      setSelectedJobKey(block.dataset.jobKey || "", { rerenderTimeline: false });
-    });
-  });
 
   bindAttachmentActionButtons();
   applyDetailsAccordion();
@@ -909,7 +912,7 @@ function normalizeSavedSector(job) {
   if (lower === "game" || lower === "game company" || lower === "gaming") return "Game";
   if (lower === "tech" || lower === "tech company" || lower === "technology") return "Tech";
 
-  const ct = String(job?.companyType || "").trim().toLowerCase();
+  const ct = normalizeToken(job?.companyType);
   if (ct === "game" || ct === "game company") return "Game";
   if (ct === "tech" || ct === "tech company") return "Tech";
   return raw || "Tech";

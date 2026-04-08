@@ -1,3 +1,5 @@
+import { normalizeToken } from "../../shared/text-utils.js";
+
 export const TIMELINE_SCOPE_ALL = "all";
 export const TIMELINE_SCOPE_SELECTED = "selected";
 export const TIMELINE_SCOPE_PHASE = "phase";
@@ -5,7 +7,7 @@ export const TIMELINE_SCOPE_NOTES = "notes";
 export const TIMELINE_SCOPE_ATTACHMENTS = "attachments";
 
 export function normalizeTimelineScope(value) {
-  const raw = String(value || "").trim().toLowerCase();
+  const raw = normalizeToken(value);
   if (
     raw === TIMELINE_SCOPE_ALL ||
     raw === TIMELINE_SCOPE_SELECTED ||

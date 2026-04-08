@@ -1,17 +1,7 @@
+import { toAuthViewModel } from "../../shared/auth-view-model.js";
+
 export function setSavedAuthStatus(refs, text) {
-  const raw = String(text || "").trim();
-  let label = raw || "Guest";
-  let hint = "";
-  const signedInMatch = raw.match(/^signed\s+in\s+as\s+(.+)$/i);
-
-  if (!raw || /^browsing\s+as\s+guest$/i.test(raw) || /^guest$/i.test(raw)) {
-    label = "Guest";
-    hint = "Browsing as guest";
-  } else if (signedInMatch) {
-    label = String(signedInMatch[1] || "").trim() || "User";
-    hint = "Signed in";
-  }
-
+  const { label, hint } = toAuthViewModel(text);
   if (refs.savedAuthStatusEl) refs.savedAuthStatusEl.textContent = label;
   if (refs.savedAuthStatusHintEl) refs.savedAuthStatusHintEl.textContent = hint;
   if (refs.savedAuthAvatarEl) {

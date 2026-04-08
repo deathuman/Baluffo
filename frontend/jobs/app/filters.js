@@ -1,5 +1,7 @@
+import { normalizeToken } from "../../shared/text-utils.js";
+
 export function normalizeLifecycleStatus(value, fallback = "active") {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = normalizeToken(value);
   if (!normalized) return fallback;
   if (normalized === "active" || normalized === "likely_removed" || normalized === "archived") return normalized;
   return fallback;
@@ -144,7 +146,7 @@ export function renderCountryPickerOptionsHtml({
   getCountryFilterOptionLabel,
   escapeHtml
 }) {
-  const normalized = String(query || "").trim().toLowerCase();
+  const normalized = normalizeToken(query);
   const selected = new Set(selectedCountries || []);
   const rows = availableCountryFilterValues.filter(code => {
     if (!normalized) return true;

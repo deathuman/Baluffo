@@ -1,0 +1,83 @@
+/**
+ * @fileoverview Shared admin bridge button status watcher.
+ * Polls admin bridge health endpoint and updates button state.
+ * Keeps poll logic shared while allowing page-specific presentation via applyState callback.
+ */
+
+/**
+ * Creates an admin bridge button watcher.
+ * @param {Object} options
+ * @param {HTMLElement} options.buttonEl - The button element to update
+ * @param {string} options.baseUrl - Admin bridge base URL
+ * @param {Function} options.fetchJson - fetchJson utility function
+ * @param {Function} options.applyState - Callback to apply page-specific presentation: ({ state, label, title, activeAlerts }) => void
+ * @param {number} [options.intervalMs] - Polling interval in milliseconds (default: 5000)
+ * @returns {{ setAdminPageButtonState, pollAdminBridgeButtonState, startAdminBridgeButtonWatch, stopAdminBridgeButtonWatch }}
+ */
+export function createAdminBridgeButtonWatcher({ buttonEl, baseUrl, fetchJson, applyState, intervalMs = 5000 }) {
+  let currentState = "checking";
+  let pollTimer = null;
+
+  /**
+   * Sets the admin bridge button state.
+   * @param {string} stateValue - "online", "offline", or "checking"
+   * @param {string} [label] - Button text
+   * @param {string} [title] - Button title/tooltip
+   * @param {number} [activeAlerts] - Number of active alerts (for online state)
+   */
+  function setAdminPageButtonState(stateValue, label, title, activeAlerts = 0) {
+    const normalized = String(stateValue || "checking").toLowerCase();
+    currentState = normalized;
+    applyState({ buttonEl, state: normalized, label, title, activeAlerts });
+  }
+
+  /**
+   * Polls admin bridge health and updates button state.
+   * @returns {Promise<void>}
+   */
+  async function pollAdminBridgeButtonState() {
+    if (!buttonEl) return;
+    if (currentState !== "online") {
+      setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
+    }
+    try {
+      const payload = await fetchJson(baseUrl, "/ops/health");
+      const summary = payload?.summary || {};
+      const activeAlertCount = Number(summary?.activeAlertCount || 0);
+      const label = activeAlertCount > 0
+        ? `Admin Online (${activeAlertCount} alert${activeAlertCount !== 1 ? "s" : ""})`
+        : "Admin Online";
+      setAdminPageButtonState("online", label, "Open admin panel", activeAlertCount);
+    } catch {
+      setAdminPageButtonState("offline", "Admin Offline", "Admin bridge is offline");
+    }
+  }
+
+  /**
+   * Starts polling admin bridge status at regular intervals.
+   */
+  function startAdminBridgeButtonWatch() {
+    if (!buttonEl || pollTimer) return;
+    setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
+    pollAdminBridgeButtonState().catch(() => { });
+    pollTimer = window.setInterval(() => {
+      pollAdminBridgeButtonState().catch(() => { });
+    }, intervalMs);
+  }
+
+  /**
+   * Stops polling admin bridge status.
+   */
+  function stopAdminBridgeButtonWatch() {
+    if (!pollTimer) return;
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  return {
+    setAdminPageButtonState,
+    pollAdminBridgeButtonState,
+    startAdminBridgeButtonWatch,
+    stopAdminBridgeButtonWatch
+  };
+}

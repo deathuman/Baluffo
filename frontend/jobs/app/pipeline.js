@@ -1,3 +1,5 @@
+import { normalizeToken } from "../../shared/text-utils.js";
+
 function titleCaseWords(value) {
   return String(value || "")
     .split(/\s+/)
@@ -18,7 +20,7 @@ function normalizePipelineStage(payload) {
       if (cleaned) return titleCaseWords(cleaned);
     }
   }
-  const rawStage = String(payload?.stage || "").trim().toLowerCase();
+  const rawStage = normalizeToken(payload?.stage);
   if (rawStage) {
     if (rawStage === "sync_push") return "Sync Push";
     if (rawStage === "sync_pull") return "Sync Pull";

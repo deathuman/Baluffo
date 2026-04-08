@@ -1,3 +1,5 @@
+import { toAuthViewModel } from "../../shared/auth-view-model.js";
+
 export function toggleJobsAuthButtons(refs, isSignedIn) {
   if (refs.authSignInBtn) refs.authSignInBtn.classList.toggle("hidden", isSignedIn);
   if (refs.authSignOutBtn) refs.authSignOutBtn.classList.toggle("hidden", !isSignedIn);
@@ -14,25 +16,11 @@ export function setJobsAuthControlsReady(refs, ready) {
   });
 }
 
-export function toJobsAuthViewModel(text) {
-  const raw = String(text || "").trim();
-  const model = { label: raw || "Guest", hint: "" };
-  const signedInMatch = raw.match(/^signed\s+in\s+as\s+(.+)$/i);
-  if (!raw || /^browsing\s+as\s+guest$/i.test(raw) || /^guest$/i.test(raw)) {
-    model.label = "Guest";
-    model.hint = "Browsing as guest";
-    return model;
-  }
-  if (signedInMatch) {
-    model.label = String(signedInMatch[1] || "").trim() || "User";
-    model.hint = "Signed in";
-  }
-  return model;
-}
+export { toAuthViewModel as toJobsAuthViewModel };
 
 export function setJobsAuthStatus(refs, text) {
   if (!refs.authStatus) return;
-  const { label, hint } = toJobsAuthViewModel(text);
+  const { label, hint } = toAuthViewModel(text);
 
   refs.authStatus.textContent = label;
   if (refs.authStatusHint) {

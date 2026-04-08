@@ -40,6 +40,9 @@ import {
 } from "../state-sync/index.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { fetchJson, postJson } from "../../shared/api-client.js";
+import { createAdminBridgeButtonWatcher } from "../../shared/admin-bridge-button.js";
+import { createAuthReadyPoller } from "../../shared/auth-ready-poll.js";
+import { normalizeToken } from "../../shared/text-utils.js";
 import { cacheJobsDom } from "./dom.js";
 import {
   toggleJobsAuthButtons,
@@ -248,13 +251,16 @@ let hasInitializedJobsFeed = false;
 let pendingAutoRefreshSignal = null;
 let lastHandledAutoRefreshSignalId = readAppliedAutoRefreshId();
 let _lastFilterOptionsSignature = "";
-let authReadyPollTimer = null;
 let authStateListenerBound = false;
+const authReadyPoller = createAuthReadyPoller({
+  isReady: () => isJobsApiReady() && jobsPageService.isAvailable(),
+  onReady: () => initAuth()
+});
 let nonCriticalStartupScheduled = false;
 let coreEventsBound = false;
 let secondaryEventsBound = false;
-let adminBridgeStatusPollTimer = null;
 let adminBridgeButtonState = "checking";
+let adminBridgeWatcher = null;
 const jobsPipelineUiState = createJobsPipelineUiState();
 const startupMetrics = createJobsStartupMetrics({
   emitMetric: (event, payload) => {
@@ -289,10 +295,88 @@ function logJobsError(message, err) {
   logError(JOBS_LOG_SCOPE, message, err);
 }
 
+/**
+ * Applies page-specific presentation for admin bridge button state.
+ * @param {Object} params
+ * @param {HTMLElement} params.buttonEl
+ * @param {string} params.state - "online", "offline", or "checking"
+ * @param {string} params.label
+ * @param {string} params.title
+ * @param {number} params.activeAlerts
+ */
+function applyJobsAdminBridgeState({ buttonEl, state, label, title }) {
+  if (!buttonEl) return;
+  const enabled = state === "online";
+  adminBridgeButtonState = state;
+  buttonEl.dataset.bridgeState = state;
+  buttonEl.textContent = label || "Admin Checking...";
+  buttonEl.title = title || label || "Checking admin bridge status";
+  buttonEl.disabled = !enabled;
+  buttonEl.setAttribute("aria-disabled", enabled ? "false" : "true");
+}
+
+/**
+ * Sets up event delegation on the jobs list container.
+ * Called once during boot to avoid reattaching listeners after each render.
+ */
+function setupJobsListDelegation() {
+  if (!jobsList) return;
+  const t = UI_TOKENS.jobs;
+
+  jobsList.addEventListener("click", event => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const saveJobBtn = target.closest(ui(t.saveJobBtn));
+    if (saveJobBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      const jobId = saveJobBtn.dataset.jobId || "";
+      const job = allJobs.find(j => String(j.id) === jobId);
+      if (job) {
+        toggleSaveJob(job).catch(() => {});
+      }
+      return;
+    }
+
+    const jobRow = target.closest(`${ui(t.jobRow)}[data-job-link]`);
+    if (jobRow && !target.closest(ui(t.saveJobBtn))) {
+      const link = jobRow.dataset.jobLink;
+      if (!link) return;
+      const jobKey = String(jobRow.dataset.jobKey || "").trim();
+      const openLink = sanitizeUrl(link) || link;
+      window.open(openLink, "_blank", "noopener,noreferrer");
+      markJobSeenFromInteraction(jobKey).catch(() => {});
+    }
+  });
+
+  jobsList.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const jobRow = target.closest(`${ui(t.jobRow)}[data-job-link]`);
+    if (jobRow && !target.closest(ui(t.saveJobBtn))) {
+      const link = jobRow.dataset.jobLink;
+      if (!link) return;
+      const jobKey = String(jobRow.dataset.jobKey || "").trim();
+      const openLink = sanitizeUrl(link) || link;
+      window.open(openLink, "_blank", "noopener,noreferrer");
+      markJobSeenFromInteraction(jobKey).catch(() => {});
+    }
+  });
+}
+
 function bootJobsPage() {
   cacheDom();
-  setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
-  setJobsStartupState("loading", "booting");
+  adminBridgeWatcher = createAdminBridgeButtonWatcher({
+    buttonEl: adminPageBtn,
+    baseUrl: ADMIN_BRIDGE_BASE,
+    fetchJson,
+    applyState: applyJobsAdminBridgeState
+  });
+  adminBridgeWatcher.setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
+  setupJobsListDelegation();  setJobsStartupState("loading", "booting");
   bindCoreEvents();
   try {
     initializeQuickFilters();
@@ -387,40 +471,9 @@ function markJobsFirstInteractive(reason) {
   }
 }
 
-function setAdminPageButtonState(stateValue, label, title) {
-  if (!adminPageBtn) return;
-  const normalized = String(stateValue || "checking").toLowerCase();
-  const enabled = normalized === "online";
-  adminBridgeButtonState = normalized;
-  adminPageBtn.dataset.bridgeState = normalized;
-  adminPageBtn.textContent = label || "Admin Checking...";
-  adminPageBtn.title = title || label || "Checking admin bridge status";
-  adminPageBtn.disabled = !enabled;
-  adminPageBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
-}
-
-async function pollAdminBridgeButtonState() {
-  if (!adminPageBtn) return;
-  if (adminBridgeButtonState !== "online") {
-    setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
-  }
-  try {
-    const payload = await fetchJson(ADMIN_BRIDGE_BASE, "/ops/health");
-    const summary = payload?.summary || {};
-    const activeAlerts = Number(summary?.activeAlertCount || 0);
-    const label = activeAlerts > 0 ? `Admin Online (${activeAlerts} alerts)` : "Admin Online";
-    setAdminPageButtonState("online", label, "Open admin panel");
-  } catch {
-    setAdminPageButtonState("offline", "Admin Offline", "Admin bridge is offline");
-  }
-}
-
 function startAdminBridgeButtonWatch() {
-  if (!adminPageBtn || adminBridgeStatusPollTimer) return;
-  pollAdminBridgeButtonState().catch(() => {});
-  adminBridgeStatusPollTimer = window.setInterval(() => {
-    pollAdminBridgeButtonState().catch(() => {});
-  }, 5000);
+  if (!adminBridgeWatcher) return;
+  adminBridgeWatcher.startAdminBridgeButtonWatch();
 }
 
 async function openAdminPageFromJobs() {
@@ -635,7 +688,7 @@ function scheduleJobsPipelineStatusPoll(delayMs) {
 
 function handlePipelineCompletionStatus(payload) {
   const updatesFound = Boolean(payload?.updatesFound || payload?.refreshRecommended);
-  const hasError = Boolean(payload?.error) || String(payload?.stage || "").trim().toLowerCase() === "error";
+  const hasError = Boolean(payload?.error) || normalizeToken(payload?.stage) === "error";
   setRefreshJobsNeedsAttention(updatesFound);
   jobsPipelineUiState.active = false;
   jobsPipelineUiState.runId = "";
@@ -813,10 +866,10 @@ function initAuth() {
     setAuthStatus("Local auth starting...");
     toggleAuthButtons(false);
     setAuthControlsReady(false);
-    scheduleAuthReadyPoll();
+    authReadyPoller.schedulePoll();
     return;
   }
-  stopAuthReadyPoll();
+  authReadyPoller.stopPoll();
   emitDesktopStartupMetric("jobs_auth_ready");
   setAuthControlsReady(true);
   if (authStateListenerBound) return;
@@ -858,24 +911,6 @@ function initAuth() {
   });
 }
 
-function stopAuthReadyPoll() {
-  if (!authReadyPollTimer) return;
-  clearTimeout(authReadyPollTimer);
-  authReadyPollTimer = null;
-}
-
-function scheduleAuthReadyPoll(delayMs = 600) {
-  stopAuthReadyPoll();
-  authReadyPollTimer = setTimeout(() => {
-    authReadyPollTimer = null;
-    if (isJobsApiReady() && jobsPageService.isAvailable()) {
-      initAuth();
-      return;
-    }
-    scheduleAuthReadyPoll(delayMs);
-  }, Math.max(250, Number(delayMs) || 600));
-}
-
 function setAuthControlsReady(ready) {
   setJobsAuthControlsReady({ authSignInBtn, authSignOutBtn }, ready);
 }
@@ -891,7 +926,7 @@ function toggleAuthButtons(isSignedIn) {
 async function signInUser() {
   if (!isJobsApiReady() || !jobsPageService.isAvailable()) {
     setAuthControlsReady(false);
-    scheduleAuthReadyPoll();
+    authReadyPoller.schedulePoll();
     showToast("Local auth provider is starting. Try again in a moment.", "info");
     return;
   }
@@ -918,7 +953,7 @@ async function signInUser() {
 async function signOutUser() {
   if (!isJobsApiReady() || !jobsPageService.isAvailable()) {
     setAuthControlsReady(false);
-    scheduleAuthReadyPoll();
+    authReadyPoller.schedulePoll();
     return;
   }
   if (!authStateListenerBound) {
@@ -1398,41 +1433,6 @@ function renderJobRow(job) {
 
 function bindRenderedJobEvents(pageJobs) {
   if (!jobsList) return;
-  const pageById = new Map(pageJobs.map(job => [String(job.id), job]));
-
-  const t = UI_TOKENS.jobs;
-  jobsList.querySelectorAll(`${ui(t.jobRow)}[data-job-link]`).forEach(row => {
-    const link = row.dataset.jobLink;
-    if (!link) return;
-    const jobKey = String(row.dataset.jobKey || "").trim();
-    const openLink = sanitizeUrl(link) || link;
-
-    row.tabIndex = 0;
-    row.setAttribute("role", "link");
-    row.addEventListener("click", e => {
-      if (e.target.closest(ui(t.saveJobBtn))) return;
-      window.open(openLink, "_blank", "noopener,noreferrer");
-      markJobSeenFromInteraction(jobKey).catch(() => {});
-    });
-    row.addEventListener("keydown", e => {
-      if (e.key !== "Enter") return;
-      if (e.target.closest(ui(t.saveJobBtn))) return;
-      window.open(openLink, "_blank", "noopener,noreferrer");
-      markJobSeenFromInteraction(jobKey).catch(() => {});
-    });
-  });
-
-  jobsList.querySelectorAll(ui(t.saveJobBtn)).forEach(btn => {
-    btn.addEventListener("click", async e => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const job = pageById.get(btn.dataset.jobId || "");
-      if (!job) return;
-      await toggleSaveJob(job);
-    });
-  });
-}
 
 function renderPagination(totalPages) {
   let html = "";
@@ -1599,7 +1599,7 @@ function updateFilterOptions() {
 
 function renderProfessionOptions(query = "") {
   if (!professionFilter) return;
-  const normalized = String(query || "").trim().toLowerCase();
+  const normalized = normalizeToken(query);
   const current = state.filters.profession;
 
   professionFilter.innerHTML = '<option value="">All Roles</option>';
@@ -1860,7 +1860,7 @@ function setSourceStatus(text) {
 
 function setJobsStartupState(state, detail = "") {
   if (!document?.body) return;
-  const normalized = String(state || "loading").trim().toLowerCase() || "loading";
+  const normalized = normalizeToken(state) || "loading";
   document.body.setAttribute("data-jobs-startup-state", normalized);
   if (detail) {
     document.body.setAttribute("data-jobs-startup-detail", String(detail));
