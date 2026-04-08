@@ -94,7 +94,7 @@ import {
   applyPendingJobsAutoRefreshSignal,
   triggerJobsAutoRefreshFromSignal
 } from "./feed.js";
-import { createJobsPageState, createJobsPipelineUiState } from "./runtime/state.js";
+import { createJobsRuntimeState } from "./runtime/state.js";
 import { createJobsStartupMetrics } from "./runtime/effects.js";
 import { createJobsBridgeRequest } from "./runtime/actions.js";
 import { setProgressVisibility, setStatusText } from "./runtime/view.js";
@@ -114,8 +114,6 @@ import {
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
-let allJobs = [];
-let filteredJobs = [];
 const JOBS_LOG_SCOPE = "jobs";
 /**
  * @typedef {Object} JobRow
@@ -169,62 +167,6 @@ const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
  * @property {string} hint
  */
 
-/** @type {JobsPageState} */
-const state = createJobsPageState(defaultFilters);
-const jobsDispatch = createJobsDispatcher();
-
-const PROFESSION_LABELS = jobsStateModule.PROFESSION_LABELS || {};
-
-let jobsList;
-let workTypeFilter;
-let lifecycleStatusFilter;
-let countryFilter;
-let countryPickerBtn;
-let countryPickerPanel;
-let countryPickerSearch;
-let countryPickerOptions;
-let countryPickerClearBtn;
-let cityFilter;
-let sectorFilter;
-let professionFilter;
-let professionSearchFilter;
-let searchFilter;
-let sortFilter;
-let resultsSummary;
-let countrySelectionBadge;
-let sourceStatus;
-let fetchProgress;
-let pagination;
-let refreshJobsBtn;
-let refreshJobsNeededBadgeEl;
-let jobsLastUpdatedEl;
-let authStatus;
-let authStatusHint;
-let authAvatar;
-let authSignInBtn;
-let authSignOutBtn;
-let adminPageBtn;
-let savedJobsBtn;
-let activeFiltersSummaryEl;
-let quickActionsEl;
-let customizeQuickFiltersBtn;
-let quickFiltersPanel;
-let quickFiltersOptionsEl;
-let desktopUrlStateReady = false;
-let desktopPendingRememberJobsUrl = false;
-let desktopPendingJobsUrl = "";
-let quickFiltersResetBtn;
-let dataSourcesListEl;
-let dataSourcesCaptionEl;
-let jobsPipelineRunBtn;
-
-const userState = {
-  currentUser: null,
-  savedJobKeys: new Set(),
-  seenJobKeys: new Set(),
-  authStateListenerBound: false
-};
-
 const JOBS_CACHE_DB = "baluffo_jobs_cache";
 const JOBS_CACHE_DB_VERSION = 2;
 const JOBS_CACHE_STORE = "jobs_feed";
@@ -241,108 +183,22 @@ const JOBS_PIPELINE_STATUS_IDLE_POLL_MS = 5000;
 const JOBS_BRIDGE_REQUEST_TIMEOUT_MS = 1800;
 const JOBS_FIRST_LOAD_REQUEST_TIMEOUT_MS = 4500;
 
+const jobsRuntime = createJobsRuntimeState(defaultFilters, {
+  lastHandledAutoRefreshSignalId: readAppliedAutoRefreshId()
+});
+const state = jobsRuntime.pageState;
+const userState = jobsRuntime.userState;
+const jobsPipelineUiState = jobsRuntime.pipelineUiState;
+const runtimeState = jobsRuntime.runtimeState;
+const dom = {};
+const jobsControllerRefs = dom;
+const jobsDispatch = createJobsDispatcher();
+const PROFESSION_LABELS = jobsStateModule.PROFESSION_LABELS || {};
 const QUICK_FILTERS = Array.isArray(jobsStateModule.QUICK_FILTERS) ? jobsStateModule.QUICK_FILTERS : [];
-let refreshInFlight = false;
-let hasInitializedJobsFeed = false;
-let pendingAutoRefreshSignal = null;
-let lastHandledAutoRefreshSignalId = readAppliedAutoRefreshId();
-let _lastFilterOptionsSignature = "";
 const authReadyPoller = createAuthReadyPoller({
   isReady: () => isJobsApiReady() && jobsPageService.isAvailable(),
   onReady: () => initAuth()
 });
-let nonCriticalStartupScheduled = false;
-let coreEventsBound = false;
-let secondaryEventsBound = false;
-let adminBridgeButtonState = "checking";
-let adminBridgeWatcher = null;
-const jobsPipelineUiState = createJobsPipelineUiState();
-const jobsControllerRefs = {
-  get authStatus() {
-    return authStatus;
-  },
-  get authStatusHint() {
-    return authStatusHint;
-  },
-  get authAvatar() {
-    return authAvatar;
-  },
-  get authSignInBtn() {
-    return authSignInBtn;
-  },
-  get authSignOutBtn() {
-    return authSignOutBtn;
-  },
-  get savedJobsBtn() {
-    return savedJobsBtn;
-  },
-  get jobsPipelineRunBtn() {
-    return jobsPipelineRunBtn;
-  },
-  get workTypeFilter() {
-    return workTypeFilter;
-  },
-  get lifecycleStatusFilter() {
-    return lifecycleStatusFilter;
-  },
-  get countryFilter() {
-    return countryFilter;
-  },
-  get countryPickerBtn() {
-    return countryPickerBtn;
-  },
-  get countryPickerPanel() {
-    return countryPickerPanel;
-  },
-  get countryPickerSearch() {
-    return countryPickerSearch;
-  },
-  get countryPickerOptions() {
-    return countryPickerOptions;
-  },
-  get countryPickerClearBtn() {
-    return countryPickerClearBtn;
-  },
-  get cityFilter() {
-    return cityFilter;
-  },
-  get sectorFilter() {
-    return sectorFilter;
-  },
-  get professionFilter() {
-    return professionFilter;
-  },
-  get professionSearchFilter() {
-    return professionSearchFilter;
-  },
-  get searchFilter() {
-    return searchFilter;
-  },
-  get sortFilter() {
-    return sortFilter;
-  },
-  get countrySelectionBadge() {
-    return countrySelectionBadge;
-  },
-  get activeFiltersSummaryEl() {
-    return activeFiltersSummaryEl;
-  },
-  get quickActionsEl() {
-    return quickActionsEl;
-  },
-  get customizeQuickFiltersBtn() {
-    return customizeQuickFiltersBtn;
-  },
-  get quickFiltersPanel() {
-    return quickFiltersPanel;
-  },
-  get quickFiltersOptionsEl() {
-    return quickFiltersOptionsEl;
-  },
-  get quickFiltersResetBtn() {
-    return quickFiltersResetBtn;
-  }
-};
 const filtersController = createJobsFiltersController({
   refs: jobsControllerRefs,
   state,
@@ -392,7 +248,7 @@ const authController = createJobsAuthController({
   emitDesktopStartupMetric,
   showToast,
   logJobsError,
-  getAllJobs: () => allJobs,
+  getAllJobs: () => runtimeState.allJobs,
   applyFiltersAndRender,
   loadSeenJobKeys,
   markSeenJob,
@@ -408,7 +264,7 @@ const pipelineController = createJobsPipelineController({
   refs: jobsControllerRefs,
   jobsPipelineUiState,
   callJobsBridge,
-  getAllJobs: () => allJobs,
+  getAllJobs: () => runtimeState.allJobs,
   showToast,
   setRefreshJobsNeedsAttention,
   isErrorStage: payload => Boolean(payload?.error) || normalizeToken(payload?.stage) === "error",
@@ -423,17 +279,17 @@ const jobsUrlPersistence = createJobsUrlPersistence({
   isDesktopRuntimeMode: () => isDesktopRuntimeMode(),
   rememberJobsUrl,
   emitMetric: (event, payload = {}) => emitDesktopStartupMetric(event, payload),
-  getDesktopUrlStateReady: () => desktopUrlStateReady,
+  getDesktopUrlStateReady: () => runtimeState.desktopUrlStateReady,
   setDesktopUrlStateReady: value => {
-    desktopUrlStateReady = Boolean(value);
+    runtimeState.desktopUrlStateReady = Boolean(value);
   },
-  getDesktopPendingRememberJobsUrl: () => desktopPendingRememberJobsUrl,
+  getDesktopPendingRememberJobsUrl: () => runtimeState.desktopPendingRememberJobsUrl,
   setDesktopPendingRememberJobsUrl: value => {
-    desktopPendingRememberJobsUrl = Boolean(value);
+    runtimeState.desktopPendingRememberJobsUrl = Boolean(value);
   },
-  getDesktopPendingJobsUrl: () => desktopPendingJobsUrl,
+  getDesktopPendingJobsUrl: () => runtimeState.desktopPendingJobsUrl,
   setDesktopPendingJobsUrl: value => {
-    desktopPendingJobsUrl = String(value || "");
+    runtimeState.desktopPendingJobsUrl = String(value || "");
   },
   lastUrlKey: JOBS_LAST_URL_KEY
 });
@@ -468,7 +324,7 @@ function logJobsError(message, err) {
 function applyJobsAdminBridgeState({ buttonEl, state, label, title }) {
   if (!buttonEl) return;
   const enabled = state === "online";
-  adminBridgeButtonState = state;
+  runtimeState.adminBridgeButtonState = state;
   buttonEl.dataset.bridgeState = state;
   buttonEl.textContent = label || "Admin Checking...";
   buttonEl.title = title || label || "Checking admin bridge status";
@@ -482,11 +338,11 @@ function applyJobsAdminBridgeState({ buttonEl, state, label, title }) {
  */
 function setupJobsListDelegation() {
   setupJobsListDelegationFromEvents({
-    jobsList,
+    jobsList: dom.jobsList,
     jobRowSelector: `${ui(UI_TOKENS.jobs.jobRow)}[data-job-link]`,
     saveJobBtnSelector: ui(UI_TOKENS.jobs.saveJobBtn),
     sanitizeUrl,
-    getJobById: jobId => allJobs.find(job => String(job.id) === String(jobId || "")),
+    getJobById: jobId => runtimeState.allJobs.find(job => String(job.id) === String(jobId || "")),
     onToggleSaveJob: toggleSaveJob,
     onMarkJobSeen: jobKey => authController.markJobSeenFromInteraction(jobKey)
   });
@@ -494,14 +350,15 @@ function setupJobsListDelegation() {
 
 function bootJobsPage() {
   cacheDom();
-  adminBridgeWatcher = createAdminBridgeButtonWatcher({
-    buttonEl: adminPageBtn,
+  runtimeState.adminBridgeWatcher = createAdminBridgeButtonWatcher({
+    buttonEl: dom.adminPageBtn,
     baseUrl: ADMIN_BRIDGE_BASE,
     fetchJson,
     applyState: applyJobsAdminBridgeState
   });
-  adminBridgeWatcher.setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
-  setupJobsListDelegation();  setJobsStartupState("loading", "booting");
+  runtimeState.adminBridgeWatcher.setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
+  setupJobsListDelegation();
+  setJobsStartupState("loading", "booting");
   bindCoreEvents();
   try {
     filtersController.initializeQuickFilters();
@@ -516,8 +373,8 @@ function bootJobsPage() {
 }
 
 function scheduleNonCriticalStartupWork() {
-  if (nonCriticalStartupScheduled) return;
-  nonCriticalStartupScheduled = true;
+  if (runtimeState.nonCriticalStartupScheduled) return;
+  runtimeState.nonCriticalStartupScheduled = true;
   scheduleNonCriticalStartup(window, () => {
     renderDataSources().catch(() => {});
     ensureJobsPipelineStatusWatch();
@@ -527,47 +384,7 @@ function scheduleNonCriticalStartupWork() {
 
 
 function cacheDom() {
-  ({
-    jobsList,
-    workTypeFilter,
-    lifecycleStatusFilter,
-    countryFilter,
-    countryPickerBtn,
-    countryPickerPanel,
-    countryPickerSearch,
-    countryPickerOptions,
-    countryPickerClearBtn,
-    cityFilter,
-    sectorFilter,
-    professionFilter,
-    professionSearchFilter,
-    searchFilter,
-    sortFilter,
-    resultsSummary,
-    countrySelectionBadge,
-    sourceStatus,
-    fetchProgress,
-    pagination,
-    refreshJobsBtn,
-    refreshJobsNeededBadgeEl,
-    jobsLastUpdatedEl,
-    authStatus,
-    authStatusHint,
-    authAvatar,
-    authSignInBtn,
-    authSignOutBtn,
-    adminPageBtn,
-    savedJobsBtn,
-    activeFiltersSummaryEl,
-    quickActionsEl,
-    customizeQuickFiltersBtn,
-    quickFiltersPanel,
-    quickFiltersOptionsEl,
-    quickFiltersResetBtn,
-    dataSourcesListEl,
-    dataSourcesCaptionEl,
-    jobsPipelineRunBtn
-  } = cacheJobsDom(document));
+  Object.assign(dom, cacheJobsDom(document));
 }
 
 function isDesktopRuntimeMode() {
@@ -585,24 +402,17 @@ function markStartupRendered(stage, rowCount) {
 function markJobsFirstInteractive(reason) {
   markFirstInteractive(startupMetrics, reason);
   setJobsStartupState("interactive", String(reason || "interactive"));
-  desktopUrlStateReady = true;
-  if (desktopPendingRememberJobsUrl) {
-    desktopPendingRememberJobsUrl = false;
-    const pendingUrl = desktopPendingJobsUrl || `${window.location.pathname}${window.location.search}`;
-    desktopPendingJobsUrl = "";
-    window.setTimeout(() => {
-      persistDesktopJobsUrlState(pendingUrl);
-    }, 0);
-  }
+  runtimeState.desktopUrlStateReady = true;
+  jobsUrlPersistence.flushDesktopPendingJobsUrlState();
 }
 
 function startAdminBridgeButtonWatch() {
-  if (!adminBridgeWatcher) return;
-  adminBridgeWatcher.startAdminBridgeButtonWatch();
+  if (!runtimeState.adminBridgeWatcher) return;
+  runtimeState.adminBridgeWatcher.startAdminBridgeButtonWatch();
 }
 
 async function openAdminPageFromJobs() {
-  if (adminBridgeButtonState !== "online") {
+  if (runtimeState.adminBridgeButtonState !== "online") {
     showToast("Admin bridge is offline.", "info");
     return;
   }
@@ -611,63 +421,63 @@ async function openAdminPageFromJobs() {
 }
 
 function bindCoreEvents() {
-  if (coreEventsBound) return;
-  coreEventsBound = true;
+  if (runtimeState.coreEventsBound) return;
+  runtimeState.coreEventsBound = true;
   const clickHandlers = new Map([
-    [savedJobsBtn, () => {
+    [dom.savedJobsBtn, () => {
       rememberCurrentJobsUrl();
       window.location.href = "saved.html";
     }],
-    [countryPickerClearBtn, () => {
+    [dom.countryPickerClearBtn, () => {
       state.filters.countries = [];
       filtersController.applyStateToFilters();
       applyFiltersAndRender({ resetPage: true });
     }],
-    [quickFiltersResetBtn, () => {
+    [dom.quickFiltersResetBtn, () => {
       filtersController.resetQuickFilterPreferences();
     }]
   ]);
   bindHandlersMap(clickHandlers);
 
-  bindAsyncClick(authSignInBtn, signInUser);
-  bindAsyncClick(authSignOutBtn, signOutUser);
-  bindAsyncClick(adminPageBtn, openAdminPageFromJobs);
-  bindAsyncClick(refreshJobsBtn, () => refreshJobsNow({ manual: true }));
-  bindAsyncClick(jobsPipelineRunBtn, triggerJobsPipelineRun);
+  bindAsyncClick(dom.authSignInBtn, signInUser);
+  bindAsyncClick(dom.authSignOutBtn, signOutUser);
+  bindAsyncClick(dom.adminPageBtn, openAdminPageFromJobs);
+  bindAsyncClick(dom.refreshJobsBtn, () => refreshJobsNow({ manual: true }));
+  bindAsyncClick(dom.jobsPipelineRunBtn, triggerJobsPipelineRun);
 }
 
 function bindEvents() {
-  if (secondaryEventsBound) return;
-  secondaryEventsBound = true;
+  if (runtimeState.secondaryEventsBound) return;
+  runtimeState.secondaryEventsBound = true;
   [
-    workTypeFilter,
-    lifecycleStatusFilter,
-    countryFilter,
-    cityFilter,
-    sectorFilter,
-    professionFilter,
-    sortFilter
+    dom.workTypeFilter,
+    dom.lifecycleStatusFilter,
+    dom.countryFilter,
+    dom.cityFilter,
+    dom.sectorFilter,
+    dom.professionFilter,
+    dom.sortFilter
   ].forEach(el => bindUi(el, "change", () => filtersController.onFilterChange()));
 
-  if (professionSearchFilter) {
-    professionSearchFilter.addEventListener("input", () => {
-      filtersController.renderProfessionOptions(professionSearchFilter.value);
+  if (dom.professionSearchFilter) {
+    dom.professionSearchFilter.addEventListener("input", () => {
+      filtersController.renderProfessionOptions(dom.professionSearchFilter.value);
     });
   }
 
-  if (countryPickerBtn) {
-    countryPickerBtn.addEventListener("click", e => {
+  if (dom.countryPickerBtn) {
+    dom.countryPickerBtn.addEventListener("click", e => {
       e.stopPropagation();
       filtersController.toggleCountryPickerPanel();
     });
   }
-  if (countryPickerSearch) {
-    countryPickerSearch.addEventListener("input", () => {
-      filtersController.renderCountryPickerOptions(countryPickerSearch.value);
+  if (dom.countryPickerSearch) {
+    dom.countryPickerSearch.addEventListener("input", () => {
+      filtersController.renderCountryPickerOptions(dom.countryPickerSearch.value);
     });
   }
-  if (countryPickerOptions) {
-    countryPickerOptions.addEventListener("change", event => {
+  if (dom.countryPickerOptions) {
+    dom.countryPickerOptions.addEventListener("change", event => {
       const target = event.target;
       if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
       const current = new Set(state.filters.countries || []);
@@ -680,17 +490,17 @@ function bindEvents() {
   }
 
   document.addEventListener("click", event => {
-    if (countryPickerPanel && !countryPickerPanel.classList.contains("hidden")) {
-      const clickedInsidePanel = countryPickerPanel.contains(event.target);
-      const clickedTrigger = countryPickerBtn && countryPickerBtn.contains(event.target);
+    if (dom.countryPickerPanel && !dom.countryPickerPanel.classList.contains("hidden")) {
+      const clickedInsidePanel = dom.countryPickerPanel.contains(event.target);
+      const clickedTrigger = dom.countryPickerBtn && dom.countryPickerBtn.contains(event.target);
       if (!clickedInsidePanel && !clickedTrigger) {
         closeCountryPickerPanel();
       }
     }
 
-    if (quickFiltersPanel && !quickFiltersPanel.classList.contains("hidden")) {
-      const clickedInsideQuickPanel = quickFiltersPanel.contains(event.target);
-      const clickedQuickTrigger = customizeQuickFiltersBtn && customizeQuickFiltersBtn.contains(event.target);
+    if (dom.quickFiltersPanel && !dom.quickFiltersPanel.classList.contains("hidden")) {
+      const clickedInsideQuickPanel = dom.quickFiltersPanel.contains(event.target);
+      const clickedQuickTrigger = dom.customizeQuickFiltersBtn && dom.customizeQuickFiltersBtn.contains(event.target);
       if (!clickedInsideQuickPanel && !clickedQuickTrigger) {
         closeQuickFiltersPanel();
       }
@@ -703,22 +513,22 @@ function bindEvents() {
     }
   });
 
-  if (searchFilter) {
-    bindUi(searchFilter, "input", debounce(() => {
+  if (dom.searchFilter) {
+    bindUi(dom.searchFilter, "input", debounce(() => {
       filtersController.onFilterChange();
     }, 180));
   }
 
   bindWindowResize(debounce(() => {
-    if (!allJobs.length) return;
+    if (!runtimeState.allJobs.length) return;
     const changed = recalculateItemsPerPage();
     if (changed) {
       applyFiltersAndRender({ resetPage: false });
     }
   }, 150));
 
-  if (quickActionsEl) {
-    quickActionsEl.addEventListener("click", event => {
+  if (dom.quickActionsEl) {
+    dom.quickActionsEl.addEventListener("click", event => {
       const btn = event.target.closest(".quick-btn");
       if (!btn) return;
       const quick = btn.dataset.quick;
@@ -729,15 +539,15 @@ function bindEvents() {
     });
   }
 
-  if (customizeQuickFiltersBtn) {
-    customizeQuickFiltersBtn.addEventListener("click", event => {
+  if (dom.customizeQuickFiltersBtn) {
+    dom.customizeQuickFiltersBtn.addEventListener("click", event => {
       event.stopPropagation();
       filtersController.toggleQuickFiltersPanel();
     });
   }
 
-  if (quickFiltersOptionsEl) {
-    quickFiltersOptionsEl.addEventListener("change", event => {
+  if (dom.quickFiltersOptionsEl) {
+    dom.quickFiltersOptionsEl.addEventListener("change", event => {
       const target = event.target;
       if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
       const { quick } = target.dataset;
@@ -757,20 +567,20 @@ function bindEvents() {
 
 async function init() {
   return initJobsFeed({
-    hasJobsList: Boolean(jobsList),
+    hasJobsList: Boolean(dom.jobsList),
     emitMetric: emitDesktopStartupMetric,
     initAuth,
     isDesktopRuntimeMode,
     readCachedJobs,
     normalizeRows: rows => {
-      allJobs = normalizeJobs(rows, {
+      runtimeState.allJobs = normalizeJobs(rows, {
         professionLabels: PROFESSION_LABELS,
         sanitizeUrl
       });
-      return allJobs;
+      return runtimeState.allJobs;
     },
     recalculateItemsPerPage,
-    updateFilterOptions: () => filtersController.updateFilterOptions(allJobs),
+    updateFilterOptions: () => filtersController.updateFilterOptions(runtimeState.allJobs),
     applyStateToFilters: () => filtersController.applyStateToFilters(),
     applyFiltersAndRender,
     markStartupRendered,
@@ -781,13 +591,13 @@ async function init() {
     refreshJobsNow,
     updateLastUpdatedText,
     setHasInitializedJobsFeed: value => {
-      hasInitializedJobsFeed = Boolean(value);
+      runtimeState.hasInitializedJobsFeed = Boolean(value);
     },
     scheduleNonCriticalStartupWork,
     applyPendingAutoRefreshSignal,
     loadStartupPreviewJobs,
     showError,
-    getAllJobs: () => allJobs
+    getAllJobs: () => runtimeState.allJobs
   });
 }
 
@@ -825,17 +635,17 @@ function readAppliedAutoRefreshId() {
 
 function markAutoRefreshSignalHandled(signalId) {
   if (!signalId) return;
-  lastHandledAutoRefreshSignalId = signalId;
+  runtimeState.lastHandledAutoRefreshSignalId = signalId;
   writeAutoRefreshAppliedId(JOBS_AUTO_REFRESH_APPLIED_KEY, signalId);
 }
 
 function handleAutoRefreshSignalValue(rawValue) {
   return handleJobsAutoRefreshSignalValue(rawValue, {
     parseAutoRefreshSignal: parseAutoRefreshSignalFromStartup,
-    getLastHandledAutoRefreshSignalId: () => lastHandledAutoRefreshSignalId,
-    getHasInitializedJobsFeed: () => hasInitializedJobsFeed,
+    getLastHandledAutoRefreshSignalId: () => runtimeState.lastHandledAutoRefreshSignalId,
+    getHasInitializedJobsFeed: () => runtimeState.hasInitializedJobsFeed,
     setPendingAutoRefreshSignal: value => {
-      pendingAutoRefreshSignal = value;
+      runtimeState.pendingAutoRefreshSignal = value;
     },
     triggerAutoRefreshFromSignal,
     logError: logJobsError
@@ -844,9 +654,9 @@ function handleAutoRefreshSignalValue(rawValue) {
 
 async function applyPendingAutoRefreshSignal() {
   return applyPendingJobsAutoRefreshSignal({
-    getPendingAutoRefreshSignal: () => pendingAutoRefreshSignal,
+    getPendingAutoRefreshSignal: () => runtimeState.pendingAutoRefreshSignal,
     setPendingAutoRefreshSignal: value => {
-      pendingAutoRefreshSignal = value;
+      runtimeState.pendingAutoRefreshSignal = value;
     },
     readAutoRefreshSignal,
     autoRefreshSignalKey: JOBS_AUTO_REFRESH_SIGNAL_KEY,
@@ -857,7 +667,7 @@ async function applyPendingAutoRefreshSignal() {
 
 async function triggerAutoRefreshFromSignal(signal) {
   return triggerJobsAutoRefreshFromSignal(signal, {
-    getLastHandledAutoRefreshSignalId: () => lastHandledAutoRefreshSignalId,
+    getLastHandledAutoRefreshSignalId: () => runtimeState.lastHandledAutoRefreshSignalId,
     setSourceStatus,
     getAutoRefreshStatusText,
     refreshJobsNow,
@@ -922,21 +732,21 @@ async function readCachedJobs() {
 }
 
 function updateLastUpdatedText(timestamp) {
-  if (!jobsLastUpdatedEl) return;
-  jobsLastUpdatedEl.textContent = getJobsLastUpdatedText(timestamp);
+  if (!dom.jobsLastUpdatedEl) return;
+  dom.jobsLastUpdatedEl.textContent = getJobsLastUpdatedText(timestamp);
 }
 
 async function refreshJobsNow({ manual, firstLoad = false }) {
   return refreshJobsFeed({ manual, firstLoad }, {
-    getRefreshInFlight: () => refreshInFlight,
+    getRefreshInFlight: () => runtimeState.refreshInFlight,
     setRefreshInFlight: value => {
-      refreshInFlight = Boolean(value);
+      runtimeState.refreshInFlight = Boolean(value);
     },
     dispatchRefreshRequested: () => {
       jobsDispatch.dispatch({ type: JOBS_ACTIONS.REFRESH_REQUESTED });
     },
     setRefreshButtonDisabled: disabled => {
-      if (refreshJobsBtn) refreshJobsBtn.disabled = disabled;
+      if (dom.refreshJobsBtn) dom.refreshJobsBtn.disabled = disabled;
     },
     setProgress,
     setSourceStatus,
@@ -950,9 +760,9 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
     },
     showToast,
     logError: logJobsError,
-    getAllJobs: () => allJobs,
+    getAllJobs: () => runtimeState.allJobs,
     setAllJobs: jobs => {
-      allJobs = jobs;
+      runtimeState.allJobs = jobs;
     },
     normalizeRows: rows => normalizeJobs(rows, {
       professionLabels: PROFESSION_LABELS,
@@ -963,7 +773,7 @@ async function refreshJobsNow({ manual, firstLoad = false }) {
     writeCachedJobs,
     updateLastUpdatedText,
     recalculateItemsPerPage,
-    updateFilterOptions: () => filtersController.updateFilterOptions(allJobs),
+    updateFilterOptions: () => filtersController.updateFilterOptions(runtimeState.allJobs),
     applyStateToFilters: () => filtersController.applyStateToFilters(),
     applyFiltersAndRender,
     markStartupRendered,
@@ -995,31 +805,31 @@ async function loadStartupPreviewJobs() {
     startupPreviewJsonUrls: STARTUP_PREVIEW_JSON_URLS,
     parseUnifiedJobsPayload: payload => parseUnifiedJobsPayload(payload, jobsParsing),
     normalizeRows: rows => {
-      allJobs = normalizeJobs(rows, {
+      runtimeState.allJobs = normalizeJobs(rows, {
         professionLabels: PROFESSION_LABELS,
         sanitizeUrl
       });
-      return allJobs;
+      return runtimeState.allJobs;
     },
     updateLastUpdatedText,
     recalculateItemsPerPage,
-    updateFilterOptions: () => filtersController.updateFilterOptions(allJobs),
+    updateFilterOptions: () => filtersController.updateFilterOptions(runtimeState.allJobs),
     applyStateToFilters: () => filtersController.applyStateToFilters(),
     applyFiltersAndRender,
     markStartupRendered,
     markJobsFirstInteractive,
-    getAllJobs: () => allJobs
+    getAllJobs: () => runtimeState.allJobs
   });
 }
 
 function setRefreshJobsNeedsAttention(needsRefresh) {
   const needs = Boolean(needsRefresh);
-  if (refreshJobsBtn) {
-    refreshJobsBtn.classList.toggle("needs-refresh", needs);
-    refreshJobsBtn.setAttribute("aria-live", "polite");
+  if (dom.refreshJobsBtn) {
+    dom.refreshJobsBtn.classList.toggle("needs-refresh", needs);
+    dom.refreshJobsBtn.setAttribute("aria-live", "polite");
   }
-  if (refreshJobsNeededBadgeEl) {
-    refreshJobsNeededBadgeEl.classList.toggle("hidden", !needs);
+  if (dom.refreshJobsNeededBadgeEl) {
+    dom.refreshJobsNeededBadgeEl.classList.toggle("hidden", !needs);
   }
 }
 
@@ -1030,10 +840,10 @@ function applyFiltersAndRender({ resetPage }) {
 
   emitDesktopStartupMetric("jobs_apply_filters_start", {
     resetPage: Boolean(resetPage),
-    totalJobs: allJobs.length
+    totalJobs: runtimeState.allJobs.length
   });
   filtersController.syncStateFromFilters();
-  filteredJobs = filterJobs(allJobs, state.filters, {
+  runtimeState.filteredJobs = filterJobs(runtimeState.allJobs, state.filters, {
     currentUser: userState.currentUser,
     seenJobKeys: userState.seenJobKeys,
     getJobKeyForJob: getJobKeyForJobWithService,
@@ -1044,16 +854,16 @@ function applyFiltersAndRender({ resetPage }) {
   });
 
   emitDesktopStartupMetric("jobs_apply_filters_complete", {
-    filteredCount: filteredJobs.length
+    filteredCount: runtimeState.filteredJobs.length
   });
-  filteredJobs = sortJobsFromQuery(filteredJobs, state.filters.sort, {
+  runtimeState.filteredJobs = sortJobsFromQuery(runtimeState.filteredJobs, state.filters.sort, {
     fullCountryName: fullCountryNameForJobs
   });
   emitDesktopStartupMetric("jobs_sort_complete", {
-    filteredCount: filteredJobs.length,
+    filteredCount: runtimeState.filteredJobs.length,
     sortMode: String(state.filters.sort || "relevance")
   });
-  displayJobs(filteredJobs);
+  displayJobs(runtimeState.filteredJobs);
   emitDesktopStartupMetric("jobs_write_state_start");
   writeStateToUrl();
   emitDesktopStartupMetric("jobs_write_state_complete");
@@ -1061,11 +871,11 @@ function applyFiltersAndRender({ resetPage }) {
 
 function displayJobs(jobs) {
   return displayJobsFromView(jobs, {
-    jobsList,
-    pagination,
-    resultsSummary,
+    jobsList: dom.jobsList,
+    pagination: dom.pagination,
+    resultsSummary: dom.resultsSummary,
     state,
-    allJobs,
+    allJobs: runtimeState.allJobs,
     currentUser: userState.currentUser,
     seenJobKeys: userState.seenJobKeys,
     savedJobKeys: userState.savedJobKeys,
@@ -1080,7 +890,7 @@ function displayJobs(jobs) {
 
 function goToPage(page) {
   return goToPageFromView(page, {
-    filteredJobs,
+    filteredJobs: runtimeState.filteredJobs,
     state,
     displayJobs,
     writeStateToUrl
@@ -1089,9 +899,9 @@ function goToPage(page) {
 
 
 function recalculateItemsPerPage() {
-  if (!jobsList) return false;
+  if (!dom.jobsList) return false;
 
-  const top = jobsList.getBoundingClientRect().top;
+  const top = dom.jobsList.getBoundingClientRect().top;
   const viewportHeight = window.innerHeight;
   const reservedSpace = 140;
   const availableHeight = Math.max(260, viewportHeight - top - reservedSpace);
@@ -1112,7 +922,7 @@ function enableKeyboardNav() {
     if (e.key === "ArrowLeft" && state.currentPage > 1) {
       goToPage(state.currentPage - 1);
     } else if (e.key === "ArrowRight") {
-      const totalPages = Math.ceil(filteredJobs.length / state.itemsPerPage);
+      const totalPages = Math.ceil(runtimeState.filteredJobs.length / state.itemsPerPage);
       if (state.currentPage < totalPages) {
         goToPage(state.currentPage + 1);
       }
@@ -1121,7 +931,7 @@ function enableKeyboardNav() {
 }
 
 function updateResultsSummary(total, from, to, loadedTotal = total) {
-  return updateResultsSummaryFromView(resultsSummary, total, from, to, loadedTotal);
+  return updateResultsSummaryFromView(dom.resultsSummary, total, from, to, loadedTotal);
 }
 
 async function fetchUnifiedJobs({ timeoutMs } = {}) {
@@ -1146,8 +956,8 @@ async function fetchJsonFromCandidates(urls, options) {
 
 async function renderDataSources() {
   return renderDataSourcesFromSources({
-    dataSourcesListEl,
-    dataSourcesCaptionEl
+    dataSourcesListEl: dom.dataSourcesListEl,
+    dataSourcesCaptionEl: dom.dataSourcesCaptionEl
   });
 }
 
@@ -1162,11 +972,11 @@ async function toggleSaveJob(job) {
 }
 
 function setProgress(visible) {
-  setProgressVisibility(setText, fetchProgress, visible);
+  setProgressVisibility(setText, dom.fetchProgress, visible);
 }
 
 function setSourceStatus(text) {
-  setStatusText(setText, sourceStatus, text);
+  setStatusText(setText, dom.sourceStatus, text);
 }
 
 function setJobsStartupState(state, detail = "") {
@@ -1181,18 +991,18 @@ function setJobsStartupState(state, detail = "") {
 }
 
 function _showLoading(text) {
-  showJobsLoading(jobsList, text);
+  showJobsLoading(dom.jobsList, text);
 }
 
 function showError(message, onRetry = null) {
   setJobsStartupState("error", "load_error");
-  showJobsError(jobsList, pagination, message, () => {
+  showJobsError(dom.jobsList, dom.pagination, message, () => {
     const retry = typeof onRetry === "function"
       ? onRetry
       : () => init().catch(err => handleJobsStartupFailure("Retry failed", err));
     return retry();
   });
-  updateResultsSummary(0, 0, 0, allJobs.length);
+  updateResultsSummary(0, 0, 0, runtimeState.allJobs.length);
 }
 
 function handleJobsStartupFailure(context, err, options = {}) {

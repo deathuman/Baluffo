@@ -15,6 +15,8 @@ import "./jobs-pipeline.test.mjs";
 import "./jobs-render.test.mjs";
 import "./jobs-runtime-jobs-list-events.test.mjs";
 import "./jobs-runtime-query.test.mjs";
+import "./jobs-runtime-state.test.mjs";
+import "./jobs-runtime-url-persistence.test.mjs";
 import "./jobs-source-metadata.test.mjs";
 import "./jobs-state.test.mjs";
 import "./local-data-backup-domain.test.mjs";

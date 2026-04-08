@@ -68,9 +68,23 @@ export function createJobsUrlPersistence({
     emitMetric("jobs_write_state_remember_url_complete");
   }
 
+  function flushDesktopPendingJobsUrlState() {
+    if (!isDesktopRuntimeMode()) return false;
+    if (!getDesktopUrlStateReady()) return false;
+    if (!getDesktopPendingRememberJobsUrl()) return false;
+    const url = getDesktopPendingJobsUrl() || `${windowObject.location.pathname}${windowObject.location.search}`;
+    setDesktopPendingRememberJobsUrl(false);
+    setDesktopPendingJobsUrl("");
+    windowObject.setTimeout(() => {
+      persistDesktopJobsUrlState(url);
+    }, 0);
+    return true;
+  }
+
   return {
     persistDesktopJobsUrlState,
     rememberCurrentJobsUrl,
-    writeStateToUrl
+    writeStateToUrl,
+    flushDesktopPendingJobsUrlState
   };
 }

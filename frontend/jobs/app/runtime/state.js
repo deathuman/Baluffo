@@ -1,8 +1,15 @@
-export function createJobsPageState(defaultFilters) {
+function cloneDefaultFilters(defaultFilters = {}) {
+  return {
+    ...defaultFilters,
+    countries: Array.from(defaultFilters?.countries || [])
+  };
+}
+
+export function createJobsPageState(defaultFilters = {}) {
   return {
     currentPage: 1,
     itemsPerPage: 10,
-    filters: { ...defaultFilters, countries: Array.from(defaultFilters.countries || []) }
+    filters: cloneDefaultFilters(defaultFilters)
   };
 }
 
@@ -13,5 +20,39 @@ export function createJobsPipelineUiState() {
     active: false,
     bridgeOnline: false,
     startedAt: ""
+  };
+}
+
+export function createJobsUserState() {
+  return {
+    currentUser: null,
+    savedJobKeys: new Set(),
+    seenJobKeys: new Set(),
+    authStateListenerBound: false
+  };
+}
+
+export function createJobsRuntimeState(defaultFilters = {}, { lastHandledAutoRefreshSignalId = 0 } = {}) {
+  return {
+    pageState: createJobsPageState(defaultFilters),
+    pipelineUiState: createJobsPipelineUiState(),
+    userState: createJobsUserState(),
+    runtimeState: {
+      allJobs: [],
+      filteredJobs: [],
+      refreshInFlight: false,
+      hasInitializedJobsFeed: false,
+      pendingAutoRefreshSignal: null,
+      lastHandledAutoRefreshSignalId: Number(lastHandledAutoRefreshSignalId) || 0,
+      desktopUrlStateReady: false,
+      desktopPendingRememberJobsUrl: false,
+      desktopPendingJobsUrl: "",
+      nonCriticalStartupScheduled: false,
+      coreEventsBound: false,
+      secondaryEventsBound: false,
+      adminBridgeButtonState: "checking",
+      adminBridgeWatcher: null,
+      lastFilterOptionsSignature: ""
+    }
   };
 }
