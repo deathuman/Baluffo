@@ -18,7 +18,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "PlayStation Global",
@@ -39,7 +45,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Paradox Careers",
@@ -62,7 +74,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Little Chicken",
@@ -87,7 +105,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Larian Studios",
@@ -95,7 +119,7 @@
     "adapter": "greenhouse",
     "slug": "larian-studios",
     "nlPriority": true,
-    "enabledByDefault": false,
+    "enabledByDefault": true,
     "id": "greenhouse:slug:larian-studios",
     "candidateState": "live",
     "approvedAt": "",
@@ -108,7 +132,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Bandai Namco Entertainment America (Greenhouse)",
@@ -129,7 +159,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Jagex (Lever)",
@@ -151,7 +187,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Sandbox VR (Lever)",
@@ -173,7 +215,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Voodoo (Lever)",
@@ -195,7 +243,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "CD PROJEKT RED (SmartRecruiters)",
@@ -217,7 +271,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Gameloft (SmartRecruiters)",
@@ -239,7 +299,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Hutch (Workable)",
@@ -261,7 +327,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Wargaming (Workable)",
@@ -283,7 +355,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "CrazyGames (Recruitee)",
@@ -305,7 +383,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Gameplay Galaxy (Pinpoint)",
@@ -327,7 +411,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "YallaPlay (Breezy)",
@@ -348,7 +438,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Lost Boys Interactive (JazzHR)",
@@ -369,7 +465,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Next Level Games (JazzHR)",
@@ -390,7 +492,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Ubisoft (SmartRecruiters)",
@@ -412,7 +520,13 @@
     "rankReasons": [],
     "deferCount": 0,
     "firstDeferredAt": "",
-    "lastDeferredAt": ""
+    "lastDeferredAt": "",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "",
+    "stateChangedBy": "",
+    "lastPromotedAt": "",
+    "lastDemotedAt": ""
   },
   {
     "name": "Discord (Greenhouse)",
@@ -467,7 +581,13 @@
     "firstDeferredAt": "",
     "lastDeferredAt": "",
     "enabledByDefault": true,
-    "promotionReason": "structured_batch_family"
+    "promotionReason": "structured_batch_family",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-04-02T19:42:23.412011+00:00",
+    "stateChangedBy": "discovery_auto_approve",
+    "lastPromotedAt": "2026-04-02T19:42:23.412011+00:00",
+    "lastDemotedAt": ""
   },
   {
     "name": "Zynga (Greenhouse)",
@@ -522,7 +642,13 @@
     "firstDeferredAt": "",
     "lastDeferredAt": "",
     "enabledByDefault": true,
-    "promotionReason": "structured_batch_family"
+    "promotionReason": "structured_batch_family",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-04-02T19:42:23.412011+00:00",
+    "stateChangedBy": "discovery_auto_approve",
+    "lastPromotedAt": "2026-04-02T19:42:23.412011+00:00",
+    "lastDemotedAt": ""
   },
   {
     "name": "Larian Studios (Lever)",
@@ -577,7 +703,13 @@
     "firstDeferredAt": "",
     "lastDeferredAt": "",
     "enabledByDefault": true,
-    "promotionReason": "structured_batch_family"
+    "promotionReason": "structured_batch_family",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-04-02T19:42:23.412011+00:00",
+    "stateChangedBy": "discovery_auto_approve",
+    "lastPromotedAt": "2026-04-02T19:42:23.412011+00:00",
+    "lastDemotedAt": ""
   },
   {
     "name": "Roof Games (Lever)",
@@ -632,7 +764,13 @@
     "firstDeferredAt": "",
     "lastDeferredAt": "",
     "enabledByDefault": true,
-    "promotionReason": "structured_batch_family"
+    "promotionReason": "structured_batch_family",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-04-02T19:42:23.412011+00:00",
+    "stateChangedBy": "discovery_auto_approve",
+    "lastPromotedAt": "2026-04-02T19:42:23.412011+00:00",
+    "lastDemotedAt": ""
   },
   {
     "name": "Easygo Gaming (Greenhouse)",
@@ -687,7 +825,13 @@
     "firstDeferredAt": "",
     "lastDeferredAt": "",
     "enabledByDefault": true,
-    "promotionReason": "structured_batch_family"
+    "promotionReason": "structured_batch_family",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-04-06T07:17:51.354588+00:00",
+    "stateChangedBy": "discovery_auto_approve",
+    "lastPromotedAt": "2026-04-06T07:17:51.354588+00:00",
+    "lastDemotedAt": ""
   },
   {
     "name": "HoYoverse (Greenhouse)",
@@ -742,7 +886,13 @@
     "firstDeferredAt": "",
     "lastDeferredAt": "",
     "enabledByDefault": true,
-    "promotionReason": "structured_batch_family"
+    "promotionReason": "structured_batch_family",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-04-06T07:17:51.354588+00:00",
+    "stateChangedBy": "discovery_auto_approve",
+    "lastPromotedAt": "2026-04-06T07:17:51.354588+00:00",
+    "lastDemotedAt": ""
   },
   {
     "name": "Age of Learning (Lever)",
@@ -797,7 +947,13 @@
     "firstDeferredAt": "",
     "lastDeferredAt": "",
     "enabledByDefault": true,
-    "promotionReason": "structured_batch_family"
+    "promotionReason": "structured_batch_family",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-04-06T07:17:51.354588+00:00",
+    "stateChangedBy": "discovery_auto_approve",
+    "lastPromotedAt": "2026-04-06T07:17:51.354588+00:00",
+    "lastDemotedAt": ""
   },
   {
     "name": "Good Job Games (Greenhouse)",
@@ -852,7 +1008,13 @@
     "firstDeferredAt": "",
     "lastDeferredAt": "",
     "enabledByDefault": true,
-    "promotionReason": "structured_batch_family"
+    "promotionReason": "structured_batch_family",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-04-07T20:47:13.501466+00:00",
+    "stateChangedBy": "discovery_auto_approve",
+    "lastPromotedAt": "2026-04-07T20:47:13.501466+00:00",
+    "lastDemotedAt": ""
   },
   {
     "name": "The Pokémon Company International (Greenhouse)",
@@ -907,7 +1069,13 @@
     "firstDeferredAt": "",
     "lastDeferredAt": "",
     "enabledByDefault": true,
-    "promotionReason": "structured_batch_family"
+    "promotionReason": "structured_batch_family",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-04-07T20:47:13.501466+00:00",
+    "stateChangedBy": "discovery_auto_approve",
+    "lastPromotedAt": "2026-04-07T20:47:13.501466+00:00",
+    "lastDemotedAt": ""
   },
   {
     "studio": "Guerrilla Games",
@@ -960,7 +1128,13 @@
     "firstDeferredAt": "",
     "lastDeferredAt": "",
     "enabledByDefault": true,
-    "promotionReason": "structured_batch_family"
+    "promotionReason": "structured_batch_family",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-04-07T21:06:19.589428+00:00",
+    "stateChangedBy": "discovery_auto_approve",
+    "lastPromotedAt": "2026-04-07T21:06:19.589428+00:00",
+    "lastDemotedAt": ""
   },
   {
     "name": "Rush Street Interactive (Greenhouse)",
@@ -1016,6 +1190,12 @@
     "firstDeferredAt": "2026-04-07T20:47:13.458220+00:00",
     "lastDeferredAt": "2026-04-07T20:47:13.458220+00:00",
     "enabledByDefault": true,
-    "promotionReason": "structured_batch_family"
+    "promotionReason": "structured_batch_family",
+    "registryState": "active",
+    "pendingReason": "",
+    "stateChangedAt": "2026-04-07T21:06:19.589428+00:00",
+    "stateChangedBy": "discovery_auto_approve",
+    "lastPromotedAt": "2026-04-07T21:06:19.589428+00:00",
+    "lastDemotedAt": ""
   }
 ]
