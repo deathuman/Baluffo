@@ -9,7 +9,7 @@
    - `npm run test:py` — Python/backend tests
    - `npm run test:unit` — Frontend unit tests
    - `npm run verify` — Full verification (for risky/broad changes)
-5. **Lint:** `npm run lint:precommit:changed` before pushing
+5. **Lint:** `npm run lint:precommit:changed` before committing or pushing
 
 ## Process notes
 

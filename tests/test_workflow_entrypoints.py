@@ -64,3 +64,13 @@ def test_pre_push_hook_runs_python_and_smoke_gates() -> None:
         assert expected_command in hook_text, (
             f"{hook_path.name} should invoke `{expected_command}` before pushing to main."
         )
+
+
+def test_pre_commit_hook_runs_lint_gate() -> None:
+    root = Path(__file__).resolve().parents[1]
+    hook_path = root / ".githooks" / "pre-commit"
+    hook_text = hook_path.read_text(encoding="utf-8")
+
+    assert "npm run lint:precommit:changed" in hook_text, (
+        f"{hook_path.name} should invoke the changed-file lint gate before every commit."
+    )
