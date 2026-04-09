@@ -879,3 +879,11 @@
 {"ts": "2026-04-09T20:22:02.603494+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 11}}
 {"ts": "2026-04-09T20:22:02.605209+00:00", "event": "admin_ready", "payload": {"elapsedMs": 12}}
 {"ts": "2026-04-09T20:22:02.605520+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 12}}
+{"ts": "2026-04-09T20:23:59.543020+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 2}}
+{"ts": "2026-04-09T20:23:59.543097+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-04-09T20:24:00.881261+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-04-09T20:24:00.882538+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-04-09T20:24:00.883036+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 14}}
+{"ts": "2026-04-09T20:24:01.069399+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 17}}
+{"ts": "2026-04-09T20:24:01.078412+00:00", "event": "admin_ready", "payload": {"elapsedMs": 18}}
+{"ts": "2026-04-09T20:24:01.079082+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 19}}
