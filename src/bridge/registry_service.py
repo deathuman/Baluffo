@@ -50,7 +50,9 @@ class RegistryService:
         active = load_json_array(self._paths.active, [])
         if active:
             return filter_tombstoned_rows(active)
-        active = [canonicalize_registry_row(dict(row), bucket="active") for row in self._default_active]
+        active = [
+            canonicalize_registry_row(dict(row), bucket="active") for row in self._default_active
+        ]
         save_json_atomic(self._paths.active, active)
         return active
 
@@ -61,7 +63,9 @@ class RegistryService:
         seen = set()
         normalized: dict[str, list[dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
         for bucket in ("active", "pending", "rejected"):
-            bucket_rows = filter_tombstoned_rows([dict(row) for row in state.get(bucket, []) if isinstance(row, dict)])
+            bucket_rows = filter_tombstoned_rows(
+                [dict(row) for row in state.get(bucket, []) if isinstance(row, dict)]
+            )
             for row in bucket_rows:
                 if not isinstance(row, dict):
                     continue

@@ -20,13 +20,13 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from src.baluffo_config import get_security_defaults, get_sync_defaults
-from src.shared.utils import now_iso, now_utc
 from src.bridge.registry_tombstones import filter_tombstoned_rows, load_tombstones
+from src.shared.utils import now_iso, now_utc
 from src.source_registry import (
     canonicalize_registry_row,
     ensure_source_id,
-    source_identity,
     sort_sources_by_identity,
+    source_identity,
 )
 
 try:
@@ -770,13 +770,9 @@ def _parse_iso(value: Any) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
-def _canonicalize_snapshot_rows(
-    rows: list[dict[str, Any]], *, bucket: str
-) -> list[dict[str, Any]]:
+def _canonicalize_snapshot_rows(rows: list[dict[str, Any]], *, bucket: str) -> list[dict[str, Any]]:
     canonical = [
-        canonicalize_registry_row(row, bucket=bucket)
-        for row in rows
-        if isinstance(row, dict)
+        canonicalize_registry_row(row, bucket=bucket) for row in rows if isinstance(row, dict)
     ]
     return sort_sources_by_identity(canonical)
 
@@ -1117,12 +1113,8 @@ def normalize_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
         "schemaVersion": int(data.get("schemaVersion") or 1),
         "generatedAt": str(data.get("generatedAt") or ""),
         "source": data.get("source") if isinstance(data.get("source"), dict) else {},
-        "active": _canonicalize_snapshot_rows(
-            list(data.get("active") or []), bucket="active"
-        ),
-        "pending": _canonicalize_snapshot_rows(
-            list(data.get("pending") or []), bucket="pending"
-        ),
+        "active": _canonicalize_snapshot_rows(list(data.get("active") or []), bucket="active"),
+        "pending": _canonicalize_snapshot_rows(list(data.get("pending") or []), bucket="pending"),
         "rejected": _canonicalize_snapshot_rows(
             list(data.get("rejected") or []), bucket="rejected"
         ),
@@ -1165,9 +1157,7 @@ def merge_registry_state(
             row_id = source_identity(row)
             if row_id in local_rejected_ids:
                 continue
-            candidates[row_id] = dict(
-                _choose_more_recent_row(candidates.get(row_id), row) or row
-            )
+            candidates[row_id] = dict(_choose_more_recent_row(candidates.get(row_id), row) or row)
     for row in candidates.values():
         bucket = str(row.get("registryState") or "").strip().lower()
         if bucket == "active":

@@ -4,6 +4,13 @@ from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 
+from src.bridge.registry_tombstones import (
+    add_tombstone,
+    load_tombstones,
+    remove_tombstone,
+    save_tombstones,
+    tombstone_source_row,
+)
 from src.core.schemas import SavedJobSchema
 from src.source_registry import (
     REGISTRY_REASON_APPROVE,
@@ -17,13 +24,6 @@ from src.source_registry import (
     transition_registry_to_active,
     transition_registry_to_pending,
     transition_registry_to_rejected,
-)
-from src.bridge.registry_tombstones import (
-    add_tombstone,
-    load_tombstones,
-    remove_tombstone,
-    save_tombstones,
-    tombstone_source_row,
 )
 
 
@@ -327,7 +327,9 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         selected = set(str(item) for item in ids)
         moved = []
         active_remaining = []
-        demote_reason = REGISTRY_REASON_FETCH_FAILURE_DEMOTE if selected else REGISTRY_REASON_FETCH_EMPTY_DEMOTE
+        demote_reason = (
+            REGISTRY_REASON_FETCH_FAILURE_DEMOTE if selected else REGISTRY_REASON_FETCH_EMPTY_DEMOTE
+        )
         for row in state["active"]:
             row_id = api.source_identity(row)
             jobs_found = max(0, int(row.get("jobsFound") or 0))
@@ -490,9 +492,7 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
                 next_state[bucket].append(row)
         save_tombstones(tombstones)
         state = api.persist_state_and_auto_sync(next_state, reason=REGISTRY_REASON_DELETE)
-        handler._send_json(
-            {"deleted": deleted_count, "summary": api.summarize_state(state)}
-        )  # noqa: SLF001
+        handler._send_json({"deleted": deleted_count, "summary": api.summarize_state(state)})  # noqa: SLF001
         return True
 
     if path == "/tasks/run-discovery":

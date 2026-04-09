@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.jobs.text_utils import clean_text
 from src.bridge.registry_tombstones import filter_tombstoned_rows, load_tombstones
+from src.jobs.text_utils import clean_text
 from src.shared.utils import now_iso
 from src.source_registry import ACTIVE_PATH, ensure_source_id, load_json_array, save_json_atomic
 

@@ -45,6 +45,10 @@ from src.bridge.api import BridgeApi
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
 from src.bridge.pipeline_service import PipelineService
 from src.bridge.registry_service import RegistryPaths, RegistryService
+from src.bridge.registry_tombstones import (
+    is_tombstoned,
+    load_tombstones,
+)
 from src.bridge.server import make_handler, run_http_server
 from src.bridge.server import runtime_state as bridge_runtime_state
 from src.bridge.source_helpers import (
@@ -63,11 +67,11 @@ from src.source_registry import (
     APPROVAL_STATE_PATH,
     DISCOVERY_CANDIDATES_PATH,
     DISCOVERY_REPORT_PATH,
-    TOMBSTONES_PATH,
+    PENDING_PATH,
     REGISTRY_REASON_MANUAL_SOURCE,
     REGISTRY_REASON_MANUAL_SOURCE_VARIANT,
-    PENDING_PATH,
     REJECTED_PATH,
+    TOMBSTONES_PATH,
     ensure_source_id,
     load_json_array,
     load_json_object,
@@ -76,10 +80,6 @@ from src.source_registry import (
     source_identity,
     source_url_fingerprint,
     unique_sources,
-)
-from src.bridge.registry_tombstones import (
-    is_tombstoned,
-    load_tombstones,
 )
 
 normalize_fetch_report_contract = report_normalizer.normalize_fetch_report_contract
@@ -420,7 +420,13 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
         TASK_STATE_PATH, \
         DISCOVERY_LOG_PATH, \
         FETCHER_LOG_PATH
-    global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, TOMBSTONES_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
+    global \
+        ACTIVE_PATH, \
+        PENDING_PATH, \
+        REJECTED_PATH, \
+        TOMBSTONES_PATH, \
+        DISCOVERY_REPORT_PATH, \
+        APPROVAL_STATE_PATH
     global \
         TASKS_CONFIG_PATH, \
         SYNC_CONFIG_PATH, \
