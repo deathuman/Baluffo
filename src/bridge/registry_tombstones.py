@@ -79,8 +79,7 @@ def is_tombstoned(
         if record:
             return True
         return any(
-            row_url
-            and str(record.get("sourceUrlFingerprint") or "").strip().lower() == row_url
+            row_url and str(record.get("sourceUrlFingerprint") or "").strip().lower() == row_url
             for record in records.values()
         )
     row_id = str(row_or_id or "").strip().lower()

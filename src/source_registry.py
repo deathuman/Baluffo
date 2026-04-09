@@ -149,7 +149,12 @@ def _infer_state_changed_by(row: dict[str, Any]) -> str:
 
 
 def _apply_registry_legacy_fields(
-    updated: dict[str, Any], *, registry_state: str, state_changed_at: str, state_changed_by: str, reason: str
+    updated: dict[str, Any],
+    *,
+    registry_state: str,
+    state_changed_at: str,
+    state_changed_by: str,
+    reason: str,
 ) -> dict[str, Any]:
     updated["registryState"] = registry_state
     updated["pendingReason"] = reason if registry_state != REGISTRY_STATE_ACTIVE else ""
@@ -182,14 +187,14 @@ def _apply_registry_legacy_fields(
         updated["approvedBy"] = ""
         updated["liveAt"] = ""
         updated["quarantinedAt"] = str(updated.get("quarantinedAt") or state_changed_at)
-        updated["quarantineReason"] = str(updated.get("quarantineReason") or reason or REGISTRY_REASON_REJECT)
+        updated["quarantineReason"] = str(
+            updated.get("quarantineReason") or reason or REGISTRY_REASON_REJECT
+        )
         updated["lastDemotedAt"] = str(updated.get("lastDemotedAt") or state_changed_at)
     return updated
 
 
-def canonicalize_registry_row(
-    row: dict[str, Any], *, bucket: str = ""
-) -> dict[str, Any]:
+def canonicalize_registry_row(row: dict[str, Any], *, bucket: str = "") -> dict[str, Any]:
     normalized = dict(row)
     normalized = ensure_source_id(normalized)
     registry_state = _infer_registry_state(normalized, bucket=bucket)
@@ -207,9 +212,15 @@ def canonicalize_registry_row(
     normalized["pendingReason"] = reason if registry_state != REGISTRY_STATE_ACTIVE else ""
     normalized["stateChangedAt"] = state_changed_at
     normalized["stateChangedBy"] = state_changed_by
-    if registry_state == REGISTRY_STATE_ACTIVE and not str(normalized.get("lastPromotedAt") or "").strip():
+    if (
+        registry_state == REGISTRY_STATE_ACTIVE
+        and not str(normalized.get("lastPromotedAt") or "").strip()
+    ):
         normalized["lastPromotedAt"] = state_changed_at
-    if registry_state != REGISTRY_STATE_ACTIVE and not str(normalized.get("lastDemotedAt") or "").strip():
+    if (
+        registry_state != REGISTRY_STATE_ACTIVE
+        and not str(normalized.get("lastDemotedAt") or "").strip()
+    ):
         normalized["lastDemotedAt"] = state_changed_at
     return normalized
 
