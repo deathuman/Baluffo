@@ -346,7 +346,7 @@ def test_read_remote_snapshot_parses_contents_payload(source_sync_test_root):
     assert len(result["snapshot"]["active"]) == 1
 
 
-def test_pull_and_merge_sources_replaces_local_with_remote_latest(source_sync_test_root):
+def test_pull_and_merge_sources_merges_distinct_sources_by_identity(source_sync_test_root):
     source_sync_test_root.write_packaged_config()
     local = {
         "active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
@@ -376,8 +376,9 @@ def test_pull_and_merge_sources_replaces_local_with_remote_latest(source_sync_te
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
     assert result["changed"]
     merged = result["mergedState"]
-    assert len(merged["active"]) == 1
-    assert merged["active"][0].get("studio") == "Remote"
+    assert len(merged["active"]) == 2
+    assert any(row.get("studio") == "Remote" for row in merged["active"])
+    assert any(row.get("listing_url") == "https://a.com/jobs" for row in merged["active"])
     assert len(merged["pending"]) == 1
 
 
@@ -414,9 +415,10 @@ def test_push_sources_snapshot_serializes_expected_payload(source_sync_test_root
     assert put_call["method"] == "PUT"
     body = json.loads(put_call["body"])
     decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
+    assert decoded["schemaVersion"] == 2
     assert "active" in decoded
     assert "pending" in decoded
-    assert "rejected" in decoded
+    assert "rejected" not in decoded
 
 
 def test_push_sources_snapshot_preserves_remote_active_and_pending(source_sync_test_root):
@@ -450,6 +452,7 @@ def test_push_sources_snapshot_preserves_remote_active_and_pending(source_sync_t
     decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
     assert len(decoded["active"]) == 1
     assert len(decoded["pending"]) == 1
+    assert decoded["schemaVersion"] == 2
 
 
 def test_push_sources_snapshot_allows_local_rejected_to_remove_remote_source(source_sync_test_root):
@@ -486,7 +489,7 @@ def test_push_sources_snapshot_allows_local_rejected_to_remove_remote_source(sou
     body = json.loads(put_call["body"])
     decoded = json.loads(base64.b64decode(body["content"]).decode("utf-8"))
     assert len(decoded["active"]) == 0
-    assert len(decoded["rejected"]) == 1
+    assert "rejected" not in decoded
 
 
 def test_401_triggers_installation_token_refresh(source_sync_test_root):

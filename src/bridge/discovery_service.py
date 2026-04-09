@@ -12,7 +12,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from src.source_registry import apply_discovery_auto_approval, source_identity
+from src.source_registry import (
+    REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
+    apply_discovery_auto_approval,
+    source_identity,
+    transition_registry_to_active,
+)
 
 BridgeLogFunc = Callable[[str, str], None]
 
@@ -193,15 +198,12 @@ class DiscoveryService:
 
     def _stamp_live_transition(self, row: dict[str, Any], *, approved_by: str) -> dict[str, Any]:
         now_iso = self._deps.now_iso()
-        updated = dict(row)
-        updated["enabledByDefault"] = True
-        updated["candidateState"] = "live"
-        updated["approvedAt"] = str(updated.get("approvedAt") or now_iso)
-        updated["approvedBy"] = str(approved_by or updated.get("approvedBy") or "")
-        updated["liveAt"] = str(updated.get("liveAt") or now_iso)
-        updated["quarantinedAt"] = ""
-        updated["quarantineReason"] = ""
-        return updated
+        return transition_registry_to_active(
+            row,
+            reason=REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
+            actor=approved_by,
+            at=now_iso,
+        )
 
     def _auto_approve_healthy_pending_sources(
         self, *, queued_candidate_ids: set[str] | None = None

@@ -1,4 +1,5 @@
 from src import admin_bridge
+from src.bridge import registry_tombstones
 
 
 def test_add_manual_source_adds_and_deduplicates(admin_bridge_ops_root):
@@ -31,6 +32,35 @@ def test_add_manual_source_static_fallback_deduplicates_by_normalized_url(admin_
     assert first["status"] == "added"
     assert second["status"] == "duplicate"
     assert str(first.get("sourceId") or "").lower() == str(second.get("sourceId") or "").lower()
+
+
+def test_add_manual_source_respects_local_tombstones(admin_bridge_ops_root, monkeypatch):
+    tombstone_path = admin_bridge_ops_root / "source-registry-tombstones.json"
+    monkeypatch.setattr(registry_tombstones, "TOMBSTONES_PATH", tombstone_path)
+    monkeypatch.setattr(admin_bridge, "TOMBSTONES_PATH", tombstone_path)
+    monkeypatch.setattr(admin_bridge.source_registry_module, "TOMBSTONES_PATH", tombstone_path)
+
+    added = admin_bridge.add_manual_source("https://example.teamtailor.com/jobs/")
+    source_id = str(added.get("sourceId") or "")
+    assert added["status"] == "added"
+    assert source_id
+
+    registry_tombstones.save_tombstones(
+        {
+            source_id: {
+                "sourceId": source_id,
+                "deletedAt": "2026-04-09T00:00:00Z",
+                "deletedBy": "test",
+                "reason": "registry_delete",
+                "bucket": "pending",
+                "source": added.get("source") or {},
+            }
+        }
+    )
+
+    blocked = admin_bridge.add_manual_source("https://example.teamtailor.com/jobs/?utm=abc")
+    assert blocked["status"] == "tombstoned"
+    assert str(blocked.get("sourceId") or "").lower() == source_id.lower()
 
 
 def test_trigger_source_check_returns_error_for_missing_source(admin_bridge_ops_root):

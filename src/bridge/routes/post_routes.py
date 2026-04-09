@@ -5,6 +5,26 @@ from typing import Any
 from pydantic import ValidationError as PydanticValidationError
 
 from src.core.schemas import SavedJobSchema
+from src.source_registry import (
+    REGISTRY_REASON_APPROVE,
+    REGISTRY_REASON_DELETE,
+    REGISTRY_REASON_FETCH_EMPTY_DEMOTE,
+    REGISTRY_REASON_FETCH_FAILURE_DEMOTE,
+    REGISTRY_REASON_REJECT,
+    REGISTRY_REASON_RESTORE_DELETED,
+    REGISTRY_REASON_RESTORE_REJECTED,
+    REGISTRY_REASON_ROLLBACK,
+    transition_registry_to_active,
+    transition_registry_to_pending,
+    transition_registry_to_rejected,
+)
+from src.bridge.registry_tombstones import (
+    add_tombstone,
+    load_tombstones,
+    remove_tombstone,
+    save_tombstones,
+    tombstone_source_row,
+)
 
 
 def _transition_registry_row(
@@ -12,39 +32,32 @@ def _transition_registry_row(
     row: dict[str, Any],
     *,
     candidate_state: str,
+    reason: str = "",
     approved_by: str = "",
     quarantine_reason: str = "",
 ) -> dict[str, Any]:
-    updated = dict(row)
-    now_iso = str(getattr(api, "now_iso", lambda: "")() or "")
-    updated["candidateState"] = str(candidate_state or updated.get("candidateState") or "")
-    updated["approvedAt"] = str(updated.get("approvedAt") or "")
-    updated["approvedBy"] = str(updated.get("approvedBy") or "")
-    updated["liveAt"] = str(updated.get("liveAt") or "")
-    updated["quarantinedAt"] = str(updated.get("quarantinedAt") or "")
-    updated["quarantineReason"] = str(updated.get("quarantineReason") or "")
     if candidate_state == "live":
-        updated["enabledByDefault"] = True
-        updated["approvedAt"] = str(updated.get("approvedAt") or now_iso)
-        updated["approvedBy"] = str(approved_by or updated.get("approvedBy") or "")
-        updated["liveAt"] = str(updated.get("liveAt") or now_iso)
-        updated["quarantinedAt"] = ""
-        updated["quarantineReason"] = ""
-    elif candidate_state == "validated":
-        updated["enabledByDefault"] = False
-        updated["approvedAt"] = ""
-        updated["approvedBy"] = ""
-        updated["liveAt"] = ""
-        updated["quarantinedAt"] = ""
-        updated["quarantineReason"] = ""
-    elif candidate_state == "quarantined":
-        updated["enabledByDefault"] = False
-        updated["approvedAt"] = ""
-        updated["approvedBy"] = ""
-        updated["liveAt"] = ""
-        updated["quarantinedAt"] = str(now_iso)
-        updated["quarantineReason"] = str(quarantine_reason or "registry_reject")
-    return updated
+        return transition_registry_to_active(
+            row,
+            reason=reason or REGISTRY_REASON_APPROVE,
+            actor=str(approved_by or reason or "registry_manual_approve"),
+            at=str(getattr(api, "now_iso", lambda: "")() or ""),
+        )
+    if candidate_state == "validated":
+        return transition_registry_to_pending(
+            row,
+            reason=reason or REGISTRY_REASON_ROLLBACK,
+            actor=str(approved_by or reason or "registry_manual_restore"),
+            at=str(getattr(api, "now_iso", lambda: "")() or ""),
+        )
+    if candidate_state == "quarantined":
+        return transition_registry_to_rejected(
+            row,
+            reason=quarantine_reason or reason or REGISTRY_REASON_REJECT,
+            actor=str(approved_by or reason or "registry_manual_reject"),
+            at=str(getattr(api, "now_iso", lambda: "")() or ""),
+        )
+    return dict(row)
 
 
 def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
@@ -249,6 +262,7 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
                 api,
                 row,
                 candidate_state="live",
+                reason=REGISTRY_REASON_APPROVE,
                 approved_by="registry_manual_approve",
             )
             for row in moved
@@ -273,12 +287,14 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
                 api,
                 row,
                 candidate_state="quarantined",
-                quarantine_reason="registry_reject",
+                reason=REGISTRY_REASON_REJECT,
+                approved_by="registry_manual_reject",
+                quarantine_reason=REGISTRY_REASON_REJECT,
             )
             for row in moved
         ]
         state["rejected"] = api.unique_sources([*state["rejected"], *moved])
-        state = api.persist_state_and_auto_sync(state, reason="registry_reject")
+        state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_REJECT)
         handler._send_json({"rejected": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
         return True
 
@@ -289,12 +305,20 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         active_remaining = []
         for row in state["active"]:
             if api.source_identity(row) in selected:
-                moved.append(_transition_registry_row(api, row, candidate_state="validated"))
+                moved.append(
+                    _transition_registry_row(
+                        api,
+                        row,
+                        candidate_state="validated",
+                        reason=REGISTRY_REASON_ROLLBACK,
+                        approved_by="registry_manual_rollback",
+                    )
+                )
             else:
                 active_remaining.append(row)
         state["active"] = active_remaining
         state["pending"] = api.unique_sources([*state["pending"], *moved])
-        state = api.persist_state_and_auto_sync(state, reason="registry_rollback")
+        state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_ROLLBACK)
         handler._send_json({"rolledBack": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
         return True
 
@@ -303,22 +327,39 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         selected = set(str(item) for item in ids)
         moved = []
         active_remaining = []
+        demote_reason = REGISTRY_REASON_FETCH_FAILURE_DEMOTE if selected else REGISTRY_REASON_FETCH_EMPTY_DEMOTE
         for row in state["active"]:
             row_id = api.source_identity(row)
             jobs_found = max(0, int(row.get("jobsFound") or 0))
             if selected:
                 if row_id in selected:
-                    moved.append(_transition_registry_row(api, row, candidate_state="validated"))
+                    moved.append(
+                        _transition_registry_row(
+                            api,
+                            row,
+                            candidate_state="validated",
+                            reason=demote_reason,
+                            approved_by=demote_reason,
+                        )
+                    )
                 else:
                     active_remaining.append(row)
             else:
                 if jobs_found == 0:
-                    moved.append(_transition_registry_row(api, row, candidate_state="validated"))
+                    moved.append(
+                        _transition_registry_row(
+                            api,
+                            row,
+                            candidate_state="validated",
+                            reason=demote_reason,
+                            approved_by=demote_reason,
+                        )
+                    )
                 else:
                     active_remaining.append(row)
         state["active"] = active_remaining
         state["pending"] = api.unique_sources([*state["pending"], *moved])
-        state = api.persist_state_and_auto_sync(state, reason="registry_demote_active")
+        state = api.persist_state_and_auto_sync(state, reason=demote_reason)
         handler._send_json({"demoted": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
         return True
 
@@ -326,15 +367,87 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
         moved, remaining = api.move_entries(state["rejected"], [str(item) for item in ids])
         state["rejected"] = remaining
-        moved = [_transition_registry_row(api, row, candidate_state="validated") for row in moved]
+        moved = [
+            _transition_registry_row(
+                api,
+                row,
+                candidate_state="validated",
+                reason=REGISTRY_REASON_RESTORE_REJECTED,
+                approved_by="registry_restore_rejected",
+            )
+            for row in moved
+        ]
         state["pending"] = api.unique_sources([*state["pending"], *moved])
-        state = api.persist_state_and_auto_sync(state, reason="registry_restore_rejected")
+        state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_RESTORE_REJECTED)
         handler._send_json({"restored": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
+        return True
+
+    if path == "/registry/restore-deleted":
+        ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
+        urls = (payload or {}).get("urls") if isinstance((payload or {}).get("urls"), list) else []
+        selected = {str(item).strip().lower() for item in ids if str(item).strip()}
+        selected_urls = {
+            api.normalize_source_url(str(item))
+            for item in urls
+            if api.normalize_source_url(str(item))
+        }
+        tombstones = load_tombstones()
+        matched = []
+        for source_id, record in list(tombstones.items()):
+            if selected and source_id in selected:
+                matched.append((source_id, record))
+                continue
+            if selected_urls and str(record.get("sourceUrlFingerprint") or "") in selected_urls:
+                matched.append((source_id, record))
+        if not matched:
+            handler._send_json({"restored": 0, "summary": api.summarize_state(state)})  # noqa: SLF001
+            return True
+        for source_id, _record in matched:
+            row = tombstone_source_row(tombstones.get(source_id))
+            if not row:
+                continue
+            bucket = str(tombstones.get(source_id, {}).get("bucket") or "pending").strip().lower()
+            if bucket == "active":
+                restored = _transition_registry_row(
+                    api,
+                    row,
+                    candidate_state="live",
+                    reason=REGISTRY_REASON_RESTORE_DELETED,
+                    approved_by="registry_restore_deleted",
+                )
+                state["active"] = api.unique_sources([*state["active"], restored])
+            elif bucket == "rejected":
+                restored = _transition_registry_row(
+                    api,
+                    row,
+                    candidate_state="quarantined",
+                    reason=REGISTRY_REASON_RESTORE_DELETED,
+                    approved_by="registry_restore_deleted",
+                    quarantine_reason=REGISTRY_REASON_RESTORE_DELETED,
+                )
+                state["rejected"] = api.unique_sources([*state["rejected"], restored])
+            else:
+                restored = _transition_registry_row(
+                    api,
+                    row,
+                    candidate_state="validated",
+                    reason=REGISTRY_REASON_RESTORE_DELETED,
+                    approved_by="registry_restore_deleted",
+                )
+                state["pending"] = api.unique_sources([*state["pending"], restored])
+            tombstones, _removed = remove_tombstone(source_id, tombstones)
+        save_tombstones(tombstones)
+        state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_RESTORE_DELETED)
+        handler._send_json({"restored": len(matched), "summary": api.summarize_state(state)})  # noqa: SLF001
         return True
 
     if path == "/registry/delete":
         ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
+        if not ids and isinstance((payload or {}).get("selected"), list):
+            ids = list((payload or {}).get("selected") or [])
         urls = (payload or {}).get("urls") if isinstance((payload or {}).get("urls"), list) else []
+        if not urls and isinstance((payload or {}).get("selectedUrls"), list):
+            urls = list((payload or {}).get("selectedUrls") or [])
         selected = {str(item).strip().lower() for item in ids if str(item).strip()}
         selected_urls = {
             api.normalize_source_url(str(item))
@@ -346,32 +459,39 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
         if not selected and not selected_urls:
             handler._send_json({"deleted": 0, "summary": api.summarize_state(state)})  # noqa: SLF001
             return True
-        before = (
-            len(state.get("active", []))
-            + len(state.get("pending", []))
-            + len(state.get("rejected", []))
-        )
+        tombstones = load_tombstones()
+        deleted_count = 0
 
-        def keep_row(row: dict) -> bool:
+        def _is_selected_row(row: dict[str, Any]) -> bool:
             row_id = api.source_identity(row)
             row_url = api.source_url_fingerprint(row)
             if row_id in selected:
-                return False
+                return True
             if row_url and row_url in selected_urls:
-                return False
-            return True
+                return True
+            return False
 
-        state["active"] = [row for row in state["active"] if keep_row(row)]
-        state["pending"] = [row for row in state["pending"] if keep_row(row)]
-        state["rejected"] = [row for row in state["rejected"] if keep_row(row)]
-        state = api.persist_state_and_auto_sync(state, reason="registry_delete")
-        after = (
-            len(state.get("active", []))
-            + len(state.get("pending", []))
-            + len(state.get("rejected", []))
-        )
+        next_state = {"active": [], "pending": [], "rejected": []}
+        for bucket in ("active", "pending", "rejected"):
+            for row in list(state.get(bucket, [])):
+                if not isinstance(row, dict):
+                    continue
+                if _is_selected_row(row):
+                    deleted_count += 1
+                    tombstones = add_tombstone(
+                        row,
+                        deleted_at=str(getattr(api, "now_iso", lambda: "")() or ""),
+                        deleted_by="registry_manual_delete",
+                        reason=REGISTRY_REASON_DELETE,
+                        bucket=bucket,
+                        tombstones=tombstones,
+                    )
+                    continue
+                next_state[bucket].append(row)
+        save_tombstones(tombstones)
+        state = api.persist_state_and_auto_sync(next_state, reason=REGISTRY_REASON_DELETE)
         handler._send_json(
-            {"deleted": max(0, before - after), "summary": api.summarize_state(state)}
+            {"deleted": deleted_count, "summary": api.summarize_state(state)}
         )  # noqa: SLF001
         return True
 

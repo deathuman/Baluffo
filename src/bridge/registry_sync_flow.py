@@ -14,6 +14,26 @@ SyncGuardFunc = Callable[[], dict[str, Any] | None]
 SyncTaskRunningFunc = Callable[[], bool]
 StartSyncTaskFunc = Callable[..., dict[str, Any]]
 
+AUTO_SYNC_PUSH_REASONS = frozenset(
+    {
+        "manual_source",
+        "manual_source_variant_added",
+        "discovery_auto_approve",
+        "discovery_queue",
+        "registry_approve",
+        "registry_reject",
+        "registry_rollback",
+        "registry_restore_rejected",
+        "registry_restore_deleted",
+        "fetch_empty_demote",
+        "fetch_failure_demote",
+    }
+)
+
+
+def should_trigger_auto_sync_push(reason: str) -> bool:
+    return str(reason or "").strip().lower() in AUTO_SYNC_PUSH_REASONS
+
 
 def maybe_trigger_auto_sync_push(
     *,
@@ -22,6 +42,8 @@ def maybe_trigger_auto_sync_push(
     sync_task_running: SyncTaskRunningFunc,
     start_sync_task: StartSyncTaskFunc,
 ) -> bool:
+    if not should_trigger_auto_sync_push(reason):
+        return False
     guard = sync_guard()
     if guard:
         return False

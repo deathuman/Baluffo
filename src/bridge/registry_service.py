@@ -10,7 +10,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from src.bridge.registry_tombstones import filter_tombstoned_rows
 from src.source_registry import (
+    canonicalize_registry_row,
     ensure_source_id,
     load_json_array,
     normalize_source_url,
@@ -47,45 +49,25 @@ class RegistryService:
     def ensure_active_registry(self) -> list[dict[str, Any]]:
         active = load_json_array(self._paths.active, [])
         if active:
-            return active
-        active = [dict(row) for row in self._default_active]
+            return filter_tombstoned_rows(active)
+        active = [canonicalize_registry_row(dict(row), bucket="active") for row in self._default_active]
         save_json_atomic(self._paths.active, active)
         return active
 
     def normalize_state(
         self, state: dict[str, list[dict[str, Any]]]
     ) -> dict[str, list[dict[str, Any]]]:
-        def _apply_bucket_lifecycle_defaults(row: dict[str, Any], *, bucket: str) -> dict[str, Any]:
-            updated = dict(row)
-            default_state = {
-                "active": "live",
-                "pending": "validated",
-                "rejected": "quarantined",
-            }.get(bucket, "validated")
-            updated["candidateState"] = str(updated.get("candidateState") or default_state)
-            updated["approvedAt"] = str(updated.get("approvedAt") or "")
-            updated["approvedBy"] = str(updated.get("approvedBy") or "")
-            updated["liveAt"] = str(updated.get("liveAt") or "")
-            updated["quarantinedAt"] = str(updated.get("quarantinedAt") or "")
-            updated["quarantineReason"] = str(updated.get("quarantineReason") or "")
-            updated["promotionLane"] = str(updated.get("promotionLane") or "")
-            updated["rankScore"] = int(updated.get("rankScore") or 0)
-            updated["rankReasons"] = list(updated.get("rankReasons") or [])
-            updated["deferCount"] = max(0, int(updated.get("deferCount") or 0))
-            updated["firstDeferredAt"] = str(updated.get("firstDeferredAt") or "")
-            updated["lastDeferredAt"] = str(updated.get("lastDeferredAt") or "")
-            return updated
-
         # Precedence is explicit: active > pending > rejected.
         seen = set()
         normalized: dict[str, list[dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
         for bucket in ("active", "pending", "rejected"):
-            for row in state.get(bucket, []):
+            bucket_rows = filter_tombstoned_rows([dict(row) for row in state.get(bucket, []) if isinstance(row, dict)])
+            for row in bucket_rows:
                 if not isinstance(row, dict):
                     continue
                 if str(row.get("adapter") or "").strip().lower() == "static":
                     row = self._normalize_manual_static(row)
-                row = _apply_bucket_lifecycle_defaults(row, bucket=bucket)
+                row = canonicalize_registry_row(row, bucket=bucket)
                 key = source_identity(row)
                 if key in seen:
                     continue
@@ -94,13 +76,17 @@ class RegistryService:
         return normalized
 
     def load_state(self) -> dict[str, list[dict[str, Any]]]:
-        return self.normalize_state(
-            {
-                "active": self.ensure_active_registry(),
-                "pending": load_json_array(self._paths.pending, []),
-                "rejected": load_json_array(self._paths.rejected, []),
-            }
-        )
+        state = {
+            "active": self.ensure_active_registry(),
+            "pending": load_json_array(self._paths.pending, []),
+            "rejected": load_json_array(self._paths.rejected, []),
+        }
+        normalized = self.normalize_state(state)
+        if normalized != state:
+            save_json_atomic(self._paths.active, normalized["active"])
+            save_json_atomic(self._paths.pending, normalized["pending"])
+            save_json_atomic(self._paths.rejected, normalized["rejected"])
+        return normalized
 
     @staticmethod
     def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:

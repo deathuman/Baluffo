@@ -363,7 +363,7 @@ class SyncService:
             "counts": {
                 "active": len(snapshot.get("active") or []),
                 "pending": len(snapshot.get("pending") or []),
-                "rejected": len(snapshot.get("rejected") or []),
+                "rejected": len(state.get("rejected") or []),
             },
         }
 

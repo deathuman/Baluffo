@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 import httpx
 
 import src.source_discovery as sd
+from src.bridge.registry_tombstones import filter_tombstoned_rows, load_tombstones
 from src.contracts import SCHEMA_VERSION
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.state import read_source_state
@@ -561,6 +562,10 @@ def run_discovery(
     active = load_json_array(sd.ACTIVE_PATH, [])
     pending_existing = load_json_array(sd.PENDING_PATH, [])
     rejected = load_json_array(sd.REJECTED_PATH, [])
+    tombstones = load_tombstones()
+    active = filter_tombstoned_rows(active, tombstones)
+    pending_existing = filter_tombstoned_rows(pending_existing, tombstones)
+    rejected = filter_tombstoned_rows(rejected, tombstones)
     prior_review_candidates = load_json_array(sd.DISCOVERY_CANDIDATES_PATH, [])
     prior_review_candidates_by_id = {
         source_identity(row): dict(row) for row in prior_review_candidates if isinstance(row, dict)
@@ -1344,7 +1349,10 @@ def run_discovery(
         report_candidates, phase="finalizing", phase_label="Finalizing discovery report"
     )
 
-    save_json_atomic(sd.PENDING_PATH, unique_sources([*queued_candidates, *pending_existing]))
+    save_json_atomic(
+        sd.PENDING_PATH,
+        filter_tombstoned_rows(unique_sources([*queued_candidates, *pending_existing]), tombstones),
+    )
     save_json_atomic(sd.DISCOVERY_CANDIDATES_PATH, report_candidates)
     m5_strategic_backlog = build_m5_strategic_backlog(
         report_candidates=report_candidates,
@@ -1473,7 +1481,7 @@ def run_discovery(
     report["runtime"]["urlPatchRecoveredCount"] = int(recovered_count)
     state = {
         "active": active,
-        "pending": [*queued_candidates, *pending_existing],
+        "pending": filter_tombstoned_rows([*queued_candidates, *pending_existing], tombstones),
         "rejected": rejected,
     }
     auto_approve_enabled = bool(effective_config.get("autoApproveHealthyPendingOnComplete", True))
@@ -1485,9 +1493,9 @@ def run_discovery(
         now_iso_fn=sd.now_iso,
     )
     if auto_approved > 0:
-        save_json_atomic(sd.ACTIVE_PATH, state["active"])
-        save_json_atomic(sd.PENDING_PATH, state["pending"])
-        save_json_atomic(sd.REJECTED_PATH, state["rejected"])
+        save_json_atomic(sd.ACTIVE_PATH, filter_tombstoned_rows(state["active"], tombstones))
+        save_json_atomic(sd.PENDING_PATH, filter_tombstoned_rows(state["pending"], tombstones))
+        save_json_atomic(sd.REJECTED_PATH, filter_tombstoned_rows(state["rejected"], tombstones))
         sd.emit_log(f"Auto-approval applied during discovery: approved={auto_approved}.")
     DiscoveryReportSchema.model_validate(report)
     final_report_path = _discovery_report_write_path()

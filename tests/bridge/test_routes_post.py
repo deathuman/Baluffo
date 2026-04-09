@@ -8,6 +8,7 @@ from typing import Any
 
 from src.bridge.api import BridgeApi
 from src.bridge.routes.post_routes import handle_post
+from src.bridge import registry_tombstones
 
 
 @dataclass
@@ -393,6 +394,42 @@ def test_delete_by_id(tmp_path: Path) -> None:
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
+
+
+def test_delete_creates_tombstone_and_restore_deleted_reinstates_row(
+    tmp_path: Path, monkeypatch
+) -> None:
+    tombstone_path = tmp_path / "source-registry-tombstones.json"
+    monkeypatch.setattr(registry_tombstones, "TOMBSTONES_PATH", tombstone_path)
+
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+
+    handler = _FakeHandler()
+    result = handle_post(
+        handler,
+        api=api,
+        path="/registry/delete",
+        payload={"ids": ["src-1"]},
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert api.load_state()["active"] == []
+    tombstones = registry_tombstones.load_tombstones(tombstone_path)
+    assert "src-1" in tombstones
+
+    restore_result = handle_post(
+        handler,
+        api=api,
+        path="/registry/restore-deleted",
+        payload={"ids": ["src-1"]},
+    )
+
+    assert restore_result is True
+    assert handler.sent[-1]["status"] == 200
+    assert api.load_state()["active"][-1]["id"] == "src-1"
+    assert registry_tombstones.load_tombstones(tombstone_path) == {}
 
 
 def test_delete_by_url(tmp_path: Path) -> None:

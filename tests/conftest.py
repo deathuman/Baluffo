@@ -8,6 +8,9 @@ poison the entire test process.
 from __future__ import annotations
 
 import os
+import shutil
+import uuid
+from collections.abc import Callable
 
 _BALUFFO_RUNTIME_ISOLATION_KEYS = (
     "BALUFFO_DATA_DIR",
@@ -23,14 +26,20 @@ for _key in _BALUFFO_RUNTIME_ISOLATION_KEYS:
     os.environ.pop(_key, None)
 
 import json
-import shutil
-import uuid
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CODEX_TMP_ROOT = REPO_ROOT / ".codex-tmp-tests"
+CODEX_TMP_ROOT.mkdir(parents=True, exist_ok=True)
+
+for _stale_root in (REPO_ROOT / ".codex-test-tmp", CODEX_TMP_ROOT):
+    if not _stale_root.exists():
+        continue
+    for _child in _stale_root.iterdir():
+        if _child.is_dir() and _child.name.startswith("pytest-"):
+            shutil.rmtree(_child, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
@@ -52,6 +61,17 @@ def repo_root() -> Path:
 def codex_tmp_root() -> Path:
     CODEX_TMP_ROOT.mkdir(parents=True, exist_ok=True)
     return CODEX_TMP_ROOT
+
+
+@pytest.fixture()
+def tmp_path(make_test_root: Callable[[str], Path]) -> Path:
+    """Repo-local replacement for PyTest's tmp_path fixture.
+
+    Windows ACLs in this environment can make PyTest's built-in tmpdir cleanup
+    unreliable, so we use the existing disposable workspace temp helper instead.
+    """
+
+    return make_test_root("pytest-tmp")
 
 
 @pytest.fixture()

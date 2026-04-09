@@ -7,6 +7,8 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+from src.bridge.registry_tombstones import is_tombstoned, load_tombstones
+
 
 def normalize_manual_static_studio_fields(
     row: dict[str, Any],
@@ -145,6 +147,8 @@ def trigger_source_check(
         return {"started": False, "error": "Missing sourceId."}
 
     state = load_state()
+    if is_tombstoned(token, load_tombstones()):
+        return {"started": False, "error": "Source is deleted locally. Restore it first."}
     run_id = f"check_{uuid.uuid4().hex[:12]}"
     for bucket in ("active", "pending", "rejected"):
         rows = state.get(bucket, [])

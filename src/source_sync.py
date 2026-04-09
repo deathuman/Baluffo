@@ -21,7 +21,13 @@ from urllib.request import Request, urlopen
 
 from src.baluffo_config import get_security_defaults, get_sync_defaults
 from src.shared.utils import now_iso, now_utc
-from src.source_registry import ensure_source_id, source_identity
+from src.bridge.registry_tombstones import filter_tombstoned_rows, load_tombstones
+from src.source_registry import (
+    canonicalize_registry_row,
+    ensure_source_id,
+    source_identity,
+    sort_sources_by_identity,
+)
 
 try:
     import certifi
@@ -31,7 +37,7 @@ except ImportError:  # pragma: no cover - optional dependency at runtime
 ROOT = Path(__file__).resolve().parents[1]
 _SYNC_DEFAULTS = get_sync_defaults()
 _SECURITY_DEFAULTS = get_security_defaults()
-SYNC_SCHEMA_VERSION = 1
+SYNC_SCHEMA_VERSION = 2
 DEFAULT_BRANCH = str(_SYNC_DEFAULTS["default_branch"])
 DEFAULT_PATH = str(_SYNC_DEFAULTS["default_path"])
 DEFAULT_TIMEOUT_S = 20
@@ -764,6 +770,56 @@ def _parse_iso(value: Any) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
+def _canonicalize_snapshot_rows(
+    rows: list[dict[str, Any]], *, bucket: str
+) -> list[dict[str, Any]]:
+    canonical = [
+        canonicalize_registry_row(row, bucket=bucket)
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    return sort_sources_by_identity(canonical)
+
+
+def _row_transition_score(row: dict[str, Any]) -> int:
+    timestamps = []
+    for key in (
+        "stateChangedAt",
+        "lastPromotedAt",
+        "lastDemotedAt",
+        "approvedAt",
+        "quarantinedAt",
+        "liveAt",
+    ):
+        dt = _parse_iso(row.get(key))
+        if dt is not None:
+            timestamps.append(int(dt.timestamp()))
+    return max(timestamps) if timestamps else 0
+
+
+def _row_bucket_rank(row: dict[str, Any]) -> int:
+    bucket = str(row.get("registryState") or "").strip().lower()
+    return {"active": 3, "pending": 2, "rejected": 1}.get(bucket, 0)
+
+
+def _row_merge_key(row: dict[str, Any]) -> tuple[int, int]:
+    return _row_transition_score(row), _row_bucket_rank(row)
+
+
+def _choose_more_recent_row(
+    local_row: dict[str, Any] | None, remote_row: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    if local_row is None:
+        return remote_row
+    if remote_row is None:
+        return local_row
+    local_key = _row_merge_key(local_row)
+    remote_key = _row_merge_key(remote_row)
+    if remote_key > local_key:
+        return remote_row
+    return local_row
+
+
 def _asn1_read_tlv(raw: bytes, offset: int) -> tuple[int, bytes, int]:
     if offset >= len(raw):
         raise ValueError("ASN.1 offset out of range")
@@ -1058,18 +1114,18 @@ def _request_json(
 def normalize_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     data = payload if isinstance(payload, dict) else {}
     return {
-        "schemaVersion": int(data.get("schemaVersion") or SYNC_SCHEMA_VERSION),
+        "schemaVersion": int(data.get("schemaVersion") or 1),
         "generatedAt": str(data.get("generatedAt") or ""),
         "source": data.get("source") if isinstance(data.get("source"), dict) else {},
-        "active": [
-            ensure_source_id(row) for row in (data.get("active") or []) if isinstance(row, dict)
-        ],
-        "pending": [
-            ensure_source_id(row) for row in (data.get("pending") or []) if isinstance(row, dict)
-        ],
-        "rejected": [
-            ensure_source_id(row) for row in (data.get("rejected") or []) if isinstance(row, dict)
-        ],
+        "active": _canonicalize_snapshot_rows(
+            list(data.get("active") or []), bucket="active"
+        ),
+        "pending": _canonicalize_snapshot_rows(
+            list(data.get("pending") or []), bucket="pending"
+        ),
+        "rejected": _canonicalize_snapshot_rows(
+            list(data.get("rejected") or []), bucket="rejected"
+        ),
     }
 
 
@@ -1077,11 +1133,50 @@ def merge_registry_state(
     local_state: dict[str, Any], remote_snapshot: dict[str, Any]
 ) -> dict[str, list[dict[str, Any]]]:
     remote = normalize_snapshot(remote_snapshot)
-    return {
-        "active": list(remote["active"]),
-        "pending": list(remote["pending"]),
-        "rejected": list(remote["rejected"]),
+    tombstones = load_tombstones()
+    local = {
+        "active": filter_tombstoned_rows(
+            _canonicalize_snapshot_rows(list(local_state.get("active") or []), bucket="active"),
+            tombstones,
+        ),
+        "pending": filter_tombstoned_rows(
+            _canonicalize_snapshot_rows(list(local_state.get("pending") or []), bucket="pending"),
+            tombstones,
+        ),
+        "rejected": filter_tombstoned_rows(
+            _canonicalize_snapshot_rows(list(local_state.get("rejected") or []), bucket="rejected"),
+            tombstones,
+        ),
     }
+    local_rejected_ids = {
+        source_identity(row) for row in local["rejected"] if isinstance(row, dict)
+    }
+    merged: dict[str, list[dict[str, Any]]] = {
+        "active": [],
+        "pending": [],
+        "rejected": sort_sources_by_identity(local["rejected"]),
+    }
+    candidates: dict[str, dict[str, Any]] = {}
+    for bucket in ("active", "pending"):
+        for row in local[bucket]:
+            candidates[source_identity(row)] = dict(row)
+    for bucket in ("active", "pending"):
+        for row in remote[bucket]:
+            row_id = source_identity(row)
+            if row_id in local_rejected_ids:
+                continue
+            candidates[row_id] = dict(
+                _choose_more_recent_row(candidates.get(row_id), row) or row
+            )
+    for row in candidates.values():
+        bucket = str(row.get("registryState") or "").strip().lower()
+        if bucket == "active":
+            merged["active"].append(ensure_source_id(row))
+        elif bucket == "pending":
+            merged["pending"].append(ensure_source_id(row))
+    merged["active"] = sort_sources_by_identity(merged["active"])
+    merged["pending"] = sort_sources_by_identity(merged["pending"])
+    return merged
 
 
 def read_remote_snapshot(
@@ -1141,67 +1236,24 @@ def read_remote_snapshot(
 def build_snapshot(
     local_state: dict[str, Any], *, source_label: str = "admin_bridge"
 ) -> dict[str, Any]:
+    canonical_state = merge_registry_state(
+        local_state,
+        {
+            "schemaVersion": SYNC_SCHEMA_VERSION,
+            "generatedAt": now_iso(),
+            "source": {"name": source_label},
+            "active": [],
+            "pending": [],
+            "rejected": [],
+        },
+    )
     return {
         "schemaVersion": SYNC_SCHEMA_VERSION,
         "generatedAt": now_iso(),
         "source": {"name": source_label},
-        "active": [
-            ensure_source_id(row)
-            for row in (local_state.get("active") or [])
-            if isinstance(row, dict)
-        ],
-        "pending": [
-            ensure_source_id(row)
-            for row in (local_state.get("pending") or [])
-            if isinstance(row, dict)
-        ],
-        "rejected": [
-            ensure_source_id(row)
-            for row in (local_state.get("rejected") or [])
-            if isinstance(row, dict)
-        ],
+        "active": canonical_state["active"],
+        "pending": canonical_state["pending"],
     }
-
-
-def _merge_without_losing_active_pending(
-    local_snapshot: dict[str, Any], remote_snapshot: dict[str, Any]
-) -> dict[str, Any]:
-    local = normalize_snapshot(local_snapshot)
-    remote = normalize_snapshot(remote_snapshot)
-    rejected_ids = {
-        source_identity(row) for row in (local.get("rejected") or []) if isinstance(row, dict)
-    }
-
-    merged: dict[str, Any] = {
-        "schemaVersion": int(local.get("schemaVersion") or SYNC_SCHEMA_VERSION),
-        "generatedAt": str(local.get("generatedAt") or now_iso()),
-        "source": dict(local.get("source") or {}),
-        "active": [
-            ensure_source_id(row) for row in (local.get("active") or []) if isinstance(row, dict)
-        ],
-        "pending": [
-            ensure_source_id(row) for row in (local.get("pending") or []) if isinstance(row, dict)
-        ],
-        "rejected": [
-            ensure_source_id(row) for row in (local.get("rejected") or []) if isinstance(row, dict)
-        ],
-    }
-
-    seen = {
-        source_identity(row)
-        for row in [*merged["active"], *merged["pending"]]
-        if isinstance(row, dict)
-    }
-    for bucket in ("active", "pending"):
-        for row in remote.get(bucket) or []:
-            if not isinstance(row, dict):
-                continue
-            key = source_identity(row)
-            if key in seen or key in rejected_ids:
-                continue
-            merged[bucket].append(ensure_source_id(row))
-            seen.add(key)
-    return merged
 
 
 def write_remote_snapshot(
@@ -1250,27 +1302,37 @@ def pull_and_merge_sources(
 ) -> dict[str, Any]:
     remote = read_remote_snapshot(config, opener=opener)
     if not remote.get("exists"):
-        return {"changed": False, "remoteFound": False, "mergedState": local_state, "remoteSha": ""}
+        canonical_local = merge_registry_state(
+            local_state,
+            {
+                "schemaVersion": SYNC_SCHEMA_VERSION,
+                "generatedAt": "",
+                "source": {},
+                "active": [],
+                "pending": [],
+                "rejected": [],
+            },
+        )
+        return {
+            "changed": False,
+            "remoteFound": False,
+            "mergedState": canonical_local,
+            "remoteSha": "",
+        }
     snapshot = remote.get("snapshot") if isinstance(remote.get("snapshot"), dict) else {}
     merged_state = merge_registry_state(local_state, snapshot)
     changed = json.dumps(merged_state, sort_keys=True, ensure_ascii=False) != json.dumps(
-        {
-            "active": [
-                ensure_source_id(row)
-                for row in (local_state.get("active") or [])
-                if isinstance(row, dict)
-            ],
-            "pending": [
-                ensure_source_id(row)
-                for row in (local_state.get("pending") or [])
-                if isinstance(row, dict)
-            ],
-            "rejected": [
-                ensure_source_id(row)
-                for row in (local_state.get("rejected") or [])
-                if isinstance(row, dict)
-            ],
-        },
+        merge_registry_state(
+            local_state,
+            {
+                "schemaVersion": SYNC_SCHEMA_VERSION,
+                "generatedAt": "",
+                "source": {},
+                "active": [],
+                "pending": [],
+                "rejected": [],
+            },
+        ),
         sort_keys=True,
         ensure_ascii=False,
     )
@@ -1290,10 +1352,9 @@ def push_sources_snapshot(
     opener: Callable[..., Any] = urlopen,
 ) -> dict[str, Any]:
     remote = read_remote_snapshot(config, opener=opener)
-    snapshot = build_snapshot(local_state)
     remote_snapshot = remote.get("snapshot") if isinstance(remote.get("snapshot"), dict) else {}
-    if remote_snapshot:
-        snapshot = _merge_without_losing_active_pending(snapshot, remote_snapshot)
+    merged_state = merge_registry_state(local_state, remote_snapshot or {})
+    snapshot = build_snapshot(merged_state)
     write_result = write_remote_snapshot(
         config,
         snapshot,

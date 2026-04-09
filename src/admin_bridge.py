@@ -63,6 +63,9 @@ from src.source_registry import (
     APPROVAL_STATE_PATH,
     DISCOVERY_CANDIDATES_PATH,
     DISCOVERY_REPORT_PATH,
+    TOMBSTONES_PATH,
+    REGISTRY_REASON_MANUAL_SOURCE,
+    REGISTRY_REASON_MANUAL_SOURCE_VARIANT,
     PENDING_PATH,
     REJECTED_PATH,
     ensure_source_id,
@@ -73,6 +76,10 @@ from src.source_registry import (
     source_identity,
     source_url_fingerprint,
     unique_sources,
+)
+from src.bridge.registry_tombstones import (
+    is_tombstoned,
+    load_tombstones,
 )
 
 normalize_fetch_report_contract = report_normalizer.normalize_fetch_report_contract
@@ -92,6 +99,7 @@ SYNC_CONFIG_PATH = ROOT / "data" / "source-sync-config.json"
 DISCOVERY_CONFIG_PATH = ROOT / "data" / "source-discovery-config.json"
 SYNC_RUNTIME_PATH = ROOT / "data" / "source-sync-runtime.json"
 STARTUP_METRICS_PATH = ROOT / "data" / "desktop-startup-metrics.jsonl"
+TOMBSTONES_PATH = ROOT / "data" / "source-registry-tombstones.json"
 
 MAX_HISTORY_ROWS = 240
 OPS_SCHEMA_VERSION = 1
@@ -412,7 +420,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
         TASK_STATE_PATH, \
         DISCOVERY_LOG_PATH, \
         FETCHER_LOG_PATH
-    global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
+    global ACTIVE_PATH, PENDING_PATH, REJECTED_PATH, TOMBSTONES_PATH, DISCOVERY_REPORT_PATH, APPROVAL_STATE_PATH
     global \
         TASKS_CONFIG_PATH, \
         SYNC_CONFIG_PATH, \
@@ -441,6 +449,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     ACTIVE_PATH = data_dir / "source-registry-active.json"
     PENDING_PATH = data_dir / "source-registry-pending.json"
     REJECTED_PATH = data_dir / "source-registry-rejected.json"
+    TOMBSTONES_PATH = data_dir / "source-registry-tombstones.json"
     DISCOVERY_REPORT_PATH = data_dir / "source-discovery-report.json"
     APPROVAL_STATE_PATH = data_dir / "source-approval-state.json"
     TASKS_CONFIG_PATH = Path(config.root) / ".vscode" / "tasks.json"
@@ -449,6 +458,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     source_registry_module.ACTIVE_PATH = ACTIVE_PATH
     source_registry_module.PENDING_PATH = PENDING_PATH
     source_registry_module.REJECTED_PATH = REJECTED_PATH
+    source_registry_module.TOMBSTONES_PATH = TOMBSTONES_PATH
     source_registry_module.DISCOVERY_REPORT_PATH = DISCOVERY_REPORT_PATH
     source_registry_module.APPROVAL_STATE_PATH = APPROVAL_STATE_PATH
     # Desktop local-data APIs are safe to keep available on localhost and are required
@@ -647,6 +657,22 @@ def add_manual_source(raw_url: str) -> dict[str, Any]:
     if not normalized_url:
         return {"status": "invalid", "message": "Invalid URL. Use a full http(s) URL."}
 
+    candidate = build_manual_candidate(normalized_url)
+    if not candidate:
+        return {
+            "status": "invalid",
+            "message": "URL is valid but provider is not supported for discovery checks.",
+        }
+
+    tombstones = load_tombstones()
+    if is_tombstoned(candidate, tombstones):
+        return {
+            "status": "tombstoned",
+            "sourceId": source_identity(candidate),
+            "source": ensure_source_id(candidate),
+            "message": "Source was deleted locally. Restore it before adding it again.",
+        }
+
     state = load_state()
     duplicate = find_existing_source_by_url(state, normalized_url)
     if duplicate:
@@ -655,13 +681,6 @@ def add_manual_source(raw_url: str) -> dict[str, Any]:
             "sourceId": source_identity(duplicate),
             "source": ensure_source_id(duplicate),
             "message": "Source already exists.",
-        }
-
-    candidate = build_manual_candidate(normalized_url)
-    if not candidate:
-        return {
-            "status": "invalid",
-            "message": "URL is valid but provider is not supported for discovery checks.",
         }
 
     # Collapse manual static variants by studio+domain (e.g. /careers, /career, /de/karriere).
@@ -685,7 +704,7 @@ def add_manual_source(raw_url: str) -> dict[str, Any]:
                 updated["listing_url"] = normalized_pages[0] if normalized_pages else normalized_url
             updated = ensure_source_id(updated)
             state[bucket][idx] = updated
-            state = persist_state_and_auto_sync(state, reason="manual_source_variant_added")
+            state = persist_state_and_auto_sync(state, reason=REGISTRY_REASON_MANUAL_SOURCE_VARIANT)
             return {
                 "status": "duplicate",
                 "sourceId": source_identity(updated),
@@ -695,7 +714,7 @@ def add_manual_source(raw_url: str) -> dict[str, Any]:
             }
 
     state["pending"] = unique_sources([candidate, *state["pending"]])
-    state = persist_state_and_auto_sync(state, reason="manual_source_added")
+    state = persist_state_and_auto_sync(state, reason=REGISTRY_REASON_MANUAL_SOURCE)
     added = next(
         (row for row in state["pending"] if source_identity(row) == source_identity(candidate)),
         candidate,
