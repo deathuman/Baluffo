@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.bridge import registry_tombstones
 from src.bridge.api import BridgeApi
 from src.bridge.routes.post_routes import handle_post
-from src.bridge import registry_tombstones
 
 
 @dataclass
