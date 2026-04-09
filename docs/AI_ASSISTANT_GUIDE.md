@@ -52,6 +52,7 @@
 | Endpoint payloads can be assumed | Check [`docs/admin-bridge-api.md`](admin-bridge-api.md) first |
 | Running Baluffo launcher reflects code changes | Restart `npm run dev:bridge` after fixes |
 | Contract changes are isolated | Update implementation + schemas + tests + docs |
+| `rejected` is just a delete sentinel | Local delete is tombstone-backed; restore paths are explicit and sync only carries active/pending rows |
 
 ---
 
@@ -71,6 +72,7 @@
 |------|------------|---------------------|
 | Frontend behavior | `frontend/<page>/app/*.js` | `frontend/<page>/app/runtime.js` |
 | Bridge/API | `src/bridge/*.py` | `src/bridge/routes/*.py` |
+| Registry sync / tombstones | `src/source_registry.py`, `src/bridge/registry_service.py` | `src/bridge/registry_tombstones.py`, `src/source_sync.py`, `src/bridge/routes/post_routes.py` |
 | Jobs pipeline | `src/jobs/pipeline.py` | `src/jobs/adapters/`, `src/jobs/canonicalize.py` |
 | Schema/contracts | `src/core/schemas.py` | `src/core/contracts.py`, `src/jobs/common/contracts.py` |
 | Desktop/runtime | `src/ship/desktop_app/__init__.py` | `src/ship/runtime_launcher.py` |
@@ -112,4 +114,4 @@ For the narrowest verification matrix, fixture layout, and test-to-source map, s
 
 ---
 
-*Last updated: 2026-04-07*
+*Last updated: 2026-04-09*

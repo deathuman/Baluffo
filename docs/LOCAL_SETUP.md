@@ -70,6 +70,8 @@ See [`testing.md`](testing.md) for verification commands and [`AI_ASSISTANT_GUID
   - `data/source-discovery-candidates.json`
   - `data/m5-strategic-backlog.json` (derived M5 review snapshot)
   - `data/source-registry-pending.json` (report-only, no auto-enable)
+  - `data/source-registry-rejected.json` (local rejected bucket, not a delete sentinel)
+  - `data/source-registry-tombstones.json` (local delete ledger keyed by source identity)
 - Optional flags:
   - `--mode static` to probe only static seed list
   - `--no-web-search` to skip lightweight web search expansion
@@ -92,6 +94,7 @@ See [`testing.md`](testing.md) for verification commands and [`AI_ASSISTANT_GUID
   - `GET /sync/status`
   - Local lint and release gates require `pre-commit` and `ruff` in the active Python environment; if they are missing, install them with `python -m pip install pre-commit ruff`.
   - `POST /registry/approve`, `POST /registry/reject`, `POST /registry/rollback`
+  - `POST /registry/restore-rejected`, `POST /registry/restore-deleted`, `POST /registry/delete`
   - `POST /sync/pull`, `POST /sync/push`
   - `POST /tasks/run-discovery`, `POST /tasks/run-fetcher`
   - `POST /tasks/run-sync-pull`, `POST /tasks/run-sync-push` (preferred for UI task/history tracking)
@@ -156,7 +159,7 @@ See [`testing.md`](testing.md) for verification commands and [`AI_ASSISTANT_GUID
 - Behavior:
   - bridge does a best-effort pull on startup (non-fatal on failure)
   - admin UI includes manual pull/push actions
-  - sync payload includes `active`, `pending`, `rejected`
+  - sync payload includes `active` and `pending` only; `rejected` stays local, and delete tombstones are never pushed remotely
 
 ## Suggested local schedules
 - Windows Task Scheduler action:

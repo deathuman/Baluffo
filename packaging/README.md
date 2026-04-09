@@ -2,6 +2,8 @@
 
 The source sync runtime now expects a packaged GitHub App config file instead of user-entered PAT settings.
 
+Remote sync snapshots are schema v2 and only include `active` and `pending` rows. Rejected rows and delete tombstones remain local-only under the bridge data directory.
+
 ## Packaged file
 
 Ship a file named `github-app-sync-config.json` with the app bundle, or set `BALUFFO_SYNC_APP_CONFIG_PATH` to its location.

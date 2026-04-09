@@ -133,3 +133,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 - This project is optimized for local/personal operation
 - Third-party source reliability may vary (rate limits, anti-bot, temporary failures)
 - Always verify critical job details on the original posting
+- Source registry sync is transition-aware: local delete is tombstone-backed, and remote sync snapshots only carry `active` and `pending` rows.

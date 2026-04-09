@@ -58,8 +58,8 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 | Saved attachments | `frontend/saved/app/attachments.js` | `frontend/saved/services.js` |
 | Admin ops | `frontend/admin/app/{auth,ops,fetcher,discovery,sync}.js` | `frontend/admin/services.js` |
 | Bridge API | `src/bridge/*.py` | `src/bridge/routes/*.py` |
-| Bridge sync | `src/bridge/sync_service.py` | `src/bridge/sync_state.py` |
-| Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py` |
+| Bridge sync | `src/bridge/sync_service.py` | `src/source_sync.py`, `src/bridge/sync_state.py` |
+| Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
 | Jobs pipeline | `src/jobs/pipeline.py` | `src/jobs/adapters/`, `src/jobs/canonicalize.py` |
 | Desktop runtime | `src/ship/desktop_app/__init__.py` | `src/ship/runtime_launcher.py` |
 | UI selectors | `frontend/shared/ui/selectors.js` | — |
@@ -82,7 +82,8 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 
 **Bridge services (`src/bridge/`):**
 - `sync_service.py`, `sync_state.py` — sync operations
-- `registry_service.py` — active/pending/rejected state
+- `registry_service.py` — canonical active/pending/rejected state, tombstone filtering, local persistence
+- `registry_tombstones.py` — local delete ledger and restore helpers
 - `discovery_service.py` — discovery task orchestration
 - `pipeline_service.py` — jobs pipeline task
 - `routes/get_routes.py`, `routes/post_routes.py` — HTTP handlers
@@ -107,7 +108,9 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 | `data/jobs-fetch-report.json` | Last fetch diagnostics |
 | `data/source-registry-active.json` | Approved sources |
 | `data/source-registry-pending.json` | Discovered, not approved |
-| `data/source-registry-rejected.json` | Rejected sources |
+| `data/source-registry-rejected.json` | Rejected sources, local-only |
+| `data/source-registry-tombstones.json` | Local-only delete ledger keyed by source identity |
+| `data/source-sync.json` | Remote sync snapshot v2 (`active` and `pending` only) |
 | `data/source-discovery-report.json` | Last discovery run |
 | `data/local-user-data/users/{uid}/*.json` | Per-user saved jobs, notes, attachments |
 
@@ -153,4 +156,4 @@ See [`testing.md`](testing.md) for more commands.
 
 ---
 
-*Last updated: 2026-04-07*
+*Last updated: 2026-04-09*

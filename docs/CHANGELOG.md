@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Provenance-based game-sector normalization instead of a raw source-sector override
 - Admin restore hooks for fetch and discovery progress after navigating away and back
 - Better public-link rewriting for provider rows that exposed raw API URLs
+- Transition-aware source registry sync with per-source merge, schema v2 snapshots, and local tombstone-backed deletes
+- Explicit registry restore-deleted flow for locally removed sources
 
 ### Changed
 - Discovery preset semantics swapped in place: `default` now uses the former uncapped-lite behavior, and `uncapped` is the broader exploration preset
@@ -40,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Jobs UI link handling normalizes RemoteOK detail URLs to the safer listing page
 - City and country filter normalization was tightened to reject obvious non-location contamination
 - k-ID no longer needs a source-specific suppressor plugin; the shared dead-listing gate now handles it
+- Source sync now pushes only active and pending rows; rejected stays local and tombstones are never serialized remotely
 - Archived [`docs/archive/scraping-pipeline-run-notes.md`](archive/scraping-pipeline-run-notes.md) — Historical run notes from 2026-03-17 (outdated)
 
 ### Fixed

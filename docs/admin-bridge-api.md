@@ -44,7 +44,8 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | POST | `/registry/reject` | Reject pending sources (`{ids: []}`) |
 | POST | `/registry/rollback` | Rollback active to pending (`{ids: []}`) |
 | POST | `/registry/restore-rejected` | Restore rejected to pending (`{ids: []}`) |
-| POST | `/registry/delete` | Delete sources (`{ids: [], urls: []}`) |
+| POST | `/registry/restore-deleted` | Restore locally deleted sources from tombstones (`{ids: [], urls: []}`) |
+| POST | `/registry/delete` | Local-only delete; writes tombstones and removes sources from the registry (`{ids: [], urls: []}`) |
 | POST | `/sources/manual` | Add manual source (`{url: ""}`) |
 
 ## Discovery
@@ -119,3 +120,4 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 - Discovery `default` now maps to the former uncapped-lite behavior. Discovery `uncapped` is the stronger exploration preset and is distinct from `force_full`.
 - `/discovery/log` is designed for live tailing via byte offsets, and the Admin UI now re-attaches to active discovery runs after page refresh.
 - Source Discovery keeps a bridge-persisted admin preference, enabled by default, that auto-approves healthy pending sources with jobs after discovery completes and before any follow-on auto-sync push decision.
+- Source registry deletes are tombstone-backed and local-only; the restore path is explicit, and manual add will not silently clear a tombstone.

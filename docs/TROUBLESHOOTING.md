@@ -252,8 +252,16 @@ npm run test:smoke
 
 | Solution | Notes |
 |----------|-------|
-| Reset to defaults | Delete registry files; they regenerate from defaults |
-| Manual fix | Edit `data/source-registry-active.json` directly |
+| Reset to defaults | Delete registry files and `data/source-registry-tombstones.json`; they regenerate from defaults |
+| Manual fix | Edit `data/source-registry-active.json`, `data/source-registry-pending.json`, or `data/source-registry-rejected.json` directly |
+
+### Deleted source reappears after sync or discovery
+
+| Check | Action |
+|-------|--------|
+| Tombstone ledger | Verify `data/source-registry-tombstones.json` contains the source identity |
+| Restore path | Use the explicit restore-deleted route or Admin action before re-adding the source |
+| Sync payload | Remember remote sync snapshots only carry `active` and `pending`; deleted rows are local-only tombstones |
 
 ---
 
@@ -284,4 +292,4 @@ python -c "import json; r=json.load(open('data/source-discovery-report.json')); 
 
 ---
 
-*Last updated: 2026-03-23*
+*Last updated: 2026-04-09*
