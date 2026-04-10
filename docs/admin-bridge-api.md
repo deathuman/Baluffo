@@ -120,4 +120,6 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 - Discovery `default` now maps to the former uncapped-lite behavior. Discovery `uncapped` is the stronger exploration preset and is distinct from `force_full`.
 - `/discovery/log` is designed for live tailing via byte offsets, and the Admin UI now re-attaches to active discovery runs after page refresh.
 - Source Discovery keeps a bridge-persisted admin preference, enabled by default, that auto-approves healthy pending sources with jobs after discovery completes and before any follow-on auto-sync push decision.
+- `weakSignal` remains an advisory hint for ranking, review, and re-probe heuristics only; it does not block auto-approval.
+- Report-side queue throttles like `domain_cap` do not veto a clean pending registry row.
 - Source registry deletes are tombstone-backed and local-only; the restore path is explicit, and manual add will not silently clear a tombstone.

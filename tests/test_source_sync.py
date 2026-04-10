@@ -382,6 +382,39 @@ def test_pull_and_merge_sources_merges_distinct_sources_by_identity(source_sync_
     assert len(merged["pending"]) == 1
 
 
+def test_merge_registry_state_keeps_newer_local_legacy_row():
+    local = {
+        "active": [
+            {
+                "adapter": "static",
+                "listing_url": "https://legacy.example/jobs",
+                "local_note": "newer-local-edit",
+            }
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+    remote = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-03-09T11:00:00+00:00",
+        "active": [
+            {
+                "adapter": "static",
+                "listing_url": "https://legacy.example/jobs",
+                "remote_note": "stale-remote-copy",
+            }
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    merged = sync.merge_registry_state(local, remote)
+
+    assert len(merged["active"]) == 1
+    assert merged["active"][0]["local_note"] == "newer-local-edit"
+    assert "remote_note" not in merged["active"][0]
+
+
 def test_push_sources_snapshot_serializes_expected_payload(source_sync_test_root):
     source_sync_test_root.write_packaged_config()
     opener = _Recorder(
@@ -419,6 +452,15 @@ def test_push_sources_snapshot_serializes_expected_payload(source_sync_test_root
     assert "active" in decoded
     assert "pending" in decoded
     assert "rejected" not in decoded
+    assert decoded["active"][0]["stateChangedAt"] == decoded["generatedAt"]
+    assert decoded["active"][0]["stateChangedBy"] == sync.REGISTRY_MIGRATION_V2
+    assert decoded["active"][0]["lastPromotedAt"] == decoded["generatedAt"]
+    assert decoded["active"][0]["approvedAt"] == decoded["generatedAt"]
+    assert decoded["active"][0]["liveAt"] == decoded["generatedAt"]
+    assert decoded["pending"][0]["stateChangedAt"] == decoded["generatedAt"]
+    assert decoded["pending"][0]["stateChangedBy"] == sync.REGISTRY_MIGRATION_V2
+    assert decoded["pending"][0]["lastDemotedAt"] == decoded["generatedAt"]
+    assert decoded["pending"][0]["pendingReason"] == sync.REGISTRY_REASON_PENDING_DEFAULT
 
 
 def test_push_sources_snapshot_preserves_remote_active_and_pending(source_sync_test_root):
@@ -453,6 +495,35 @@ def test_push_sources_snapshot_preserves_remote_active_and_pending(source_sync_t
     assert len(decoded["active"]) == 1
     assert len(decoded["pending"]) == 1
     assert decoded["schemaVersion"] == 2
+
+
+def test_build_snapshot_is_idempotent_for_legacy_rows(monkeypatch):
+    local = {
+        "active": [
+            {
+                "adapter": "static",
+                "listing_url": "https://legacy.example/jobs",
+            }
+        ],
+        "pending": [
+            {
+                "adapter": "teamtailor",
+                "name": "Legacy Pending",
+            }
+        ],
+        "rejected": [],
+    }
+    monkeypatch.setattr(sync, "now_iso", lambda: "2026-04-09T20:55:07.978053+00:00")
+    first = sync.build_snapshot(local, source_label="admin_bridge")
+    second = sync.build_snapshot(local, source_label="admin_bridge")
+    assert first == second
+    assert first["active"][0]["stateChangedAt"] == first["generatedAt"]
+    assert first["active"][0]["stateChangedBy"] == sync.REGISTRY_MIGRATION_V2
+    assert first["active"][0]["lastPromotedAt"] == first["generatedAt"]
+    assert first["pending"][0]["stateChangedAt"] == first["generatedAt"]
+    assert first["pending"][0]["stateChangedBy"] == sync.REGISTRY_MIGRATION_V2
+    assert first["pending"][0]["lastDemotedAt"] == first["generatedAt"]
+    assert first["pending"][0]["pendingReason"] == sync.REGISTRY_REASON_PENDING_DEFAULT
 
 
 def test_push_sources_snapshot_allows_local_rejected_to_remove_remote_source(source_sync_test_root):

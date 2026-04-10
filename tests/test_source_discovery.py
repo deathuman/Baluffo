@@ -2088,6 +2088,7 @@ def test_run_discovery_leaves_pending_only_rows_unapproved() -> None:
                         "adapter": "static",
                         "name": "Healthy Pending",
                         "jobsFound": 3,
+                        "weakSignal": True,
                         "status": "healthy",
                     }
                 ],
@@ -2137,20 +2138,23 @@ def test_run_discovery_leaves_pending_only_rows_unapproved() -> None:
                 fetcher=lambda *args, **kwargs: "",
             )
 
-            assert int((report.get("summary") or {}).get("approvedCandidateCount") or 0) == 0
-            assert int((report.get("summary") or {}).get("liveCandidateCount") or 0) == 0
+            assert int((report.get("summary") or {}).get("approvedCandidateCount") or 0) == 1
+            assert int((report.get("summary") or {}).get("liveCandidateCount") or 0) == 1
             assert (
                 int(
                     (((report.get("runtime") or {}).get("autoApproval") or {}).get("approvedCount"))
                     or 0
                 )
-                == 0
+                == 1
             )
             active = json.loads(sd.ACTIVE_PATH.read_text(encoding="utf-8"))
             pending = json.loads(sd.PENDING_PATH.read_text(encoding="utf-8"))
-            assert active == []
-            assert [row["id"] for row in pending] == ["pending-ok"]
-            assert not (root / "source-approval-state.json").exists()
+            assert [row["id"] for row in active] == ["pending-ok"]
+            assert bool(active[0].get("weakSignal"))
+            assert pending == []
+            assert json.loads(
+                (root / "source-approval-state.json").read_text(encoding="utf-8")
+            ) == {"approvedSinceLastRun": 1}
         finally:
             (
                 sd.ACTIVE_PATH,

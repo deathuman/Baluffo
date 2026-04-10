@@ -61,6 +61,38 @@ def test_source_url_fingerprint_uses_static_pages_when_no_endpoint_field() -> No
     assert sr.source_url_fingerprint(row) == "https://milestone.it/careers"
 
 
+def test_canonicalize_registry_row_backfills_active_transition_metadata() -> None:
+    row = {
+        "adapter": "static",
+        "listing_url": "https://example.com/jobs",
+        "approvedAt": "2026-04-09T10:00:00+00:00",
+        "liveAt": "2026-04-09T10:05:00+00:00",
+    }
+    normalized = sr.canonicalize_registry_row(row, bucket="active")
+    assert normalized["registryState"] == "active"
+    assert normalized["stateChangedAt"] == "2026-04-09T10:00:00+00:00"
+    assert normalized["stateChangedBy"] == sr.REGISTRY_MIGRATION_V2
+    assert normalized["lastPromotedAt"] == "2026-04-09T10:00:00+00:00"
+    assert normalized["approvedAt"] == "2026-04-09T10:00:00+00:00"
+    assert normalized["approvedBy"] == sr.REGISTRY_MIGRATION_V2
+    assert normalized["liveAt"] == "2026-04-09T10:05:00+00:00"
+    assert normalized["pendingReason"] == ""
+
+
+def test_canonicalize_registry_row_backfills_pending_transition_metadata() -> None:
+    row = {
+        "adapter": "teamtailor",
+        "name": "Pending Row",
+        "lastDemotedAt": "2026-04-09T11:00:00+00:00",
+    }
+    normalized = sr.canonicalize_registry_row(row, bucket="pending")
+    assert normalized["registryState"] == "pending"
+    assert normalized["stateChangedAt"] == "2026-04-09T11:00:00+00:00"
+    assert normalized["stateChangedBy"] == sr.REGISTRY_MIGRATION_V2
+    assert normalized["lastDemotedAt"] == "2026-04-09T11:00:00+00:00"
+    assert normalized["pendingReason"] == sr.REGISTRY_REASON_PENDING_DEFAULT
+
+
 def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() -> None:
     with workspace_tmpdir("source-registry") as tmp:
         approval_path = Path(tmp) / "source-approval-state.json"
@@ -79,8 +111,11 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
                     "adapter": "greenhouse",
                     "name": "Healthy Pending",
                     "jobsFound": 3,
-                    "confidence": "high",
-                    "rankScore": 84,
+                    "sampleCount": 3,
+                    "weakSignal": True,
+                    "evidenceScore": 24,
+                    "confidence": "medium",
+                    "rankScore": 24,
                     "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
                     "promotionLane": "structured_batch",
                     "status": "healthy",
@@ -123,8 +158,11 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
                     "adapter": "greenhouse",
                     "name": "Healthy Pending",
                     "jobsFound": 3,
-                    "confidence": "high",
-                    "rankScore": 84,
+                    "sampleCount": 3,
+                    "weakSignal": True,
+                    "evidenceScore": 24,
+                    "confidence": "medium",
+                    "rankScore": 24,
                     "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
                     "promotionLane": "structured_batch",
                     "status": "healthy",
@@ -160,22 +198,227 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
             now_iso_fn=lambda: "2026-03-20T12:06:00Z",
         )
 
-        assert approved == 1
-        assert [row["id"] for row in next_state["active"]] == ["active-1", "pending-ok"]
-        assert [row["id"] for row in next_state["pending"]] == [
+        assert approved == 3
+        assert [row["id"] for row in next_state["active"]] == [
+            "active-1",
+            "pending-ok",
             "pending-static",
             "pending-bamboo",
         ]
+        assert next_state["active"][1]["weakSignal"] is True
+        assert [row["id"] for row in next_state["pending"]] == []
+        assert report["summary"]["approvedCandidateCount"] == 3
+        assert report["summary"]["liveCandidateCount"] == 3
+        assert report["runtime"]["autoApproval"] == {"enabled": True, "approvedCount": 3}
+        assert report["candidates"][0]["candidateState"] == "live"
+        assert report["candidates"][0]["approvedBy"] == "discovery_auto_approve"
+        assert report["candidates"][0]["liveAt"] == "2026-03-20T12:06:00Z"
+        assert report["candidates"][0]["promotionReason"] == "weak_candidate"
+        assert report["candidates"][1]["candidateState"] == "live"
+        assert report["candidates"][1]["approvedBy"] == "discovery_auto_approve"
+        assert report["candidates"][1]["liveAt"] == "2026-03-20T12:06:00Z"
+        assert report["candidates"][1]["promotionReason"] == "manual_review_only"
+        assert report["candidates"][2]["candidateState"] == "live"
+        assert report["candidates"][2]["approvedBy"] == "discovery_auto_approve"
+        assert report["candidates"][2]["liveAt"] == "2026-03-20T12:06:00Z"
+        assert report["candidates"][2]["promotionReason"] == "structured_family_gate"
+        assert json.loads(approval_path.read_text(encoding="utf-8")) == {"approvedSinceLastRun": 3}
+
+
+def test_apply_discovery_auto_approval_ignores_report_domain_cap_deferral_for_clean_pending_row() -> (
+    None
+):
+    with workspace_tmpdir("source-registry") as tmp:
+        approval_path = Path(tmp) / "source-approval-state.json"
+        state = {
+            "active": [],
+            "pending": [
+                {
+                    "id": "workable:account:velanstudios",
+                    "adapter": "workable",
+                    "name": "Velan Studios, Inc. (Workable)",
+                    "jobsFound": 9,
+                    "sampleCount": 9,
+                    "weakSignal": True,
+                    "status": "healthy",
+                    "candidateState": "validated",
+                }
+            ],
+            "rejected": [],
+        }
+        report = {
+            "summary": {
+                "queuedCandidateCount": 1,
+                "approvedCandidateCount": 0,
+                "liveCandidateCount": 0,
+            },
+            "runtime": {},
+            "candidates": [
+                {
+                    "id": "workable:account:velanstudios",
+                    "adapter": "workable",
+                    "name": "Velan Studios, Inc. (Workable)",
+                    "jobsFound": 3,
+                    "sampleCount": 3,
+                    "weakSignal": True,
+                    "deferred": True,
+                    "deferReason": "domain_cap",
+                    "dropReason": "domain_cap",
+                    "promotionLane": "domain_cap_review",
+                    "promotionReason": "deferred_candidate",
+                    "status": "healthy",
+                }
+            ],
+        }
+
+        next_state, approved = sr.apply_discovery_auto_approval(
+            state,
+            report,
+            auto_approve_enabled=True,
+            approval_state_path=approval_path,
+            now_iso_fn=lambda: "2026-03-20T12:06:00Z",
+        )
+
+        assert approved == 1
+        assert [row["id"] for row in next_state["active"]] == ["workable:account:velanstudios"]
+        assert next_state["active"][0]["jobsFound"] == 9
+        assert next_state["pending"] == []
         assert report["summary"]["approvedCandidateCount"] == 1
         assert report["summary"]["liveCandidateCount"] == 1
         assert report["runtime"]["autoApproval"] == {"enabled": True, "approvedCount": 1}
         assert report["candidates"][0]["candidateState"] == "live"
         assert report["candidates"][0]["approvedBy"] == "discovery_auto_approve"
         assert report["candidates"][0]["liveAt"] == "2026-03-20T12:06:00Z"
-        assert report["candidates"][0]["promotionReason"] == "structured_batch_family"
-        assert report["candidates"][1]["promotionReason"] == "manual_review_only"
-        assert report["candidates"][2]["promotionReason"] == "structured_family_gate"
         assert json.loads(approval_path.read_text(encoding="utf-8")) == {"approvedSinceLastRun": 1}
+
+
+def test_apply_discovery_auto_approval_keeps_failed_or_deferred_candidates_pending() -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        approval_path = Path(tmp) / "source-approval-state.json"
+        state = {
+            "active": [],
+            "pending": [
+                {
+                    "id": "pending-error",
+                    "adapter": "greenhouse",
+                    "name": "Errored Pending",
+                    "jobsFound": 2,
+                    "sampleCount": 2,
+                    "evidenceScore": 24,
+                    "confidence": "medium",
+                    "rankScore": 24,
+                    "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
+                    "promotionLane": "structured_batch",
+                    "status": "error",
+                    "lastProbeError": "timeout",
+                },
+                {
+                    "id": "pending-blocked",
+                    "adapter": "greenhouse",
+                    "name": "Blocked Pending",
+                    "jobsFound": 2,
+                    "sampleCount": 2,
+                    "evidenceScore": 24,
+                    "confidence": "medium",
+                    "rankScore": 24,
+                    "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
+                    "promotionLane": "structured_batch",
+                    "status": "healthy",
+                    "candidateState": "quarantined",
+                },
+                {
+                    "id": "pending-deferred",
+                    "adapter": "greenhouse",
+                    "name": "Deferred Pending",
+                    "jobsFound": 2,
+                    "sampleCount": 2,
+                    "evidenceScore": 24,
+                    "confidence": "medium",
+                    "rankScore": 24,
+                    "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
+                    "promotionLane": "structured_batch",
+                    "status": "healthy",
+                    "weakSignal": True,
+                    "deferred": True,
+                },
+            ],
+            "rejected": [],
+        }
+        report = {
+            "summary": {
+                "queuedCandidateCount": 2,
+                "approvedCandidateCount": 0,
+                "liveCandidateCount": 0,
+            },
+            "runtime": {},
+            "candidates": [
+                {
+                    "id": "pending-error",
+                    "adapter": "greenhouse",
+                    "name": "Errored Pending",
+                    "jobsFound": 2,
+                    "sampleCount": 2,
+                    "evidenceScore": 24,
+                    "confidence": "medium",
+                    "rankScore": 24,
+                    "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
+                    "promotionLane": "structured_batch",
+                    "status": "error",
+                    "lastProbeError": "timeout",
+                },
+                {
+                    "id": "pending-blocked",
+                    "adapter": "greenhouse",
+                    "name": "Blocked Pending",
+                    "jobsFound": 2,
+                    "sampleCount": 2,
+                    "evidenceScore": 24,
+                    "confidence": "medium",
+                    "rankScore": 24,
+                    "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
+                    "promotionLane": "structured_batch",
+                    "status": "healthy",
+                    "candidateState": "quarantined",
+                },
+                {
+                    "id": "pending-deferred",
+                    "adapter": "greenhouse",
+                    "name": "Deferred Pending",
+                    "jobsFound": 2,
+                    "sampleCount": 2,
+                    "evidenceScore": 24,
+                    "confidence": "medium",
+                    "rankScore": 24,
+                    "rankReasons": ["structured_batch_family", "jobs_found_bonus"],
+                    "promotionLane": "structured_batch",
+                    "status": "healthy",
+                    "weakSignal": True,
+                    "deferred": True,
+                },
+            ],
+        }
+
+        next_state, approved = sr.apply_discovery_auto_approval(
+            state,
+            report,
+            auto_approve_enabled=True,
+            approval_state_path=approval_path,
+            now_iso_fn=lambda: "2026-03-20T12:06:00Z",
+        )
+
+        assert approved == 0
+        assert [row["id"] for row in next_state["active"]] == []
+        assert [row["id"] for row in next_state["pending"]] == [
+            "pending-error",
+            "pending-blocked",
+            "pending-deferred",
+        ]
+        assert report["summary"]["approvedCandidateCount"] == 0
+        assert report["summary"]["liveCandidateCount"] == 0
+        assert report["runtime"]["autoApproval"] == {"enabled": True, "approvedCount": 0}
+        assert report["candidates"][0]["promotionReason"] == "structured_batch_family"
+        assert report["candidates"][1]["promotionReason"] == "structured_batch_family"
+        assert report["candidates"][2]["promotionReason"] == "deferred_candidate"
 
         repeat_state, repeat_approved = sr.apply_discovery_auto_approval(
             next_state,
@@ -185,6 +428,6 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
             now_iso_fn=lambda: "2026-03-20T12:07:00Z",
         )
 
-        assert repeat_approved == 1
+        assert repeat_approved == 0
         assert repeat_state == next_state
-        assert json.loads(approval_path.read_text(encoding="utf-8")) == {"approvedSinceLastRun": 1}
+        assert not approval_path.exists()

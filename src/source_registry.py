@@ -29,9 +29,6 @@ APPROVAL_STATE_PATH = DATA_DIR / "source-approval-state.json"
 TOMBSTONES_PATH = DATA_DIR / "source-registry-tombstones.json"
 AUTO_APPROVAL_STRONG_ADAPTERS = frozenset({"greenhouse", "lever", "ashby"})
 AUTO_APPROVAL_SECONDARY_ADAPTERS = frozenset({"bamboohr", "workday"})
-AUTO_APPROVAL_ALLOWED_REASONS = frozenset(
-    {"structured_batch_family", "structured_family_high_confidence"}
-)
 REGISTRY_STATE_ACTIVE = "active"
 REGISTRY_STATE_PENDING = "pending"
 REGISTRY_STATE_REJECTED = "rejected"
@@ -51,6 +48,7 @@ REGISTRY_REASON_RESTORE_DELETED = "registry_restore_deleted"
 REGISTRY_REASON_FETCH_EMPTY_DEMOTE = "fetch_empty_demote"
 REGISTRY_REASON_FETCH_FAILURE_DEMOTE = "fetch_failure_demote"
 REGISTRY_REASON_SOURCE_CHECK_UPDATED = "source_check_updated"
+REGISTRY_MIGRATION_V2 = "registry_migration_v2"
 
 
 def _coerce_int(value: Any, default: int = 0) -> int:
@@ -200,6 +198,8 @@ def canonicalize_registry_row(row: dict[str, Any], *, bucket: str = "") -> dict[
     registry_state = _infer_registry_state(normalized, bucket=bucket)
     state_changed_at = _infer_state_changed_at(normalized, registry_state=registry_state)
     state_changed_by = _infer_state_changed_by(normalized)
+    if state_changed_at and not state_changed_by:
+        state_changed_by = REGISTRY_MIGRATION_V2
     reason = _infer_pending_reason(normalized, registry_state=registry_state, bucket=bucket)
     normalized = _apply_registry_legacy_fields(
         normalized,
@@ -466,13 +466,32 @@ def _normalize_discovery_health_status(value: Any) -> str:
     return token
 
 
-def _pending_row_is_auto_approvable(row: dict[str, Any]) -> bool:
+def _pending_row_is_auto_approvable(
+    row: dict[str, Any], *, report_row: dict[str, Any] | None = None
+) -> bool:
+    """Return True when a pending discovery row has concrete approval evidence.
+
+    Advisory signals like weakSignal and promotionReason are intentionally ignored here.
+    Report-side queue throttles such as domain_cap do not override a clean pending row.
+    """
     if not isinstance(row, dict):
+        return False
+    report = report_row if isinstance(report_row, dict) else {}
+    if bool(row.get("deferred")):
+        return False
+    candidate_state = str(row.get("candidateState") or "").strip().lower()
+    report_candidate_state = str(report.get("candidateState") or "").strip().lower()
+    if candidate_state in {"quarantined", "rejected"} or report_candidate_state in {
+        "quarantined",
+        "rejected",
+    }:
         return False
     jobs_found = row.get("jobsFound")
     sample_count = row.get("sampleCount")
+    report_jobs_found = report.get("jobsFound")
+    report_sample_count = report.get("sampleCount")
     jobs_count = 0
-    for value in (jobs_found, sample_count):
+    for value in (jobs_found, sample_count, report_jobs_found, report_sample_count):
         try:
             numeric = int(value or 0)
         except (TypeError, ValueError):
@@ -482,22 +501,18 @@ def _pending_row_is_auto_approvable(row: dict[str, Any]) -> bool:
             break
     if jobs_count <= 0:
         return False
-    if str(row.get("lastProbeError") or "").strip():
+    last_probe_error = str(report.get("lastProbeError") or row.get("lastProbeError") or "").strip()
+    if last_probe_error:
         return False
-    status = _normalize_discovery_health_status(row.get("_lastStatus") or row.get("status"))
+    status = _normalize_discovery_health_status(
+        report.get("_lastStatus")
+        or report.get("status")
+        or row.get("_lastStatus")
+        or row.get("status")
+    )
     if status == "error":
         return False
     return True
-
-
-def _queued_report_candidate_ids(report: dict[str, Any]) -> set[str]:
-    candidates = report.get("candidates") if isinstance(report.get("candidates"), list) else []
-    queued_ids: set[str] = set()
-    for row in candidates:
-        if not isinstance(row, dict) or bool(row.get("deferred")):
-            continue
-        queued_ids.add(source_identity(row))
-    return queued_ids
 
 
 def _stamp_live_transition(
@@ -518,7 +533,7 @@ def _promotion_reason_for_candidate(row: dict[str, Any]) -> str:
     adapter = str(row.get("adapter") or "").strip().lower()
     confidence = str(row.get("confidence") or "").strip().lower()
     promotion_lane = str(row.get("promotionLane") or "").strip().lower()
-    rank_score = max(0, int(row.get("rankScore") or row.get("score") or 0))
+    evidence_score = max(0, int(row.get("evidenceScore") or 0))
     jobs_found = max(0, int(row.get("jobsFound") or row.get("sampleCount") or 0))
     rank_reasons = {
         str(item or "").strip()
@@ -528,12 +543,13 @@ def _promotion_reason_for_candidate(row: dict[str, Any]) -> str:
 
     if bool(row.get("deferred")):
         return "deferred_candidate"
+    if bool(row.get("weakSignal")):
+        return "weak_candidate"
 
     if adapter in AUTO_APPROVAL_STRONG_ADAPTERS:
         if (
             promotion_lane == "structured_batch"
             and confidence in {"high", "medium"}
-            and rank_score >= 60
             and jobs_found > 0
             and "structured_batch_family" in rank_reasons
         ):
@@ -542,11 +558,9 @@ def _promotion_reason_for_candidate(row: dict[str, Any]) -> str:
 
     if adapter in AUTO_APPROVAL_SECONDARY_ADAPTERS:
         if (
-            confidence == "high"
-            and rank_score >= 75
-            and jobs_found > 0
+            jobs_found > 0
             and "structured_family" in rank_reasons
-            and ("jobs_found_bonus" in rank_reasons or "evidence_rank_bonus" in rank_reasons)
+            and (confidence == "high" or evidence_score >= 26)
         ):
             return "structured_family_high_confidence"
         return "structured_family_gate"
@@ -573,7 +587,6 @@ def apply_discovery_auto_approval(
     runtime_auto = (
         runtime.get("autoApproval") if isinstance(runtime.get("autoApproval"), dict) else {}
     )
-    queued_ids = _queued_report_candidate_ids(report)
     report_candidates = (
         report.get("candidates") if isinstance(report.get("candidates"), list) else []
     )
@@ -585,13 +598,16 @@ def apply_discovery_auto_approval(
     approved_at = str(now_iso_fn() if callable(now_iso_fn) else now_iso())
     moved: list[dict[str, Any]] = []
     remaining: list[dict[str, Any]] = []
+    moved_ids: set[str] = set()
 
     if auto_approve_enabled:
         for row in normalized_state["pending"]:
             row_id = source_identity(row)
             report_row = report_candidates_by_id.get(row_id)
-            promotion_reason = _promotion_reason_for_candidate(dict(report_row or row))
-            if row_id in queued_ids and promotion_reason in AUTO_APPROVAL_ALLOWED_REASONS:
+            merged_row = dict(report_row or row)
+            promotion_reason = _promotion_reason_for_candidate(merged_row)
+            if _pending_row_is_auto_approvable(row, report_row=report_row):
+                moved_ids.add(row_id)
                 moved.append(
                     _stamp_live_transition(
                         row,
@@ -633,11 +649,7 @@ def apply_discovery_auto_approval(
             updated_row = dict(row)
             if promotion_reason:
                 updated_row["promotionReason"] = promotion_reason
-            if (
-                not bool(updated_row.get("deferred"))
-                and row_id in queued_ids
-                and promotion_reason in AUTO_APPROVAL_ALLOWED_REASONS
-            ):
+            if row_id in moved_ids or _pending_row_is_auto_approvable(updated_row):
                 updated_row = _stamp_live_transition(
                     updated_row,
                     approved_by="discovery_auto_approve",

@@ -15,8 +15,10 @@ from typing import Any
 from src.source_registry import (
     REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
     apply_discovery_auto_approval,
-    source_identity,
     transition_registry_to_active,
+)
+from src.source_registry import (
+    _pending_row_is_auto_approvable as registry_pending_row_is_auto_approvable,
 )
 
 BridgeLogFunc = Callable[[str, str], None]
@@ -153,27 +155,7 @@ class DiscoveryService:
 
     @classmethod
     def _pending_row_is_auto_approvable(cls, row: dict[str, Any]) -> bool:
-        if not isinstance(row, dict):
-            return False
-        jobs_found = row.get("jobsFound")
-        sample_count = row.get("sampleCount")
-        jobs_count = 0
-        for value in (jobs_found, sample_count):
-            try:
-                numeric = int(value or 0)
-            except (TypeError, ValueError):
-                numeric = 0
-            if numeric > 0:
-                jobs_count = numeric
-                break
-        if jobs_count <= 0:
-            return False
-        if str(row.get("lastProbeError") or "").strip():
-            return False
-        status = cls._normalize_health_status(row.get("_lastStatus") or row.get("status"))
-        if status == "error":
-            return False
-        return True
+        return registry_pending_row_is_auto_approvable(row)
 
     def _increment_approval_state(self, count: int) -> None:
         if count <= 0:
@@ -185,59 +167,6 @@ class DiscoveryService:
             count
         )
         self._deps.save_json_atomic(self._paths.approval_state, approval)
-
-    @staticmethod
-    def _queued_report_candidate_ids(report: dict[str, Any]) -> set[str]:
-        candidates = report.get("candidates") if isinstance(report.get("candidates"), list) else []
-        queued_ids: set[str] = set()
-        for row in candidates:
-            if not isinstance(row, dict) or bool(row.get("deferred")):
-                continue
-            queued_ids.add(source_identity(row))
-        return queued_ids
-
-    def _stamp_live_transition(self, row: dict[str, Any], *, approved_by: str) -> dict[str, Any]:
-        now_iso = self._deps.now_iso()
-        return transition_registry_to_active(
-            row,
-            reason=REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
-            actor=approved_by,
-            at=now_iso,
-        )
-
-    def _auto_approve_healthy_pending_sources(
-        self, *, queued_candidate_ids: set[str] | None = None
-    ) -> int:
-        state = self._deps.load_state()
-        pending_rows = list(state.get("pending") or [])
-        moved: list[dict[str, Any]] = []
-        remaining: list[dict[str, Any]] = []
-        queued_ids = {
-            str(item or "").strip().lower()
-            for item in (queued_candidate_ids or set())
-            if str(item or "").strip()
-        }
-        for row in pending_rows:
-            row_id = source_identity(row)
-            if row_id in queued_ids or self._pending_row_is_auto_approvable(row):
-                moved.append(
-                    self._stamp_live_transition(
-                        row,
-                        approved_by="discovery_auto_approve",
-                    )
-                )
-            else:
-                remaining.append(row)
-        if not moved:
-            return 0
-        next_state = {
-            "active": [*list(state.get("active") or []), *moved],
-            "pending": remaining,
-            "rejected": list(state.get("rejected") or []),
-        }
-        self._deps.persist_state_and_auto_sync(next_state, reason="discovery_auto_approve")
-        self._increment_approval_state(len(moved))
-        return len(moved)
 
     def watch_discovery_run_for_auto_sync(self, run_id: str, pid: int, started_at: str) -> None:
         started_dt = self._deps.parse_iso(started_at) or self._deps.now_utc()
