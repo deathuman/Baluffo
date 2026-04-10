@@ -1,7 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { setupJobsListDelegation } from "../../../frontend/jobs/app/runtime/jobs-list-events.js";
+import { setupJobsListDelegation as setupJobsListDelegationEvents } from "../../../frontend/jobs/app/runtime/jobs-list-events.js";
+
+global.window = {
+  location: {
+    href: "http://localhost/jobs.html"
+  }
+};
+
+const { openJobLinkInDefaultBrowser } = await import("../../../frontend/jobs/app/runtime.js");
 
 class FakeElement {}
 
@@ -43,7 +51,7 @@ test("jobs list delegation opens rows once and protects save clicks", () => {
     const row = { dataset: { jobLink: "https://example.com/job", jobKey: "job-1" } };
     const saveButton = { dataset: { jobId: "job-1" } };
 
-    setupJobsListDelegation({
+    setupJobsListDelegationEvents({
       jobsList,
       jobRowSelector: ".job-row[data-job-link]",
       saveJobBtnSelector: ".save-btn",
@@ -79,4 +87,77 @@ test("jobs list delegation opens rows once and protects save clicks", () => {
     global.Element = previousElement;
     global.window = previousWindow;
   }
+});
+
+test("jobs list delegation can hand off job links to a browser callback", () => {
+  const previousElement = global.Element;
+  const previousWindow = global.window;
+  global.Element = FakeElement;
+  const opens = [];
+  const external = [];
+  const marks = [];
+  const saves = [];
+  global.window = {
+    open(url) {
+      opens.push(url);
+    }
+  };
+
+  try {
+    const jobsList = createJobsList();
+    const row = { dataset: { jobLink: "https://example.com/job", jobKey: "job-1" } };
+
+    setupJobsListDelegationEvents({
+      jobsList,
+      jobRowSelector: ".job-row[data-job-link]",
+      saveJobBtnSelector: ".save-btn",
+      sanitizeUrl: value => value,
+      getJobById: id => (id === "job-1" ? { id: "job-1" } : null),
+      onToggleSaveJob: async job => {
+        saves.push(job.id);
+      },
+      onOpenJobLink: async url => {
+        external.push(url);
+      },
+      onMarkJobSeen: async jobKey => {
+        marks.push(jobKey);
+      }
+    });
+
+    jobsList.handlers.get("click")({
+      target: createTarget({ row, saveButton: null }),
+      preventDefault() {},
+      stopPropagation() {}
+    });
+
+    assert.deepEqual(external, ["https://example.com/job"]);
+    assert.deepEqual(opens, []);
+    assert.deepEqual(marks, ["job-1"]);
+    assert.deepEqual(saves, []);
+  } finally {
+    global.Element = previousElement;
+    global.window = previousWindow;
+  }
+});
+
+test("desktop job link open does not fall back to the shell on bridge failure", async () => {
+  const opens = [];
+  const logs = [];
+
+  await openJobLinkInDefaultBrowser("https://example.com/job", {
+    isDesktopRuntimeMode: () => true,
+    callJobsBridge: async () => {
+      throw new Error("bridge unavailable");
+    },
+    openWindow: url => {
+      opens.push(url);
+    },
+    logJobsError: (message, err) => {
+      logs.push([message, err?.message]);
+    },
+    bridgeBaseUrl: "http://127.0.0.1:8877"
+  });
+
+  assert.deepEqual(opens, []);
+  assert.deepEqual(logs, [["Failed to open job link in the default browser", "bridge unavailable"]]);
 });

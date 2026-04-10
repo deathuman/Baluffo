@@ -128,6 +128,39 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   await expect(page.locator("#data-sources-list")).toContainText("Google Sheets");
 });
 
+test("jobs filter popups close on outside click and Escape", async ({ page }) => {
+  await page.goto("/jobs.html");
+  await expectJobsPageReady(page);
+
+  const countryPickerBtn = page.locator("#country-picker-btn");
+  const countryPickerPanel = page.locator("#country-picker-panel");
+  const countryPickerSearch = page.locator("#country-picker-search");
+  const pageHeading = page.locator("h1");
+  const quickFiltersBtn = page.locator("#customize-quick-filters-btn");
+  const quickFiltersPanel = page.locator("#quick-filters-panel");
+
+  await countryPickerBtn.click();
+  await expect(countryPickerPanel).toBeVisible();
+  await pageHeading.click();
+  await expect(countryPickerPanel).toBeHidden();
+
+  await countryPickerBtn.click();
+  await expect(countryPickerPanel).toBeVisible();
+  await expect(countryPickerSearch).toBeFocused();
+  await countryPickerSearch.press("Escape");
+  await expect(countryPickerPanel).toBeHidden();
+
+  await quickFiltersBtn.click();
+  await expect(quickFiltersPanel).toBeVisible();
+  await pageHeading.click();
+  await expect(quickFiltersPanel).toBeHidden();
+
+  await quickFiltersBtn.click();
+  await expect(quickFiltersPanel).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(quickFiltersPanel).toBeHidden();
+});
+
 test("saved smoke: export stays available for signed-in browser users and guest state restores", async ({ page }) => {
   await page.goto("/saved.html");
 

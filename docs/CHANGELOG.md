@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.1] - Unreleased
+
+### Added
+- Jobs filter popup regression coverage for country picker outside-click and `Escape` dismissal.
+- Pipeline run button progress bar coverage and UI state reporting.
+
+### Fixed
+- Country picker dropdown now closes reliably when clicking outside it or pressing `Escape`, matching the shared popup behavior in the Jobs page.
+
 ## [0.1.0] - 2026-04-10
 
 ### Added

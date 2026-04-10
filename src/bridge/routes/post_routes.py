@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import webbrowser
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import ValidationError as PydanticValidationError
 
@@ -237,6 +239,24 @@ def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
             )
             api.append_startup_metric(event, details)
             handler._send_json({"ok": True})  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+        return True
+
+    if path == "/desktop-local-data/open-url":
+        try:
+            url = str((payload or {}).get("url") or "").strip()
+            parsed = urlsplit(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                handler._send_json({"ok": False, "error": "Invalid URL"}, status=400)  # noqa: SLF001
+                return True
+            if webbrowser.open(url):
+                handler._send_json({"ok": True})  # noqa: SLF001
+                return True
+            handler._send_json(  # noqa: SLF001
+                {"ok": False, "error": "Unable to open the default browser"},
+                status=500,
+            )
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True

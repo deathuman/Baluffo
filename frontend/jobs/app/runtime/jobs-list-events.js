@@ -6,6 +6,7 @@ export function setupJobsListDelegation({
   sanitizeUrl,
   getJobById,
   onToggleSaveJob,
+  onOpenJobLink,
   onMarkJobSeen
 }) {
   if (!jobsList) return;
@@ -32,7 +33,11 @@ export function setupJobsListDelegation({
     if (!link) return;
     const jobKey = String(jobRow.dataset.jobKey || "").trim();
     const openLink = sanitizeUrl(link) || link;
-    window.open(openLink, "_blank", "noopener,noreferrer");
+    if (typeof onOpenJobLink === "function") {
+      Promise.resolve(onOpenJobLink(openLink, jobRow)).catch(() => {});
+    } else {
+      window.open(openLink, "_blank", "noopener,noreferrer");
+    }
     onMarkJobSeen(jobKey).catch(() => {});
   });
 
@@ -47,7 +52,11 @@ export function setupJobsListDelegation({
     if (!link) return;
     const jobKey = String(jobRow.dataset.jobKey || "").trim();
     const openLink = sanitizeUrl(link) || link;
-    window.open(openLink, "_blank", "noopener,noreferrer");
+    if (typeof onOpenJobLink === "function") {
+      Promise.resolve(onOpenJobLink(openLink, jobRow)).catch(() => {});
+    } else {
+      window.open(openLink, "_blank", "noopener,noreferrer");
+    }
     onMarkJobSeen(jobKey).catch(() => {});
   });
 }

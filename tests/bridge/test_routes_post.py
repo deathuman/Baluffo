@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from src.bridge import registry_tombstones
 from src.bridge.api import BridgeApi
@@ -700,6 +701,45 @@ def test_save_discovery_config_persists_and_returns_saved_payload(tmp_path: Path
     assert (
         handler.sent[-1]["payload"]["savedConfig"]["autoApproveHealthyPendingOnComplete"] is False
     )
+
+
+def test_open_url_uses_default_browser(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+
+    handler = _FakeHandler()
+    with mock.patch(
+        "src.bridge.routes.post_routes.webbrowser.open", return_value=True
+    ) as open_mock:
+        result = handle_post(
+            handler,
+            api=api,
+            path="/desktop-local-data/open-url",
+            payload={"url": "https://unity.com/careers/positions/7472070"},
+        )
+
+    assert result is True
+    assert open_mock.call_args.args == ("https://unity.com/careers/positions/7472070",)
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["ok"] is True
+
+
+def test_open_url_reports_failure_when_browser_cannot_open(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+
+    handler = _FakeHandler()
+    with mock.patch("src.bridge.routes.post_routes.webbrowser.open", return_value=False):
+        result = handle_post(
+            handler,
+            api=api,
+            path="/desktop-local-data/open-url",
+            payload={"url": "https://unity.com/careers/positions/7472070"},
+        )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 500
+    assert handler.sent[-1]["payload"]["ok"] is False
 
 
 def test_ack_alert_success(tmp_path: Path) -> None:

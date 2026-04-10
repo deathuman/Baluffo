@@ -332,6 +332,37 @@ function applyJobsAdminBridgeState({ buttonEl, state, label, title }) {
   buttonEl.setAttribute("aria-disabled", enabled ? "false" : "true");
 }
 
+export async function openJobLinkInDefaultBrowser(url, deps = {}) {
+  if (!url) return;
+  const isDesktop = typeof deps.isDesktopRuntimeMode === "function"
+    ? deps.isDesktopRuntimeMode
+    : isDesktopRuntimeMode;
+  const openWindow = typeof deps.openWindow === "function"
+    ? deps.openWindow
+    : target => window.open(target, "_blank", "noopener,noreferrer");
+  const callBridge = typeof deps.callJobsBridge === "function"
+    ? deps.callJobsBridge
+    : callJobsBridge;
+  const logError = typeof deps.logJobsError === "function"
+    ? deps.logJobsError
+    : logJobsError;
+  const bridgeBaseUrl = typeof deps.bridgeBaseUrl === "string" && deps.bridgeBaseUrl
+    ? deps.bridgeBaseUrl
+    : ADMIN_BRIDGE_BASE;
+  if (!isDesktop()) {
+    openWindow(url);
+    return;
+  }
+  try {
+    await callBridge(bridgeBaseUrl, "/desktop-local-data/open-url", {
+      method: "POST",
+      body: { url }
+    });
+  } catch (err) {
+    logError("Failed to open job link in the default browser", err);
+  }
+}
+
 /**
  * Sets up event delegation on the jobs list container.
  * Called once during boot to avoid reattaching listeners after each render.
@@ -344,6 +375,7 @@ function setupJobsListDelegation() {
     sanitizeUrl,
     getJobById: jobId => runtimeState.allJobs.find(job => String(job.id) === String(jobId || "")),
     onToggleSaveJob: toggleSaveJob,
+    onOpenJobLink: openJobLinkInDefaultBrowser,
     onMarkJobSeen: jobKey => authController.markJobSeenFromInteraction(jobKey)
   });
 }
@@ -489,12 +521,12 @@ function bindEvents() {
     });
   }
 
-  document.addEventListener("click", event => {
+  const handleDocumentPointerDown = event => {
     if (dom.countryPickerPanel && !dom.countryPickerPanel.classList.contains("hidden")) {
       const clickedInsidePanel = dom.countryPickerPanel.contains(event.target);
       const clickedTrigger = dom.countryPickerBtn && dom.countryPickerBtn.contains(event.target);
       if (!clickedInsidePanel && !clickedTrigger) {
-        closeCountryPickerPanel();
+        filtersController.closeCountryPickerPanel();
       }
     }
 
@@ -502,16 +534,18 @@ function bindEvents() {
       const clickedInsideQuickPanel = dom.quickFiltersPanel.contains(event.target);
       const clickedQuickTrigger = dom.customizeQuickFiltersBtn && dom.customizeQuickFiltersBtn.contains(event.target);
       if (!clickedInsideQuickPanel && !clickedQuickTrigger) {
-        closeQuickFiltersPanel();
+        filtersController.closeQuickFiltersPanel();
       }
     }
-  });
+  };
+  document.addEventListener("pointerdown", handleDocumentPointerDown, true);
+  document.addEventListener("mousedown", handleDocumentPointerDown, true);
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape") {
-      closeCountryPickerPanel();
-      closeQuickFiltersPanel();
-    }
-  });
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    filtersController.closeCountryPickerPanel();
+    filtersController.closeQuickFiltersPanel();
+  }, true);
 
   if (dom.searchFilter) {
     bindUi(dom.searchFilter, "input", debounce(() => {
