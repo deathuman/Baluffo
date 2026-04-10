@@ -925,3 +925,19 @@
 {"ts": "2026-04-10T15:09:31.557995+00:00", "event": "admin_ready", "payload": {"elapsedMs": 4}}
 {"ts": "2026-04-10T15:09:31.564684+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 5}}
 {"ts": "2026-04-10T15:09:31.564892+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 4}}
+{"ts": "2026-04-10T15:25:53.209854+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-04-10T15:25:53.209929+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-04-10T15:25:54.534698+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 12}}
+{"ts": "2026-04-10T15:25:54.537692+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-04-10T15:25:54.537857+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-04-10T15:25:54.765283+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-04-10T15:25:54.766512+00:00", "event": "admin_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-04-10T15:25:54.767313+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 13}}
+{"ts": "2026-04-10T15:27:36.070008+00:00", "event": "saved_auth_ready", "payload": {"elapsedMs": 1}}
+{"ts": "2026-04-10T15:27:36.070109+00:00", "event": "saved_first_interactive", "payload": {"reason": "auth_ready", "elapsedMs": 2}}
+{"ts": "2026-04-10T15:27:37.382850+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 13}}
+{"ts": "2026-04-10T15:27:37.384106+00:00", "event": "admin_ready", "payload": {"elapsedMs": 14}}
+{"ts": "2026-04-10T15:27:37.384315+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 14}}
+{"ts": "2026-04-10T15:27:37.556553+00:00", "event": "admin_init_ready", "payload": {"elapsedMs": 15}}
+{"ts": "2026-04-10T15:27:37.562862+00:00", "event": "admin_ready", "payload": {"elapsedMs": 15}}
+{"ts": "2026-04-10T15:27:37.565127+00:00", "event": "admin_first_interactive", "payload": {"reason": "ready", "elapsedMs": 16}}
