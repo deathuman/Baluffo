@@ -390,6 +390,7 @@ def test_collect_packaged_smoke_env_diagnostics_reports_paths_and_elevation() ->
             diagnostics = smoke.collect_packaged_smoke_env_diagnostics(
                 artifacts_dir=root / "artifacts",
                 exe_path=exe_path,
+                node_smoke_script=smoke.DEFAULT_NODE_SMOKE_SCRIPT,
                 node_command=["C:/Program Files/nodejs/node.exe"],
                 env=env,
             )

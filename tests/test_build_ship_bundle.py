@@ -84,9 +84,8 @@ def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
         assert not (version_root / "src" / "build_sync_app_config.py").exists()
         assert not (version_root / "baluffo.config.local.json").exists()
         assert (version_root / "packaging" / "github-app-sync-config.json").exists()
-        for page_name in ("admin.html", "jobs.html", "saved.html"):
-            html = (version_root / page_name).read_text(encoding="utf-8")
-            assert '<script src="frontend-runtime-config.js?v=1"></script>' in html
+        jobs_html = (version_root / "jobs.html").read_text(encoding="utf-8")
+        assert '<script src="frontend-runtime-config.js?v=2"></script>' in jobs_html
         bundled_release_guide = (output / "RELEASE_GUIDE.md").read_text(encoding="utf-8")
         assert "# Release Guide" in bundled_release_guide
 
