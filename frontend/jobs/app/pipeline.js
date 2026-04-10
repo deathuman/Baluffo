@@ -1,3 +1,4 @@
+import { fetchBridge } from "../../shared/api-client.js";
 import { normalizeToken } from "../../shared/text-utils.js";
 
 function titleCaseWords(value) {
@@ -27,6 +28,71 @@ function normalizePipelineStage(payload) {
     return titleCaseWords(rawStage.replace(/_/g, " "));
   }
   return "Pipeline";
+}
+
+function clampProgressRatio(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(1, numeric));
+}
+
+function ensureJobsPipelineButtonChrome(button, idleLabel) {
+  if (!button) return null;
+
+  const existingFill = typeof button.querySelector === "function"
+    ? button.querySelector('[data-ui="jobs-pipeline-fill"]')
+    : null;
+  const existingLabel = typeof button.querySelector === "function"
+    ? button.querySelector('[data-ui="jobs-pipeline-label"]')
+    : null;
+  if (existingFill && existingLabel) {
+    return { fillEl: existingFill, labelEl: existingLabel };
+  }
+
+  const ownerDocument = button.ownerDocument || (typeof document !== "undefined" ? document : null);
+  if (!ownerDocument?.createElement || typeof button.replaceChildren !== "function") {
+    return null;
+  }
+
+  const fillEl = ownerDocument.createElement("span");
+  fillEl.className = "jobs-pipeline-btn-fill";
+  fillEl.dataset.ui = "jobs-pipeline-fill";
+  fillEl.setAttribute?.("aria-hidden", "true");
+
+  const labelEl = ownerDocument.createElement("span");
+  labelEl.className = "jobs-pipeline-btn-label";
+  labelEl.dataset.ui = "jobs-pipeline-label";
+  labelEl.textContent = String(button.textContent || idleLabel || "Run Discovery + Fetch + Sync");
+
+  button.replaceChildren(fillEl, labelEl);
+  return { fillEl, labelEl };
+}
+
+function buildPipelineFillState(payload, { running = false } = {}) {
+  const active = Boolean(running || payload?.active);
+  if (!active) return { mode: "", fill: 0 };
+
+  const progress = payload?.progress && typeof payload.progress === "object" ? payload.progress : {};
+  const currentStep = Number(progress.currentStep || 0);
+  const totalSteps = Number(progress.totalSteps || 0);
+  const progressMode = String(progress.mode || "").trim().toLowerCase();
+  const hasDeterminateStep = Number.isFinite(currentStep) && Number.isFinite(totalSteps) && totalSteps > 0 && currentStep > 0;
+  const hasDeterminateProgress = hasDeterminateStep || progressMode === "determinate";
+
+  if (!hasDeterminateProgress) {
+    return { mode: "indeterminate", fill: 0 };
+  }
+
+  const rawPercent = progress.percent;
+  const percent = Number(rawPercent);
+  const hasPercent = rawPercent !== null && rawPercent !== undefined && String(rawPercent).trim() !== "";
+  const ratio = hasPercent && Number.isFinite(percent)
+    ? clampProgressRatio(percent / 100)
+    : clampProgressRatio(totalSteps > 0 ? currentStep / totalSteps : 0);
+  return {
+    mode: "determinate",
+    fill: ratio
+  };
 }
 
 export function formatPipelineElapsed(startedAt, nowMs = Date.now()) {
@@ -59,22 +125,118 @@ export function getPipelineProgressLabel(payload) {
   return "Running pipeline...";
 }
 
-export function updateJobsPipelineUi(refs, { running = false, disabled = false, buttonLabel = "", progressLabel = "", isError = false } = {}) {
-  const { jobsPipelineRunBtn, jobsPipelineProgressEl } = refs || {};
-  if (jobsPipelineRunBtn) {
-    if (!jobsPipelineRunBtn.dataset.idleLabel) {
-      jobsPipelineRunBtn.dataset.idleLabel = String(jobsPipelineRunBtn.textContent || "Run Discovery + Fetch + Sync");
-    }
-    const idleLabel = String(jobsPipelineRunBtn.dataset.idleLabel || "Run Discovery + Fetch + Sync");
-    jobsPipelineRunBtn.textContent = buttonLabel || (running ? "Pipeline Running..." : idleLabel);
-    jobsPipelineRunBtn.disabled = Boolean(disabled);
-    jobsPipelineRunBtn.setAttribute("aria-disabled", jobsPipelineRunBtn.disabled ? "true" : "false");
-    jobsPipelineRunBtn.classList.toggle("running", Boolean(running));
-    jobsPipelineRunBtn.classList.toggle("log-error", Boolean(isError));
+export function buildJobsPipelineButtonView(
+  payload,
+  {
+    running = false,
+    disabled = false,
+    buttonLabel = "",
+    progressLabel = "",
+    isError = false,
+    nowMs = Date.now()
+  } = {}
+) {
+  const active = Boolean(running || payload?.active);
+  const fillState = buildPipelineFillState(payload, { running });
+  const label = String(
+    buttonLabel
+    || (active
+      ? getPipelineRunningLabel(
+        {
+          ...payload,
+          startedAt: String(payload?.startedAt || "")
+        },
+        nowMs
+      )
+      : "")
+  ).trim();
+
+  return {
+    active,
+    disabled: Boolean(disabled),
+    isError: Boolean(isError),
+    label: label || (active ? "Pipeline Running..." : "Run Discovery + Fetch + Sync"),
+    progressLabel: String(progressLabel || getPipelineProgressLabel(payload)).trim(),
+    progressMode: fillState.mode,
+    progressFill: fillState.fill
+  };
+}
+
+export function updateJobsPipelineUi(
+  refs,
+  {
+    pipelinePayload = null,
+    running = false,
+    disabled = false,
+    buttonLabel = "",
+    progressLabel = "",
+    isError = false
+  } = {}
+) {
+  const { jobsPipelineRunBtn } = refs || {};
+  if (!jobsPipelineRunBtn) return;
+
+  if (!jobsPipelineRunBtn.dataset.idleLabel) {
+    jobsPipelineRunBtn.dataset.idleLabel = String(jobsPipelineRunBtn.textContent || "Run Discovery + Fetch + Sync");
   }
-  // Deprecated on jobs page: pipeline status is surfaced via button label only.
-  void jobsPipelineProgressEl;
-  void progressLabel;
+  const idleLabel = String(jobsPipelineRunBtn.dataset.idleLabel || "Run Discovery + Fetch + Sync");
+  const chrome = ensureJobsPipelineButtonChrome(jobsPipelineRunBtn, idleLabel);
+  const fillEl = chrome?.fillEl || null;
+  const labelEl = chrome?.labelEl || null;
+  const view = buildJobsPipelineButtonView(pipelinePayload, {
+    running,
+    disabled,
+    buttonLabel,
+    progressLabel,
+    isError
+  });
+
+  const nextLabel = view.label || (view.active ? "Pipeline Running..." : idleLabel);
+  if (labelEl) {
+    labelEl.textContent = nextLabel;
+  } else {
+    jobsPipelineRunBtn.textContent = nextLabel;
+  }
+  jobsPipelineRunBtn.disabled = Boolean(view.disabled);
+  jobsPipelineRunBtn.setAttribute("aria-disabled", jobsPipelineRunBtn.disabled ? "true" : "false");
+  jobsPipelineRunBtn.setAttribute("aria-busy", view.active ? "true" : "false");
+  jobsPipelineRunBtn.classList.toggle("running", Boolean(view.active));
+  jobsPipelineRunBtn.classList.toggle("determinate", view.progressMode === "determinate");
+  jobsPipelineRunBtn.classList.toggle("indeterminate", view.progressMode === "indeterminate");
+  jobsPipelineRunBtn.classList.toggle("log-error", Boolean(view.isError));
+
+  if (view.progressMode === "determinate") {
+    const fillPercent = Math.round(view.progressFill * 100);
+    jobsPipelineRunBtn.dataset.progressMode = "determinate";
+    jobsPipelineRunBtn.dataset.progressFill = String(fillPercent);
+    jobsPipelineRunBtn.style.setProperty("--jobs-pipeline-fill", `${fillPercent}%`);
+    if (fillEl) {
+      fillEl.dataset.progressMode = "determinate";
+      fillEl.style.width = `${fillPercent}%`;
+      fillEl.style.opacity = "1";
+      fillEl.style.removeProperty("animation");
+    }
+  } else if (view.progressMode === "indeterminate") {
+    jobsPipelineRunBtn.dataset.progressMode = "indeterminate";
+    delete jobsPipelineRunBtn.dataset.progressFill;
+    jobsPipelineRunBtn.style.removeProperty("--jobs-pipeline-fill");
+    if (fillEl) {
+      fillEl.dataset.progressMode = "indeterminate";
+      fillEl.style.width = "42%";
+      fillEl.style.opacity = "1";
+      fillEl.style.animation = "jobsPipelineFillSweep 1.15s ease-in-out infinite";
+    }
+  } else {
+    delete jobsPipelineRunBtn.dataset.progressMode;
+    delete jobsPipelineRunBtn.dataset.progressFill;
+    jobsPipelineRunBtn.style.removeProperty("--jobs-pipeline-fill");
+    if (fillEl) {
+      delete fillEl.dataset.progressMode;
+      fillEl.style.width = "0%";
+      fillEl.style.opacity = "0";
+      fillEl.style.removeProperty("animation");
+    }
+  }
 }
 
 export function clearJobsPipelinePolling(state) {
@@ -90,8 +252,6 @@ export function scheduleJobsPipelineStatusPoll(state, delayMs, pollFn, minDelayM
     pollFn().catch(() => {});
   }, Math.max(Number(minDelayMs) || 600, Number(delayMs) || Number(minDelayMs) || 600));
 }
-
-import { fetchBridge } from "../../shared/api-client.js";
 
 export async function callJobsBridge(baseUrl, path, options = {}) {
   const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 1800;

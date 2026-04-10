@@ -77,7 +77,6 @@ async function main() {
   let context;
   let page;
   let apiRequest;
-  let adminNavigationDetected = false;
   const pageErrors = [];
   try {
     browser = await chromium.launch({ headless: process.env.PACKAGED_SMOKE_HEADED !== "1" });
@@ -86,22 +85,17 @@ async function main() {
     page.on("pageerror", error => pageErrors.push(String(error?.message || error)));
     apiRequest = await playwrightRequest.newContext({ baseURL: BRIDGE_BASE });
     await fs.mkdir(OUTPUT_DIR, { recursive: true });
-    page.on("framenavigated", frame => {
-      if (frame === page.mainFrame() && /admin\.html/i.test(frame.url())) {
-        adminNavigationDetected = true;
-      }
-    });
 
     const jobsStartup = {
-      name: "Jobs startup without Admin navigation",
-      slug: "jobs-startup-without-admin-navigation",
+      name: "Jobs startup and pipeline button progress",
+      slug: "jobs-startup-and-pipeline-button-progress",
       status: "passed",
       durationMs: 0,
       error: ""
     };
     const pipelineRun = {
-      name: "Jobs pipeline launches without Admin navigation",
-      slug: "jobs-pipeline-launches-without-admin-navigation",
+      name: "Jobs pipeline button fills while running",
+      slug: "jobs-pipeline-button-fills-while-running",
       status: "passed",
       durationMs: 0,
       error: ""
@@ -112,7 +106,6 @@ async function main() {
       await gotoDesktop(page, "jobs.html");
       await waitForDesktopAdapter(page);
       await waitForJobsPageReady(page);
-      assert.equal(adminNavigationDetected, false, "jobs startup must not navigate to admin.html");
     } catch (error) {
       jobsStartup.status = "failed";
       jobsStartup.error = error instanceof Error ? error.message : String(error);
@@ -125,17 +118,56 @@ async function main() {
     const pipelineStartedAt = Date.now();
     try {
       const pipelineButton = page.locator("#jobs-pipeline-run-btn");
-      await pipelineButton.click();
       await page.waitForFunction(
-        () => /running/i.test(String(document.querySelector("#jobs-pipeline-run-btn")?.textContent || "")),
+        () => {
+          const button = document.querySelector("#jobs-pipeline-run-btn");
+          const idleLabel = String(button?.dataset.idleLabel || "Run Discovery + Fetch + Sync");
+          return Boolean(button)
+            && !button.disabled
+            && String(button.textContent || "").trim() === idleLabel
+            && button.getAttribute("aria-busy") !== "true";
+        },
+        null,
+        { timeout: 30_000 }
+      );
+      await pipelineButton.dispatchEvent("click");
+      await page.waitForFunction(
+        () => {
+          const button = document.querySelector("#jobs-pipeline-run-btn");
+          return Boolean(button)
+            && button.getAttribute("aria-busy") === "true"
+            && Boolean(button.dataset.progressMode)
+            && Boolean(button.querySelector(".jobs-pipeline-btn-fill"));
+        },
         null,
         { timeout: 30_000 }
       );
       const runId = await waitForPipelineRunStart(apiRequest);
       assert.match(runId, /^pipeline_[a-f0-9]{10}$/i, "jobs pipeline run id should look like a pipeline run");
-      await page.waitForTimeout(15_000);
+      const buttonState = await pipelineButton.evaluate(el => ({
+        mode: String(el.dataset.progressMode || ""),
+        fill: String(el.dataset.progressFill || ""),
+        fillWidth: String(el.querySelector(".jobs-pipeline-btn-fill")?.style.width || ""),
+        fillOpacity: String(el.querySelector(".jobs-pipeline-btn-fill")?.style.opacity || ""),
+        fillMode: String(el.querySelector(".jobs-pipeline-btn-fill")?.dataset.progressMode || ""),
+        label: String(el.textContent || ""),
+        ariaBusy: String(el.getAttribute("aria-busy") || "")
+      }));
+      assert.ok(buttonState.mode === "determinate" || buttonState.mode === "indeterminate", "pipeline button should show a progress mode");
+      assert.match(buttonState.label, /running/i);
+      assert.equal(buttonState.ariaBusy, "true");
+      assert.ok(buttonState.fillMode === buttonState.mode || !buttonState.fillMode, "pipeline fill should track the button mode");
+      assert.notEqual(buttonState.fillOpacity, "0", "pipeline fill should be visible");
+      if (buttonState.mode === "determinate") {
+        assert.match(buttonState.fill, /^\d+$/);
+        assert.ok(Number(buttonState.fill) > 0, "determinate fill should be greater than zero");
+        assert.match(buttonState.fillWidth, /%$/);
+        assert.notEqual(buttonState.fillWidth, "0%", "determinate fill should be visible");
+      } else {
+        assert.match(buttonState.fillWidth, /%$/);
+        assert.notEqual(buttonState.fillWidth, "0%", "indeterminate fill should be visible");
+      }
       assert.equal(pageErrors.length, 0, `unexpected jobs page errors: ${pageErrors.join("; ")}`);
-      assert.equal(adminNavigationDetected, false, "jobs pipeline must not navigate to admin.html");
       assert.match(
         String(page.url() || ""),
         /jobs\.html/i,

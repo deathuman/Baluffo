@@ -12,14 +12,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Dedicated Jobs-page packaged smoke lane that proves the pipeline can be launched from Jobs without opening Admin.
 - Changelog-backed release-note extraction for tagged releases.
+- Shared dead-listing gate for static and generic careers extraction so regular pages reject as `dead_listing_page`
+- Provenance-based game-sector normalization instead of a raw source-sector override
+- Admin restore hooks for fetch and discovery progress after navigating away and back
+- Better public-link rewriting for provider rows that exposed raw API URLs
+- Transition-aware source registry sync with per-source merge, schema v2 snapshots, and local tombstone-backed deletes
+- Explicit registry restore-deleted flow for locally removed sources
 
 ### Changed
 - Discovery auto-approval now uses explicit eligibility rules and keeps `weakSignal` as diagnostics only.
 - GitHub release notes are generated from the top versioned section of `docs/CHANGELOG.md`.
 - Ship-bundle release builds use the canonical `python` entrypoint instead of `py -3.13`.
+- Discovery preset semantics swapped in place: `default` now uses the former uncapped-lite behavior, and `uncapped` is the broader exploration preset
+- Static plugin fallback metadata is now centralized in a shared helper to reduce duplicated boilerplate across host adapters
+- Jobs UI link handling normalizes RemoteOK detail URLs to the safer listing page
+- City and country filter normalization was tightened to reject obvious non-location contamination
+- k-ID no longer needs a source-specific suppressor plugin; the shared dead-listing gate now handles it
+- Source sync now pushes only active and pending rows; rejected stays local and tombstones are never serialized remotely
+- Archived [`docs/archive/scraping-pipeline-run-notes.md`](archive/scraping-pipeline-run-notes.md) — Historical run notes from 2026-03-17 (outdated)
 
 ### Fixed
 - Legacy sync merge comparison no longer prefers stale remote rows when transition metadata is missing on the local side.
+- SmartRecruiters API links now rewrite to the public posting URL
+- Game-company rows now stay classified as `Game` when provenance or company evidence supports it
+- Misclassified regular pages such as About / Contact / Careers landing pages no longer become synthetic job entries
+- Static extraction now stops leaking a few repeated metadata payload shapes through copy-pasted per-plugin dict construction
 
 ## [0.0.15] - 2026-03-30
 
@@ -39,31 +56,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Multiple bug fixes from M1-M6 delivery
-
-## [Unreleased]
-
-### Added
-- Shared dead-listing gate for static and generic careers extraction so regular pages reject as `dead_listing_page`
-- Provenance-based game-sector normalization instead of a raw source-sector override
-- Admin restore hooks for fetch and discovery progress after navigating away and back
-- Better public-link rewriting for provider rows that exposed raw API URLs
-- Transition-aware source registry sync with per-source merge, schema v2 snapshots, and local tombstone-backed deletes
-- Explicit registry restore-deleted flow for locally removed sources
-
-### Changed
-- Discovery preset semantics swapped in place: `default` now uses the former uncapped-lite behavior, and `uncapped` is the broader exploration preset
-- Static plugin fallback metadata is now centralized in a shared helper to reduce duplicated boilerplate across host adapters
-- Jobs UI link handling normalizes RemoteOK detail URLs to the safer listing page
-- City and country filter normalization was tightened to reject obvious non-location contamination
-- k-ID no longer needs a source-specific suppressor plugin; the shared dead-listing gate now handles it
-- Source sync now pushes only active and pending rows; rejected stays local and tombstones are never serialized remotely
-- Archived [`docs/archive/scraping-pipeline-run-notes.md`](archive/scraping-pipeline-run-notes.md) — Historical run notes from 2026-03-17 (outdated)
-
-### Fixed
-- SmartRecruiters API links now rewrite to the public posting URL
-- Game-company rows now stay classified as `Game` when provenance or company evidence supports it
-- Misclassified regular pages such as About / Contact / Careers landing pages no longer become synthetic job entries
-- Static extraction now stops leaking a few repeated metadata payload shapes through copy-pasted per-plugin dict construction
 
 ---
 
@@ -95,8 +87,6 @@ The notes below were retained from the earlier draft release history and are now
 
 ### Shipping and discovery foundation
 - GitHub App-based source sync for multi-PC workflows
-- Desktop portable EXE with PyInstaller
-- Ship bundle (zip-first) release channel
 - Source discovery package (`src/source_discovery/`) reorganized
 - Static adapter plugin system for studio-specific parsing
 
@@ -124,7 +114,6 @@ The notes below were retained from the earlier draft release history and are now
 
 ## Version History
 
-- [Unreleased] — Current development
 - [0.0.10] — 2026-03-23
 - [0.0.9] — 2026-03-23
 - [0.0.8] — 2026-03-20

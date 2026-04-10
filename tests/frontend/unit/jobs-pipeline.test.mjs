@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildJobsPipelineButtonView,
   formatPipelineElapsed,
   getPipelineRunningLabel,
   updateJobsPipelineUi
@@ -17,6 +18,73 @@ function createClassList() {
       return values.has(name);
     }
   };
+}
+
+function createStyle() {
+  const values = new Map();
+  return {
+    setProperty(name, value) {
+      values.set(name, value);
+      this[name] = value;
+    },
+    removeProperty(name) {
+      values.delete(name);
+      delete this[name];
+    },
+    getPropertyValue(name) {
+      return values.get(name) || "";
+    }
+  };
+}
+
+function createElementMock(tagName) {
+  return {
+    tagName: String(tagName || "").toUpperCase(),
+    dataset: {},
+    style: createStyle(),
+    className: "",
+    textContent: "",
+    setAttribute(name, value) {
+      this[name] = value;
+    }
+  };
+}
+
+function createButtonMock(textContent = "Run Discovery + Fetch + Sync") {
+  const button = {
+    dataset: {},
+    style: createStyle(),
+    disabled: false,
+    classList: createClassList(),
+    _textContent: textContent,
+    ownerDocument: {
+      createElement: createElementMock
+    },
+    children: [],
+    get textContent() {
+      if (this.children.length > 0) {
+        return this.children.map(child => String(child?.textContent || "")).join("");
+      }
+      return String(this._textContent || "");
+    },
+    set textContent(value) {
+      this._textContent = String(value);
+      this.children = [];
+    },
+    replaceChildren(...nodes) {
+      this.children = nodes;
+    },
+    querySelector(selector) {
+      const match = /^\[data-ui="([^"]+)"\]$/.exec(String(selector || ""));
+      if (!match) return null;
+      const wanted = match[1];
+      return this.children.find(child => String(child?.dataset?.ui || "") === wanted) || null;
+    },
+    setAttribute(name, value) {
+      this[name] = value;
+    }
+  };
+  return button;
 }
 
 test("pipeline label formats running stage with elapsed seconds", () => {
@@ -50,60 +118,126 @@ test("formatPipelineElapsed handles invalid and short durations", () => {
   assert.equal(formatPipelineElapsed("2026-03-12T12:00:00.000Z", now), "8s");
 });
 
-test("updateJobsPipelineUi updates button and ignores deprecated progress element", () => {
-  const button = {
-    textContent: "Run Discovery + Fetch + Sync",
-    dataset: {},
-    disabled: false,
-    classList: createClassList(),
-    setAttribute(name, value) {
-      this[name] = value;
-    }
-  };
-  const progress = {
-    textContent: "legacy",
-    classList: createClassList()
-  };
-
-  updateJobsPipelineUi(
-    { jobsPipelineRunBtn: button, jobsPipelineProgressEl: progress },
+test("buildJobsPipelineButtonView keeps the starting state indeterminate", () => {
+  const view = buildJobsPipelineButtonView(
+    {
+      active: true,
+      startedAt: "2026-03-12T12:00:00.000Z",
+      stage: "starting",
+      progress: {
+        active: true,
+        currentStep: 0,
+        totalSteps: 3,
+        percent: 0,
+        label: "Starting pipeline..."
+      }
+    },
     {
       running: true,
-      disabled: true,
-      buttonLabel: "Discovery running... 12s",
-      progressLabel: "should not render"
+      buttonLabel: "Starting Pipeline...",
+      nowMs: Date.parse("2026-03-12T12:00:00.000Z")
     }
   );
 
-  assert.equal(button.textContent, "Discovery running... 12s");
-  assert.equal(button.disabled, true);
-  assert.equal(button["aria-disabled"], "true");
-  assert.equal(button.classList.contains("running"), true);
-  assert.equal(progress.textContent, "legacy");
+  assert.equal(view.active, true);
+  assert.equal(view.progressMode, "indeterminate");
+  assert.equal(view.progressFill, 0);
+  assert.equal(view.label, "Starting Pipeline...");
 });
 
-test("updateJobsPipelineUi falls back to idle label when idle buttonLabel is empty", () => {
-  const button = {
-    textContent: "Run Discovery + Fetch + Sync",
-    dataset: {},
-    disabled: true,
-    classList: createClassList(),
-    setAttribute(name, value) {
-      this[name] = value;
+test("buildJobsPipelineButtonView derives determinate fill from pipeline steps", () => {
+  const view = buildJobsPipelineButtonView(
+    {
+      active: true,
+      startedAt: "2026-03-12T12:00:00.000Z",
+      stage: "fetch",
+      progress: {
+        active: true,
+        currentStep: 2,
+        totalSteps: 3,
+        percent: 67,
+        label: "Running fetch..."
+      }
+    },
+    {
+      running: true,
+      buttonLabel: "",
+      nowMs: Date.parse("2026-03-12T12:07:27.000Z")
     }
-  };
+  );
+
+  assert.equal(view.progressMode, "determinate");
+  assert.equal(view.progressFill, 0.67);
+  assert.equal(view.label, "Fetch running... 7m 27s");
+});
+
+test("updateJobsPipelineUi updates button background progress", () => {
+  const button = createButtonMock();
+
+  updateJobsPipelineUi(
+    { jobsPipelineRunBtn: button },
+    {
+      running: true,
+      disabled: true,
+      buttonLabel: "Fetch running... 7m 27s",
+      pipelinePayload: {
+        active: true,
+        startedAt: "2026-03-12T12:00:00.000Z",
+        stage: "fetch",
+        progress: {
+          active: true,
+          currentStep: 2,
+          totalSteps: 3,
+          percent: 67,
+          label: "Running fetch..."
+        }
+      }
+    }
+  );
+
+  assert.equal(button.textContent, "Fetch running... 7m 27s");
+  assert.equal(button.disabled, true);
+  assert.equal(button["aria-disabled"], "true");
+  assert.equal(button["aria-busy"], "true");
+  assert.equal(button.classList.contains("running"), true);
+  assert.equal(button.classList.contains("determinate"), true);
+  assert.equal(button.dataset.progressMode, "determinate");
+  assert.equal(button.dataset.progressFill, "67");
+  assert.equal(button.style.getPropertyValue("--jobs-pipeline-fill"), "67%");
+  assert.equal(button.children.length, 2);
+  assert.equal(button.children[0].dataset.ui, "jobs-pipeline-fill");
+  assert.equal(button.children[0].dataset.progressMode, "determinate");
+  assert.equal(button.children[0].style.width, "67%");
+  assert.equal(button.children[0].style.opacity, "1");
+  assert.equal(button.children[1].dataset.ui, "jobs-pipeline-label");
+  assert.equal(button.children[1].textContent, "Fetch running... 7m 27s");
+});
+
+test("updateJobsPipelineUi clears progress state when idle or errored", () => {
+  const button = createButtonMock();
+  button.disabled = true;
 
   updateJobsPipelineUi(
     { jobsPipelineRunBtn: button },
     {
       running: false,
       disabled: false,
-      buttonLabel: ""
+      buttonLabel: "",
+      isError: true
     }
   );
 
   assert.equal(button.textContent, "Run Discovery + Fetch + Sync");
   assert.equal(button.disabled, false);
   assert.equal(button["aria-disabled"], "false");
+  assert.equal(button["aria-busy"], "false");
   assert.equal(button.classList.contains("running"), false);
+  assert.equal(button.classList.contains("log-error"), true);
+  assert.equal(button.dataset.progressMode, undefined);
+  assert.equal(button.dataset.progressFill, undefined);
+  assert.equal(button.style.getPropertyValue("--jobs-pipeline-fill"), "");
+  assert.equal(button.children[0].dataset.progressMode, undefined);
+  assert.equal(button.children[0].style.width, "0%");
+  assert.equal(button.children[0].style.opacity, "0");
+  assert.equal(button.children[1].textContent, "Run Discovery + Fetch + Sync");
 });

@@ -1079,13 +1079,85 @@ h1 {
 }
 
 .jobs-pipeline-btn {
+  display: inline-flex;
+  align-items: center;
   min-height: 0;
   font-weight: 700;
   white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 0.35rem;
+  padding-inline: 0.92rem 1rem;
+  color: var(--text-primary);
+  background-color: var(--btn-muted-bg);
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    opacity 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease;
 }
 
 .jobs-pipeline-btn.running {
-  opacity: 0.92;
+  opacity: 0.98;
+}
+
+.jobs-pipeline-btn-label {
+  position: relative;
+  z-index: 1;
+  letter-spacing: 0.01em;
+}
+
+.jobs-pipeline-btn-fill {
+  position: absolute;
+  inset: 0;
+  left: 0;
+  width: 0%;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  background-color: color-mix(in srgb, var(--chip-remote-bg) 88%, var(--surface-4));
+  border-right: 1px solid color-mix(in srgb, var(--chip-remote-border) 58%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--chip-remote-border) 22%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--chip-remote-text) 12%, transparent);
+  filter: saturate(1.02) brightness(1.02);
+  transition:
+    width 0.24s ease,
+    opacity 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.jobs-pipeline-btn.running:disabled,
+.jobs-pipeline-btn.running[aria-disabled="true"] {
+  opacity: 1;
+  filter: none;
+}
+
+.jobs-pipeline-btn[data-progress-mode="determinate"] {
+  border-color: var(--chip-remote-border);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chip-remote-text) 16%, transparent);
+}
+
+.jobs-pipeline-btn[data-progress-mode="indeterminate"] {
+  border-color: var(--chip-remote-border);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chip-remote-text) 16%, transparent);
+}
+
+.jobs-pipeline-btn[data-progress-mode="indeterminate"] .jobs-pipeline-btn-fill {
+  width: 42%;
+  min-width: 5rem;
+  opacity: 1;
+  background-color: color-mix(in srgb, var(--chip-remote-bg) 88%, var(--surface-4));
+  animation: jobsPipelineSweep 1.15s ease-in-out infinite;
+  filter: saturate(1.02) brightness(1.02);
 }
 
 .jobs-pipeline-progress {
@@ -1096,6 +1168,15 @@ h1 {
 
 .jobs-pipeline-progress.log-error {
   color: #df9c9c;
+}
+
+@keyframes jobsPipelineSweep {
+  0% {
+    transform: translateX(-125%);
+  }
+  100% {
+    transform: translateX(265%);
+  }
 }
 
 .jobs-pipeline-progress.running::before {
