@@ -10,6 +10,9 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
         "npm run test:frontend:unit",
         "npm run test:py",
         "npm run test:frontend:packaged",
+        "npm run test:frontend:packaged:jobs-pipeline",
+        "python scripts/build_ship_bundle.py",
+        "python scripts/extract_release_notes.py",
     ):
         assert expected_command in workflow_text, (
             f"{workflow_path.name} should invoke `{expected_command}`."
@@ -21,6 +24,8 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
         "scripts\\run_py_tests.cmd",
         "py -3.13 scripts/packaged_desktop_smoke.py",
         "python scripts/packaged_desktop_smoke.py",
+        "py -3.13 scripts/build_ship_bundle.py",
+        "Set-Content -Path release-notes.md",
     ):
         assert forbidden_command not in workflow_text, (
             f"{workflow_path.name} should route release-gate test lanes through their canonical npm scripts instead of duplicating raw commands."

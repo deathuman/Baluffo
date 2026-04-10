@@ -240,6 +240,7 @@ def collect_packaged_smoke_env_diagnostics(
     *,
     artifacts_dir: Path,
     exe_path: Path,
+    node_smoke_script: Path,
     node_command: list[str] | None = None,
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -253,6 +254,7 @@ def collect_packaged_smoke_env_diagnostics(
         "exeParentWritable": path_is_writable(Path(exe_path).parent),
         "nodeCommand": node_cmd,
         "nodePath": str(node_cmd[0]) if node_cmd else "",
+        "nodeSmokeScript": str(node_smoke_script),
         "tmp": str(env_map.get("TMP") or ""),
         "temp": str(env_map.get("TEMP") or ""),
         "isElevated": is_windows_process_elevated(),
@@ -639,13 +641,14 @@ def run_packaged_node_smoke(
     site_base_url: str,
     bridge_base_url: str,
     artifacts_dir: Path,
+    node_smoke_script: Path,
     headed: bool,
     pause_on_failure: bool,
     timeout_s: float,
 ) -> dict[str, Any]:
     output_dir = artifacts_dir / "smoke-output"
     report_path = artifacts_dir / "smoke-report.json"
-    command = [*resolve_node_command(), str(DEFAULT_NODE_SMOKE_SCRIPT)]
+    command = [*resolve_node_command(), str(Path(node_smoke_script).expanduser().resolve())]
     env = build_packaged_smoke_env(
         site_base_url=site_base_url,
         bridge_base_url=bridge_base_url,
@@ -656,6 +659,7 @@ def run_packaged_node_smoke(
     diagnostics = collect_packaged_smoke_env_diagnostics(
         artifacts_dir=artifacts_dir,
         exe_path=DEFAULT_EXE_PATH,
+        node_smoke_script=Path(node_smoke_script).expanduser().resolve(),
         node_command=command,
         env=env,
     )
@@ -786,6 +790,9 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     embedded_probes = bool(args.embedded_probes)
     profile_mode = "warm" if str(args.profile_mode or "").strip().lower() == "warm" else "cold"
     open_path = str(args.open_path or "jobs.html").strip() or "jobs.html"
+    node_smoke_script = (
+        Path(args.node_smoke_script or DEFAULT_NODE_SMOKE_SCRIPT).expanduser().resolve()
+    )
     startup_page = Path(open_path).stem or "jobs"
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -830,7 +837,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     stderr_handle = None
     try:
         report["environment"] = collect_packaged_smoke_env_diagnostics(
-            artifacts_dir=artifacts_dir, exe_path=exe_path
+            artifacts_dir=artifacts_dir, exe_path=exe_path, node_smoke_script=node_smoke_script
         )
         if profile_mode == "warm":
             run_warmup_launch(
@@ -922,6 +929,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             site_base_url=site_base_url,
             bridge_base_url=bridge_base_url,
             artifacts_dir=artifacts_dir,
+            node_smoke_script=node_smoke_script,
             headed=bool(args.headed),
             pause_on_failure=bool(args.pause_on_failure),
             timeout_s=float(args.playwright_timeout or DEFAULT_SMOKE_RUNNER_TIMEOUT_S),
@@ -1043,6 +1051,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--profile-only", action="store_true")
     parser.add_argument("--profile-mode", choices=("cold", "warm"), default="cold")
     parser.add_argument("--open-path", default="jobs.html")
+    parser.add_argument("--node-smoke-script", default=str(DEFAULT_NODE_SMOKE_SCRIPT))
     return parser.parse_args(argv)
 
 

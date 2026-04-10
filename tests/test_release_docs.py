@@ -1,5 +1,9 @@
 import json
+import subprocess
+import sys
 from pathlib import Path
+
+from src.app_version import get_app_version
 
 
 def _section(text: str, heading: str) -> str:
@@ -16,16 +20,51 @@ def test_release_guide_is_canonical_single_source(repo_root: Path) -> None:
     assert len(text.splitlines()) > 0, "docs/RELEASE.md should not be empty."
 
 
-def test_release_docs_stay_on_the_public_0_0_x_line(repo_root: Path) -> None:
+def test_release_docs_cover_the_public_0_1_0_line(repo_root: Path) -> None:
     docs_dir = repo_root / "docs"
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
     changelog_text = (docs_dir / "CHANGELOG.md").read_text(encoding="utf-8")
+    app_version = get_app_version()
 
     assert "src/app_version.py" in release_text
     assert "v<app_version>" in release_text
-    assert "0.0.15" in changelog_text
+    assert "single release-note source of truth" in release_text
+    assert "npm run test:frontend:packaged:jobs-pipeline" in release_text
+    assert "python scripts/extract_release_notes.py" in release_text
+    assert f"## [{app_version}]" in changelog_text
     assert "## [1.3.0]" not in changelog_text
     assert "[1.3.0] — 2026-03-22" not in changelog_text
+
+
+def test_release_notes_extractor_uses_top_changelog_section(
+    repo_root: Path, tmp_path: Path
+) -> None:
+    script_path = repo_root / "scripts" / "extract_release_notes.py"
+    changelog_path = repo_root / "docs" / "CHANGELOG.md"
+    output_path = tmp_path / "release-notes.md"
+    app_version = get_app_version()
+
+    completed = subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            str(script_path),
+            "--version",
+            app_version,
+            "--changelog",
+            str(changelog_path),
+            "--output",
+            str(output_path),
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+
+    extracted = output_path.read_text(encoding="utf-8")
+    assert str(output_path) in completed.stdout
+    assert extracted.startswith(f"## [{app_version}] - ")
+    assert "## [Unreleased]" not in extracted
 
 
 def test_local_setup_examples_use_placeholder_version(repo_root: Path) -> None:

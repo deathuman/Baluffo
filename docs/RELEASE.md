@@ -28,6 +28,7 @@ Every release must track these versions explicitly:
 - The default `app_version` used by local build/package workflows is defined in `src/app_version.py`.
 - Git tags should use the `v<app_version>` form.
 - The public release history should follow the same `app_version` line; updater/schema versions are documented separately and should not introduce a second public version family.
+- GitHub release notes must be generated from the top versioned section of `docs/CHANGELOG.md`; that section is the single release-note source of truth.
 
 Compatibility rules:
 
@@ -114,6 +115,12 @@ Recovery and diagnostics:
 ```powershell
 .\run-all.ps1 -RecoverPrevious
 .\run-all.ps1 -CreateSupportBundle
+```
+
+Release-note extraction:
+
+```powershell
+python scripts/extract_release_notes.py --version <version> --changelog docs/CHANGELOG.md --output release-notes.md
 ```
 
 ### Portable EXE
@@ -204,6 +211,7 @@ Before any release:
 
 ```powershell
 npm run test:frontend:packaged
+npm run test:frontend:packaged:jobs-pipeline
 ```
 
 Optional rebuild-backed smoke validation:
@@ -214,7 +222,7 @@ npm run probe:desktop:startup:cold
 
 For a warmer startup path, use `npm run probe:desktop:startup:warm`.
 
-4. Confirm desktop startup, bridge readiness, and admin page readiness all pass in the smoke output.
+4. Confirm desktop startup, bridge readiness, the full packaged smoke, and the Jobs-page no-Admin pipeline smoke all pass in the smoke output.
 5. If sync credentials are packaged, confirm the packaged runtime still resolves the expected sync config and smoke remains green.
 
 ### Post-Release / Incident Checks

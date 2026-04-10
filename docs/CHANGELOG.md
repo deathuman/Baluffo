@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0] - 2026-04-10
+
+### Added
+- Dedicated Jobs-page packaged smoke lane that proves the pipeline can be launched from Jobs without opening Admin.
+- Changelog-backed release-note extraction for tagged releases.
+
+### Changed
+- Discovery auto-approval now uses explicit eligibility rules and keeps `weakSignal` as diagnostics only.
+- GitHub release notes are generated from the top versioned section of `docs/CHANGELOG.md`.
+- Ship-bundle release builds use the canonical `python` entrypoint instead of `py -3.13`.
+
+### Fixed
+- Legacy sync merge comparison no longer prefers stale remote rows when transition metadata is missing on the local side.
+
 ## [0.0.15] - 2026-03-30
 
 ### Added

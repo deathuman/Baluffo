@@ -59,6 +59,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Ship bundle leaf builder | `python scripts/build_ship_bundle.py --bundle-version <version>` |
 | Portable EXE leaf builder | `python scripts/build_portable_exe.py --bundle-version <version>` |
 | Packaged desktop smoke gate | `npm run test:frontend:packaged` |
+| Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
 | Rebuild-backed packaged diagnostic | `npm run probe:desktop:startup:cold` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
