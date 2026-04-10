@@ -17,33 +17,28 @@ from src.python_version_guard import ensure_required_python
 
 def extract_release_notes(changelog_text: str, version: str) -> str:
     lines = changelog_text.splitlines()
-    top_version_heading_index = None
-    top_version_heading = ""
+    version_heading_index = None
+    version_heading = ""
 
     for index, line in enumerate(lines):
-        if line.startswith("## ["):
-            top_version_heading_index = index
-            top_version_heading = line.strip()
+        stripped_line = line.strip()
+        if stripped_line.startswith(f"## [{version}]"):
+            version_heading_index = index
+            version_heading = stripped_line
             break
 
-    if top_version_heading_index is None:
-        raise ValueError("Could not find a versioned changelog section to extract.")
-
-    expected_heading = f"## [{version}]"
-    if not top_version_heading.startswith(expected_heading):
-        raise ValueError(
-            f"Top changelog section must be {expected_heading!r}, found {top_version_heading!r}."
-        )
+    if version_heading_index is None:
+        raise ValueError(f"Could not find a changelog section for version {version!r}.")
 
     end_index = len(lines)
-    for index in range(top_version_heading_index + 1, len(lines)):
+    for index in range(version_heading_index + 1, len(lines)):
         if lines[index].startswith("## "):
             end_index = index
             break
 
-    extracted = "\n".join(lines[top_version_heading_index:end_index]).rstrip()
+    extracted = "\n".join(lines[version_heading_index:end_index]).rstrip()
     if not extracted:
-        raise ValueError(f"Changelog section {expected_heading!r} was empty.")
+        raise ValueError(f"Changelog section {version_heading!r} was empty.")
     return f"{extracted}\n"
 
 
