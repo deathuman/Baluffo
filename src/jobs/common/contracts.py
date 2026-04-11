@@ -725,6 +725,9 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     location_quality_audit = (
         src.get("locationQualityAudit") if isinstance(src.get("locationQualityAudit"), dict) else {}
     )
+    city_garbage_audit = (
+        src.get("cityGarbageAudit") if isinstance(src.get("cityGarbageAudit"), dict) else {}
+    )
     sector_quality_audit = (
         src.get("sectorQualityAudit") if isinstance(src.get("sectorQualityAudit"), dict) else {}
     )
@@ -865,6 +868,43 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 for item in (
                     location_quality_audit.get("examples")
                     if isinstance(location_quality_audit.get("examples"), list)
+                    else []
+                )[:20]
+                if isinstance(item, dict)
+            ],
+        },
+        "cityGarbageAudit": {
+            "totalRows": _clamped_int(city_garbage_audit.get("totalRows"), 0, 0),
+            "garbageRows": _clamped_int(city_garbage_audit.get("garbageRows"), 0, 0),
+            "fieldCounts": {
+                clean_text(key): _clamped_int(value, 0, 0)
+                for key, value in (
+                    city_garbage_audit.get("fieldCounts")
+                    if isinstance(city_garbage_audit.get("fieldCounts"), dict)
+                    else {}
+                ).items()
+                if clean_text(key)
+            },
+            "categoryCounts": {
+                clean_text(key): _clamped_int(value, 0, 0)
+                for key, value in (
+                    city_garbage_audit.get("categoryCounts")
+                    if isinstance(city_garbage_audit.get("categoryCounts"), dict)
+                    else {}
+                ).items()
+                if clean_text(key)
+            },
+            "examples": [
+                {
+                    "company": clean_text(item.get("company")),
+                    "title": clean_text(item.get("title")),
+                    "source": clean_text(item.get("source")),
+                    "jobLink": clean_text(item.get("jobLink")),
+                    "fields": item.get("fields") if isinstance(item.get("fields"), dict) else {},
+                }
+                for item in (
+                    city_garbage_audit.get("examples")
+                    if isinstance(city_garbage_audit.get("examples"), list)
                     else []
                 )[:20]
                 if isinstance(item, dict)

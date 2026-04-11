@@ -6,6 +6,7 @@ import hashlib
 from collections.abc import Sequence
 from typing import Any
 
+from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.canonicalize import (
     OUTPUT_FIELDS,
     clean_text,
@@ -240,7 +241,6 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
 
     location_entries: list[dict[str, Any]] = []
     placeholder_location_entries: list[dict[str, Any]] = []
-    location_seen = set()
     for row in [existing.to_dict(), candidate.to_dict(), merged]:
         entries = row.get("locations")
         if not isinstance(entries, list):
@@ -258,27 +258,32 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
                 if not placeholder_location_entries:
                     placeholder_location_entries.append(normalized_item)
                 continue
-            key = "|".join(
-                [
-                    norm_text(normalized_item.get("city")),
-                    norm_text(normalized_item.get("country")),
-                ]
-            )
-            if key in location_seen:
-                continue
-            location_seen.add(key)
             location_entries.append(normalized_item)
     if location_entries:
-        merged["locations"] = location_entries
-        merged["locationSummary"] = " | ".join(
-            ", ".join(
-                part
-                for part in [clean_text(item.get("city")), clean_text(item.get("country"))]
-                if part
+        normalized_locations = normalize_location_details(location_entries)
+        merged_locations = normalized_locations.get("locations") or location_entries
+        if not normalized_locations.get("locations"):
+            fallback_city = clean_text(normalized_locations.get("city"))
+            fallback_country = clean_text(normalized_locations.get("country"))
+            if not any(
+                clean_text(item.get("city")) or clean_text(item.get("country"))
+                for item in merged_locations
+            ):
+                merged_locations = []
+            elif not merged_locations and (fallback_city or fallback_country):
+                merged_locations = [{"city": fallback_city, "country": fallback_country}]
+        merged["locations"] = merged_locations
+        merged["locationSummary"] = clean_text(normalized_locations.get("locationSummary"))
+        if not merged["locationSummary"] and merged_locations:
+            merged["locationSummary"] = " | ".join(
+                ", ".join(
+                    part
+                    for part in [clean_text(item.get("city")), clean_text(item.get("country"))]
+                    if part
+                )
+                for item in merged_locations
+                if clean_text(item.get("city")) or clean_text(item.get("country"))
             )
-            for item in location_entries
-            if clean_text(item.get("city")) or clean_text(item.get("country"))
-        )
     elif placeholder_location_entries:
         merged["locations"] = placeholder_location_entries
 

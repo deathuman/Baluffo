@@ -10,6 +10,7 @@ export function isCleanFilterOptionValue(value, {
 export function buildFilterOptions(allJobs, {
   getJobLocationCities = () => [],
   getJobLocationCountries = () => [],
+  isSemanticallyValidLocationValue = () => true,
   isValidCountry = () => true,
   getAvailableRegionOptions = () => [],
   fullCountryName = value => String(value || "")
@@ -25,7 +26,7 @@ export function buildFilterOptions(allJobs, {
     });
     if (job.profession) professions.add(job.profession);
     getJobLocationCities(job).forEach(city => {
-      if (city && isCleanFilterOptionValue(city, { isSemanticallyValidLocationValue: () => true })) {
+      if (city && isCleanFilterOptionValue(city, { isSemanticallyValidLocationValue })) {
         cities.add(city);
       }
     });

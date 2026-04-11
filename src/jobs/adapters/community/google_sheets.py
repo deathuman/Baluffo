@@ -9,6 +9,7 @@ from io import StringIO
 from typing import Any
 from urllib.parse import quote
 
+from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.common import config as common_config
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
@@ -221,6 +222,20 @@ def _resolve_company_name(
     return ""
 
 
+def _normalize_sheet_location(city_value: Any, country_value: Any) -> dict[str, Any]:
+    city_text = clean_text(city_value)
+    country_text = clean_text(country_value)
+    if city_text and "|" in city_text:
+        return normalize_location_details(city_text)
+    if city_text and country_text:
+        return normalize_location_details({"city": city_text, "country": country_text})
+    if city_text:
+        return normalize_location_details(city_text)
+    if country_text:
+        return normalize_location_details(country_text)
+    return normalize_location_details("")
+
+
 def parse_google_sheets_csv(
     csv_text: str, *, heartbeat_callback: HeartbeatCallback | None = None
 ) -> list[RawJob]:
@@ -304,6 +319,10 @@ def parse_google_sheets_csv(
             inferred_company = _company_from_smartrecruiters_url(job_link)
             if inferred_company:
                 company = inferred_company
+        location_details = _normalize_sheet_location(
+            row[city_idx] if 0 <= city_idx < len(row) else "",
+            row[country_idx] if 0 <= country_idx < len(row) else default_country,
+        )
         if not company:
             continue
         jobs.append(
@@ -311,10 +330,11 @@ def parse_google_sheets_csv(
                 "sourceJobId": f"sheet-{idx}",
                 "title": title,
                 "company": company,
-                "city": clean_text(row[city_idx] if 0 <= city_idx < len(row) else ""),
-                "country": clean_text(
-                    row[country_idx] if 0 <= country_idx < len(row) else default_country
-                ),
+                "city": clean_text(location_details.get("city"))
+                or clean_text(row[city_idx] if 0 <= city_idx < len(row) else ""),
+                "country": clean_text(location_details.get("country"))
+                or clean_text(row[country_idx] if 0 <= country_idx < len(row) else default_country)
+                or default_country,
                 "workType": clean_text(
                     row[location_idx] if 0 <= location_idx < len(row) else "On-site"
                 ),
@@ -323,6 +343,8 @@ def parse_google_sheets_csv(
                 ),
                 "jobLink": job_link,
                 "sector": clean_text(row[sector_idx] if 0 <= sector_idx < len(row) else ""),
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     if heartbeat_callback:

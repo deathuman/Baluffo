@@ -156,6 +156,7 @@ See [`testing.md`](testing.md) for verification commands and [`AI_ASSISTANT_GUID
   - keep Source Sync enabled in Admin
   - startup pull runs automatically
   - use `Pull Sources Sync` / `Push Sources Sync` for manual recovery when needed
+- If a machine is behind a proxy or has a custom trust store, point `BALUFFO_SYNC_CA_BUNDLE` at a PEM bundle of trusted CA certificates before starting the bridge.
 - Behavior:
   - bridge does a best-effort pull on startup (non-fatal on failure)
   - admin UI includes manual pull/push actions

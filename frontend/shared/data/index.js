@@ -1,24 +1,6 @@
-const COUNTRY_NAME_BY_CODE = {
-  US: "United States",
-  CA: "Canada",
-  GB: "United Kingdom",
-  UK: "United Kingdom",
-  DE: "Germany",
-  FI: "Finland",
-  JP: "Japan",
-  AU: "Australia",
-  SG: "Singapore",
-  FR: "France",
-  NL: "Netherlands",
-  SE: "Sweden",
-  NO: "Norway",
-  DK: "Denmark",
-  ES: "Spain",
-  IT: "Italy",
-  BR: "Brazil",
-  IN: "India",
-  Remote: "Remote"
-};
+import { COUNTRY_ACCEPTANCE } from "./country-acceptance.js";
+
+const COUNTRY_NAME_BY_CODE = COUNTRY_ACCEPTANCE.countryNameByCode || {};
 
 const REMOTE_OK_HOSTS = new Set(["remoteok.com", "remoteok.io"]);
 const REMOTE_OK_LISTING_URL = "https://remoteok.com/jobs";

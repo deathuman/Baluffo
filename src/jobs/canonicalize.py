@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from src.jobs.adapters import community
+from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.common import config as common_config
 from src.jobs.common.datetime_utils import posted_ts, to_iso
 from src.jobs.common.heuristics import (
@@ -30,6 +31,7 @@ from src.jobs.text_utils import (
     clean_text,
     norm_text,
     normalize_url,
+    resolve_country_acceptance_value,
     sanitize_location_text,
     sanitize_public_text,
 )
@@ -226,46 +228,30 @@ def canonicalize_job_with_reason(
         return normalized_entries
 
     def normalize_locations(value: Any) -> list[dict[str, str]]:
-        entries = value
-        if isinstance(entries, str):
-            try:
-                entries = json.loads(entries)
-            except json.JSONDecodeError:
-                entries = []
-        if not isinstance(entries, list):
-            entries = []
-        normalized_entries: list[dict[str, str]] = []
-        seen = set()
-        for item in entries:
-            if not isinstance(item, dict):
-                continue
-            city_value, city_reason = sanitize_location_text(
-                item.get("city") or item.get("addressLocality"),
-                field_name="city",
-            )
-            country_value, country_reason = sanitize_location_text(
-                item.get("country") or item.get("addressCountry"),
-                field_name="country",
-            )
-            if not city_value and not country_value:
-                continue
-            if not city_value and norm_text(country_value) in {"", "unknown"}:
-                continue
-            normalized_city = city_value
-            normalized_country = ""
-            if country_value and not country_reason:
-                normalized_country = normalize_country(country_value)
-            key = "|".join([norm_text(normalized_city), norm_text(normalized_country)])
-            if key in seen:
-                continue
-            seen.add(key)
-            normalized_entries.append(
-                {
-                    "city": normalized_city,
-                    "country": normalized_country,
-                }
-            )
-        return normalized_entries
+        details = normalize_location_details(value)
+        locations = [
+            {
+                "city": sanitize_location_text(item.get("city"), field_name="city")[0],
+                "country": normalize_country(
+                    sanitize_location_text(item.get("country"), field_name="country")[0]
+                )
+                if sanitize_location_text(item.get("country"), field_name="country")[0]
+                else "",
+            }
+            for item in details.get("locations") or []
+            if clean_text(item.get("city")) or clean_text(item.get("country"))
+        ]
+        if not locations:
+            city_value = sanitize_location_text(details.get("city"), field_name="city")[0]
+            country_value = sanitize_location_text(details.get("country"), field_name="country")[0]
+            if city_value or country_value:
+                locations = [
+                    {
+                        "city": city_value,
+                        "country": normalize_country(country_value) if country_value else "",
+                    }
+                ]
+        return locations
 
     source_bundle = normalize_source_bundle(raw.get("sourceBundle"))
     if not source_bundle:
@@ -317,6 +303,11 @@ def canonicalize_job_with_reason(
     ) and primary_location.get("country"):
         country_value = primary_location["country"]
         country_reason = ""
+    if not country_value:
+        promoted_country = resolve_country_acceptance_value(raw.get("city"))
+        if promoted_country:
+            country_value = promoted_country
+            country_reason = ""
     if not normalized_locations and (city_value or country_value):
         normalized_locations = [
             {

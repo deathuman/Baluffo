@@ -15,8 +15,11 @@ import {
   getJobLocationCountries,
   getJobKeyForJob,
   deriveFreshness,
-  mapFreshnessAgeToScore
+  mapFreshnessAgeToScore,
+  toJobSnapshot
 } from "../../../frontend/jobs/domain.js";
+import { CITY_NOISE_CONTRACT } from "../../../frontend/shared/data/city-noise.js";
+import { getSupportedCountryLabels } from "../../../frontend/jobs/app/countries.js";
 
 test("jobs domain detects work type and contract", () => {
   assert.equal(detectWorkType("fully remote"), "Remote");
@@ -32,6 +35,15 @@ test("jobs domain hides placeholder country values from filter options", () => {
   assert.equal(isValidCountry("N/A"), false);
   assert.equal(isValidCountry("Remote"), true);
   assert.equal(isValidCountry("Japan"), true);
+  assert.equal(isValidCountry("England"), true);
+  assert.equal(isValidCountry("EU & NA"), true);
+  assert.equal(isValidCountry("Onsite"), false);
+});
+
+test("jobs domain accepts the supported country vocabulary", () => {
+  for (const label of getSupportedCountryLabels()) {
+    assert.notEqual(sanitizeLocationField(label, "country"), "");
+  }
 });
 
 test("jobs domain classifies company and normalizes jobs", () => {
@@ -274,6 +286,32 @@ test("jobs domain sanitizes public text html fragments", () => {
   assert.equal(rows[0].sector, "Game");
 });
 
+test("jobs domain keeps snapshot-derived locations and summary sanitized", () => {
+  const snapshot = toJobSnapshot({
+    title: "Gameplay Programmer",
+    company: "Studio",
+    city: "Berlin / Hamburg",
+    country: "Onsite",
+    locationSummary: "Should not be trusted",
+    locations: [
+      { city: "Tokyo", country: "Japan" },
+      { city: "Guildford", country: "England" },
+      { city: "", country: "Hybrid" }
+    ],
+    jobLink: "https://example.com/job"
+  }, {
+    sanitizeUrl: value => value
+  });
+
+  assert.equal(snapshot.city, "");
+  assert.equal(snapshot.country, "");
+  assert.deepEqual(snapshot.locations, [
+    { city: "Tokyo", country: "Japan" },
+    { city: "Guildford", country: "England" }
+  ]);
+  assert.equal(snapshot.locationSummary, "Tokyo, Japan | Guildford, England");
+});
+
 test("jobs domain blanks semantic location noise but preserves valid locations", () => {
   assert.equal(
     sanitizeLocationField(
@@ -317,6 +355,9 @@ test("jobs domain blanks semantic location noise but preserves valid locations",
     ""
   );
   assert.equal(sanitizeLocationField("Tokyo", "city"), "Tokyo");
+  assert.equal(sanitizeLocationField("Japan", "country"), "Japan");
+  assert.equal(sanitizeLocationField("United States of America", "country"), "US");
+  assert.equal(sanitizeLocationField("Hybrid", "country"), "");
   assert.equal(isSemanticallyValidLocationValue("Montréal", "city"), true);
   assert.equal(isSemanticallyValidLocationValue("6,559 followers", "city"), false);
 
@@ -330,5 +371,58 @@ test("jobs domain blanks semantic location noise but preserves valid locations",
     sanitizeUrl: value => value
   });
   assert.equal(rows[0].city, "");
-  assert.equal(rows[0].country, "United States");
+  assert.equal(rows[0].country, "US");
+});
+
+test("jobs domain rejects shared city-noise contract fragments", () => {
+  assert.equal(CITY_NOISE_CONTRACT.proseFragments.includes("bachelor's degree"), true);
+  assert.equal(CITY_NOISE_CONTRACT.sentencePrefixes.includes("learn"), true);
+  assert.equal(CITY_NOISE_CONTRACT.placeholderFragments.includes("%label_"), true);
+  assert.equal(CITY_NOISE_CONTRACT.knownJunkTokens.includes("????"), true);
+  for (const token of ["any", "eu & na", "uk", "spontaneous application", "work & innovation"]) {
+    assert.equal(CITY_NOISE_CONTRACT.knownJunkTokens.includes(token), true);
+  }
+
+  const cases = [
+    "A bachelor's degree in digital communications",
+    "If you are looking for Tokyo",
+    "%LABEL_POSITION_TYPE_REMOTE_ANY%",
+    "????",
+    "144 million+ Downloads",
+    "3 to UTC+1",
+    "9mo",
+    "All",
+    "Inc."
+  ];
+  for (const value of cases) {
+    assert.equal(sanitizeLocationField(value, "city"), "");
+    assert.equal(isSemanticallyValidLocationValue(value, "city"), false);
+  }
+});
+
+test("jobs domain promotes country labels out of city fields", () => {
+  for (const [value, expectedCountry] of [["EU & NA", "EU & NA"], ["UK", "UK"]]) {
+    assert.equal(sanitizeLocationField(value, "city"), "");
+    assert.equal(sanitizeLocationField(value, "country"), expectedCountry);
+  }
+
+  const rows = normalizeJobs([{
+    title: "Artist",
+    company: "Studio",
+    city: "UK",
+    country: "Unknown",
+  }], {
+    professionLabels: {},
+    sanitizeUrl: value => value
+  });
+  assert.equal(rows[0].city, "");
+  assert.equal(rows[0].country, "UK");
+  assert.equal(rows[0].locationSummary, "UK");
+});
+
+test("jobs domain rejects structural city noise values", () => {
+  for (const value of ["2026", "3"]) {
+    assert.equal(sanitizeLocationField(value, "city"), "");
+    assert.equal(isSemanticallyValidLocationValue(value, "city"), false);
+  }
 });

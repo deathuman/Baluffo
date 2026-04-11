@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import re
+import unicodedata
+from functools import lru_cache
 from html import unescape
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -32,14 +36,16 @@ LOCATION_POSTAL_CODE_RE = re.compile(r"\b\d{2,6}(?:-\d{2,4})?\b")
 LOCATION_SCRIPT_NOISE_RE = re.compile(
     r"(?i)(?:document\.|addEventListener|DOMContentLoaded|querySelector|innerHTML|setTimeout|console\.|function\s*\(|\{\{|\}\})"
 )
-LOCATION_SENTENCE_PREFIX_RE = re.compile(
-    r"(?i)^(learn|view|choose|click|if you|to view|document|our)\b"
-)
-LOCATION_TOKEN_PLACEHOLDER_RE = re.compile(r"%(?:LABEL|BUTTON)_[A-Z0-9_]+%", re.IGNORECASE)
 LOCATION_ROLE_BLOB_RE = re.compile(
     r"(?i)\b(administratif|administration|assistant|assistante|gestion|human resources|hr|office|operations?|coordination|support)\b"
 )
 REMOTEISH_TOKENS = {"remote", "hybrid", "onsite", "on-site", "worldwide"}
+COUNTRY_ACCEPTANCE_CONTRACT_PATH = (
+    Path(__file__).resolve().parents[2] / "data/contracts/country_acceptance.json"
+)
+CITY_NOISE_CONTRACT_PATH = (
+    Path(__file__).resolve().parents[2] / "data/contracts/city_noise_contract.json"
+)
 
 
 def clean_text(value: Any) -> str:
@@ -66,6 +72,114 @@ def sanitize_public_text(value: Any) -> str:
     return normalized
 
 
+def normalize_country_acceptance_token(value: Any) -> str:
+    text = sanitize_public_text(value)
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFD", text)
+    return re.sub(r"[^a-z0-9]", "", re.sub(r"[\u0300-\u036f]", "", normalized.lower()))
+
+
+def normalize_city_noise_text(value: Any) -> str:
+    text = sanitize_public_text(value)
+    if not text:
+        return ""
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+@lru_cache(maxsize=1)
+def load_country_acceptance_contract() -> dict[str, Any]:
+    raw = json.loads(COUNTRY_ACCEPTANCE_CONTRACT_PATH.read_text(encoding="utf-8"))
+    exact_label_map: dict[str, str] = {}
+    for label in raw.get("acceptedExactLabels", []) or []:
+        token = normalize_country_acceptance_token(label)
+        text = sanitize_public_text(label)
+        if token and text and token not in exact_label_map:
+            exact_label_map[token] = text
+
+    alias_to_canonical: dict[str, str] = {}
+    for alias, canonical in (raw.get("normalizeAliasesToValue", {}) or {}).items():
+        token = normalize_country_acceptance_token(alias)
+        text = sanitize_public_text(canonical)
+        if token and text and token not in alias_to_canonical:
+            alias_to_canonical[token] = text
+
+    return {
+        "version": int(raw.get("version") or 1),
+        "exactLabelMap": exact_label_map,
+        "aliasToCanonical": alias_to_canonical,
+    }
+
+
+@lru_cache(maxsize=1)
+def load_city_noise_contract() -> dict[str, Any]:
+    raw = json.loads(CITY_NOISE_CONTRACT_PATH.read_text(encoding="utf-8"))
+
+    def _load_fragments(values: Any) -> list[str]:
+        fragments: list[str] = []
+        seen: set[str] = set()
+        for value in values or []:
+            text = normalize_city_noise_text(value)
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            fragments.append(text)
+        return fragments
+
+    return {
+        "version": int(raw.get("version") or 1),
+        "proseFragments": _load_fragments(raw.get("proseFragments")),
+        "sentencePrefixes": _load_fragments(raw.get("sentencePrefixes")),
+        "placeholderFragments": _load_fragments(raw.get("placeholderFragments")),
+        "knownJunkTokens": _load_fragments(raw.get("knownJunkTokens")),
+    }
+
+
+def _matches_city_sentence_prefix(text: str, prefix: str) -> bool:
+    if not text or not prefix or not text.startswith(prefix):
+        return False
+    if len(text) == len(prefix):
+        return True
+    return not text[len(prefix)].isalnum()
+
+
+def is_city_noise_fragment(value: Any) -> bool:
+    text = normalize_city_noise_text(value)
+    if not text:
+        return False
+    contract = load_city_noise_contract()
+    if text in contract["knownJunkTokens"]:
+        return True
+    if any(fragment and fragment in text for fragment in contract["proseFragments"]):
+        return True
+    if any(fragment and fragment in text for fragment in contract["placeholderFragments"]):
+        return True
+    return any(
+        _matches_city_sentence_prefix(text, prefix) for prefix in contract["sentencePrefixes"]
+    )
+
+
+def resolve_country_acceptance_value(value: Any) -> str:
+    token = normalize_country_acceptance_token(value)
+    if not token:
+        return ""
+    contract = load_country_acceptance_contract()
+    return contract["aliasToCanonical"].get(token) or contract["exactLabelMap"].get(token, "")
+
+
+def sanitize_country_text(value: Any) -> tuple[str, str]:
+    text = sanitize_public_text(value)
+    if not text:
+        return "", ""
+    reason = invalid_location_reason(text, field_name="country")
+    if reason:
+        return "", reason
+    resolved = resolve_country_acceptance_value(text)
+    if resolved:
+        return resolved, ""
+    return "", "invalid_country_semantic_noise"
+
+
 def has_html_like_fragment(value: Any) -> bool:
     text = unescape(clean_text(value))
     if not text:
@@ -82,6 +196,12 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
         return ""
     if lowered in REMOTEISH_TOKENS:
         return ""
+    if field_name == "city" and resolve_country_acceptance_value(text):
+        return f"invalid_{field_name}_semantic_noise"
+    if text.isdigit():
+        return f"invalid_{field_name}_semantic_noise"
+    if not any(char.isalnum() for char in text):
+        return f"invalid_{field_name}_semantic_noise"
     if len(text) > 120:
         return f"invalid_{field_name}_semantic_overlong"
     if len(text) > 72 and (text.count(",") >= 3 or text.count(";") >= 2):
@@ -104,10 +224,6 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
         return f"invalid_{field_name}_semantic_noise"
     if LOCATION_SCRIPT_NOISE_RE.search(text):
         return f"invalid_{field_name}_semantic_noise"
-    if LOCATION_SENTENCE_PREFIX_RE.search(text):
-        return f"invalid_{field_name}_semantic_noise"
-    if LOCATION_TOKEN_PLACEHOLDER_RE.search(text):
-        return f"invalid_{field_name}_semantic_noise"
     if text.count(",") >= 3 and LOCATION_ROLE_BLOB_RE.search(text):
         return f"invalid_{field_name}_semantic_noise"
     if text.startswith("#"):
@@ -116,6 +232,8 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
         return f"invalid_{field_name}_semantic_noise"
     if "{" in text or "}" in text:
         return f"invalid_{field_name}_semantic_noise"
+    if field_name == "city" and is_city_noise_fragment(text):
+        return f"invalid_{field_name}_semantic_noise"
     return ""
 
 
@@ -123,6 +241,8 @@ def sanitize_location_text(value: Any, *, field_name: str = "city") -> tuple[str
     text = sanitize_public_text(value)
     if not text:
         return "", ""
+    if field_name == "country":
+        return sanitize_country_text(text)
     reason = invalid_location_reason(text, field_name=field_name)
     if reason:
         return "", reason

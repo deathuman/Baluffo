@@ -13,6 +13,12 @@ from src.jobs.adapters.html_parsers import (
     iter_block_fragments,
     strip_html_text,
 )
+from src.jobs.adapters.location_rules import (
+    _WORK_TYPE_NOISE_TOKENS,
+    _looks_like_location_name,
+    is_plausibly_location_candidate,
+)
+from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.adapters.provider_parsers import parse_generic_location_fields
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
@@ -265,9 +271,11 @@ def _pick_location_and_terms(block_html: str, title: str) -> tuple[str, str, str
         if not candidate or candidate == title or candidate.lower() in _IGNORED_TOKENS:
             continue
         lower = candidate.lower()
-        if not location and any(hint in lower for hint in _LOCATION_HINTS):
-            location = candidate
-            continue
+        if not location:
+            parsed_city, parsed_country, parsed_work_type = parse_generic_location_fields(candidate)
+            if parsed_city or parsed_country != "Unknown" or parsed_work_type:
+                location = candidate
+                continue
         if not work_type and any(
             token in lower for token in ("full time", "part time", "remote", "hybrid")
         ):
@@ -286,32 +294,42 @@ def _looks_like_location_cell(text: str) -> bool:
     candidate = clean_text(text)
     if not candidate or candidate.lower() in _IGNORED_TOKENS:
         return False
-    lower = candidate.lower()
-    if any(hint in lower for hint in _LOCATION_HINTS):
-        return True
-    if any(separator in candidate for separator in ("|", ",", "/", ";")):
-        return True
+    lowered = candidate.lower()
+    if lowered in _NON_JOB_TITLE_EXACT_TOKENS or lowered in _NON_JOB_TITLE_PHRASE_TOKENS:
+        return False
+    normalized = re.sub(r"[\s_-]+", " ", lowered).strip()
+    if normalized in _WORK_TYPE_NOISE_TOKENS:
+        return False
     city, country, work_type = parse_generic_location_fields(candidate)
+    if city or country != "Unknown":
+        if any(token in lowered for token in _JOB_TITLE_HINT_TOKENS) and not any(
+            delimiter in candidate for delimiter in (",", "/", "-")
+        ):
+            return False
+        words = re.findall(r"[A-Za-zÀ-ÿ0-9']+", candidate)
+        if len(words) > 1 and not any(delimiter in candidate for delimiter in (",", "/", "-", "|")):
+            if not _looks_like_location_name(candidate, words):
+                return False
+        return True
     if work_type:
-        return True
-    if country != "Unknown" and (city or len(candidate.split()) <= 4):
-        return True
-    return False
+        return False
+    return is_plausibly_location_candidate(candidate)
 
 
 def _parse_structured_locations(
     structured_cells: list[str], title: str
 ) -> tuple[list[dict[str, str]], str, str]:
-    locations: list[dict[str, str]] = []
-    seen: set[str] = set()
-    fallback_country = ""
     work_type = ""
     contract_type = ""
+    location_candidates: list[str] = []
     for candidate in structured_cells[1:]:
         candidate = clean_text(candidate)
         if not candidate or candidate == title or candidate.lower() in _IGNORED_TOKENS:
             continue
         lower = candidate.lower()
+        if _looks_like_location_cell(candidate):
+            location_candidates.append(candidate)
+            continue
         if not work_type and any(
             token in lower for token in ("full time", "part time", "remote", "hybrid")
         ):
@@ -323,36 +341,7 @@ def _parse_structured_locations(
         ):
             contract_type = candidate
             continue
-        if not _looks_like_location_cell(candidate):
-            continue
-        parts = [candidate]
-        if "|" in candidate:
-            parts = [
-                clean_text(part) for part in re.split(r"\s*\|\s*", candidate) if clean_text(part)
-            ]
-        for part in parts:
-            city, country, part_work_type = parse_generic_location_fields(part)
-            if part_work_type and not work_type:
-                work_type = part_work_type
-            if not city and country != "Unknown":
-                fallback_country = country
-                continue
-            if not city and not country and not part_work_type:
-                continue
-            if country == "Unknown" and fallback_country and city:
-                country = fallback_country
-            key = "|".join([clean_text(city).lower(), clean_text(country).lower()])
-            if key in seen:
-                continue
-            seen.add(key)
-            locations.append({"city": city, "country": country})
-    if fallback_country:
-        for item in locations:
-            if (
-                not clean_text(item.get("country"))
-                or clean_text(item.get("country")).lower() == "unknown"
-            ):
-                item["country"] = fallback_country
+    locations = normalize_location_details(location_candidates).get("locations") or []
     return locations, work_type, contract_type
 
 
@@ -494,14 +483,6 @@ def extract_rendered_card_jobs(
             )
         location, work_type, contract_type = _pick_location_and_terms(block_html, title)
         if locations:
-            primary_location = next(
-                (
-                    item
-                    for item in locations
-                    if clean_text(item.get("city", "")) or clean_text(item.get("country", ""))
-                ),
-                {},
-            )
             location = " | ".join(
                 ", ".join(
                     part
@@ -514,13 +495,35 @@ def extract_rendered_card_jobs(
                 for item in locations
                 if clean_text(item.get("city", "")) or clean_text(item.get("country", ""))
             )
-            city = clean_text(primary_location.get("city", "")) or location
-            country = clean_text(primary_location.get("country", "")) or "Unknown"
+            location_details = normalize_location_details(locations)
+            primary_location = next(
+                (
+                    item
+                    for item in location_details.get("locations", [])
+                    if clean_text(item.get("city", "")) or clean_text(item.get("country", ""))
+                ),
+                {},
+            )
+            city = (
+                clean_text(primary_location.get("city", ""))
+                or clean_text(location_details.get("city", ""))
+                or location
+            )
+            country = (
+                clean_text(primary_location.get("country", ""))
+                or clean_text(location_details.get("country", ""))
+                or "Unknown"
+            )
             work_type = structured_work_type or work_type
             contract_type = structured_contract_type or contract_type
         else:
-            city = location
-            country = "Unknown"
+            location_details = normalize_location_details(location)
+            city = clean_text(location_details.get("city", ""))
+            country = clean_text(location_details.get("country", "")) or "Unknown"
+            locations = location_details.get("locations") or []
+            location = clean_text(location_details.get("locationSummary")) or location
+            if not city and country == "Unknown":
+                location = ""
         if not _has_job_entry_evidence(
             href=href,
             anchor_text=anchor.get("text") or "",

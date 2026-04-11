@@ -1,4 +1,5 @@
 # ruff: noqa: F403,F405
+from src.jobs.adapters.html_parsers import parse_jobposting_location_details
 from tests.jobs_fetcher_helpers import *
 
 patch_jobs_fetcher_aliases()
@@ -716,3 +717,60 @@ def test_scrapy_runner_jobylon_v1_extracts_jobs() -> None:
         "https://emp.jobylon.com/jobs/329202-remedy-entertainment-senior-support-engineer/" in links
     )
     assert "https://emp.jobylon.com/jobs/322343-remedy-entertainment-development-director/" in links
+
+
+@pytest.mark.parametrize(
+    ("location_entry", "expected_city", "expected_country", "expected_summary"),
+    [
+        ({"addressLocality": "Apr. 06", "addressCountry": "US"}, "", "US", ""),
+        ({"addressLocality": "AI Solutions PM", "addressCountry": "US"}, "", "US", ""),
+        (
+            {"addressLocality": "Administrative & Support Services", "addressCountry": "CA"},
+            "",
+            "CA",
+            "",
+        ),
+        (
+            {"addressLocality": "Guildford", "addressCountry": "UK"},
+            "Guildford",
+            "UK",
+            "Guildford, UK",
+        ),
+    ],
+)
+def test_parse_jobposting_location_details_rejects_noise_locality(
+    location_entry: dict[str, str],
+    expected_city: str,
+    expected_country: str,
+    expected_summary: str,
+) -> None:
+    details = parse_jobposting_location_details(location_entry)
+    assert details["city"] == expected_city
+    assert details["country"] == expected_country
+    assert details["locationSummary"] == expected_summary
+
+
+def test_parse_jobposting_location_details_rebuilds_summary_from_surviving_entries() -> None:
+    details = parse_jobposting_location_details(
+        [
+            {"addressLocality": "Apr. 06", "addressCountry": "Unknown"},
+            {"addressLocality": "Guildford", "addressCountry": "UK"},
+        ]
+    )
+    assert details["city"] == "Guildford"
+    assert details["country"] == "UK"
+    assert details["locations"] == [{"city": "Guildford", "country": "UK"}]
+    assert details["locationSummary"] == "Guildford, UK"
+
+
+def test_parse_jobposting_location_details_deduplicates_variants_and_drops_role_bleed() -> None:
+    details = parse_jobposting_location_details(
+        {
+            "addressLocality": "Artiste technique | Montréal, CA",
+            "addressCountry": "CA",
+        }
+    )
+    assert details["city"] == "Montréal"
+    assert details["country"] == "CA"
+    assert details["locations"] == [{"city": "Montréal", "country": "CA"}]
+    assert details["locationSummary"] == "Montréal, CA"

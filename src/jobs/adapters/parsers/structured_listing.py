@@ -16,6 +16,8 @@ from src.jobs.adapters.html_parsers import (
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 
+from .location import normalize_location_details
+
 
 def _parse_structured_listing_page(
     html_text: str,
@@ -93,22 +95,25 @@ def _parse_structured_listing_page(
                 )
             ):
                 location = line
-            if not work_type and any(token in lowered for token in ("full", "part", "contract")):
-                work_type = line
+        if not work_type and any(token in lowered for token in ("full", "part", "contract")):
+            work_type = line
 
         job_link = clean_text(absolute)
+        location_details = normalize_location_details(location)
         jobs.append(
             {
                 "sourceJobId": f"{source_prefix}:{hashlib.sha1(job_link.encode('utf-8')).hexdigest()[:10]}",
                 "title": title,
                 "company": clean_text(fallback_company) or "Unknown",
-                "city": location,
-                "country": "Unknown",
+                "city": clean_text(location_details.get("city")) or location,
+                "country": clean_text(location_details.get("country")) or "Unknown",
                 "workType": work_type,
                 "contractType": work_type,
                 "jobLink": job_link,
                 "sector": "Game",
                 "postedAt": "",
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
         seen_links.add(absolute)

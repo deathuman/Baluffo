@@ -4,8 +4,18 @@ from collections import Counter
 
 from scrapy.http import HtmlResponse, Request
 
-from src.jobs.adapters.plugins.static import ats_wrappers, rendered_cards, sheet_studios
-from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
+from src.jobs.adapters.plugins.static import (
+    ats_wrappers,
+    frontier,
+    kojima,
+    rendered_cards,
+    sheet_studios,
+)
+from src.jobs.adapters.plugins.static._rendered_cards import (
+    _looks_like_location_cell,
+    _parse_structured_locations,
+    extract_rendered_card_jobs,
+)
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_helpers import process_detail_link
 from src.jobs.page_gating import classify_job_page
@@ -46,6 +56,21 @@ def test_normalize_source_report_row_preserves_static_site_changed_url_surface()
     assert "listingUrl" not in non_site_changed
     assert "pages" not in non_site_changed
     assert "sourceId" not in non_site_changed
+
+
+def test_rendered_card_location_cell_heuristic_rejects_role_bleed() -> None:
+    assert not _looks_like_location_cell("Artiste technique")
+    assert _looks_like_location_cell("Montréal, CA")
+
+
+def test_rendered_card_structured_locations_deduplicate_variants() -> None:
+    locations, work_type, contract_type = _parse_structured_locations(
+        ["Gameplay Programmer", "Munich, DE | München, DE", "Full-time"],
+        "Gameplay Programmer",
+    )
+    assert locations == [{"city": "Munich", "country": "DE"}]
+    assert work_type == ""
+    assert contract_type == ""
 
 
 def test_normalize_source_report_row_preserves_static_zero_extract_classification() -> None:
@@ -2933,7 +2958,8 @@ def test_extract_rendered_card_jobs_handles_table_row_manual_website_cards() -> 
         "https://example.com/jobs/environment-artist",
         "https://example.com/jobs/technical-artist",
     }
-    assert {row["country"] for row in rows} == {"Unknown"}
+    assert {row["city"] for row in rows} == {"Remote", "Berlin"}
+    assert {row["country"] for row in rows} == {"Remote", "DE"}
 
 
 def test_extract_rendered_card_jobs_rejects_generic_site_pages_with_allow_any_anchor() -> None:
@@ -3119,6 +3145,101 @@ def test_extract_rendered_card_jobs_parses_stellar_structured_anchor_cells() -> 
         row["jobLink"]
         == "https://jobs.ashbyhq.com/stellarentertainment/4526ffd2-860e-4e2d-8743-4e637ca0ced6"
     )
+
+
+def test_extract_rendered_card_jobs_skips_non_location_cells_before_city_extraction() -> None:
+    html = """
+        <a href="https://example.com/jobs/1" target="_blank" class="join_row">
+          <div class="d-table-cell vacancy ps-1 pe-3 pe-md-0">Gameplay Engineer</div>
+          <div class="d-table-cell vacancy">.elementor</div>
+          <div class="d-table-cell vacancy">AI Solutions PM</div>
+          <div class="d-table-cell vacancy">Administrative & Support Services</div>
+          <div class="d-table-cell vacancy">AGREE DISAGREE LEARN MORE</div>
+          <div class="d-table-cell vacancy">Assist with outdoor photos</div>
+          <div class="d-table-cell vacancy">Art & Animation</div>
+          <div class="d-table-cell vacancy text-end pe-1">Berlin, DE</div>
+        </a>
+        """
+    rows = extract_rendered_card_jobs(
+        html,
+        page_url="https://example.com/careers/",
+        company="Example Studio",
+        source_id="example_rendered_noise",
+        allow_any_anchor=True,
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == "Gameplay Engineer"
+    assert row["city"] == "Berlin"
+    assert row["country"] == "DE"
+    assert row["locations"] == [{"city": "Berlin", "country": "DE"}]
+    assert row["locationSummary"] == "Berlin, DE"
+
+
+def test_run_static_frontier_source_skips_non_location_dd_values() -> None:
+    html = """
+        <html>
+          <body>
+            <li>
+              <div class="c-careers-job-listing__department-list-detail">
+                <h3>Senior Gameplay Programmer</h3>
+                <dd>AI Solutions PM</dd>
+                <dd>Administrative & Support Services</dd>
+                <dd>Full Time</dd>
+                <dd>Tokyo</dd>
+                <a href="/careers/jobs/senior-gameplay-programmer">Details</a>
+              </div>
+            </li>
+          </body>
+        </html>
+        """
+    rows = frontier.run(
+        fetch_text=lambda _url, _timeout: html,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        pages=["https://www.frontier.co.uk/careers"],
+        source_row={"name": "Frontier Developments", "id": "frontier"},
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == "Senior Gameplay Programmer"
+    assert row["city"] == "Tokyo"
+    assert row["country"] == "Unknown"
+
+
+@pytest.mark.parametrize(
+    "noise_line",
+    ["Apr. 06", "AI Solutions PM", "Assist with outdoor photos"],
+)
+def test_run_static_studio_pages_source_kojima_blank_city_for_noise_trailing_line(
+    noise_line: str,
+) -> None:
+    html = f"""
+        <html>
+          <body>
+            <a href="/en/careers/123">
+              <span>Senior Programmer</span><br />
+              <span>Programming</span><br />
+              <span>{noise_line}</span>
+            </a>
+          </body>
+        </html>
+        """
+    rows = kojima.run(
+        fetch_text=lambda _url, _timeout: html,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        pages=["https://www.kojimaproductions.jp/en/careers"],
+        source_row={"name": "Kojima Productions", "id": "kojima"},
+        parse_jobpostings_from_html=lambda *args, **kwargs: [],
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == "Senior Programmer"
+    assert row["city"] == ""
+    assert row["country"] == "Japan"
 
 
 def test_run_static_studio_pages_source_uses_rendered_card_fallback_for_manual_table_pages() -> (

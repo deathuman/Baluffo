@@ -11,6 +11,24 @@ def test_parse_google_sheets_csv_fixture() -> None:
     assert rows[0]["company"] == "Pixel Forge"
 
 
+def test_parse_google_sheets_csv_normalizes_multi_location_rows() -> None:
+    csv_text = (
+        "Company,City,Country,Job Title,Link\n"
+        'Studio A,"Munich, DE | München, DE",,Gameplay Programmer,https://example.com/jobs/1\n'
+        'Studio B,"Vancouver, CA | CA",,Technical Artist,https://example.com/jobs/2\n'
+    )
+    rows = jf.parse_google_sheets_csv(csv_text)
+    assert len(rows) == 2
+    assert rows[0]["city"] == "Munich"
+    assert rows[0]["country"] == "DE"
+    assert rows[0]["locations"] == [{"city": "Munich", "country": "DE"}]
+    assert rows[0]["locationSummary"] == "Munich, DE"
+    assert rows[1]["city"] == "Vancouver"
+    assert rows[1]["country"] == "CA"
+    assert rows[1]["locations"] == [{"city": "Vancouver", "country": "CA"}]
+    assert rows[1]["locationSummary"] == "Vancouver, CA"
+
+
 def test_google_sheet_candidate_urls_prefer_gviz_and_pub_over_export() -> None:
     urls = jf.google_sheet_candidate_urls("sheet-id", "0")
     assert urls[0].endswith("/gviz/tq?tqx=out:csv&gid=0")
@@ -41,7 +59,7 @@ def test_parse_google_sheets_csv_supports_studio_header_alias() -> None:
     rows = jf.parse_google_sheets_csv(csv_text)
     assert len(rows) == 1
     assert rows[0]["company"] == "Acme Games"
-    assert rows[0]["country"] == "Germany"
+    assert rows[0]["country"] == "DE"
     assert rows[0]["title"] == "Senior Gameplay Engineer"
 
 

@@ -12,7 +12,10 @@ from urllib.parse import urljoin
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters.community import google_sheets as _google_sheets
 from src.jobs.adapters.html_parsers import parse_gamesindustry_html, parse_wellfound_html
-from src.jobs.adapters.provider_parsers import parse_epic_games_jobs_payload
+from src.jobs.adapters.provider_parsers import (
+    parse_epic_games_jobs_payload,
+    parse_generic_location_fields,
+)
 from src.jobs.common.config import (
     EPIC_CAREERS_API_URL,
     GAMES_INDUSTRY_URLS,
@@ -333,12 +336,7 @@ def _location_fields(location_text: str) -> tuple[str, str, str]:
     lower = text.lower()
     if any(token in lower for token in {"remote", "anywhere", "worldwide"}):
         return "Remote", "Remote", "Remote"
-    parts = [clean_text(part) for part in re.split(r"[,/|]", text) if clean_text(part)]
-    if not parts:
-        return "", "Unknown", ""
-    if len(parts) == 1:
-        return parts[0], "Unknown", ""
-    return parts[0], parts[-1], ""
+    return parse_generic_location_fields(text)
 
 
 def _strip_html(value: str) -> str:

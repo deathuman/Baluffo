@@ -10,11 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.1] - Unreleased
 
 ### Added
+- Shared city-noise and country-acceptance contracts, plus regression coverage for the exact junk tokens and country-promotion cases.
+- Location normalization coverage for Google Sheets, rendered-card extraction, canonical parsers, and frontend jobs-domain parity.
 - Jobs filter popup regression coverage for country picker outside-click and `Escape` dismissal.
 - Pipeline run button progress bar coverage and UI state reporting.
 
+### Changed
+- City parsing now normalizes multi-location strings, dedupes bilingual variants, and rebuilds location summaries from the surviving normalized locations.
+- Country-like city values such as `EU & NA` and `UK` are now promoted into the country field instead of being dropped, while valid cities remain untouched.
+- Location normalization was consolidated into the canonical parsers path and mirrored in the frontend jobs domain so backend and UI stay aligned.
+- Release tooling, source-sync helpers, and developer docs were refreshed alongside the current pending job pipeline changes.
+
 ### Fixed
+- Exact city garbage, prose bleed, and chrome-like location fragments are now rejected consistently across the audit, canonicalization, and frontend normalization paths.
+- The Sega M Electrical Products row no longer gets forced into the `Game` sector classification.
 - Country picker dropdown now closes reliably when clicking outside it or pressing `Escape`, matching the shared popup behavior in the Jobs page.
+- Source sync can now be pointed at a custom PEM CA bundle via `BALUFFO_SYNC_CA_BUNDLE` for machines with a nonstandard trust store or TLS-inspecting proxy.
 
 ## [0.1.0] - 2026-04-10
 

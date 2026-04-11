@@ -16,6 +16,8 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
+from src.jobs.adapters.location_rules import is_plausibly_location_candidate
+from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
@@ -143,49 +145,17 @@ def _extract_jobposting_location_entry(location: Any) -> dict[str, str] | None:
     source = address if isinstance(address, dict) else location
     city = clean_text(source.get("addressLocality"))
     country = clean_text(source.get("addressCountry"))
+    if city and not is_plausibly_location_candidate(city):
+        city = ""
+    if not city and norm_text(country) in {"", "unknown"}:
+        return None
     if not city and not country:
         return None
     return {"city": city, "country": country}
 
 
 def parse_jobposting_location_details(job_location: Any) -> dict[str, Any]:
-    entries = job_location if isinstance(job_location, list) else [job_location]
-    locations: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for entry in entries:
-        normalized = _extract_jobposting_location_entry(entry)
-        if not normalized:
-            continue
-        token = f"{normalized['city']}|{normalized['country']}"
-        if token in seen:
-            continue
-        seen.add(token)
-        locations.append(normalized)
-
-    if not locations:
-        return {
-            "city": "",
-            "country": "Unknown",
-            "locations": [],
-            "locationSummary": "",
-        }
-
-    primary_location = next(
-        (item for item in locations if item.get("city") or item.get("country")),
-        locations[0],
-    )
-    city = primary_location.get("city", "")
-    country = primary_location.get("country", "") or "Unknown"
-    location_summary = " | ".join(
-        ", ".join(part for part in [item.get("city", ""), item.get("country", "")] if part)
-        for item in locations
-    )
-    return {
-        "city": city,
-        "country": country,
-        "locations": locations,
-        "locationSummary": location_summary,
-    }
+    return normalize_location_details(job_location)
 
 
 def parse_jobposting_locations(job_location: Any) -> tuple[str, str]:
@@ -476,6 +446,8 @@ def parse_gamesindustry_html(
 
 
 def parse_wellfound_candidate(node: dict[str, Any], base_url: str) -> RawJob | None:
+    from src.jobs.adapters.parsers.location import parse_generic_location_fields
+
     title = clean_text(node.get("title") or node.get("jobTitle"))
     company = ""
     if isinstance(node.get("company"), dict):
@@ -506,20 +478,18 @@ def parse_wellfound_candidate(node: dict[str, Any], base_url: str) -> RawJob | N
     city = ""
     country = "Unknown"
     if location_text:
-        parts = [part.strip() for part in location_text.split(",") if part.strip()]
-        if parts:
-            city = parts[0]
-            country = parts[-1] if len(parts) > 1 else parts[0]
+        city, country, _ = parse_generic_location_fields(location_text)
     if is_remote:
         city = "Remote"
         country = "Remote"
+    work_type = "Remote" if is_remote else (location_text if city or country != "Unknown" else "")
     return {
         "sourceJobId": clean_text(node.get("id") or node.get("jobId")),
         "title": title,
         "company": company,
         "city": city,
         "country": country,
-        "workType": "Remote" if is_remote else location_text,
+        "workType": work_type,
         "contractType": clean_text(node.get("employmentType") or ""),
         "jobLink": link,
         "sector": clean_text(node.get("industry") or ""),

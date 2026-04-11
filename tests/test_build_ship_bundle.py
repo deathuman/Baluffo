@@ -76,6 +76,8 @@ def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
         assert (version_root / "desktop-probe-head.html").exists()
         assert (version_root / "desktop-probe-inline.html").exists()
         assert (version_root / "startup-probe.js").exists()
+        assert (version_root / "data" / "contracts" / "country_acceptance.json").exists()
+        assert (version_root / "data" / "contracts" / "city_noise_contract.json").exists()
         assert (version_root / "packaging" / "README.md").exists()
         assert (version_root / "packaging" / "github-app-sync-config.template.json").exists()
         assert not (version_root / "package-lock.json").exists()

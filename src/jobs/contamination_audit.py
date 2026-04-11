@@ -9,6 +9,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from src.jobs.adapters.location_rules import classify_city_garbage
 from src.jobs.text_utils import clean_text, has_html_like_fragment, invalid_location_reason
 
 PUBLIC_TEXT_FIELDS = (
@@ -107,9 +108,77 @@ def build_location_quality_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def build_city_garbage_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    field_counts: Counter[str] = Counter()
+    category_counts: Counter[str] = Counter()
+    examples: list[dict[str, Any]] = []
+    garbage_rows = 0
+    total_rows = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        total_rows += 1
+        invalid_fields: dict[str, Any] = {}
+
+        for field in ("city", "locationSummary"):
+            value = clean_text(row.get(field))
+            category = classify_city_garbage(value)
+            if not category:
+                continue
+            invalid_fields[field] = {
+                "category": category,
+                "value": value,
+            }
+            field_counts[field] += 1
+            category_counts[category] += 1
+
+        locations = row.get("locations")
+        if isinstance(locations, list):
+            location_hits: list[dict[str, str]] = []
+            for item in locations:
+                if not isinstance(item, dict):
+                    continue
+                value = clean_text(item.get("city"))
+                category = classify_city_garbage(value)
+                if not category:
+                    continue
+                location_hits.append(
+                    {
+                        "category": category,
+                        "value": value,
+                    }
+                )
+                field_counts["locations.city"] += 1
+                category_counts[category] += 1
+            if location_hits:
+                invalid_fields["locations.city"] = location_hits
+
+        if not invalid_fields:
+            continue
+        garbage_rows += 1
+        if len(examples) < 20:
+            examples.append(
+                {
+                    "company": clean_text(row.get("company")),
+                    "title": clean_text(row.get("title")),
+                    "source": clean_text(row.get("source")),
+                    "jobLink": clean_text(row.get("jobLink")),
+                    "fields": invalid_fields,
+                }
+            )
+    return {
+        "totalRows": total_rows,
+        "garbageRows": garbage_rows,
+        "fieldCounts": dict(field_counts),
+        "categoryCounts": dict(category_counts),
+        "examples": examples,
+    }
+
+
 def build_public_text_quality_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     report = build_contamination_report(rows)
     report["locationQualityAudit"] = build_location_quality_report(rows)
+    report["cityGarbageAudit"] = build_city_garbage_report(rows)
     return report
 
 

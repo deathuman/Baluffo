@@ -1,4 +1,5 @@
 import { fullCountryName as fullCountryNameFromData } from "../../shared/data/index.js";
+import { COUNTRY_ACCEPTANCE } from "../../shared/data/country-acceptance.js";
 import {
   canonicalizeCountryName,
   fullCountryName as fullCountryNameFromDomainLayer,
@@ -17,53 +18,9 @@ const COUNTRY_DISPLAY_NAMES = (typeof Intl !== "undefined" && typeof Intl.Displa
   ? new Intl.DisplayNames(["en"], { type: "region" })
   : null;
 
-const COUNTRY_NAME_BY_CODE = {
-  US: "United States",
-  CA: "Canada",
-  GB: "United Kingdom",
-  UK: "United Kingdom",
-  DE: "Germany",
-  FI: "Finland",
-  JP: "Japan",
-  AU: "Australia",
-  SG: "Singapore",
-  FR: "France",
-  NL: "Netherlands",
-  SE: "Sweden",
-  NO: "Norway",
-  DK: "Denmark",
-  ES: "Spain",
-  IT: "Italy",
-  BR: "Brazil",
-  IN: "India",
-  MX: "Mexico",
-  AR: "Argentina",
-  CL: "Chile",
-  PL: "Poland",
-  PT: "Portugal",
-  IE: "Ireland",
-  CH: "Switzerland",
-  AT: "Austria",
-  BE: "Belgium",
-  CZ: "Czechia",
-  CN: "China",
-  KR: "South Korea",
-  NZ: "New Zealand"
-};
+const COUNTRY_NAME_BY_CODE = COUNTRY_ACCEPTANCE.countryNameByCode || {};
 
-const COUNTRY_ALIAS_TO_CANONICAL = {
-  usa: "United States",
-  unitedstatesofamerica: "United States",
-  america: "United States",
-  uk: "United Kingdom",
-  greatbritain: "United Kingdom",
-  england: "United Kingdom",
-  uae: "United Arab Emirates",
-  czechrepublic: "Czechia",
-  korea: "South Korea",
-  republicofkorea: "South Korea",
-  russianfederation: "Russia"
-};
+const COUNTRY_ALIAS_TO_CANONICAL = Object.fromEntries(COUNTRY_ACCEPTANCE.aliasToCanonical);
 
 const COUNTRY_NAME_OPTIONS = {
   fullCountryNameFromData,
@@ -146,6 +103,8 @@ const REGION_DEFINITIONS = [
   }
 ];
 
+const COUNTRY_COMPATIBILITY_LABELS = ["Anywhere", "England", "EU & NA", "Global", "Remote", "Worldwide"];
+
 const REMOTE_WORLDWIDE_TOKENS = new Set(
   ["remote", "worldwide", "global", "anywhere"].map(item => normalizeCountryToken(item))
 );
@@ -184,6 +143,17 @@ export function getAvailableRegionOptions(countries) {
     regionCountryTokenLookup: REGION_COUNTRY_TOKEN_LOOKUP,
     countryNameOptions: COUNTRY_NAME_OPTIONS
   });
+}
+
+export function getSupportedCountryLabels() {
+  return Array.from(
+    new Set([
+      ...Object.keys(COUNTRY_NAME_BY_CODE),
+      ...Object.values(COUNTRY_NAME_BY_CODE),
+      ...REGION_DEFINITIONS.flatMap(region => region.countries),
+      ...COUNTRY_COMPATIBILITY_LABELS
+    ])
+  );
 }
 
 export function matchesCountrySelection(jobCountry, selections) {

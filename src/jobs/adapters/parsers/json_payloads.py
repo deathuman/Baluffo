@@ -12,7 +12,11 @@ from src.jobs.models import RawJob
 from src.jobs.normalizers import normalize_country
 from src.jobs.text_utils import clean_text
 
-from .location import parse_generic_location_fields, parse_greenhouse_location
+from .location import (
+    normalize_location_details,
+    parse_generic_location_fields,
+    parse_greenhouse_location,
+)
 
 
 def _smartrecruiters_public_job_link(company_id: str, posting_id: str, ref_value: Any) -> str:
@@ -46,6 +50,10 @@ def _smartrecruiters_public_job_link(company_id: str, posting_id: str, ref_value
     return raw_link
 
 
+def _normalized_location_details(location_value: Any) -> dict[str, Any]:
+    return normalize_location_details(location_value)
+
+
 def parse_greenhouse_jobs_payload(
     payload: Any, board_slug: str, fallback_company: str = ""
 ) -> list[RawJob]:
@@ -69,18 +77,21 @@ def parse_greenhouse_jobs_payload(
             else clean_text(location_obj)
         )
         city, country, work_type = parse_greenhouse_location(location_name)
+        location_details = _normalized_location_details(location_name)
         jobs.append(
             {
                 "sourceJobId": f"greenhouse:{board_slug}:{clean_text(row.get('id') or row.get('internal_job_id'))}",
                 "title": title,
                 "company": company,
-                "city": city,
-                "country": country,
+                "city": clean_text(location_details.get("city")) or city,
+                "country": clean_text(location_details.get("country")) or country,
                 "workType": work_type,
                 "contractType": "",
                 "jobLink": job_link,
                 "sector": "Game",
                 "postedAt": row.get("first_published") or row.get("updated_at"),
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     return jobs
@@ -103,6 +114,7 @@ def parse_lever_jobs_payload(
         categories = row.get("categories") if isinstance(row.get("categories"), dict) else {}
         location_text = clean_text(categories.get("location") or row.get("location"))
         city, country, work_type = parse_generic_location_fields(location_text)
+        location_details = _normalized_location_details(location_text)
         commitment = clean_text(categories.get("commitment") or row.get("commitment"))
         tags_text = " ".join(
             [
@@ -118,13 +130,15 @@ def parse_lever_jobs_payload(
                 "sourceJobId": f"lever:{account}:{clean_text(row.get('id') or row.get('requisitionCode'))}",
                 "title": title,
                 "company": company,
-                "city": city,
-                "country": country,
+                "city": clean_text(location_details.get("city")) or city,
+                "country": clean_text(location_details.get("country")) or country,
                 "workType": work_type or location_text,
                 "contractType": commitment,
                 "jobLink": link,
                 "sector": "Game",
                 "postedAt": row.get("createdAt") or row.get("updatedAt"),
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     return jobs
@@ -147,7 +161,8 @@ def parse_smartrecruiters_jobs_payload(
         if not title or not (posting_id or link):
             continue
         location_obj = row.get("location") if isinstance(row.get("location"), dict) else {}
-        city = clean_text(location_obj.get("city"))
+        location_details = _normalized_location_details(location_obj)
+        city = clean_text(location_details.get("city")) or clean_text(location_obj.get("city"))
         country = normalize_country(
             clean_text(location_obj.get("country")) or clean_text(location_obj.get("countryCode"))
         )
@@ -173,6 +188,8 @@ def parse_smartrecruiters_jobs_payload(
                 "jobLink": link or f"https://jobs.smartrecruiters.com/{company_id}/{posting_id}",
                 "sector": "Game",
                 "postedAt": row.get("releasedDate") or row.get("createdOn"),
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     return jobs
@@ -206,6 +223,7 @@ def parse_workable_jobs_payload(
             ]
         ).strip()
         city, country, work_type = parse_generic_location_fields(location_text)
+        location_details = _normalized_location_details(location_text)
         if bool(location.get("telecommuting")):
             city, country, work_type = "Remote", "Remote", "Remote"
         tags = " ".join(
@@ -223,13 +241,15 @@ def parse_workable_jobs_payload(
                 "sourceJobId": f"workable:{account}:{clean_text(row.get('shortcode') or row.get('id'))}",
                 "title": title,
                 "company": company,
-                "city": city,
-                "country": country,
+                "city": clean_text(location_details.get("city")) or city,
+                "country": clean_text(location_details.get("country")) or country,
                 "workType": work_type or location_text,
                 "contractType": clean_text(row.get("employment_type")),
                 "jobLink": link,
                 "sector": "Game",
                 "postedAt": row.get("published") or row.get("created_at"),
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     return jobs
@@ -273,6 +293,7 @@ def parse_epic_games_jobs_payload(
                 ]
             )
         city, country, work_type = parse_generic_location_fields(location_text)
+        location_details = _normalized_location_details(location_text)
         if bool(row.get("remote")):
             city, country, work_type = "Remote", "Remote", "Remote"
         tags = " ".join(
@@ -290,13 +311,15 @@ def parse_epic_games_jobs_payload(
                 "sourceJobId": f"epic:{posting_id or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
                 "title": title,
                 "company": company_name,
-                "city": city,
-                "country": country,
+                "city": clean_text(location_details.get("city")) or city,
+                "country": clean_text(location_details.get("country")) or country,
                 "workType": work_type or location_text,
                 "contractType": clean_text(row.get("type")),
                 "jobLink": link,
                 "sector": "Game",
                 "postedAt": row.get("first_published") or row.get("updated_at"),
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     return jobs
@@ -336,6 +359,7 @@ def parse_recruitee_jobs_payload(
             ]
         ).strip()
         city, country, work_type = parse_generic_location_fields(location_text)
+        location_details = _normalized_location_details(location_text)
         if bool(row.get("remote")):
             city, country, work_type = "Remote", "Remote", "Remote"
         tags = " ".join(
@@ -359,8 +383,8 @@ def parse_recruitee_jobs_payload(
                 "sourceJobId": f"recruitee:{subdomain}:{clean_text(row.get('id') or row.get('slug'))}",
                 "title": title,
                 "company": company,
-                "city": city,
-                "country": country,
+                "city": clean_text(location_details.get("city")) or city,
+                "country": clean_text(location_details.get("country")) or country,
                 "workType": work_type or location_text,
                 "contractType": clean_text(
                     row.get("employment_type_text") or row.get("employment_type")
@@ -370,6 +394,8 @@ def parse_recruitee_jobs_payload(
                 "postedAt": row.get("published_at")
                 or row.get("created_at")
                 or row.get("updated_at"),
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     return jobs
@@ -395,6 +421,7 @@ def parse_pinpoint_jobs_payload(
         location_obj = row.get("location") if isinstance(row.get("location"), dict) else {}
         location_text = clean_text(location_obj.get("name"))
         city, country, work_type = parse_generic_location_fields(location_text)
+        location_details = _normalized_location_details(location_text)
         workplace_type_text = clean_text(
             row.get("workplace_type_text") or row.get("workplace_type")
         )
@@ -419,8 +446,8 @@ def parse_pinpoint_jobs_payload(
                 "sourceJobId": f"pinpoint:{subdomain}:{clean_text(row.get('id') or job_obj.get('id') or row.get('requisition_id'))}",
                 "title": title,
                 "company": company,
-                "city": city,
-                "country": country,
+                "city": clean_text(location_details.get("city")) or city,
+                "country": clean_text(location_details.get("country")) or country,
                 "workType": work_type or workplace_type_text or location_text,
                 "contractType": clean_text(
                     row.get("employment_type_text") or row.get("employment_type")
@@ -428,6 +455,8 @@ def parse_pinpoint_jobs_payload(
                 "jobLink": link,
                 "sector": "Game",
                 "postedAt": row.get("deadline_at") or "",
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     return jobs

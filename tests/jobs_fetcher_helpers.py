@@ -19,8 +19,10 @@ from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_helpers import source_detail_limit_for, source_detail_retries_for
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.contamination_audit import (
+    build_city_garbage_report,
     build_contamination_report,
     build_location_quality_report,
+    build_public_text_quality_report,
 )
 from src.scrapers import runner as scrapy_runner
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -33,6 +35,8 @@ __all__ = [
     "BrowserFallbackCircuitBreaker",
     "FIXTURES_DIR",
     "build_contamination_report",
+    "build_city_garbage_report",
+    "build_public_text_quality_report",
     "build_location_quality_report",
     "default_registry",
     "ensure_provider_plugins",

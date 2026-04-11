@@ -50,6 +50,14 @@ GAME_SOURCE_FAMILY_HINTS = {
     "workwithindies",
 }
 
+NON_GAME_INDUSTRY_HINTS = {
+    "electrical product",
+    "electrical products",
+    "electronics",
+    "industrial products",
+    "manufacturing",
+}
+
 
 def _flatten_source_bundle(source_bundle: Any) -> list[dict[str, Any]]:
     if not isinstance(source_bundle, list):
@@ -86,13 +94,16 @@ def has_positive_game_evidence(
     job_link: Any = "",
     source_bundle: Any = None,
 ) -> bool:
-    if has_game_source_provenance(source, source_bundle):
-        return True
     text = " ".join(
         str(v or "").strip().lower() for v in (company, title, source, job_link) if v is not None
     )
     if not text:
         return False
+    normalized_text = re.sub(r"[\s_-]+", " ", text)
+    if any(hint in normalized_text for hint in NON_GAME_INDUSTRY_HINTS):
+        return False
+    if has_game_source_provenance(source, source_bundle):
+        return True
     if any(keyword in text for keyword in GAME_KEYWORDS):
         return True
     role_text = " ".join(str(v or "").strip().lower() for v in (title,) if v is not None)

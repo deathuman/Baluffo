@@ -10,7 +10,7 @@ from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 
-from .location import parse_generic_location_fields
+from .location import normalize_location_details, parse_generic_location_fields
 
 
 def parse_personio_feed_xml(xml_text: str, source_name: str = "") -> list[RawJob]:
@@ -30,6 +30,7 @@ def parse_personio_feed_xml(xml_text: str, source_name: str = "") -> list[RawJob
         office = clean_text(posting.findtext("office"))
         department = clean_text(posting.findtext("department"))
         city, country, work_type = parse_generic_location_fields(office)
+        location_details = normalize_location_details(office)
         job_link = clean_text(posting.findtext("url"))
         posting_id = clean_text(posting.findtext("id") or posting.get("id"))
         tags = " ".join([department, office])
@@ -40,13 +41,15 @@ def parse_personio_feed_xml(xml_text: str, source_name: str = "") -> list[RawJob
                 "sourceJobId": f"personio:{source_name}:{posting_id or hashlib.sha1((title + office).encode('utf-8')).hexdigest()[:10]}",
                 "title": title,
                 "company": company,
-                "city": city,
-                "country": country,
+                "city": clean_text(location_details.get("city")) or city,
+                "country": clean_text(location_details.get("country")) or country,
                 "workType": work_type or office,
                 "contractType": clean_text(posting.findtext("employmentType")),
                 "jobLink": job_link,
                 "sector": "Game",
                 "postedAt": clean_text(posting.findtext("createdAt") or posting.findtext("date")),
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     return jobs

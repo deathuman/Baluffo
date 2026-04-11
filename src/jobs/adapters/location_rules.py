@@ -1,0 +1,629 @@
+"""Shared location plausibility helpers for parser-layer extraction."""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from src.jobs.normalizers import COUNTRY_NAME_TO_CODE
+from src.jobs.text_utils import clean_text, norm_text
+
+_REMOTEISH_LOCATION_TOKENS = {"remote", "anywhere", "worldwide", "global"}
+_LOCATION_LABEL_TOKENS = {
+    "location",
+    "locations",
+    "city",
+    "country",
+    "job location",
+    "work location",
+}
+_LOCATION_WORK_TYPE_TOKENS = {"hybrid", "onsite", "on site"}
+_CITY_ABBREVIATION_ALLOWLIST = {"hcmc", "nyc", "la", "sf", "dc"}
+_CITY_REGION_DESCRIPTOR_ALLOWLIST = {
+    "anz",
+    "apac",
+    "emea",
+    "eu & na",
+    "saudi arabia",
+    "united arab emirates",
+}
+_CITY_LOCATION_SUFFIX_WORDS = {
+    "bay",
+    "beach",
+    "boro",
+    "burg",
+    "burgh",
+    "canaveral",
+    "coast",
+    "creek",
+    "desert",
+    "east",
+    "city",
+    "falls",
+    "field",
+    "ford",
+    "gate",
+    "grove",
+    "hague",
+    "harbor",
+    "harbour",
+    "heights",
+    "hill",
+    "hills",
+    "island",
+    "islands",
+    "jaya",
+    "junction",
+    "lake",
+    "lakes",
+    "land",
+    "locks",
+    "mesa",
+    "mouth",
+    "north",
+    "oaks",
+    "park",
+    "point",
+    "port",
+    "prairie",
+    "rapids",
+    "raton",
+    "ridge",
+    "shore",
+    "south",
+    "springs",
+    "tikva",
+    "town",
+    "towns",
+    "valley",
+    "view",
+    "village",
+    "ville",
+    "west",
+    "woods",
+}
+_CITY_LOCATION_ALLOWLIST = {
+    "aliso viejo",
+    "abu dhabi",
+    "al ain",
+    "annapolis junction",
+    "ann arbor",
+    "auburn hills",
+    "bayan lepas",
+    "baton rouge",
+    "belo horizonte",
+    "ben arous",
+    "boca raton",
+    "beverly hills",
+    "bien hoa",
+    "broken arrow",
+    "burgess hill",
+    "bad homburg",
+    "bad nauheim",
+    "bad mergentheim",
+    "bad rodach",
+    "blue bell",
+    "bnei brak",
+    "briarcliff manor",
+    "carol stream",
+    "castle rock",
+    "castle donington",
+    "college station",
+    "coral gables",
+    "corpus christi",
+    "casa grande",
+    "ciudad juarez",
+    "ciudad lópez mateos",
+    "central jakarta",
+    "burleigh heads",
+    "browns plains",
+    "gold coast",
+    "golden valley",
+    "green bay",
+    "green forest",
+    "greenwood village",
+    "glen allen",
+    "glen burnie",
+    "grand prairie",
+    "grand rapids",
+    "grand forks",
+    "glenwood springs",
+    "buenos aires",
+    "costa mesa",
+    "cape town",
+    "cape canaveral",
+    "chula vista",
+    "colorado springs",
+    "costa rica",
+    "center valley",
+    "flowery branch",
+    "hemel hempstead",
+    "highlands ranch",
+    "des moines",
+    "dee why",
+    "florham park",
+    "george town",
+    "hoogvliet rotterdam",
+    "hong kong",
+    "hod hasharon",
+    "kuala lumpur",
+    "johor bahru",
+    "leamington spa",
+    "long beach",
+    "macquarie park",
+    "little rock",
+    "mountain view",
+    "mountain home",
+    "mercer island",
+    "milton keynes",
+    "miami beach",
+    "mammoth lakes",
+    "narre warren",
+    "moose jaw",
+    "myrtle beach",
+    "navi mumbai",
+    "novi sad",
+    "noarlunga centre",
+    "oakland",
+    "oak brook",
+    "old bridge",
+    "palm beach gardens",
+    "petah tikva",
+    "petaling jaya",
+    "palo alto",
+    "palm desert",
+    "paso robles",
+    "phnom penh",
+    "playa vista",
+    "porto alegre",
+    "porto nacional",
+    "ridgefield park",
+    "rancho cucamonga",
+    "round rock",
+    "sugar land",
+    "samut prakan",
+    "silver spring",
+    "smithfield plains",
+    "stansted mountfitchet",
+    "royal leamington spa",
+    "shah alam",
+    "simpang ampat",
+    "sunshine coast",
+    "stone mountain",
+    "sankt ingbert",
+    "temple terrace",
+    "the hague",
+    "thousand oaks",
+    "thuringowa central",
+    "upper arlington",
+    "virginia beach",
+    "vicente lópez",
+    "walnut creek",
+    "westlake village",
+    "windsor locks",
+    "white bear",
+    "white plains",
+    "woodland hills",
+    "waterloo",
+    "wellington",
+    "washington dc",
+    "lake forest",
+    "lake jackson",
+    "lake mary",
+    "lombardy",
+    "great neck",
+    "kings bay base",
+    "ramat gan",
+    "voorhees township",
+    "schwäbisch gmünd",
+    "eagle river",
+    "falls church",
+    "englewood cliffs",
+    "greater noida",
+    "joint base andrews",
+    "koh samui",
+    "kuta selatan",
+    "mill hall",
+}
+_CITY_LOCATION_PREFIX_WORDS = {
+    "de",
+    "del",
+    "da",
+    "do",
+    "dos",
+    "du",
+    "di",
+    "la",
+    "le",
+    "of",
+    "and",
+    "or",
+    "van",
+    "von",
+    "der",
+    "den",
+    "el",
+    "y",
+}
+_CITY_LOCATION_PREFIXES = {
+    "new",
+    "san",
+    "santa",
+    "santo",
+    "saint",
+    "st",
+    "st.",
+    "los",
+    "las",
+    "fort",
+    "port",
+    "mount",
+    "north",
+    "south",
+    "east",
+    "west",
+    "rio",
+    "río",
+    "sao",
+    "são",
+    "gran",
+}
+_CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS = {
+    "about",
+    "accessibility",
+    "ai",
+    "analytics",
+    "blog",
+    "code",
+    "company",
+    "companies",
+    "consent",
+    "consumer",
+    "corporate",
+    "creative",
+    "customer",
+    "enablement",
+    "explore",
+    "games",
+    "gaming",
+    "google",
+    "learn",
+    "marketing",
+    "official",
+    "product",
+    "products",
+    "privacy",
+    "recruitment",
+    "results",
+    "search",
+    "services",
+    "support",
+    "technology",
+    "terms",
+    "website",
+    "wizards",
+}
+_CITY_CHROME_LABELS = {
+    "about",
+    "accessibility services",
+    "blog",
+    "clear search results",
+    "company",
+    "companies",
+    "corporate",
+    "creative",
+    "cookies and consent policies",
+    "explore",
+    "google analytics",
+    "official website",
+    "privacy policy",
+    "privacy policy legal eula",
+    "terms of service",
+    "visit their website",
+    "we're sorry",
+}
+_WORK_TYPE_NOISE_TOKENS = {
+    "contract",
+    "fixed term",
+    "fixed-term",
+    "freelance",
+    "full time",
+    "full-time",
+    "hybrid",
+    "intern",
+    "internship",
+    "on site",
+    "onsite",
+    "part time",
+    "part-time",
+    "permanent",
+    "seasonal",
+    "temporary",
+    "volunteer",
+}
+_LOCATION_PREFIX_NOISE = (
+    "as a ",
+    "as an ",
+    "assist ",
+    "assist with ",
+    "click ",
+    "data privacy statement ",
+    "engage with ",
+    "if you ",
+    "learn ",
+    "our ",
+    "please ",
+    "location: ",
+    "location - ",
+    "to view ",
+    "view ",
+    "we are ",
+    "we're ",
+    "we're looking ",
+    "work location: ",
+    "you will ",
+)
+_LOCATION_FRAGMENT_NOISE = (
+    "administrative & support services",
+    "administration",
+    "agree disagree learn more",
+    "ai & technology",
+    "ai campaigns that convert wishlists into revenue",
+    "ai enablement",
+    "ai solutions pm",
+    "art & animation",
+    "assist with outdoor photos",
+    "bachelor's degree",
+    "business inquiries",
+    "china games recruitment sourcer",
+    "clear search results",
+    "code wizards",
+    "code wizards group",
+    "communications",
+    "concepteur technique narratif",
+    "consumer products",
+    "cookies and consent policies",
+    "creative marketing",
+    "data privacy statement legal notice",
+    "du planst und",
+    "elementor",
+    "engage with your audience",
+    "exclusively as a digital document",
+    "games fqa warsaw",
+    "games programming",
+    "gaming website",
+    "head of creative production",
+    "internal ai product owner",
+    "join offroad games",
+    "google analytics",
+    "learn more",
+    "marketing design team lead",
+    "navigation",
+    "new graduate recruitment",
+    "outdoor photos",
+    "performance marketing",
+    "privacy policy",
+    "privacy policy legal eula",
+    "product associate",
+    "product management",
+    "product video ads",
+    "products and services",
+    "raw power games",
+    "solutions",
+    "stormind games",
+    "support services",
+    "support team lead",
+    "technology",
+    "three words to describe",
+    "there are no current openings",
+    "we're looking for talented professionals",
+    "we're sorry",
+    "you will bring our world",
+    "yesterday marked international women's day",
+)
+_CITY_MULTI_LANGUAGE_PROSE_INDICATORS = (
+    "concepteur",
+    "planst",
+    "veröffentlichst",
+    "postuler",
+    "rejoindre",
+)
+_DATE_LIKE_RE = re.compile(
+    r"(?i)^(?:"
+    r"\d{4}"
+    r"|(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\.?\s+\d{1,2}(?:,\s*\d{2,4})?"
+    r"|\d{1,2}\s+(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\.?(?:,\s*\d{2,4})?"
+    r"|\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?"
+    r")$"
+)
+_LONG_DIGIT_WORD_BLOB_RE = re.compile(r"(?i)^\d+\s+\w+$")
+_ID_LIKE_RE = re.compile(r"(?i)^(?:\d+[_-][a-f0-9]+|[a-f0-9]{8,})$")
+_VERSION_LIKE_RE = re.compile(r"(?i)^v\d+(?:\.\d+)+$")
+_HOURS_INFO_RE = re.compile(r"(?i)^(?:[a-z]{2}\s*\+\s*\d+\s+hours)$")
+_PHONE_LIKE_RE = re.compile(r"(?i)(?:\+?\d[\d\s().-]{6,}\d|\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})")
+_URL_LIKE_RE = re.compile(r"(?i)\b(?:https?://|www\.)")
+_EMAIL_LIKE_RE = re.compile(r"(?i)\b[\w.+-]+@[\w.-]+\.\w+\b")
+_CSS_LIKE_RE = re.compile(
+    r"(?i)(?:--|var\(|calc\(|box-shadow|grid-gutter|padding:|border:|width:|size:)"
+)
+_SCRIPT_LIKE_RE = re.compile(
+    r"(?i)(?:document\.|addEventListener|DOMContentLoaded|querySelector|innerHTML|setTimeout|console\.|function\s*\(|\{\{|\}\})"
+)
+
+
+def _looks_like_country_token(value: str) -> bool:
+    token = clean_text(value)
+    lowered = token.lower()
+    if lowered in COUNTRY_NAME_TO_CODE:
+        return True
+    return len(token) == 2 and token.isalpha()
+
+
+def _location_candidate_words(value: str) -> list[str]:
+    return re.findall(r"[A-Za-zÀ-ÿ0-9']+", value)
+
+
+def _looks_like_location_name(token: str, words: list[str]) -> bool:
+    if not words:
+        return False
+    lower_words = [word.lower() for word in words]
+    normalized = re.sub(r"[\s_-]+", " ", norm_text(token)).strip()
+    if any(word in _CITY_LOCATION_PREFIX_WORDS for word in lower_words):
+        return True
+    if any(word in _CITY_LOCATION_PREFIXES for word in lower_words):
+        return True
+    if any(word in {"de", "del", "da", "do", "du", "of", "and", "or"} for word in lower_words):
+        return True
+    if len(words) <= 3 and len(set(lower_words)) < len(lower_words):
+        return True
+    if normalized in _CITY_LOCATION_ALLOWLIST:
+        return True
+    if lower_words[-1] in _CITY_LOCATION_SUFFIX_WORDS and len(words) <= 4:
+        if all(
+            word.istitle() or word.isupper() or word.lower() in _CITY_LOCATION_PREFIX_WORDS
+            for word in words[:-1]
+        ):
+            return True
+    if len(words) == 1 and "'" in words[0] and words[0].replace("'", "").isalpha():
+        return True
+    if len(words) == 1 and words[0].istitle():
+        return True
+    return False
+
+
+def _fragment_looks_like_location_value(fragment: str) -> bool:
+    text = clean_text(fragment)
+    if not text:
+        return False
+    normalized = re.sub(r"[\s_-]+", " ", norm_text(text)).strip()
+    if normalized in _REMOTEISH_LOCATION_TOKENS:
+        return True
+    if normalized in _CITY_REGION_DESCRIPTOR_ALLOWLIST:
+        return True
+    if _looks_like_country_token(text):
+        return True
+    words = _location_candidate_words(text)
+    if not words:
+        return False
+    if any(separator in text for separator in (",", "/", "-")):
+        return True
+    return _looks_like_location_name(text, words)
+
+
+def _looks_like_pipe_joined_location_summary(token: str) -> bool:
+    if "|" not in token:
+        return False
+    fragments = [clean_text(part) for part in re.split(r"\s*\|\s*", token) if clean_text(part)]
+    if len(fragments) < 2:
+        return False
+    return all(_fragment_looks_like_location_value(fragment) for fragment in fragments)
+
+
+def classify_city_garbage(value: Any) -> str:
+    token = clean_text(value)
+    if not token:
+        return ""
+    lowered = norm_text(token)
+    normalized = re.sub(r"[\s_-]+", " ", lowered).strip()
+    words = _location_candidate_words(token)
+    alpha_words = [word for word in words if any(char.isalpha() for char in word)]
+    if normalized in _CITY_REGION_DESCRIPTOR_ALLOWLIST:
+        return ""
+    if _looks_like_pipe_joined_location_summary(token):
+        return ""
+    if normalized in _REMOTEISH_LOCATION_TOKENS or _looks_like_country_token(token):
+        return ""
+    if normalized in _LOCATION_LABEL_TOKENS:
+        return "site_chrome"
+    if normalized in _CITY_CHROME_LABELS or any(
+        label in normalized for label in _CITY_CHROME_LABELS
+    ):
+        return "site_chrome"
+    if token.endswith(":") and normalized.rstrip(":") not in _REMOTEISH_LOCATION_TOKENS:
+        return "technical_noise"
+    if any(normalized.startswith(prefix) for prefix in _LOCATION_PREFIX_NOISE):
+        return "prose_bleed"
+    if any(fragment in normalized for fragment in _LOCATION_FRAGMENT_NOISE):
+        if any(keyword in normalized for keyword in _CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS):
+            return "role_category"
+        if any(indicator in normalized for indicator in _CITY_MULTI_LANGUAGE_PROSE_INDICATORS):
+            return "prose_bleed"
+        return "role_category"
+    if any(indicator in normalized for indicator in _CITY_MULTI_LANGUAGE_PROSE_INDICATORS):
+        return "prose_bleed"
+    if _URL_LIKE_RE.search(token) or _EMAIL_LIKE_RE.search(token):
+        return "technical_noise"
+    if _PHONE_LIKE_RE.search(token):
+        return "technical_noise"
+    if _CSS_LIKE_RE.search(token) or _SCRIPT_LIKE_RE.search(token):
+        return "technical_noise"
+    if _DATE_LIKE_RE.fullmatch(token):
+        return "technical_noise"
+    if _VERSION_LIKE_RE.fullmatch(normalized):
+        return "technical_noise"
+    if _HOURS_INFO_RE.fullmatch(normalized):
+        return "technical_noise"
+    if _ID_LIKE_RE.fullmatch(normalized.replace(" ", "")) or _LONG_DIGIT_WORD_BLOB_RE.fullmatch(
+        token
+    ):
+        return "technical_noise"
+    if any(char in token for char in ("[", "]", "{", "}", "<", ">", "=", "|")):
+        return "technical_noise"
+    if "?" in token or token.startswith((".", "*", "+", "@", "#", "!")):
+        return "technical_noise"
+    if not words or not any(char.isalnum() for char in token):
+        return "technical_noise"
+    if len(words) == 1:
+        word = words[0]
+        lowered_word = word.lower()
+        if lowered_word in _CITY_ABBREVIATION_ALLOWLIST:
+            return ""
+        if "'" in word and word.replace("'", "").isalpha():
+            return ""
+        if lowered_word in _CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS:
+            return "role_category"
+        if word.isdigit():
+            return "technical_noise"
+        if word.isupper():
+            if len(word) <= 4:
+                return "technical_noise"
+            return "organization_bleed"
+        if not word.istitle() and not word.islower():
+            return "organization_bleed"
+        return ""
+    if any(word.lower() in _CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS for word in alpha_words):
+        return "role_category"
+    if len(alpha_words) > 6 and not any(delimiter in token for delimiter in (",", "/", "-")):
+        return "prose_bleed"
+    if alpha_words and all(word.islower() for word in alpha_words):
+        return "prose_bleed"
+    if len(alpha_words) <= 3 and all((word.istitle() or word.isupper()) for word in alpha_words):
+        if any(delimiter in token for delimiter in (",", "/", "-", "–", "—")):
+            return ""
+        if not _looks_like_location_name(token, words):
+            return "name_like"
+    return ""
+
+
+def is_plausibly_location_candidate(value: Any) -> bool:
+    token = clean_text(value)
+    if not token:
+        return False
+    lowered = norm_text(token)
+    normalized = re.sub(r"[\s_-]+", " ", lowered).strip()
+    base = normalized.rstrip(":")
+    if normalized in {"", "na", "n/a", "none", "unknown"}:
+        return False
+    if normalized in _CITY_REGION_DESCRIPTOR_ALLOWLIST:
+        return False
+    if not token[0].isalnum():
+        return False
+    if base in _REMOTEISH_LOCATION_TOKENS:
+        return True
+    if base in _LOCATION_LABEL_TOKENS:
+        return False
+    if _looks_like_country_token(token):
+        return True
+    if normalized in _WORK_TYPE_NOISE_TOKENS:
+        return False
+    return classify_city_garbage(token) == ""

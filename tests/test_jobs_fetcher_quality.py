@@ -1,4 +1,5 @@
 # ruff: noqa: F403,F405
+from src.jobs.text_utils import load_city_noise_contract
 from tests.jobs_fetcher_helpers import *
 
 patch_jobs_fetcher_aliases()
@@ -55,6 +56,52 @@ def test_contamination_audit_reports_public_field_examples() -> None:
     assert str(report["examples"][0]["fields"]["city"]) == '<div class="location">Tokyo'
 
 
+def test_city_garbage_audit_reports_obvious_garbage_examples() -> None:
+    report = build_city_garbage_report(
+        [
+            {
+                "title": "Gameplay Engineer",
+                "company": "Studio",
+                "city": "We're sorry",
+                "country": "US",
+                "locationSummary": "Winston-Salem, US | Clear search results",
+                "locations": [
+                    {"city": "We're sorry", "country": "US"},
+                    {"city": "Berlin", "country": "DE"},
+                ],
+                "jobLink": "https://example.com/1",
+            },
+            {
+                "title": "Gameplay Engineer",
+                "company": "Studio",
+                "city": "AI Enablement",
+                "country": "US",
+                "locationSummary": "AI Enablement | Regensburg, DE",
+                "locations": [{"city": "AI Enablement", "country": "US"}],
+                "jobLink": "https://example.com/2",
+            },
+            {
+                "title": "Gameplay Engineer",
+                "company": "Studio",
+                "city": "Tokyo",
+                "country": "JP",
+                "locationSummary": "Tokyo, JP",
+                "locations": [{"city": "Tokyo", "country": "JP"}],
+                "jobLink": "https://example.com/3",
+            },
+        ]
+    )
+    assert int(report["totalRows"]) == 3
+    assert int(report["garbageRows"]) == 2
+    assert int(report["fieldCounts"]["city"]) == 2
+    assert int(report["fieldCounts"]["locationSummary"]) == 2
+    assert int(report["fieldCounts"]["locations.city"]) == 2
+    assert int(report["categoryCounts"]["site_chrome"]) == 3
+    assert int(report["categoryCounts"]["role_category"]) == 3
+    assert str(report["examples"][0]["fields"]["city"]["category"]) == "site_chrome"
+    assert str(report["examples"][1]["fields"]["city"]["category"]) == "role_category"
+
+
 def test_canonicalize_job_with_reason_blanks_semantic_location_noise() -> None:
     row, reason = jf.canonicalize_job_with_reason(
         {
@@ -72,7 +119,178 @@ def test_canonicalize_job_with_reason_blanks_semantic_location_noise() -> None:
     assert row is not None
     payload = row if isinstance(row, dict) else row.to_dict()
     assert payload["city"] == ""
-    assert payload["country"] == "Unknown"
+    assert payload["country"] == ""
+
+
+def test_public_text_quality_report_includes_city_garbage_audit() -> None:
+    report = build_public_text_quality_report(
+        [
+            {
+                "title": "Gameplay Engineer",
+                "company": "Studio",
+                "city": "We're sorry",
+                "country": "US",
+                "locationSummary": "Winston-Salem, US | Clear search results",
+                "locations": [{"city": "We're sorry", "country": "US"}],
+                "jobLink": "https://example.com/report",
+            }
+        ]
+    )
+    assert "contaminatedRows" in report
+    assert "locationQualityAudit" in report
+    assert "cityGarbageAudit" in report
+    assert int(report["cityGarbageAudit"]["garbageRows"]) == 1
+
+
+def test_normalize_fetch_report_payload_preserves_city_garbage_audit() -> None:
+    normalized_report = jobs_reporting.normalize_fetch_report_payload(
+        {
+            "schemaVersion": 1,
+            "runId": "run-1",
+            "startedAt": "2026-03-30T00:00:00Z",
+            "finishedAt": "2026-03-30T00:05:00Z",
+            "runtime": {},
+            "contaminationAudit": {"totalRows": 1, "contaminatedRows": 0},
+            "cityGarbageAudit": {
+                "totalRows": 1,
+                "garbageRows": 1,
+                "fieldCounts": {"city": 1},
+                "categoryCounts": {"site_chrome": 1},
+                "examples": [],
+            },
+            "locationQualityAudit": {"totalRows": 1, "invalidLocationFieldCount": 0},
+            "sectorQualityAudit": {"totalRows": 1, "downgradedGameSectorCount": 0},
+        }
+    )
+    assert int(normalized_report["cityGarbageAudit"]["garbageRows"]) == 1
+    assert int(normalized_report["cityGarbageAudit"]["fieldCounts"]["city"]) == 1
+    assert int(normalized_report["cityGarbageAudit"]["categoryCounts"]["site_chrome"]) == 1
+
+
+def test_canonicalize_job_with_reason_blanks_shared_city_noise_contract_fragments() -> None:
+    contract = load_city_noise_contract()
+    assert "bachelor's degree" in contract["proseFragments"]
+    assert "learn" in contract["sentencePrefixes"]
+    assert "%label_" in contract["placeholderFragments"]
+    assert "????" in contract["knownJunkTokens"]
+    assert "ai solutions pm" in contract["knownJunkTokens"]
+    for token in [
+        "Any",
+        "Apps for kids",
+        "CET +- 4",
+        "CET +- 2",
+        "COME FLY WITH US",
+        "Chief Human Resource Officer (CHRO)",
+        "Come work with us!",
+        "Chronos: Before the Ashes",
+        "Community",
+        "Contact",
+        "Create amazing characters that are efficient",
+        "Create",
+        "Cybersecurity",
+        "Culture & Values",
+        "Data & Engineering",
+        "Data & Research",
+        "Department",
+        "Departments",
+        "Do Not Sell My Information",
+        "Do Not Share My Personal",
+        "EU & NA",
+        "Endless Legend is a 4X turn",
+        "Ensure brand message is consistent",
+        "Entertain the world",
+        "Filter by",
+        "Filter roles by",
+        "Filters",
+        "Finance",
+        "Finance & Accounting",
+        "Find us on Facebook",
+        "From Concept to Console: Meet Winslow",
+        "Full",
+        "Full or part",
+        "Games FQA Warsaw",
+        "HUMANKIND is a turn",
+        "Head of IP Licensing BD",
+        "Head of Recruiting",
+        "Help create video scripts",
+        "In this role",
+        "Imprint",
+        "Internal Tools & Player Insights",
+        "Interviews",
+        "Junior",
+        "Join our crew",
+        "Join the community",
+        "Join us",
+        "Legal",
+        "Ltd. )",
+        "Mastery social platforms: Facebook",
+        "Office",
+        "Organization",
+        "People & Culture",
+        "Senior Production Accountant (Feature) : 2026",
+        "Sega of America",
+        "Sign in",
+        "Spontaneous application",
+        "Startup Directory Founder Directory Launch YC",
+        "Student",
+        "Student & Recent Graduates",
+        "Studio",
+        "Studios",
+        "Titan Quest II Announced",
+        "To be clear",
+        "To be considered",
+        "UNAVAILABLE",
+        "UK",
+        "Web Build Purple Imp",
+        "Work & Innovation",
+    ]:
+        assert token.lower() in contract["knownJunkTokens"]
+
+    cases = [
+        "A bachelor's degree in digital communications",
+        "If you are looking for Tokyo",
+        "%LABEL_POSITION_TYPE_REMOTE_ANY%",
+        "????",
+    ]
+    for city in cases:
+        row, reason = jf.canonicalize_job_with_reason(
+            {
+                "title": "Artist",
+                "company": "Studio",
+                "city": city,
+                "country": "Japan",
+                "jobLink": "https://example.com/city-contract",
+                "sector": "Game",
+            },
+            source="static_source::noise",
+            fetched_at="2026-03-20T00:00:00Z",
+        )
+        assert reason == ""
+        assert row is not None
+        payload = row if isinstance(row, dict) else row.to_dict()
+        assert payload["city"] == ""
+        assert payload["country"] == "Japan"
+
+
+def test_canonicalize_job_with_reason_blanks_structural_city_noise_values() -> None:
+    for city in ["2026", "3"]:
+        row, reason = jf.canonicalize_job_with_reason(
+            {
+                "title": "Artist",
+                "company": "Studio",
+                "city": city,
+                "country": "Japan",
+                "jobLink": "https://example.com/city-structural-noise",
+                "sector": "Game",
+            },
+            source="static_source::noise",
+            fetched_at="2026-03-20T00:00:00Z",
+        )
+        assert reason == ""
+        assert row is not None
+        payload = row if isinstance(row, dict) else row.to_dict()
+        assert payload["city"] == ""
+        assert payload["country"] == "Japan"
 
 
 def test_canonicalize_job_with_reason_blanks_metric_and_css_location_noise() -> None:
@@ -93,6 +311,46 @@ def test_canonicalize_job_with_reason_blanks_metric_and_css_location_noise() -> 
     payload = row if isinstance(row, dict) else row.to_dict()
     assert payload["city"] == ""
     assert payload["country"] == ""
+
+
+def test_canonicalize_job_with_reason_rejects_country_work_type_noise() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Artist",
+            "company": "Studio",
+            "city": "Tokyo",
+            "country": "Hybrid",
+            "jobLink": "https://example.com/country-noise",
+            "sector": "Game",
+        },
+        source="static_source::noise",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == "Tokyo"
+    assert payload["country"] == ""
+
+
+def test_canonicalize_job_with_reason_preserves_region_country_names() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Artist",
+            "company": "Studio",
+            "city": "Skopje",
+            "country": "North Macedonia",
+            "jobLink": "https://example.com/region-country",
+            "sector": "Game",
+        },
+        source="static_source::region-country",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == "Skopje"
+    assert payload["country"] == "North Macedonia"
 
 
 def test_canonicalize_job_with_reason_promotes_first_meaningful_multi_location_entry() -> None:
@@ -118,6 +376,32 @@ def test_canonicalize_job_with_reason_promotes_first_meaningful_multi_location_e
     assert payload["country"] == "England"
     assert payload["locationSummary"] == "Guildford, England | Utrecht, NL"
     assert payload["locations"][0] == {"city": "Guildford", "country": "England"}
+
+
+def test_canonicalize_job_with_reason_rebuilds_location_summary_from_surviving_entries() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Rendering Engineer",
+            "company": "Stellar Entertainment",
+            "city": "AI Solutions PM",
+            "country": "Unknown",
+            "locations": [
+                {"city": "AI Solutions PM", "country": "Unknown"},
+                {"city": "Guildford", "country": "UK"},
+            ],
+            "jobLink": "https://jobs.ashbyhq.com/stellarentertainment/5e067256-96d1-4923-9d48-a920639c9fbe",
+            "sector": "Tech",
+        },
+        source="static_source::listing_url:https://stellarentertainment.software/join-us/",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == "Guildford"
+    assert payload["country"] == "UK"
+    assert payload["locationSummary"] == "Guildford, UK"
+    assert payload["locations"] == [{"city": "Guildford", "country": "UK"}]
 
 
 def test_deduplicate_jobs_merges_sparse_variant_into_richer_multi_location_row() -> None:
@@ -268,6 +552,111 @@ def test_canonicalize_job_with_reason_blanks_role_blob_location_noise() -> None:
     assert payload["locations"] == [{"city": "Paris", "country": "FR"}]
 
 
+@pytest.mark.parametrize(
+    "value, expected_country",
+    [
+        ("Any", ""),
+        ("Apps for kids", ""),
+        ("CET +- 4", ""),
+        ("CET +- 2", ""),
+        ("COME FLY WITH US", ""),
+        ("Chief Human Resource Officer (CHRO)", ""),
+        ("Come work with us!", ""),
+        ("Chronos: Before the Ashes", ""),
+        ("Community", ""),
+        ("Contact", ""),
+        ("Create amazing characters that are efficient", ""),
+        ("Create", ""),
+        ("Cybersecurity", ""),
+        ("Culture & Values", ""),
+        ("Data & Engineering", ""),
+        ("Data & Research", ""),
+        ("Department", ""),
+        ("Departments", ""),
+        ("Do Not Sell My Information", ""),
+        ("Do Not Share My Personal", ""),
+        ("EU & NA", "EU & NA"),
+        ("Endless Legend is a 4X turn", ""),
+        ("Ensure brand message is consistent", ""),
+        ("Entertain the world", ""),
+        ("Filter by", ""),
+        ("Filter roles by", ""),
+        ("Filters", ""),
+        ("Finance", ""),
+        ("Finance & Accounting", ""),
+        ("Find us on Facebook", ""),
+        ("From Concept to Console: Meet Winslow", ""),
+        ("Full", ""),
+        ("Full or part", ""),
+        ("Games FQA Warsaw", ""),
+        ("HUMANKIND is a turn", ""),
+        ("Head of IP Licensing BD", ""),
+        ("Head of Recruiting", ""),
+        ("Help create video scripts", ""),
+        ("In this role", ""),
+        ("Imprint", ""),
+        ("Internal Tools & Player Insights", ""),
+        ("Interviews", ""),
+        ("Junior", ""),
+        ("Join our crew", ""),
+        ("Join the community", ""),
+        ("Join us", ""),
+        ("Legal", ""),
+        ("Ltd. )", ""),
+        ("Mastery social platforms: Facebook", ""),
+        ("Office", ""),
+        ("Organization", ""),
+        ("People & Culture", ""),
+        ("Senior Production Accountant (Feature) : 2026", ""),
+        ("Sega of America", ""),
+        ("Sign in", ""),
+        ("Spontaneous application", ""),
+        ("Startup Directory Founder Directory Launch YC", ""),
+        ("Student", ""),
+        ("Student & Recent Graduates", ""),
+        ("Studio", ""),
+        ("Studios", ""),
+        ("Titan Quest II Announced", ""),
+        ("To be clear", ""),
+        ("To be considered", ""),
+        ("UNAVAILABLE", ""),
+        ("UK", "UK"),
+        ("Web Build Purple Imp", ""),
+        ("Work & Innovation", ""),
+        ("144 million+ Downloads", ""),
+        ("3 to UTC+1", ""),
+        ("9mo", ""),
+        ("All", ""),
+        ("Inc.", ""),
+    ],
+)
+def test_canonicalize_job_with_reason_blanks_exact_city_noise_outliers(
+    value: str,
+    expected_country: str,
+) -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Test Role",
+            "company": "Test Studio",
+            "city": value,
+            "country": "Unknown",
+            "jobLink": "https://example.com/test-role",
+            "sector": "Tech",
+        },
+        source="static_source::static",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == ""
+    assert payload["country"] == expected_country
+    assert payload["locationSummary"] == expected_country
+    assert payload["locations"] == (
+        [{"city": "", "country": expected_country}] if expected_country else []
+    )
+
+
 def test_canonicalize_job_with_reason_normalizes_sector_from_game_evidence() -> None:
     jobs_canonicalize.reset_sector_quality_audit()
     row, reason = jf.canonicalize_job_with_reason(
@@ -395,6 +784,34 @@ def test_canonicalize_job_with_reason_normalizes_sector_from_game_evidence() -> 
     cloud_payload = cloud_row if isinstance(cloud_row, dict) else cloud_row.to_dict()
     assert cloud_payload["sector"] == "Game"
     assert cloud_payload["companyType"] == "Game"
+
+    sega_me_row, sega_me_reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Projects /After sales services Engineer",
+            "company": "SEGA",
+            "city": "10th of Ramadan",
+            "country": "Unknown",
+            "jobLink": "https://eg.linkedin.com/jobs/view/projects-after-sales-services-engineer-at-%E2%80%8F%E2%80%8Esega-m-electrical-products%E2%80%8E-4399033334",
+            "sector": "Tech",
+            "sourceBundle": [
+                {
+                    "source": "static_source::static:listing_url:https://www.linkedin.com/jobs/search/?currentjobid=4148163061&geoid=92000000&keywords=sega",
+                    "sourceJobId": "static:static:listing_url:https://www.linkedin.com/jobs/search/?currentjobid=4148163061&geoid=92000000&keywords=sega:55d919920a",
+                    "jobLink": "https://eg.linkedin.com/jobs/view/projects-after-sales-services-engineer-at-%E2%80%8F%E2%80%8Esega-m-electrical-products%E2%80%8E-4399033334",
+                    "postedAt": "",
+                    "adapter": "static",
+                    "studio": "SEGA",
+                }
+            ],
+        },
+        source="static_source::static:listing_url:https://www.linkedin.com/jobs/search/?currentjobid=4148163061&geoid=92000000&keywords=sega",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert sega_me_reason == ""
+    assert sega_me_row is not None
+    sega_me_payload = sega_me_row if isinstance(sega_me_row, dict) else sega_me_row.to_dict()
+    assert sega_me_payload["sector"] == "Tech"
+    assert sega_me_payload["companyType"] == "Tech"
 
 
 def test_canonicalize_job_with_reason_blanks_title_like_city_noise() -> None:

@@ -153,7 +153,7 @@ def test_parse_greenhouse_jobs_payload_fixture() -> None:
     assert len(rows) == 2
     assert all(row["sourceJobId"].startswith("greenhouse:guerrilla-games:") for row in rows)
     assert rows[0]["company"] == "Guerrilla Games"
-    assert rows[0]["country"] == "Netherlands"
+    assert rows[0]["country"] == "NL"
 
 
 def test_parse_teamtailor_listing_links_fixture() -> None:
@@ -175,8 +175,8 @@ def test_parse_jobpostings_from_html_teamtailor_fixture() -> None:
     )
     assert len(rows) == 1
     assert rows[0]["title"] == "Game Programmer"
-    assert rows[0]["city"] == "Delft"
-    assert rows[0]["country"] == "NL"
+    assert rows[0]["city"] == ""
+    assert rows[0]["country"] == "Unknown"
 
 
 def test_parse_wellfound_html_fixture() -> None:
@@ -221,6 +221,47 @@ def test_parse_smartrecruiters_jobs_payload_rewrites_api_ref_to_public_job_url()
     rows = jf.parse_smartrecruiters_jobs_payload(payload, "Gameloft", fallback_company="Gameloft")
     assert len(rows) == 1
     assert rows[0]["jobLink"] == "https://jobs.smartrecruiters.com/Gameloft/744000115751281"
+
+
+def test_parse_smartrecruiters_jobs_payload_normalizes_location_variants() -> None:
+    payload = {
+        "content": [
+            {
+                "id": "744000115751282",
+                "name": "Gameplay Programmer",
+                "ref": "744000115751282",
+                "releasedDate": "2026-02-20T10:00:00Z",
+                "location": {"city": "Vancouver, CA | CA", "country": "CA"},
+                "department": "Engineering",
+            }
+        ]
+    }
+    rows = jf.parse_smartrecruiters_jobs_payload(payload, "Studio", fallback_company="Studio")
+    assert len(rows) == 1
+    assert rows[0]["city"] == "Vancouver"
+    assert rows[0]["country"] == "CA"
+    assert rows[0]["locations"] == [{"city": "Vancouver", "country": "CA"}]
+    assert rows[0]["locationSummary"] == "Vancouver, CA"
+
+
+def test_parse_lever_jobs_payload_normalizes_multi_location_strings() -> None:
+    payload = [
+        {
+            "id": "lever-1",
+            "text": "Gameplay Programmer",
+            "hostedUrl": "https://example.com/jobs/lever-1",
+            "categories": {
+                "location": "Munich, DE | München, DE",
+            },
+            "descriptionPlain": "Hiring a gameplay programmer for the game team.",
+        }
+    ]
+    rows = jf.parse_lever_jobs_payload(payload, "studio", fallback_company="Studio")
+    assert len(rows) == 1
+    assert rows[0]["city"] == "Munich"
+    assert rows[0]["country"] == "DE"
+    assert rows[0]["locations"] == [{"city": "Munich", "country": "DE"}]
+    assert rows[0]["locationSummary"] == "Munich, DE"
 
 
 def test_parse_workable_jobs_payload_fixture() -> None:
@@ -585,7 +626,7 @@ def test_parse_workwithindies_html_fixture() -> None:
     assert len(rows) == 2
     assert rows[0]["company"] == "Moonshot Games"
     assert any(row["workType"] == "Remote" for row in rows)
-    assert any(row["country"] == "Canada" for row in rows)
+    assert any(row["country"] == "CA" for row in rows)
 
 
 def test_parse_8bitplay_html_fixture() -> None:

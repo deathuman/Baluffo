@@ -694,3 +694,26 @@ def test_request_raw_json_wraps_certificate_verify_failures():
             timeout_s=12,
             opener=failing_opener,
         )
+
+
+def test_build_sync_ssl_context_loads_custom_ca_bundle(monkeypatch, tmp_path):
+    cafile = tmp_path / "custom-ca.pem"
+    cafile.write_text("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
+    seen = {"default_certs": False, "cafiles": []}
+
+    class FakeContext:
+        def load_default_certs(self):
+            seen["default_certs"] = True
+
+        def load_verify_locations(self, *, cafile=None):
+            seen["cafiles"].append(cafile)
+
+    monkeypatch.setattr(sync.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(sync, "certifi", None)
+    monkeypatch.setenv(sync.SYNC_CA_BUNDLE_ENV, str(cafile))
+
+    context = sync._build_sync_ssl_context()  # noqa: SLF001
+
+    assert isinstance(context, FakeContext)
+    assert seen["default_certs"] is True
+    assert seen["cafiles"] == [str(cafile)]

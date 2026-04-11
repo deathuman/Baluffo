@@ -7,6 +7,7 @@ import {
   isCleanFilterOptionValue,
   sortJobs
 } from "../../../frontend/jobs/app/runtime/query.js";
+import { sanitizeLocationField } from "../../../frontend/jobs/domain.js";
 
 test("jobs runtime query helpers derive filter options from the full job set", () => {
   const options = buildFilterOptions([
@@ -19,13 +20,38 @@ test("jobs runtime query helpers derive filter options from the full job set", (
     {
       profession: "artist",
       sector: "Art",
-      city: "Utrecht",
-      country: "NL"
+      city: "Berlin / Hamburg",
+      country: "Japan"
+    },
+    {
+      profession: "writer",
+      sector: "Narrative",
+      city: "2026",
+      country: "US"
+    },
+    {
+      profession: "producer",
+      sector: "Games",
+      city: "A bachelor's degree in digital communications",
+      country: "CA"
+    },
+    {
+      profession: "designer",
+      sector: "Art",
+      city: "????",
+      country: "GB"
+    },
+    {
+      profession: "producer",
+      sector: "Games",
+      city: "Rotterdam",
+      country: "Onsite"
     }
   ], {
     getJobLocationCities: job => [job.city].filter(Boolean),
     getJobLocationCountries: job => [job.country].filter(Boolean),
-    isValidCountry: value => Boolean(value),
+    isValidCountry: value => Boolean(sanitizeLocationField(value, "country")),
+    isSemanticallyValidLocationValue: value => Boolean(sanitizeLocationField(value, "city")),
     getAvailableRegionOptions: countries => countries.map(country => ({
       value: `region:${country}`,
       label: country
@@ -33,9 +59,10 @@ test("jobs runtime query helpers derive filter options from the full job set", (
     fullCountryName: value => value
   });
 
-  assert.deepEqual(options.availableProfessions, ["artist", "engineer"]);
-  assert.deepEqual(options.availableCities, ["Amsterdam", "Utrecht"]);
-  assert.deepEqual(options.availableSectors, ["Art", "Games"]);
+  assert.deepEqual(options.availableProfessions, ["artist", "designer", "engineer", "producer", "writer"]);
+  assert.deepEqual(options.availableCities, ["Amsterdam", "Rotterdam"]);
+  assert.deepEqual(options.availableCountries, ["CA", "GB", "Japan", "NL", "US"]);
+  assert.deepEqual(options.availableSectors, ["Art", "Games", "Narrative"]);
 });
 
 test("jobs runtime query helpers filter jobs by search, new-only, and country selection", () => {

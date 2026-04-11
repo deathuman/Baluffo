@@ -84,6 +84,8 @@ PACKAGING_FILES = (
     "github-app-sync-config.template.json",
 )
 APP_RUNTIME_DATA_FILES = (
+    "contracts/country_acceptance.json",
+    "contracts/city_noise_contract.json",
     "jobs-unified-startup.json",
     "jobs-unified-light.json",
     "jobs-unified.json",

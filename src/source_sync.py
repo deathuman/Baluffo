@@ -45,6 +45,7 @@ DEFAULT_PATH = str(_SYNC_DEFAULTS["default_path"])
 DEFAULT_TIMEOUT_S = 20
 PACKAGED_SYNC_CONFIG_ENV = "BALUFFO_SYNC_APP_CONFIG_PATH"
 PACKAGED_SYNC_PASSPHRASE_ENV = "BALUFFO_SYNC_KEY_PASSPHRASE"
+SYNC_CA_BUNDLE_ENV = "BALUFFO_SYNC_CA_BUNDLE"
 SYNC_DISABLE_ENV = "BALUFFO_SYNC_DISABLE"
 SYNC_ALLOWED_REPO_ENV = "BALUFFO_SYNC_ALLOWED_REPO"
 SYNC_ALLOWED_BRANCH_ENV = "BALUFFO_SYNC_ALLOWED_BRANCH"
@@ -686,6 +687,15 @@ def _github_json_headers(authorization: str) -> dict[str, str]:
 def _build_sync_ssl_context() -> ssl.SSLContext:
     context = ssl.create_default_context()
     context.load_default_certs()
+    ca_bundle_path = str(os.environ.get(SYNC_CA_BUNDLE_ENV) or "").strip()
+    if ca_bundle_path:
+        resolved_bundle = Path(ca_bundle_path).expanduser()
+        if not resolved_bundle.is_file():
+            raise RuntimeError(
+                f"Sync request failed: CA bundle not found at {resolved_bundle} "
+                f"(set {SYNC_CA_BUNDLE_ENV} to a valid PEM bundle)."
+            )
+        context.load_verify_locations(cafile=str(resolved_bundle))
     certifi_path = ""
     try:
         certifi_path = str(certifi.where() if certifi else "").strip()

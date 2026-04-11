@@ -1,3 +1,5 @@
+import { sanitizeLocationField } from "../jobs/domain.js";
+
 export function createSavedJobsDomain(deps) {
   const {
     withStore,
@@ -45,8 +47,8 @@ export function createSavedJobsDomain(deps) {
       company: String(source.company ?? base.company ?? "").trim(),
       sector: normalizeSectorValue(source.sector ?? base.sector, source.companyType ?? base.companyType),
       companyType: String(source.companyType ?? base.companyType ?? "Tech").trim() || "Tech",
-      city: String(source.city ?? base.city ?? "").trim(),
-      country: String(source.country ?? base.country ?? "").trim(),
+      city: sanitizeLocationField(source.city ?? base.city ?? "", "city"),
+      country: sanitizeLocationField(source.country ?? base.country ?? "", "country"),
       workType: String(source.workType ?? base.workType ?? "Onsite").trim() || "Onsite",
       contractType: String(source.contractType ?? base.contractType ?? "Unknown").trim() || "Unknown",
       jobLink: sanitizeJobUrl(source.jobLink ?? base.jobLink ?? ""),
@@ -129,8 +131,8 @@ export function createSavedJobsDomain(deps) {
           company: job.company || "",
           sector: normalizeSectorValue(job.sector, job.companyType),
           companyType: job.companyType || "Tech",
-          city: job.city || "",
-          country: job.country || "",
+          city: sanitizeLocationField(job.city || "", "city"),
+          country: sanitizeLocationField(job.country || "", "country"),
           workType: job.workType || "Onsite",
           contractType: job.contractType || "Unknown",
           jobLink: sanitizeJobUrl(job.jobLink || ""),

@@ -8,6 +8,7 @@ from urllib.parse import urljoin, urlparse
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.provider_parsers import parse_generic_location_fields
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url, sanitize_public_text
 
@@ -174,11 +175,10 @@ def _parse_kojima_listing_rows(
         title = sanitize_public_text(lines[0] if lines else text.split("  ")[0])
         city = ""
         country = ""
-        if len(lines) >= 3 and "," in lines[-1]:
-            city = sanitize_public_text(lines[-1].split(",", 1)[0])
-            country = sanitize_public_text(lines[-1].split(",", 1)[1]) or "Japan"
-        elif len(lines) >= 3:
-            city = sanitize_public_text(lines[-1])
+        if len(lines) >= 3:
+            city, country, _ = parse_generic_location_fields(lines[-1])
+            if not city and country == "Unknown":
+                country = "Japan"
         source_job_id = path.rstrip("/").split("/")[-1] or f"{source_id}-{len(rows) + 1}"
         rows.append(
             {

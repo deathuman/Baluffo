@@ -757,6 +757,11 @@ def run_pipeline(
     location_quality_audit = _apply_final_location_quality_guardrail(deduped_payload_rows)
     sector_quality_audit = snapshot_sector_quality_audit(total_rows=len(deduped_payload_rows))
     contamination_report = build_public_text_quality_report(deduped_payload_rows)
+    city_garbage_audit = (
+        contamination_report.get("cityGarbageAudit")
+        if isinstance(contamination_report.get("cityGarbageAudit"), dict)
+        else {}
+    )
     contamination_rows = int(contamination_report.get("contaminatedRows") or 0)
     if contamination_rows > 0:
         raise ValueError(
@@ -932,6 +937,7 @@ def run_pipeline(
             ),
             "sources": source_reports,
             "contaminationAudit": contamination_report,
+            "cityGarbageAudit": city_garbage_audit,
             "locationQualityAudit": location_quality_audit,
             "sectorQualityAudit": sector_quality_audit,
             "outputs": {

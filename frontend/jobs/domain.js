@@ -1,3 +1,11 @@
+import {
+  resolveCountryAcceptanceValue
+} from "../shared/data/country-acceptance.js";
+import {
+  CITY_NOISE_CONTRACT,
+  normalizeCityNoiseText
+} from "../shared/data/city-noise.js";
+
 export function detectWorkType(text) {
   if (!text) return "Onsite";
   const lower = String(text).toLowerCase();
@@ -184,13 +192,31 @@ export function fullCountryName(code, options = {}) {
   return fromShared || canonicalizeCountryName(code, options);
 }
 
+function sanitizeCountryField(value) {
+  const text = sanitizePublicText(value);
+  if (!text) return "";
+  const resolved = resolveCountryAcceptanceValue(text);
+  return resolved || "";
+}
+
+function matchesCitySentencePrefix(text, prefix) {
+  if (!text || !prefix || !text.startsWith(prefix)) return false;
+  if (text.length === prefix.length) return true;
+  return !/[a-z0-9]/i.test(text.charAt(prefix.length));
+}
+
+function isCityNoiseFragment(value) {
+  const text = normalizeCityNoiseText(value);
+  if (!text) return false;
+  const contract = CITY_NOISE_CONTRACT || {};
+  if (Array.isArray(contract.knownJunkTokens) && contract.knownJunkTokens.includes(text)) return true;
+  if (Array.isArray(contract.proseFragments) && contract.proseFragments.some(fragment => text.includes(fragment))) return true;
+  if (Array.isArray(contract.placeholderFragments) && contract.placeholderFragments.some(fragment => text.includes(fragment))) return true;
+  return Array.isArray(contract.sentencePrefixes) && contract.sentencePrefixes.some(prefix => matchesCitySentencePrefix(text, prefix));
+}
+
 export function isValidCountry(country) {
-  if (!country || typeof country !== "string") return false;
-  const trimmed = country.trim();
-  if (!trimmed || trimmed.length < 2) return false;
-  if (["unknown", "n/a", "na", "none"].includes(trimmed.toLowerCase())) return false;
-  if (trimmed.includes(",")) return false;
-  return true;
+  return Boolean(sanitizeCountryField(country));
 }
 
 export function normalizeTimestamp(value) {
@@ -243,8 +269,6 @@ const LOCATION_CSS_NOISE_RE = /(?:--|var\(|calc\(|box-shadow|grid-gutter)/i;
 const LOCATION_ADDRESS_NOISE_RE = /\b\d[^\n]*\b(?:street|st\.?|avenue|ave\.?|road|rd\.?|boulevard|blvd\.?|drive|dr\.?|lane|ln\.?|way|parkway|pkwy\.?|suite|ste\.?|apt\.?|unit|floor|fl\.?|building|bldg\.?)/i;
 const LOCATION_POSTAL_CODE_RE = /\b\d{2,6}(?:-\d{2,4})?\b/;
 const LOCATION_SCRIPT_NOISE_RE = /(?:document\.|addEventListener|DOMContentLoaded|querySelector|innerHTML|setTimeout|console\.|function\s*\(|\{\{|\}\})/i;
-const LOCATION_SENTENCE_PREFIX_RE = /^(learn|view|choose|click|if you|to view|document|our)\b/i;
-const LOCATION_TOKEN_PLACEHOLDER_RE = /%(?:LABEL|BUTTON)_[A-Z0-9_]+%/i;
 const LOCATION_ROLE_BLOB_RE = /\b(administratif|administration|assistant|assistante|gestion|human resources|hr|office|operations?|coordination|support)\b/i;
 
 export function invalidLocationReason(value, field = "city") {
@@ -254,6 +278,11 @@ export function invalidLocationReason(value, field = "city") {
   if (["unknown", "n/a", "na", "none", "remote", "hybrid", "onsite", "on-site", "worldwide"].includes(lowered)) {
     return "";
   }
+  if (field === "city" && resolveCountryAcceptanceValue(text)) {
+    return `invalid_${field}_semantic_noise`;
+  }
+  if (/^\d+$/u.test(text)) return `invalid_${field}_semantic_noise`;
+  if (!/[\p{L}\p{N}]/u.test(text)) return `invalid_${field}_semantic_noise`;
   if (text.length > 120) return `invalid_${field}_semantic_overlong`;
   if (text.length > 72 && ((text.match(/,/g) || []).length >= 3 || (text.match(/;/g) || []).length >= 2)) {
     return `invalid_${field}_semantic_multi_location_blob`;
@@ -279,14 +308,13 @@ export function invalidLocationReason(value, field = "city") {
   if (text.includes("/")) return `invalid_${field}_semantic_noise`;
   if (text.endsWith(",")) return `invalid_${field}_semantic_noise`;
   if (LOCATION_SCRIPT_NOISE_RE.test(text)) return `invalid_${field}_semantic_noise`;
-  if (LOCATION_SENTENCE_PREFIX_RE.test(text)) return `invalid_${field}_semantic_noise`;
-  if (LOCATION_TOKEN_PLACEHOLDER_RE.test(text)) return `invalid_${field}_semantic_noise`;
   if ((text.match(/,/g) || []).length >= 3 && LOCATION_ROLE_BLOB_RE.test(text)) {
     return `invalid_${field}_semantic_noise`;
   }
   if (text.startsWith("#")) return `invalid_${field}_semantic_noise`;
   if (text.includes('"') && text.includes(":")) return `invalid_${field}_semantic_noise`;
   if (text.includes("{") || text.includes("}")) return `invalid_${field}_semantic_noise`;
+  if (field === "city" && isCityNoiseFragment(text)) return `invalid_${field}_semantic_noise`;
   return "";
 }
 
@@ -297,16 +325,22 @@ export function isSemanticallyValidLocationValue(value, field = "city") {
 export function sanitizeLocationField(value, field = "city") {
   const text = sanitizePublicText(value);
   if (!text) return "";
+  if (field === "country") {
+    return sanitizeCountryField(text);
+  }
   return isSemanticallyValidLocationValue(text, field) ? text : "";
 }
 
 function normalizeLocationEntry(entry) {
   if (!entry || typeof entry !== "object") return null;
-  const city = sanitizeLocationField(entry.city || entry.addressLocality || "", "city");
+  const rawCity = sanitizePublicText(entry.city || entry.addressLocality || "");
+  const city = sanitizeLocationField(rawCity, "city");
   const country = sanitizeLocationField(entry.country || entry.addressCountry || "", "country");
-  if (!city && !country) return null;
-  if (!city && isUnknownLocationToken(country)) return null;
-  return { city, country };
+  const promotedCountry = !country ? resolveCountryAcceptanceValue(rawCity) : "";
+  const resolvedCountry = country || promotedCountry;
+  if (!city && !resolvedCountry) return null;
+  if (!city && isUnknownLocationToken(resolvedCountry)) return null;
+  return { city, country: resolvedCountry };
 }
 
 function isUnknownLocationToken(value) {
@@ -327,9 +361,12 @@ export function normalizeJobLocations(value, fallbackCity = "", fallbackCountry 
     normalized.push(normalizedEntry);
   }
   if (normalized.length === 0) {
-    const city = sanitizeLocationField(fallbackCity || "", "city");
+    const rawFallbackCity = sanitizePublicText(fallbackCity || "");
+    const city = sanitizeLocationField(rawFallbackCity, "city");
     const country = sanitizeLocationField(fallbackCountry || "", "country");
-    if (city || country) normalized.push({ city, country });
+    const promotedCountry = !country ? resolveCountryAcceptanceValue(rawFallbackCity) : "";
+    const resolvedCountry = country || promotedCountry;
+    if (city || resolvedCountry) normalized.push({ city, country: resolvedCountry });
   }
   return normalized;
 }
@@ -534,15 +571,19 @@ export function toJobSnapshot(job, options = {}) {
     job?.jobLink,
     job?.sourceBundle || []
   );
+  const locations = normalizeJobLocations(job?.locations, job?.city || "", job?.country || "");
+  const city = sanitizeLocationField(job?.city || "", "city");
+  const country = sanitizeLocationField(job?.country || "", "country");
+  const locationSummary = buildJobLocationSummary({ ...job, city, country, locations });
   return {
     title: job?.title || "",
     company: job?.company || "",
     sector: job?.sector || companyType,
     companyType: job?.companyType || companyType,
-    city: job?.city || "",
-    country: job?.country || "",
-    locations: Array.isArray(job?.locations) ? job.locations : [],
-    locationSummary: job?.locationSummary || buildJobLocationSummary(job),
+    city,
+    country,
+    locations,
+    locationSummary,
     workType: job?.workType || "Onsite",
     contractType: job?.contractType || "Unknown",
     jobLink: sanitizeUrl(job?.jobLink || "")

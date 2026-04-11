@@ -17,7 +17,7 @@ from src.jobs.adapters.html_parsers import (
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 
-from .location import parse_generic_location_fields
+from .location import normalize_location_details, parse_generic_location_fields
 
 
 def parse_ashby_jobs_from_html(
@@ -53,6 +53,7 @@ def parse_ashby_jobs_from_html(
                         if isinstance(item, dict)
                     )
                     location = "; ".join(part for part in location_parts if part)
+                    location_details = normalize_location_details(location_parts)
                     contract_type = clean_text(posting.get("employmentType"))
                     contract_type = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", contract_type)
                     jobs.append(
@@ -60,8 +61,8 @@ def parse_ashby_jobs_from_html(
                             "sourceJobId": f"ashby:{posting_id}",
                             "title": title,
                             "company": company,
-                            "city": location,
-                            "country": "Unknown",
+                            "city": clean_text(location_details.get("city")) or location,
+                            "country": clean_text(location_details.get("country")) or "Unknown",
                             "workType": clean_text(posting.get("workplaceType")),
                             "contractType": contract_type,
                             "jobLink": f"{normalized_board_url.rstrip('/')}/{posting_id}",
@@ -69,6 +70,8 @@ def parse_ashby_jobs_from_html(
                             "postedAt": clean_text(
                                 posting.get("publishedDate") or posting.get("updatedAt")
                             ),
+                            "locations": location_details.get("locations") or [],
+                            "locationSummary": clean_text(location_details.get("locationSummary")),
                         }
                     )
                 if jobs:
@@ -110,6 +113,7 @@ def parse_ashby_jobs_from_html(
         if not title:
             continue
         company = clean_text(fallback_company) or "Unknown"
+        location_details = normalize_location_details("")
         jobs.append(
             {
                 "sourceJobId": f"ashby:{ashby_jid or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
@@ -122,6 +126,8 @@ def parse_ashby_jobs_from_html(
                 "jobLink": link,
                 "sector": "Game",
                 "postedAt": "",
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     return jobs
@@ -197,6 +203,7 @@ def parse_jazzhr_jobs_html(
         lines = [clean_text(line) for line in context_text.splitlines() if clean_text(line)]
         location_value = lines[0] if lines else ""
         city, country, work_type = parse_generic_location_fields(location_value)
+        location_details = normalize_location_details(location_value)
         if any("remote" in line.lower() for line in lines[:3]):
             city, country, work_type = "Remote", "Remote", "Remote"
         contract_match = re.search(
@@ -210,13 +217,15 @@ def parse_jazzhr_jobs_html(
                 "sourceJobId": f"jazzhr:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
                 "title": title,
                 "company": company,
-                "city": city,
-                "country": country,
+                "city": clean_text(location_details.get("city")) or city,
+                "country": clean_text(location_details.get("country")) or country,
                 "workType": work_type,
                 "contractType": contract_type,
                 "jobLink": link,
                 "sector": "Game",
                 "postedAt": "",
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     return jobs

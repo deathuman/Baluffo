@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlparse
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.provider_parsers import parse_generic_location_fields
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
 
@@ -184,8 +185,9 @@ def _parse_blizzard_search_results(*, html: str, company: str, source_id: str) -
             r"Posted Date\s*([A-Za-z]+\s+\d{1,2}\s+\d{4})", strip_html_text(context), flags=re.I
         )
         location = clean_text(location_match.group(1)) if location_match else ""
-        city = clean_text(location.split(",", 1)[0]) if "," in location else location
-        country = "United States of America" if "United States" in location else ""
+        city, country, _ = parse_generic_location_fields(location)
+        if not country and "United States" in location:
+            country = "United States of America"
         rows.append(
             {
                 "sourceJobId": f"static:{source_id}:{job_id or len(rows) + 1}",

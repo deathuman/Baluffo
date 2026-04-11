@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.provider_parsers import parse_generic_location_fields
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
 
@@ -180,13 +181,20 @@ def _parse_intervieweb_rows(
         )
         if category_match:
             category = clean_text(category_match.group(1))
+        parsed_city, parsed_country, _ = parse_generic_location_fields(location)
+        if parsed_city or parsed_country != "Unknown":
+            city = parsed_city
+            country = parsed_country
+        else:
+            city = ""
+            country = "Italy" if location else ""
         rows.append(
             {
                 "sourceJobId": source_job_id,
                 "title": title,
                 "company": company,
-                "city": location.split(",", 1)[0].strip() if "," in location else location,
-                "country": "Italy" if location else "",
+                "city": city,
+                "country": country or "Unknown",
                 "workType": "",
                 "contractType": "",
                 "jobLink": link,

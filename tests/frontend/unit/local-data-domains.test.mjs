@@ -130,6 +130,69 @@ test("saved-jobs domain normalizes bookmark timestamp and merge keeps richer exi
   assert.equal(merged.company, existing.company);
 });
 
+test("saved-jobs domain sanitizes city and country on read and write", async () => {
+  const writes = [];
+  const savedJobsDomain = createSavedJobsDomain({
+    withStore: async (_storeName, _mode, fn) => {
+      const store = {
+        get() {
+          return {
+            result: null,
+            onerror: null,
+            set onsuccess(handler) {
+              setTimeout(() => handler(), 0);
+            }
+          };
+        },
+        put(row) {
+          writes.push(row);
+          return {
+            onerror: null,
+            set onsuccess(handler) {
+              setTimeout(() => handler(), 0);
+            }
+          };
+        }
+      };
+      await new Promise((resolve, reject) => fn(store, resolve, reject));
+    },
+    listSavedJobs: async () => [],
+    ensureCurrentUser: () => ({ uid: "u1" }),
+    notifySavedJobsChanged: async () => {},
+    addActivityLog: async () => {},
+    generateJobKey: input => String(input?.jobKey || "job_x"),
+    normalizeApplicationStatus: status => String(status || "bookmark"),
+    canTransitionPhase: () => true,
+    normalizeSectorValue: value => String(value || "Tech"),
+    normalizeCustomSourceLabel: value => String(value || "Personal"),
+    sanitizeJobUrl: value => String(value || ""),
+    nowIso: () => "2026-03-08T12:00:00.000Z",
+    normalizeIsoOrNow: (value, fallback = "") => String(value || fallback),
+    toPlainObject: value => (value && typeof value === "object" && !Array.isArray(value) ? value : {}),
+    isClearlyLowerQualityImported: () => false
+  });
+
+  const normalized = savedJobsDomain.normalizeSavedJobRecord("u1", {
+    jobKey: "job_1",
+    city: "A bachelor's degree in digital communications",
+    country: "Japan"
+  });
+  assert.equal(normalized.city, "");
+  assert.equal(normalized.country, "Japan");
+
+  await savedJobsDomain.saveJobForUser("u1", {
+    title: "Role",
+    company: "Studio",
+    city: "2026",
+    country: "Japan",
+    jobLink: "https://example.com/job"
+  });
+
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].city, "");
+  assert.equal(writes[0].country, "Japan");
+});
+
 test("saved-jobs domain updateJobNotes does not mutate updatedAt ordering field", async () => {
   const existingRow = {
     pk: "u1::job_1",

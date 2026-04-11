@@ -11,6 +11,7 @@ from urllib.parse import urljoin
 from src.jobs.adapters.html_parsers import html_fragment_lines, strip_html_text
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.provider_parsers import parse_generic_location_fields
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
 
@@ -69,11 +70,15 @@ def _pick_location_and_terms(window: str) -> tuple[str, str, str]:
     dd_values = [value for value in dd_values if value]
     if not dd_values:
         return "", "", ""
-    location = dd_values[0]
+    location = ""
     work_type = ""
     contract_type = ""
-    for value in dd_values[1:]:
+    for value in dd_values:
         lower = value.lower()
+        city, country, parsed_work_type = parse_generic_location_fields(value)
+        if not location and (city or country != "Unknown" or parsed_work_type):
+            location = value
+            continue
         if any(token in lower for token in ("full time", "part time", "remote", "hybrid")):
             if not work_type:
                 work_type = value
@@ -129,14 +134,15 @@ def _extract_from_li_blocks(
         if not title:
             continue
         location, work_type, contract_type = _pick_location_and_terms(detail_html)
+        city, country, _ = parse_generic_location_fields(location)
         seen_links.add(link)
         jobs.append(
             {
                 "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
                 "title": title,
                 "company": company,
-                "city": location,
-                "country": "Unknown",
+                "city": city,
+                "country": country if country != "Unknown" else "Unknown",
                 "workType": work_type,
                 "contractType": contract_type,
                 "jobLink": link,
@@ -201,14 +207,15 @@ def _extract_jobs(html: str, *, page_url: str, company: str, source_id: str) -> 
         if not title:
             continue
         location, work_type, contract_type = _pick_location_and_terms(window)
+        city, country, _ = parse_generic_location_fields(location)
         seen_links.add(link)
         jobs.append(
             {
                 "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
                 "title": title,
                 "company": company,
-                "city": location,
-                "country": "Unknown",
+                "city": city,
+                "country": country if country != "Unknown" else "Unknown",
                 "workType": work_type,
                 "contractType": contract_type,
                 "jobLink": link,
