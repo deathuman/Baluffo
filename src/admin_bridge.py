@@ -78,13 +78,13 @@ from src.source_registry import (
     normalize_source_url,
     save_json_atomic,
     source_identity,
-    source_url_fingerprint,
     unique_sources,
 )
 
 normalize_fetch_report_contract = report_normalizer.normalize_fetch_report_contract
 normalize_discovery_report_contract = report_normalizer.normalize_discovery_report_contract
 _safe_int = report_normalizer.safe_int
+source_url_fingerprint = source_registry_module.source_url_fingerprint
 from src.shared.utils import now_iso, now_utc
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
@@ -546,8 +546,7 @@ def read_startup_metrics(limit: int = 200) -> list[dict[str, Any]]:
     return bridge_runtime_state.read_startup_metrics(limit)
 
 
-def resolve_effective_sync_config() -> source_sync_module.SyncConfig:
-    return _get_sync_service()._resolve_effective_sync_config()  # noqa: SLF001
+# noqa: SLF001
 
 
 def refresh_sync_config() -> source_sync_module.SyncConfig:
@@ -1084,10 +1083,6 @@ def _maybe_trigger_auto_sync_push(reason: str) -> bool:
         sync_task_running=sync_task_running,
         start_sync_task=start_sync_task,
     )
-
-
-def _watch_discovery_run_for_auto_sync(run_id: str, pid: int, started_at: str) -> None:
-    _get_discovery_service().watch_discovery_run_for_auto_sync(run_id, pid, started_at)
 
 
 def _run_sync_task_worker(

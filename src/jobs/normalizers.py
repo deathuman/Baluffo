@@ -72,12 +72,6 @@ def normalize_work_type(value: Any, title: Any = None) -> str:
     return "Onsite"
 
 
-def _classify_company_type(company: Any, title: Any = "") -> str:
-    if _has_positive_game_evidence(company, title):
-        return "Game"
-    return "Tech"
-
-
 def normalize_sector(
     value: Any,
     company: Any = "",

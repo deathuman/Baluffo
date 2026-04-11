@@ -7,11 +7,3 @@ APP_VERSION = "0.1.0"
 
 def get_app_version() -> str:
     return str(APP_VERSION).strip()
-
-
-def get_display_version(prefix: str = "Baluffo") -> str:
-    name = str(prefix or "").strip()
-    version = get_app_version()
-    if not name:
-        return version
-    return f"{name} {version}"

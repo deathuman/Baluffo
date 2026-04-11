@@ -47,7 +47,6 @@ HEARTBEAT_IDLE_TIMEOUT_S = 600.0
 CHROMIUM_PROCESS_READY_TIMEOUT_S = 2.0
 DETACHED_BROWSER_GRACE_TIMEOUT_S = 35.0
 INSTANCE_LOCK_WAIT_S = 3.0
-SESSION_REUSE_WAIT_S = 12.0
 INSTANCE_CONFLICT_RETRY_S = 6.0
 ALREADY_RUNNING_ERROR = (
     "Baluffo is already running. Close the existing desktop session before starting a new one."
@@ -936,25 +935,6 @@ def get_valid_session_state(
     return {}
 
 
-def wait_for_valid_session_state(
-    *,
-    timeout_s: float = SESSION_REUSE_WAIT_S,
-    env: dict[str, str] | None = None,
-    expected_launcher_token: str = "",
-) -> dict[str, object]:
-    deadline = time.monotonic() + max(0.5, float(timeout_s))
-    while time.monotonic() < deadline:
-        state = get_valid_session_state(
-            env,
-            expected_launcher_token=expected_launcher_token,
-            clear_invalid=False,
-        )
-        if state:
-            return state
-        time.sleep(0.25)
-    return {}
-
-
 def _truncate_reason(reason: object, *, limit: int = 120) -> str:
     text = str(reason or "").strip()
     if len(text) <= limit:
@@ -1250,7 +1230,7 @@ def watch_browser_session(
         time.sleep(2.0)
 
 
-def show_native_message(title: str, message: str, *, ask_to_install: bool = False) -> bool:
+def show_native_message(title: str, message: str) -> bool:
     if os.name == "nt":
         flags = MB_ICONERROR | MB_OK
         ctypes.windll.user32.MessageBoxW(None, str(message or ""), title, flags)

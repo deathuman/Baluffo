@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Sequence
-from pathlib import Path
 from typing import Any
 
 from src.jobs.adapters import community

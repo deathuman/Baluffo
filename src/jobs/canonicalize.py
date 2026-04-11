@@ -14,7 +14,7 @@ from typing import Any
 from src.jobs.adapters import community
 from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.common import config as common_config
-from src.jobs.common.datetime_utils import posted_ts, to_iso
+from src.jobs.common.datetime_utils import to_iso
 from src.jobs.common.heuristics import (
     classify_company_type,
     compute_focus_score,
@@ -63,17 +63,6 @@ def reset_location_quality_audit() -> None:
         _LOCATION_AUDIT_FIELD_COUNTS.clear()
         _LOCATION_AUDIT_REASON_COUNTS.clear()
         _LOCATION_AUDIT_EXAMPLES.clear()
-
-
-def snapshot_location_quality_audit(*, total_rows: int = 0) -> dict[str, Any]:
-    with _LOCATION_AUDIT_LOCK:
-        return {
-            "totalRows": max(0, int(total_rows or 0)),
-            "invalidLocationFieldCount": int(sum(_LOCATION_AUDIT_FIELD_COUNTS.values())),
-            "fieldCounts": dict(_LOCATION_AUDIT_FIELD_COUNTS),
-            "reasonCounts": dict(_LOCATION_AUDIT_REASON_COUNTS),
-            "examples": list(_LOCATION_AUDIT_EXAMPLES[:20]),
-        }
 
 
 def reset_sector_quality_audit() -> None:

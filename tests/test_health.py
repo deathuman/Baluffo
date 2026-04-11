@@ -1,7 +1,5 @@
 """Tests for health scoring and source health utilities."""
 
-import pytest
-
 from src.jobs.common.health import (
     calculate_health_score,
     get_quarantined_sources,

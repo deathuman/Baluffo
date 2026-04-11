@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Callable
-from typing import Any
 from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import (

@@ -1,15 +1,11 @@
 """Source health scoring utilities."""
 
-from dataclasses import dataclass
 from datetime import UTC
-
-DEFAULT_HEALTH_WINDOW_SIZE = 5
 
 
 def calculate_health_score(
     consecutive_failures: int,
     consecutive_zero_kept: int,
-    recent_latencies: list[int] | None = None,
     median_latency_ms: int = 0,
     latency_penalty_threshold_ms: int = 300000,
 ) -> int:
@@ -18,7 +14,6 @@ def calculate_health_score(
     Args:
         consecutive_failures: Number of consecutive failed runs
         consecutive_zero_kept: Number of consecutive zero-kept runs
-        recent_latencies: List of recent latency values in ms
         median_latency_ms: Median latency for the source
         latency_penalty_threshold_ms: Threshold above which latency penalizes score
 
@@ -39,18 +34,6 @@ def calculate_health_score(
     score = base_score - failure_penalty - zero_kept_penalty - latency_penalty
 
     return max(0, min(100, score))
-
-
-@dataclass
-class HealthSummary:
-    """Health summary for a source or adapter."""
-
-    name: str
-    health_score: int
-    consecutive_failures: int
-    consecutive_zero_kept: int
-    failure_bucket: str | None
-    is_quarantined: bool
 
 
 def get_top_failing_sources(
@@ -146,7 +129,7 @@ def get_quarantined_sources(
     Returns:
         List of quarantined sources with reasons
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     now = datetime.now(UTC)
     quarantined = []

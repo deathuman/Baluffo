@@ -14,12 +14,12 @@ from src.jobs.canonicalize import (
     compute_quality_score,
     norm_text,
     normalize_url,
-    posted_ts,
     to_iso,
 )
 from src.jobs.common import config as common_config
 from src.jobs.common import social as common_social
 from src.jobs.common import url as common_url
+from src.jobs.common.datetime_utils import posted_ts
 from src.jobs.interfaces import JobProcessor
 from src.jobs.models import CanonicalJob
 from src.jobs.page_gating import looks_like_job_title_candidate

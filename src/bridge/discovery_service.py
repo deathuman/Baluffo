@@ -13,12 +13,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.source_registry import (
-    REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
-    apply_discovery_auto_approval,
-    transition_registry_to_active,
+    _pending_row_is_auto_approvable as registry_pending_row_is_auto_approvable,
 )
 from src.source_registry import (
-    _pending_row_is_auto_approvable as registry_pending_row_is_auto_approvable,
+    apply_discovery_auto_approval,
 )
 
 BridgeLogFunc = Callable[[str, str], None]
@@ -144,29 +142,9 @@ class DiscoveryService:
         self._deps.save_json_atomic(self._paths.settings, normalized)
         return normalized
 
-    @staticmethod
-    def _normalize_health_status(value: Any) -> str:
-        token = str(value or "").strip().lower()
-        if token in {"healthy", "success"}:
-            return "ok"
-        if token in {"failed", "failure"}:
-            return "error"
-        return token
-
     @classmethod
     def _pending_row_is_auto_approvable(cls, row: dict[str, Any]) -> bool:
         return registry_pending_row_is_auto_approvable(row)
-
-    def _increment_approval_state(self, count: int) -> None:
-        if count <= 0:
-            return
-        approval = self._deps.load_json_object(
-            self._paths.approval_state, {"approvedSinceLastRun": 0}
-        )
-        approval["approvedSinceLastRun"] = int(approval.get("approvedSinceLastRun") or 0) + int(
-            count
-        )
-        self._deps.save_json_atomic(self._paths.approval_state, approval)
 
     def watch_discovery_run_for_auto_sync(self, run_id: str, pid: int, started_at: str) -> None:
         started_dt = self._deps.parse_iso(started_at) or self._deps.now_utc()

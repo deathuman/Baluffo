@@ -62,7 +62,7 @@ def run(
         )
         return []
 
-    jobylon_jobs, _stats, jobylon_errors, _rejects = extract_jobylon_v1_jobs(
+    jobylon_jobs, _stats, _jobylon_errors, _rejects = extract_jobylon_v1_jobs(
         source_name=source_name,
         studio=company,
         page_url=page_url,

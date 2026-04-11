@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Callable
-from dataclasses import replace
 from typing import Any
 
 from src.jobs.adapters import community
@@ -50,10 +49,6 @@ def default_request_config(
         user_agent=str(merged.get("User-Agent") or ""),
         proxy_url=str(proxy_url or ""),
     )
-
-
-def with_proxy(request: RequestConfig, proxy_url: str) -> RequestConfig:
-    return replace(request, proxy_url=str(proxy_url or ""))
 
 
 def build_headers(request: RequestConfig) -> dict[str, str]:

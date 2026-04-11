@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Any, TypedDict
 
@@ -137,21 +137,3 @@ class CanonicalJob:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-
-
-def canonical_job_to_dict(job: CanonicalJob) -> dict[str, Any]:
-    return job.to_dict()
-
-
-def canonical_jobs_to_dicts(rows: Sequence[CanonicalJob]) -> list[dict[str, Any]]:
-    return [row.to_dict() for row in rows]
-
-
-def update_canonical_job(job: CanonicalJob, **changes: Any) -> CanonicalJob:
-    payload = job.to_dict()
-    payload.update(changes)
-    return CanonicalJob.from_mapping(payload)
-
-
-def ensure_mutable_mapping(payload: RawJobLike | MutableMapping[str, Any]) -> dict[str, Any]:
-    return dict(payload)

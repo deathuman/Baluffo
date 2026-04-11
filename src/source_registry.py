@@ -38,7 +38,6 @@ REGISTRY_STATES = frozenset(
 REGISTRY_REASON_MANUAL_SOURCE = "manual_source"
 REGISTRY_REASON_MANUAL_SOURCE_VARIANT = "manual_source_variant_added"
 REGISTRY_REASON_DISCOVERY_AUTO_APPROVE = "discovery_auto_approve"
-REGISTRY_REASON_DISCOVERY_QUEUE = "discovery_queue"
 REGISTRY_REASON_ROLLBACK = "registry_rollback"
 REGISTRY_REASON_RESTORE_REJECTED = "registry_restore_rejected"
 REGISTRY_REASON_REJECT = "registry_reject"
@@ -47,7 +46,6 @@ REGISTRY_REASON_DELETE = "registry_delete"
 REGISTRY_REASON_RESTORE_DELETED = "registry_restore_deleted"
 REGISTRY_REASON_FETCH_EMPTY_DEMOTE = "fetch_empty_demote"
 REGISTRY_REASON_FETCH_FAILURE_DEMOTE = "fetch_failure_demote"
-REGISTRY_REASON_SOURCE_CHECK_UPDATED = "source_check_updated"
 REGISTRY_MIGRATION_V2 = "registry_migration_v2"
 
 

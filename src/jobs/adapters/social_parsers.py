@@ -338,24 +338,6 @@ def social_compute_confidence(
     return max(0, min(100, score))
 
 
-def social_should_keep_post(
-    *,
-    title: str,
-    text: str,
-    min_confidence: int,
-    reject_for_hire_posts: bool,
-    has_apply_url: bool,
-) -> tuple[bool, int]:
-    keep, confidence, _reason = social_evaluate_post(
-        title=title,
-        text=text,
-        min_confidence=min_confidence,
-        reject_for_hire_posts=reject_for_hire_posts,
-        has_apply_url=has_apply_url,
-    )
-    return keep, confidence
-
-
 def social_evaluate_post(
     *,
     title: str,

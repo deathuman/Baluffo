@@ -3,14 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from src.source_registry import (
-    DISCOVERY_CANDIDATES_PATH,
-    DISCOVERY_REPORT_PATH,
-    load_json_array,
-    save_json_atomic,
-    source_identity,
-    unique_sources,
-)
+from src.source_registry import unique_sources
 
 from .scoring import careers_keyword_count, clean_token, studio_domain_match
 
@@ -65,29 +58,3 @@ def collapse_competing_candidates(candidates: Iterable[dict[str, Any]]) -> list[
         if row_score > current_score:
             preferred[key] = row
     return unique_sources([*passthrough, *preferred.values()])
-
-
-def collapse_competing_candidates_by_identity(
-    rows: Iterable[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Merge candidates by source_identity (e.g. for sheet_directory provider list)."""
-    seen: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        identity = source_identity(row)
-        if not identity:
-            continue
-        previous = seen.get(identity)
-        if not previous:
-            seen[identity] = dict(row)
-            continue
-        if int(row.get("evidenceScore") or 0) > int(previous.get("evidenceScore") or 0):
-            seen[identity] = dict(row)
-    return list(seen.values())
-
-
-def load_existing_candidates() -> list[dict[str, Any]]:
-    return load_json_array(DISCOVERY_CANDIDATES_PATH)
-
-
-def write_discovery_outputs(report: dict[str, Any]) -> None:
-    save_json_atomic(DISCOVERY_REPORT_PATH, report)

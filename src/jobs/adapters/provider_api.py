@@ -16,7 +16,6 @@ from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_p
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
-from src.jobs.text_utils import clean_text
 
 # Personio private helpers — kept for test compatibility
 # (tests/test_jobs_fetcher_providers.py calls provider_api._personio_rate_limit_cutoff)

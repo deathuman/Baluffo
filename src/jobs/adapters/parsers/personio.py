@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any
 from xml.etree import ElementTree as ET
 
 from src.jobs.game_detection import looks_like_game_job

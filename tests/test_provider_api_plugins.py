@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from src.jobs import common
-from src.jobs.adapters import _runtime, provider_api, provider_parsers
+from src.jobs.adapters import _runtime, provider_api
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 

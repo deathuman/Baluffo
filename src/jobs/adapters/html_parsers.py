@@ -16,7 +16,6 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
-from src.jobs.adapters.location_rules import is_plausibly_location_candidate
 from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob
@@ -135,23 +134,6 @@ def iter_job_postings_from_jsonld(value: Any) -> Iterable[dict[str, Any]]:
         yield value
     for child in value.values():
         yield from iter_job_postings_from_jsonld(child)
-
-
-def _extract_jobposting_location_entry(location: Any) -> dict[str, str] | None:
-    if not isinstance(location, dict):
-        return None
-
-    address = location.get("address")
-    source = address if isinstance(address, dict) else location
-    city = clean_text(source.get("addressLocality"))
-    country = clean_text(source.get("addressCountry"))
-    if city and not is_plausibly_location_candidate(city):
-        city = ""
-    if not city and norm_text(country) in {"", "unknown"}:
-        return None
-    if not city and not country:
-        return None
-    return {"city": city, "country": country}
 
 
 def parse_jobposting_location_details(job_location: Any) -> dict[str, Any]:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from src.jobs.adapters.html_parsers import (

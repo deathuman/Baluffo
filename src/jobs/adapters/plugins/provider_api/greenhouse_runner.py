@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Any
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import _runtime as runtime_deps

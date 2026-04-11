@@ -96,11 +96,6 @@ def is_downgrade(current: str, target: str) -> bool:
     return str(target) < str(current)
 
 
-def _resolve_active_root(root: Path) -> Path:
-    current = (root / "app" / CURRENT_NAME).read_text(encoding="utf-8").strip()
-    return root / "app" / "versions" / current
-
-
 @dataclass(frozen=True)
 class ShipPaths:
     root: Path

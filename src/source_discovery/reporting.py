@@ -305,14 +305,6 @@ def _validate_evidence_types(values: list[str], *, context: str) -> list[str]:
     return [item for item in cleaned if item in EVIDENCE_TYPES_SET]
 
 
-def summarize_failures(failures: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    counter: Counter[str] = Counter()
-    for row in failures:
-        key = str(row.get("key") or row.get("adapter") or "unknown")
-        counter[key] += 1
-    return [{"key": key, "count": count} for key, count in counter.most_common(5)]
-
-
 def stage_curated_seed_candidates() -> list[dict[str, Any]]:
     import src.source_discovery as sd
     from src.source_registry import unique_sources

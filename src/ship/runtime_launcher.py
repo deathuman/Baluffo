@@ -9,7 +9,6 @@ import json
 import os
 import runpy
 import shutil
-import socket
 import sys
 import time
 from collections.abc import Iterator
@@ -179,13 +178,6 @@ def heal_active_ship_version(layout: RuntimeLayout) -> None:
     )
     _try_heal_required_files_from_repo(layout)
     _try_heal_required_files_from_meipass(layout)
-
-
-def find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
 
 
 def wait_for_url(url: str, *, timeout_s: float = 20.0, interval_s: float = 0.25) -> None:
@@ -371,7 +363,6 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # noqa: BLE001
         print(json.dumps({"ok": False, "error": str(exc)}))
         return 1
-    return 1
 
 
 if __name__ == "__main__":

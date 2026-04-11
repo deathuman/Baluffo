@@ -225,7 +225,6 @@ def summarize_startup_metrics(
             "missingEvents": sorted({event for event in missing_events if event}),
         }
 
-    auth_event, auth_ms = _pick_first(events, [f"{safe_page}_auth_ready"])
     render_event, render_ms = _pick_first(events, [f"{safe_page}_first_render"])
     interactive_event, interactive_ms = _pick_first(
         events, [f"{safe_page}_first_interactive", f"{safe_page}_ready"]

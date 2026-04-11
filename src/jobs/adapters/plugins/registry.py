@@ -28,9 +28,6 @@ class PluginRegistry:
             raise ValueError("plugin.family is required")
         self._families.setdefault(family, []).append(plugin)
 
-    def list_plugins(self, family: str) -> list[AdapterPlugin]:
-        return list(self._families.get(str(family or "").strip(), []))
-
     def select(self, ctx: AdapterPluginContext) -> tuple[AdapterPlugin, PluginSelection]:
         family = str(ctx.family or "").strip()
         plugins = self._families.get(family, [])

@@ -22,12 +22,18 @@ select = [
 ignore = [
   "E501",
   "E402",
-  "F401",  # unused imports in __init__.py - re-exports for downstream
   "E731",  # lambda assignments often intentional for callbacks
   "F811",  # redefinition of unused - often intentional re-exports
 ]
 
 [lint.per-file-ignores]
+"**/__init__.py" = [
+  "F401",  # unused imports in __init__.py - re-exports for downstream
+]
+"whitelist.py" = [
+  "B018",
+  "F821",
+]
 "tests/**/*.py" = [
   "B011",
   "F841",  # unused variables in tests often intentional

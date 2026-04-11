@@ -65,8 +65,3 @@ def coerce_str(value: Any, default: str) -> str:
     """Coerce value to non-empty str; return default if stripped empty."""
     text = str(value or "").strip()
     return text or str(default)
-
-
-def coerce_port(value: Any, default: int = 8877) -> int:
-    """Coerce value to port number in [1, 65535]."""
-    return coerce_int(value, default, minimum=1, maximum=65535)

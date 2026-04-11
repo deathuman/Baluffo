@@ -4,7 +4,6 @@ import json
 import sys
 import time
 from collections import defaultdict
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +15,6 @@ from src.jobs import common as jobs_common
 from src.jobs.adapters import community, provider_api
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.text_utils import clean_text
-
-AuditRunner = Callable[..., list[dict[str, Any]]]
 
 REPORT_JSON_PATH = Path("data/adapter-audit-report.json")
 REPORT_MD_PATH = Path("data/adapter-audit-report.md")

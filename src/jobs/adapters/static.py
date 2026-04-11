@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
+from src.jobs.adapters import static_scrapy as _static_scrapy
 from src.jobs.adapters.html_parsers import (
     maybe_fetch_kojima_job_listing_html,
     parse_jobpostings_from_html,
@@ -37,7 +38,6 @@ from src.jobs.adapters.static_helpers import (
     source_detail_retries_for,
     update_source_detail_taxonomy,
 )
-from src.jobs.adapters.static_scrapy import run_scrapy_static_source
 from src.jobs.common import config as common_config
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.interfaces import SourceLoader
@@ -55,6 +55,7 @@ from src.shared.regex import find_urls_in_text
 from src.shared.utils import now_iso
 
 register_static_plugins()
+run_scrapy_static_source = _static_scrapy.run_scrapy_static_source
 
 
 def static_source_shard(row: dict[str, Any]) -> str:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Any
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import urljoin, urlparse
 
 from src.jobs.game_detection import looks_like_game_job
 from src.jobs.models import RawJob

@@ -10,32 +10,20 @@ from src.jobs.text_utils import clean_text, normalize_url
 # Canonical classification values for static/scrapy_static diagnostics and browser queue.
 # Use these when setting classification in plugins and adapter code so reporting stays consistent.
 CLASSIFICATION_OK_WITH_JOBS = "ok_with_jobs"
-CLASSIFICATION_OK_NO_JOBS = "ok_no_jobs"
 CLASSIFICATION_EMPTY_CONFIRMED = "empty_confirmed"
 CLASSIFICATION_NEEDS_REVIEW = "needs_review"
 CLASSIFICATION_FETCH_OK_EXTRACT_ZERO = CLASSIFICATION_NEEDS_REVIEW
 CLASSIFICATION_JS_REQUIRED = "js_required"
 CLASSIFICATION_SITE_CHANGED = "site_changed"
-CLASSIFICATION_ANTI_BOT_OR_CHALLENGE = "anti_bot_or_challenge"
 CLASSIFICATION_BLOCKED_OR_CHALLENGE = "blocked_or_challenge"
 CLASSIFICATION_TIMEOUT = "timeout"
-CLASSIFICATION_BROWSER_TIMEOUT = "browser_timeout"
-CLASSIFICATION_BROWSER_RETRY_NOT_RECOMMENDED = "browser_retry_not_recommended"
 CLASSIFICATION_RATE_LIMITED = "rate_limited"
 CLASSIFICATION_PARSER_STALE = "parser_stale"
 CLASSIFICATION_DEAD_LISTING_PAGE = "dead_listing_page"
-CLASSIFICATION_PARSE_ERROR = "parse_error"
 CLASSIFICATION_ERROR = "error"
 
+
 # Classifications that cause a source to be added to the browser fallback queue.
-CLASSIFICATIONS_FOR_BROWSER_QUEUE = frozenset(
-    {
-        CLASSIFICATION_BLOCKED_OR_CHALLENGE,
-        CLASSIFICATION_TIMEOUT,
-    }
-)
-
-
 def normalize_html(html: str) -> str:
     return str(html or "")
 

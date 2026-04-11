@@ -5,13 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Any
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from src.jobs.adapters.html_parsers import (
-    extract_first_tag_text,
-    html_fragment_lines,
-    iter_anchor_fragments,
     strip_html_text,
 )
 from src.jobs.models import RawJob

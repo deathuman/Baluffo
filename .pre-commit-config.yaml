@@ -50,3 +50,12 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]
+
+  - repo: https://github.com/jendrikseipp/vulture
+    rev: v2.14
+    hooks:
+      - id: vulture
+        name: vulture (dead code detection)
+        args: [src/, whitelist.py, "--min-confidence=60"]
+        pass_filenames: false
+        stages: [pre-push]

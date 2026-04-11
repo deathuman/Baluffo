@@ -45,7 +45,6 @@ SummarizeStateFunc = Callable[[dict[str, list[dict[str, Any]]]], dict[str, int]]
 PersistStateFunc = Callable[[dict[str, list[dict[str, Any]]]], dict[str, list[dict[str, Any]]]]
 
 BridgeLogFunc = Callable[[str, str], None]
-BridgeLogWithFieldsFunc = Callable[[str, str], None]
 
 TriggerDiscoveryTaskFunc = Callable[..., tuple[int, dict[str, Any]]]
 StartTaskFunc = Callable[[dict[str, Any] | None], dict[str, Any]]

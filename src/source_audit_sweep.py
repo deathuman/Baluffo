@@ -32,8 +32,6 @@ DEFAULT_MANIFEST_PATH = ROOT / "_out" / "LATEST_MANIFEST.json"
 DEFAULT_DATA_DIR = ROOT / "data"
 DEFAULT_OUTPUT_JSON = DEFAULT_DATA_DIR / "active-source-audit-report.json"
 DEFAULT_OUTPUT_MD = DEFAULT_DATA_DIR / "active-source-audit-report.md"
-DEFAULT_UNIFIED_LIGHT_PATH = DEFAULT_DATA_DIR / "jobs-unified-light.json"
-DEFAULT_UNIFIED_FULL_PATH = DEFAULT_DATA_DIR / "jobs-unified.json"
 
 DEAD_LISTING_MARKERS = {
     "dead_listing_page",
@@ -55,9 +53,6 @@ NEEDS_REVIEW_MARKERS = {
     "rate_limited",
     "site_changed",
     "unknown",
-}
-ERROR_MARKERS = {
-    "error",
 }
 PRIORITY_FAMILIES = (
     "google_sheets",
