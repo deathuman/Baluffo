@@ -7,7 +7,6 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from src.jobs.adapters import community
-from src.jobs.common import config as common_config
 from src.jobs.common.contracts import (
     normalize_fetch_report_payload,
     normalize_runtime_payload,
@@ -16,6 +15,8 @@ from src.jobs.common.contracts import (
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text
 from src.scrapers.domain_profiles import domain_profile_for_url, pick_canonical_listing_url
+
+from .common import config as common_config
 
 TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
 DEFAULT_FETCH_STRATEGY = common_config.DEFAULT_FETCH_STRATEGY

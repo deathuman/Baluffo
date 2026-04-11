@@ -1,8 +1,4 @@
-"""Pipeline service for jobs pipeline operations.
-
-This module provides PipelineService for managing jobs pipeline
-tasks and status polling.
-"""
+"""Jobs pipeline orchestration service used by the admin bridge."""
 
 from __future__ import annotations
 
@@ -34,7 +30,6 @@ class PipelineService:
         task_running_from_state: Callable[[str], bool],
         sync_task_running: Callable[[], bool],
         current_fetch_output_count: Callable[[], int],
-        wait_for_report_completion: Callable[..., dict[str, Any]],
         wait_for_sync_completion: Callable[[str, float], dict[str, Any]],
         discovery_report_path: Any,
         fetch_report_path: Any,
@@ -54,7 +49,6 @@ class PipelineService:
         self._task_running_from_state = task_running_from_state
         self._sync_task_running = sync_task_running
         self._current_fetch_output_count = current_fetch_output_count
-        self._wait_for_report_completion = wait_for_report_completion
         self._wait_for_sync_completion = wait_for_sync_completion
         self._discovery_report_path = discovery_report_path
         self._fetch_report_path = fetch_report_path
@@ -148,6 +142,43 @@ class PipelineService:
             payload["appVersion"] = self._get_app_version()
             return payload
 
+    def wait_for_report_completion(
+        self,
+        *,
+        report_path: Any,
+        started_at: str,
+        timeout_s: float,
+        report_name: str,
+        load_json_object: Callable[[Any, Any], Any],
+        report_is_stale_in_progress: Callable[..., bool] | None = None,
+        fail_on_stale: bool = False,
+    ) -> dict[str, Any]:
+        from datetime import UTC, datetime, timedelta
+        from threading import Event
+
+        stale_guard = report_is_stale_in_progress or (lambda *_args, **_kwargs: False)
+        deadline = datetime.now(UTC) + timedelta(seconds=max(10.0, float(timeout_s)))
+        started_dt = self._parse_iso(started_at)
+        while datetime.now(UTC) < deadline:
+            report = load_json_object(report_path, {})
+            report_started = self._parse_iso(report.get("startedAt"))
+            report_finished = self._parse_iso(report.get("finishedAt"))
+            if (
+                started_dt
+                and report_started
+                and report_started >= (started_dt - timedelta(seconds=1))
+            ):
+                if report_finished and report_finished >= report_started:
+                    return report if isinstance(report, dict) else {}
+            if fail_on_stale and stale_guard(
+                "fetch" if "fetch" in report_name else "discovery",
+                report_path,
+                report if isinstance(report, dict) else {},
+            ):
+                raise RuntimeError(f"{report_name} became stale before completion")
+            Event().wait(1.0)
+        raise TimeoutError(f"{report_name} did not finish within timeout")
+
     def _run_worker(self, run_id: str) -> None:
         try:
             self._mark_stage(
@@ -160,21 +191,25 @@ class PipelineService:
             if int(discovery_status) >= 300 or not bool(discovery_result.get("started")):
                 raise RuntimeError(str(discovery_result.get("error") or "discovery start failed"))
             discovery_started_at = str(discovery_result.get("startedAt") or self._now_iso())
-            self._wait_for_report_completion(
+            self.wait_for_report_completion(
                 report_path=self._discovery_report_path,
                 started_at=discovery_started_at,
                 timeout_s=900.0,
                 report_name="discovery report",
+                load_json_object=self._load_json_object,
+                report_is_stale_in_progress=lambda *_args, **_kwargs: False,
             )
 
             self._mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
             fetch_result = self._start_fetcher_task({"preset": "default"})
             fetch_started_at = str(fetch_result.get("startedAt") or self._now_iso())
-            self._wait_for_report_completion(
+            self.wait_for_report_completion(
                 report_path=self._fetch_report_path,
                 started_at=fetch_started_at,
                 timeout_s=1200.0,
                 report_name="fetch report",
+                load_json_object=self._load_json_object,
+                report_is_stale_in_progress=lambda *_args, **_kwargs: False,
             )
 
             self._mark_stage(

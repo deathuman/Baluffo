@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from src.jobs.adapters import _runtime as runtime_deps
-from src.jobs.common import config as common_config
 from src.jobs.common.datetime_utils import to_iso
 from src.jobs.common.taxonomy import (
     ClassificationContext,
@@ -22,6 +21,8 @@ from src.jobs.common.taxonomy import (
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.shared.utils import coerce_int, env_flag
+
+from ..common import config as common_config
 
 TIMEOUT_BUCKET_SOURCE_NAMES = {
     "andarion games gmbh (gamesmap)",

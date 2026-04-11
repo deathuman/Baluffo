@@ -10,9 +10,10 @@ from typing import Any
 from urllib.parse import quote
 
 from src.jobs.adapters.parsers.location import normalize_location_details
-from src.jobs.common import config as common_config
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
+
+from ...common import config as common_config
 
 UNTRUSTWORTHY_COMPANY_LABELS = common_config.UNTRUSTWORTHY_COMPANY_LABELS
 UNKNOWN_COMPANY_LABEL = common_config.UNKNOWN_COMPANY_LABEL

@@ -12,7 +12,6 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, strip_html_text
-from src.jobs.common import config as common_config
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.taxonomy import (
     assess_zero_extract,
@@ -28,6 +27,8 @@ from src.jobs.page_gating import (
     looks_like_regular_page_url,
 )
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
+
+from ..common import config as common_config
 
 
 @dataclass(frozen=True)

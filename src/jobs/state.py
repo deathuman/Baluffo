@@ -15,8 +15,6 @@ from src.jobs.browser_fallback import (
     BROWSER_FALLBACK_STATE_KEY,
     BrowserFallbackCircuitBreaker,
 )
-from src.jobs.common import config as common_config
-from src.jobs.common import url as common_url
 from src.jobs.common.datetime_utils import parse_datetime, to_iso
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.common.registry import _migration_adapter_for_host
@@ -27,6 +25,9 @@ from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.jobs_fetcher_registry import EXCLUDED_DEFAULT_SOURCES, SOURCE_REPORT_META
 from src.pipeline_io import write_text_if_changed
 from src.shared.utils import now_iso
+
+from .common import config as common_config
+from .common import url as common_url
 
 LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = common_config.LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS
 LIFECYCLE_ARCHIVE_RETENTION_DAYS = common_config.LIFECYCLE_ARCHIVE_RETENTION_DAYS

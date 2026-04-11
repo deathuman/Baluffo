@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from src import admin_bridge
+from src.bridge import ACTIVE_SYNC_RUNS, ACTIVE_SYNC_THREADS, SYNC_STATE_LOCK
 
 
 @pytest.fixture()
@@ -11,7 +12,6 @@ def admin_bridge_entrypoint_root(make_test_root, monkeypatch) -> Path:
     """Entry-point level admin_bridge fixture for module/singleton patch tests."""
     root = make_test_root("admin-bridge")
 
-    monkeypatch.setattr(admin_bridge, "_TASK_HISTORY_MANAGER", None)
     monkeypatch.setattr(admin_bridge, "OPS_HISTORY_PATH", root / "admin-run-history.json")
     monkeypatch.setattr(admin_bridge, "OPS_ALERT_STATE_PATH", root / "admin-alert-state.json")
     monkeypatch.setattr(admin_bridge, "JOBS_FETCH_REPORT_PATH", root / "jobs-fetch-report.json")
@@ -31,6 +31,10 @@ def admin_bridge_entrypoint_root(make_test_root, monkeypatch) -> Path:
     admin_bridge.save_json_atomic(admin_bridge.PENDING_PATH, [])
     admin_bridge.save_json_atomic(admin_bridge.REJECTED_PATH, [])
     admin_bridge.save_json_atomic(admin_bridge.TASKS_CONFIG_PATH, {"tasks": []})
+    with SYNC_STATE_LOCK:
+        ACTIVE_SYNC_RUNS.clear()
+        ACTIVE_SYNC_THREADS.clear()
+    monkeypatch.setattr(admin_bridge, "_PIPELINE_SERVICE", None)
 
     packaged_sync_config = root / "github-app-sync-config.json"
     packaged_sync_config.write_text(
@@ -57,6 +61,10 @@ def admin_bridge_entrypoint_root(make_test_root, monkeypatch) -> Path:
     yield root
 
     admin_bridge.wait_for_sync_tasks(timeout_s=2.0)
+    with SYNC_STATE_LOCK:
+        ACTIVE_SYNC_RUNS.clear()
+        ACTIVE_SYNC_THREADS.clear()
+    monkeypatch.setattr(admin_bridge, "_PIPELINE_SERVICE", None)
 
 
 @pytest.fixture()

@@ -48,7 +48,7 @@ That's it. Your data stays on your machine.
 ### Tech Stack
 
 - **Frontend:** plain HTML/CSS/JavaScript with native ES modules (no framework)
-- **Backend:** Python scripts for jobs fetching, source discovery, and admin bridge
+- **Backend:** Python scripts and CLIs for jobs fetching, source discovery, and admin bridge
 - **Storage:** localStorage + IndexedDB (browser mode), file-based (desktop mode)
 
 ### Quick Development Setup
@@ -86,8 +86,8 @@ npm run dev:pipeline
 |  |- local-data/             # Browser IndexedDB adapter
 |- src/
 |  |- jobs_fetcher.py         # Build unified jobs feed
-|  |- source_discovery.py     # Discover candidate sources (legacy CLI)
-|  |- admin_bridge.py         # Local admin HTTP API
+|  |- source_discovery.py     # CLI entrypoint for source discovery
+|  |- admin_bridge.py         # Local admin HTTP API entrypoint
 |  |- bridge/                 # Bridge service modules (server/, api.py, ops_api.py, etc.)
 |  |- source_discovery/       # Source discovery package (orchestrator, probe, web_search, etc.)
 |  |- jobs/                   # Job pipeline and adapters

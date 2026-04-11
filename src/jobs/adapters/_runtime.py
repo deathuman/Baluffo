@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-import src.jobs.common as common
+from .. import common as common
 
 
 def facade():

@@ -1,12 +1,9 @@
-"""Task launch API for async task management.
-
-This module provides TaskLaunchApi for launching and managing
-background tasks.
-"""
+"""Task launch helpers for bridge-managed background work."""
 
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -265,6 +262,95 @@ class TaskLaunchApi:
             if sanitized:
                 args.extend(["--only-sources", ",".join(sanitized)])
         return args, preset
+
+    def start_fetcher_task(
+        self,
+        payload: dict[str, Any] | None = None,
+        *,
+        append_run_history: Callable[[dict[str, Any]], dict[str, Any]],
+        normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
+        prune_started_rows_for_type: Callable[..., None],
+        run_background_script: Callable[..., int],
+        save_json_atomic: Callable[[Path, Any], None],
+        schema_version: int,
+        load_json_object: Callable[[Path, Any], Any],
+    ) -> dict[str, Any]:
+        run_id = f"fetch_{uuid.uuid4().hex[:10]}"
+        started_at = self._deps.now_iso()
+        fetcher_args, preset = self.build_fetcher_args_from_payload(
+            payload if isinstance(payload, dict) else {}
+        )
+        self._paths.fetcher_log.parent.mkdir(parents=True, exist_ok=True)
+        self._paths.fetcher_log.write_text(
+            f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8"
+        )
+        prune_started_rows_for_type("fetch", keep_started_at=started_at)
+        append_run_history(
+            {
+                "id": run_id,
+                "runId": run_id,
+                "type": "fetch",
+                "status": "started",
+                "startedAt": started_at,
+                "finishedAt": "",
+                "durationMs": 0,
+                "summary": {},
+            }
+        )
+        spawn_args = list(fetcher_args)
+        if "--output-dir" not in spawn_args:
+            spawn_args.extend(["--output-dir", str(self._runtime.data_dir)])
+        pid = run_background_script(
+            "jobs_fetcher.py",
+            spawn_args,
+            extra_env={
+                "BALUFFO_FETCH_RUN_ID": run_id,
+                "BALUFFO_FETCH_STARTED_AT": started_at,
+            },
+        )
+        save_json_atomic(
+            self._paths.jobs_fetch_report,
+            normalize_fetch_report_contract(
+                {
+                    "runId": run_id,
+                    "schemaVersion": schema_version,
+                    "startedAt": started_at,
+                    "finishedAt": "",
+                    "runtime": {
+                        "lifecycle": {
+                            "owner": "fetch_report",
+                            "heartbeatAt": started_at,
+                        }
+                    },
+                    "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+                    "sources": [],
+                    "outputs": {"report": str(self._paths.jobs_fetch_report)},
+                }
+            ),
+        )
+        approval = load_json_object(self._paths.approval_state, {"approvedSinceLastRun": 0})
+        if not isinstance(approval, dict):
+            approval = {"approvedSinceLastRun": 0}
+        approval["approvedSinceLastRun"] = 0
+        save_json_atomic(self._paths.approval_state, approval)
+        self._deps.bridge_log(
+            "info",
+            "task_started",
+            runId=run_id,
+            task="jobs_fetcher",
+            preset=preset,
+            pid=pid,
+            args=" ".join(spawn_args),
+        )
+        return {
+            "started": True,
+            "runId": run_id,
+            "task": "jobs_fetcher",
+            "preset": preset,
+            "args": spawn_args,
+            "pid": int(pid),
+            "startedAt": started_at,
+        }
 
 
 __all__ = ["TaskLaunchApi", "TaskLaunchDeps", "TaskLaunchPaths", "TaskLaunchRuntime"]

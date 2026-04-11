@@ -8,7 +8,6 @@ import os
 import subprocess
 import sys
 import threading
-import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -39,8 +38,8 @@ from src.bridge import source_check_fetch as _source_check_fetch
 from src.bridge import source_check_http as _source_check_http
 from src.bridge import source_checker as _source_checker
 from src.bridge import sync_task_flow as _sync_task_flow
-from src.bridge import task_history as _task_history_module
 from src.bridge import task_launch_api as _task_launch_api
+from src.bridge.admin_task_history import AdminTaskHistory
 from src.bridge.api import BridgeApi
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
 from src.bridge.pipeline_service import PipelineService
@@ -56,6 +55,7 @@ from src.bridge.source_helpers import (
     find_existing_static_source_by_studio_domain,
     infer_studio_name_from_host,
 )
+from src.bridge.sync_state import SYNC_CONFIG_PATH_DEFAULT, SYNC_RUNTIME_PATH_DEFAULT
 from src.contracts import SCHEMA_VERSION
 from src.jobs.parsers import parse_jobpostings_from_html
 from src.jobs.pipeline import default_source_loaders
@@ -95,31 +95,27 @@ TASKS_CONFIG_PATH = ROOT / ".vscode" / "tasks.json"
 TASK_STATE_PATH = ROOT / "data" / "admin-task-state.json"
 DISCOVERY_LOG_PATH = ROOT / "data" / "source-discovery.log"
 FETCHER_LOG_PATH = ROOT / "data" / "jobs-fetcher.log"
-SYNC_CONFIG_PATH = ROOT / "data" / "source-sync-config.json"
+SYNC_CONFIG_PATH = SYNC_CONFIG_PATH_DEFAULT
 DISCOVERY_CONFIG_PATH = ROOT / "data" / "source-discovery-config.json"
-SYNC_RUNTIME_PATH = ROOT / "data" / "source-sync-runtime.json"
+SYNC_RUNTIME_PATH = SYNC_RUNTIME_PATH_DEFAULT
 STARTUP_METRICS_PATH = ROOT / "data" / "desktop-startup-metrics.jsonl"
 TOMBSTONES_PATH = ROOT / "data" / "source-registry-tombstones.json"
 
 MAX_HISTORY_ROWS = 240
 OPS_SCHEMA_VERSION = 1
 OPS_STATE_LOCK = threading.RLock()
-_TASK_HISTORY_MANAGER: Any | None = None
-
-
-def _get_task_history_manager() -> Any:
-    global _TASK_HISTORY_MANAGER
-    if _TASK_HISTORY_MANAGER is None:
-        _TASK_HISTORY_MANAGER = _task_history_module.TaskHistoryManager(
-            OPS_HISTORY_PATH,
-            TASK_STATE_PATH,
-            MAX_HISTORY_ROWS,
-            OPS_STATE_LOCK,
-            load_json_array=load_json_array,
-            save_json_atomic=save_json_atomic,
-            load_json_object=load_json_object,
-        )
-    return _TASK_HISTORY_MANAGER
+_TASK_HISTORY = AdminTaskHistory(
+    history_path=lambda: OPS_HISTORY_PATH,
+    task_state_path=lambda: TASK_STATE_PATH,
+    max_rows=lambda: MAX_HISTORY_ROWS,
+    lock=OPS_STATE_LOCK,
+    load_json_array=load_json_array,
+    save_json_atomic=save_json_atomic,
+    load_json_object=load_json_object,
+    parse_iso=lambda value: parse_iso(value),
+    now_utc=lambda: now_utc(),
+    pid_is_running=lambda pid: pid_is_running(pid),
+)
 
 
 LOG_LEVEL_ORDER = bridge_config.LOG_LEVEL_ORDER
@@ -137,20 +133,6 @@ _PIPELINE_SERVICE: PipelineService | None = None
 _PIPELINE_SERVICE_LOCK = threading.RLock()
 
 
-class _RunHistoryAdapter:
-    def append(self, row: dict[str, Any]) -> dict[str, Any]:
-        return append_run_history(row)
-
-    def upsert(self, entry: dict[str, Any], *, dedupe_fields: tuple[str, ...]) -> dict[str, Any]:
-        return upsert_run_history(entry, dedupe_fields=dedupe_fields)
-
-    def load(self) -> list[dict[str, Any]]:
-        return load_run_history()
-
-    def prune_started_rows_for_type(self, entry_type: str, finished_at: str) -> None:
-        prune_started_rows_for_type(entry_type, finished_at=finished_at)
-
-
 def _get_sync_service() -> SyncService:
     global _SYNC_SERVICE, _SYNC_SERVICE_DATA_DIR
     data_dir = Path(RUNTIME_CONFIG.data_dir).resolve()
@@ -165,7 +147,7 @@ def _get_sync_service() -> SyncService:
             load_state=load_state,
             persist_state=persist_state,
             summarize_state=summarize_state,
-            run_history=_RunHistoryAdapter(),
+            run_history=_TASK_HISTORY,
             ops_state_lock=OPS_STATE_LOCK,
             get_security_defaults=get_security_defaults,
             sync_state=SyncState(data_dir=data_dir),
@@ -322,7 +304,6 @@ def _get_pipeline_service() -> PipelineService:
                 task_running_from_state=task_running_from_state,
                 sync_task_running=sync_task_running,
                 current_fetch_output_count=_current_fetch_output_count,
-                wait_for_report_completion=_wait_for_report_completion,
                 wait_for_sync_completion=_wait_for_sync_completion,
                 discovery_report_path=DISCOVERY_REPORT_PATH,
                 fetch_report_path=JOBS_FETCH_REPORT_PATH,
@@ -411,7 +392,6 @@ def bridge_log(level: str, message: str, **fields: Any) -> None:
 
 def configure_runtime_paths(config: RuntimeConfig) -> None:
     global RUNTIME_CONFIG
-    global _TASK_HISTORY_MANAGER
     global \
         OPS_HISTORY_PATH, \
         OPS_ALERT_STATE_PATH, \
@@ -435,6 +415,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
         STARTUP_METRICS_PATH
     global _REGISTRY_SERVICE, _REGISTRY_SERVICE_PATHS
     global _DISCOVERY_SERVICE, _DISCOVERY_SERVICE_PATHS
+    global _PIPELINE_SERVICE
 
     RUNTIME_CONFIG = config
     data_dir = Path(config.data_dir).resolve()
@@ -445,12 +426,11 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     JOBS_FETCH_REPORT_PATH = data_dir / "jobs-fetch-report.json"
     JOBS_FETCH_TASKS_PATH = data_dir / "jobs-fetch-tasks.json"
     TASK_STATE_PATH = data_dir / "admin-task-state.json"
-    _TASK_HISTORY_MANAGER = None  # force new manager with updated paths
     DISCOVERY_LOG_PATH = data_dir / "source-discovery.log"
     FETCHER_LOG_PATH = data_dir / "jobs-fetcher.log"
-    SYNC_CONFIG_PATH = data_dir / "source-sync-config.json"
+    SYNC_CONFIG_PATH = data_dir / SYNC_CONFIG_PATH_DEFAULT.name
     DISCOVERY_CONFIG_PATH = data_dir / "source-discovery-config.json"
-    SYNC_RUNTIME_PATH = data_dir / "source-sync-runtime.json"
+    SYNC_RUNTIME_PATH = data_dir / SYNC_RUNTIME_PATH_DEFAULT.name
     STARTUP_METRICS_PATH = data_dir / "desktop-startup-metrics.jsonl"
     ACTIVE_PATH = data_dir / "source-registry-active.json"
     PENDING_PATH = data_dir / "source-registry-pending.json"
@@ -485,6 +465,8 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     with _DISCOVERY_SERVICE_LOCK:
         _DISCOVERY_SERVICE = None
         _DISCOVERY_SERVICE_PATHS = None
+    with _PIPELINE_SERVICE_LOCK:
+        _PIPELINE_SERVICE = None
 
 
 def startup_banner(config: RuntimeConfig) -> None:
@@ -881,72 +863,15 @@ def pid_is_running(pid: int) -> bool:
     return True
 
 
-def load_run_history() -> list[dict[str, Any]]:
-    return _run_history_api.load_run_history(_get_task_history_manager())
-
-
-def save_run_history(rows: list[dict[str, Any]]) -> None:
-    _run_history_api.save_run_history(_get_task_history_manager(), rows)
-
-
-def append_run_history(row: dict[str, Any]) -> dict[str, Any]:
-    return _run_history_api.append_run_history(_get_task_history_manager(), row)
-
-
-def upsert_run_history(entry: dict[str, Any], *, dedupe_fields: tuple[str, ...]) -> dict[str, Any]:
-    return _run_history_api.upsert_run_history(
-        _get_task_history_manager(), entry, dedupe_fields=dedupe_fields
-    )
-
-
-def prune_started_rows_for_type(
-    run_type: str,
-    *,
-    keep_started_at: str = "",
-    finished_at: str = "",
-) -> None:
-    _run_history_api.prune_started_rows_for_type(
-        _get_task_history_manager(),
-        run_type,
-        keep_started_at=keep_started_at,
-        finished_at=finished_at,
-    )
-
-
-def _clear_task_state_locked(task_type: str) -> None:
-    _get_task_history_manager()._clear_task_state_locked(task_type)
-
-
-def clear_task_state(task_type: str) -> None:
-    _run_history_api.clear_task_state(_get_task_history_manager(), task_type)
-
-
-def task_running_from_state(task_type: str) -> bool:
-    return _run_history_api.task_running_from_state(
-        task_type, load_json_object, TASK_STATE_PATH, pid_is_running
-    )
-
-
-def report_is_stale_in_progress(
-    task_type: str,
-    path: Path,
-    report: dict[str, Any],
-    *,
-    max_age_minutes: int = 5,
-    max_mtime_idle_minutes: float = 0.35,
-) -> bool:
-    return _run_history_api.report_is_stale_in_progress(
-        task_type,
-        path,
-        report,
-        load_json_object=load_json_object,
-        task_state_path=TASK_STATE_PATH,
-        parse_iso=parse_iso,
-        now_utc=now_utc,
-        pid_is_running=pid_is_running,
-        max_age_minutes=max_age_minutes,
-        max_mtime_idle_minutes=max_mtime_idle_minutes,
-    )
+load_run_history = _TASK_HISTORY.load
+save_run_history = _TASK_HISTORY.save_run_history
+append_run_history = _TASK_HISTORY.append
+upsert_run_history = _TASK_HISTORY.upsert
+prune_started_rows_for_type = _TASK_HISTORY.prune_started_rows_for_type
+_clear_task_state_locked = _TASK_HISTORY.clear_task_state_locked
+clear_task_state = _TASK_HISTORY.clear_task_state
+task_running_from_state = _TASK_HISTORY.task_running_from_state
+report_is_stale_in_progress = _TASK_HISTORY.report_is_stale_in_progress
 
 
 def _read_tasks_config() -> dict[str, Any]:
@@ -1144,23 +1069,15 @@ def _wait_for_report_completion(
     report_name: str,
     fail_on_stale: bool = False,
 ) -> dict[str, Any]:
-    deadline = datetime.now(UTC) + timedelta(seconds=max(10.0, float(timeout_s)))
-    started_dt = parse_iso(started_at)
-    while datetime.now(UTC) < deadline:
-        report = load_json_object(report_path, {})
-        report_started = parse_iso(report.get("startedAt"))
-        report_finished = parse_iso(report.get("finishedAt"))
-        if started_dt and report_started and report_started >= (started_dt - timedelta(seconds=1)):
-            if report_finished and report_finished >= report_started:
-                return report if isinstance(report, dict) else {}
-        if fail_on_stale and report_is_stale_in_progress(
-            "fetch" if "fetch" in report_name else "discovery",
-            report_path,
-            report if isinstance(report, dict) else {},
-        ):
-            raise RuntimeError(f"{report_name} became stale before completion")
-        threading.Event().wait(1.0)
-    raise TimeoutError(f"{report_name} did not finish within timeout")
+    return _get_pipeline_service().wait_for_report_completion(
+        report_path=report_path,
+        started_at=started_at,
+        timeout_s=timeout_s,
+        report_name=report_name,
+        load_json_object=load_json_object,
+        report_is_stale_in_progress=report_is_stale_in_progress,
+        fail_on_stale=fail_on_stale,
+    )
 
 
 def _wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> dict[str, Any]:
@@ -1180,80 +1097,16 @@ def _wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> dict[str
 
 
 def start_fetcher_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    run_id = f"fetch_{uuid.uuid4().hex[:10]}"
-    started_at = now_iso()
-    fetcher_args, preset = build_fetcher_args_from_payload(
-        payload if isinstance(payload, dict) else {}
+    return _get_task_launch_api().start_fetcher_task(
+        payload,
+        append_run_history=append_run_history,
+        normalize_fetch_report_contract=normalize_fetch_report_contract,
+        prune_started_rows_for_type=prune_started_rows_for_type,
+        run_background_script=run_background_script,
+        save_json_atomic=save_json_atomic,
+        schema_version=SCHEMA_VERSION,
+        load_json_object=load_json_object,
     )
-    FETCHER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    FETCHER_LOG_PATH.write_text(
-        f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8"
-    )
-    prune_started_rows_for_type("fetch", keep_started_at=started_at)
-    append_run_history(
-        {
-            "id": run_id,
-            "runId": run_id,
-            "type": "fetch",
-            "status": "started",
-            "startedAt": started_at,
-            "finishedAt": "",
-            "durationMs": 0,
-            "summary": {},
-        }
-    )
-    spawn_args = list(fetcher_args)
-    if "--output-dir" not in spawn_args:
-        spawn_args.extend(["--output-dir", str(RUNTIME_CONFIG.data_dir)])
-    pid = run_background_script(
-        "jobs_fetcher.py",
-        spawn_args,
-        extra_env={
-            "BALUFFO_FETCH_RUN_ID": run_id,
-            "BALUFFO_FETCH_STARTED_AT": started_at,
-        },
-    )
-    save_json_atomic(
-        JOBS_FETCH_REPORT_PATH,
-        normalize_fetch_report_contract(
-            {
-                "runId": run_id,
-                "schemaVersion": SCHEMA_VERSION,
-                "startedAt": started_at,
-                "finishedAt": "",
-                "runtime": {
-                    "lifecycle": {
-                        "owner": "fetch_report",
-                        "heartbeatAt": started_at,
-                    }
-                },
-                "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
-                "sources": [],
-                "outputs": {"report": str(JOBS_FETCH_REPORT_PATH)},
-            }
-        ),
-    )
-    approval = load_json_object(APPROVAL_STATE_PATH, {"approvedSinceLastRun": 0})
-    approval["approvedSinceLastRun"] = 0
-    save_json_atomic(APPROVAL_STATE_PATH, approval)
-    bridge_log(
-        "info",
-        "task_started",
-        runId=run_id,
-        task="jobs_fetcher",
-        preset=preset,
-        pid=pid,
-        args=" ".join(spawn_args),
-    )
-    return {
-        "started": True,
-        "runId": run_id,
-        "task": "jobs_fetcher",
-        "preset": preset,
-        "args": spawn_args,
-        "pid": int(pid),
-        "startedAt": started_at,
-    }
 
 
 def start_jobs_pipeline_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:

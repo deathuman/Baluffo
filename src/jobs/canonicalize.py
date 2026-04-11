@@ -13,7 +13,6 @@ from typing import Any
 
 from src.jobs.adapters import community
 from src.jobs.adapters.parsers.location import normalize_location_details
-from src.jobs.common import config as common_config
 from src.jobs.common.datetime_utils import to_iso
 from src.jobs.common.heuristics import (
     classify_company_type,
@@ -37,6 +36,8 @@ from src.jobs.text_utils import (
 )
 from src.jobs.transport import PooledRedirectResolver
 from src.shared.utils import env_flag
+
+from .common import config as common_config
 
 UNKNOWN_COMPANY_LABEL = common_config.UNKNOWN_COMPANY_LABEL
 UNTRUSTWORTHY_COMPANY_LABELS = common_config.UNTRUSTWORTHY_COMPANY_LABELS

@@ -21,7 +21,7 @@ src/dev_admin_supervisor.py (Baluffo launcher)
   -> starts site + bridge + owned browser session
   -> tears down on session exit
 
-src/admin_bridge.py (composition root)
+src/admin_bridge.py (wiring-only composition root)
   -> src/bridge/ (services: sync, registry, discovery, pipeline, routes)
 
 src/jobs_fetcher.py -> src/jobs/ (pipeline, adapters, dedup)
@@ -40,7 +40,7 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 | `src/jobs_fetcher.py` | Build unified jobs feed |
 | `src/source_discovery.py` | Discover candidate sources (delegates to package) |
 | `src/dev_admin_supervisor.py` | Baluffo launcher (site + bridge + browser) |
-| `src/admin_bridge.py` | Bridge-only entry (expert/manual mode) |
+| `src/admin_bridge.py` | Bridge-only entry (expert/manual mode, wiring only) |
 | `src/jobs/pipeline.py` | Core job processing |
 | `src/source_discovery/` | Discovery package modules |
 | `scripts/build_ship_bundle.py` | Create ship bundle |
@@ -89,7 +89,7 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 - `routes/get_routes.py`, `routes/post_routes.py` — HTTP handlers
 - `ops_api.py`, `task_history.py`, `source_check_api.py` — ops/report/orchestration
 
-**Still in `admin_bridge.py`:** HTTP server, service wiring, thin wrappers
+**Still in `admin_bridge.py`:** HTTP server, service wiring, compatibility wrappers
 
 **Jobs package (`src/jobs/`):**
 - `pipeline.py` — core processing
@@ -141,9 +141,9 @@ See [`testing.md`](testing.md) for more commands.
 
 ## 9) Transitional boundaries (don't move blindly)
 
-- `src/admin_bridge.py` — composition root; add new logic to `src/bridge/*.py`
+- `src/admin_bridge.py` — wiring-only composition root; add new logic to `src/bridge/*.py`
 - `src/jobs/adapters/_runtime.py` — keep `_runtime.facade()` boundary
-- `src/jobs/common/__init__.py` — shared barrel; prefer direct `src/jobs/common/*` imports
+- `src/jobs/common/__init__.py` — compatibility facade; prefer direct leaf imports
 - `frontend/local-data/services.js` — keep `window.JobAppLocalData` abstraction
 
 ---
@@ -156,4 +156,4 @@ See [`testing.md`](testing.md) for more commands.
 
 ---
 
-*Last updated: 2026-04-09*
+*Last updated: 2026-04-12*

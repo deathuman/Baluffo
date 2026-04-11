@@ -43,7 +43,7 @@
 | Wrong assumption | Reality |
 |------------------|---------|
 | Frontend is React/Vue | Vanilla ES modules, no framework |
-| `src/admin_bridge.py` is the place for new logic | Prefer `src/bridge/*.py` modules; admin_bridge is composition root |
+| `src/admin_bridge.py` is the place for new logic | Prefer `src/bridge/*.py` modules; admin_bridge is wiring-only composition root |
 | `src/source_discovery.py` == `src/source_discovery/` | CLI/legacy vs package modules |
 | Desktop and browser modes behave the same | Startup, session, heartbeat differ |
 | Bridge changes need only backend tests | Verify both Python backend and frontend tests |
@@ -77,7 +77,7 @@
 | Schema/contracts | `src/core/schemas.py` | `src/core/contracts.py`, `src/jobs/common/contracts.py` |
 | Desktop/runtime | `src/ship/desktop_app/__init__.py` | `src/ship/runtime_launcher.py` |
 
-**Caution files** (prefer wiring-only): `src/admin_bridge.py`, transitional boundaries in architecture doc, broad page runtime files.
+**Caution files** (prefer wiring-only): `src/admin_bridge.py`, `src/jobs/common/__init__.py`, transitional boundaries in architecture doc, broad page runtime files.
 
 ---
 
@@ -114,4 +114,4 @@ For the narrowest verification matrix, fixture layout, and test-to-source map, s
 
 ---
 
-*Last updated: 2026-04-09*
+*Last updated: 2026-04-12*

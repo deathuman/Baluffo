@@ -16,14 +16,15 @@ from src.jobs.canonicalize import (
     normalize_url,
     to_iso,
 )
-from src.jobs.common import config as common_config
-from src.jobs.common import social as common_social
-from src.jobs.common import url as common_url
 from src.jobs.common.datetime_utils import posted_ts
 from src.jobs.interfaces import JobProcessor
 from src.jobs.models import CanonicalJob
 from src.jobs.page_gating import looks_like_job_title_candidate
 from src.jobs.text_utils import sanitize_location_text
+
+from .common import config as common_config
+from .common import social as common_social
+from .common import url as common_url
 
 fingerprint_url = common_url.fingerprint_url
 SOCIAL_SOURCE_NAMES = common_social.SOCIAL_SOURCE_NAMES

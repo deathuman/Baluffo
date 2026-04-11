@@ -22,10 +22,6 @@ from src.jobs import transport as transport_pkg
 from src.jobs.adapters import community as community_adapter
 from src.jobs.adapters import static as static_adapter
 from src.jobs.adapters.api import default_source_loaders as adapters_default_source_loaders
-from src.jobs.common import config as common_config
-from src.jobs.common import health as health_module
-from src.jobs.common import social as common_social
-from src.jobs.common import sources as common_sources
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.common.contracts import normalize_task_state_payload
 from src.jobs.contamination_audit import build_public_text_quality_report
@@ -66,6 +62,11 @@ from src.pipeline_io import (
     write_text_if_changed,
 )
 from src.shared.utils import now_iso
+
+from .common import config as common_config
+from .common import health as health_module
+from .common import social as common_social
+from .common import sources as common_sources
 
 DEFAULT_OUTPUT_DIR = common_config.DEFAULT_OUTPUT_DIR
 DEFAULT_TIMEOUT_S = common_config.DEFAULT_TIMEOUT_S

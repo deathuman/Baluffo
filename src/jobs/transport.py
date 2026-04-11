@@ -8,13 +8,14 @@ from collections.abc import Callable
 from typing import Any
 
 from src.jobs.adapters import community
-from src.jobs.common import config as common_config
-from src.jobs.common import url as common_url
 from src.jobs.common.fetch import fetch_with_retries as common_fetch_with_retries
 from src.jobs.common.http import default_fetch_text as common_default_fetch_text
 from src.jobs.models import RequestConfig
 from src.jobs.text_utils import norm_text
 from src.jobs.text_utils import normalize_url as normalize_url_impl
+
+from .common import config as common_config
+from .common import url as common_url
 
 DEFAULT_TIMEOUT_S = common_config.DEFAULT_TIMEOUT_S
 DEFAULT_RETRIES = common_config.DEFAULT_RETRIES

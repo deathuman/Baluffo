@@ -7,9 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from src.jobs.adapters import community
-from src.jobs.common import config as common_config
-from src.jobs.common import social as common_social
-from src.jobs.common import sources as common_sources
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.common.registry import registry_entries as common_registry_entries
 from src.jobs.common.registry_defaults import (
@@ -17,6 +14,10 @@ from src.jobs.common.registry_defaults import (
     REDUNDANT_STATIC_IF_PROVIDER,
 )
 from src.jobs.models import SourceConfig
+
+from .common import config as common_config
+from .common import social as common_social
+from .common import sources as common_sources
 
 DEFAULT_SOCIAL_CONFIG = common_social.DEFAULT_SOCIAL_CONFIG
 DEFAULT_SOCIAL_CONFIG_PATH = common_config.DEFAULT_SOCIAL_CONFIG_PATH

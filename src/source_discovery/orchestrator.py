@@ -40,6 +40,7 @@ from src.source_registry import (
     unique_sources,
 )
 
+from .bootstrap import discovery_report_write_path, prime_bridge_discovery_report
 from .core import (
     _evidence_threshold_for_probe,
     adapter_domain_fingerprint,
@@ -85,66 +86,16 @@ from .web_search import (
 
 
 def _discovery_report_write_path() -> Path:
-    """Where to write the live discovery report.
-
-    Prefer ``BALUFFO_DISCOVERY_REPORT_PATH`` (set by the admin bridge when spawning the
-    worker) so we always update the same absolute path used for the pre-run seed file.
-    Fall back to ``BALUFFO_DATA_DIR`` / default filename, then ``sd.DISCOVERY_REPORT_PATH``.
-    """
-    env_path = str(os.environ.get("BALUFFO_DISCOVERY_REPORT_PATH") or "").strip()
-    if env_path:
-        return Path(env_path).expanduser().resolve()
-    raw = str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
-    if raw:
-        return Path(raw).expanduser().resolve() / "source-discovery-report.json"
-    return Path(str(sd.DISCOVERY_REPORT_PATH))
+    return discovery_report_write_path()
 
 
 def _prime_bridge_discovery_report(*, run_id: str, started_at: str, mode: str) -> None:
-    """Publish a minimal in-progress report before heavy setup so the admin UI updates immediately."""
-    rid = str(run_id or "").strip()
-    sat = str(started_at or "").strip()
-    if not rid or not sat:
-        return
-    summary: dict[str, Any] = {
-        "foundEndpointCount": 0,
-        "probedCandidateCount": 0,
-        "queuedCandidateCount": 0,
-        "failedProbeCount": 0,
-        "skippedDuplicateCount": 0,
-        "skippedLowEvidenceProbeCount": 0,
-        "phase": "starting",
-        "phaseKey": "starting",
-        "phaseLabel": "Initializing scan",
-    }
-    report_path = _discovery_report_write_path()
-    task_progress = build_discovery_task_progress(summary=summary, finished=False)
-    save_json_atomic(
-        report_path,
-        {
-            "schemaVersion": SCHEMA_VERSION,
-            "runId": rid,
-            "mode": str(mode or "dynamic"),
-            "startedAt": sat,
-            "finishedAt": "",
-            "summary": summary,
-            "runtime": {
-                "lifecycle": {
-                    "owner": "discovery_report",
-                    "heartbeatAt": sd.now_iso(),
-                },
-            },
-            "taskProgress": task_progress,
-            "candidates": [],
-            "failures": [],
-            "topFailures": [],
-            "outputs": {
-                "report": str(report_path),
-                "candidates": str(sd.DISCOVERY_CANDIDATES_PATH),
-                "pending": str(sd.PENDING_PATH),
-                "urlPatches": str(getattr(sd, "URL_PATCH_MANIFEST_PATH", "")),
-            },
-        },
+    prime_bridge_discovery_report(
+        run_id=run_id,
+        started_at=started_at,
+        mode=mode,
+        save_json_atomic=save_json_atomic,
+        now_iso=sd.now_iso,
     )
 
 
@@ -422,7 +373,7 @@ def run_discovery(
     run_started_mono = time.perf_counter()
     sd.emit_log(
         f"Discovery worker run_discovery() begin runId={run_id!r} "
-        f"report_path={_discovery_report_write_path()!s}"
+        f"report_path={discovery_report_write_path()!s}"
     )
     _prime_bridge_discovery_report(
         run_id=run_id, started_at=started_at, mode=str(mode or "dynamic")
@@ -523,7 +474,7 @@ def run_discovery(
             phase_label=phase_label,
         )
         task_progress = build_discovery_task_progress(summary=summary, finished=False)
-        report_write_path = _discovery_report_write_path()
+        report_write_path = discovery_report_write_path()
         save_json_atomic(
             report_write_path,
             {
@@ -1471,7 +1422,7 @@ def run_discovery(
         "suppressionSummary": suppression_summary,
         "sheetDirectorySummary": sheet_directory_summary,
         "outputs": {
-            "report": str(_discovery_report_write_path()),
+            "report": str(discovery_report_write_path()),
             "candidates": str(sd.DISCOVERY_CANDIDATES_PATH),
             "pending": str(sd.PENDING_PATH),
             "urlPatches": str(getattr(sd, "URL_PATCH_MANIFEST_PATH", "")),
@@ -1498,7 +1449,7 @@ def run_discovery(
         save_json_atomic(sd.REJECTED_PATH, filter_tombstoned_rows(state["rejected"], tombstones))
         sd.emit_log(f"Auto-approval applied during discovery: approved={auto_approved}.")
     DiscoveryReportSchema.model_validate(report)
-    final_report_path = _discovery_report_write_path()
+    final_report_path = discovery_report_write_path()
     save_json_atomic(final_report_path, report)
     sd.emit_log(f"Discovery report written to {final_report_path}.")
     return report

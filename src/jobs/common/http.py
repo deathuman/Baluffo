@@ -1,4 +1,4 @@
-"""Low-level HTTP helpers used by legacy entrypoints."""
+"""Low-level HTTP helpers used by jobs adapters and legacy entrypoints."""
 
 from __future__ import annotations
 

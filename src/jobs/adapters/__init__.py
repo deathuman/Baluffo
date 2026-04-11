@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.jobs.adapters import community, provider_api, social, static
-from src.jobs.common import config as common_config
-from src.jobs.common import social as common_social
 from src.jobs.common.http import default_fetch_text as common_default_fetch_text
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import FetchContext, FetchResult, SourceDiagnostics
 from src.jobs.text_utils import clean_text
 from src.jobs_fetcher_registry import DEFAULT_SOURCE_LOADER_NAMES
+
+from ..common import config as common_config
+from ..common import social as common_social
 
 
 def default_source_loaders(

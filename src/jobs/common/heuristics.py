@@ -1,8 +1,4 @@
-"""Heuristics and scoring helpers for job canonicalization.
-
-This module exists to keep `src.jobs.common.__init__` a thin aggregator while
-preserving backwards-compatible re-exports.
-"""
+"""Heuristics and scoring helpers for job canonicalization."""
 
 from __future__ import annotations
 
@@ -10,11 +6,12 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from src.jobs.common import config as common_config
 from src.jobs.common.datetime_utils import parse_datetime
 from src.jobs.game_detection import has_positive_game_evidence
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text
+
+from . import config as common_config
 
 
 def classify_company_type(

@@ -38,7 +38,6 @@ from src.jobs.adapters.static_helpers import (
     source_detail_retries_for,
     update_source_detail_taxonomy,
 )
-from src.jobs.common import config as common_config
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import RawJob
@@ -53,6 +52,8 @@ from src.jobs.transport import conditional_revalidate_url
 from src.scrapers.domain_profiles import domain_profile_for_url
 from src.shared.regex import find_urls_in_text
 from src.shared.utils import now_iso
+
+from ..common import config as common_config
 
 register_static_plugins()
 run_scrapy_static_source = _static_scrapy.run_scrapy_static_source
