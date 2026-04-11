@@ -216,7 +216,15 @@ def parse_jobpostings_from_html(
             company = parse_jobposting_company(
                 row.get("hiringOrganization"), fallback_company=fallback_company
             )
-            location_details = parse_jobposting_location_details(row.get("jobLocation"))
+            job_location = row.get("jobLocation")
+            if (
+                clean_text(fallback_source_id_prefix).startswith("teamtailor:")
+                and isinstance(job_location, dict)
+                and isinstance(job_location.get("address"), dict)
+            ):
+                location_details = normalize_location_details("")
+            else:
+                location_details = parse_jobposting_location_details(job_location)
             source_id = parse_jobposting_source_id(
                 row.get("identifier"),
                 fallback=f"{fallback_source_id_prefix}-{counter}"
