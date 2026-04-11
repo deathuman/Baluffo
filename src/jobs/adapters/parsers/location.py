@@ -92,14 +92,24 @@ def _normalize_country_key(value: Any) -> str:
     return _COUNTRY_KEY_ALIASES.get(normalized_key, normalized_key)
 
 
+def _extract_location_text_and_country(location_value: Any) -> tuple[str, str]:
+    if not isinstance(location_value, dict):
+        return "", ""
+    address = location_value.get("address")
+    source = address if isinstance(address, dict) else location_value
+    text = clean_text(
+        source.get("city")
+        or source.get("addressLocality")
+        or source.get("locationName")
+        or source.get("name")
+    )
+    country = clean_text(source.get("country") or source.get("addressCountry"))
+    return text, country
+
+
 def _iter_location_fragments(location_value: Any) -> list[str]:
     if isinstance(location_value, dict):
-        text = clean_text(
-            location_value.get("city")
-            or location_value.get("addressLocality")
-            or location_value.get("name")
-        )
-        country = clean_text(location_value.get("country") or location_value.get("addressCountry"))
+        text, country = _extract_location_text_and_country(location_value)
         if text and "|" in text:
             return [clean_text(part) for part in re.split(r"\s*\|\s*", text) if clean_text(part)]
         if text and country:
@@ -113,10 +123,7 @@ def _iter_location_fragments(location_value: Any) -> list[str]:
         fragments: list[str] = []
         for item in location_value:
             if isinstance(item, dict):
-                text = clean_text(
-                    item.get("city") or item.get("addressLocality") or item.get("name")
-                )
-                country = clean_text(item.get("country") or item.get("addressCountry"))
+                text, country = _extract_location_text_and_country(item)
                 if text and "|" in text:
                     fragments.extend(
                         clean_text(part) for part in re.split(r"\s*\|\s*", text) if clean_text(part)
