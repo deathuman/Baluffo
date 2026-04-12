@@ -20,6 +20,7 @@ from src.jobs.adapters.html_parsers import (
     parse_jobpostings_from_html,
     strip_html_text,
 )
+from src.jobs.adapters.location_rules import classify_city_garbage
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.errors import NoPluginFoundError
 from src.jobs.adapters.plugins.static import register_static_plugins
@@ -27,6 +28,7 @@ from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
 from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_helpers import (
+    _is_one_man_studio_noise_city,
     add_detail_link,
     build_static_entry_report,
     build_static_source_runtime_config,
@@ -47,7 +49,7 @@ from src.jobs.state import (
     get_incremental_cache_decision,
     should_skip_static_source_for_structured_migration,
 )
-from src.jobs.text_utils import clean_text, normalize_url
+from src.jobs.text_utils import clean_text, normalize_url, sanitize_location_text
 from src.jobs.transport import conditional_revalidate_url
 from src.scrapers.domain_profiles import domain_profile_for_url
 from src.shared.regex import find_urls_in_text
@@ -57,6 +59,18 @@ from ..common import config as common_config
 
 register_static_plugins()
 run_scrapy_static_source = _static_scrapy.run_scrapy_static_source
+
+
+def _needs_detail_location_resolution(
+    row: dict[str, Any], link: str = "", location_hint: str = ""
+) -> bool:
+    city = clean_text(row.get("city"))
+    if city:
+        sanitized_city, city_reason = sanitize_location_text(city, field_name="city")
+        if city_reason or classify_city_garbage(city) or not sanitized_city:
+            return True
+    hint = clean_text(location_hint)
+    return not city and bool(hint)
 
 
 def static_source_shard(row: dict[str, Any]) -> str:
@@ -227,6 +241,41 @@ def run_static_studio_pages_source(
                 maybe_fetch_kojima_job_listing_html=maybe_fetch_kojima_job_listing_html,
                 try_playwright=try_playwright,
             )
+            if "theonemanstudio" in source_name.lower() or "one man studio" in company.lower():
+                for row in plugin_jobs:
+                    if not isinstance(row, dict):
+                        continue
+                    row_city, _ = sanitize_location_text(row.get("city"), field_name="city")
+                    row_country, _ = sanitize_location_text(
+                        row.get("country"), field_name="country"
+                    )
+                    if row_country == "Remote":
+                        row_country = ""
+                    if row_city == "Remote":
+                        row_city = ""
+                    if row_country in {"", "Unknown"} and _is_one_man_studio_noise_city(
+                        row_city,
+                        source_name=source_name,
+                        source=source,
+                    ):
+                        row_city = ""
+                    row["city"] = row_city
+                    row["country"] = row_country
+                    if row_city or row_country not in {"", "Unknown"}:
+                        row["locations"] = [
+                            {
+                                "city": row_city,
+                                "country": row_country if row_country != "Unknown" else "",
+                            }
+                        ]
+                        row["locationSummary"] = ", ".join(
+                            part
+                            for part in [row_city, row_country if row_country != "Unknown" else ""]
+                            if part
+                        )
+                    else:
+                        row["locations"] = []
+                        row["locationSummary"] = ""
             emit_heartbeat()
             jobs.extend(plugin_jobs)
             entry_report["fetchedCount"] = len(pages)
@@ -466,9 +515,53 @@ def run_static_studio_pages_source(
                                 )
                                 title = clean_text(row.get("title"))
                                 link = normalize_url(row.get("jobLink"))
+                                location_hint = clean_text(row.pop("_locationHint", ""))
+                                needs_detail_lookup = _needs_detail_location_resolution(
+                                    row,
+                                    link,
+                                    location_hint,
+                                )
                                 if looks_like_job_title_candidate(title):
                                     if not link or link in seen_links:
                                         continue
+                                    if needs_detail_lookup:
+                                        detail_result = process_detail_link(
+                                            detail=link,
+                                            detail_title=title,
+                                            source_started=source_started,
+                                            static_source_time_budget_s=source_budget_s,
+                                            fetch_html_cached=fetch_html_cached,
+                                            timeout_s=timeout_s,
+                                            detail_retries=retries,
+                                            company=company,
+                                            source_name=source_name,
+                                            source=source,
+                                            ignored_link_titles=ignored_link_titles,
+                                        )
+                                        stats["detail_pages_visited"] += 1
+                                        stats["detail_fetch_ms"] += int(
+                                            detail_result.get("fetchMs") or 0
+                                        )
+                                        emitted_detail_rows = detail_result.get("rows") or []
+                                        if emitted_detail_rows:
+                                            seen_links.add(link)
+                                            for emitted_row in emitted_detail_rows:
+                                                if not isinstance(emitted_row, dict):
+                                                    continue
+                                                emitted_row["source"] = (
+                                                    clean_text(source.get("name"))
+                                                    or company
+                                                    or source_name
+                                                )
+                                                emitted_row["studio"] = (
+                                                    clean_text(source.get("studio"))
+                                                    or company
+                                                    or source_name
+                                                )
+                                                jobs.append(emitted_row)
+                                                listing_jobs_found += 1
+                                            has_job_like_rendered_title = True
+                                            continue
                                     seen_links.add(link)
                                     jobs.append(row)
                                     listing_jobs_found += 1

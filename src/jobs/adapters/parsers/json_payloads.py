@@ -12,6 +12,7 @@ from src.jobs.models import RawJob
 from src.jobs.normalizers import normalize_country
 from src.jobs.text_utils import clean_text
 
+from ..html_parsers import strip_html_text
 from .location import (
     normalize_location_details,
     parse_generic_location_fields,
@@ -54,6 +55,145 @@ def _normalized_location_details(location_value: Any) -> dict[str, Any]:
     return normalize_location_details(location_value)
 
 
+def _infer_workable_location_details(
+    *,
+    location_details_source: Any,
+    description_text: str,
+) -> dict[str, Any]:
+    location_details = _normalized_location_details(location_details_source)
+    location_city = clean_text(location_details.get("city"))
+    location_country = clean_text(location_details.get("country"))
+    if (location_city or location_country != "Unknown") or not description_text:
+        return location_details
+    description_candidate = ""
+    for pattern in (
+        r"\b(?:based in|located in|located at|in|at)\s+([^.;:\n]+(?:,\s*[^.;:\n]+){1,3})",
+        r"\b(?:location|office location)\s*:\s*([^.;:\n]+(?:,\s*[^.;:\n]+){1,3})",
+    ):
+        match = re.search(pattern, description_text, flags=re.I)
+        if match:
+            description_candidate = clean_text(match.group(1))
+            if description_candidate:
+                break
+    if not description_candidate:
+        for fragment in re.split(r"[.;\n]+", description_text):
+            fragment = clean_text(fragment)
+            if fragment and "," in fragment:
+                description_candidate = fragment
+                break
+    description_source = description_candidate or description_text
+    description_details = _normalized_location_details(description_source)
+    if clean_text(description_details.get("city")) or clean_text(
+        description_details.get("country")
+    ):
+        return description_details
+    desc_city, desc_country, desc_work_type = parse_generic_location_fields(description_source)
+    if desc_city or desc_country != "Unknown" or desc_work_type:
+        return {
+            "city": desc_city,
+            "country": desc_country,
+            "locations": [
+                {
+                    "city": desc_city,
+                    "country": desc_country if desc_country != "Unknown" else "",
+                }
+            ]
+            if desc_city or desc_country != "Unknown"
+            else [],
+            "locationSummary": ", ".join(
+                part
+                for part in [desc_city, desc_country if desc_country != "Unknown" else ""]
+                if part
+            ),
+        }
+    return location_details
+
+
+def _trim_location_candidate(value: str) -> str:
+    text = clean_text(value)
+    if not text:
+        return ""
+    text = re.split(
+        r"\b(?:onsite|on site|on-site|remote|hybrid|full time|full-time|part time|part-time|role|position)\b",
+        text,
+        maxsplit=1,
+        flags=re.I,
+    )[0]
+    return clean_text(text).strip(" ,;:/-")
+
+
+def _infer_location_details_from_text(text: Any) -> dict[str, Any]:
+    content_text = clean_text(strip_html_text(text))
+    if not content_text:
+        return _normalized_location_details("")
+
+    content_candidate = ""
+    for pattern in (
+        r"\b(?:based in|located in|located at|in|at)\s+([^.;:\n]+(?:,\s*[^.;:\n]+){1,3})",
+        r"\b(?:location|office location)\s*:\s*([^.;:\n]+(?:,\s*[^.;:\n]+){1,3})",
+    ):
+        match = re.search(pattern, content_text, flags=re.I)
+        if match:
+            content_candidate = _trim_location_candidate(match.group(1))
+            if content_candidate:
+                break
+    if not content_candidate:
+        for fragment in re.split(r"[.;\n]+", content_text):
+            fragment = _trim_location_candidate(fragment)
+            if fragment and "," in fragment:
+                content_candidate = fragment
+                break
+
+    location_source = content_candidate or content_text
+    content_details = _normalized_location_details(location_source)
+    if (
+        clean_text(content_details.get("city"))
+        or clean_text(content_details.get("country")) != "Unknown"
+    ):
+        return content_details
+
+    city, country, _ = parse_generic_location_fields(location_source)
+    if city or country != "Unknown":
+        return {
+            "city": city,
+            "country": country,
+            "locations": [
+                {
+                    "city": city,
+                    "country": country if country != "Unknown" else "",
+                }
+            ]
+            if city or country != "Unknown"
+            else [],
+            "locationSummary": ", ".join(
+                part for part in [city, country if country != "Unknown" else ""] if part
+            ),
+        }
+    return content_details
+
+
+def _infer_greenhouse_location_details(row: dict[str, Any], location_name: str) -> dict[str, Any]:
+    location_details = _normalized_location_details(location_name)
+    if (
+        clean_text(location_details.get("city"))
+        or clean_text(location_details.get("country")) != "Unknown"
+    ):
+        return location_details
+    content_details = _infer_location_details_from_text(
+        row.get("content")
+        or row.get("description")
+        or row.get("summary")
+        or row.get("content_html")
+        or row.get("contentHtml")
+    )
+    if (
+        clean_text(content_details.get("city"))
+        or clean_text(content_details.get("country")) != "Unknown"
+    ):
+        return content_details
+    return location_details
+
+
 def parse_greenhouse_jobs_payload(
     payload: Any, board_slug: str, fallback_company: str = ""
 ) -> list[RawJob]:
@@ -77,7 +217,7 @@ def parse_greenhouse_jobs_payload(
             else clean_text(location_obj)
         )
         city, country, work_type = parse_greenhouse_location(location_name)
-        location_details = _normalized_location_details(location_name)
+        location_details = _infer_greenhouse_location_details(row, location_name)
         jobs.append(
             {
                 "sourceJobId": f"greenhouse:{board_slug}:{clean_text(row.get('id') or row.get('internal_job_id'))}",
@@ -115,6 +255,13 @@ def parse_lever_jobs_payload(
         location_text = clean_text(categories.get("location") or row.get("location"))
         city, country, work_type = parse_generic_location_fields(location_text)
         location_details = _normalized_location_details(location_text)
+        if (
+            not clean_text(location_details.get("city"))
+            and clean_text(location_details.get("country")) == "Unknown"
+        ):
+            location_details = _infer_location_details_from_text(
+                row.get("descriptionPlain") or row.get("description")
+            )
         commitment = clean_text(categories.get("commitment") or row.get("commitment"))
         tags_text = " ".join(
             [
@@ -162,6 +309,16 @@ def parse_smartrecruiters_jobs_payload(
             continue
         location_obj = row.get("location") if isinstance(row.get("location"), dict) else {}
         location_details = _normalized_location_details(location_obj)
+        if (
+            not clean_text(location_details.get("city"))
+            and clean_text(location_details.get("country")) == "Unknown"
+        ):
+            location_details = _infer_location_details_from_text(
+                row.get("description")
+                or row.get("jobDescription")
+                or row.get("jobDescriptionPlain")
+                or row.get("content")
+            )
         city = clean_text(location_details.get("city")) or clean_text(location_obj.get("city"))
         country = normalize_country(
             clean_text(location_obj.get("country")) or clean_text(location_obj.get("countryCode"))
@@ -215,21 +372,37 @@ def parse_workable_jobs_payload(
         if link and not link.startswith("http"):
             link = urljoin(f"https://apply.workable.com/{account}/", link)
         location = row.get("location") if isinstance(row.get("location"), dict) else {}
+        locations = row.get("locations") if isinstance(row.get("locations"), list) else []
+        description_text = clean_text(row.get("description"))
+        raw_city = clean_text(location.get("city") or row.get("city"))
+        raw_country = clean_text(
+            location.get("country") or location.get("countryCode") or row.get("country")
+        )
         location_text = " ".join(
             [
-                clean_text(location.get("city")),
-                clean_text(location.get("country")),
-                "Remote" if bool(location.get("telecommuting")) else "",
+                raw_city,
+                raw_country,
+                "Remote"
+                if bool(location.get("telecommuting")) or bool(row.get("telecommuting"))
+                else "",
             ]
         ).strip()
-        city, country, work_type = parse_generic_location_fields(location_text)
-        location_details = _normalized_location_details(location_text)
-        if bool(location.get("telecommuting")):
+        city, country, work_type = parse_generic_location_fields(
+            ", ".join(part for part in [raw_city, raw_country] if part)
+        )
+        location_details_source: Any = locations if locations else (location or {})
+        if not location_details_source and (raw_city or raw_country):
+            location_details_source = {"city": raw_city, "country": raw_country}
+        location_details = _infer_workable_location_details(
+            location_details_source=location_details_source or location_text,
+            description_text=description_text,
+        )
+        if bool(location.get("telecommuting")) or bool(row.get("telecommuting")):
             city, country, work_type = "Remote", "Remote", "Remote"
         tags = " ".join(
             [
                 clean_text(row.get("department")),
-                clean_text(row.get("description")),
+                description_text,
             ]
         )
         if not title or not link:
@@ -241,9 +414,9 @@ def parse_workable_jobs_payload(
                 "sourceJobId": f"workable:{account}:{clean_text(row.get('shortcode') or row.get('id'))}",
                 "title": title,
                 "company": company,
-                "city": clean_text(location_details.get("city")) or city,
-                "country": clean_text(location_details.get("country")) or country,
-                "workType": work_type or location_text,
+                "city": clean_text(location_details.get("city")) or city or raw_city,
+                "country": clean_text(location_details.get("country")) or country or raw_country,
+                "workType": work_type or ("Remote" if "Remote" in location_text else ""),
                 "contractType": clean_text(row.get("employment_type")),
                 "jobLink": link,
                 "sector": "Game",
@@ -294,6 +467,13 @@ def parse_epic_games_jobs_payload(
             )
         city, country, work_type = parse_generic_location_fields(location_text)
         location_details = _normalized_location_details(location_text)
+        if (
+            not clean_text(location_details.get("city"))
+            and clean_text(location_details.get("country")) == "Unknown"
+        ):
+            location_details = _infer_location_details_from_text(
+                row.get("description") or row.get("body") or row.get("content")
+            )
         if bool(row.get("remote")):
             city, country, work_type = "Remote", "Remote", "Remote"
         tags = " ".join(
@@ -360,6 +540,13 @@ def parse_recruitee_jobs_payload(
         ).strip()
         city, country, work_type = parse_generic_location_fields(location_text)
         location_details = _normalized_location_details(location_text)
+        if (
+            not clean_text(location_details.get("city"))
+            and clean_text(location_details.get("country")) == "Unknown"
+        ):
+            location_details = _infer_location_details_from_text(
+                row.get("description") or row.get("requirements")
+            )
         if bool(row.get("remote")):
             city, country, work_type = "Remote", "Remote", "Remote"
         tags = " ".join(
@@ -422,6 +609,13 @@ def parse_pinpoint_jobs_payload(
         location_text = clean_text(location_obj.get("name"))
         city, country, work_type = parse_generic_location_fields(location_text)
         location_details = _normalized_location_details(location_text)
+        if (
+            not clean_text(location_details.get("city"))
+            and clean_text(location_details.get("country")) == "Unknown"
+        ):
+            location_details = _infer_location_details_from_text(
+                row.get("description") or row.get("content") or row.get("summary")
+            )
         workplace_type_text = clean_text(
             row.get("workplace_type_text") or row.get("workplace_type")
         )

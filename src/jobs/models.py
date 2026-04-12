@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Any, TypedDict
 
+from src.jobs.text_utils import clean_text
+
 RawJob = dict[str, Any]
 RawJobLike = Mapping[str, Any]
 
@@ -103,26 +105,26 @@ class CanonicalJob:
                 locations_raw = []
         return cls(
             id=data.get("id", ""),
-            title=str(data.get("title") or ""),
-            company=str(data.get("company") or ""),
-            city=str(data.get("city") or ""),
-            country=str(data.get("country") or ""),
-            workType=str(data.get("workType") or ""),
-            contractType=str(data.get("contractType") or ""),
-            jobLink=str(data.get("jobLink") or ""),
-            sector=str(data.get("sector") or ""),
-            profession=str(data.get("profession") or ""),
-            companyType=str(data.get("companyType") or ""),
-            description=str(data.get("description") or ""),
-            source=str(data.get("source") or ""),
-            sourceJobId=str(data.get("sourceJobId") or ""),
-            fetchedAt=str(data.get("fetchedAt") or ""),
-            postedAt=str(data.get("postedAt") or ""),
-            status=str(data.get("status") or ""),
-            firstSeenAt=str(data.get("firstSeenAt") or ""),
-            lastSeenAt=str(data.get("lastSeenAt") or ""),
-            removedAt=str(data.get("removedAt") or ""),
-            dedupKey=str(data.get("dedupKey") or ""),
+            title=clean_text(data.get("title")),
+            company=clean_text(data.get("company")),
+            city=clean_text(data.get("city")),
+            country=clean_text(data.get("country")),
+            workType=clean_text(data.get("workType")),
+            contractType=clean_text(data.get("contractType")),
+            jobLink=clean_text(data.get("jobLink")),
+            sector=clean_text(data.get("sector")),
+            profession=clean_text(data.get("profession")),
+            companyType=clean_text(data.get("companyType")),
+            description=clean_text(data.get("description")),
+            source=clean_text(data.get("source")),
+            sourceJobId=clean_text(data.get("sourceJobId")),
+            fetchedAt=clean_text(data.get("fetchedAt")),
+            postedAt=clean_text(data.get("postedAt")),
+            status=clean_text(data.get("status")),
+            firstSeenAt=clean_text(data.get("firstSeenAt")),
+            lastSeenAt=clean_text(data.get("lastSeenAt")),
+            removedAt=clean_text(data.get("removedAt")),
+            dedupKey=clean_text(data.get("dedupKey")),
             qualityScore=int(data.get("qualityScore") or 0),
             focusScore=int(data.get("focusScore") or 0),
             sourceBundleCount=int(data.get("sourceBundleCount") or 0),
@@ -130,9 +132,9 @@ class CanonicalJob:
                 dict(item) for item in data.get("sourceBundle") or [] if isinstance(item, Mapping)
             ],
             locations=[dict(item) for item in locations_raw if isinstance(item, Mapping)],
-            locationSummary=str(data.get("locationSummary") or ""),
-            adapter=str(data.get("adapter") or ""),
-            studio=str(data.get("studio") or ""),
+            locationSummary=clean_text(data.get("locationSummary")),
+            adapter=clean_text(data.get("adapter")),
+            studio=clean_text(data.get("studio")),
         )
 
     def to_dict(self) -> dict[str, Any]:

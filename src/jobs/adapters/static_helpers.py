@@ -11,7 +11,13 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
-from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, strip_html_text
+from src.jobs.adapters.html_parsers import (
+    html_fragment_lines,
+    parse_jobpostings_from_html,
+    strip_html_text,
+)
+from src.jobs.adapters.location_rules import _looks_like_location_name, classify_city_garbage
+from src.jobs.adapters.parsers.location import parse_generic_location_fields
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.taxonomy import (
     assess_zero_extract,
@@ -26,7 +32,12 @@ from src.jobs.page_gating import (
     looks_like_regular_navigation_text,
     looks_like_regular_page_url,
 )
-from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.jobs.text_utils import (
+    clean_text,
+    norm_text,
+    normalize_url,
+    sanitize_location_text,
+)
 
 from ..common import config as common_config
 
@@ -450,6 +461,155 @@ def add_detail_link(
     detail_links.append((absolute, clean_text(anchor_text)))
 
 
+def _detail_page_scan_start(lines: list[str]) -> int:
+    location_labels = {
+        "location",
+        "job location",
+        "office location",
+        "work location",
+        "勤務地",
+        "勤務場所",
+    }
+    for index, line in enumerate(lines):
+        lowered = clean_text(line).lower().rstrip(":")
+        if lowered in location_labels:
+            return index + 1
+    return 0
+
+
+def _infer_detail_page_fields(detail_html: str, detail_title: str) -> tuple[str, str, str, str]:
+    lines = [clean_text(line) for line in html_fragment_lines(detail_html) if clean_text(line)]
+    title_text = clean_text(detail_title).lower()
+    city = ""
+    country = "Unknown"
+    work_type = ""
+    contract_type = ""
+    remote_preferred = False
+    scan_start = _detail_page_scan_start(lines)
+    scan_offset = max(0, scan_start - 2) if scan_start else 0
+    scan_lines = lines[scan_offset:] if scan_start else lines
+    for index, line in enumerate(scan_lines):
+        absolute_index = index + scan_offset
+        if title_text and title_text == line.lower():
+            continue
+        candidates = []
+        lowered = line.lower()
+        if scan_start and absolute_index > scan_start and line.endswith(":"):
+            break
+        if lowered in {"勤務地", "勤務場所", "location"} and absolute_index + 1 < len(lines):
+            candidates.append(clean_text(lines[absolute_index + 1]))
+        if " in " in lowered:
+            candidates.append(clean_text(line.rsplit(" in ", 1)[-1]))
+        if " at " in lowered:
+            candidates.append(clean_text(line.rsplit(" at ", 1)[-1]))
+        candidates.append(line)
+        for candidate in candidates:
+            if not candidate:
+                continue
+            normalized_candidate = norm_text(candidate)
+            if "tokyo" in normalized_candidate or "東京" in candidate:
+                parsed_city, parsed_country, parsed_work_type = parse_generic_location_fields(
+                    candidate
+                )
+                if parsed_work_type and not work_type:
+                    work_type = parsed_work_type
+                if not parsed_city:
+                    parsed_city = "Tokyo"
+                if parsed_country == "Unknown":
+                    parsed_country = "Japan"
+                return parsed_city, parsed_country, work_type, contract_type
+            if not contract_type and any(
+                token in normalized_candidate
+                for token in ("full time", "full-time", "part time", "part-time")
+            ):
+                contract_type = clean_text(candidate)
+                continue
+            if normalized_candidate in {"remote", "fully remote"}:
+                work_type = "Remote"
+                remote_preferred = True
+                continue
+            if normalized_candidate in {"onsite", "on site", "hybrid"}:
+                if remote_preferred:
+                    continue
+                if not work_type:
+                    work_type = clean_text(candidate)
+                continue
+            if classify_city_garbage(candidate):
+                continue
+            if (
+                candidate.isascii()
+                and classify_city_garbage(candidate)
+                and not any(separator in candidate for separator in (",", "/", "-", "|"))
+            ):
+                continue
+            parsed_city, parsed_country, parsed_work_type = parse_generic_location_fields(candidate)
+            if clean_text(parsed_city).lower().startswith(("in ", "at ")):
+                continue
+            if parsed_work_type and not work_type:
+                work_type = parsed_work_type
+            if parsed_city == "Remote" and parsed_country == "Remote":
+                work_type = work_type or "Remote"
+                remote_preferred = True
+                continue
+            if parsed_city and parsed_country == "Unknown":
+                if parsed_city == "Tokyo" or "tokyo" in normalized_candidate or "東京" in candidate:
+                    parsed_country = "Japan"
+            if not parsed_city and parsed_country == "Unknown":
+                if "tokyo" in normalized_candidate or "東京" in candidate:
+                    parsed_city, parsed_country = "Tokyo", "Japan"
+                elif not (remote_preferred or work_type or contract_type):
+                    continue
+            if (
+                not parsed_city
+                and parsed_country == "Unknown"
+                and not (remote_preferred or work_type or contract_type)
+            ):
+                continue
+            if parsed_city or parsed_country != "Unknown":
+                return parsed_city, parsed_country, work_type, contract_type
+    return city, country, work_type or ("Remote" if remote_preferred else ""), contract_type
+
+
+def _is_one_man_studio_noise_city(
+    row_city: str, *, source_name: str, source: dict[str, Any]
+) -> bool:
+    if not row_city or row_city != row_city.lower() or len(row_city.split()) != 1:
+        normalized_city = norm_text(row_city).replace("’", "'")
+        heading_noise = {
+            "what you'll do",
+            "what you'll bring",
+            "the role",
+            "about one man studio",
+            "apply for this role",
+            "job location",
+            "job type",
+            "fully remote",
+            "holidays",
+            "bank holidays",
+            "menu",
+            "skip to content",
+            "full name",
+            "email",
+            "portfolio reel",
+            "portfolio / reel",
+            "upload cv resume",
+            "allowed type(s): .pdf, .doc, .docx",
+        }
+        if normalized_city in heading_noise or not _looks_like_location_name(
+            row_city, row_city.split()
+        ):
+            return True
+        return False
+    source_name_text = clean_text(source_name).lower()
+    studio_text = clean_text(source.get("studio")).lower()
+    company_text = clean_text(source.get("company")).lower()
+    return (
+        "theonemanstudio" in source_name_text
+        or studio_text == "one man studio"
+        or company_text == "one man studio"
+    )
+
+
 def process_detail_link(
     *,
     detail: str,
@@ -481,6 +641,83 @@ def process_detail_link(
         fallback_company=company,
         fallback_source_id_prefix=f"static:{source_name}",
     )
+    inferred_city, inferred_country, inferred_work_type, inferred_contract_type = (
+        _infer_detail_page_fields(detail_html, detail_title)
+    )
+    sanitized_inferred_city, inferred_city_reason = sanitize_location_text(
+        inferred_city,
+        field_name="city",
+    )
+    if inferred_city and (inferred_city_reason or not sanitized_inferred_city):
+        inferred_city = ""
+        if inferred_country == "":
+            inferred_country = "Unknown"
+    else:
+        inferred_city = sanitized_inferred_city
+    normalized_company = norm_text(company)
+    if inferred_city and normalized_company and norm_text(inferred_city) == normalized_company:
+        inferred_city = ""
+        if inferred_country == "":
+            inferred_country = "Unknown"
+    if _is_one_man_studio_noise_city(
+        inferred_city,
+        source_name=source_name,
+        source=source,
+    ):
+        inferred_city = ""
+        if inferred_country == "":
+            inferred_country = "Unknown"
+    if detail_jobs:
+        for row in detail_jobs:
+            if not isinstance(row, dict):
+                continue
+            row_city, _ = sanitize_location_text(row.get("city"), field_name="city")
+            row_country, _ = sanitize_location_text(row.get("country"), field_name="country")
+            if row_country == "Remote":
+                row_country = ""
+            if row_city == "Remote":
+                row_city = ""
+            if row_city and normalized_company and norm_text(row_city) == normalized_company:
+                row_city = ""
+            if row_country in {"", "Unknown"} and _is_one_man_studio_noise_city(
+                row_city,
+                source_name=source_name,
+                source=source,
+            ):
+                row_city = ""
+            row["city"] = row_city
+            row["country"] = row_country
+            if (not row_city or row_country in {"", "Unknown"}) and (
+                inferred_city or inferred_country != "Unknown"
+            ):
+                row["city"] = row_city or inferred_city
+                row["country"] = (
+                    row_country if row_country not in {"", "Unknown"} else inferred_country
+                )
+            if not clean_text(row.get("workType")) and inferred_work_type:
+                row["workType"] = inferred_work_type
+            if not clean_text(row.get("contractType")) and inferred_contract_type:
+                row["contractType"] = inferred_contract_type
+            updated_city = clean_text(row.get("city"))
+            updated_country = clean_text(row.get("country"))
+            if updated_city or (updated_country and updated_country != "Unknown"):
+                row["locations"] = [
+                    {
+                        "city": updated_city,
+                        "country": updated_country if updated_country != "Unknown" else "",
+                    }
+                ]
+                row["locationSummary"] = ", ".join(
+                    part
+                    for part in [
+                        updated_city,
+                        updated_country if updated_country != "Unknown" else "",
+                    ]
+                    if part
+                )
+            else:
+                row["locations"] = []
+                row["locationSummary"] = ""
     parse_ms = int((time.perf_counter() - parse_started) * 1000)
 
     rows: list[RawJob] = []
@@ -507,6 +744,12 @@ def process_detail_link(
             )
             rejected_example = f"{detail} | {parsed_title}" if parsed_title else detail
         else:
+            inferred_row_available = (
+                inferred_city
+                or inferred_country != "Unknown"
+                or inferred_work_type
+                or inferred_contract_type
+            )
             path_parts = [part for part in urlparse(detail).path.rstrip("/").split("/") if part]
             slug = path_parts[-1] if path_parts else ""
             if slug.lower() == "apply" and len(path_parts) >= 2:
@@ -515,7 +758,54 @@ def process_detail_link(
             title = strip_html_text(re.sub(r"[-_]+", " ", slug))
             if parsed_title and parsed_title.lower() not in ignored_link_titles:
                 title = parsed_title
-            if title and not re.fullmatch(r"\d+", title) and looks_like_job_title_candidate(title):
+            if (
+                inferred_row_available
+                and title
+                and not re.fullmatch(r"\d+", title)
+                and looks_like_job_title_candidate(title)
+            ):
+                rows.append(
+                    {
+                        "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
+                        "title": title,
+                        "company": company,
+                        "city": inferred_city,
+                        "country": inferred_country,
+                        "locations": [
+                            {
+                                "city": inferred_city,
+                                "country": inferred_country
+                                if inferred_country != "Unknown"
+                                else "",
+                            }
+                        ]
+                        if inferred_city or inferred_country != "Unknown"
+                        else [],
+                        "locationSummary": ", ".join(
+                            part
+                            for part in [
+                                inferred_city,
+                                inferred_country if inferred_country != "Unknown" else "",
+                            ]
+                            if part
+                        ),
+                        "workType": inferred_work_type
+                        or (
+                            "Onsite"
+                            if "in person" in clean_text(strip_html_text(detail_html)).lower()
+                            else ""
+                        ),
+                        "contractType": inferred_contract_type,
+                        "jobLink": detail,
+                        "sector": "Game",
+                        "postedAt": "",
+                        "adapter": "static",
+                        "studio": clean_text(source.get("studio")) or company or source_name,
+                    }
+                )
+            elif (
+                title and not re.fullmatch(r"\d+", title) and looks_like_job_title_candidate(title)
+            ):
                 rows.append(
                     {
                         "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",

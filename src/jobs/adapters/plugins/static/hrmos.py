@@ -12,6 +12,7 @@ from src.jobs.adapters.html_parsers import (
 )
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.provider_parsers import normalize_location_details
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 
@@ -135,13 +136,14 @@ def _parse_listing_rows(
                 for token in ("full", "contract", "intern", "temporary", "part-time")
             ):
                 contract_type = line
+        location_details = normalize_location_details(location)
         jobs.append(
             {
                 "sourceJobId": f"static:{source_id}:{hashlib.sha1(absolute.encode('utf-8')).hexdigest()[:10]}",
                 "title": title,
                 "company": company,
-                "city": location,
-                "country": "Unknown",
+                "city": clean_text(location_details.get("city")),
+                "country": clean_text(location_details.get("country")) or "Unknown",
                 "workType": "",
                 "contractType": contract_type,
                 "jobLink": absolute,
@@ -151,6 +153,8 @@ def _parse_listing_rows(
                 "studio": company,
                 "source": source_name,
                 "summary": " | ".join(meta[:4]),
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     return jobs

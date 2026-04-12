@@ -12,6 +12,7 @@ from src.jobs.adapters.html_parsers import (
 )
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.provider_parsers import normalize_location_details
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 
@@ -70,13 +71,14 @@ def run(
         meta = [line for line in lines if line != title and line.lower() != "more details"]
         location = meta[0] if meta else ""
         contract_type = meta[1] if len(meta) > 1 else ""
+        location_details = normalize_location_details(location)
         jobs.append(
             {
                 "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
                 "title": title,
                 "company": company,
-                "city": location,
-                "country": "Unknown",
+                "city": clean_text(location_details.get("city")),
+                "country": clean_text(location_details.get("country")) or "Unknown",
                 "workType": "",
                 "contractType": contract_type,
                 "jobLink": link,
@@ -86,6 +88,8 @@ def run(
                 "studio": company,
                 "source": clean_text(source_row.get("name")) or company,
                 "summary": " | ".join(meta[:3]),
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
 

@@ -1,6 +1,7 @@
 # ruff: noqa: F403,F405
 import hashlib
 from collections import Counter
+from pathlib import Path
 
 from scrapy.http import HtmlResponse, Request
 
@@ -23,6 +24,12 @@ from src.scrapers.spiders.generic_careers import GenericCareersSpider
 from tests.jobs_fetcher_helpers import *
 
 patch_jobs_fetcher_aliases()
+
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
+
+def _read_fixture(name: str) -> str:
+    return (FIXTURES_DIR / name).read_text(encoding="utf-8")
 
 
 def test_normalize_source_report_row_preserves_static_site_changed_url_surface() -> None:
@@ -63,13 +70,55 @@ def test_rendered_card_location_cell_heuristic_rejects_role_bleed() -> None:
     assert _looks_like_location_cell("Montréal, CA")
 
 
+@pytest.mark.parametrize(
+    ("visible_title", "expected_title"),
+    [
+        ("March 17, 2023 3D Artist", "3D Artist"),
+        ("03/17/2023 QA Engineer", "QA Engineer"),
+        ("2023-03-17 Marketing Artist", "Marketing Artist"),
+    ],
+)
+def test_rendered_card_jobs_strip_leading_posted_date_prefixes(
+    visible_title: str,
+    expected_title: str,
+) -> None:
+    html = f"""
+        <a href="https://example.com/jobs/1" target="_blank" class="join_row">
+          <div class="d-table-cell vacancy ps-1 pe-3 pe-md-0">{visible_title}</div>
+          <div class="d-table-cell vacancy">Filters</div>
+        </a>
+        """
+    rows = extract_rendered_card_jobs(
+        html,
+        page_url="https://example.com/careers/",
+        company="Example Studio",
+        source_id="example_rendered_date_prefix",
+        allow_any_anchor=True,
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == expected_title
+    assert row["city"] == ""
+    assert row["locationSummary"] == ""
+
+
 def test_rendered_card_structured_locations_deduplicate_variants() -> None:
     locations, work_type, contract_type = _parse_structured_locations(
         ["Gameplay Programmer", "Munich, DE | München, DE", "Full-time"],
         "Gameplay Programmer",
     )
     assert locations == [{"city": "Munich", "country": "DE"}]
-    assert work_type == ""
+    assert work_type == "Full-time"
+    assert contract_type == ""
+
+
+def test_rendered_card_structured_locations_ignore_full_time_noise_cells() -> None:
+    locations, work_type, contract_type = _parse_structured_locations(
+        ["Environment Artist München", "Full-time", "München, DE", "Onsite"],
+        "Environment Artist München",
+    )
+    assert locations == [{"city": "München", "country": "DE"}]
+    assert work_type == "Full-time"
     assert contract_type == ""
 
 
@@ -147,6 +196,43 @@ def test_job_page_gate_rejects_regular_pages_and_accepts_jobposting_jsonld() -> 
     assert reason == "jobposting_jsonld"
 
 
+def test_parse_jobpostings_from_html_collapses_sequence_text_values() -> None:
+    html = """
+        <html>
+          <body>
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "JobPosting",
+              "title": [
+                "Lead Technical Designer",
+                " House of How Games",
+                "Job Description"
+              ],
+              "url": "https://www.houseofhow.com/job/lead-technical-designer",
+              "hiringOrganization": {"name": ["House of How"]},
+              "jobLocationType": "Onsite",
+              "employmentType": "Unknown"
+            }
+            </script>
+          </body>
+        </html>
+    """
+
+    rows = jf.parse_jobpostings_from_html(
+        html,
+        base_url="https://www.houseofhow.com/careers/",
+        fallback_company="House of How",
+        fallback_source_id_prefix="static:House of How (Sheet)",
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == "Lead Technical Designer"
+    assert row["company"] == "House of How"
+    assert row["jobLink"] == "https://www.houseofhow.com/job/lead-technical-designer"
+
+
 def test_static_detail_fallback_rejects_regular_pages_without_synthesizing_rows() -> None:
     regular_html = """
         <html>
@@ -206,6 +292,391 @@ def test_static_detail_fallback_rejects_generic_synthesized_titles() -> None:
     assert result["rows"] == []
     assert str(result.get("rejectedClassification") or "") == "dead_listing_page"
     assert "https://www.tetherstudios.com/job/tech" in str(result.get("rejectedExample") or "")
+
+
+def test_static_detail_fallback_does_not_synthesize_rows_from_remote_full_time_noise() -> None:
+    detail_html = """
+        <html>
+          <body>
+            <h1>Senior Environment Artist</h1>
+            <p>Remote</p>
+            <p>Full Time</p>
+            <p>About our studio and culture.</p>
+          </body>
+        </html>
+        """
+
+    def fake_fetch(
+        url: str, _remaining_budget_s: float | None = None, **kwargs: object
+    ) -> tuple[str, bool]:
+        assert url == "https://example.com/about/senior-environment-artist"
+        return detail_html, False
+
+    result = process_detail_link(
+        detail="https://example.com/about/senior-environment-artist",
+        detail_title="Senior Environment Artist",
+        source_started=0.0,
+        static_source_time_budget_s=10,
+        fetch_html_cached=fake_fetch,
+        timeout_s=5,
+        detail_retries=0,
+        company="Example Studio",
+        source_name="static:listing_url:https://example.com/jobs",
+        source={"studio": "Example Studio"},
+        ignored_link_titles=set(),
+    )
+
+    assert result["rows"] == []
+    assert result["parseEmpty"] is True
+    assert str(result.get("rejectedClassification") or "") == "dead_listing_page"
+
+
+def test_static_detail_fallback_understands_team_asobi_japanese_location_block() -> None:
+    detail_html = """
+        <html>
+          <body>
+            <h1>3D Environment Artist</h1>
+            <p>勤務場所</p>
+            <p>東京エリア（3ヶ月の試用期間後、リモートワーク可）</p>
+          </body>
+        </html>
+        """
+
+    def fake_fetch(
+        url: str, _remaining_budget_s: float | None = None, **kwargs: object
+    ) -> tuple[str, bool]:
+        assert url == "https://job-boards.greenhouse.io/siei/jobs/5524462004"
+        return detail_html, False
+
+    result = process_detail_link(
+        detail="https://job-boards.greenhouse.io/siei/jobs/5524462004",
+        detail_title="3D Environment Artist",
+        source_started=0.0,
+        static_source_time_budget_s=10,
+        fetch_html_cached=fake_fetch,
+        timeout_s=5,
+        detail_retries=0,
+        company="Team ASOBI",
+        source_name="static:listing_url:https://www.teamasobi.com/jobs/",
+        source={"studio": "Team ASOBI"},
+        ignored_link_titles=set(),
+    )
+
+    assert len(result["rows"]) == 1
+    row = result["rows"][0]
+    assert row["city"] == "Tokyo"
+    assert row["country"] == "Japan"
+    assert row["locationSummary"] == "Tokyo, Japan"
+    assert row["locations"] == [{"city": "Tokyo", "country": "Japan"}]
+
+
+def test_static_detail_fallback_enriches_unknown_rows_from_tokyo_detail_block() -> None:
+    detail_html = """
+        <html>
+          <body>
+            <h1>背景アーティスト / Environment Artist</h1>
+            <p>Office location:</p>
+            <p>7F NTF Takebashi Building, 3-15 Kanda Nishiki-cho, Chiyoda-ku, Tokyo</p>
+          </body>
+        </html>
+        """
+
+    def fake_fetch(
+        url: str, _remaining_budget_s: float | None = None, **kwargs: object
+    ) -> tuple[str, bool]:
+        assert url == "https://www.kojimaproductions.jp/en/environment-artist"
+        return detail_html, False
+
+    with mock.patch(
+        "src.jobs.adapters.static_helpers.parse_jobpostings_from_html",
+        return_value=[
+            {
+                "sourceJobId": "static:kojima:environment-artist",
+                "title": "背景アーティスト / Environment Artist",
+                "company": "KOJIMA PRODUCTIONS",
+                "city": "",
+                "country": "Unknown",
+                "locations": [],
+                "locationSummary": "",
+                "workType": "",
+                "contractType": "",
+                "jobLink": "https://www.kojimaproductions.jp/en/environment-artist",
+                "sector": "Game",
+                "postedAt": "",
+            }
+        ],
+    ):
+        result = process_detail_link(
+            detail="https://www.kojimaproductions.jp/en/environment-artist",
+            detail_title="背景アーティスト / Environment Artist",
+            source_started=0.0,
+            static_source_time_budget_s=10,
+            fetch_html_cached=fake_fetch,
+            timeout_s=5,
+            detail_retries=0,
+            company="KOJIMA PRODUCTIONS",
+            source_name="static:listing_url:https://www.kojimaproductions.jp/en/careers",
+            source={"studio": "KOJIMA PRODUCTIONS"},
+            ignored_link_titles=set(),
+        )
+
+    assert len(result["rows"]) == 1
+    row = result["rows"][0]
+    assert row["city"] == "Tokyo"
+    assert row["country"] == "Japan"
+    assert row["locationSummary"] == "Tokyo, Japan"
+    assert row["locations"] == [{"city": "Tokyo", "country": "Japan"}]
+
+
+def test_static_detail_fallback_ignores_grid_noise_before_office_location() -> None:
+    detail_html = """
+        <html>
+          <body>
+            <h1>Lead Environment Artist</h1>
+            <div>grid</div>
+            <p>Office location:</p>
+            <p>7F NTF Takebashi Building, 3-15 Kanda Nishiki-cho, Chiyoda-ku, Tokyo</p>
+          </body>
+        </html>
+        """
+
+    def fake_fetch(
+        url: str, _remaining_budget_s: float | None = None, **kwargs: object
+    ) -> tuple[str, bool]:
+        assert url == "https://area35east.com/jobs/lead-environment-artist"
+        return detail_html, False
+
+    result = process_detail_link(
+        detail="https://area35east.com/jobs/lead-environment-artist",
+        detail_title="Lead Environment Artist",
+        source_started=0.0,
+        static_source_time_budget_s=10,
+        fetch_html_cached=fake_fetch,
+        timeout_s=5,
+        detail_retries=0,
+        company="Area 35 East",
+        source_name="static:listing_url:https://area35east.com/careers",
+        source={"studio": "Area 35 East"},
+        ignored_link_titles=set(),
+    )
+
+    assert len(result["rows"]) == 1
+    row = result["rows"][0]
+    assert row["city"] == "Tokyo"
+    assert row["country"] == "Japan"
+    assert row["locationSummary"] == "Tokyo, Japan"
+    assert row["locations"] == [{"city": "Tokyo", "country": "Japan"}]
+
+
+def test_static_detail_fallback_treats_remote_only_text_as_work_type_not_location() -> None:
+    detail_html = """
+        <html>
+          <body>
+            <h1>Principal Environment Artist</h1>
+            <p>Remote, Remote</p>
+            <p>Remote</p>
+            <p>Full Time</p>
+          </body>
+        </html>
+        """
+
+    def fake_fetch(
+        url: str, _remaining_budget_s: float | None = None, **kwargs: object
+    ) -> tuple[str, bool]:
+        assert url == "https://www.onemanstudio.com/jobs/principal-environment-artist"
+        return detail_html, False
+
+    result = process_detail_link(
+        detail="https://www.onemanstudio.com/jobs/principal-environment-artist",
+        detail_title="Principal Environment Artist",
+        source_started=0.0,
+        static_source_time_budget_s=10,
+        fetch_html_cached=fake_fetch,
+        timeout_s=5,
+        detail_retries=0,
+        company="One Man Studio",
+        source_name="static:listing_url:https://theonemanstudio.com/careers/",
+        source={"studio": "One Man Studio"},
+        ignored_link_titles=set(),
+    )
+
+    assert len(result["rows"]) == 1
+    row = result["rows"][0]
+    assert row["city"] == ""
+    assert row["country"] == "Unknown"
+    assert row["locationSummary"] == ""
+    assert row["locations"] == []
+    assert row["workType"] == "Remote"
+    assert row["contractType"] == "Full Time"
+
+
+def test_static_detail_fallback_ignores_gutenify_css_noise_on_one_man_studio_page() -> None:
+    detail_html = _read_fixture("theonemanstudio_detail_live_shape.html")
+
+    def fake_fetch(
+        url: str, _remaining_budget_s: float | None = None, **kwargs: object
+    ) -> tuple[str, bool]:
+        assert url == "https://theonemanstudio.com/jobs/environment-artist"
+        return detail_html, False
+
+    result = process_detail_link(
+        detail="https://theonemanstudio.com/jobs/environment-artist",
+        detail_title="Senior | Mid-level Environment Artist",
+        source_started=0.0,
+        static_source_time_budget_s=10,
+        fetch_html_cached=fake_fetch,
+        timeout_s=5,
+        detail_retries=0,
+        company="One Man Studio Ltd.",
+        source_name="static_source::static:listing_url:https://theonemanstudio.com/careers/",
+        source={"studio": "One Man Studio", "company": "One Man Studio"},
+        ignored_link_titles=set(),
+    )
+
+    assert len(result["rows"]) == 1
+    row = result["rows"][0]
+    assert row["city"] == ""
+    assert row["country"] == "Unknown"
+    assert row["locationSummary"] == ""
+    assert row["locations"] == []
+    assert row["workType"] == "Remote"
+    assert row["contractType"] == "Full Time"
+
+
+def test_static_detail_fallback_ignores_scroll_noise_when_no_location_exists() -> None:
+    detail_html = """
+        <html>
+          <body>
+            <h1>PRINCIPAL 3D ENVIRONMENT ARTIST NEW IP</h1>
+            <div>Scroll</div>
+          </body>
+        </html>
+        """
+
+    def fake_fetch(
+        url: str, _remaining_budget_s: float | None = None, **kwargs: object
+    ) -> tuple[str, bool]:
+        assert url == "https://www.4a-games.com.mt/principal-3d-environment-artist-new-ip"
+        return detail_html, False
+
+    result = process_detail_link(
+        detail="https://www.4a-games.com.mt/principal-3d-environment-artist-new-ip",
+        detail_title="PRINCIPAL 3D ENVIRONMENT ARTIST NEW IP",
+        source_started=0.0,
+        static_source_time_budget_s=10,
+        fetch_html_cached=fake_fetch,
+        timeout_s=5,
+        detail_retries=0,
+        company="4A Games",
+        source_name="static:listing_url:https://www.4a-games.com.mt/careers",
+        source={"studio": "4A Games"},
+        ignored_link_titles=set(),
+    )
+
+    assert all(row.get("city") != "Scroll" for row in result["rows"])
+    assert all(row.get("locationSummary") != "Scroll" for row in result["rows"])
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "detail_url", "source_name", "company", "city_token", "title"),
+    [
+        (
+            "theonemanstudio_detail_noise.html",
+            "https://theonemanstudio.com/jobs/environment-artist",
+            "static:listing_url:https://theonemanstudio.com/careers/",
+            "One Man Studio",
+            "justification",
+            "Senior | Mid-level Environment Artist",
+        ),
+        (
+            "theonemanstudio_detail_noise.html",
+            "https://theonemanstudio.com/jobs/principal-environment-artist",
+            "static:listing_url:https://theonemanstudio.com/careers/",
+            "One Man Studio",
+            "space",
+            "Principal Environment Artist",
+        ),
+        (
+            "gismart_detail_noise.html",
+            "https://gismart.com/vacancy/web-product-designer-testora",
+            "static:listing_url:https://gismart.com/careers/",
+            "Gismart",
+            "Testora",
+            "Web/Product Designer (Testora)",
+        ),
+        (
+            "inworld_detail_noise.html",
+            "https://jobs.ashbyhq.com/inworld-ai/bf5054ab-ed19-4890-8f0b-ca8a57210e42/application",
+            "static:listing_url:https://inworld.ai/careers#job-openings",
+            "Inworld AI",
+            "Swaziland",
+            "Staff / Principal Machine Learning Engineer, Serving - Switzerland",
+        ),
+        (
+            "techland_detail_noise.html",
+            "https://techland.net/job-offers/weapon-concept-artist-57",
+            "static:listing_url:https://techland.net/job-offers",
+            "Techland",
+            "event:'pageViewed'",
+            "Weapon Concept Artist",
+        ),
+    ],
+)
+def test_static_detail_fallback_sanitizes_source_specific_noise_city_values(
+    fixture_name: str,
+    detail_url: str,
+    source_name: str,
+    company: str,
+    city_token: str,
+    title: str,
+) -> None:
+    detail_html = _read_fixture(fixture_name)
+
+    def fake_fetch(
+        url: str, _remaining_budget_s: float | None = None, **kwargs: object
+    ) -> tuple[str, bool]:
+        assert url == detail_url
+        return detail_html, False
+
+    with mock.patch(
+        "src.jobs.adapters.static_helpers.parse_jobpostings_from_html",
+        return_value=[
+            {
+                "sourceJobId": f"static:test:{city_token}",
+                "title": title,
+                "company": company,
+                "city": city_token,
+                "country": "Unknown",
+                "locations": [{"city": city_token, "country": ""}],
+                "locationSummary": city_token,
+                "workType": "Onsite",
+                "contractType": "Unknown",
+                "jobLink": detail_url,
+                "sector": "Game",
+                "postedAt": "",
+            }
+        ],
+    ):
+        result = process_detail_link(
+            detail=detail_url,
+            detail_title=title,
+            source_started=0.0,
+            static_source_time_budget_s=10,
+            fetch_html_cached=fake_fetch,
+            timeout_s=5,
+            detail_retries=0,
+            company=company,
+            source_name=source_name,
+            source={"studio": company},
+            ignored_link_titles=set(),
+        )
+
+    assert len(result["rows"]) == 1
+    row = result["rows"][0]
+    assert row["city"] == ""
+    assert row["country"] == ""
+    assert row["locationSummary"] == ""
+    assert row["locations"] == []
 
 
 def test_static_source_rejects_regular_pages_as_dead_listing_pages() -> None:
@@ -2704,6 +3175,8 @@ def test_run_static_studio_pages_source_globalstep_listing_only() -> None:
     )
     assert len(rows) == 1
     assert rows[0]["jobLink"] == "https://globalstep.com/jobs/unity-game-developer/"
+    assert rows[0]["city"] == "Bucharest"
+    assert rows[0]["country"] == "Romania"
 
 
 def test_run_static_studio_pages_source_climax_listing_only() -> None:
@@ -2851,6 +3324,114 @@ def test_sheet_studios_enriches_generic_category_rows_from_jobposting_details() 
         "https://www.tetherstudios.com/job/tech",
         "https://www.tetherstudios.com/job/art",
     }
+
+
+def test_sheet_studios_sanitizes_one_man_studio_listing_city_noise() -> None:
+    listing_html = _read_fixture("theonemanstudio_detail_noise.html")
+
+    def fake_fetch(url: str, timeout_s: int) -> str:
+        assert timeout_s == 5
+        assert url == "https://theonemanstudio.com/careers/"
+        return listing_html
+
+    def fake_parse_jobpostings_from_html(
+        *args: object, **kwargs: object
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "sourceJobId": "static:test:one-man-studio-noise",
+                "title": "Principal Environment Artist",
+                "company": "One Man Studio Ltd.",
+                "city": "size",
+                "country": "Unknown",
+                "locations": [{"city": "size", "country": ""}],
+                "locationSummary": "size",
+                "workType": "Onsite",
+                "contractType": "Unknown",
+                "jobLink": "https://theonemanstudio.com/jobs/principal-environment-artist",
+                "sector": "Game",
+                "postedAt": "",
+            }
+        ]
+
+    rows = sheet_studios.run(
+        fetch_text=fake_fetch,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0.0,
+        pages=["https://theonemanstudio.com/careers/"],
+        source_row={
+            "name": "One Man Studio (Sheet)",
+            "studio": "One Man Studio",
+            "company": "One Man Studio",
+            "id": "static:listing_url:https://theonemanstudio.com/careers/",
+        },
+        parse_jobpostings_from_html=fake_parse_jobpostings_from_html,
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["city"] == ""
+    assert row["country"] == ""
+    assert row["locationSummary"] == ""
+    assert row["locations"] == []
+
+
+def test_sheet_studios_preserves_existing_multi_location_payloads() -> None:
+    listing_html = "<html><body><script type='application/ld+json'>{}</script></body></html>"
+
+    def fake_fetch(url: str, timeout_s: int) -> str:
+        assert timeout_s == 5
+        assert url == "https://example.com/careers/"
+        return listing_html
+
+    def fake_parse_jobpostings_from_html(
+        *args: object, **kwargs: object
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "sourceJobId": "static:test:multi-location",
+                "title": "Technical Artist",
+                "company": "Example Studio",
+                "city": "Guildford",
+                "country": "UK",
+                "locations": [
+                    {"city": "Guildford", "country": "UK"},
+                    {"city": "Utrecht", "country": "NL"},
+                ],
+                "locationSummary": "Guildford, UK | Utrecht, NL",
+                "workType": "Onsite",
+                "contractType": "Unknown",
+                "jobLink": "https://example.com/jobs/technical-artist",
+                "sector": "Game",
+                "postedAt": "",
+            }
+        ]
+
+    rows = sheet_studios.run(
+        fetch_text=fake_fetch,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0.0,
+        pages=["https://example.com/careers/"],
+        source_row={
+            "name": "Example Studio (Sheet)",
+            "studio": "Example Studio",
+            "company": "Example Studio",
+            "id": "static:listing_url:https://example.com/careers/",
+        },
+        parse_jobpostings_from_html=fake_parse_jobpostings_from_html,
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["city"] == "Guildford"
+    assert row["country"] == "UK"
+    assert row["locations"] == [
+        {"city": "Guildford", "country": "UK"},
+        {"city": "Utrecht", "country": "NL"},
+    ]
+    assert row["locationSummary"] == "Guildford, UK | Utrecht, NL"
 
 
 def test_run_static_studio_pages_source_amber_jobvite_listing_only() -> None:
@@ -3016,6 +3597,30 @@ def test_extract_rendered_card_jobs_rejects_generic_site_pages_with_allow_any_an
     assert (
         rows[0]["jobLink"] == "https://www.tetherstudios.com/careers/business-development-manager"
     )
+
+
+def test_extract_rendered_card_jobs_rejects_campaign_landing_pages() -> None:
+    html = """
+        <html>
+          <body>
+            <article class="card">
+              <a href="/latin-america-student-and-recent-graduates">
+                Latin America Student and Recent Graduates Explore internship and apprenticeship roles across exciting teams including consumer products, entertainment and sports in Latin America! Jan. 14, 2025
+              </a>
+              <div>Latin America Student and Recent Graduates</div>
+            </article>
+          </body>
+        </html>
+        """
+
+    rows = extract_rendered_card_jobs(
+        html,
+        page_url="https://www.disneycareers.com/en/search-jobs/game/391/1",
+        company="Disney",
+        source_id="disney_campaign_page",
+        allow_any_anchor=True,
+    )
+    assert rows == []
 
 
 def test_extract_rendered_card_jobs_keeps_tether_category_openings() -> None:
@@ -3205,7 +3810,7 @@ def test_run_static_frontier_source_skips_non_location_dd_values() -> None:
     row = rows[0]
     assert row["title"] == "Senior Gameplay Programmer"
     assert row["city"] == "Tokyo"
-    assert row["country"] == "Unknown"
+    assert row["country"] == "Japan"
 
 
 @pytest.mark.parametrize(
@@ -3305,6 +3910,55 @@ def test_run_static_studio_pages_source_uses_rendered_card_fallback_for_manual_t
         assert str(detail.get("failureBucket") or "") != "js_required"
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
+
+
+def test_run_static_studio_pages_source_text_detail_page_overrides_listing_category_city() -> None:
+    listing_html = """
+        <html>
+          <body>
+            <section>
+              <h2>Art</h2>
+              <a href="/en/jobs?job_id=49">
+                <div class="d-table-cell vacancy ps-1 pe-3 pe-md-0">3D Environment Artist</div>
+                <div class="d-table-cell vacancy">Art</div>
+              </a>
+            </section>
+          </body>
+        </html>
+        """
+    detail_html = """
+        <html>
+          <body>
+            <h1>3D Environment Artist</h1>
+            <p>We work together in person, in Bellevue, WA, USA</p>
+          </body>
+        </html>
+        """
+    jf.SOURCE_DIAGNOSTICS.clear()
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=lambda url, _timeout: listing_html if url.endswith("/en/jobs") else detail_html,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[
+            {
+                "name": "Valve Software (Manual Website)",
+                "studio": "Valve Software",
+                "company": "Valve Software",
+                "pages": ["https://www.valvesoftware.com/en/jobs"],
+                "id": "static:listing_url:https://www.valvesoftware.com/en/jobs",
+            }
+        ],
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == "3D Environment Artist"
+    assert row["city"] == "Bellevue"
+    assert row["country"] == "US"
+    assert row["locationSummary"] == "Bellevue, US"
+    assert row["locations"] == [{"city": "Bellevue", "country": "US"}]
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert int(detail.get("keptCount") or 0) == 1
 
 
 def test_run_static_studio_pages_source_ats_wrapper_extracts_greenhouse_cards() -> None:
@@ -3416,3 +4070,101 @@ def test_run_static_studio_pages_source_amanotes_plugin_extracts_next_data_posit
         "https://www.careers.amanotes.com/jobs/"
         "senior-backend-developer/43fa1ef6-a45e-4718-9b8f-022c673632c6"
     )
+    assert rows[0]["city"] == "HCMC"
+    assert rows[0]["country"] == "Vietnam"
+    assert rows[0]["locations"] == [{"city": "HCMC", "country": "Vietnam"}]
+    assert rows[0]["locationSummary"] == "HCMC, Vietnam"
+    assert rows[0]["workType"] == ""
+
+
+def test_run_static_studio_pages_source_amanotes_plugin_preserves_remote_as_work_type() -> None:
+    html = """
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "positions": [
+                {
+                  "title": "QA Engineer",
+                  "location": "Remote",
+                  "type": "Full-time",
+                  "team": "Game",
+                  "slug": {"current": "qa-engineer"},
+                  "leverId": "job-1"
+                }
+              ]
+            }
+          }
+        }
+        </script>
+        """
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=lambda _url, _timeout: html,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[
+            {
+                "name": "Amanotes (Sheet)",
+                "studio": "Amanotes",
+                "company": "Amanotes",
+                "pages": ["https://www.careers.amanotes.com/jobs"],
+                "id": "static:listing_url:https://www.careers.amanotes.com/jobs",
+            }
+        ],
+    )
+    assert len(rows) == 1
+    assert rows[0]["city"] == ""
+    assert rows[0]["country"] == ""
+    assert rows[0]["locations"] == []
+    assert rows[0]["locationSummary"] == ""
+    assert rows[0]["workType"] == "Remote"
+
+
+def test_run_static_studio_pages_source_sheet_studios_blanks_noise_city_labels() -> None:
+    listing_html = """
+        <html>
+          <body>
+            <div class="opening-card">
+              <a href="https://example.com/story/frontend-engineer">Making complexity approachable as a Frontend Engineer</a>
+              <div>Teams</div>
+            </div>
+          </body>
+        </html>
+        """
+    detail_html = """
+        <html>
+          <body>
+            <h1>Making complexity approachable as a Frontend Engineer</h1>
+            <nav>Teams</nav>
+            <article>Culture story, not a job opening.</article>
+          </body>
+        </html>
+        """
+
+    def fake_fetch(url: str, _timeout: int) -> str:
+        mapping = {
+            "https://tactilegames.com/careers/": listing_html,
+            "https://example.com/story/frontend-engineer": detail_html,
+        }
+        return mapping[url]
+
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=fake_fetch,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[
+            {
+                "name": "Tactile Games",
+                "studio": "Tactile Games",
+                "company": "Tactile Games",
+                "pages": ["https://tactilegames.com/careers/"],
+                "id": "static:listing_url:https://tactilegames.com/careers/",
+            }
+        ],
+    )
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Making complexity approachable as a Frontend Engineer"
+    assert rows[0]["city"] == ""
+    assert rows[0]["country"] == "Unknown"

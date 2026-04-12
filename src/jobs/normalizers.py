@@ -16,6 +16,7 @@ COUNTRY_NAME_TO_CODE = {
     "italy": "IT",
     "france": "FR",
     "germany": "DE",
+    "california": "US",
     "sweden": "SE",
     "norway": "NO",
     "denmark": "DK",
@@ -23,6 +24,13 @@ COUNTRY_NAME_TO_CODE = {
     "brazil": "BR",
     "india": "IN",
     "canada": "CA",
+    "malaysia": "MY",
+    "turkey": "TR",
+    "turkiye": "TR",
+    "türkiye": "TR",
+    "ivory coast": "CI",
+    "cote d'ivoire": "CI",
+    "côte d'ivoire": "CI",
     "remote": "Remote",
 }
 

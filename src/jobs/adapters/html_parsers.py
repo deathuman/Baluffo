@@ -314,6 +314,8 @@ def parse_gamesindustry_html(
 ) -> list[RawJob]:
     jobs: list[RawJob] = []
     seen_links = set()
+    listing_row_pattern = re.compile(r'(?is)<div[^>]+class=["\'][^"\']*views-row[^"\']*["\'][^>]*>')
+    listing_row_starts = [match.start() for match in listing_row_pattern.finditer(html_text)]
 
     def push_job(row: RawJob) -> None:
         job_link = normalize_url(row.get("jobLink"))
@@ -377,13 +379,60 @@ def parse_gamesindustry_html(
             continue
         if norm_text(title) in {"read more", "find jobs", "search for jobs"}:
             continue
-        context = html_text[max(0, match.start() - 500) : min(len(html_text), match.end() + 2500)]
-        company_match = re.search(r'(?is)<div class="company-name">(.*?)</div>', context)
-        city_match = re.search(r'(?is)<div class="city">(.*?)</div>', context)
-        changed_match = re.search(r'(?is)<div class="job-changed-date">(.*?)</div>', context)
+        row_context = ""
+        row_start = next(
+            (start for start in reversed(listing_row_starts) if start <= match.start()),
+            -1,
+        )
+        if row_start >= 0:
+            next_row_start = next(
+                (start for start in listing_row_starts if start > row_start),
+                len(html_text),
+            )
+            row_context = html_text[row_start:next_row_start]
+        context = (
+            row_context
+            or html_text[max(0, match.start() - 500) : min(len(html_text), match.end() + 2500)]
+        )
+        company_match = (
+            re.search(
+                r'(?is)<div[^>]*class=["\'][^"\']*company-name[^"\']*["\'][^>]*>(.*?)</div>',
+                context,
+            )
+            or re.search(
+                r'(?is)<span[^>]*class=["\'][^"\']*recruiter-company-profile-job-organization[^"\']*["\'][^>]*>(.*?)</span>',
+                context,
+            )
+            or re.search(
+                r'(?is)<div[^>]*class=["\'][^"\']*pane-node-recruiter-company-profile-job-organization[^"\']*["\'][^>]*>(.*?)</div>',
+                context,
+            )
+        )
+        location_match = (
+            re.search(
+                r'(?is)<div[^>]*class=["\'][^"\']*city[^"\']*["\'][^>]*>(.*?)</div>',
+                context,
+            )
+            or re.search(
+                r'(?is)<div[^>]*class=["\'][^"\']*location[^"\']*["\'][^>]*>(.*?)</div>',
+                context,
+            )
+            or re.search(
+                r'(?is)<div[^>]*class=["\'][^"\']*field-job-region[^"\']*["\'][^>]*>(.*?)</div>',
+                context,
+            )
+        )
+        changed_match = re.search(
+            r'(?is)<div[^>]*class=["\'][^"\']*job-changed-date[^"\']*["\'][^>]*>(.*?)</div>',
+            context,
+        ) or re.search(
+            r'(?is)<span[^>]*class=["\'][^"\']*date[^"\']*["\'][^>]*>(.*?)</span>',
+            context,
+        )
 
         company = strip_html_text(company_match.group(1)) if company_match else ""
-        city = strip_html_text(city_match.group(1)) if city_match else ""
+        location_text = strip_html_text(location_match.group(1)) if location_match else ""
+        location_details = normalize_location_details(location_text)
         changed_date = strip_html_text(changed_match.group(1)) if changed_match else ""
         source_id_match = re.search(r"/job/[^/?#]*-(\d+)", href)
 
@@ -392,10 +441,10 @@ def parse_gamesindustry_html(
                 "sourceJobId": clean_text(source_id_match.group(1) if source_id_match else ""),
                 "title": title,
                 "company": company or "Unknown",
-                "city": city,
-                "country": "Unknown",
-                "locations": [{"city": clean_text(city), "country": "Unknown"}] if city else [],
-                "locationSummary": clean_text(city),
+                "city": clean_text(location_details.get("city")),
+                "country": clean_text(location_details.get("country")) or "Unknown",
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
                 "workType": "",
                 "contractType": "",
                 "jobLink": urljoin(base_url, href),

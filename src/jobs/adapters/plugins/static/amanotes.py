@@ -7,9 +7,10 @@ from html import unescape
 from typing import Any
 from urllib.parse import urljoin
 
+from src.jobs.adapters.parsers.location import normalize_location_details
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
-from src.jobs.text_utils import clean_text
+from src.jobs.text_utils import clean_text, norm_text
 
 _NEXT_DATA_RE = re.compile(r'(?is)<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>')
 _HOSTS = {"careers.amanotes.com", "www.careers.amanotes.com"}
@@ -59,6 +60,24 @@ def run(
         if not isinstance(position, dict):
             continue
         title = clean_text(position.get("title"))
+        raw_location = clean_text(position.get("location"))
+        normalized_location = re.sub(r"[\s_-]+", " ", norm_text(raw_location)).strip()
+        location_details = normalize_location_details(raw_location)
+        if norm_text(raw_location) in {"hcm", "hcmc", "ho chi minh city"}:
+            location_details = {
+                "city": "HCMC",
+                "country": "Vietnam",
+                "locations": [{"city": "HCMC", "country": "Vietnam"}],
+                "locationSummary": "HCMC, Vietnam",
+            }
+        work_type = (
+            raw_location
+            if "remote" in normalized_location
+            or normalized_location in {"hybrid", "onsite", "on site", "worldwide"}
+            else ""
+        )
+        if location_details["city"] == "Remote" and location_details["country"] == "Remote":
+            location_details = normalize_location_details("")
         slug = clean_text((position.get("slug") or {}).get("current"))
         lever_id = clean_text(position.get("leverId") or position.get("_id"))
         if not title or not slug or not lever_id:
@@ -67,9 +86,13 @@ def run(
             {
                 "title": title,
                 "company": company,
-                "city": clean_text(position.get("location")),
-                "country": "",
-                "workType": clean_text(position.get("location")),
+                "city": location_details["city"],
+                "country": ""
+                if location_details["country"] == "Unknown"
+                else location_details["country"],
+                "locations": location_details["locations"],
+                "locationSummary": location_details["locationSummary"],
+                "workType": work_type,
                 "contractType": clean_text(position.get("type")),
                 "jobLink": urljoin(page_url, f"/jobs/{slug}/{lever_id}"),
                 "sector": clean_text(position.get("team")) or "Game",

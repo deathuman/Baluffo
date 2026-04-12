@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.adapters import provider_parsers as _provider_parsers
-from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
+from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, strip_html_text
+from src.jobs.adapters.parsers.location import parse_generic_location_fields
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text, normalize_url
@@ -58,6 +60,41 @@ def _merge_detail_job(
         listing_row.get("postedAt")
     )
     return merged
+
+
+def _parse_text_detail_location(detail_html: str, detail_url: str) -> dict[str, Any]:
+    text = clean_text(strip_html_text(detail_html))
+    if not text:
+        return {}
+    title = clean_text(urlparse(detail_url).path.rstrip("/").split("/")[-1].replace("-", " "))
+    for line in (clean_text(line) for line in text.splitlines() if clean_text(line)):
+        if title and line.lower() == title.lower():
+            continue
+        candidates = []
+        lowered = line.lower()
+        if " in " in lowered:
+            candidates.append(clean_text(line.rsplit(" in ", 1)[-1]))
+        if " at " in lowered:
+            candidates.append(clean_text(line.rsplit(" at ", 1)[-1]))
+        candidates.append(line)
+        for candidate in candidates:
+            city, country, _ = parse_generic_location_fields(candidate)
+            if clean_text(city).lower().startswith(("in ", "at ")):
+                continue
+            if not city and country == "Unknown":
+                continue
+            normalized_country = country if country != "Unknown" else ""
+            locations = []
+            if city or normalized_country:
+                locations.append({"city": city, "country": normalized_country})
+            return {
+                "city": city,
+                "country": normalized_country,
+                "locations": locations,
+                "locationSummary": ", ".join(part for part in [city, normalized_country] if part),
+                "workType": "Onsite" if "in person" in text.lower() else "",
+            }
+    return {}
 
 
 def _run_structured_listing_sources(
@@ -162,6 +199,10 @@ def _run_structured_listing_sources(
                             fallback_source_id_prefix=f"{adapter_name}:{source_name}",
                         )
                         detail_rows = parsed_detail_rows or []
+                        if not detail_rows:
+                            text_detail_row = _parse_text_detail_location(detail_html, detail_url)
+                            if text_detail_row:
+                                detail_rows = [text_detail_row]
                     except Exception as exc:  # noqa: BLE001
                         errors.append(f"{adapter_name}:{source_name}:{detail_url}: {exc}")
                     if detail_rows:

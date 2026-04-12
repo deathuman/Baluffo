@@ -17,7 +17,7 @@ _LOCATION_LABEL_TOKENS = {
     "job location",
     "work location",
 }
-_LOCATION_WORK_TYPE_TOKENS = {"hybrid", "onsite", "on site"}
+_LOCATION_WORK_TYPE_TOKENS = {"hybrid", "onsite", "on site", "full time", "part time"}
 _CITY_ABBREVIATION_ALLOWLIST = {"hcmc", "nyc", "la", "sf", "dc"}
 _CITY_REGION_DESCRIPTOR_ALLOWLIST = {
     "anz",
@@ -273,7 +273,14 @@ _CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS = {
     "accessibility",
     "ai",
     "analytics",
+    "art",
+    "audio",
+    "admin",
     "blog",
+    "backdrop",
+    "blur",
+    "block",
+    "content",
     "code",
     "company",
     "companies",
@@ -284,10 +291,19 @@ _CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS = {
     "customer",
     "enablement",
     "explore",
+    "finance",
     "games",
     "gaming",
+    "document",
+    "developers",
+    "hardware",
     "google",
+    "gutenify",
+    "grid",
+    "gutter",
+    "senior",
     "learn",
+    "legal",
     "marketing",
     "official",
     "product",
@@ -297,28 +313,148 @@ _CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS = {
     "results",
     "search",
     "services",
+    "site",
+    "scroll",
     "support",
     "technology",
     "terms",
+    "justification",
+    "style",
+    "styles",
+    "menu",
+    "pageviewed",
+    "news",
+    "serving",
+    "staff",
+    "swaziland",
+    "testora",
+    "techland",
+    "walking",
+    "space",
+    "column",
+    "moz",
+    "button",
+    "inner",
+    "editor",
+    "shadow",
+    "object",
+    "element",
+    "node",
+    "icon",
+    "label",
+    "text",
+    "item",
+    "items",
+    "link",
+    "links",
+    "row",
+    "rows",
+    "list",
+    "lists",
+    "svg",
+    "path",
+    "image",
+    "img",
+    "size",
+    "home",
+    "wrapper",
+    "container",
+    "section",
+    "header",
+    "footer",
+    "main",
+    "body",
+    "nav",
+    "panel",
+    "dropdown",
+    "tab",
+    "tabs",
+    "webkit",
     "website",
     "wizards",
+}
+_LOWERCASE_CITY_CHROME_TOKENS = {
+    "background",
+    "intrinsic",
+    "mobile",
+    "paced",
+    "primary",
+    "pageviewed",
+    "runtime",
+    "space",
+    "column",
+    "moz",
+    "button",
+    "inner",
+    "editor",
+    "shadow",
+    "object",
+    "element",
+    "node",
+    "icon",
+    "label",
+    "text",
+    "item",
+    "items",
+    "link",
+    "links",
+    "row",
+    "rows",
+    "list",
+    "lists",
+    "svg",
+    "path",
+    "image",
+    "img",
+    "size",
+    "home",
+    "wrapper",
+    "container",
+    "section",
+    "header",
+    "footer",
+    "main",
+    "body",
+    "nav",
+    "panel",
+    "dropdown",
+    "tab",
+    "tabs",
+    "touch",
+    "widget",
 }
 _CITY_CHROME_LABELS = {
     "about",
     "accessibility services",
+    "admin",
+    "backdrop",
     "blog",
+    "blur",
     "clear search results",
     "company",
     "companies",
     "corporate",
     "creative",
     "cookies and consent policies",
+    "content",
     "explore",
+    "document",
+    "gutenify",
     "google analytics",
+    "get started",
     "official website",
     "privacy policy",
     "privacy policy legal eula",
+    "read more",
+    "senior",
+    "security and compliance",
+    "menu",
+    "site",
     "terms of service",
+    "webkit",
+    "event:'pageviewed'",
+    "techland",
+    "space",
     "visit their website",
     "we're sorry",
 }
@@ -444,7 +580,7 @@ _PHONE_LIKE_RE = re.compile(r"(?i)(?:\+?\d[\d\s().-]{6,}\d|\(?\d{3}\)?[-.\s]?\d{
 _URL_LIKE_RE = re.compile(r"(?i)\b(?:https?://|www\.)")
 _EMAIL_LIKE_RE = re.compile(r"(?i)\b[\w.+-]+@[\w.-]+\.\w+\b")
 _CSS_LIKE_RE = re.compile(
-    r"(?i)(?:--|var\(|calc\(|box-shadow|grid-gutter|padding:|border:|width:|size:)"
+    r"(?i)(?:--|var\(|calc\(|box-shadow|grid-gutter|padding:|border:|width:|size:|\b\d+(?:\.\d+)?(?:px|vw|vh|rem|em|%)\)?)"
 )
 _SCRIPT_LIKE_RE = re.compile(
     r"(?i)(?:document\.|addEventListener|DOMContentLoaded|querySelector|innerHTML|setTimeout|console\.|function\s*\(|\{\{|\}\})"
@@ -527,12 +663,18 @@ def classify_city_garbage(value: Any) -> str:
     normalized = re.sub(r"[\s_-]+", " ", lowered).strip()
     words = _location_candidate_words(token)
     alpha_words = [word for word in words if any(char.isalpha() for char in word)]
+    if token.endswith((")", "]", "}")) and not any(opening in token for opening in ("(", "[", "{")):
+        stripped = token.rstrip(")]}")
+        if stripped and re.fullmatch(r"[A-Za-zÀ-ÿ']+(?:\s+[A-Za-zÀ-ÿ']+)*", stripped):
+            return "role_category"
     if normalized in _CITY_REGION_DESCRIPTOR_ALLOWLIST:
         return ""
     if _looks_like_pipe_joined_location_summary(token):
         return ""
     if normalized in _REMOTEISH_LOCATION_TOKENS or _looks_like_country_token(token):
         return ""
+    if "student and recent graduates" in normalized:
+        return "role_category"
     if normalized in _LOCATION_LABEL_TOKENS:
         return "site_chrome"
     if normalized in _CITY_CHROME_LABELS or any(
@@ -578,6 +720,12 @@ def classify_city_garbage(value: Any) -> str:
         lowered_word = word.lower()
         if lowered_word in _CITY_ABBREVIATION_ALLOWLIST:
             return ""
+        if len(lowered_word) == 1 and lowered_word.isalpha() and lowered_word.islower():
+            return "technical_noise"
+        if lowered_word in _LOWERCASE_CITY_CHROME_TOKENS and (
+            token == token.lower() or token.istitle()
+        ):
+            return "site_chrome"
         if "'" in word and word.replace("'", "").isalpha():
             return ""
         if lowered_word in _CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS:

@@ -58,6 +58,35 @@ def test_canonicalize_returns_typed_job() -> None:
     assert job.profession == "technical-artist"
 
 
+def test_canonical_job_from_mapping_collapses_sequence_text_fields() -> None:
+    job = CanonicalJob.from_mapping(
+        {
+            "title": ["Lead Technical Designer", " House of How Games"],
+            "company": ["House of How"],
+            "description": ["Lead Technical Designer", "House of How Games"],
+            "city": ["Stockholm"],
+            "country": ["SE"],
+            "jobLink": "https://www.houseofhow.com/job/lead-technical-designer",
+            "source": ["scrapy_static_sources"],
+            "sourceJobId": ["3fd3af46526a"],
+            "locationSummary": ["Stockholm, SE"],
+            "adapter": ["static"],
+            "studio": ["House of How"],
+        }
+    )
+
+    assert job.title == "Lead Technical Designer"
+    assert job.company == "House of How"
+    assert job.description == "Lead Technical Designer"
+    assert job.city == "Stockholm"
+    assert job.country == "SE"
+    assert job.source == "scrapy_static_sources"
+    assert job.sourceJobId == "3fd3af46526a"
+    assert job.locationSummary == "Stockholm, SE"
+    assert job.adapter == "static"
+    assert job.studio == "House of How"
+
+
 def test_parsers_keep_extraction_raw_and_dedup_accepts_typed_records() -> None:
     rows = parsers.parse_jobpostings_from_html(
         """

@@ -122,6 +122,69 @@ def test_canonicalize_job_with_reason_blanks_semantic_location_noise() -> None:
     assert payload["country"] == ""
 
 
+def test_canonicalize_job_with_reason_normalizes_raw_city_blob_without_locations() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Technical Artist",
+            "company": "Riot Games",
+            "city": "Los Angeles, USA",
+            "country": "Unknown",
+            "jobLink": "https://example.com/riot",
+            "sector": "Game",
+        },
+        source="static_source::static:listing_url:https://www.riotgames.com/en/work-with-us/jobs",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == "Los Angeles"
+    assert payload["country"] == "US"
+    assert payload["locations"] == [{"city": "Los Angeles", "country": "US"}]
+
+
+def test_canonicalize_job_with_reason_promotes_country_only_raw_city_value() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Localization Producer",
+            "company": "PlayStation Global",
+            "city": "Japan",
+            "country": "Unknown",
+            "jobLink": "https://example.com/japan",
+            "sector": "Game",
+        },
+        source="greenhouse_boards",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == ""
+    assert payload["country"] == "Japan"
+    assert payload["locations"] == [{"city": "", "country": "Japan"}]
+
+
+def test_canonicalize_job_with_reason_drops_static_page_noise_in_city_field() -> None:
+    row, reason = jf.canonicalize_job_with_reason(
+        {
+            "title": "Studio Operations",
+            "company": "Warner Bros. Games",
+            "city": "Content & Editorial",
+            "country": "Unknown",
+            "jobLink": "https://careers.wbd.com/global/en/c/studio-operations-jobs",
+            "sector": "Game",
+        },
+        source="static_source::static:listing_url:https://careers.wbd.com/global/en/wb-games-jobs",
+        fetched_at="2026-03-20T00:00:00Z",
+    )
+    assert reason == ""
+    assert row is not None
+    payload = row if isinstance(row, dict) else row.to_dict()
+    assert payload["city"] == ""
+    assert payload["country"] == ""
+    assert payload["locations"] == []
+
+
 def test_public_text_quality_report_includes_city_garbage_audit() -> None:
     report = build_public_text_quality_report(
         [
@@ -330,7 +393,7 @@ def test_canonicalize_job_with_reason_rejects_country_work_type_noise() -> None:
     assert row is not None
     payload = row if isinstance(row, dict) else row.to_dict()
     assert payload["city"] == "Tokyo"
-    assert payload["country"] == ""
+    assert payload["country"] == "Japan"
 
 
 def test_canonicalize_job_with_reason_preserves_region_country_names() -> None:

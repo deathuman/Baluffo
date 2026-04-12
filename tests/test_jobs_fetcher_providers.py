@@ -160,6 +160,18 @@ def _assert_gamesindustry(rows: list[dict[str, Any]]) -> None:
     assert "Programming (6)" not in titles
 
 
+def test_parse_gamesindustry_html_extracts_company_and_city_from_real_43784_listing() -> None:
+    html = _fixture("gamesindustry_job_43784_listing.html")
+    rows = jf.parse_gamesindustry_html(html, "https://jobs.gamesindustry.biz")
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Senior Level Designer [Fixed Term]"
+    assert rows[0]["company"] == "Avalanche Studios"
+    assert rows[0]["city"] == "Stockholm"
+    assert rows[0]["country"] == "SE"
+    assert rows[0]["sourceJobId"] == "43784"
+
+
 def _assert_greenhouse(rows: list[dict[str, Any]]) -> None:
     assert all(row["sourceJobId"].startswith("greenhouse:guerrilla-games:") for row in rows)
     assert rows[0]["company"] == "Guerrilla Games"
@@ -437,6 +449,142 @@ def test_parse_workable_jobs_payload_fixture() -> None:
     rows = jf.parse_workable_jobs_payload(payload, "hutch", fallback_company="Hutch")
     assert len(rows) == 1
     assert rows[0]["workType"] == "Remote"
+
+
+def test_parse_workable_jobs_payload_uses_top_level_location_fields() -> None:
+    payload = {
+        "name": "Vertigo",
+        "jobs": [
+            {
+                "shortcode": "3F55933E05",
+                "title": "3D Environment Artist",
+                "url": "https://apply.workable.com/j/3F55933E05",
+                "published": "2026-02-02",
+                "created_at": "2026-02-02",
+                "city": "Istanbul",
+                "country": "Turkey",
+                "locations": [
+                    {
+                        "city": "Istanbul",
+                        "country": "Turkey",
+                        "countryCode": "TR",
+                        "region": "Istanbul",
+                        "hidden": False,
+                    }
+                ],
+                "description": "We're now looking for a passionate 3D Environment Artist to join our dynamic team in Istanbul. This is an on-site role.",
+                "telecommuting": False,
+            }
+        ],
+    }
+
+    rows = jf.parse_workable_jobs_payload(payload, "vertigogames", fallback_company="Vertigo")
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["city"] == "Istanbul"
+    assert row["country"] == "TR"
+    assert row["locations"] == [{"city": "Istanbul", "country": "TR"}]
+    assert row["locationSummary"] == "Istanbul, TR"
+    assert row["workType"] == ""
+
+
+def test_parse_workable_jobs_payload_falls_back_to_description_location() -> None:
+    payload = {
+        "name": "Goliath Games",
+        "jobs": [
+            {
+                "shortcode": "goliath-1",
+                "title": "Package Designer",
+                "url": "https://apply.workable.com/goliath/j/goliath-1/",
+                "published": "2026-02-02",
+                "created_at": "2026-02-02",
+                "department": "Tech",
+                "description": "We are hiring a Package Designer for our team in Norristown, Pennsylvania, United States. This is an onsite role.",
+                "telecommuting": False,
+            }
+        ],
+    }
+
+    rows = jf.parse_workable_jobs_payload(payload, "goliath", fallback_company="Goliath Games")
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["city"] == "Norristown"
+    assert row["country"] == "US"
+    assert row["locations"] == [{"city": "Norristown", "country": "US"}]
+    assert row["locationSummary"] == "Norristown, US"
+
+
+def test_parse_workable_jobs_payload_maps_state_abbreviations_in_description_location() -> None:
+    payload = {
+        "name": "Example Games",
+        "jobs": [
+            {
+                "shortcode": "example-1",
+                "title": "Gameplay Engineer",
+                "url": "https://apply.workable.com/example/j/example-1/",
+                "department": "Engineering",
+                "description": "Join our game team in San Francisco, CA. This is an onsite role.",
+                "telecommuting": False,
+            }
+        ],
+    }
+
+    rows = jf.parse_workable_jobs_payload(payload, "example", fallback_company="Example Games")
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["city"] == "San Francisco"
+    assert row["country"] == "US"
+    assert row["locations"] == [{"city": "San Francisco", "country": "US"}]
+    assert row["locationSummary"] == "San Francisco, US"
+
+
+def test_parse_greenhouse_jobs_payload_falls_back_to_description_location() -> None:
+    payload = {
+        "jobs": [
+            {
+                "id": 12345,
+                "title": "Senior Quest Designer - Varsapura",
+                "company_name": "HoYoverse",
+                "absolute_url": "https://boards.greenhouse.io/hoyoverse/jobs/12345",
+                "location": {"name": ""},
+                "content": "<p>Location: Tokyo, Japan</p><p>Onsite role.</p>",
+                "first_published": "2026-03-01T10:00:00Z",
+            }
+        ]
+    }
+
+    rows = jf.parse_greenhouse_jobs_payload(payload, "hoyoverse", fallback_company="HoYoverse")
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["city"] == "Tokyo"
+    assert row["country"] == "Japan"
+    assert row["locations"] == [{"city": "Tokyo", "country": "Japan"}]
+    assert row["locationSummary"] == "Tokyo, Japan"
+
+
+def test_parse_pinpoint_jobs_payload_falls_back_to_description_location() -> None:
+    payload = {
+        "data": [
+            {
+                "id": "ho-1",
+                "title": "Senior Gameplay Engineer",
+                "url": "https://gameplaygalaxy.pinpointhq.com/postings/ho-1",
+                "location": {"name": ""},
+                "workplace_type_text": "Onsite",
+                "employment_type_text": "Full Time",
+                "job": {"department": {"name": "Design"}},
+                "description": "<p>Location: Tokyo, Japan</p><p>Onsite role.</p>",
+            }
+        ]
+    }
+
+    rows = jf.parse_pinpoint_jobs_payload(payload, "hoyoverse", fallback_company="HoYoverse")
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["city"] == "Tokyo"
+    assert row["country"] == "Japan"
+    assert row["locations"] == [{"city": "Tokyo", "country": "Japan"}]
+    assert row["locationSummary"] == "Tokyo, Japan"
 
 
 def test_parse_ashby_jobs_from_html_fixture() -> None:
@@ -1071,6 +1219,8 @@ def test_hrmos_plugin_extracts_listing_rows_without_detail_fetch() -> None:
     assert len(rows) == 2
     assert rows[0]["jobLink"] == "https://hrmos.co/pages/cygames/jobs/0001"
     assert rows[0]["title"] == "Gameplay Programmer"
+    assert rows[0]["city"] == "Tokyo"
+    assert rows[0]["country"] == "Japan"
 
 
 def test_hrmos_plugin_does_not_emit_full_prose_blob_as_location() -> None:
@@ -1125,6 +1275,36 @@ def test_riot_plugin_extracts_listing_rows_without_detail_fetch() -> None:
     assert len(rows) == 1
     assert rows[0]["jobLink"] == "https://www.riotgames.com/en/j/7449593"
     assert rows[0]["title"] == "Senior Software Engineer"
+    assert rows[0]["city"] == "Dublin"
+    assert rows[0]["country"] == "Ireland"
+
+
+def test_lionbridge_plugin_splits_city_region_country_listing_rows() -> None:
+    from src.jobs.adapters.plugins.static import lionbridge
+
+    html = """
+        <table>
+          <tr>
+            <td><a href="/jobs/test-lead">Test Lead</a></td>
+            <td>Mexico City, CMDX, Mexico</td>
+            <td>Onsite</td>
+          </tr>
+        </table>
+        """
+
+    rows = lionbridge.run(
+        fetch_text=lambda _url, _timeout: html,
+        timeout_s=10,
+        retries=0,
+        backoff_s=0.0,
+        pages=["https://careers.lionbridge.com/jobs/search"],
+        source_row={"id": "lionbridge", "name": "Lionbridge Games"},
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Test Lead"
+    assert rows[0]["city"] == "Mexico City"
+    assert rows[0]["country"] == "Mexico"
 
 
 def test_choose_detail_traversal_mode_prefers_listing_only_for_verified_hosts() -> None:

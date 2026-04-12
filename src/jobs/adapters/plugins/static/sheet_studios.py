@@ -9,10 +9,10 @@ from typing import Any
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.static_helpers import process_detail_link
+from src.jobs.adapters.static_helpers import _is_one_man_studio_noise_city, process_detail_link
 from src.jobs.models import RawJob
 from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
-from src.jobs.text_utils import clean_text
+from src.jobs.text_utils import clean_text, sanitize_location_text
 
 # Hosts (netloc, lower) for which this plugin handles static extraction.
 # Ensures proper classification and browser fallback when extract fails.
@@ -54,6 +54,90 @@ _SHEET_STUDIO_HOSTS = frozenset(
         "www.unknownworlds.com",
     }
 )
+
+
+def _needs_rendered_detail_resolution(row: dict[str, Any]) -> bool:
+    city = clean_text(row.get("city"))
+    if city:
+        sanitized_city, city_reason = sanitize_location_text(city, field_name="city")
+        if city_reason or not sanitized_city:
+            return True
+    return False
+
+
+def _sanitize_row_locations(
+    row: dict[str, Any],
+    *,
+    source_name: str,
+    source: dict[str, Any],
+) -> None:
+    row_city, _ = sanitize_location_text(row.get("city"), field_name="city")
+    row_country, _ = sanitize_location_text(row.get("country"), field_name="country")
+    if row_country == "Remote":
+        row_country = ""
+    if row_city == "Remote":
+        row_city = ""
+    if row_country in {"", "Unknown"} and _is_one_man_studio_noise_city(
+        row_city,
+        source_name=source_name,
+        source=source,
+    ):
+        row_city = ""
+
+    sanitized_locations: list[dict[str, str]] = []
+    raw_locations = row.get("locations")
+    if isinstance(raw_locations, list):
+        for location in raw_locations:
+            if not isinstance(location, dict):
+                continue
+            location_city, _ = sanitize_location_text(location.get("city"), field_name="city")
+            location_country, _ = sanitize_location_text(
+                location.get("country"), field_name="country"
+            )
+            if location_country == "Remote":
+                location_country = ""
+            if location_city == "Remote":
+                location_city = ""
+            if location_country in {"", "Unknown"} and _is_one_man_studio_noise_city(
+                location_city,
+                source_name=source_name,
+                source=source,
+            ):
+                location_city = ""
+            if location_city or location_country not in {"", "Unknown"}:
+                sanitized_locations.append(
+                    {
+                        "city": location_city,
+                        "country": location_country if location_country != "Unknown" else "",
+                    }
+                )
+
+    if sanitized_locations:
+        primary = sanitized_locations[0]
+        row["city"] = primary.get("city", "")
+        row["country"] = primary.get("country", "") or "Unknown"
+        row["locations"] = sanitized_locations
+        row["locationSummary"] = " | ".join(
+            ", ".join(part for part in [item.get("city", ""), item.get("country", "")] if part)
+            for item in sanitized_locations
+        )
+        return
+
+    row["city"] = row_city
+    row["country"] = row_country
+    if row_city or row_country not in {"", "Unknown"}:
+        row["locations"] = [
+            {
+                "city": row_city,
+                "country": row_country if row_country != "Unknown" else "",
+            }
+        ]
+        row["locationSummary"] = ", ".join(
+            part for part in [row_city, row_country if row_country != "Unknown" else ""] if part
+        )
+    else:
+        row["locations"] = []
+        row["locationSummary"] = ""
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
@@ -119,6 +203,7 @@ def run(
             row["adapter"] = "static"
             row["studio"] = company
             row["source"] = clean_text(source_row.get("name")) or company
+            _sanitize_row_locations(row, source_name=source_id, source=source_row)
     cleaned = [r for r in rows if isinstance(r, dict)]
     if not cleaned:
         rendered_rows = extract_rendered_card_jobs(
@@ -142,16 +227,46 @@ def run(
         if rendered_rows:
             enriched_rows: list[RawJob] = []
             source_name = clean_text(source_row.get("name")) or company
+            one_man_studio_source = (
+                "theonemanstudio" in source_id.lower() or "one man studio" in source_name.lower()
+            )
             for row in rendered_rows:
                 row = dict(row)
                 row["adapter"] = "static"
                 row["studio"] = company
                 row["source"] = source_name
+                _sanitize_row_locations(row, source_name=source_id, source=source_row)
                 title = clean_text(row.get("title"))
-                if not title or looks_like_job_title_candidate(title):
+                detail_link = clean_text(row.get("jobLink"))
+                needs_detail_lookup = _needs_rendered_detail_resolution(row)
+                if one_man_studio_source and detail_link:
+                    detail_result = process_detail_link(
+                        detail=detail_link,
+                        detail_title=title,
+                        source_started=time.perf_counter(),
+                        static_source_time_budget_s=max(5, int(timeout_s) * 2),
+                        fetch_html_cached=lambda url, **kwargs: (fetch_text(url, timeout_s), False),
+                        timeout_s=timeout_s,
+                        detail_retries=max(0, int(retries)),
+                        company=company,
+                        source_name=source_id,
+                        source=source_row,
+                        ignored_link_titles=set(),
+                    )
+                    detail_rows = (
+                        detail_result.get("rows") if isinstance(detail_result, dict) else []
+                    )
+                    if detail_rows:
+                        for detail_row in detail_rows:
+                            if isinstance(detail_row, dict):
+                                detail_row["source"] = source_name
+                                detail_row["studio"] = company
+                                detail_row["adapter"] = "static"
+                                enriched_rows.append(detail_row)
+                        continue
+                if not title or (looks_like_job_title_candidate(title) and not needs_detail_lookup):
                     enriched_rows.append(row)
                     continue
-                detail_link = clean_text(row.get("jobLink"))
                 if not detail_link:
                     enriched_rows.append(row)
                     continue
@@ -176,6 +291,8 @@ def run(
                             detail_row["studio"] = company
                             detail_row["adapter"] = "static"
                             enriched_rows.append(detail_row)
+                    continue
+                if detail_result.get("rejectedClassification"):
                     continue
                 enriched_rows.append(row)
             return enriched_rows

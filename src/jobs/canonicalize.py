@@ -217,8 +217,36 @@ def canonicalize_job_with_reason(
             normalized_entries.append(normalized_item)
         return normalized_entries
 
-    def normalize_locations(value: Any) -> list[dict[str, str]]:
+    def normalize_locations(
+        value: Any, *, raw_city: Any = "", raw_country: Any = ""
+    ) -> list[dict[str, str]]:
         details = normalize_location_details(value)
+        detail_locations = details.get("locations") or []
+        has_structured_location = (
+            any(
+                clean_text(item.get("city")) or clean_text(item.get("country"))
+                for item in detail_locations
+                if isinstance(item, dict)
+            )
+            or clean_text(details.get("city"))
+            or clean_text(details.get("country"))
+            not in {
+                "",
+                "Unknown",
+            }
+        )
+        if not has_structured_location:
+            city_fragment = sanitize_location_text(raw_city, field_name="city")[0]
+            country_fragment = sanitize_location_text(raw_country, field_name="country")[0]
+            if city_fragment or (
+                country_fragment and norm_text(country_fragment) not in {"", "unknown"}
+            ):
+                raw_fragments = [city_fragment]
+                if country_fragment and norm_text(country_fragment) != "unknown":
+                    raw_fragments.append(country_fragment)
+                details = normalize_location_details(
+                    ", ".join(fragment for fragment in raw_fragments if fragment)
+                )
         locations = [
             {
                 "city": sanitize_location_text(item.get("city"), field_name="city")[0],
@@ -272,7 +300,11 @@ def canonicalize_job_with_reason(
         title=title,
         job_link=normalized_link,
     )
-    normalized_locations = normalize_locations(raw.get("locations"))
+    normalized_locations = normalize_locations(
+        raw.get("locations"),
+        raw_city=raw.get("city"),
+        raw_country=raw.get("country"),
+    )
     primary_location = next(
         (item for item in normalized_locations if item.get("city") or item.get("country")),
         {},
@@ -288,6 +320,28 @@ def canonicalize_job_with_reason(
     country_value, country_reason = sanitize_location_text(raw.get("country"), field_name="country")
     if not city_value and primary_location.get("city"):
         city_value = primary_location["city"]
+    elif city_value and primary_location.get("city"):
+        raw_city_details = normalize_location_details(raw.get("city"))
+        raw_city_locations = raw_city_details.get("locations") or []
+        raw_city_primary = next(
+            (
+                item
+                for item in raw_city_locations
+                if isinstance(item, dict)
+                and (clean_text(item.get("city")) or clean_text(item.get("country")))
+            ),
+            {},
+        )
+        if (
+            clean_text(raw_city_primary.get("city")) == primary_location.get("city")
+            and (
+                not clean_text(raw_city_primary.get("country"))
+                or clean_text(raw_city_primary.get("country"))
+                == clean_text(primary_location.get("country"))
+            )
+            and norm_text(country_value) in {"", "unknown"}
+        ):
+            city_value = primary_location["city"]
     if (
         not country_value or country_reason or norm_text(country_value) == "unknown"
     ) and primary_location.get("country"):

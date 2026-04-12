@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 from src.jobs.adapters.html_parsers import html_fragment_lines, iter_anchor_fragments
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.provider_parsers import normalize_location_details
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 
@@ -63,13 +64,14 @@ def run(
         if not title:
             continue
         seen.add(link)
+        location_details = normalize_location_details(location)
         jobs.append(
             {
                 "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
                 "title": title,
                 "company": company,
-                "city": location,
-                "country": "Unknown",
+                "city": clean_text(location_details.get("city")),
+                "country": clean_text(location_details.get("country")) or "Unknown",
                 "workType": "",
                 "contractType": "",
                 "jobLink": link,
@@ -78,6 +80,8 @@ def run(
                 "adapter": "static",
                 "studio": company,
                 "source": clean_text(source_row.get("name")) or company,
+                "locations": location_details.get("locations") or [],
+                "locationSummary": clean_text(location_details.get("locationSummary")),
             }
         )
     if not jobs:

@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from collections.abc import Mapping
 from functools import lru_cache
 from html import unescape
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+from src.jobs.normalizers import COUNTRY_NAME_TO_CODE, normalize_country
 
 TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source"}
 HTML_TAG_RE = re.compile(r"(?is)<[^>]+>")
@@ -22,13 +25,16 @@ LOCATION_NOISE_PATTERNS = (
     re.compile(r"(?i)\b(business level|job description|preferred|benefits?|contact us)\b"),
     re.compile(r"(?i)\b(open jobs?|followers?|following|connections?|employees?)\b"),
     re.compile(r"(?i)\b(report this post|view all jobs|job postings?|all jobs)\b"),
+    re.compile(r"(?i)\b(admin|backdrop|blur|gutter|site|webkit)\b"),
     re.compile(
         r"(?i)\b(job|jobs|career|careers|hiring|quiz|game|artist|animator|designer|developer|engineer|programmer|producer|director|writer|specialist|manager|intern|freelanc(?:e|ing)|technical)\b"
     ),
     re.compile(r"(?i)(?:https?://|www\.)"),
     re.compile(r"(キャリア登録|ポジション|ご案内|応募|職務経歴|ビジネスレベルの日本語能力)"),
 )
-LOCATION_CSS_NOISE_RE = re.compile(r"(?i)(?:--|var\(|calc\(|box-shadow|grid-gutter)")
+LOCATION_CSS_NOISE_RE = re.compile(
+    r"(?i)(?:--|var\(|calc\(|box-shadow|grid-gutter|\b\d+(?:\.\d+)?(?:px|vw|vh|rem|em|%)\)?)"
+)
 LOCATION_ADDRESS_NOISE_RE = re.compile(
     r"(?i)\b\d[^\n]*\b(?:street|st\.?|avenue|ave\.?|road|rd\.?|boulevard|blvd\.?|drive|dr\.?|lane|ln\.?|way|parkway|pkwy\.?|suite|ste\.?|apt\.?|unit|floor|fl\.?|building|bldg\.?)\b"
 )
@@ -40,6 +46,76 @@ LOCATION_ROLE_BLOB_RE = re.compile(
     r"(?i)\b(administratif|administration|assistant|assistante|gestion|human resources|hr|office|operations?|coordination|support)\b"
 )
 REMOTEISH_TOKENS = {"remote", "hybrid", "onsite", "on-site", "worldwide"}
+LOWERCASE_CITY_NOISE_TOKENS = {
+    "background",
+    "block",
+    "content",
+    "document",
+    "get started",
+    "event:'pageviewed'",
+    "justification",
+    "intrinsic",
+    "mobile",
+    "paced",
+    "primary",
+    "pageviewed",
+    "read more",
+    "senior",
+    "developers",
+    "news",
+    "runtime",
+    "gutenify",
+    "staff",
+    "serving",
+    "style",
+    "styles",
+    "swaziland",
+    "testora",
+    "space",
+    "column",
+    "moz",
+    "button",
+    "inner",
+    "editor",
+    "shadow",
+    "object",
+    "element",
+    "node",
+    "icon",
+    "label",
+    "text",
+    "item",
+    "items",
+    "link",
+    "links",
+    "row",
+    "rows",
+    "list",
+    "lists",
+    "svg",
+    "path",
+    "image",
+    "img",
+    "size",
+    "home",
+    "wrapper",
+    "container",
+    "section",
+    "header",
+    "footer",
+    "main",
+    "body",
+    "nav",
+    "panel",
+    "dropdown",
+    "tab",
+    "tabs",
+    "techland",
+    "menu",
+    "walking",
+    "touch",
+    "widget",
+}
 COUNTRY_ACCEPTANCE_CONTRACT_PATH = (
     Path(__file__).resolve().parents[2] / "data/contracts/country_acceptance.json"
 )
@@ -49,7 +125,29 @@ CITY_NOISE_CONTRACT_PATH = (
 
 
 def clean_text(value: Any) -> str:
-    return str(value or "").strip()
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore").strip()
+    if isinstance(value, Mapping):
+        for key in ("name", "title", "value", "text", "label", "content"):
+            candidate = clean_text(value.get(key))
+            if candidate:
+                return candidate
+        for item in value.values():
+            candidate = clean_text(item)
+            if candidate:
+                return candidate
+        return ""
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            candidate = clean_text(item)
+            if candidate:
+                return candidate
+        return ""
+    return str(value).strip()
 
 
 def norm_text(value: Any) -> str:
@@ -171,6 +269,17 @@ def sanitize_country_text(value: Any) -> tuple[str, str]:
     text = sanitize_public_text(value)
     if not text:
         return "", ""
+    if text == "Remote":
+        return "Remote", ""
+    if len(text) == 2 and text.isalpha() and text == text.upper():
+        return text, ""
+    normalized = normalize_country(text)
+    if (
+        normalized in set(COUNTRY_NAME_TO_CODE.values())
+        or text.lower() in COUNTRY_NAME_TO_CODE
+        or resolve_country_acceptance_value(text)
+    ):
+        return normalized, ""
     reason = invalid_location_reason(text, field_name="country")
     if reason:
         return "", reason
@@ -196,6 +305,10 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
         return ""
     if lowered in REMOTEISH_TOKENS:
         return ""
+    if field_name == "city" and normalize_city_noise_text(text) in LOWERCASE_CITY_NOISE_TOKENS:
+        return f"invalid_{field_name}_semantic_noise"
+    if field_name == "city" and len(text) == 1 and text.isalpha() and text.islower():
+        return f"invalid_{field_name}_semantic_noise"
     if field_name == "city" and resolve_country_acceptance_value(text):
         return f"invalid_{field_name}_semantic_noise"
     if text.isdigit():
@@ -225,6 +338,8 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
     if LOCATION_SCRIPT_NOISE_RE.search(text):
         return f"invalid_{field_name}_semantic_noise"
     if text.count(",") >= 3 and LOCATION_ROLE_BLOB_RE.search(text):
+        return f"invalid_{field_name}_semantic_noise"
+    if LOCATION_ROLE_BLOB_RE.search(text) and ("(" in text or ")" in text):
         return f"invalid_{field_name}_semantic_noise"
     if text.startswith("#"):
         return f"invalid_{field_name}_semantic_noise"

@@ -180,6 +180,14 @@ _JOB_TITLE_HINT_TOKENS = (
     "retention",
 )
 
+_JOB_TITLE_CAMPAIGN_NOISE_PHRASES = (
+    "student and recent graduates",
+    "students and recent graduates",
+    "explore internship and apprenticeship roles",
+    "apprenticeship roles across exciting teams",
+    "across exciting teams including",
+)
+
 _NO_OPENING_MARKERS = (
     "no open positions",
     "no open roles",
@@ -219,6 +227,8 @@ def _count_hits(text: str, needles: tuple[str, ...]) -> int:
 def looks_like_job_title_candidate(text: str) -> bool:
     lowered = _lower(text)
     if not lowered or lowered in {"job", "jobs", "career", "careers"}:
+        return False
+    if any(phrase in lowered for phrase in _JOB_TITLE_CAMPAIGN_NOISE_PHRASES):
         return False
     return any(token in lowered for token in _JOB_TITLE_HINT_TOKENS)
 

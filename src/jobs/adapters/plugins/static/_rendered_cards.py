@@ -14,6 +14,7 @@ from src.jobs.adapters.html_parsers import (
 from src.jobs.adapters.location_rules import (
     _WORK_TYPE_NOISE_TOKENS,
     _looks_like_location_name,
+    classify_city_garbage,
     is_plausibly_location_candidate,
 )
 from src.jobs.adapters.parsers.location import normalize_location_details
@@ -73,6 +74,14 @@ _OPEN_POSITION_HINTS = frozenset(
         "open role",
         "open roles",
     }
+)
+
+_TITLE_CAMPAIGN_NOISE_PHRASES = (
+    "student and recent graduates",
+    "students and recent graduates",
+    "explore internship and apprenticeship roles",
+    "apprenticeship roles across exciting teams",
+    "across exciting teams including",
 )
 _JOB_TITLE_HINT_TOKENS = frozenset(
     {
@@ -189,6 +198,13 @@ _LOCATION_HINTS = (
     "part-time",
     "contract",
 )
+_LEADING_POSTED_DATE_RE = re.compile(
+    r"(?is)^\s*(?:"
+    r"(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\.?\s+\d{1,2}(?:,\s*\d{2,4})?"
+    r"|\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?"
+    r"|\d{4}-\d{2}-\d{2}"
+    r")\s*(?:[|\-–—:]\s*|\s+)"
+)
 
 
 def _normalize_title_candidate(text: str) -> str:
@@ -212,7 +228,26 @@ def _normalize_title_candidate(text: str) -> str:
     if hiring_match:
         candidate = hiring_match.group(1)
     candidate = clean_text(candidate)
+    candidate = _strip_leading_posted_date_prefix(candidate)
+    lowered = candidate.lower()
+    if any(phrase in lowered for phrase in _TITLE_CAMPAIGN_NOISE_PHRASES):
+        return ""
     return "" if candidate.lower() in _IGNORED_TOKENS else candidate
+
+
+def _strip_leading_posted_date_prefix(text: str) -> str:
+    candidate = clean_text(text)
+    if not candidate:
+        return ""
+    match = _LEADING_POSTED_DATE_RE.match(candidate)
+    if not match:
+        return candidate
+    remainder = clean_text(candidate[match.end() :])
+    if not remainder:
+        return candidate
+    if _looks_like_job_title(remainder):
+        return remainder
+    return candidate
 
 
 def _extract_structured_cell_texts(fragment: str) -> list[str]:
@@ -269,14 +304,15 @@ def _pick_location_and_terms(block_html: str, title: str) -> tuple[str, str, str
         if not candidate or candidate == title or candidate.lower() in _IGNORED_TOKENS:
             continue
         lower = candidate.lower()
+        normalized = re.sub(r"[\s_-]+", " ", lower).strip()
+        if normalized in {"full", "part"}:
+            continue
         if not location:
-            parsed_city, parsed_country, parsed_work_type = parse_generic_location_fields(candidate)
-            if parsed_city or parsed_country != "Unknown" or parsed_work_type:
+            parsed_city, parsed_country, _ = parse_generic_location_fields(candidate)
+            if parsed_city or parsed_country != "Unknown":
                 location = candidate
                 continue
-        if not work_type and any(
-            token in lower for token in ("full time", "part time", "remote", "hybrid")
-        ):
+        if not work_type and (normalized in _WORK_TYPE_NOISE_TOKENS or normalized in {"remote"}):
             work_type = candidate
             continue
         if not contract_type and any(
@@ -296,6 +332,8 @@ def _looks_like_location_cell(text: str) -> bool:
     if lowered in _NON_JOB_TITLE_EXACT_TOKENS or lowered in _NON_JOB_TITLE_PHRASE_TOKENS:
         return False
     normalized = re.sub(r"[\s_-]+", " ", lowered).strip()
+    if normalized in {"full", "part"}:
+        return False
     if normalized in _WORK_TYPE_NOISE_TOKENS:
         return False
     city, country, work_type = parse_generic_location_fields(candidate)
@@ -325,12 +363,17 @@ def _parse_structured_locations(
         if not candidate or candidate == title or candidate.lower() in _IGNORED_TOKENS:
             continue
         lower = candidate.lower()
+        normalized = re.sub(r"[\s_-]+", " ", lower).strip()
+        if normalized in {"full", "part"}:
+            continue
+        if normalized in _WORK_TYPE_NOISE_TOKENS:
+            if not work_type and normalized in {"full time", "part time", "remote", "hybrid"}:
+                work_type = candidate
+            continue
         if _looks_like_location_cell(candidate):
             location_candidates.append(candidate)
             continue
-        if not work_type and any(
-            token in lower for token in ("full time", "part time", "remote", "hybrid")
-        ):
+        if not work_type and normalized in {"full time", "part time", "remote", "hybrid"}:
             work_type = candidate
             continue
         if not contract_type and any(
@@ -379,6 +422,8 @@ def _pick_job_anchor(
 def _looks_like_job_title(title: str) -> bool:
     lowered = clean_text(title).lower()
     if not lowered or lowered in _IGNORED_TOKENS:
+        return False
+    if any(phrase in lowered for phrase in _TITLE_CAMPAIGN_NOISE_PHRASES):
         return False
     return any(token in lowered for token in _JOB_TITLE_HINT_TOKENS)
 
@@ -472,6 +517,14 @@ def extract_rendered_card_jobs(
         title = _pick_title(block_html, anchor_body)
         if not title:
             return
+        location_hint = ""
+        for line in html_fragment_lines(block_html):
+            candidate = clean_text(strip_html_text(line))
+            if not candidate or candidate == title or candidate.lower() in _IGNORED_TOKENS:
+                continue
+            if classify_city_garbage(candidate):
+                location_hint = candidate
+                break
         locations: list[dict[str, str]] = []
         structured_work_type = ""
         structured_contract_type = ""
@@ -551,6 +604,7 @@ def extract_rendered_card_jobs(
                 "source": "",
                 "locations": locations,
                 "locationSummary": location,
+                "_locationHint": location_hint,
                 "_renderedCardMode": mode,
             }
         )
