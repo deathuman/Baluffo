@@ -699,14 +699,16 @@ def parse_generic_location_fields(location_value: Any) -> tuple[str, str, str]:
             and not invalid_location_reason(part, field_name="city")
         ]
         if not candidate_parts:
-            country_part = next(
-                (
-                    _normalize_country_fragment(part)
-                    for part in reversed(parts)
-                    if _normalize_country_fragment(part)
-                ),
-                "",
-            )
+            country_part = ""
+            for part in reversed(parts):
+                normalized_country = _normalize_country_fragment(part)
+                cleaned_part = clean_text(part)
+                if not normalized_country:
+                    continue
+                if len(cleaned_part) == 2 and not cleaned_part.isupper():
+                    continue
+                country_part = normalized_country
+                break
             if country_part:
                 return "", country_part, ""
             return "", "Unknown", ""
