@@ -94,14 +94,24 @@ def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
         seeded_report = json.loads(
             (output / "data" / "jobs-fetch-report.json").read_text(encoding="utf-8")
         )
-        # Verify structure exists, not specific empty values (bundle may have processed data)
-        assert "startedAt" in seeded_report
-        assert "finishedAt" in seeded_report
-        assert "summary" in seeded_report
-        assert "sources" in seeded_report
-        assert "runId" in seeded_report
-        assert "runtime" in seeded_report
-        assert "taskProgress" in seeded_report
+        assert seeded_report == {
+            "schemaVersion": 1,
+            "runId": "",
+            "startedAt": "",
+            "finishedAt": "",
+            "runtime": {"lifecycle": {"owner": "fetch_report", "heartbeatAt": ""}},
+            "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+            "taskProgress": {
+                "active": False,
+                "phaseKey": "",
+                "phaseLabel": "",
+                "mode": "indeterminate",
+                "ratio": 0.0,
+                "counts": {},
+            },
+            "sources": [],
+            "outputs": {"report": str(output / "data" / "jobs-fetch-report.json")},
+        }
         assert isinstance(seeded_report["sources"], list)
 
 

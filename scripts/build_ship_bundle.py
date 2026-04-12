@@ -189,6 +189,7 @@ def _seed_runtime_data(data_dir: Path) -> None:
         src = ROOT / "data" / name
         if src.exists():
             _copy_file(src, data_dir / name)
+    fetch_report_path = data_dir / "jobs-fetch-report.json"
     payloads = {
         "source-registry-pending.json": [],
         "source-registry-rejected.json": [],
@@ -198,7 +199,6 @@ def _seed_runtime_data(data_dir: Path) -> None:
             "src.source_discovery", fromlist=["DEFAULT_DISCOVERY_CONFIG"]
         ).DEFAULT_DISCOVERY_CONFIG,
         "source-approval-state.json": {"approvedSinceLastRun": 0},
-        "jobs-fetch-report.json": {"summary": {}, "sources": [], "runtime": {}, "outputs": {}},
         "jobs-fetch-tasks.json": {"summary": {}, "tasks": [], "outputs": {}},
         "jobs-source-state.json": {"schemaVersion": 1, "updatedAt": "", "sources": {}},
         "jobs-success-cache.json": {"updatedAt": "", "successfulSources": []},
@@ -211,6 +211,31 @@ def _seed_runtime_data(data_dir: Path) -> None:
         if target.exists():
             continue
         _write_text(target, json.dumps(payload, indent=2, ensure_ascii=False))
+    _write_text(
+        fetch_report_path,
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "runId": "",
+                "startedAt": "",
+                "finishedAt": "",
+                "runtime": {"lifecycle": {"owner": "fetch_report", "heartbeatAt": ""}},
+                "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+                "taskProgress": {
+                    "active": False,
+                    "phaseKey": "",
+                    "phaseLabel": "",
+                    "mode": "indeterminate",
+                    "ratio": 0.0,
+                    "counts": {},
+                },
+                "sources": [],
+                "outputs": {"report": str(fetch_report_path)},
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+    )
 
 
 def _resolve_packaged_sync_config() -> Path | None:
