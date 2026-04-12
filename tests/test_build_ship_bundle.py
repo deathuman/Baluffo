@@ -95,10 +95,13 @@ def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
             (output / "data" / "jobs-fetch-report.json").read_text(encoding="utf-8")
         )
         # Verify structure exists, not specific empty values (bundle may have processed data)
+        assert "startedAt" in seeded_report
+        assert "finishedAt" in seeded_report
         assert "summary" in seeded_report
         assert "sources" in seeded_report
+        assert "runId" in seeded_report
         assert "runtime" in seeded_report
-        assert "outputs" in seeded_report
+        assert "taskProgress" in seeded_report
         assert isinstance(seeded_report["sources"], list)
 
 

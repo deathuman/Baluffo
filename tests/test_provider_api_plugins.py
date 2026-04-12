@@ -2,19 +2,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
 
 from src.jobs import common
 from src.jobs.adapters import _runtime, provider_api
-
-FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
-
-
-def _fixture(name: str) -> str:
-    return (FIXTURES_DIR / name).read_text(encoding="utf-8")
+from tests.jobs_fetcher_helpers import _fixture
 
 
 class _FakeDeps:
@@ -105,179 +100,231 @@ def fake_deps(monkeypatch: pytest.MonkeyPatch) -> _FakeDeps:
     return deps
 
 
-def test_provider_api_greenhouse_dispatch_extracts_registry_backed_jobs(
-    fake_deps: _FakeDeps,
-) -> None:
-    fake_deps.set_registry_entries(
-        "greenhouse",
-        [
-            {"slug": "studio-a", "studio": "Studio A", "name": "Studio A"},
-        ],
-    )
-    url = common.GREENHOUSE_JOBS_URL_TEMPLATE.format(slug="studio-a")
-    fake_deps.set_response(
-        url,
-        {
-            "jobs": [
-                {
-                    "id": 1,
-                    "text": "Engineer",
-                    "title": "Engineer",
-                    "location": {"name": "Remote"},
-                    "absolute_url": "https://example/jobs/1",
-                }
-            ]
-        },
-    )
-
-    dispatched = provider_api.run_greenhouse_boards_source(
-        fetch_text=lambda _url, _timeout: "",
-        timeout_s=5,
-        retries=1,
-        backoff_s=0.0,
-    )
-    assert len(dispatched) == 1
-    assert dispatched[0]["adapter"] == "greenhouse"
-    assert dispatched[0]["studio"] == "Studio A"
-    assert dispatched[0]["sourceJobId"].startswith("greenhouse:studio-a:")
+@dataclass(frozen=True)
+class _DispatchCase:
+    name: str
+    setup: Callable[[_FakeDeps], None]
+    run: Callable[[], list[dict[str, Any]]]
+    expected_len: int
+    expected_adapter: str
+    expected_studio: str
+    extra_check: Callable[[list[dict[str, Any]]], None] = lambda rows: None
 
 
-def test_provider_api_teamtailor_dispatch_extracts_registry_backed_jobs(
-    fake_deps: _FakeDeps,
-) -> None:
-    fake_deps.set_registry_entries(
-        "teamtailor",
-        [
-            {"name": "TT", "listing_url": "https://tt/listing", "base_url": "https://tt"},
-        ],
-    )
-    fake_deps.set_response("https://tt/listing", "<html>listing</html>")
-    fake_deps.set_response("https://tt/jobs/1", "<html>detail 1</html>")
-    fake_deps.set_response("https://tt/jobs/2", "<html>detail 2</html>")
-
-    dispatched = provider_api.run_teamtailor_sources_source(
-        fetch_text=lambda _url, _timeout: "",
-        timeout_s=5,
-        retries=1,
-        backoff_s=0.0,
-    )
-    assert len(dispatched) == 2
-    assert all(row["adapter"] == "teamtailor" for row in dispatched)
-    assert all(row["studio"] == "TT" for row in dispatched)
+def _assert_source_job_id_prefix(rows: list[dict[str, Any]]) -> None:
+    assert rows[0]["sourceJobId"].startswith("greenhouse:studio-a:")
 
 
-def test_provider_api_breezy_dispatch_extracts_registry_backed_jobs(fake_deps: _FakeDeps) -> None:
-    fake_deps.set_registry_entries(
-        "breezy",
-        [
-            {
-                "name": "YallaPlay (Breezy)",
-                "studio": "YallaPlay",
-                "board_url": "https://yallaplay.breezy.hr/",
-            }
-        ],
-    )
-    fake_deps.set_text_response("https://yallaplay.breezy.hr/", _fixture("breezy_jobs.html"))
-
-    rows = provider_api.run_breezy_sources_source(
-        fetch_text=lambda _url, _timeout: "",
-        timeout_s=5,
-        retries=1,
-        backoff_s=0.0,
-    )
-
-    assert len(rows) == 2
-    assert all(row["adapter"] == "breezy" for row in rows)
-    assert all(row["studio"] == "YallaPlay" for row in rows)
+def _assert_remote_work_type(rows: list[dict[str, Any]]) -> None:
     assert any(row["workType"] == "Remote" for row in rows)
 
 
-def test_provider_api_jazzhr_dispatch_extracts_registry_backed_jobs(fake_deps: _FakeDeps) -> None:
-    fake_deps.set_registry_entries(
-        "jazzhr",
-        [
-            {
-                "name": "Lost Boys Interactive (JazzHR)",
-                "studio": "Lost Boys Interactive",
-                "board_url": "https://lostboysinteractive.applytojob.com/apply",
-            }
-        ],
-    )
-    fake_deps.set_text_response(
-        "https://lostboysinteractive.applytojob.com/apply",
-        _fixture("jazzhr_jobs.html"),
-    )
-
-    rows = provider_api.run_jazzhr_sources_source(
-        fetch_text=lambda _url, _timeout: "",
-        timeout_s=5,
-        retries=1,
-        backoff_s=0.0,
-    )
-
-    assert len(rows) == 2
-    assert all(row["adapter"] == "jazzhr" for row in rows)
-    assert all(row["studio"] == "Lost Boys Interactive" for row in rows)
+def _assert_full_time_contract(rows: list[dict[str, Any]]) -> None:
     assert any(row["contractType"] == "Full Time" for row in rows)
 
 
-def test_provider_api_recruitee_dispatch_extracts_registry_backed_jobs(
+DISPATCH_CASES = [
+    pytest.param(
+        _DispatchCase(
+            name="greenhouse",
+            setup=lambda deps: (
+                deps.set_registry_entries(
+                    "greenhouse",
+                    [{"slug": "studio-a", "studio": "Studio A", "name": "Studio A"}],
+                ),
+                deps.set_response(
+                    common.GREENHOUSE_JOBS_URL_TEMPLATE.format(slug="studio-a"),
+                    {
+                        "jobs": [
+                            {
+                                "id": 1,
+                                "text": "Engineer",
+                                "title": "Engineer",
+                                "location": {"name": "Remote"},
+                                "absolute_url": "https://example/jobs/1",
+                            }
+                        ]
+                    },
+                ),
+            ),
+            run=lambda: provider_api.run_greenhouse_boards_source(
+                fetch_text=lambda _url, _timeout: "",
+                timeout_s=5,
+                retries=1,
+                backoff_s=0.0,
+            ),
+            expected_len=1,
+            expected_adapter="greenhouse",
+            expected_studio="Studio A",
+            extra_check=_assert_source_job_id_prefix,
+        ),
+        id="greenhouse",
+    ),
+    pytest.param(
+        _DispatchCase(
+            name="teamtailor",
+            setup=lambda deps: (
+                deps.set_registry_entries(
+                    "teamtailor",
+                    [{"name": "TT", "listing_url": "https://tt/listing", "base_url": "https://tt"}],
+                ),
+                deps.set_response("https://tt/listing", "<html>listing</html>"),
+                deps.set_response("https://tt/jobs/1", "<html>detail 1</html>"),
+                deps.set_response("https://tt/jobs/2", "<html>detail 2</html>"),
+            ),
+            run=lambda: provider_api.run_teamtailor_sources_source(
+                fetch_text=lambda _url, _timeout: "",
+                timeout_s=5,
+                retries=1,
+                backoff_s=0.0,
+            ),
+            expected_len=2,
+            expected_adapter="teamtailor",
+            expected_studio="TT",
+        ),
+        id="teamtailor",
+    ),
+    pytest.param(
+        _DispatchCase(
+            name="breezy",
+            setup=lambda deps: (
+                deps.set_registry_entries(
+                    "breezy",
+                    [
+                        {
+                            "name": "YallaPlay (Breezy)",
+                            "studio": "YallaPlay",
+                            "board_url": "https://yallaplay.breezy.hr/",
+                        }
+                    ],
+                ),
+                deps.set_text_response(
+                    "https://yallaplay.breezy.hr/", _fixture("breezy_jobs.html")
+                ),
+            ),
+            run=lambda: provider_api.run_breezy_sources_source(
+                fetch_text=lambda _url, _timeout: "",
+                timeout_s=5,
+                retries=1,
+                backoff_s=0.0,
+            ),
+            expected_len=2,
+            expected_adapter="breezy",
+            expected_studio="YallaPlay",
+            extra_check=_assert_remote_work_type,
+        ),
+        id="breezy",
+    ),
+    pytest.param(
+        _DispatchCase(
+            name="jazzhr",
+            setup=lambda deps: (
+                deps.set_registry_entries(
+                    "jazzhr",
+                    [
+                        {
+                            "name": "Lost Boys Interactive (JazzHR)",
+                            "studio": "Lost Boys Interactive",
+                            "board_url": "https://lostboysinteractive.applytojob.com/apply",
+                        }
+                    ],
+                ),
+                deps.set_text_response(
+                    "https://lostboysinteractive.applytojob.com/apply",
+                    _fixture("jazzhr_jobs.html"),
+                ),
+            ),
+            run=lambda: provider_api.run_jazzhr_sources_source(
+                fetch_text=lambda _url, _timeout: "",
+                timeout_s=5,
+                retries=1,
+                backoff_s=0.0,
+            ),
+            expected_len=2,
+            expected_adapter="jazzhr",
+            expected_studio="Lost Boys Interactive",
+            extra_check=_assert_full_time_contract,
+        ),
+        id="jazzhr",
+    ),
+    pytest.param(
+        _DispatchCase(
+            name="recruitee",
+            setup=lambda deps: (
+                deps.set_registry_entries(
+                    "recruitee",
+                    [
+                        {
+                            "name": "CrazyGames (Recruitee)",
+                            "studio": "CrazyGames",
+                            "subdomain": "jobs.crazygames.com",
+                            "api_url": "https://jobs.crazygames.com/api/offers/",
+                        }
+                    ],
+                ),
+                deps.set_response(
+                    "https://jobs.crazygames.com/api/offers/",
+                    json.loads(_fixture("recruitee_jobs.json")),
+                ),
+            ),
+            run=lambda: provider_api.run_recruitee_sources_source(
+                fetch_text=lambda _url, _timeout: "",
+                timeout_s=5,
+                retries=1,
+                backoff_s=0.0,
+            ),
+            expected_len=2,
+            expected_adapter="recruitee",
+            expected_studio="CrazyGames",
+            extra_check=_assert_remote_work_type,
+        ),
+        id="recruitee",
+    ),
+    pytest.param(
+        _DispatchCase(
+            name="pinpoint",
+            setup=lambda deps: (
+                deps.set_registry_entries(
+                    "pinpoint",
+                    [
+                        {
+                            "name": "Gameplay Galaxy (Pinpoint)",
+                            "studio": "Gameplay Galaxy",
+                            "subdomain": "gameplaygalaxy",
+                            "api_url": "https://gameplaygalaxy.pinpointhq.com/postings.json",
+                        }
+                    ],
+                ),
+                deps.set_response(
+                    "https://gameplaygalaxy.pinpointhq.com/postings.json",
+                    json.loads(_fixture("pinpoint_jobs.json")),
+                ),
+            ),
+            run=lambda: provider_api.run_pinpoint_sources_source(
+                fetch_text=lambda _url, _timeout: "",
+                timeout_s=5,
+                retries=1,
+                backoff_s=0.0,
+            ),
+            expected_len=2,
+            expected_adapter="pinpoint",
+            expected_studio="Gameplay Galaxy",
+            extra_check=_assert_remote_work_type,
+        ),
+        id="pinpoint",
+    ),
+]
+
+
+@pytest.mark.parametrize("case", DISPATCH_CASES, ids=lambda case: case.name)
+def test_provider_api_dispatch_extracts_registry_backed_jobs(
     fake_deps: _FakeDeps,
+    case: _DispatchCase,
 ) -> None:
-    fake_deps.set_registry_entries(
-        "recruitee",
-        [
-            {
-                "name": "CrazyGames (Recruitee)",
-                "studio": "CrazyGames",
-                "subdomain": "jobs.crazygames.com",
-                "api_url": "https://jobs.crazygames.com/api/offers/",
-            }
-        ],
-    )
-    fake_deps.set_response(
-        "https://jobs.crazygames.com/api/offers/",
-        json.loads(_fixture("recruitee_jobs.json")),
-    )
+    case.setup(fake_deps)
+    rows = case.run()
 
-    rows = provider_api.run_recruitee_sources_source(
-        fetch_text=lambda _url, _timeout: "",
-        timeout_s=5,
-        retries=1,
-        backoff_s=0.0,
-    )
-
-    assert len(rows) == 2
-    assert all(row["adapter"] == "recruitee" for row in rows)
-    assert all(row["studio"] == "CrazyGames" for row in rows)
-    assert any(row["workType"] == "Remote" for row in rows)
-
-
-def test_provider_api_pinpoint_dispatch_extracts_registry_backed_jobs(fake_deps: _FakeDeps) -> None:
-    fake_deps.set_registry_entries(
-        "pinpoint",
-        [
-            {
-                "name": "Gameplay Galaxy (Pinpoint)",
-                "studio": "Gameplay Galaxy",
-                "subdomain": "gameplaygalaxy",
-                "api_url": "https://gameplaygalaxy.pinpointhq.com/postings.json",
-            }
-        ],
-    )
-    fake_deps.set_response(
-        "https://gameplaygalaxy.pinpointhq.com/postings.json",
-        json.loads(_fixture("pinpoint_jobs.json")),
-    )
-
-    rows = provider_api.run_pinpoint_sources_source(
-        fetch_text=lambda _url, _timeout: "",
-        timeout_s=5,
-        retries=1,
-        backoff_s=0.0,
-    )
-
-    assert len(rows) == 2
-    assert all(row["adapter"] == "pinpoint" for row in rows)
-    assert all(row["studio"] == "Gameplay Galaxy" for row in rows)
-    assert any(row["workType"] == "Remote" for row in rows)
+    assert len(rows) == case.expected_len
+    assert all(row["adapter"] == case.expected_adapter for row in rows)
+    assert all(row["studio"] == case.expected_studio for row in rows)
+    case.extra_check(rows)

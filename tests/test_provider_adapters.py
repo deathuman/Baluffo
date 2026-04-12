@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Callable
+from dataclasses import dataclass
 from unittest import mock
+
+import pytest
 
 from src.jobs.adapters import _runtime as runtime_resolver
 from src.jobs.adapters import provider_api
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-
-FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
-
-
-def _fixture(name: str) -> str:
-    return (FIXTURES_DIR / name).read_text(encoding="utf-8")
+from tests.jobs_fetcher_helpers import _fixture
 
 
 class _FakeDeps:
@@ -25,6 +23,9 @@ class _FakeDeps:
 
     def registry_entries(self, key: str) -> list[dict[str, object]]:
         return [dict(row) for row in self._registry_rows.get(key, [])]
+
+    def set_registry_entries(self, key: str, rows: list[dict[str, object]]) -> None:
+        self._registry_rows[key] = [dict(row) for row in rows]
 
     def fetch_with_retries(
         self,
@@ -56,107 +57,167 @@ class _FakeDeps:
         }
 
 
-def test_workable_provider_adapter_fixture_extracts_jobs() -> None:
-    deps = _FakeDeps(
-        {
-            "workable": [
-                {
-                    "name": "Hutch (Workable)",
-                    "studio": "Hutch",
-                    "adapter": "workable",
-                    "account": "hutch",
-                    "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true",
-                    "enabledByDefault": True,
-                }
-            ]
-        }
-    )
+@dataclass(frozen=True)
+class _FixtureCase:
+    name: str
+    setup: Callable[[_FakeDeps], None]
+    run: Callable[[], list[dict[str, object]]]
+    expected_adapter: str
+    expected_studio: str
+    extra_check: Callable[[list[dict[str, object]]], None] = lambda rows: None
 
-    def fetch_text(url: str, _timeout: int) -> str:
-        assert url.endswith("/hutch?details=true")
-        return _fixture("workable_jobs.json")
 
-    with mock.patch.object(runtime_resolver, "facade", lambda: deps):
-        rows = provider_api.run_workable_sources_source(
-            fetch_text=fetch_text,
-            timeout_s=5,
-            retries=0,
-            backoff_s=0,
-        )
-
-    assert len(rows) >= 1
-    assert rows[0]["adapter"] == "workable"
+def _assert_basic_job_fields(rows: list[dict[str, object]]) -> None:
     assert rows[0]["title"]
     assert rows[0]["company"]
     assert rows[0]["jobLink"]
 
 
-def test_breezy_provider_adapter_fixture_extracts_jobs() -> None:
-    deps = _FakeDeps(
-        {
-            "breezy": [
-                {
-                    "name": "YallaPlay (Breezy)",
-                    "studio": "YallaPlay",
-                    "adapter": "breezy",
-                    "board_url": "https://yallaplay.breezy.hr/",
-                    "enabledByDefault": True,
-                }
-            ]
-        }
+def _setup_workable(deps: _FakeDeps) -> None:
+    deps.set_registry_entries(
+        "workable",
+        [
+            {
+                "name": "Hutch (Workable)",
+                "studio": "Hutch",
+                "adapter": "workable",
+                "account": "hutch",
+                "api_url": "https://apply.workable.com/api/v1/widget/accounts/hutch?details=true",
+                "enabledByDefault": True,
+            }
+        ],
     )
 
-    def fetch_text(url: str, _timeout: int) -> str:
-        assert url == "https://yallaplay.breezy.hr/"
-        return _fixture("breezy_jobs.html")
 
-    with mock.patch.object(runtime_resolver, "facade", lambda: deps):
-        rows = provider_api.run_breezy_sources_source(
-            fetch_text=fetch_text,
-            timeout_s=5,
-            retries=0,
-            backoff_s=0,
-        )
-
-    assert len(rows) >= 1
-    assert rows[0]["adapter"] == "breezy"
-    assert rows[0]["title"]
-    assert rows[0]["company"]
-    assert rows[0]["jobLink"]
-
-
-def test_jazzhr_provider_adapter_fixture_extracts_jobs() -> None:
-    deps = _FakeDeps(
-        {
-            "jazzhr": [
-                {
-                    "name": "Lost Boys Interactive (JazzHR)",
-                    "studio": "Lost Boys Interactive",
-                    "adapter": "jazzhr",
-                    "board_url": "https://lostboysinteractive.applytojob.com/apply",
-                    "enabledByDefault": True,
-                }
-            ]
-        }
+def _setup_breezy(deps: _FakeDeps) -> None:
+    deps.set_registry_entries(
+        "breezy",
+        [
+            {
+                "name": "YallaPlay (Breezy)",
+                "studio": "YallaPlay",
+                "adapter": "breezy",
+                "board_url": "https://yallaplay.breezy.hr/",
+                "enabledByDefault": True,
+            }
+        ],
     )
 
-    def fetch_text(url: str, _timeout: int) -> str:
-        assert url == "https://lostboysinteractive.applytojob.com/apply"
-        return _fixture("jazzhr_jobs.html")
+
+def _setup_jazzhr(deps: _FakeDeps) -> None:
+    deps.set_registry_entries(
+        "jazzhr",
+        [
+            {
+                "name": "Lost Boys Interactive (JazzHR)",
+                "studio": "Lost Boys Interactive",
+                "adapter": "jazzhr",
+                "board_url": "https://lostboysinteractive.applytojob.com/apply",
+                "enabledByDefault": True,
+            }
+        ],
+    )
+
+
+FIXTURE_CASES = [
+    pytest.param(
+        _FixtureCase(
+            name="workable",
+            setup=lambda deps: (
+                _setup_workable(deps),
+                deps.set_source_diagnostics(
+                    "workable_sources",
+                    adapter="workable",
+                    studio="Hutch",
+                    details=[],
+                    partial_errors=[],
+                ),
+            ),
+            run=lambda: provider_api.run_workable_sources_source(
+                fetch_text=lambda url, timeout: (
+                    _fixture("workable_jobs.json") if url.endswith("/hutch?details=true") else ""
+                ),
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+            ),
+            expected_adapter="workable",
+            expected_studio="Hutch",
+            extra_check=_assert_basic_job_fields,
+        ),
+        id="workable",
+    ),
+    pytest.param(
+        _FixtureCase(
+            name="breezy",
+            setup=lambda deps: (
+                _setup_breezy(deps),
+                deps.set_source_diagnostics(
+                    "breezy_sources",
+                    adapter="breezy",
+                    studio="YallaPlay",
+                    details=[],
+                    partial_errors=[],
+                ),
+            ),
+            run=lambda: provider_api.run_breezy_sources_source(
+                fetch_text=lambda url, timeout: (
+                    _fixture("breezy_jobs.html") if url == "https://yallaplay.breezy.hr/" else ""
+                ),
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+            ),
+            expected_adapter="breezy",
+            expected_studio="YallaPlay",
+            extra_check=_assert_basic_job_fields,
+        ),
+        id="breezy",
+    ),
+    pytest.param(
+        _FixtureCase(
+            name="jazzhr",
+            setup=lambda deps: (
+                _setup_jazzhr(deps),
+                deps.set_source_diagnostics(
+                    "jazzhr_sources",
+                    adapter="jazzhr",
+                    studio="Lost Boys Interactive",
+                    details=[],
+                    partial_errors=[],
+                ),
+            ),
+            run=lambda: provider_api.run_jazzhr_sources_source(
+                fetch_text=lambda url, timeout: (
+                    _fixture("jazzhr_jobs.html")
+                    if url == "https://lostboysinteractive.applytojob.com/apply"
+                    else ""
+                ),
+                timeout_s=5,
+                retries=0,
+                backoff_s=0,
+            ),
+            expected_adapter="jazzhr",
+            expected_studio="Lost Boys Interactive",
+            extra_check=_assert_basic_job_fields,
+        ),
+        id="jazzhr",
+    ),
+]
+
+
+@pytest.mark.parametrize("case", FIXTURE_CASES, ids=lambda case: case.name)
+def test_provider_fixture_parsers_extract_jobs(case: _FixtureCase) -> None:
+    deps = _FakeDeps({})
+    case.setup(deps)
 
     with mock.patch.object(runtime_resolver, "facade", lambda: deps):
-        rows = provider_api.run_jazzhr_sources_source(
-            fetch_text=fetch_text,
-            timeout_s=5,
-            retries=0,
-            backoff_s=0,
-        )
+        rows = case.run()
 
     assert len(rows) >= 1
-    assert rows[0]["adapter"] == "jazzhr"
-    assert rows[0]["title"]
-    assert rows[0]["company"]
-    assert rows[0]["jobLink"]
+    assert all(row["adapter"] == case.expected_adapter for row in rows)
+    assert all(row["studio"] == case.expected_studio for row in rows)
+    case.extra_check(rows)
 
 
 def test_personio_plugin_dispatch_uses_shared_helper_and_fixture() -> None:

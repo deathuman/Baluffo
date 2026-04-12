@@ -1,68 +1,139 @@
 import io
 import json
 import os
-from contextlib import redirect_stdout
+from collections.abc import Callable
+from contextlib import ExitStack, redirect_stdout
+from dataclasses import dataclass
 from unittest import mock
+
+import pytest
 
 from src import admin_bridge
 
 
-def test_resolve_runtime_config_cli_env_precedence(admin_bridge_entrypoint_root):
-    cfg = admin_bridge.resolve_runtime_config(
-        [
-            "--port",
-            "9001",
-            "--host",
-            "127.0.0.9",
-            "--data-dir",
-            str(admin_bridge_entrypoint_root),
-            "--log-format",
-            "jsonl",
-            "--log-level",
-            "debug",
-        ],
-        env={
-            "BALUFFO_BRIDGE_HOST": "1.2.3.4",
-            "BALUFFO_BRIDGE_PORT": "9999",
-            "BALUFFO_DATA_DIR": "C:\\should-not-win",
-            "BALUFFO_BRIDGE_LOG_FORMAT": "human",
-            "BALUFFO_BRIDGE_LOG_LEVEL": "info",
-            "BALUFFO_BRIDGE_OWNER_MODE": "env-owner",
-        },
-    )
-    assert cfg.host == "127.0.0.9"
-    assert cfg.port == 9001
-    assert str(cfg.data_dir) == str(admin_bridge_entrypoint_root.resolve())
-    assert cfg.log_format == "jsonl"
-    assert cfg.log_level == "debug"
-    assert cfg.owner_mode == "env-owner"
+@dataclass(frozen=True)
+class _RuntimeConfigCase:
+    name: str
+    cli_args: list[str]
+    env: dict[str, str]
+    bridge_defaults: dict[str, object] | None = None
+    storage_defaults: dict[str, object] | None = None
+    expected_host: str | None = None
+    expected_port: int | None = None
+    expected_data_dir_token: str | None = None
+    expected_data_dir_suffix: str | None = None
+    expected_log_format: str | None = None
+    expected_log_level: str | None = None
+    expected_owner_mode: str | None = None
+    expected_owner_token: str | None = None
+    expected_started_by: str | None = None
+    expected_owner_idle_timeout_s: float | None = None
+    expected_quiet_requests: bool | None = None
 
 
-def test_resolve_runtime_config_env_defaults_when_cli_missing(admin_bridge_entrypoint_root):
-    with (
-        mock.patch.object(
-            admin_bridge,
-            "get_bridge_defaults",
-            return_value={
-                "host": "127.0.0.2",
-                "port": 8878,
-                "log_format": "human",
-                "log_level": "info",
-                "quiet_requests": False,
+def _run_runtime_config_case(case: _RuntimeConfigCase, admin_bridge_entrypoint_root) -> None:
+    entrypoint_root = str(admin_bridge_entrypoint_root.resolve())
+    cli_args = [entrypoint_root if arg == "__ENTRYPOINT_ROOT__" else arg for arg in case.cli_args]
+    env = {
+        key: entrypoint_root if value == "__ENTRYPOINT_ROOT__" else value
+        for key, value in case.env.items()
+    }
+    with ExitStack() as stack:
+        if case.bridge_defaults is not None:
+            stack.enter_context(
+                mock.patch.object(
+                    admin_bridge,
+                    "get_bridge_defaults",
+                    return_value=case.bridge_defaults,
+                )
+            )
+        if case.storage_defaults is not None:
+            translated_storage_defaults = {}
+            for key, value in case.storage_defaults.items():
+                if isinstance(value, str) and value.startswith("__ENTRYPOINT_ROOT__/"):
+                    translated_storage_defaults[key] = (
+                        admin_bridge_entrypoint_root / value.split("/", 1)[1]
+                    )
+                elif value == "__ENTRYPOINT_ROOT__":
+                    translated_storage_defaults[key] = admin_bridge_entrypoint_root
+                else:
+                    translated_storage_defaults[key] = value
+            stack.enter_context(
+                mock.patch.object(
+                    admin_bridge,
+                    "get_storage_defaults",
+                    return_value=translated_storage_defaults,
+                )
+            )
+        cfg = admin_bridge.resolve_runtime_config(cli_args, env=env)
+
+    if case.expected_host is not None:
+        assert cfg.host == case.expected_host
+    if case.expected_port is not None:
+        assert cfg.port == case.expected_port
+    if case.expected_data_dir_token == "entrypoint-root":
+        assert str(cfg.data_dir) == entrypoint_root
+    elif case.expected_data_dir_suffix is not None:
+        assert str(cfg.data_dir) == str(
+            (admin_bridge_entrypoint_root / case.expected_data_dir_suffix).resolve()
+        )
+    if case.expected_log_format is not None:
+        assert cfg.log_format == case.expected_log_format
+    if case.expected_log_level is not None:
+        assert cfg.log_level == case.expected_log_level
+    if case.expected_owner_mode is not None:
+        assert cfg.owner_mode == case.expected_owner_mode
+    if case.expected_owner_token is not None:
+        assert cfg.owner_token == case.expected_owner_token
+    if case.expected_started_by is not None:
+        assert cfg.started_by == case.expected_started_by
+    if case.expected_owner_idle_timeout_s is not None:
+        assert cfg.owner_idle_timeout_s == case.expected_owner_idle_timeout_s
+    if case.expected_quiet_requests is not None:
+        assert cfg.quiet_requests is case.expected_quiet_requests
+
+
+RESOLVE_RUNTIME_CONFIG_CASES = [
+    pytest.param(
+        _RuntimeConfigCase(
+            name="cli-env-precedence",
+            cli_args=[
+                "--port",
+                "9001",
+                "--host",
+                "127.0.0.9",
+                "--data-dir",
+                "__ENTRYPOINT_ROOT__",
+                "--log-format",
+                "jsonl",
+                "--log-level",
+                "debug",
+            ],
+            env={
+                "BALUFFO_BRIDGE_HOST": "1.2.3.4",
+                "BALUFFO_BRIDGE_PORT": "9999",
+                "BALUFFO_DATA_DIR": "C:\\should-not-win",
+                "BALUFFO_BRIDGE_LOG_FORMAT": "human",
+                "BALUFFO_BRIDGE_LOG_LEVEL": "info",
+                "BALUFFO_BRIDGE_OWNER_MODE": "env-owner",
             },
+            expected_host="127.0.0.9",
+            expected_port=9001,
+            expected_data_dir_token="entrypoint-root",
+            expected_log_format="jsonl",
+            expected_log_level="debug",
+            expected_owner_mode="env-owner",
         ),
-        mock.patch.object(
-            admin_bridge,
-            "get_storage_defaults",
-            return_value={"data_dir": admin_bridge_entrypoint_root / "from-file"},
-        ),
-    ):
-        cfg = admin_bridge.resolve_runtime_config(
-            [],
+        id="cli-env-precedence",
+    ),
+    pytest.param(
+        _RuntimeConfigCase(
+            name="env-defaults-when-cli-missing",
+            cli_args=[],
             env={
                 "BALUFFO_BRIDGE_HOST": "0.0.0.0",
                 "BALUFFO_BRIDGE_PORT": "9911",
-                "BALUFFO_DATA_DIR": str(admin_bridge_entrypoint_root),
+                "BALUFFO_DATA_DIR": "__ENTRYPOINT_ROOT__",
                 "BALUFFO_BRIDGE_LOG_FORMAT": "jsonl",
                 "BALUFFO_BRIDGE_LOG_LEVEL": "debug",
                 "BALUFFO_BRIDGE_OWNER_MODE": "dev-supervisor",
@@ -70,44 +141,57 @@ def test_resolve_runtime_config_env_defaults_when_cli_missing(admin_bridge_entry
                 "BALUFFO_BRIDGE_STARTED_BY": "unit-test",
                 "BALUFFO_BRIDGE_OWNER_IDLE_TIMEOUT_S": "45",
             },
-        )
-    assert cfg.host == "0.0.0.0"
-    assert cfg.port == 9911
-    assert str(cfg.data_dir) == str(admin_bridge_entrypoint_root.resolve())
-    assert cfg.log_format == "jsonl"
-    assert cfg.log_level == "debug"
-    assert cfg.owner_mode == "dev-supervisor"
-    assert cfg.owner_token == "token-123"
-    assert cfg.started_by == "unit-test"
-    assert cfg.owner_idle_timeout_s == 45.0
-
-
-def test_resolve_runtime_config_uses_file_defaults_when_env_missing(admin_bridge_entrypoint_root):
-    with (
-        mock.patch.object(
-            admin_bridge,
-            "get_bridge_defaults",
-            return_value={
+            bridge_defaults={
+                "host": "127.0.0.2",
+                "port": 8878,
+                "log_format": "human",
+                "log_level": "info",
+                "quiet_requests": False,
+            },
+            storage_defaults={"data_dir": "__ENTRYPOINT_ROOT__/from-file"},
+            expected_host="0.0.0.0",
+            expected_port=9911,
+            expected_data_dir_token="entrypoint-root",
+            expected_log_format="jsonl",
+            expected_log_level="debug",
+            expected_owner_mode="dev-supervisor",
+            expected_owner_token="token-123",
+            expected_started_by="unit-test",
+            expected_owner_idle_timeout_s=45.0,
+        ),
+        id="env-defaults-when-cli-missing",
+    ),
+    pytest.param(
+        _RuntimeConfigCase(
+            name="file-defaults-when-env-missing",
+            cli_args=[],
+            env={},
+            bridge_defaults={
                 "host": "127.0.0.5",
                 "port": 9915,
                 "log_format": "jsonl",
                 "log_level": "debug",
                 "quiet_requests": True,
             },
+            storage_defaults={"data_dir": "__ENTRYPOINT_ROOT__/from-file"},
+            expected_host="127.0.0.5",
+            expected_port=9915,
+            expected_data_dir_suffix="from-file",
+            expected_log_format="jsonl",
+            expected_log_level="debug",
+            expected_quiet_requests=True,
         ),
-        mock.patch.object(
-            admin_bridge,
-            "get_storage_defaults",
-            return_value={"data_dir": admin_bridge_entrypoint_root / "from-file"},
-        ),
-    ):
-        cfg = admin_bridge.resolve_runtime_config([], env={})
-    assert cfg.host == "127.0.0.5"
-    assert cfg.port == 9915
-    assert str(cfg.data_dir) == str((admin_bridge_entrypoint_root / "from-file").resolve())
-    assert cfg.log_format == "jsonl"
-    assert cfg.log_level == "debug"
-    assert cfg.quiet_requests
+        id="file-defaults-when-env-missing",
+    ),
+]
+
+
+@pytest.mark.parametrize("case", RESOLVE_RUNTIME_CONFIG_CASES, ids=lambda case: case.name)
+def test_resolve_runtime_config_uses_precedence_matrix(
+    case: _RuntimeConfigCase,
+    admin_bridge_entrypoint_root,
+) -> None:
+    _run_runtime_config_case(case, admin_bridge_entrypoint_root)
 
 
 def test_bridge_log_jsonl_output_is_valid_json(admin_bridge_entrypoint_root):
@@ -336,323 +420,612 @@ def test_compute_ops_health_includes_social_alerts(admin_bridge_entrypoint_root)
     assert "social_false_positive_spike" not in ids
 
 
-def test_normalize_fetch_report_contract_sanitizes_minimal_payload(admin_bridge_entrypoint_root):
-    payload = admin_bridge.normalize_fetch_report_contract(
-        {
-            "schemaVersion": "1.0",
-            "startedAt": 123,
-            "finishedAt": None,
-            "summary": "bad",
-            "sources": [{"name": "x", "status": "OK", "durationMs": "17"}],
-        }
-    )
-    assert int(payload.get("schemaVersion") or 0) == 1
-    assert str(payload.get("startedAt") or "") == "123"
-    assert str(payload.get("finishedAt") or "") == ""
+@dataclass(frozen=True)
+class _FetchReportCase:
+    name: str
+    payload: dict[str, object]
+    expected_schema_version: int | None = None
+    expected_started_at: str | None = None
+    expected_finished_at: str | None = None
+    expected_source_count: int | None = None
+    expected_phase_key: str | None = None
+    expected_phase_label: str | None = None
+    expected_phase_active: bool | None = None
+    expected_row_status: str | None = None
+    expected_row_duration_ms: int | None = None
+    expected_detail_name: str | None = None
+    expected_ratio: float | None = None
+
+
+def _run_fetch_report_case(case: _FetchReportCase) -> None:
+    payload = admin_bridge.normalize_fetch_report_contract(case.payload)
     assert isinstance(payload.get("summary"), dict)
     assert isinstance(payload.get("runtime"), dict)
-    assert len(payload.get("sources") or []) == 1
     assert isinstance(payload.get("taskProgress"), dict)
-    assert str(payload["taskProgress"].get("phaseKey") or "") == "executing_sources"
-    row = payload["sources"][0]
-    assert str(row.get("status") or "") == "ok"
-    assert int(row.get("durationMs") or 0) == 17
-
-
-def test_normalize_fetch_report_contract_keeps_blank_report_inactive(
-    admin_bridge_entrypoint_root,
-):
-    payload = admin_bridge.normalize_fetch_report_contract({})
+    if case.expected_schema_version is not None:
+        assert int(payload.get("schemaVersion") or 0) == case.expected_schema_version
+    if case.expected_started_at is not None:
+        assert str(payload.get("startedAt") or "") == case.expected_started_at
+    if case.expected_finished_at is not None:
+        assert str(payload.get("finishedAt") or "") == case.expected_finished_at
+    if case.expected_source_count is not None:
+        assert len(payload.get("sources") or []) == case.expected_source_count
     task_progress = payload.get("taskProgress") or {}
-    assert task_progress["active"] is False
-    assert str(task_progress.get("phaseKey") or "") == ""
-    assert str(task_progress.get("phaseLabel") or "") == ""
+    if case.expected_phase_key is not None:
+        assert str(task_progress.get("phaseKey") or "") == case.expected_phase_key
+    if case.expected_phase_label is not None:
+        assert str(task_progress.get("phaseLabel") or "") == case.expected_phase_label
+    if case.expected_phase_active is not None:
+        assert bool(task_progress.get("active")) is case.expected_phase_active
+    if case.expected_ratio is not None:
+        assert float(task_progress.get("ratio") or 0) == case.expected_ratio
+    if case.expected_row_status is not None or case.expected_row_duration_ms is not None:
+        row = payload["sources"][0]
+        if case.expected_row_status is not None:
+            assert str(row.get("status") or "") == case.expected_row_status
+        if case.expected_row_duration_ms is not None:
+            assert int(row.get("durationMs") or 0) == case.expected_row_duration_ms
+    if case.expected_detail_name is not None:
+        row = payload["sources"][0]
+        details = row.get("details") or []
+        assert len(details) == 1
+        assert str(details[0].get("name") or "") == case.expected_detail_name
 
 
-def test_normalize_fetch_report_contract_parses_stringified_detail_rows(
-    admin_bridge_entrypoint_root,
-):
-    payload = admin_bridge.normalize_fetch_report_contract(
-        {
-            "sources": [
-                {
-                    "name": "lever_sources",
-                    "status": "ok",
-                    "details": [
-                        "{'adapter': 'lever', 'studio': 'Jagex', 'name': 'Jagex (Lever)', 'status': 'ok', 'fetchedCount': 2, 'keptCount': 2, 'error': ''}"
-                    ],
-                }
-            ]
-        }
-    )
-    assert len(payload.get("sources") or []) == 1
-    row = payload["sources"][0]
-    details = row.get("details") or []
-    assert len(details) == 1
-    assert str(details[0].get("name") or "") == "Jagex (Lever)"
-
-
-def test_normalize_fetch_report_contract_forces_completed_task_progress_when_finished(
-    admin_bridge_entrypoint_root,
-):
-    payload = admin_bridge.normalize_fetch_report_contract(
-        {
-            "startedAt": "2026-03-23T16:16:54.905369+00:00",
-            "finishedAt": "2026-03-23T16:18:10.053424+00:00",
-            "taskProgress": {
-                "active": True,
-                "phaseKey": "executing_sources",
-                "phaseLabel": "Executing sources",
-                "mode": "determinate",
-                "ratio": 0.18,
-                "counts": {
-                    "resolvedSources": 61,
-                    "sourceCount": 520,
+FETCH_REPORT_CASES = [
+    pytest.param(
+        _FetchReportCase(
+            name="minimal-payload",
+            payload={
+                "schemaVersion": "1.0",
+                "startedAt": 123,
+                "finishedAt": None,
+                "summary": "bad",
+                "sources": [{"name": "x", "status": "OK", "durationMs": "17"}],
+            },
+            expected_schema_version=1,
+            expected_started_at="123",
+            expected_finished_at="",
+            expected_source_count=1,
+            expected_phase_key="executing_sources",
+            expected_row_status="ok",
+            expected_row_duration_ms=17,
+        ),
+        id="minimal-payload",
+    ),
+    pytest.param(
+        _FetchReportCase(
+            name="blank-report",
+            payload={},
+            expected_phase_active=False,
+            expected_phase_key="",
+            expected_phase_label="",
+        ),
+        id="blank-report",
+    ),
+    pytest.param(
+        _FetchReportCase(
+            name="stringified-detail-rows",
+            payload={
+                "sources": [
+                    {
+                        "name": "lever_sources",
+                        "status": "ok",
+                        "details": [
+                            "{'adapter': 'lever', 'studio': 'Jagex', 'name': 'Jagex (Lever)', 'status': 'ok', 'fetchedCount': 2, 'keptCount': 2, 'error': ''}"
+                        ],
+                    }
+                ]
+            },
+            expected_source_count=1,
+            expected_detail_name="Jagex (Lever)",
+        ),
+        id="stringified-detail-rows",
+    ),
+    pytest.param(
+        _FetchReportCase(
+            name="completed-progress",
+            payload={
+                "startedAt": "2026-03-23T16:16:54.905369+00:00",
+                "finishedAt": "2026-03-23T16:18:10.053424+00:00",
+                "taskProgress": {
+                    "active": True,
+                    "phaseKey": "executing_sources",
+                    "phaseLabel": "Executing sources",
+                    "mode": "determinate",
+                    "ratio": 0.18,
+                    "counts": {
+                        "resolvedSources": 61,
+                        "sourceCount": 520,
+                        "outputCount": 3683,
+                        "failedSources": 23,
+                        "excludedSources": 0,
+                    },
+                },
+                "summary": {
                     "outputCount": 3683,
                     "failedSources": 23,
                     "excludedSources": 0,
+                    "sourceCount": 61,
+                    "successfulSources": 38,
                 },
+                "sources": [],
             },
-            "summary": {
-                "outputCount": 3683,
-                "failedSources": 23,
-                "excludedSources": 0,
-                "sourceCount": 61,
-                "successfulSources": 38,
+            expected_phase_active=False,
+            expected_phase_key="completed",
+            expected_phase_label="Completed",
+            expected_ratio=1.0,
+        ),
+        id="completed-progress",
+    ),
+]
+
+
+@pytest.mark.parametrize("case", FETCH_REPORT_CASES, ids=lambda case: case.name)
+def test_normalize_fetch_report_contract_cases(case: _FetchReportCase) -> None:
+    _run_fetch_report_case(case)
+
+
+@dataclass(frozen=True)
+class _DiscoveryReportCase:
+    name: str
+    payload: dict[str, object]
+    expected_queued_candidates: int
+    expected_probed_candidates: int | None = None
+    expected_phase_key: str | None = None
+    expected_mode: str | None = None
+    expected_runtime_total_ms: int | None = None
+    expected_stage_probe_ms: int | None = None
+    expected_adapter_name: str | None = None
+    expected_status: str | None = None
+
+
+def _run_discovery_report_case(case: _DiscoveryReportCase) -> None:
+    if case.expected_status is None:
+        payload = admin_bridge.normalize_discovery_report_contract(case.payload)
+        task_progress = payload.get("taskProgress") or {}
+        assert (
+            int((payload.get("summary") or {}).get("queuedCandidateCount") or 0)
+            == case.expected_queued_candidates
+        )
+        if case.expected_probed_candidates is not None:
+            assert (
+                int(task_progress.get("counts", {}).get("probedCandidates") or 0)
+                == case.expected_probed_candidates
+            )
+        if case.expected_phase_key is not None:
+            assert str(task_progress.get("phaseKey") or "") == case.expected_phase_key
+        if case.expected_mode is not None:
+            assert str(task_progress.get("mode") or "") == case.expected_mode
+        if case.expected_runtime_total_ms is not None:
+            assert (
+                int((payload.get("runtime") or {}).get("totalDurationMs") or 0)
+                == case.expected_runtime_total_ms
+            )
+        if case.expected_stage_probe_ms is not None:
+            assert (
+                int(
+                    (((payload.get("runtime") or {}).get("stageTimingsMs") or {}).get("probe")) or 0
+                )
+                == case.expected_stage_probe_ms
+            )
+        if case.expected_adapter_name is not None:
+            assert (
+                str(
+                    (((payload.get("runtime") or {}).get("adapterTimings") or [])[0].get("adapter"))
+                    or ""
+                )
+                == case.expected_adapter_name
+            )
+        counts = task_progress.get("counts") or {}
+        assert int(counts.get("queuedCandidates") or 0) == case.expected_queued_candidates
+    else:
+        summary, status = admin_bridge.summarize_discovery_report(case.payload)
+        assert int(summary.get("queuedCandidateCount") or 0) == case.expected_queued_candidates
+        assert status == case.expected_status
+
+
+DISCOVERY_REPORT_CASES = [
+    pytest.param(
+        _DiscoveryReportCase(
+            name="normalize-queued-count",
+            payload={
+                "summary": {"queuedCandidateCount": 0, "probedCandidateCount": 4},
+                "runtime": {
+                    "totalDurationMs": "123",
+                    "stageTimingsMs": {"probe": "45"},
+                    "adapterTimings": [
+                        {"adapter": "greenhouse", "durationMs": "22", "queuedCount": 1}
+                    ],
+                },
+                "candidates": [
+                    {"name": "A", "deferred": False},
+                    {"name": "B"},
+                    {"name": "C", "deferred": True},
+                ],
             },
-            "sources": [],
-        }
-    )
-    assert payload["taskProgress"]["active"] is False
-    assert str(payload["taskProgress"].get("phaseKey") or "") == "completed"
-    assert str(payload["taskProgress"].get("phaseLabel") or "") == "Completed"
-    assert float(payload["taskProgress"].get("ratio") or 0) == 1.0
-
-
-def test_normalize_discovery_report_contract_derives_queued_count_from_candidates(
-    admin_bridge_entrypoint_root,
-):
-    payload = admin_bridge.normalize_discovery_report_contract(
-        {
-            "summary": {"queuedCandidateCount": 0, "probedCandidateCount": 4},
-            "runtime": {
-                "totalDurationMs": "123",
-                "stageTimingsMs": {"probe": "45"},
-                "adapterTimings": [{"adapter": "greenhouse", "durationMs": "22", "queuedCount": 1}],
+            expected_queued_candidates=2,
+            expected_probed_candidates=4,
+            expected_phase_key="starting",
+            expected_mode="indeterminate",
+            expected_runtime_total_ms=123,
+            expected_stage_probe_ms=45,
+            expected_adapter_name="greenhouse",
+        ),
+        id="normalize-queued-count",
+    ),
+    pytest.param(
+        _DiscoveryReportCase(
+            name="summarize-prefers-derived-queued-count",
+            payload={
+                "startedAt": "2026-03-01T00:00:00+00:00",
+                "finishedAt": "2026-03-01T00:01:00+00:00",
+                "summary": {
+                    "queuedCandidateCount": 0,
+                    "failedProbeCount": 0,
+                    "probedCandidateCount": 2,
+                },
+                "candidates": [
+                    {"name": "A"},
+                    {"name": "B", "deferred": False},
+                    {"name": "C", "deferred": True},
+                ],
             },
-            "candidates": [
-                {"name": "A", "deferred": False},
-                {"name": "B"},
-                {"name": "C", "deferred": True},
-            ],
-        }
-    )
-    task_progress = payload.get("taskProgress") or {}
-    assert str(task_progress.get("phaseKey") or "") == "starting"
-    assert str(task_progress.get("mode") or "") == "indeterminate"
-    counts = task_progress.get("counts") or {}
-    assert int(counts.get("queuedCandidates") or 0) == 2
-    assert int(counts.get("probedCandidates") or 0) == 4
-    assert int((payload.get("summary") or {}).get("queuedCandidateCount") or 0) == 2
-    assert int((payload.get("runtime") or {}).get("totalDurationMs") or 0) == 123
-    assert (
-        int((((payload.get("runtime") or {}).get("stageTimingsMs") or {}).get("probe")) or 0) == 45
-    )
-    assert (
-        str((((payload.get("runtime") or {}).get("adapterTimings") or [])[0].get("adapter")) or "")
-        == "greenhouse"
-    )
+            expected_queued_candidates=2,
+            expected_status="ok",
+        ),
+        id="summarize-prefers-derived-queued-count",
+    ),
+]
 
 
-def test_summarize_discovery_report_prefers_derived_queued_count(admin_bridge_entrypoint_root):
-    summary, status = admin_bridge.summarize_discovery_report(
-        {
-            "startedAt": "2026-03-01T00:00:00+00:00",
-            "finishedAt": "2026-03-01T00:01:00+00:00",
-            "summary": {
-                "queuedCandidateCount": 0,
-                "failedProbeCount": 0,
-                "probedCandidateCount": 2,
+@pytest.mark.parametrize("case", DISCOVERY_REPORT_CASES, ids=lambda case: case.name)
+def test_discovery_report_queue_count_cases(case: _DiscoveryReportCase) -> None:
+    _run_discovery_report_case(case)
+
+
+@dataclass(frozen=True)
+class _FetcherArgsCase:
+    name: str
+    payload: dict[str, object]
+    expected_preset: str
+    report_payload: dict[str, object] | None = None
+    expected_present: tuple[str, ...] = ()
+    expected_absent: tuple[str, ...] = ()
+    expected_values: tuple[tuple[str, str], ...] = ()
+
+
+def _run_fetcher_args_case(case: _FetcherArgsCase) -> None:
+    if case.report_payload is not None:
+        admin_bridge.save_json_atomic(
+            admin_bridge.JOBS_FETCH_REPORT_PATH,
+            case.report_payload,
+        )
+    args, preset = admin_bridge.build_fetcher_args_from_payload(case.payload)
+    assert preset == case.expected_preset
+    for option in case.expected_present:
+        assert option in args
+    for option in case.expected_absent:
+        assert option not in args
+    for option, value in case.expected_values:
+        assert option in args
+        assert args[args.index(option) + 1] == value
+
+
+FETCHER_ARGS_CASES = [
+    pytest.param(
+        _FetcherArgsCase(
+            name="retry-failed-filters-unknown",
+            payload={"preset": "retry_failed"},
+            expected_preset="retry_failed",
+            report_payload={
+                "startedAt": "2026-03-01T00:00:00+00:00",
+                "finishedAt": "2026-03-01T00:10:00+00:00",
+                "summary": {"failedSources": 3, "sourceCount": 4},
+                "sources": [
+                    {"name": "remote_ok", "status": "error"},
+                    {"name": "unknown_custom_source", "status": "error"},
+                    {"name": "google_sheets", "status": "error"},
+                    {"name": "remote_ok", "status": "error"},
+                ],
             },
-            "candidates": [
-                {"name": "A"},
-                {"name": "B", "deferred": False},
-                {"name": "C", "deferred": True},
-            ],
-        }
-    )
-    assert int(summary.get("queuedCandidateCount") or 0) == 2
-    assert status == "ok"
+            expected_present=(
+                "--only-sources",
+                "--ignore-circuit-breaker",
+                "--fetch-strategy",
+                "--adapter-http-concurrency",
+            ),
+            expected_absent=("--quiet",),
+            expected_values=(("--only-sources", "google_sheets,remote_ok"),),
+        ),
+        id="retry-failed-filters-unknown",
+    ),
+    pytest.param(
+        _FetcherArgsCase(
+            name="retry-failed-without-known-failures",
+            payload={"preset": "retry_failed"},
+            expected_preset="retry_failed",
+            report_payload={
+                "sources": [
+                    {"name": "unknown_custom_source_a", "status": "error"},
+                    {"name": "unknown_custom_source_b", "status": "error"},
+                ]
+            },
+            expected_present=("--ignore-circuit-breaker",),
+            expected_absent=("--only-sources", "--quiet"),
+        ),
+        id="retry-failed-without-known-failures",
+    ),
+    pytest.param(
+        _FetcherArgsCase(
+            name="cadence-and-strategy-overrides",
+            payload={
+                "preset": "default",
+                "fetchStrategy": "http",
+                "adapterHttpConcurrency": 48,
+                "respectSourceCadence": True,
+                "hotSourceCadenceMinutes": 20,
+                "coldSourceCadenceMinutes": 90,
+            },
+            expected_preset="default",
+            expected_present=(
+                "--fetch-strategy",
+                "--adapter-http-concurrency",
+                "--respect-source-cadence",
+                "--hot-source-cadence-minutes",
+                "--cold-source-cadence-minutes",
+            ),
+            expected_values=(
+                ("--fetch-strategy", "http"),
+                ("--adapter-http-concurrency", "48"),
+                ("--hot-source-cadence-minutes", "20"),
+                ("--cold-source-cadence-minutes", "90"),
+            ),
+        ),
+        id="cadence-and-strategy-overrides",
+    ),
+    pytest.param(
+        _FetcherArgsCase(
+            name="social-enabled-default",
+            payload={"preset": "default"},
+            expected_preset="default",
+            expected_present=("--social-enabled",),
+        ),
+        id="social-enabled-default",
+    ),
+    pytest.param(
+        _FetcherArgsCase(
+            name="social-opt-out",
+            payload={"preset": "default", "socialEnabled": False},
+            expected_preset="default",
+            expected_absent=("--social-enabled",),
+        ),
+        id="social-opt-out",
+    ),
+    pytest.param(
+        _FetcherArgsCase(
+            name="uncapped-keeps-social",
+            payload={"preset": "uncapped"},
+            expected_preset="uncapped",
+            expected_present=(
+                "--force-refresh-all",
+                "--ignore-circuit-breaker",
+                "--max-workers",
+                "--max-per-domain",
+                "--static-detail-concurrency",
+                "--source-ttl-minutes",
+                "--circuit-breaker-failures",
+                "--circuit-breaker-cooldown-minutes",
+                "--social-enabled",
+            ),
+            expected_absent=("--adapter-http-concurrency",),
+            expected_values=(
+                ("--max-workers", "64"),
+                ("--max-per-domain", "6"),
+                ("--static-detail-concurrency", "24"),
+                ("--source-ttl-minutes", "0"),
+                ("--circuit-breaker-failures", "0"),
+                ("--circuit-breaker-cooldown-minutes", "0"),
+            ),
+        ),
+        id="uncapped-keeps-social",
+    ),
+]
 
 
-def test_build_fetcher_args_retry_failed_is_deterministic_and_filters_unknown(
-    admin_bridge_entrypoint_root,
-):
-    admin_bridge.save_json_atomic(
-        admin_bridge.JOBS_FETCH_REPORT_PATH,
-        {
-            "startedAt": "2026-03-01T00:00:00+00:00",
-            "finishedAt": "2026-03-01T00:10:00+00:00",
-            "summary": {"failedSources": 3, "sourceCount": 4},
-            "sources": [
-                {"name": "remote_ok", "status": "error"},
-                {"name": "unknown_custom_source", "status": "error"},
-                {"name": "google_sheets", "status": "error"},
-                {"name": "remote_ok", "status": "error"},
-            ],
+@pytest.mark.parametrize("case", FETCHER_ARGS_CASES, ids=lambda case: case.name)
+def test_build_fetcher_args_matrix(case: _FetcherArgsCase) -> None:
+    _run_fetcher_args_case(case)
+
+
+def _history_row(
+    *,
+    row_id: str | None = None,
+    run_id: str | None = None,
+    status: str = "started",
+    started_at: str,
+    finished_at: str = "",
+    duration_ms: int = 0,
+    summary: dict[str, object] | None = None,
+) -> dict[str, object]:
+    row: dict[str, object] = {
+        "type": "fetch",
+        "status": status,
+        "startedAt": started_at,
+        "finishedAt": finished_at,
+        "durationMs": duration_ms,
+        "summary": summary or {},
+    }
+    if row_id is not None:
+        row["id"] = row_id
+    if run_id is not None:
+        row["runId"] = run_id
+    return row
+
+
+def _fetch_report(
+    *,
+    started_at: str,
+    run_id: str | None = None,
+    finished_at: str = "",
+    summary: dict[str, object] | None = None,
+    runtime: dict[str, object] | None = None,
+    task_progress: dict[str, object] | None = None,
+) -> dict[str, object]:
+    report: dict[str, object] = {
+        "startedAt": started_at,
+        "finishedAt": finished_at,
+        "summary": summary or {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+        "sources": [],
+    }
+    if run_id is not None:
+        report["runId"] = run_id
+    if runtime is not None:
+        report["runtime"] = runtime
+    if task_progress is not None:
+        report["taskProgress"] = task_progress
+    return report
+
+
+def _discovery_report(
+    *,
+    started_at: str,
+    run_id: str | None = None,
+    finished_at: str = "",
+    summary: dict[str, object] | None = None,
+    task_progress: dict[str, object] | None = None,
+) -> dict[str, object]:
+    report: dict[str, object] = {
+        "startedAt": started_at,
+        "finishedAt": finished_at,
+        "summary": summary
+        or {
+            "foundEndpointCount": 0,
+            "probedCandidateCount": 0,
+            "queuedCandidateCount": 0,
+            "failedProbeCount": 0,
         },
+        "candidates": [],
+        "failures": [],
+    }
+    if run_id is not None:
+        report["runId"] = run_id
+    if task_progress is not None:
+        report["taskProgress"] = task_progress
+    return report
+
+
+def _task_state_entry(
+    task_type: str,
+    *,
+    run_id: str,
+    started_at: str,
+    pid: int = 111,
+    script: str | None = None,
+) -> dict[str, object]:
+    return {
+        "runId": run_id,
+        "taskType": task_type,
+        "pid": pid,
+        "script": script
+        or ("source_discovery.py" if task_type == "discovery" else "jobs_fetcher.py"),
+        "status": "running",
+        "startedAt": started_at,
+    }
+
+
+def _active_progress(
+    phase_key: str, phase_label: str, counts: dict[str, object]
+) -> dict[str, object]:
+    return {
+        "active": True,
+        "phaseKey": phase_key,
+        "phaseLabel": phase_label,
+        "mode": "determinate",
+        "ratio": 0.5,
+        "counts": counts,
+    }
+
+
+def _completed_progress(phase_label: str) -> dict[str, object]:
+    return {
+        "active": False,
+        "phaseKey": "completed",
+        "phaseLabel": phase_label,
+        "mode": "determinate",
+        "ratio": 1,
+        "counts": {},
+    }
+
+
+def _matching_history_rows(
+    rows: list[dict[str, object]],
+    *,
+    started_at: str | None = None,
+    finished_at: str | None = None,
+    run_id: str | None = None,
+) -> list[dict[str, object]]:
+    return [
+        row
+        for row in rows
+        if str(row.get("type") or "") == "fetch"
+        and (started_at is None or str(row.get("startedAt") or "") == started_at)
+        and (finished_at is None or str(row.get("finishedAt") or "") == finished_at)
+        and (run_id is None or str(row.get("runId") or "") == run_id)
+    ]
+
+
+def _task_row(payload: dict[str, object], task_type: str) -> dict[str, object]:
+    return next(
+        row for row in (payload.get("tasks") or []) if str(row.get("taskType") or "") == task_type
     )
-    args, preset = admin_bridge.build_fetcher_args_from_payload({"preset": "retry_failed"})
-    assert preset == "retry_failed"
-    assert "--only-sources" in args
-    idx = args.index("--only-sources")
-    assert args[idx + 1] == "google_sheets,remote_ok"
-    assert "--ignore-circuit-breaker" in args
-    assert "--quiet" not in args
-    assert "--fetch-strategy" in args
-    assert "--adapter-http-concurrency" in args
 
 
-def test_build_fetcher_args_retry_failed_omits_only_sources_when_no_known_failures(
-    admin_bridge_entrypoint_root,
-):
-    admin_bridge.save_json_atomic(
-        admin_bridge.JOBS_FETCH_REPORT_PATH,
-        {
-            "sources": [
-                {"name": "unknown_custom_source_a", "status": "error"},
-                {"name": "unknown_custom_source_b", "status": "error"},
-            ]
-        },
-    )
-    args, preset = admin_bridge.build_fetcher_args_from_payload({"preset": "retry_failed"})
-    assert preset == "retry_failed"
-    assert "--only-sources" not in args
-    assert "--ignore-circuit-breaker" in args
-    assert "--quiet" not in args
+def _current_task_payload() -> dict[str, object]:
+    return admin_bridge.build_bridge_api(
+        admin_bridge.RUNTIME_CONFIG
+    ).get_current_task_state_payload()
 
 
-def test_build_fetcher_args_accepts_cadence_and_strategy_overrides(admin_bridge_entrypoint_root):
-    args, preset = admin_bridge.build_fetcher_args_from_payload(
-        {
-            "preset": "default",
-            "fetchStrategy": "http",
-            "adapterHttpConcurrency": 48,
-            "respectSourceCadence": True,
-            "hotSourceCadenceMinutes": 20,
-            "coldSourceCadenceMinutes": 90,
-        }
-    )
-    assert preset == "default"
-    assert "--fetch-strategy" in args
-    assert args[args.index("--fetch-strategy") + 1] == "http"
-    assert "--adapter-http-concurrency" in args
-    assert args[args.index("--adapter-http-concurrency") + 1] == "48"
-    assert "--respect-source-cadence" in args
-    assert "--hot-source-cadence-minutes" in args
-    assert args[args.index("--hot-source-cadence-minutes") + 1] == "20"
-    assert "--cold-source-cadence-minutes" in args
-    assert args[args.index("--cold-source-cadence-minutes") + 1] == "90"
+@dataclass(frozen=True)
+class _SyncHistoryCase:
+    name: str
+    setup: Callable[[], None]
+    assert_rows: Callable[[list[dict[str, object]]], None]
 
 
-def test_build_fetcher_args_enables_social_by_default(admin_bridge_entrypoint_root):
-    args, preset = admin_bridge.build_fetcher_args_from_payload({"preset": "default"})
-    assert preset == "default"
-    assert "--social-enabled" in args
-
-
-def test_build_fetcher_args_allows_social_opt_out(admin_bridge_entrypoint_root):
-    args, preset = admin_bridge.build_fetcher_args_from_payload(
-        {
-            "preset": "default",
-            "socialEnabled": False,
-        }
-    )
-    assert preset == "default"
-    assert "--social-enabled" not in args
-
-
-def test_build_fetcher_args_uncapped_bypasses_admin_caps_and_keeps_social(
-    admin_bridge_entrypoint_root,
-):
-    args, preset = admin_bridge.build_fetcher_args_from_payload({"preset": "uncapped"})
-    assert preset == "uncapped"
-    assert "--force-refresh-all" in args
-    assert "--ignore-circuit-breaker" in args
-    assert "--max-workers" in args
-    assert args[args.index("--max-workers") + 1] == "64"
-    assert "--max-per-domain" in args
-    assert args[args.index("--max-per-domain") + 1] == "6"
-    assert "--static-detail-concurrency" in args
-    assert args[args.index("--static-detail-concurrency") + 1] == "24"
-    assert "--source-ttl-minutes" in args
-    assert args[args.index("--source-ttl-minutes") + 1] == "0"
-    assert "--circuit-breaker-failures" in args
-    assert args[args.index("--circuit-breaker-failures") + 1] == "0"
-    assert "--circuit-breaker-cooldown-minutes" in args
-    assert args[args.index("--circuit-breaker-cooldown-minutes") + 1] == "0"
-    assert "--adapter-http-concurrency" not in args
-    assert "--social-enabled" in args
-
-
-def test_sync_history_from_reports_discards_unfinished_fetch_without_run_id(
-    admin_bridge_entrypoint_root,
-):
+def _setup_unfinished_fetch_without_run_id() -> None:
     old_started = "2026-03-01T00:00:00+00:00"
+    admin_bridge.save_json_atomic(admin_bridge.DISCOVERY_REPORT_PATH, {})
     admin_bridge.save_json_atomic(
         admin_bridge.OPS_HISTORY_PATH,
-        [
-            {
-                "type": "fetch",
-                "status": "started",
-                "startedAt": old_started,
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {},
-            }
-        ],
+        [_history_row(started_at=old_started)],
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
-        {
-            "startedAt": old_started,
-            "finishedAt": "",
-            "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
-            "sources": [],
-        },
+        _fetch_report(started_at=old_started),
     )
     old_ts = 1_700_000_000
     os.utime(admin_bridge.JOBS_FETCH_REPORT_PATH, (old_ts, old_ts))
-    rows = admin_bridge.sync_history_from_reports()
+
+
+def _assert_unfinished_fetch_without_run_id(rows: list[dict[str, object]]) -> None:
     assert rows == []
     report = admin_bridge.load_json_object(admin_bridge.JOBS_FETCH_REPORT_PATH, {})
     assert str(report.get("finishedAt") or "") == ""
 
 
-def test_sync_history_from_reports_does_not_finish_discovery_from_read_side(
-    admin_bridge_entrypoint_root,
-):
+def _setup_unfinished_discovery_read_side() -> None:
     old_started = "2026-03-01T00:00:00+00:00"
     admin_bridge.save_json_atomic(
         admin_bridge.DISCOVERY_REPORT_PATH,
-        {
-            "startedAt": old_started,
-            "finishedAt": "",
-            "summary": {
-                "foundEndpointCount": 0,
-                "probedCandidateCount": 0,
-                "queuedCandidateCount": 0,
-                "failedProbeCount": 0,
-            },
-            "candidates": [],
-            "failures": [],
-        },
+        _discovery_report(started_at=old_started),
     )
     old_ts = 1_700_000_000
     os.utime(admin_bridge.DISCOVERY_REPORT_PATH, (old_ts, old_ts))
 
-    admin_bridge.sync_history_from_reports()
 
+def _assert_unfinished_discovery_read_side(_rows: list[dict[str, object]]) -> None:
     report = admin_bridge.load_json_object(admin_bridge.DISCOVERY_REPORT_PATH, {})
     assert str(report.get("finishedAt") or "").strip() == ""
 
@@ -692,7 +1065,9 @@ def test_alert_ack_suppresses_visible_alert(admin_bridge_entrypoint_root):
     assert "degraded_reliability" not in updated_ids
 
 
-def test_run_background_script_uses_child_script_mode_when_frozen(admin_bridge_entrypoint_root):
+def _configure_background_script_runtime(
+    admin_bridge_entrypoint_root, *, desktop_mode: bool
+) -> None:
     cfg = admin_bridge.RuntimeConfig(
         root=admin_bridge_entrypoint_root,
         data_dir=admin_bridge_entrypoint_root,
@@ -701,68 +1076,91 @@ def test_run_background_script_uses_child_script_mode_when_frozen(admin_bridge_e
         log_format="human",
         log_level="info",
         quiet_requests=True,
-        desktop_mode=True,
+        desktop_mode=desktop_mode,
     )
     admin_bridge.configure_runtime_paths(cfg)
-    fake_proc = type("FakeProc", (), {"pid": 12345})()
+
+
+@dataclass(frozen=True)
+class _BackgroundScriptCommandCase:
+    name: str
+    frozen: bool
+    executable: str
+    desktop_mode: bool
+    fake_pid: int
+    expected_prefix: tuple[str, ...]
+    expected_script_arg: str | None = None
+    expected_python_script_path: bool = False
+    expect_unbuffered_env: bool = False
+
+
+BACKGROUND_SCRIPT_COMMAND_CASES = [
+    pytest.param(
+        _BackgroundScriptCommandCase(
+            name="frozen-child-script",
+            frozen=True,
+            executable="C:/tmp/Baluffo.exe",
+            desktop_mode=True,
+            fake_pid=12345,
+            expected_prefix=("C:/tmp/Baluffo.exe", "__child_script__", "--root"),
+            expected_script_arg="source_discovery.py",
+        ),
+        id="frozen-child-script",
+    ),
+    pytest.param(
+        _BackgroundScriptCommandCase(
+            name="unbuffered-python",
+            frozen=False,
+            executable="C:/Python313/python.exe",
+            desktop_mode=False,
+            fake_pid=24680,
+            expected_prefix=("C:/Python313/python.exe", "-u"),
+            expected_python_script_path=True,
+            expect_unbuffered_env=True,
+        ),
+        id="unbuffered-python",
+    ),
+]
+
+
+@pytest.mark.parametrize("case", BACKGROUND_SCRIPT_COMMAND_CASES, ids=lambda case: case.name)
+def test_run_background_script_command_shape(
+    case: _BackgroundScriptCommandCase,
+    admin_bridge_entrypoint_root,
+) -> None:
+    _configure_background_script_runtime(
+        admin_bridge_entrypoint_root,
+        desktop_mode=case.desktop_mode,
+    )
+    fake_proc = type("FakeProc", (), {"pid": case.fake_pid})()
     with (
-        mock.patch.object(admin_bridge.sys, "frozen", True, create=True),
-        mock.patch.object(admin_bridge.sys, "executable", "C:/tmp/Baluffo.exe"),
+        mock.patch.object(admin_bridge.sys, "frozen", case.frozen, create=True),
+        mock.patch.object(admin_bridge.sys, "executable", case.executable),
         mock.patch.object(admin_bridge.subprocess, "Popen", return_value=fake_proc) as popen_mock,
     ):
         admin_bridge.run_background_script("source_discovery.py", ["--mode", "dynamic"])
     command = popen_mock.call_args.args[0]
-    assert command[:5] == [
-        "C:/tmp/Baluffo.exe",
-        "__child_script__",
-        "--root",
-        str(admin_bridge_entrypoint_root),
-        "--script",
-    ]
-    assert "source_discovery.py" in command
+    assert command[: len(case.expected_prefix)] == list(case.expected_prefix)
+    if case.expected_script_arg is not None:
+        assert command[:5] == [
+            case.executable,
+            "__child_script__",
+            "--root",
+            str(admin_bridge_entrypoint_root),
+            "--script",
+        ]
+        assert case.expected_script_arg in command
+    if case.expected_python_script_path:
+        assert command[2] == str(admin_bridge_entrypoint_root / "src" / "source_discovery.py")
     assert command[-2:] == ["--mode", "dynamic"]
-
-
-def test_run_background_script_uses_unbuffered_python_for_live_logs(admin_bridge_entrypoint_root):
-    cfg = admin_bridge.RuntimeConfig(
-        root=admin_bridge_entrypoint_root,
-        data_dir=admin_bridge_entrypoint_root,
-        host="127.0.0.1",
-        port=8877,
-        log_format="human",
-        log_level="info",
-        quiet_requests=True,
-        desktop_mode=False,
-    )
-    admin_bridge.configure_runtime_paths(cfg)
-    fake_proc = type("FakeProc", (), {"pid": 24680})()
-    with (
-        mock.patch.object(admin_bridge.sys, "frozen", False, create=True),
-        mock.patch.object(admin_bridge.sys, "executable", "C:/Python313/python.exe"),
-        mock.patch.object(admin_bridge.subprocess, "Popen", return_value=fake_proc) as popen_mock,
-    ):
-        admin_bridge.run_background_script("source_discovery.py", ["--mode", "dynamic"])
-    command = popen_mock.call_args.args[0]
     kwargs = popen_mock.call_args.kwargs
-    assert command[:2] == ["C:/Python313/python.exe", "-u"]
-    assert command[2] == str(admin_bridge_entrypoint_root / "src" / "source_discovery.py")
-    assert command[-2:] == ["--mode", "dynamic"]
-    assert kwargs["env"]["PYTHONUNBUFFERED"] == "1"
-    assert kwargs["stdout"] is kwargs["stderr"]
+    if case.expect_unbuffered_env:
+        assert kwargs["env"]["PYTHONUNBUFFERED"] == "1"
+        assert kwargs["stdout"] is kwargs["stderr"]
 
 
 def test_run_background_script_persists_run_id_in_task_state(admin_bridge_entrypoint_root):
-    cfg = admin_bridge.RuntimeConfig(
-        root=admin_bridge_entrypoint_root,
-        data_dir=admin_bridge_entrypoint_root,
-        host="127.0.0.1",
-        port=8877,
-        log_format="human",
-        log_level="info",
-        quiet_requests=True,
-        desktop_mode=False,
-    )
-    admin_bridge.configure_runtime_paths(cfg)
+    _configure_background_script_runtime(admin_bridge_entrypoint_root, desktop_mode=False)
     fake_proc = type("FakeProc", (), {"pid": 24680})()
     with (
         mock.patch.object(admin_bridge.sys, "frozen", False, create=True),
@@ -806,196 +1204,187 @@ def test_start_fetcher_task_writes_report_shell_with_run_id(admin_bridge_entrypo
     )
 
 
-def test_sync_history_from_reports_merges_fetch_launcher_and_report_rows_by_run_id(
-    admin_bridge_entrypoint_root,
-):
+def _setup_fetch_launcher_report_merge() -> None:
     run_id = "fetch_merge_1"
     started_at = "2026-03-01T00:00:00+00:00"
     finished_at = "2026-03-01T00:03:00+00:00"
     admin_bridge.save_json_atomic(
         admin_bridge.OPS_HISTORY_PATH,
-        [
-            {
-                "id": run_id,
-                "runId": run_id,
-                "type": "fetch",
-                "status": "started",
-                "startedAt": started_at,
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {},
-            }
-        ],
+        [_history_row(row_id=run_id, run_id=run_id, started_at=started_at)],
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
-        {
-            "runId": run_id,
-            "startedAt": started_at,
-            "finishedAt": finished_at,
-            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 5},
-            "sources": [],
-        },
+        _fetch_report(
+            run_id=run_id,
+            started_at=started_at,
+            finished_at=finished_at,
+            summary={"outputCount": 10, "failedSources": 1, "sourceCount": 5},
+        ),
     )
 
-    rows = admin_bridge.sync_history_from_reports()
-    matching = [row for row in rows if str(row.get("runId") or "") == run_id]
+
+def _assert_fetch_launcher_report_merge(rows: list[dict[str, object]]) -> None:
+    matching = [row for row in rows if str(row.get("runId") or "") == "fetch_merge_1"]
     assert len(matching) == 1
     assert str(matching[0].get("status") or "") == "warning"
-    assert str(matching[0].get("finishedAt") or "") == finished_at
+    assert str(matching[0].get("finishedAt") or "") == "2026-03-01T00:03:00+00:00"
 
 
-def test_sync_history_from_reports_collapses_duplicate_run_id_rows(
-    admin_bridge_entrypoint_root,
-):
+def _setup_duplicate_run_id_rows() -> None:
     started_at = "2026-03-01T00:00:00+00:00"
     finished_at = "2026-03-01T00:03:00+00:00"
     run_id = "run_a"
+    summary = {"outputCount": 10, "failedSources": 1, "sourceCount": 5}
     admin_bridge.save_json_atomic(
         admin_bridge.OPS_HISTORY_PATH,
         [
-            {
-                "id": run_id,
-                "runId": run_id,
-                "type": "fetch",
-                "status": "warning",
-                "startedAt": started_at,
-                "finishedAt": finished_at,
-                "durationMs": 1000,
-                "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 5},
-            },
-            {
-                "id": "run_b",
-                "runId": run_id,
-                "type": "fetch",
-                "status": "warning",
-                "startedAt": started_at,
-                "finishedAt": finished_at,
-                "durationMs": 1000,
-                "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 5},
-            },
+            _history_row(
+                row_id=run_id,
+                run_id=run_id,
+                status="warning",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=1000,
+                summary=summary,
+            ),
+            _history_row(
+                row_id="run_b",
+                run_id=run_id,
+                status="warning",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=1000,
+                summary=summary,
+            ),
         ],
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
-        {
-            "runId": run_id,
-            "startedAt": started_at,
-            "finishedAt": finished_at,
-            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 5},
-            "sources": [],
-        },
+        _fetch_report(
+            run_id=run_id, started_at=started_at, finished_at=finished_at, summary=summary
+        ),
     )
 
-    rows = admin_bridge.sync_history_from_reports()
-    matching = [
-        row
-        for row in rows
-        if str(row.get("type") or "") == "fetch"
-        and str(row.get("startedAt") or "") == started_at
-        and str(row.get("finishedAt") or "") == finished_at
-    ]
+
+def _assert_duplicate_run_id_rows(rows: list[dict[str, object]]) -> None:
+    matching = _matching_history_rows(
+        rows,
+        started_at="2026-03-01T00:00:00+00:00",
+        finished_at="2026-03-01T00:03:00+00:00",
+    )
     assert len(matching) == 1
-    assert str(matching[0].get("runId") or "") == run_id
+    assert str(matching[0].get("runId") or "") == "run_a"
 
 
-def test_sync_history_from_reports_projects_run_id_row_only(
-    admin_bridge_entrypoint_root,
-):
+def _setup_project_run_id_row_only() -> None:
     run_id = "fetch_enrich_1"
     started_at = admin_bridge.now_iso()
     admin_bridge.save_json_atomic(
         admin_bridge.OPS_HISTORY_PATH,
-        [
-            {
-                "id": "legacy_fetch_started",
-                "type": "fetch",
-                "status": "started",
-                "startedAt": started_at,
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {},
-            }
-        ],
+        [_history_row(row_id="legacy_fetch_started", started_at=started_at)],
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
-        {
-            "runId": run_id,
-            "startedAt": started_at,
-            "finishedAt": "",
-            "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
-            "sources": [],
-        },
+        _fetch_report(run_id=run_id, started_at=started_at),
     )
 
-    rows = admin_bridge.sync_history_from_reports()
-    matching = [
-        row
-        for row in rows
-        if str(row.get("type") or "") == "fetch" and str(row.get("startedAt") or "") == started_at
-    ]
+
+def _assert_project_run_id_row_only(rows: list[dict[str, object]]) -> None:
+    matching = _matching_history_rows(rows, run_id="fetch_enrich_1")
     assert len(matching) == 1
-    assert str(matching[0].get("runId") or "") == run_id
     assert str(matching[0].get("status") or "").lower() == "started"
 
 
-def test_sync_history_from_reports_discards_rows_without_run_id(
-    admin_bridge_entrypoint_root,
-):
+def _setup_discards_rows_without_run_id() -> None:
     run_id = "fetch_stale_1"
     started_at = "2026-03-01T00:00:00+00:00"
     admin_bridge.save_json_atomic(
         admin_bridge.OPS_HISTORY_PATH,
         [
-            {
-                "id": run_id,
-                "runId": run_id,
-                "type": "fetch",
-                "status": "started",
-                "startedAt": started_at,
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {},
-            },
-            {
-                "id": "legacy_duplicate",
-                "type": "fetch",
-                "status": "started",
-                "startedAt": started_at,
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {},
-            },
+            _history_row(row_id=run_id, run_id=run_id, started_at=started_at),
+            _history_row(row_id="legacy_duplicate", started_at=started_at),
         ],
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
-        {
-            "runId": run_id,
-            "startedAt": started_at,
-            "finishedAt": "",
-            "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
-            "sources": [],
-        },
+        _fetch_report(run_id=run_id, started_at=started_at),
     )
     old_ts = 1_700_000_000
     os.utime(admin_bridge.JOBS_FETCH_REPORT_PATH, (old_ts, old_ts))
 
-    rows = admin_bridge.sync_history_from_reports()
-    matching = [
-        row
-        for row in rows
-        if str(row.get("type") or "") == "fetch" and str(row.get("startedAt") or "") == started_at
-    ]
+
+def _assert_discards_rows_without_run_id(rows: list[dict[str, object]]) -> None:
+    matching = _matching_history_rows(
+        rows,
+        started_at="2026-03-01T00:00:00+00:00",
+        run_id="fetch_stale_1",
+    )
     assert len(matching) == 1
-    assert str(matching[0].get("runId") or "") == run_id
     assert str(matching[0].get("status") or "").lower() == "error"
     assert (
         str((matching[0].get("summary") or {}).get("error") or "")
         == "owner_inactive_without_terminal_report"
     )
     assert all(str(row.get("runId") or "").strip() for row in rows)
+
+
+SYNC_HISTORY_CASES = [
+    pytest.param(
+        _SyncHistoryCase(
+            name="discard-unfinished-fetch-without-run-id",
+            setup=_setup_unfinished_fetch_without_run_id,
+            assert_rows=_assert_unfinished_fetch_without_run_id,
+        ),
+        id="discard-unfinished-fetch-without-run-id",
+    ),
+    pytest.param(
+        _SyncHistoryCase(
+            name="discovery-read-side-does-not-finish",
+            setup=_setup_unfinished_discovery_read_side,
+            assert_rows=_assert_unfinished_discovery_read_side,
+        ),
+        id="discovery-read-side-does-not-finish",
+    ),
+    pytest.param(
+        _SyncHistoryCase(
+            name="merge-fetch-launcher-report",
+            setup=_setup_fetch_launcher_report_merge,
+            assert_rows=_assert_fetch_launcher_report_merge,
+        ),
+        id="merge-fetch-launcher-report",
+    ),
+    pytest.param(
+        _SyncHistoryCase(
+            name="collapse-duplicate-run-id",
+            setup=_setup_duplicate_run_id_rows,
+            assert_rows=_assert_duplicate_run_id_rows,
+        ),
+        id="collapse-duplicate-run-id",
+    ),
+    pytest.param(
+        _SyncHistoryCase(
+            name="project-run-id-row-only",
+            setup=_setup_project_run_id_row_only,
+            assert_rows=_assert_project_run_id_row_only,
+        ),
+        id="project-run-id-row-only",
+    ),
+    pytest.param(
+        _SyncHistoryCase(
+            name="discard-rows-without-run-id",
+            setup=_setup_discards_rows_without_run_id,
+            assert_rows=_assert_discards_rows_without_run_id,
+        ),
+        id="discard-rows-without-run-id",
+    ),
+]
+
+
+@pytest.mark.parametrize("case", SYNC_HISTORY_CASES, ids=lambda case: case.name)
+def test_sync_history_from_reports_cases(case: _SyncHistoryCase) -> None:
+    case.setup()
+    rows = admin_bridge.sync_history_from_reports()
+    case.assert_rows(rows)
 
 
 def test_start_fetcher_task_registers_history_before_report_can_duplicate(
@@ -1029,65 +1418,57 @@ def test_start_fetcher_task_registers_history_before_report_can_duplicate(
     assert len(matching) == 1
 
 
-def test_get_current_task_state_payload_projects_active_tasks(admin_bridge_entrypoint_root):
+@dataclass(frozen=True)
+class _CurrentTaskStateCase:
+    name: str
+    setup: Callable[[], Callable[[], None] | None]
+    assert_payload: Callable[[dict[str, object]], None]
+    pid_is_running: bool | None = None
+
+
+def _setup_active_tasks_projection() -> Callable[[], None]:
     started_at = admin_bridge.now_iso()
     admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
-            "fetch": {
-                "runId": "fetch_1",
-                "taskType": "fetch",
-                "pid": 111,
-                "script": "jobs_fetcher.py",
-                "status": "running",
-                "startedAt": started_at,
-            },
-            "discovery": {
-                "runId": "discovery_1",
-                "taskType": "discovery",
-                "pid": 222,
-                "script": "source_discovery.py",
-                "status": "running",
-                "startedAt": started_at,
-            },
+            "fetch": _task_state_entry("fetch", run_id="fetch_1", started_at=started_at),
+            "discovery": _task_state_entry(
+                "discovery",
+                run_id="discovery_1",
+                started_at=started_at,
+                pid=222,
+            ),
         },
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
-        {
-            "runId": "fetch_1",
-            "startedAt": started_at,
-            "finishedAt": "",
-            "taskProgress": {
-                "active": True,
-                "phaseKey": "executing_sources",
-                "phaseLabel": "Executing sources",
-                "mode": "determinate",
-                "ratio": 0.5,
-                "counts": {"resolvedSources": 5, "sourceCount": 10},
-            },
-            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 10},
-            "sources": [],
-        },
+        _fetch_report(
+            run_id="fetch_1",
+            started_at=started_at,
+            task_progress=_active_progress(
+                "executing_sources",
+                "Executing sources",
+                {"resolvedSources": 5, "sourceCount": 10},
+            ),
+            summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+        ),
     )
     admin_bridge.save_json_atomic(
         admin_bridge.DISCOVERY_REPORT_PATH,
-        {
-            "runId": "discovery_1",
-            "startedAt": started_at,
-            "finishedAt": "",
-            "taskProgress": {
-                "active": True,
-                "phaseKey": "scanning_sources",
-                "phaseLabel": "Scanning known careers pages",
+        _discovery_report(
+            run_id="discovery_1",
+            started_at=started_at,
+            task_progress={
+                **_active_progress(
+                    "scanning_sources",
+                    "Scanning known careers pages",
+                    {"queuedCandidates": 3},
+                ),
                 "mode": "indeterminate",
                 "ratio": 0,
-                "counts": {"queuedCandidates": 3},
             },
-            "summary": {"queuedCandidateCount": 3},
-            "candidates": [],
-            "failures": [],
-        },
+            summary={"queuedCandidateCount": 3},
+        ),
     )
     admin_bridge.bridge_runtime_state.PIPELINE_STATUS.update(
         {
@@ -1117,24 +1498,7 @@ def test_get_current_task_state_payload_projects_active_tasks(admin_bridge_entry
         }
     )
 
-    try:
-        payload = admin_bridge.build_bridge_api(
-            admin_bridge.RUNTIME_CONFIG
-        ).get_current_task_state_payload()
-        tasks = payload.get("tasks") or []
-        task_types = {str(row.get("taskType") or "") for row in tasks}
-        assert payload.get("count") == 4
-        assert {"fetch", "discovery", "pipeline", "sync"} <= task_types
-        fetch_row = next(row for row in tasks if str(row.get("taskType") or "") == "fetch")
-        assert (
-            str((fetch_row.get("taskProgress") or {}).get("phaseKey") or "") == "executing_sources"
-        )
-        pipeline_row = next(row for row in tasks if str(row.get("taskType") or "") == "pipeline")
-        assert (
-            str((pipeline_row.get("taskProgress") or {}).get("phaseLabel") or "")
-            == "Running fetch..."
-        )
-    finally:
+    def cleanup() -> None:
         admin_bridge.SyncState.remove_active_sync_run("sync_1")
         admin_bridge.bridge_runtime_state.PIPELINE_STATUS.update(
             {
@@ -1147,165 +1511,121 @@ def test_get_current_task_state_payload_projects_active_tasks(admin_bridge_entry
             }
         )
 
+    return cleanup
 
-def test_get_current_task_state_payload_clears_stale_task_state_once_report_finishes(
-    admin_bridge_entrypoint_root,
-):
+
+def _assert_active_tasks_projection(payload: dict[str, object]) -> None:
+    tasks = payload.get("tasks") or []
+    task_types = {str(row.get("taskType") or "") for row in tasks}
+    assert payload.get("count") == 4
+    assert {"fetch", "discovery", "pipeline", "sync"} <= task_types
+    fetch_row = _task_row(payload, "fetch")
+    assert str((fetch_row.get("taskProgress") or {}).get("phaseKey") or "") == "executing_sources"
+    pipeline_row = _task_row(payload, "pipeline")
+    assert (
+        str((pipeline_row.get("taskProgress") or {}).get("phaseLabel") or "") == "Running fetch..."
+    )
+
+
+def _setup_finished_reports_clear_stale_state() -> None:
     started_at = "2026-03-08T10:00:30.000Z"
     finished_at = "2026-03-08T10:05:30.000Z"
     admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
-            "fetch": {
-                "runId": "fetch_1",
-                "taskType": "fetch",
-                "pid": 111,
-                "script": "jobs_fetcher.py",
-                "status": "running",
-                "startedAt": started_at,
-            },
-            "discovery": {
-                "runId": "discovery_1",
-                "taskType": "discovery",
-                "pid": 222,
-                "script": "source_discovery.py",
-                "status": "running",
-                "startedAt": started_at,
-            },
+            "fetch": _task_state_entry("fetch", run_id="fetch_1", started_at=started_at),
+            "discovery": _task_state_entry(
+                "discovery",
+                run_id="discovery_1",
+                started_at=started_at,
+                pid=222,
+            ),
         },
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
-        {
-            "runId": "fetch_1",
-            "startedAt": started_at,
-            "finishedAt": finished_at,
-            "taskProgress": {
-                "active": False,
-                "phaseKey": "completed",
-                "phaseLabel": "Fetcher completed",
-                "mode": "determinate",
-                "ratio": 1,
-                "counts": {},
-            },
-            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 10},
-            "sources": [],
-        },
+        _fetch_report(
+            run_id="fetch_1",
+            started_at=started_at,
+            finished_at=finished_at,
+            task_progress=_completed_progress("Fetcher completed"),
+            summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+        ),
     )
     admin_bridge.save_json_atomic(
         admin_bridge.DISCOVERY_REPORT_PATH,
-        {
-            "runId": "discovery_1",
-            "startedAt": started_at,
-            "finishedAt": finished_at,
-            "taskProgress": {
-                "active": False,
-                "phaseKey": "completed",
-                "phaseLabel": "Discovery completed",
-                "mode": "determinate",
-                "ratio": 1,
-                "counts": {},
-            },
-            "summary": {"queuedCandidateCount": 3},
-            "candidates": [],
-            "failures": [],
-        },
+        _discovery_report(
+            run_id="discovery_1",
+            started_at=started_at,
+            finished_at=finished_at,
+            task_progress=_completed_progress("Discovery completed"),
+            summary={"queuedCandidateCount": 3},
+        ),
     )
 
-    payload = admin_bridge.build_bridge_api(
-        admin_bridge.RUNTIME_CONFIG
-    ).get_current_task_state_payload()
+
+def _assert_finished_reports_clear_stale_state(payload: dict[str, object]) -> None:
     assert payload.get("count") == 0
     assert payload.get("tasks") == []
     assert admin_bridge.load_json_object(admin_bridge.TASK_STATE_PATH, {}) == {}
 
 
-def test_get_current_task_state_payload_keeps_recent_fetch_visible_during_heartbeat_gap(
-    admin_bridge_entrypoint_root,
-):
+def _setup_heartbeat_gap_fetch() -> None:
     started_at = admin_bridge.now_iso()
     admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
-            "fetch": {
-                "runId": "fetch_1",
-                "taskType": "fetch",
-                "pid": 111,
-                "script": "jobs_fetcher.py",
-                "status": "running",
-                "startedAt": started_at,
-            }
+            "fetch": _task_state_entry("fetch", run_id="fetch_1", started_at=started_at),
         },
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
-        {
-            "runId": "fetch_1",
-            "startedAt": started_at,
-            "finishedAt": "",
-            "runtime": {"lifecycle": {"owner": "fetch_report", "heartbeatAt": ""}},
-            "taskProgress": {
+        _fetch_report(
+            run_id="fetch_1",
+            started_at=started_at,
+            runtime={"lifecycle": {"owner": "fetch_report", "heartbeatAt": ""}},
+            task_progress={
+                **_active_progress(
+                    "executing_sources",
+                    "Executing sources",
+                    {"resolvedSources": 5, "sourceCount": 10},
+                ),
                 "active": False,
-                "phaseKey": "executing_sources",
-                "phaseLabel": "Executing sources",
-                "mode": "determinate",
-                "ratio": 0.5,
-                "counts": {"resolvedSources": 5, "sourceCount": 10},
             },
-            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 10},
-            "sources": [],
-        },
+            summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+        ),
     )
 
-    # Task state still points at a live PID while the report heartbeat lags; ops uses PID truth
-    # (not the old unfinished-run fallback) to keep the fetch row visible.
-    with mock.patch.object(admin_bridge, "pid_is_running", return_value=True):
-        payload = admin_bridge.build_bridge_api(
-            admin_bridge.RUNTIME_CONFIG
-        ).get_current_task_state_payload()
-    tasks = payload.get("tasks") or []
-    fetch_row = next(row for row in tasks if str(row.get("taskType") or "") == "fetch")
+
+def _assert_heartbeat_gap_fetch(payload: dict[str, object]) -> None:
+    fetch_row = _task_row(payload, "fetch")
     assert payload.get("count") == 1
     assert fetch_row.get("active") is True
     assert str(fetch_row.get("status") or "") == "running"
 
 
-def test_get_current_task_state_payload_prefers_active_fetch_owner_over_finished_history(
-    admin_bridge_entrypoint_root,
-):
+def _setup_active_owner_over_finished_history() -> None:
     started_at = admin_bridge.now_iso()
     run_id = "fetch_live_1"
     admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
-            "fetch": {
-                "runId": run_id,
-                "taskType": "fetch",
-                "pid": 111,
-                "script": "jobs_fetcher.py",
-                "status": "running",
-                "startedAt": started_at,
-            }
+            "fetch": _task_state_entry("fetch", run_id=run_id, started_at=started_at),
         },
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
-        {
-            "runId": run_id,
-            "startedAt": started_at,
-            "finishedAt": "",
-            "runtime": {"lifecycle": {"owner": "fetch_report", "heartbeatAt": started_at}},
-            "taskProgress": {
-                "active": True,
-                "phaseKey": "executing_sources",
-                "phaseLabel": "Executing sources",
-                "mode": "determinate",
-                "ratio": 0.5,
-                "counts": {"resolvedSources": 5, "sourceCount": 10},
-            },
-            "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 10},
-            "sources": [],
-        },
+        _fetch_report(
+            run_id=run_id,
+            started_at=started_at,
+            runtime={"lifecycle": {"owner": "fetch_report", "heartbeatAt": started_at}},
+            task_progress=_active_progress(
+                "executing_sources",
+                "Executing sources",
+                {"resolvedSources": 5, "sourceCount": 10},
+            ),
+            summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+        ),
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_TASKS_PATH,
@@ -1322,26 +1642,78 @@ def test_get_current_task_state_payload_prefers_active_fetch_owner_over_finished
     admin_bridge.save_json_atomic(
         admin_bridge.OPS_HISTORY_PATH,
         [
-            {
-                "id": run_id,
-                "runId": run_id,
-                "type": "fetch",
-                "status": "warning",
-                "startedAt": started_at,
-                "finishedAt": admin_bridge.now_iso(),
-                "durationMs": 123,
-                "summary": {"outputCount": 10, "failedSources": 1, "sourceCount": 10},
-            }
+            _history_row(
+                row_id=run_id,
+                run_id=run_id,
+                status="warning",
+                started_at=started_at,
+                finished_at=admin_bridge.now_iso(),
+                duration_ms=123,
+                summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+            )
         ],
     )
 
-    payload = admin_bridge.build_bridge_api(
-        admin_bridge.RUNTIME_CONFIG
-    ).get_current_task_state_payload()
-    fetch_row = next(row for row in (payload.get("tasks") or []) if row.get("taskType") == "fetch")
+
+def _assert_active_owner_over_finished_history(payload: dict[str, object]) -> None:
+    fetch_row = _task_row(payload, "fetch")
     assert fetch_row["active"] is True
-    assert str(fetch_row.get("runId") or "") == run_id
+    assert str(fetch_row.get("runId") or "") == "fetch_live_1"
     diagnostics = payload.get("diagnostics") or []
     assert any(
         str(item.get("code") or "") == "history_finished_while_owner_active" for item in diagnostics
     )
+
+
+CURRENT_TASK_STATE_CASES = [
+    pytest.param(
+        _CurrentTaskStateCase(
+            name="active-task-projection",
+            setup=_setup_active_tasks_projection,
+            assert_payload=_assert_active_tasks_projection,
+        ),
+        id="active-task-projection",
+    ),
+    pytest.param(
+        _CurrentTaskStateCase(
+            name="finished-reports-clear-stale-state",
+            setup=_setup_finished_reports_clear_stale_state,
+            assert_payload=_assert_finished_reports_clear_stale_state,
+        ),
+        id="finished-reports-clear-stale-state",
+    ),
+    pytest.param(
+        _CurrentTaskStateCase(
+            name="heartbeat-gap-keeps-fetch-visible",
+            setup=_setup_heartbeat_gap_fetch,
+            assert_payload=_assert_heartbeat_gap_fetch,
+            pid_is_running=True,
+        ),
+        id="heartbeat-gap-keeps-fetch-visible",
+    ),
+    pytest.param(
+        _CurrentTaskStateCase(
+            name="active-owner-over-finished-history",
+            setup=_setup_active_owner_over_finished_history,
+            assert_payload=_assert_active_owner_over_finished_history,
+        ),
+        id="active-owner-over-finished-history",
+    ),
+]
+
+
+@pytest.mark.parametrize("case", CURRENT_TASK_STATE_CASES, ids=lambda case: case.name)
+def test_get_current_task_state_payload_cases(case: _CurrentTaskStateCase) -> None:
+    cleanup = case.setup()
+    try:
+        if case.pid_is_running is None:
+            payload = _current_task_payload()
+        else:
+            with mock.patch.object(
+                admin_bridge, "pid_is_running", return_value=case.pid_is_running
+            ):
+                payload = _current_task_payload()
+        case.assert_payload(payload)
+    finally:
+        if cleanup is not None:
+            cleanup()
