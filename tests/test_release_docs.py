@@ -131,6 +131,13 @@ def test_package_json_build_aliases_use_leaf_builders(repo_root: Path) -> None:
     assert scripts["build:portable-exe"] == (
         "npm run check:python-version && python scripts/build_portable_exe.py"
     )
+    assert scripts["test:frontend:packaged"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py"
+    )
+    assert (
+        "_out/latest/build/portable/Baluffo.exe"
+        not in scripts["test:frontend:packaged:jobs-pipeline"]
+    )
     assert "verify:portable" not in scripts
 
 

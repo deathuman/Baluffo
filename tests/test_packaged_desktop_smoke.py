@@ -309,12 +309,15 @@ def test_startup_profile_summary_classifies_local_auth_delay() -> None:
 def test_ensure_portable_exe_raises_when_missing_and_build_still_missing() -> None:
     with (
         workspace_tmpdir("packaged-smoke") as tmp,
-        mock.patch.object(smoke, "run_portable_build") as build_mock,
     ):
         exe_path = Path(tmp) / "dist" / "baluffo-portable" / "Baluffo.exe"
-        with pytest.raises(RuntimeError, match="Packaged desktop executable not found"):
-            smoke.ensure_portable_exe(exe_path, rebuild=False)
-        build_mock.assert_called_once()
+        with (
+            mock.patch.object(smoke, "DEFAULT_EXE_PATH", exe_path),
+            mock.patch.object(smoke, "run_portable_build") as build_mock,
+        ):
+            with pytest.raises(RuntimeError, match="Packaged desktop executable not found"):
+                smoke.ensure_portable_exe(exe_path, rebuild=False)
+            build_mock.assert_called_once()
 
 
 def test_ensure_portable_exe_uses_rebuild_output_dir_when_requested() -> None:
@@ -325,7 +328,10 @@ def test_ensure_portable_exe_uses_rebuild_output_dir_when_requested() -> None:
         rebuilt_exe = rebuilt_dir / "Baluffo.exe"
         rebuilt_dir.mkdir(parents=True, exist_ok=True)
         rebuilt_exe.write_text("exe", encoding="utf-8")
-        with mock.patch.object(smoke, "run_portable_build", return_value=rebuilt_exe) as build_mock:
+        with (
+            mock.patch.object(smoke, "DEFAULT_EXE_PATH", requested_exe),
+            mock.patch.object(smoke, "run_portable_build", return_value=rebuilt_exe) as build_mock,
+        ):
             resolved = smoke.ensure_portable_exe(
                 requested_exe, rebuild=True, rebuild_output_dir=rebuilt_dir
             )
@@ -346,6 +352,26 @@ def test_ensure_portable_exe_rebuilds_default_dist_when_exe_older_than_sources()
         ):
             smoke.ensure_portable_exe(fake_default, rebuild=False)
         build_mock.assert_called_once_with(None)
+
+
+def test_ensure_portable_exe_honors_explicit_path_without_rebuilding() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        explicit_exe = Path(tmp) / "_out" / "latest" / "build" / "portable" / "Baluffo.exe"
+        explicit_exe.parent.mkdir(parents=True, exist_ok=True)
+        explicit_exe.write_text("exe", encoding="utf-8")
+        with mock.patch.object(smoke, "run_portable_build") as build_mock:
+            resolved = smoke.ensure_portable_exe(explicit_exe, rebuild=True)
+        assert resolved == explicit_exe.resolve()
+        build_mock.assert_not_called()
+
+
+def test_ensure_portable_exe_rejects_missing_explicit_path_instead_of_building_default() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        explicit_exe = Path(tmp) / "_out" / "latest" / "build" / "portable" / "Baluffo.exe"
+        with mock.patch.object(smoke, "run_portable_build") as build_mock:
+            with pytest.raises(RuntimeError, match="Packaged desktop executable not found"):
+                smoke.ensure_portable_exe(explicit_exe, rebuild=True)
+        build_mock.assert_not_called()
 
 
 def test_parse_packaged_node_smoke_report_reads_scenarios() -> None:
@@ -386,20 +412,90 @@ def test_collect_packaged_smoke_env_diagnostics_reports_paths_and_elevation() ->
         exe_path.parent.mkdir(parents=True, exist_ok=True)
         exe_path.write_text("exe", encoding="utf-8")
         env = {"TMP": str(root / "tmp"), "TEMP": str(root / "temp")}
-        with mock.patch.object(smoke, "is_windows_process_elevated", return_value=True):
+        with (
+            mock.patch.object(smoke, "DEFAULT_EXE_PATH", exe_path),
+            mock.patch.object(smoke, "is_windows_process_elevated", return_value=True),
+        ):
             diagnostics = smoke.collect_packaged_smoke_env_diagnostics(
                 artifacts_dir=root / "artifacts",
+                requested_exe_path=exe_path,
                 exe_path=exe_path,
                 node_smoke_script=smoke.DEFAULT_NODE_SMOKE_SCRIPT,
                 node_command=["C:/Program Files/nodejs/node.exe"],
                 env=env,
             )
+        assert diagnostics["requestedExePath"] == str(exe_path.resolve())
+        assert diagnostics["defaultExePath"] == str(exe_path.resolve())
+        assert diagnostics["exePathMode"] == "default-dist"
+        assert diagnostics["exePathSource"] == "default-dist"
+        assert diagnostics["explicitExePathFreshness"] == "n/a"
+        assert diagnostics["rebuiltPortableExe"] is False
         assert diagnostics["artifactsDirWritable"]
         assert diagnostics["exeParentWritable"]
         assert diagnostics["nodePath"] == "C:/Program Files/nodejs/node.exe"
         assert diagnostics["tmp"] == str(root / "tmp")
         assert diagnostics["temp"] == str(root / "temp")
         assert diagnostics["isElevated"]
+
+
+def test_collect_packaged_smoke_env_diagnostics_reports_explicit_path_freshness() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        explicit_exe = root / "_out" / "latest" / "build" / "portable" / "Baluffo.exe"
+        explicit_exe.parent.mkdir(parents=True, exist_ok=True)
+        explicit_exe.write_text("exe", encoding="utf-8")
+        with (
+            mock.patch.object(smoke, "_portable_exe_marker_staleness", return_value="stale"),
+            mock.patch.object(smoke, "is_windows_process_elevated", return_value=False),
+        ):
+            diagnostics = smoke.collect_packaged_smoke_env_diagnostics(
+                artifacts_dir=root / "artifacts",
+                requested_exe_path=explicit_exe,
+                exe_path=explicit_exe,
+                node_smoke_script=smoke.DEFAULT_NODE_SMOKE_SCRIPT,
+                node_command=["node"],
+                env={},
+            )
+        assert diagnostics["exePathMode"] == "explicit-path"
+        assert diagnostics["exePathSource"] == "explicit-path"
+        assert diagnostics["explicitExePathFreshness"] == "stale"
+        assert diagnostics["rebuiltPortableExe"] is False
+
+
+def test_collect_packaged_smoke_env_diagnostics_reports_rebuilt_default_dist() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        exe_path = root / "dist" / "baluffo-portable" / "Baluffo.exe"
+        exe_path.parent.mkdir(parents=True, exist_ok=True)
+        exe_path.write_text("exe", encoding="utf-8")
+        with (
+            mock.patch.object(smoke, "DEFAULT_EXE_PATH", exe_path),
+            mock.patch.object(smoke, "is_windows_process_elevated", return_value=False),
+        ):
+            diagnostics = smoke.collect_packaged_smoke_env_diagnostics(
+                artifacts_dir=root / "artifacts",
+                requested_exe_path=exe_path,
+                exe_path=exe_path,
+                node_smoke_script=smoke.DEFAULT_NODE_SMOKE_SCRIPT,
+                rebuilt_portable_dir=root / "artifacts" / "portable-build",
+                node_command=["node"],
+                env={},
+            )
+        assert diagnostics["exePathMode"] == "default-dist"
+        assert diagnostics["exePathSource"] == "rebuilt-dist"
+        assert diagnostics["explicitExePathFreshness"] == "n/a"
+        assert diagnostics["rebuiltPortableExe"] is True
+
+
+def test_packaged_pipeline_smoke_mode_is_enabled_only_for_jobs_pipeline_script() -> None:
+    assert (
+        smoke.packaged_pipeline_smoke_mode(smoke.JOBS_PIPELINE_NODE_SMOKE_SCRIPT) == "stub-success"
+    )
+    assert smoke.packaged_pipeline_smoke_mode(smoke.DEFAULT_NODE_SMOKE_SCRIPT) == ""
+    assert smoke.packaged_runtime_env_overrides(smoke.JOBS_PIPELINE_NODE_SMOKE_SCRIPT) == {
+        "BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE": "stub-success"
+    }
+    assert smoke.packaged_runtime_env_overrides(smoke.DEFAULT_NODE_SMOKE_SCRIPT) == {}
 
 
 def test_classify_subprocess_error_marks_spawn_eperm() -> None:

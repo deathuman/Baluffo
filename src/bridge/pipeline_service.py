@@ -30,6 +30,7 @@ class PipelineService:
         task_running_from_state: Callable[[str], bool],
         sync_task_running: Callable[[], bool],
         current_fetch_output_count: Callable[[], int],
+        load_json_object: Callable[[Any, Any], Any],
         wait_for_sync_completion: Callable[[str, float], dict[str, Any]],
         discovery_report_path: Any,
         fetch_report_path: Any,
@@ -49,6 +50,7 @@ class PipelineService:
         self._task_running_from_state = task_running_from_state
         self._sync_task_running = sync_task_running
         self._current_fetch_output_count = current_fetch_output_count
+        self._load_json_object = load_json_object
         self._wait_for_sync_completion = wait_for_sync_completion
         self._discovery_report_path = discovery_report_path
         self._fetch_report_path = fetch_report_path

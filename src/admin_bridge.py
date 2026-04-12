@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -292,6 +293,101 @@ def _get_pipeline_service() -> PipelineService:
     global _PIPELINE_SERVICE
     with _PIPELINE_SERVICE_LOCK:
         if _PIPELINE_SERVICE is None:
+            smoke_mode = (
+                str(os.getenv("BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE") or "").strip().lower()
+            )
+            stub_success_mode = smoke_mode == "stub-success"
+            pipeline_load_json_object = load_json_object
+            pipeline_trigger_discovery_task = trigger_discovery_task
+            pipeline_start_fetcher_task = start_fetcher_task
+            pipeline_start_sync_task = start_sync_task
+            pipeline_wait_for_sync_completion = _wait_for_sync_completion
+            pipeline_current_fetch_output_count = _current_fetch_output_count
+
+            if stub_success_mode:
+                smoke_runtime: dict[str, Any] = {
+                    "discoveryStartedAt": "",
+                    "discoveryReadyAt": 0.0,
+                    "fetchStartedAt": "",
+                    "fetchReadyAt": 0.0,
+                }
+
+                def pipeline_load_json_object(path: Any, default: Any) -> Any:
+                    resolved = Path(path).resolve()
+                    if resolved == Path(DISCOVERY_REPORT_PATH).resolve():
+                        started_at = str(smoke_runtime.get("discoveryStartedAt") or "")
+                        if started_at:
+                            finished_at = (
+                                started_at
+                                if time.monotonic()
+                                >= float(smoke_runtime.get("discoveryReadyAt") or 0.0)
+                                else ""
+                            )
+                            return {
+                                "runId": "discovery_smoke",
+                                "startedAt": started_at,
+                                "finishedAt": finished_at,
+                                "status": "ok" if finished_at else "running",
+                                "summary": {},
+                            }
+                    if resolved == Path(JOBS_FETCH_REPORT_PATH).resolve():
+                        started_at = str(smoke_runtime.get("fetchStartedAt") or "")
+                        if started_at:
+                            finished_at = (
+                                started_at
+                                if time.monotonic()
+                                >= float(smoke_runtime.get("fetchReadyAt") or 0.0)
+                                else ""
+                            )
+                            return {
+                                "runId": "fetch_smoke",
+                                "startedAt": started_at,
+                                "finishedAt": finished_at,
+                                "status": "ok" if finished_at else "running",
+                                "summary": {"outputCount": 0},
+                            }
+                    return load_json_object(path, default)
+
+                def pipeline_trigger_discovery_task(**kwargs):
+                    started_at = now_iso()
+                    smoke_runtime["discoveryStartedAt"] = started_at
+                    smoke_runtime["discoveryReadyAt"] = time.monotonic() + 1.2
+                    return 200, {
+                        "started": True,
+                        "startedAt": started_at,
+                        "runId": "discovery_smoke",
+                    }
+
+                def pipeline_start_fetcher_task(
+                    payload: dict[str, Any] | None = None,
+                ) -> dict[str, Any]:
+                    started_at = now_iso()
+                    smoke_runtime["fetchStartedAt"] = started_at
+                    smoke_runtime["fetchReadyAt"] = time.monotonic() + 1.2
+                    return {"started": True, "startedAt": started_at, "runId": "fetch_smoke"}
+
+                def pipeline_start_sync_task(
+                    action: str, *, reason: str, automatic: bool
+                ) -> dict[str, Any]:
+                    return {"started": True, "runId": "sync_smoke"}
+
+                def pipeline_wait_for_sync_completion(
+                    run_id: str, timeout_s: float = 900.0
+                ) -> dict[str, Any]:
+                    finished_at = now_iso()
+                    return {
+                        "id": str(run_id or "sync_smoke"),
+                        "type": "sync",
+                        "status": "ok",
+                        "finishedAt": finished_at,
+                        "summary": {},
+                    }
+
+                def pipeline_current_fetch_output_count() -> int:
+                    report = pipeline_load_json_object(JOBS_FETCH_REPORT_PATH, {})
+                    summary = summarize_fetch_report(normalize_fetch_report_contract(report))
+                    return int(summary.get("outputCount") or 0)
+
             _PIPELINE_SERVICE = PipelineService(
                 pipeline_state_lock=bridge_runtime_state.PIPELINE_STATE_LOCK,
                 pipeline_status=bridge_runtime_state.PIPELINE_STATUS,
@@ -303,13 +399,14 @@ def _get_pipeline_service() -> PipelineService:
                 upsert_run_history=upsert_run_history,
                 task_running_from_state=task_running_from_state,
                 sync_task_running=sync_task_running,
-                current_fetch_output_count=_current_fetch_output_count,
-                wait_for_sync_completion=_wait_for_sync_completion,
+                current_fetch_output_count=pipeline_current_fetch_output_count,
+                load_json_object=pipeline_load_json_object,
+                wait_for_sync_completion=pipeline_wait_for_sync_completion,
                 discovery_report_path=DISCOVERY_REPORT_PATH,
                 fetch_report_path=JOBS_FETCH_REPORT_PATH,
-                trigger_discovery_task=trigger_discovery_task,
-                start_fetcher_task=start_fetcher_task,
-                start_sync_task=start_sync_task,
+                trigger_discovery_task=pipeline_trigger_discovery_task,
+                start_fetcher_task=pipeline_start_fetcher_task,
+                start_sync_task=pipeline_start_sync_task,
                 get_app_version=get_app_version,
             )
         return _PIPELINE_SERVICE

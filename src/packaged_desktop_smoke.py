@@ -37,6 +37,9 @@ DEFAULT_ARTIFACT_ROOT = ROOT / ".codex-tmp" / "packaged-desktop-smoke"
 DEFAULT_RUNTIME_TIMEOUT_S = 35.0
 DEFAULT_SMOKE_RUNNER_TIMEOUT_S = 180.0
 DEFAULT_NODE_SMOKE_SCRIPT = ROOT / "tests" / "frontend" / "packaged-desktop-smoke.mjs"
+JOBS_PIPELINE_NODE_SMOKE_SCRIPT = (
+    ROOT / "tests" / "frontend" / "packaged-desktop-smoke.jobs-pipeline.mjs"
+)
 # If any of these are newer than ``dist/.../Baluffo.exe``, the smoke gate must rebuild
 # so CI/local never runs an obsolete PyInstaller payload against current sources.
 _PORTABLE_EXE_FRESHNESS_MARKERS = (
@@ -173,6 +176,29 @@ def _default_portable_exe_stale(exe_path: Path) -> bool:
     return False
 
 
+def _exe_path_uses_default_dist(exe_path: Path) -> bool:
+    return Path(exe_path).expanduser().resolve() == DEFAULT_EXE_PATH.resolve()
+
+
+def _portable_exe_marker_staleness(exe_path: Path) -> str:
+    resolved = Path(exe_path).expanduser().resolve()
+    if not resolved.exists():
+        return "missing"
+    if not resolved.is_file():
+        return "unusable"
+    try:
+        exe_mtime = resolved.stat().st_mtime
+    except OSError:
+        return "unusable"
+    for marker in _PORTABLE_EXE_FRESHNESS_MARKERS:
+        try:
+            if marker.is_file() and marker.stat().st_mtime > exe_mtime:
+                return "stale"
+        except OSError:
+            continue
+    return "fresh"
+
+
 def run_portable_build(output_dir: Path | None = None) -> Path:
     command = [sys.executable, str(ROOT / "scripts" / "build_portable_exe.py")]
     target_dir = None
@@ -239,19 +265,37 @@ def classify_subprocess_error(error: Exception | str) -> str:
 def collect_packaged_smoke_env_diagnostics(
     *,
     artifacts_dir: Path,
+    requested_exe_path: Path,
     exe_path: Path,
     node_smoke_script: Path,
+    rebuilt_portable_dir: Path | None = None,
     node_command: list[str] | None = None,
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     env_map = env if env is not None else os.environ
     node_cmd = list(node_command or resolve_node_command())
+    requested = Path(requested_exe_path).expanduser().resolve()
+    resolved = Path(exe_path).expanduser().resolve()
+    uses_default_dist = _exe_path_uses_default_dist(requested)
+    rebuilt_portable_used = rebuilt_portable_dir is not None and uses_default_dist
+    explicit_freshness = "n/a" if uses_default_dist else _portable_exe_marker_staleness(requested)
+    exe_path_source = "default-dist"
+    if rebuilt_portable_used:
+        exe_path_source = "rebuilt-dist"
+    elif not uses_default_dist:
+        exe_path_source = "explicit-path"
     diagnostics = {
         "cwd": str(ROOT),
         "artifactsDir": str(artifacts_dir),
         "artifactsDirWritable": path_is_writable(artifacts_dir),
-        "exePath": str(exe_path),
-        "exeParentWritable": path_is_writable(Path(exe_path).parent),
+        "requestedExePath": str(requested),
+        "defaultExePath": str(DEFAULT_EXE_PATH),
+        "exePath": str(resolved),
+        "exeParentWritable": path_is_writable(resolved.parent),
+        "exePathMode": "default-dist" if uses_default_dist else "explicit-path",
+        "exePathSource": exe_path_source,
+        "explicitExePathFreshness": explicit_freshness,
+        "rebuiltPortableExe": rebuilt_portable_used,
         "nodeCommand": node_cmd,
         "nodePath": str(node_cmd[0]) if node_cmd else "",
         "nodeSmokeScript": str(node_smoke_script),
@@ -291,10 +335,28 @@ def build_packaged_smoke_env(
     return env
 
 
+def packaged_pipeline_smoke_mode(node_smoke_script: Path) -> str:
+    resolved = Path(node_smoke_script).expanduser().resolve()
+    if resolved == JOBS_PIPELINE_NODE_SMOKE_SCRIPT.resolve():
+        return "stub-success"
+    return ""
+
+
+def packaged_runtime_env_overrides(node_smoke_script: Path) -> dict[str, str]:
+    mode = packaged_pipeline_smoke_mode(node_smoke_script)
+    if not mode:
+        return {}
+    return {"BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE": mode}
+
+
 def ensure_portable_exe(
     exe_path: Path, rebuild: bool = False, rebuild_output_dir: Path | None = None
 ) -> Path:
     exe = Path(exe_path).expanduser().resolve()
+    if not _exe_path_uses_default_dist(exe):
+        if not exe.is_file():
+            raise RuntimeError(f"Packaged desktop executable not found: {exe}")
+        return exe
     stale = _default_portable_exe_stale(exe)
     if not (rebuild or not exe.is_file() or stale):
         return exe
@@ -319,6 +381,7 @@ def launch_packaged_exe(
     stderr_path: Path,
     open_path: str = "jobs.html",
     startup_probe: bool = False,
+    env: dict[str, str] | None = None,
 ) -> tuple[subprocess.Popen[Any], Any, Any]:
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     stderr_path.parent.mkdir(parents=True, exist_ok=True)
@@ -342,6 +405,7 @@ def launch_packaged_exe(
         cwd=exe_path.parent,
         stdout=stdout_handle,
         stderr=stderr_handle,
+        env=env,
     )
     return process, stdout_handle, stderr_handle
 
@@ -536,6 +600,7 @@ def run_embedded_runtime_probe(
     runtime_timeout_s: float,
     startup_probe: bool,
     profile_mode: str,
+    env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     slug = slugify_token(str(probe.get("name") or "embedded-probe"))
     probe_dir = artifacts_root / slug
@@ -561,6 +626,7 @@ def run_embedded_runtime_probe(
             stderr_path=stderr_path,
             open_path=str(probe.get("openPath") or "jobs.html"),
             startup_probe=startup_probe,
+            env=env,
         )
         wait_for_packaged_runtime(
             process,
@@ -638,6 +704,8 @@ def read_packaged_node_smoke_payload(path: Path) -> dict[str, Any]:
 
 def run_packaged_node_smoke(
     *,
+    requested_exe_path: Path,
+    exe_path: Path,
     site_base_url: str,
     bridge_base_url: str,
     artifacts_dir: Path,
@@ -656,9 +724,11 @@ def run_packaged_node_smoke(
         headed=headed,
         pause_on_failure=pause_on_failure,
     )
+    env.update(packaged_runtime_env_overrides(node_smoke_script))
     diagnostics = collect_packaged_smoke_env_diagnostics(
         artifacts_dir=artifacts_dir,
-        exe_path=DEFAULT_EXE_PATH,
+        requested_exe_path=requested_exe_path,
+        exe_path=exe_path,
         node_smoke_script=Path(node_smoke_script).expanduser().resolve(),
         node_command=command,
         env=env,
@@ -728,7 +798,12 @@ def build_failure_payload(
 
 
 def run_warmup_launch(
-    exe_path: Path, *, open_path: str, runtime_timeout_s: float, startup_probe: bool
+    exe_path: Path,
+    *,
+    open_path: str,
+    runtime_timeout_s: float,
+    startup_probe: bool,
+    env: dict[str, str] | None = None,
 ) -> None:
     warmup_root = DEFAULT_ARTIFACT_ROOT / "warmup"
     warmup_root.mkdir(parents=True, exist_ok=True)
@@ -749,6 +824,7 @@ def run_warmup_launch(
             stderr_path=warmup_root / "desktop-exe.stderr.log",
             open_path=open_path,
             startup_probe=startup_probe,
+            env=env,
         )
         wait_for_packaged_runtime(
             process,
@@ -793,6 +869,8 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     node_smoke_script = (
         Path(args.node_smoke_script or DEFAULT_NODE_SMOKE_SCRIPT).expanduser().resolve()
     )
+    runtime_env = os.environ.copy()
+    runtime_env.update(packaged_runtime_env_overrides(node_smoke_script))
     startup_page = Path(open_path).stem or "jobs"
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -837,7 +915,11 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     stderr_handle = None
     try:
         report["environment"] = collect_packaged_smoke_env_diagnostics(
-            artifacts_dir=artifacts_dir, exe_path=exe_path, node_smoke_script=node_smoke_script
+            artifacts_dir=artifacts_dir,
+            requested_exe_path=requested_exe_path,
+            exe_path=exe_path,
+            node_smoke_script=node_smoke_script,
+            rebuilt_portable_dir=rebuild_output_dir,
         )
         if profile_mode == "warm":
             run_warmup_launch(
@@ -845,6 +927,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 open_path=open_path,
                 runtime_timeout_s=float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S),
                 startup_probe=startup_probe,
+                env=runtime_env,
             )
         if embedded_probes and not bool(args.profile_only):
             embedded_scenarios = [
@@ -855,6 +938,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                     runtime_timeout_s=float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S),
                     startup_probe=startup_probe,
                     profile_mode=profile_mode,
+                    env=runtime_env,
                 )
                 for probe in EMBEDDED_PAGE_PROBES
             ]
@@ -880,6 +964,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             stderr_path=stderr_path,
             open_path=open_path,
             startup_probe=startup_probe,
+            env=runtime_env,
         )
         runtime_state = wait_for_packaged_runtime(
             process,
@@ -926,6 +1011,8 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             return report
 
         smoke_runner_result = run_packaged_node_smoke(
+            requested_exe_path=requested_exe_path,
+            exe_path=exe_path,
             site_base_url=site_base_url,
             bridge_base_url=bridge_base_url,
             artifacts_dir=artifacts_dir,

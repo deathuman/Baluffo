@@ -58,6 +58,7 @@ Saved job record fields:
 | Run jobs pipeline | `npm run dev:pipeline` |
 | Full build | `npm run build` |
 | Portable EXE | `npm run build:portable-exe -- --bundle-version <version>` |
+| Packaged smoke (direct dist artifact) | `npm run test:frontend:packaged`, `npm run test:frontend:packaged:jobs-pipeline` |
 | Full verification | `npm run verify` |
 | Run tests | `npm run test:py`, `npm run test:unit`, `npm run test:smoke` |
 | Pre-commit lint | `npm run lint:precommit:changed` |
@@ -204,5 +205,12 @@ See [`testing.md`](testing.md) for verification commands and [`AI_ASSISTANT_GUID
   - `dist/baluffo-portable-<version>.zip`
 - Dedicated desktop entrypoint:
   - `Baluffo.exe`
+- Artifact ownership:
+  - direct portable builds own `dist\baluffo-portable`
+  - `_out\latest\build\portable` is reserved for orchestrator `build` / `verify` runs
+- Jobs-page packaged smoke:
+  - `npm run test:frontend:packaged:jobs-pipeline`
+  - validates terminal pipeline success in the packaged desktop runtime, not just button startup state
+  - uses a smoke-only stub-success mode so the packaged gate stays deterministic and does not run the full real pipeline
 - Runbook:
   - `docs/RELEASE.md`

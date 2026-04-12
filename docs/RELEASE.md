@@ -214,6 +214,9 @@ npm run test:frontend:packaged
 npm run test:frontend:packaged:jobs-pipeline
 ```
 
+These packaged smoke commands validate the direct `dist\baluffo-portable\Baluffo.exe` artifact. `_out\latest\build\portable\Baluffo.exe` is reserved for orchestrator-driven `build` / `verify` runs.
+The Jobs-page packaged smoke is now a terminal-success gate: it must launch the Jobs pipeline, observe visible running progress, and then reach a non-error terminal state. It uses a smoke-only stub-success pipeline mode so the lane stays deterministic and does not run the full real discovery/fetch/sync workload.
+
 Optional rebuild-backed smoke validation:
 
 ```powershell
@@ -223,6 +226,7 @@ npm run probe:desktop:startup:cold
 For a warmer startup path, use `npm run probe:desktop:startup:warm`.
 
 4. Confirm desktop startup, bridge readiness, the full packaged smoke, and the Jobs-page no-Admin pipeline smoke all pass in the smoke output.
+   - The Jobs-page smoke should not be considered passed if the backend pipeline enters `stage=error` or reports a non-empty `error` after startup.
 5. If sync credentials are packaged, confirm the packaged runtime still resolves the expected sync config and smoke remains green.
 
 ### Post-Release / Incident Checks

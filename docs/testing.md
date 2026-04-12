@@ -60,6 +60,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Portable EXE leaf builder | `python scripts/build_portable_exe.py --bundle-version <version>` |
 | Packaged desktop smoke gate | `npm run test:frontend:packaged` |
 | Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
+| Orchestrated packaged smoke gate | `npm run test:frontend:packaged:orchestrated` |
 | Rebuild-backed packaged diagnostic | `npm run probe:desktop:startup:cold` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
@@ -79,12 +80,35 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 - In this environment, direct pytest temp-root creation under `%LOCALAPPDATA%\\Temp` can hit Windows permission errors during setup/cleanup.
 - If a narrow bridge test run fails before assertions with tmpdir/tempfile ACL errors, rerun it with a repo-local `--basetemp` or the existing repo-local tempdir shim rather than treating it as a product regression.
 
+## Packaged artifact ownership
+
+- Direct packaging commands own `dist/` outputs:
+  - `npm run build:portable-exe`
+  - `python scripts/build_portable_exe.py`
+  - `npm run test:frontend:packaged*`
+- Orchestrated build and verify commands own `_out/runs/...` and `_out/latest/...`:
+  - `npm run build`
+  - `npm run verify`
+  - `python scripts/orchestrator.py build`
+  - `python scripts/orchestrator.py verify`
+- Do not expect `build:portable-exe` to refresh `_out/latest`; that mirror only belongs to the orchestrator flow.
+
+## Jobs Pipeline Smoke Contract
+
+- `npm run test:frontend:packaged:jobs-pipeline` is no longer just a “pipeline started” check.
+- It must prove all of the following in the packaged desktop runtime:
+  - the Jobs page renders and the pipeline button becomes busy,
+  - the pipeline reports a real `runId`,
+  - the tracked run reaches a terminal non-error state,
+  - no backend `error` payload is surfaced after startup.
+- This lane uses a smoke-only stub-success pipeline mode so it stays deterministic and bounded while still exercising the real `PipelineService` worker path.
+
 ## Release/build regression picks
 
 Use the narrowest check that matches the risky path:
 
 - Packaging or portable EXE changes: `python scripts/build_portable_exe.py`
-- Bridge route wiring or task-launch signature changes: focused `tests/bridge/...`
+- Bridge route wiring or task-launch signature changes: focused `tests/bridge/...` plus `tests/test_pipeline_execution.py` for worker-path coverage
 - Admin task buttons, presets, or busy-state changes: focused frontend unit tests plus the nearest admin bridge payload test
 - Contamination or location-quality regressions: targeted fetcher/unit checks around sanitization, canonicalization, or audit helpers
 

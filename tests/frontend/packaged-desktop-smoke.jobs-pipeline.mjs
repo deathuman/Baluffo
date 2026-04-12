@@ -62,12 +62,34 @@ async function waitForPipelineRunStart(apiRequest, timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const payload = await fetchPipelineStatus(apiRequest);
-    if (payload?.active && String(payload?.runId || "").trim()) {
-      return String(payload.runId);
+    const runId = String(payload?.runId || "").trim();
+    const stage = String(payload?.stage || "").trim().toLowerCase();
+    if ((payload?.active && runId) || (runId && stage && stage !== "idle")) {
+      return payload;
     }
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
   throw new Error("Jobs pipeline did not start within the allotted time.");
+}
+
+async function waitForPipelineRunTerminal(apiRequest, runId, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const payload = await fetchPipelineStatus(apiRequest);
+    const currentRunId = String(payload?.runId || "").trim();
+    const stage = String(payload?.stage || "").trim().toLowerCase();
+    const error = String(payload?.error || "").trim();
+    if (currentRunId && currentRunId === runId) {
+      if (error || stage === "error") {
+        throw new Error(`Jobs pipeline entered error state: ${error || stage}`);
+      }
+      if (!payload?.active && stage && stage !== "starting") {
+        return payload;
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  throw new Error("Jobs pipeline did not reach a terminal non-error state within the allotted time.");
 }
 
 async function main() {
@@ -142,7 +164,8 @@ async function main() {
         null,
         { timeout: 30_000 }
       );
-      const runId = await waitForPipelineRunStart(apiRequest);
+      const startedPayload = await waitForPipelineRunStart(apiRequest);
+      const runId = String(startedPayload?.runId || "");
       assert.match(runId, /^pipeline_[a-f0-9]{10}$/i, "jobs pipeline run id should look like a pipeline run");
       const buttonState = await pipelineButton.evaluate(el => ({
         mode: String(el.dataset.progressMode || ""),
@@ -167,6 +190,10 @@ async function main() {
         assert.match(buttonState.fillWidth, /%$/);
         assert.notEqual(buttonState.fillWidth, "0%", "indeterminate fill should be visible");
       }
+      const terminalPayload = await waitForPipelineRunTerminal(apiRequest, runId);
+      assert.equal(Boolean(terminalPayload?.active), false, "pipeline should finish in smoke mode");
+      assert.notEqual(String(terminalPayload?.stage || "").trim().toLowerCase(), "error");
+      assert.equal(String(terminalPayload?.error || "").trim(), "");
       assert.equal(pageErrors.length, 0, `unexpected jobs page errors: ${pageErrors.join("; ")}`);
       assert.match(
         String(page.url() || ""),

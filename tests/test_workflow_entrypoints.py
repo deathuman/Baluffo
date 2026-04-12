@@ -92,6 +92,20 @@ def test_package_json_dev_pipeline_uses_module_entrypoint(repo_root: Path) -> No
     )
 
 
+def test_package_json_packaged_smoke_scripts_use_direct_dist_by_default(repo_root: Path) -> None:
+    package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
+    scripts = package["scripts"]
+    assert scripts["test:frontend:packaged"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py"
+    )
+    assert scripts["test:frontend:packaged:jobs-pipeline"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --node-smoke-script tests/frontend/packaged-desktop-smoke.jobs-pipeline.mjs --playwright-timeout 300"
+    )
+    assert scripts["test:frontend:packaged:orchestrated"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --exe-path _out/latest/build/portable/Baluffo.exe"
+    )
+
+
 def test_dev_pipeline_targeted_npm_entrypoint_starts_without_relative_import_failure(
     repo_root: Path, tmp_path: Path
 ) -> None:

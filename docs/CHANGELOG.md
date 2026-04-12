@@ -14,11 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Location normalization coverage for Google Sheets, rendered-card extraction, canonical parsers, and frontend jobs-domain parity.
 - Jobs filter popup regression coverage for country picker outside-click and `Escape` dismissal.
 - Pipeline run button progress bar coverage and UI state reporting.
+- Explicit packaged-smoke artifact ownership split between direct `dist\` builds and orchestrator-owned `_out\latest\` artifacts.
+- Terminal-success packaged Jobs-page pipeline smoke coverage, including a deterministic smoke-only stub-success pipeline mode.
+- Backend regression coverage for the pipeline worker path and `admin_bridge` pipeline-service dependency wiring.
 
 ### Changed
 - City parsing now normalizes multi-location strings, dedupes bilingual variants, and rebuilds location summaries from the surviving normalized locations.
 - Country-like city values such as `EU & NA` and `UK` are now promoted into the country field instead of being dropped, while valid cities remain untouched.
 - Location normalization was consolidated into the canonical parsers path and mirrored in the frontend jobs domain so backend and UI stay aligned.
+- Packaged smoke commands now default to the direct `dist\baluffo-portable\Baluffo.exe` artifact, while `_out\latest\build\portable\Baluffo.exe` is reserved for the explicit orchestrated smoke lane.
+- Packaged smoke diagnostics now report whether the EXE came from the default `dist\` path, an explicit caller-supplied path, or a rebuilt direct-build artifact.
 - Release tooling, source-sync helpers, and developer docs were refreshed alongside the current pending job pipeline changes.
 
 ### Fixed
@@ -26,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Sega M Electrical Products row no longer gets forced into the `Game` sector classification.
 - Country picker dropdown now closes reliably when clicking outside it or pressing `Escape`, matching the shared popup behavior in the Jobs page.
 - Source sync can now be pointed at a custom PEM CA bundle via `BALUFFO_SYNC_CA_BUNDLE` for machines with a nonstandard trust store or TLS-inspecting proxy.
+- Jobs-page pipeline runs no longer fail at runtime with `'PipelineService' object has no attribute '_load_json_object'`.
+- The packaged Jobs-page pipeline smoke now fails on backend worker errors after startup instead of passing once the button briefly enters a busy state.
 
 ## [0.1.0] - 2026-04-10
 
