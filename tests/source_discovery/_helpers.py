@@ -1,5 +1,27 @@
+import asyncio
+import importlib
 import json
+import os
+import sys
+import threading
+import time
 from pathlib import Path
+from unittest import mock
+
+from src import source_discovery as sd
+from src import source_registry as sr
+from src.source_discovery import config as discovery_config_module
+from src.source_discovery import gamesmap as gamesmap_adapter
+from src.source_discovery import orchestrator as discovery_orchestrator
+from src.source_discovery import url_patches as discovery_url_patches
+from src.source_discovery.core import classify_probe_failure_stage
+from src.source_discovery.schemas import DiscoveryReportSummarySchema
+from src.source_discovery.web_search import async_fetch_text_httpx
+from tests.helpers.discovery_runtime import (
+    override_discovery_config,
+    override_discovery_runtime,
+)
+from tests.helpers.temp_paths import workspace_tmpdir
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 
@@ -21,4 +43,30 @@ def _gamesmap_next_payload_html(companies: list[dict[str, object]]) -> str:
     )
 
 
-__all__ = [name for name in globals() if not name.startswith("__")]
+__all__ = [
+    "DiscoveryReportSummarySchema",
+    "FIXTURES_DIR",
+    "Path",
+    "_fixture_json",
+    "_fixture_text",
+    "_gamesmap_next_payload_html",
+    "async_fetch_text_httpx",
+    "asyncio",
+    "classify_probe_failure_stage",
+    "discovery_config_module",
+    "discovery_orchestrator",
+    "discovery_url_patches",
+    "gamesmap_adapter",
+    "importlib",
+    "json",
+    "mock",
+    "os",
+    "override_discovery_config",
+    "override_discovery_runtime",
+    "sd",
+    "sr",
+    "sys",
+    "threading",
+    "time",
+    "workspace_tmpdir",
+]
