@@ -10,21 +10,27 @@ This document owns the verification matrix for Baluffo. Keep build, test, and fi
 
 ## Python tests (pytest)
 
-Run the Python test suite:
+Run the balanced developer Python lane:
 
 ```bash
 npm run test:py
 ```
 
-This wrapper now uses a repo-local pytest basetemp so Windows temp-root ACL issues do not interfere with the suite.
+This wrapper now uses the repo-local pytest temp root under `.tmp/pytest` (with `--basetemp=.tmp/pytest/basetemp`) so Windows temp-root ACL issues do not interfere with the suite. It excludes `slow`, `packaging`, and `release` tests so the default local loop stays focused on day-to-day development.
 
-**Quick local runs (exclude slow tests):** To skip long-running tests (e.g. timeout/retry tests) and finish faster:
+Run the full Python suite when you need release-level confidence:
 
 ```bash
-python -m pytest tests -q -m "not slow" --color=no
+npm run test:py:extended
 ```
 
-Slow tests are marked with `@pytest.mark.slow` in the codebase. The full suite includes them.
+**Direct local filtering:** To reproduce the developer lane directly from pytest:
+
+```bash
+python -m pytest tests -q -m "not slow and not packaging and not release" --color=no
+```
+
+Slow, packaging, and release tests stay in the extended lane. The timing lane still runs the full suite so performance regressions stay visible.
 
 Run a quick timing sanity check (prints the slowest tests at the end):
 
@@ -50,7 +56,8 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 
 | Goal | Command |
 |------|---------|
-| Full suite | `npm run test:py` |
+| Developer lane | `npm run test:py` |
+| Full suite / release lane | `npm run test:py:extended` |
 | Local pre-commit gate | `npm run lint:precommit:changed` |
 | Full pre-commit sweep | `npm run lint:precommit:all` |
 | CI pre-commit sweep | `npm run lint:precommit:ci` |
@@ -64,19 +71,19 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Rebuild-backed packaged diagnostic | `npm run probe:desktop:startup:cold` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
-| Exclude slow | `python -m pytest tests -q -m "not slow" --color=no` |
+| Match developer lane directly | `python -m pytest tests -q -m "not slow and not packaging and not release" --color=no` |
 
 **Shared fixtures (where they are defined):**
 
 | Fixture | Location |
 |---------|----------|
 | `repo_root`, `codex_tmp_root`, `make_test_root`, `source_sync_test_root` | `tests/conftest.py` |
-| `admin_bridge_ops_root` | `tests/admin/conftest.py` |
+| `admin_bridge_entrypoint_root` | `tests/admin/conftest.py` |
 | `workspace_tmpdir(prefix)` (context manager) | `tests/helpers/temp_paths.py` |
 
 **Temp directory note (Windows sandbox):**
 
-- Prefer repo-local temp fixtures such as `workspace_tmpdir(...)` and `admin_bridge_ops_root` for new tests that write runtime state.
+- Prefer repo-local temp fixtures such as `workspace_tmpdir(...)` and `admin_bridge_entrypoint_root` for new tests that write runtime state.
 - In this environment, direct pytest temp-root creation under `%LOCALAPPDATA%\\Temp` can hit Windows permission errors during setup/cleanup.
 - If a narrow bridge test run fails before assertions with tmpdir/tempfile ACL errors, rerun it with a repo-local `--basetemp` or the existing repo-local tempdir shim rather than treating it as a product regression.
 
@@ -92,6 +99,13 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
   - `python scripts/orchestrator.py build`
   - `python scripts/orchestrator.py verify`
 - Do not expect `build:portable-exe` to refresh `_out/latest`; that mirror only belongs to the orchestrator flow.
+
+## Test ownership rules
+
+- Real shard files must own real tests. Do not hide test functions inside giant imported `_cases.py` containers.
+- Shared helpers should stay local to the test family and helper-only. Prefer `_helpers.py`, `conftest.py`, or a focused helper module over a broad test utility barrel.
+- Before adding a new guard or smoke test, delete or merge any older test that already protects the same invariant.
+- Prefer seam-patched unit checks for selection, normalization, and routing logic. Keep only one intentionally slow smoke test when full execution is the behavior under test.
 
 ## Jobs Pipeline Smoke Contract
 
@@ -116,21 +130,23 @@ Use the narrowest check that matches the risky path:
 
 | Area | Test path |
 |------|-----------|
-| Jobs pipeline / jobs_fetcher | `tests/test_jobs_fetcher.py` (integration shim), `tests/test_jobs_fetcher_google_sheets.py`, `tests/test_jobs_fetcher_parsing.py`, `tests/test_jobs_fetcher_providers.py`, `tests/test_jobs_fetcher_static.py`, `tests/test_jobs_fetcher_pipeline.py`, `tests/test_jobs_fetcher_quality.py` |
-| Source discovery | `tests/test_source_discovery.py` |
+| Jobs pipeline / jobs_fetcher | `tests/test_jobs_fetcher.py` (integration shim), `tests/test_jobs_fetcher_google_sheets.py`, `tests/test_jobs_fetcher_parsing.py`, `tests/test_jobs_fetcher_providers.py`, `tests/jobs_static/`, `tests/test_jobs_fetcher_pipeline.py`, `tests/test_jobs_fetcher_quality.py` |
+| Source discovery | `tests/source_discovery/` |
 | Admin bridge (registry, runtime, static fallback, sync) | `tests/admin/test_admin_bridge_ops_*.py` |
 | Desktop app / launcher | `tests/test_desktop_app.py` |
 | Source sync | `tests/test_source_sync.py` |
-| Local data store, backup, config, etc. | `tests/test_<module>.py` |
+| Local data store, backup, config, etc. | `tests/test_local_data_store.py`, `tests/test_desktop_app.py`, and the nearest focused `tests/test_*.py` module for the subsystem |
 
 ## Frontend smoke tests (Playwright)
 
 Playwright smoke tests are run by `npm run test:smoke` / `npm run test`.
 
-`playwright.config.js` starts a local web server using `python -m http.server`.
+`playwright.config.js` starts a local web server using `python scripts/serve_static_site.py --directory .`.
 Make sure `python` on your machine resolves to Python 3 (not Python 2), otherwise the web server will fail to start.
 
 If needed for local development, set `PLAYWRIGHT_PYTHON=py` (or any Python 3 launcher) to override what Playwright uses.
+
+Playwright artifacts are written under `.tmp/playwright/test-results`, so the repo root does not accumulate a `test-results/` directory.
 
 ## Test types in Baluffo
 
@@ -158,7 +174,8 @@ python -m pytest tests -q -m "not slow" --cov=src --cov-report=term-missing --co
 ## Which command should I run?
 
 - Small Python logic change: `npm run test:py`
-- Before pushing or merging: `npm run lint:precommit` or `npm run verify`
+- Before pushing to `main` or preparing a release: `npm run test:py:extended`
+- Before merging a broad or risky backend change: `npm run test:py:extended` or `npm run verify`
 - JavaScript/frontend unit change: `npm run test:unit`
 - Browser or page-flow change: `npm run test:smoke`
 - Broad or risky change: `npm run verify`

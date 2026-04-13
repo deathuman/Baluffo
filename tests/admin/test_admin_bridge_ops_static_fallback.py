@@ -4,7 +4,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from src import admin_bridge
+from src.source_registry import source_identity
+from tests.helpers.bridge_api import build_admin_bridge_api
 
 
 @dataclass(frozen=True)
@@ -16,29 +17,25 @@ class _LinkPatternCase:
     minimum_jobs_found: int | None = None
 
 
-def _run_link_pattern_case(case: _LinkPatternCase) -> None:
-    added = admin_bridge.add_manual_source(case.source_url)
+def _run_link_pattern_case(case: _LinkPatternCase, monkeypatch) -> None:
+    api = build_admin_bridge_api()
+    added = api.add_manual_source(case.source_url)
     source_id = str(added.get("sourceId") or "")
     assert source_id
 
-    original_fetch = admin_bridge.discovery.fetch_text_with_retry
-    try:
+    def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
+        return case.responses.get(url, "<html></html>")
 
-        def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
-            return case.responses.get(url, "<html></html>")
-
-        admin_bridge.discovery.fetch_text_with_retry = fake_fetch
-        result = admin_bridge.trigger_source_check(source_id)
-        assert result["started"]
-        assert result["ok"]
-        assert bool(result.get("weakSignal"))
-        jobs_found = int(result["jobsFound"])
-        if case.expected_jobs_found is not None:
-            assert jobs_found == case.expected_jobs_found
-        if case.minimum_jobs_found is not None:
-            assert jobs_found >= case.minimum_jobs_found
-    finally:
-        admin_bridge.discovery.fetch_text_with_retry = original_fetch
+    monkeypatch.setattr("src.admin_bridge.discovery.fetch_text_with_retry", fake_fetch)
+    result = api.trigger_source_check(source_id)
+    assert result["started"]
+    assert result["ok"]
+    assert bool(result.get("weakSignal"))
+    jobs_found = int(result["jobsFound"])
+    if case.expected_jobs_found is not None:
+        assert jobs_found == case.expected_jobs_found
+    if case.minimum_jobs_found is not None:
+        assert jobs_found >= case.minimum_jobs_found
 
 
 LINK_PATTERN_CASES = [
@@ -362,61 +359,56 @@ def _fetch_404_then_alternate(
     return fake_fetch
 
 
-def _run_source_check_case(case: _SourceCheckCase) -> None:
-    added = admin_bridge.add_manual_source(case.source_url)
+def _run_source_check_case(case: _SourceCheckCase, monkeypatch) -> None:
+    api = build_admin_bridge_api()
+    added = api.add_manual_source(case.source_url)
     source_id = str(added.get("sourceId") or "")
     assert source_id
 
-    original_fetch = admin_bridge.discovery.fetch_text_with_retry
-    original_browser_fetch = admin_bridge._source_check_http.try_fetch_with_playwright
-    original_redirect = admin_bridge._source_check_http.discover_redirect_career_candidates
-    try:
+    def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
+        return case.fetch_handler(url)
 
-        def fake_fetch(url: str, _timeout: int, *, adapter: str, fetcher=None):  # noqa: ANN001
-            return case.fetch_handler(url)
+    def fake_browser(*_args, **_kwargs):  # noqa: ANN001
+        if case.browser_result is None:
+            raise AssertionError("unexpected browser fallback")
+        return case.browser_result
 
-        def fake_browser(*_args, **_kwargs):  # noqa: ANN001
-            if case.browser_result is None:
-                raise AssertionError("unexpected browser fallback")
-            return case.browser_result
-
-        admin_bridge.discovery.fetch_text_with_retry = fake_fetch
-        admin_bridge._source_check_http.try_fetch_with_playwright = fake_browser
-        admin_bridge._source_check_http.discover_redirect_career_candidates = (
-            lambda *_args, **_kwargs: list(case.redirect_candidates)
+    monkeypatch.setattr("src.admin_bridge.discovery.fetch_text_with_retry", fake_fetch)
+    monkeypatch.setattr(
+        "src.admin_bridge._source_check_http.try_fetch_with_playwright",
+        fake_browser,
+    )
+    monkeypatch.setattr(
+        "src.admin_bridge._source_check_http.discover_redirect_career_candidates",
+        lambda *_args, **_kwargs: list(case.redirect_candidates),
+    )
+    result = api.trigger_source_check(source_id)
+    assert result["started"]
+    if case.expected_ok:
+        assert result["ok"]
+    else:
+        assert not result["ok"]
+    if case.expected_error_code is not None:
+        assert str(result.get("errorCode") or "") == case.expected_error_code
+    if case.expected_error_fragment is not None:
+        assert case.expected_error_fragment in str(result.get("error") or "").lower()
+    if case.require_suggested_urls:
+        suggested = result.get("suggestedUrls") or []
+        assert suggested
+        for url in case.expected_suggested_urls:
+            assert url in suggested
+    if case.expected_browser_fallback_attempted is not None:
+        assert (
+            bool(result.get("browserFallbackAttempted")) is case.expected_browser_fallback_attempted
         )
-        result = admin_bridge.trigger_source_check(source_id)
-        assert result["started"]
-        if case.expected_ok:
-            assert result["ok"]
-        else:
-            assert not result["ok"]
-        if case.expected_error_code is not None:
-            assert str(result.get("errorCode") or "") == case.expected_error_code
-        if case.expected_error_fragment is not None:
-            assert case.expected_error_fragment in str(result.get("error") or "").lower()
-        if case.require_suggested_urls:
-            suggested = result.get("suggestedUrls") or []
-            assert suggested
-            for url in case.expected_suggested_urls:
-                assert url in suggested
-        if case.expected_browser_fallback_attempted is not None:
-            assert (
-                bool(result.get("browserFallbackAttempted"))
-                is case.expected_browser_fallback_attempted
-            )
-        if case.expected_browser_fallback_used is not None:
-            assert bool(result.get("browserFallbackUsed")) is case.expected_browser_fallback_used
-        if case.expected_weak_signal is not None:
-            assert bool(result.get("weakSignal")) is case.expected_weak_signal
-        if case.expected_jobs_found is not None:
-            assert int(result["jobsFound"]) == case.expected_jobs_found
-        if case.minimum_jobs_found is not None:
-            assert int(result["jobsFound"]) >= case.minimum_jobs_found
-    finally:
-        admin_bridge.discovery.fetch_text_with_retry = original_fetch
-        admin_bridge._source_check_http.try_fetch_with_playwright = original_browser_fetch
-        admin_bridge._source_check_http.discover_redirect_career_candidates = original_redirect
+    if case.expected_browser_fallback_used is not None:
+        assert bool(result.get("browserFallbackUsed")) is case.expected_browser_fallback_used
+    if case.expected_weak_signal is not None:
+        assert bool(result.get("weakSignal")) is case.expected_weak_signal
+    if case.expected_jobs_found is not None:
+        assert int(result["jobsFound"]) == case.expected_jobs_found
+    if case.minimum_jobs_found is not None:
+        assert int(result["jobsFound"]) >= case.minimum_jobs_found
 
 
 SOURCE_CHECK_SUCCESS_CASES = [
@@ -667,26 +659,46 @@ SOURCE_CHECK_BROWSER_CASES = [
 
 
 @pytest.mark.parametrize("case", SOURCE_CHECK_SUCCESS_CASES, ids=lambda case: case.name)
-def test_trigger_source_check_static_fallback_handles_success_cases(case: _SourceCheckCase) -> None:
-    _run_source_check_case(case)
+def test_trigger_source_check_static_fallback_handles_success_cases(
+    case: _SourceCheckCase,
+    admin_bridge_entrypoint_root,
+    monkeypatch,
+) -> None:
+    _run_source_check_case(case, monkeypatch)
 
 
 @pytest.mark.parametrize("case", SOURCE_CHECK_ERROR_CASES, ids=lambda case: case.name)
-def test_trigger_source_check_static_fallback_handles_error_cases(case: _SourceCheckCase) -> None:
-    _run_source_check_case(case)
+def test_trigger_source_check_static_fallback_handles_error_cases(
+    case: _SourceCheckCase,
+    admin_bridge_entrypoint_root,
+    monkeypatch,
+) -> None:
+    _run_source_check_case(case, monkeypatch)
 
 
 @pytest.mark.parametrize("case", SOURCE_CHECK_BROWSER_CASES, ids=lambda case: case.name)
-def test_trigger_source_check_static_fallback_handles_browser_cases(case: _SourceCheckCase) -> None:
-    _run_source_check_case(case)
+def test_trigger_source_check_static_fallback_handles_browser_cases(
+    case: _SourceCheckCase,
+    admin_bridge_entrypoint_root,
+    monkeypatch,
+) -> None:
+    _run_source_check_case(case, monkeypatch)
 
 
 @pytest.mark.parametrize("case", LINK_PATTERN_CASES, ids=lambda case: case.name)
-def test_trigger_source_check_static_fallback_accepts_link_patterns(case: _LinkPatternCase) -> None:
-    _run_link_pattern_case(case)
+def test_trigger_source_check_static_fallback_accepts_link_patterns(
+    case: _LinkPatternCase,
+    admin_bridge_entrypoint_root,
+    monkeypatch,
+) -> None:
+    _run_link_pattern_case(case, monkeypatch)
 
 
-def test_trigger_source_check_static_normalizes_placeholder_studio_name(admin_bridge_ops_root):
+def test_trigger_source_check_static_normalizes_placeholder_studio_name(
+    admin_bridge_entrypoint_root,
+    monkeypatch,
+):
+    api = build_admin_bridge_api()
     pending_row = {
         "name": "Www (Manual Website)",
         "studio": "Www",
@@ -697,20 +709,20 @@ def test_trigger_source_check_static_normalizes_placeholder_studio_name(admin_br
         "enabledByDefault": False,
         "id": "static:listing_url:https://www.naconstudiomilan.com/careers",
     }
-    admin_bridge.save_json_atomic(admin_bridge.PENDING_PATH, [pending_row])
+    api.persist_state_and_auto_sync(
+        {"active": [], "pending": [pending_row], "rejected": []},
+        reason="unit_test_seed",
+    )
     source_id = str(pending_row["id"])
 
     listing_html = '<a href="/careers/gameplay-designer/">Gameplay Designer</a>'
-    original_fetch = admin_bridge.discovery.fetch_text_with_retry
-    try:
-        admin_bridge.discovery.fetch_text_with_retry = lambda *_args, **_kwargs: listing_html
-        result = admin_bridge.trigger_source_check(source_id)
-        assert result["started"]
-        assert result["ok"]
-        pending = admin_bridge.load_json_array(admin_bridge.PENDING_PATH, [])
-        updated = next(
-            (row for row in pending if admin_bridge.source_identity(row) == source_id), {}
-        )
-        assert str(updated.get("studio") or "") == "Nacon Studio Milan"
-    finally:
-        admin_bridge.discovery.fetch_text_with_retry = original_fetch
+    monkeypatch.setattr(
+        "src.admin_bridge.discovery.fetch_text_with_retry",
+        lambda *_args, **_kwargs: listing_html,
+    )
+    result = api.trigger_source_check(source_id)
+    assert result["started"]
+    assert result["ok"]
+    pending = api.load_state()["pending"]
+    updated = next((row for row in pending if source_identity(row) == source_id), {})
+    assert str(updated.get("studio") or "") == "Nacon Studio Milan"

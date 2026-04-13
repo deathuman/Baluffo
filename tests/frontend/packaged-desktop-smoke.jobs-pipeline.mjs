@@ -11,11 +11,11 @@ const BRIDGE_HOST = bridgeUrl.hostname || "127.0.0.1";
 const REPORT_PATH =
   process.env.PACKAGED_SMOKE_REPORT_PATH ||
   process.env.PACKAGED_SMOKE_PLAYWRIGHT_REPORT ||
-  path.resolve(".codex-tmp/packaged-desktop-smoke/jobs-pipeline-report.json");
+  path.resolve(".tmp/packaged-desktop-smoke/jobs-pipeline-report.json");
 const OUTPUT_DIR =
   process.env.PACKAGED_SMOKE_OUTPUT_DIR ||
   process.env.PACKAGED_SMOKE_ARTIFACTS_DIR ||
-  path.resolve(".codex-tmp/packaged-desktop-smoke/jobs-pipeline-output");
+  path.resolve(".tmp/packaged-desktop-smoke/jobs-pipeline-output");
 
 async function writeReport(report) {
   await fs.mkdir(path.dirname(REPORT_PATH), { recursive: true });

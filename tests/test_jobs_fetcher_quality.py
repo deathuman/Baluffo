@@ -1,6 +1,16 @@
-# ruff: noqa: F403,F405
+import pytest
+
 from src.jobs.text_utils import load_city_noise_contract
-from tests.jobs_fetcher_helpers import *
+from tests.jobs_fetcher_helpers import (
+    build_city_garbage_report,
+    build_contamination_report,
+    build_location_quality_report,
+    build_public_text_quality_report,
+    jf,
+    jobs_canonicalize,
+    jobs_reporting,
+    patch_jobs_fetcher_aliases,
+)
 
 patch_jobs_fetcher_aliases()
 

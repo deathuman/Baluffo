@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from src.bridge.api import BridgeApi
 from src.bridge.request_utils import read_json_from_request
 
 
@@ -25,12 +26,8 @@ def _is_expected_client_disconnect(exc: BaseException) -> bool:
     return False
 
 
-def make_handler(*, api: Any):
-    """Create a request handler bound to an API module/object.
-
-    The route handlers in `src.bridge.routes.*` expect an `api` object exposing
-    functions/state (historically the `src.admin_bridge` module).
-    """
+def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
+    """Create a request handler bound to the active BridgeApi instance."""
 
     class Handler(BaseHTTPRequestHandler):
         def _handle_response_write_exception(self, exc: BaseException, *, status: int) -> bool:

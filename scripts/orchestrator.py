@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import locale
 import os
 import shutil
 import subprocess
@@ -129,6 +130,8 @@ def run_proc(command: list[str], name: str, allow_stream: bool = False) -> tuple
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding=locale.getpreferredencoding(False) or "utf-8",
+            errors="replace",
             shell=use_shell,
             bufsize=1,  # Line buffered
             universal_newlines=True,
@@ -268,7 +271,7 @@ def verify(args: argparse.Namespace):
     test_dir = run_dir / "test"
 
     # 1. Python Unit Tests
-    ok_py, log_py = run_proc(["npm", "run", "test:py"], "PyTests", allow_stream=True)
+    ok_py, log_py = run_proc(["npm", "run", "test:py:extended"], "PyTests", allow_stream=True)
 
     # 2. Frontend Unit Tests (Node)
     ok_node, log_node = run_proc(["npm", "run", "test:unit"], "NodeTests", allow_stream=True)

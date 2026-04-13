@@ -9,6 +9,8 @@ from src import packaged_desktop_smoke as smoke
 from src.ship.startup_profile import summarize_startup_metrics
 from tests.helpers.temp_paths import workspace_tmpdir
 
+pytestmark = [pytest.mark.packaging, pytest.mark.slow]
+
 
 def test_local_address_matches_listen_port() -> None:
     assert smoke._local_address_matches_listen_port("127.0.0.1:8080", 8080) is True
@@ -352,6 +354,29 @@ def test_ensure_portable_exe_rebuilds_default_dist_when_exe_older_than_sources()
         ):
             smoke.ensure_portable_exe(fake_default, rebuild=False)
         build_mock.assert_called_once_with(None)
+
+
+def test_default_portable_exe_becomes_stale_when_frontend_asset_is_newer() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        fake_default = root / "dist" / "baluffo-portable" / "Baluffo.exe"
+        frontend_asset = root / "frontend" / "jobs" / "app" / "feed.js"
+        fake_default.parent.mkdir(parents=True, exist_ok=True)
+        frontend_asset.parent.mkdir(parents=True, exist_ok=True)
+        fake_default.write_text("old", encoding="utf-8")
+        frontend_asset.write_text("newer", encoding="utf-8")
+        old = 1_000_000.0
+        new = old + 100
+        os.utime(fake_default, (old, old))
+        os.utime(frontend_asset, (new, new))
+
+        with (
+            mock.patch.object(smoke, "ROOT", root),
+            mock.patch.object(smoke, "DEFAULT_EXE_PATH", fake_default),
+            mock.patch.object(smoke, "_PORTABLE_EXE_FRESHNESS_MARKERS", ()),
+            mock.patch.object(smoke, "_PORTABLE_EXE_FRESHNESS_DIRS", (root / "frontend",)),
+        ):
+            assert smoke._default_portable_exe_stale(fake_default) is True
 
 
 def test_ensure_portable_exe_honors_explicit_path_without_rebuilding() -> None:

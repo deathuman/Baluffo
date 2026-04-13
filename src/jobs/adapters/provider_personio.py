@@ -8,8 +8,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.exceptions import AdapterValidationError
-from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.adapters.parsers.personio import parse_personio_feed_xml
+from src.jobs.common.diagnostics import set_source_diagnostics
+from src.jobs.common.fetch import fetch_with_retries
+from src.jobs.registry import registry_entries as jobs_registry_entries
 from src.jobs.text_utils import clean_text
 
 RawJob = dict[str, Any]
@@ -73,8 +75,7 @@ def run_personio_sources_source(
     registry_entries_fn: Callable[[str], list[dict[str, Any]]] | None = None,
 ) -> list[RawJob]:
     _ = force_refresh_all
-    deps = runtime_deps.facade()
-    registry_loader = registry_entries_fn or getattr(deps, "registry_entries", None)
+    registry_loader = registry_entries_fn or jobs_registry_entries
     if not callable(registry_loader):
         raise AdapterValidationError.from_errors(["personio: missing registry_entries loader"])
 
@@ -110,7 +111,7 @@ def run_personio_sources_source(
             details.append(entry_report)
             continue
         try:
-            text = deps.fetch_with_retries(feed_url, fetch_text, timeout_s, retries, backoff_s)
+            text = fetch_with_retries(feed_url, fetch_text, timeout_s, retries, backoff_s)
             parsed = parse_personio_feed_xml(text, source_name=studio)
             entry_report["fetchedCount"] = len(parsed)
             entry_report["keptCount"] = len(parsed)
@@ -135,7 +136,7 @@ def run_personio_sources_source(
             errors.append(f"personio:{source_name}: {exc}")
         details.append(entry_report)
 
-    deps.set_source_diagnostics(
+    set_source_diagnostics(
         "personio_sources",
         adapter="personio",
         studio="multiple",

@@ -1,4 +1,4 @@
-import { AdminConfig as adminConfig } from "../../../admin-config.js";
+import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
 import {
   escapeHtml,
   showToast,

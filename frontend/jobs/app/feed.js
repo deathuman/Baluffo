@@ -127,7 +127,13 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
   setRefreshInFlight(true);
   dispatchRefreshRequested();
 
-  setRefreshButtonDisabled(true);
+  // Keep the page interactive while noncritical background refreshes run after
+  // startup-preview/cache boot. Only blocking/manual refresh flows should lock
+  // the refresh control.
+  const disableRefreshButton = Boolean(manual || firstLoad);
+  if (disableRefreshButton) {
+    setRefreshButtonDisabled(true);
+  }
   if (manual || firstLoad) setProgress(true);
   if (manual) setSourceStatus("Refreshing jobs from unified feed...");
 
@@ -197,7 +203,9 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     return false;
   } finally {
     setRefreshInFlight(false);
-    setRefreshButtonDisabled(false);
+    if (disableRefreshButton) {
+      setRefreshButtonDisabled(false);
+    }
     setProgress(false);
   }
 }

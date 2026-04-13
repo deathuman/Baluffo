@@ -4,11 +4,13 @@ from collections import Counter
 from collections.abc import Iterable
 from typing import Any
 
+from src.contracts import SCHEMA_VERSION
 from src.shared.utils import now_iso
 from src.source_registry import source_identity
 
 from .config import EVIDENCE_TYPES_SET
 from .io_runtime import endpoint_url
+from .runtime_metrics import build_discovery_runtime_payload
 from .scoring import unique_string_list
 
 M5_ALLOWED_M4_FAMILIES = {"bamboohr", "workday", "breezy"}
@@ -295,6 +297,152 @@ def emit_log(message: str) -> None:
     print(line, flush=True)
 
 
+def update_candidate_review_metadata(
+    row: dict[str, Any],
+    *,
+    prior_candidate: dict[str, Any] | None,
+    now_iso: str,
+) -> dict[str, Any]:
+    updated = dict(row)
+    prior = prior_candidate if isinstance(prior_candidate, dict) else {}
+    updated["candidateState"] = str(updated.get("candidateState") or "validated")
+    updated["rankScore"] = int(updated.get("rankScore") or updated.get("score") or 0)
+    updated["rankReasons"] = unique_string_list(
+        updated.get("rankReasons") or updated.get("reasons") or []
+    )
+    updated["promotionLane"] = str(updated.get("promotionLane") or "manual_review")
+    updated["approvedAt"] = str(updated.get("approvedAt") or "")
+    updated["approvedBy"] = str(updated.get("approvedBy") or "")
+    updated["liveAt"] = str(updated.get("liveAt") or "")
+    updated["quarantinedAt"] = str(updated.get("quarantinedAt") or "")
+    updated["quarantineReason"] = str(updated.get("quarantineReason") or "")
+    updated["deferCount"] = max(0, int(updated.get("deferCount") or prior.get("deferCount") or 0))
+    updated["firstDeferredAt"] = str(
+        updated.get("firstDeferredAt") or prior.get("firstDeferredAt") or ""
+    )
+    updated["lastDeferredAt"] = str(
+        updated.get("lastDeferredAt") or prior.get("lastDeferredAt") or ""
+    )
+
+    if bool(updated.get("deferred")):
+        updated["candidateState"] = "validated"
+        updated["deferCount"] = max(1, int(prior.get("deferCount") or 0) + 1)
+        updated["firstDeferredAt"] = str(
+            prior.get("firstDeferredAt") or prior.get("lastDeferredAt") or now_iso
+        )
+        updated["lastDeferredAt"] = str(now_iso)
+        if str(updated.get("deferReason") or "").strip().lower() == "domain_cap":
+            updated["promotionLane"] = "domain_cap_review"
+
+    return updated
+
+
+def write_discovery_progress_report(
+    *,
+    current_candidates: list[dict[str, Any]],
+    phase: str,
+    phase_label: str,
+    total_duration_ms: int,
+    stage_timings_ms: dict[str, int],
+    adapter_runtime: dict[str, dict[str, int | str]],
+    preset_name: str,
+    top_cap_bypassed: bool,
+    sheet_static_probe_cap_bypassed: bool,
+    url_patch_stats: dict[str, int],
+    found_endpoint_count: int,
+    generated_count_by_stage: dict[str, int],
+    survived_dedupe_count_by_stage: dict[str, int],
+    probed_count_by_stage: dict[str, int],
+    queued_count_by_stage: dict[str, int],
+    probed: int,
+    healthy: int,
+    failures: list[dict[str, Any]],
+    skipped_duplicate_count: int,
+    skipped_invalid: int,
+    skipped_low_evidence_probe_count: int,
+    validation_skipped_count: int,
+    probe_failed_count: int,
+    queue_filtered_count: int,
+    adapter_counter: Counter[str],
+    method_counter: Counter[str],
+    duplicate_reasons: dict[str, int],
+    suppressed_static_count: int,
+    suppressed_static_by_reason: dict[str, int],
+    suppressed_static_by_stage: dict[str, int],
+    thresholds: dict[str, Any],
+    run_id: str,
+    mode: str,
+    started_at: str,
+    report_write_path,
+    outputs: dict[str, str],
+    save_json_atomic_fn,
+    now_iso_fn=now_iso,
+) -> None:
+    runtime_payload = build_discovery_runtime_payload(
+        total_duration_ms=total_duration_ms,
+        stage_timings_ms=stage_timings_ms,
+        adapter_runtime=adapter_runtime,
+        preset=preset_name,
+        top_cap_bypassed=top_cap_bypassed,
+        sheet_static_probe_cap_bypassed=sheet_static_probe_cap_bypassed,
+    )
+    runtime_payload["urlPatchStats"] = dict(url_patch_stats)
+    summary = build_stage_summary(
+        current_candidates,
+        found_endpoint_count=found_endpoint_count,
+        generated_count_by_stage=generated_count_by_stage,
+        survived_dedupe_count_by_stage=survived_dedupe_count_by_stage,
+        probed_count_by_stage=probed_count_by_stage,
+        queued_count_by_stage=queued_count_by_stage,
+        probed=probed,
+        healthy=healthy,
+        failures=failures,
+        skipped_duplicate_count=skipped_duplicate_count,
+        skipped_invalid=skipped_invalid,
+        skipped_low_evidence_probe_count=skipped_low_evidence_probe_count,
+        validation_skipped_count=validation_skipped_count,
+        probe_failed_count=probe_failed_count,
+        queue_filtered_count=queue_filtered_count,
+        adapter_counter=adapter_counter,
+        method_counter=method_counter,
+        duplicate_reasons=duplicate_reasons,
+        deferred_counts=None,
+        queued_by_adapter=None,
+        deferred_by_adapter=None,
+        healthy_but_deferred_by_adapter=None,
+        suppressed_static_count=suppressed_static_count,
+        suppressed_static_by_reason=dict(suppressed_static_by_reason),
+        suppressed_static_by_stage=dict(suppressed_static_by_stage),
+        thresholds=thresholds,
+        phase=phase,
+        phase_label=phase_label,
+    )
+    task_progress = build_discovery_task_progress(summary=summary, finished=False)
+    save_json_atomic_fn(
+        report_write_path,
+        {
+            "schemaVersion": SCHEMA_VERSION,
+            "runId": run_id,
+            "mode": mode,
+            "startedAt": started_at,
+            "finishedAt": "",
+            "summary": summary,
+            "runtime": {
+                **dict(runtime_payload),
+                "lifecycle": {
+                    "owner": "discovery_report",
+                    "heartbeatAt": now_iso_fn(),
+                },
+            },
+            "taskProgress": task_progress,
+            "candidates": current_candidates,
+            "failures": failures,
+            "topFailures": [],
+            "outputs": outputs,
+        },
+    )
+
+
 def _validate_evidence_types(values: list[str], *, context: str) -> list[str]:
     cleaned = unique_string_list(
         [str(item or "").strip() for item in (values or []) if str(item or "").strip()]
@@ -306,11 +454,12 @@ def _validate_evidence_types(values: list[str], *, context: str) -> list[str]:
 
 
 def stage_curated_seed_candidates() -> list[dict[str, Any]]:
-    import src.source_discovery as sd
     from src.source_registry import unique_sources
 
+    from .config import STATIC_DISCOVERY_CANDIDATES
+
     rows: list[dict[str, Any]] = []
-    for raw in getattr(sd, "STATIC_DISCOVERY_CANDIDATES", []):
+    for raw in STATIC_DISCOVERY_CANDIDATES:
         if not isinstance(raw, dict):
             continue
         row = dict(raw)

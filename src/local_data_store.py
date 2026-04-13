@@ -877,7 +877,7 @@ class LocalDataStore:
             "warnings": warnings,
         }
 
-    def get_admin_overview(self, _admin_pin: str | None = None) -> dict[str, Any]:
+    def get_admin_overview(self) -> dict[str, Any]:
         with LOCK:
             users = []
             for user_dir in sorted(self.paths.users.iterdir()) if self.paths.users.exists() else []:

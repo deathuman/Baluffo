@@ -6,10 +6,12 @@ import json
 from collections.abc import Callable
 
 from src.exceptions import AdapterValidationError
-from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.common.config import GREENHOUSE_JOBS_URL_TEMPLATE
+from src.jobs.common.diagnostics import set_source_diagnostics
+from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
+from src.jobs.registry import registry_entries
 from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 from src.jobs.transport import conditional_revalidate_url
@@ -28,8 +30,7 @@ def _run_greenhouse_boards(
     errors: list[str] = []
     details: list[dict[str, object]] = []
     provider_url = ""
-    deps = runtime_deps.facade()
-    for board in deps.registry_entries("greenhouse"):
+    for board in registry_entries("greenhouse"):
         slug = clean_text(board.get("slug"))
         if not slug:
             continue
@@ -85,7 +86,7 @@ def _run_greenhouse_boards(
                 details.append(entry_report)
                 continue
         try:
-            text = deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)
             parsed = _provider_parsers.parse_greenhouse_jobs_payload(
                 payload, slug, fallback_company=label
@@ -103,7 +104,7 @@ def _run_greenhouse_boards(
                 provider_url = url
             errors.append(f"greenhouse:{slug}: {exc}")
         details.append(entry_report)
-    deps.set_source_diagnostics(
+    set_source_diagnostics(
         "greenhouse_boards",
         adapter="greenhouse",
         studio="multiple",

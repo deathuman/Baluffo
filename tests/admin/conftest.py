@@ -34,6 +34,12 @@ def admin_bridge_entrypoint_root(make_test_root, monkeypatch) -> Path:
     with SYNC_STATE_LOCK:
         ACTIVE_SYNC_RUNS.clear()
         ACTIVE_SYNC_THREADS.clear()
+    monkeypatch.setattr(admin_bridge, "_SYNC_SERVICE", None)
+    monkeypatch.setattr(admin_bridge, "_SYNC_SERVICE_DATA_DIR", None)
+    monkeypatch.setattr(admin_bridge, "_REGISTRY_SERVICE", None)
+    monkeypatch.setattr(admin_bridge, "_REGISTRY_SERVICE_PATHS", None)
+    monkeypatch.setattr(admin_bridge, "_DISCOVERY_SERVICE", None)
+    monkeypatch.setattr(admin_bridge, "_DISCOVERY_SERVICE_PATHS", None)
     monkeypatch.setattr(admin_bridge, "_PIPELINE_SERVICE", None)
 
     packaged_sync_config = root / "github-app-sync-config.json"
@@ -64,10 +70,10 @@ def admin_bridge_entrypoint_root(make_test_root, monkeypatch) -> Path:
     with SYNC_STATE_LOCK:
         ACTIVE_SYNC_RUNS.clear()
         ACTIVE_SYNC_THREADS.clear()
+    monkeypatch.setattr(admin_bridge, "_SYNC_SERVICE", None)
+    monkeypatch.setattr(admin_bridge, "_SYNC_SERVICE_DATA_DIR", None)
+    monkeypatch.setattr(admin_bridge, "_REGISTRY_SERVICE", None)
+    monkeypatch.setattr(admin_bridge, "_REGISTRY_SERVICE_PATHS", None)
+    monkeypatch.setattr(admin_bridge, "_DISCOVERY_SERVICE", None)
+    monkeypatch.setattr(admin_bridge, "_DISCOVERY_SERVICE_PATHS", None)
     monkeypatch.setattr(admin_bridge, "_PIPELINE_SERVICE", None)
-
-
-@pytest.fixture()
-def admin_bridge_ops_root(admin_bridge_entrypoint_root: Path) -> Path:
-    """Backward-compatible alias for legacy admin bridge tests."""
-    return admin_bridge_entrypoint_root

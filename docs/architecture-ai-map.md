@@ -21,11 +21,13 @@ src/dev_admin_supervisor.py (Baluffo launcher)
   -> starts site + bridge + owned browser session
   -> tears down on session exit
 
-src/admin_bridge.py (wiring-only composition root)
+src/admin_bridge.py (stable thin entrypoint / wiring-only composition root)
   -> src/bridge/ (services: sync, registry, discovery, pipeline, routes)
 
-src/jobs_fetcher.py -> src/jobs/ (pipeline, adapters, dedup)
-src/source_discovery.py -> src/source_discovery/ (package)
+src/jobs_fetcher.py (stable thin CLI facade)
+  -> src/jobs/ (pipeline, adapters, dedup)
+src/source_discovery.py (stable thin CLI entrypoint)
+  -> src/source_discovery/ (package)
 
 src/ship/desktop_app/__init__.py (desktop runtime)
   -> spawns site + bridge, opens browser, watches heartbeat
@@ -41,7 +43,7 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 | `src/source_discovery.py` | Discover candidate sources (delegates to package) |
 | `src/dev_admin_supervisor.py` | Baluffo launcher (site + bridge + browser) |
 | `src/admin_bridge.py` | Bridge-only entry (expert/manual mode, wiring only) |
-| `src/jobs/pipeline.py` | Core job processing |
+| `src/jobs/pipeline.py` | Pipeline entry flow |
 | `src/source_discovery/` | Discovery package modules |
 | `scripts/build_ship_bundle.py` | Create ship bundle |
 | `scripts/build_portable_exe.py` | Create portable EXE |
@@ -58,9 +60,11 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 | Saved attachments | `frontend/saved/app/attachments.js` | `frontend/saved/services.js` |
 | Admin ops | `frontend/admin/app/{auth,ops,fetcher,discovery,sync}.js` | `frontend/admin/services.js` |
 | Bridge API | `src/bridge/*.py` | `src/bridge/routes/*.py` |
-| Bridge sync | `src/bridge/sync_service.py` | `src/source_sync.py`, `src/bridge/sync_state.py` |
+| Discovery behavior | `src/source_discovery/orchestrator.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
+| Bridge sync | `src/bridge/sync_service.py` | `src/source_sync.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py`, `src/source_sync_crypto.py`, `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
-| Jobs pipeline | `src/jobs/pipeline.py` | `src/jobs/adapters/`, `src/jobs/canonicalize.py` |
+| Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
+| Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
 | Desktop runtime | `src/ship/desktop_app/__init__.py` | `src/ship/runtime_launcher.py` |
 | UI selectors | `frontend/shared/ui/selectors.js` | — |
 
@@ -74,7 +78,7 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 
 **Admin page:** `frontend/admin/app.js` → `runtime.js` → `app/auth.js`, `app/fetcher.js`, `app/discovery.js`, `app/sync.js`, `app/registry.js`, `app/ops.js`
 
-**Shared:** `frontend/shared/state-hub.js` (cross-module state), `frontend/shared/api-client.js` (bridge HTTP)
+**Shared:** `frontend/shared/state-hub.js` (cross-module state), `frontend/shared/api-client.js` (bridge HTTP), `frontend/shared/config/admin-config.js` (frontend-safe runtime config), `frontend/shared/local-data/` (desktop/browser local-data clients)
 
 ---
 
@@ -92,10 +96,20 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 **Still in `admin_bridge.py`:** HTTP server, service wiring, compatibility wrappers
 
 **Jobs package (`src/jobs/`):**
-- `pipeline.py` — core processing
+- `pipeline.py` — pipeline entry flow
+- `pipeline_timing.py`, `pipeline_finalize.py` — timing aggregation and late-stage output/report assembly
 - `adapters/` — static, provider_api, social fetchers
 - `canonicalize.py`, `dedup.py` — normalization
-- `common/` — config, contracts, heuristics, parsing
+- `common/` — leaf helpers (`config`, `contracts`, `heuristics`, `parsing`, etc.); `common/__init__.py` is compatibility-only
+
+**Discovery package (`src/source_discovery/`):**
+- `orchestrator.py` — public run flow
+- `runtime_metrics.py`, `stage_control.py`, `reporting.py` — runtime bookkeeping, stage toggles, report helpers
+- `gamesmap.py`, `gamedevmap.py`, `gameprog.py`, `sheet_directory.py`, `web_search.py` — domain generators
+
+**Sync helpers:**
+- `source_sync.py` — compatibility and test patch surface
+- `source_sync_config.py`, `source_sync_snapshot.py`, `source_sync_crypto.py` — config resolution, snapshot I/O, and crypto/JWT helpers
 
 ---
 
@@ -139,12 +153,14 @@ See [`testing.md`](testing.md) for more commands.
 
 ---
 
-## 9) Transitional boundaries (don't move blindly)
+## 9) Thin Boundaries (don't move blindly)
 
-- `src/admin_bridge.py` — wiring-only composition root; add new logic to `src/bridge/*.py`
-- `src/jobs/adapters/_runtime.py` — keep `_runtime.facade()` boundary
-- `src/jobs/common/__init__.py` — compatibility facade; prefer direct leaf imports
-- `frontend/local-data/services.js` — keep `window.JobAppLocalData` abstraction
+- `src/admin_bridge.py` — stable thin entrypoint; add new bridge logic to `src/bridge/*.py`
+- `src/source_discovery.py` — stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
+- `src/jobs_fetcher.py` — stable thin CLI facade; add pipeline logic to `src/jobs/*`
+- `src/source_sync.py` — permanent thin sync integration surface; keep new sync logic in `src/source_sync_*` helpers
+- `src/jobs/common/__init__.py` — package marker only; prefer `src.jobs.common.<leaf>` or package-submodule imports
+- `frontend/local-data/services.js` — transitional local-data boundary; page code should go through slice-local `services.js`
 
 ---
 
@@ -156,4 +172,4 @@ See [`testing.md`](testing.md) for more commands.
 
 ---
 
-*Last updated: 2026-04-12*
+*Last updated: 2026-04-13*

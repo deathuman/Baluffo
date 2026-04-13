@@ -31,10 +31,14 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CODEX_TMP_ROOT = REPO_ROOT / ".codex-tmp-tests"
+CODEX_TMP_ROOT = REPO_ROOT / ".tmp" / "pytest"
 CODEX_TMP_ROOT.mkdir(parents=True, exist_ok=True)
 
-for _stale_root in (REPO_ROOT / ".codex-test-tmp", CODEX_TMP_ROOT):
+for _stale_root in (
+    REPO_ROOT / ".codex-test-tmp",
+    REPO_ROOT / ".codex-tmp-tests",
+    CODEX_TMP_ROOT,
+):
     if not _stale_root.exists():
         continue
     for _child in _stale_root.iterdir():

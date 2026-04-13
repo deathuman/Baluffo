@@ -11,10 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.jobs import common as jobs_common
 from src.jobs.adapters import community, provider_api
-from src.jobs.common.config import SOURCE_DIAGNOSTICS
+from src.jobs.common.config import DEFAULT_TIMEOUT_S, SOURCE_DIAGNOSTICS
+from src.jobs.common.http import default_fetch_text
+from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
+from src.shared.utils import now_iso
 
 REPORT_JSON_PATH = Path("data/adapter-audit-report.json")
 REPORT_MD_PATH = Path("data/adapter-audit-report.md")
@@ -152,7 +154,7 @@ AUDIT_CASES: list[dict[str, Any]] = [
 
 
 def _registry_examples(adapter: str) -> list[str]:
-    rows = jobs_common.registry_entries(adapter, enabled_only=True)
+    rows = registry_entries(adapter, enabled_only=True)
     return [
         clean_text(row.get("name")) or clean_text(row.get("studio")) or adapter for row in rows[:3]
     ]
@@ -237,8 +239,8 @@ def _run_case(case: dict[str, Any]) -> dict[str, Any]:
     error_text = ""
     try:
         rows = case["runner"](
-            fetch_text=jobs_common.default_fetch_text,
-            timeout_s=jobs_common.DEFAULT_TIMEOUT_S,
+            fetch_text=default_fetch_text,
+            timeout_s=DEFAULT_TIMEOUT_S,
             retries=1,
             backoff_s=0.5,
         )
@@ -346,7 +348,7 @@ def build_report() -> dict[str, Any]:
     ):
         buckets.setdefault(key, [])
     return {
-        "generatedAt": jobs_common.now_iso(),
+        "generatedAt": now_iso(),
         "results": items,
         "buckets": dict(buckets),
     }

@@ -29,8 +29,8 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | GET | `/desktop-local-data/backup/export-file?uid=&includeFiles=` | Export backup (JSON or ZIP) |
 | POST | `/desktop-local-data/backup/export` | Export backup (JSON payload) |
 | POST | `/desktop-local-data/backup/import` | Import backup |
-| POST | `/desktop-local-data/admin/overview` | Admin overview (requires PIN) |
-| POST | `/desktop-local-data/admin/wipe` | Wipe account (requires PIN) |
+| POST | `/desktop-local-data/admin/overview` | Admin overview |
+| POST | `/desktop-local-data/admin/wipe` | Wipe account |
 
 ## Source Registry
 

@@ -316,7 +316,6 @@ test("admin auth controller session view model tracks bridge badge state", async
 
 test("admin registry controller loads filtered discovery state and dispatches refresh", async () => {
   const state = {
-    adminPin: "1234",
     activeSourceFilter: "all",
     latestFetcherReportCache: null,
     adminBusyState: {
@@ -423,7 +422,6 @@ test("admin registry controller loads filtered discovery state and dispatches re
 test("admin registry controller only logs discovery refreshes when the registry snapshot changes", async () => {
   const logs = [];
   const state = {
-    adminPin: "1234",
     adminBusyState: {
       discoveryRun: false,
       discoveryWatch: false,
@@ -490,7 +488,6 @@ test("admin registry controller adds a manual source and runs the follow-up chec
   const toasts = [];
   const logs = [];
   const state = {
-    adminPin: "1234",
     adminBusyState: {
       discoveryRun: false,
       discoveryWatch: false,
@@ -599,7 +596,6 @@ test("admin registry controller approves selected pending rows", async () => {
       const posts = [];
       const logs = [];
       const state = {
-        adminPin: "1234",
         adminBusyState: {
           discoveryRun: false,
           discoveryWatch: false,
@@ -681,7 +677,6 @@ test("admin discovery controller stores optimistic run metadata while discovery 
 
   try {
     const state = {
-      adminPin: "1234",
       discoveryLogRemoteOffset: 0,
       discoveryLaunchAtMs: 0,
       discoveryCompletionPollDeadline: 0,
@@ -788,7 +783,6 @@ test("admin discovery controller emits summary-first live progress and updates p
   try {
     const barEl = createElement({ style: {} });
     const state = {
-      adminPin: "1234",
       discoveryLogRemoteOffset: 0,
       discoveryLaunchAtMs: 0,
       discoveryCompletionPollDeadline: 0,
@@ -906,7 +900,6 @@ test("admin discovery controller applies live progress when runId matches despit
   try {
     const barEl = createElement({ style: {} });
     const state = {
-      adminPin: "1234",
       discoveryLogRemoteOffset: 0,
       discoveryLaunchAtMs: 0,
       discoveryCompletionPollDeadline: 0,
@@ -999,7 +992,6 @@ test("admin discovery controller applies live progress when runId matches despit
 test("admin discovery controller forwards uncapped preset payload", async () => {
   const calls = [];
   const state = {
-    adminPin: "1234",
     discoveryLogRemoteOffset: 0,
     discoveryLaunchAtMs: 0,
     discoveryCompletionPollDeadline: 0,
@@ -1063,7 +1055,6 @@ test("admin discovery controller loads and saves auto-approve config", async () 
   const calls = [];
   const toasts = [];
   const state = {
-    adminPin: "1234",
     latestDiscoveryConfigCache: null,
     discoveryConfigDirty: false,
     discoveryLogRemoteOffset: 0,
@@ -1169,7 +1160,6 @@ test("admin discovery controller recovers when launch response is lost but repor
 
   try {
     const state = {
-      adminPin: "1234",
       discoveryLogRemoteOffset: 0,
       discoveryLaunchAtMs: 0,
       discoveryCompletionPollDeadline: 0,
@@ -1255,7 +1245,6 @@ test("admin discovery controller recovers when launch response is lost but repor
 test("admin discovery controller still shows error when launch recovery finds no fresh run", async () => {
   const toasts = [];
   const state = {
-    adminPin: "1234",
     discoveryLogRemoteOffset: 0,
     discoveryLaunchAtMs: 0,
     discoveryCompletionPollDeadline: 0,
@@ -1329,7 +1318,6 @@ test("admin discovery controller does not reattach when the fresh report is a la
   const logs = [];
   const toasts = [];
   const state = {
-    adminPin: "1234",
     discoveryLogRemoteOffset: 0,
     discoveryLaunchAtMs: 0,
     discoveryCompletionPollDeadline: 0,
@@ -1408,7 +1396,6 @@ test("admin discovery controller does not reattach when the fresh report is a la
 test("admin discovery controller updates progress label from server log phases before report progress arrives", () => {
   const logs = [];
   const state = {
-    adminPin: "1234",
     discoveryLogRemoteOffset: 0,
     discoveryLaunchAtMs: 0,
     discoveryCompletionPollDeadline: 0,
@@ -1487,7 +1474,6 @@ test("admin ops controller preserves optimistic rows while history lags", async 
 
   for (const { label, optimisticKey, busyKey, runId } of cases) {
     const state = {
-      adminPin: "1234",
       latestOpsHealthCache: null,
       discoveryOptimisticRun: null,
       fetchOptimisticRun: null,
@@ -1591,7 +1577,6 @@ test("admin ops controller renders bridge task-state without reattaching from hi
 
   for (const { label, taskType, busyKey, watcherKey, liveTypes, runId } of cases) {
     const state = {
-      adminPin: "1234",
       latestOpsHealthCache: null,
       fetchOptimisticRun: null,
       discoveryOptimisticRun: null,
@@ -1701,7 +1686,6 @@ test("admin fetcher controller stores optimistic run metadata while fetch watch 
   let controller;
   try {
     const state = {
-      adminPin: "1234",
       latestFetcherReportCache: null,
       fetcherLaunchAtMs: 0,
       fetcherCompletionPollDeadline: 0,
@@ -1803,7 +1787,6 @@ test("admin fetcher controller starts live progress watching for an explicit bri
   global.clearTimeout = () => {};
 
   const state = {
-    adminPin: "1234",
     latestFetcherReportCache: null,
     fetcherLaunchAtMs: 0,
     fetcherCompletionPollDeadline: 0,
@@ -1915,7 +1898,6 @@ test("admin fetcher controller starts live progress watching for an explicit bri
 
 test("admin fetcher controller can restore a live watch from local state when the latest report is stale", async () => {
   const state = {
-    adminPin: "1234",
     latestFetcherReportCache: null,
     fetcherLaunchAtMs: Date.parse("2026-03-08T10:00:00.000Z"),
     fetcherCompletionPollDeadline: 0,
@@ -2053,7 +2035,6 @@ test("admin fetcher controller can restore a live watch from local state when th
 test("admin fetcher controller renders progress from the shared task progress contract", async () => {
   const logs = [];
   const state = {
-    adminPin: "1234",
     latestFetcherReportCache: null,
     fetcherLaunchAtMs: Date.parse("2026-03-08T10:00:00.000Z"),
     fetcherCompletionPollDeadline: Date.parse("2026-03-08T10:10:00.000Z"),
@@ -2285,7 +2266,6 @@ test("admin fetcher controller only emits generic active heartbeat after sustain
   let controller;
   try {
     const state = {
-      adminPin: "1234",
       latestFetcherReportCache: null,
       fetcherLaunchAtMs: nowMs,
       fetcherCompletionPollDeadline: nowMs + 600000,
@@ -2377,7 +2357,6 @@ test("admin fetcher controller only emits generic active heartbeat after sustain
 test("admin fetcher controller forwards uncapped preset payload", async () => {
   const calls = [];
   const state = {
-    adminPin: "1234",
     latestFetcherReportCache: null,
     fetcherLaunchAtMs: 0,
     fetcherCompletionPollDeadline: 0,
@@ -2453,7 +2432,6 @@ test("admin sync controller hydrates status and runs save/test/pull/push flows",
   const paths = [];
   const busyTransitions = [];
   const state = {
-    adminPin: "1234",
     syncConfigDirty: true,
     latestSyncStatusCache: null
   };

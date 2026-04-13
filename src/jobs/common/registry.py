@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from fnmatch import fnmatch
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -58,11 +56,6 @@ def _scrapy_static_registry_from_browser_queue(
     *, enabled_only: bool = True
 ) -> list[dict[str, Any]]:
     queue_path = SCRAPY_BROWSER_QUEUE_PATH
-    common_module = sys.modules.get("src.jobs.common")
-    if common_module is not None:
-        candidate = getattr(common_module, "SCRAPY_BROWSER_QUEUE_PATH", queue_path)
-        if isinstance(candidate, Path):
-            queue_path = candidate
     try:
         if not queue_path.exists():
             return []

@@ -9,18 +9,27 @@ import json
 import os
 import platform
 import ssl
+import sys
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError as _HTTPError
+from urllib.error import URLError as _URLError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.request import Request as _Request
+from urllib.request import urlopen
 
+import src.source_sync_config as _source_sync_config
+import src.source_sync_crypto as _source_sync_crypto
+import src.source_sync_snapshot as _source_sync_snapshot
 from src.baluffo_config import get_security_defaults, get_sync_defaults
-from src.bridge.registry_tombstones import filter_tombstoned_rows, load_tombstones
+from src.bridge.registry_tombstones import (
+    filter_tombstoned_rows as _filter_tombstoned_rows,
+)
+from src.bridge.registry_tombstones import load_tombstones as _load_tombstones
 from src.shared.utils import now_iso, now_utc
 from src.source_registry import (
     REGISTRY_MIGRATION_V2,
@@ -28,7 +37,9 @@ from src.source_registry import (
     canonicalize_registry_row,
     ensure_source_id,
     sort_sources_by_identity,
-    source_identity,
+)
+from src.source_registry import (
+    source_identity as _source_identity,
 )
 
 try:
@@ -39,6 +50,12 @@ except ImportError:  # pragma: no cover - optional dependency at runtime
 ROOT = Path(__file__).resolve().parents[1]
 _SYNC_DEFAULTS = get_sync_defaults()
 _SECURITY_DEFAULTS = get_security_defaults()
+HTTPError = _HTTPError
+URLError = _URLError
+Request = _Request
+load_tombstones = _load_tombstones
+filter_tombstoned_rows = _filter_tombstoned_rows
+source_identity = _source_identity
 SYNC_SCHEMA_VERSION = 2
 DEFAULT_BRANCH = str(_SYNC_DEFAULTS["default_branch"])
 DEFAULT_PATH = str(_SYNC_DEFAULTS["default_path"])
@@ -72,6 +89,10 @@ _EMBEDDED_SECRET_PARTS = (
     ".Emb3d",
     "ded.KeY",
 )
+
+
+def _self_module() -> Any:
+    return sys.modules[__name__]
 
 
 class SyncOperationError(RuntimeError):
@@ -203,38 +224,24 @@ def _machine_fingerprint() -> str:
 
 
 def _base64url_encode(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return _source_sync_crypto.base64url_encode(raw)
 
 
 def _base64url_decode(text: str) -> bytes:
-    padded = str(text or "").strip()
-    padded += "=" * ((4 - (len(padded) % 4)) % 4)
-    return base64.urlsafe_b64decode(padded.encode("ascii"))
+    return _source_sync_crypto.base64url_decode(text)
 
 
 def _stream_encrypt(raw: bytes, key: bytes) -> bytes:
-    if not key:
-        raise RuntimeError("Missing encryption key")
-    out = bytearray()
-    counter = 0
-    while len(out) < len(raw):
-        block = __import__("hashlib").sha256(key + counter.to_bytes(4, "big")).digest()
-        out.extend(block)
-        counter += 1
-    return bytes(a ^ b for a, b in zip(raw, out[: len(raw)]))
+    return _source_sync_crypto.stream_encrypt(raw, key)
 
 
 def _derive_private_key_binding_key(*, salt_b64: str, app_id: str, installation_id: str) -> bytes:
-    salt = _base64url_decode(salt_b64)
-    material = "|".join(
-        [
-            _machine_fingerprint(),
-            str(app_id or "").strip(),
-            str(installation_id or "").strip(),
-            _base64url_encode(salt),
-        ]
-    ).encode("utf-8")
-    return __import__("hashlib").sha256(material).digest()
+    return _source_sync_crypto.derive_private_key_binding_key(
+        salt_b64=salt_b64,
+        app_id=app_id,
+        installation_id=installation_id,
+        machine_fingerprint=_machine_fingerprint(),
+    )
 
 
 def encrypt_private_key_pem(
@@ -243,8 +250,13 @@ def encrypt_private_key_pem(
     key = _derive_private_key_binding_key(
         salt_b64=salt_b64, app_id=app_id, installation_id=installation_id
     )
-    encrypted = _stream_encrypt(str(private_key_pem or "").encode("utf-8"), key)
-    return _base64url_encode(encrypted)
+    return _source_sync_crypto.encrypt_private_key_pem(
+        private_key_pem,
+        salt_b64=salt_b64,
+        app_id=app_id,
+        installation_id=installation_id,
+        key=key,
+    )
 
 
 def decrypt_private_key_pem(
@@ -253,25 +265,18 @@ def decrypt_private_key_pem(
     key = _derive_private_key_binding_key(
         salt_b64=salt_b64, app_id=app_id, installation_id=installation_id
     )
-    decrypted = _stream_encrypt(_base64url_decode(private_key_pem_enc), key)
-    return decrypted.decode("utf-8")
+    return _source_sync_crypto.decrypt_private_key_pem(private_key_pem_enc, key=key)
 
 
 def _derive_passphrase_key(
     *, salt_b64: str, app_id: str, installation_id: str, passphrase: str
 ) -> bytes:
-    salt = _base64url_decode(salt_b64)
-    material = "|".join(
-        [
-            MACHINE_SCOPE,
-            KEY_DERIVATION_PASSPHRASE,
-            str(app_id or "").strip(),
-            str(installation_id or "").strip(),
-            _base64url_encode(salt),
-            str(passphrase or ""),
-        ]
-    ).encode("utf-8")
-    return __import__("hashlib").sha256(material).digest()
+    return _source_sync_crypto.derive_passphrase_key(
+        salt_b64=salt_b64,
+        app_id=app_id,
+        installation_id=installation_id,
+        passphrase=passphrase,
+    )
 
 
 def encrypt_private_key_pem_with_passphrase(
@@ -288,8 +293,13 @@ def encrypt_private_key_pem_with_passphrase(
         installation_id=installation_id,
         passphrase=passphrase,
     )
-    encrypted = _stream_encrypt(str(private_key_pem or "").encode("utf-8"), key)
-    return _base64url_encode(encrypted)
+    return _source_sync_crypto.encrypt_private_key_pem(
+        private_key_pem,
+        salt_b64=salt_b64,
+        app_id=app_id,
+        installation_id=installation_id,
+        key=key,
+    )
 
 
 def decrypt_private_key_pem_with_passphrase(
@@ -306,45 +316,15 @@ def decrypt_private_key_pem_with_passphrase(
         installation_id=installation_id,
         passphrase=passphrase,
     )
-    decrypted = _stream_encrypt(_base64url_decode(private_key_pem_enc), key)
-    return decrypted.decode("utf-8")
+    return _source_sync_crypto.decrypt_private_key_pem(private_key_pem_enc, key=key)
 
 
 def build_embedded_passphrase(*, hint: str, version: str = EMBEDDED_KEY_VERSION_DEFAULT) -> str:
-    seed = "|".join(
-        [
-            MACHINE_SCOPE,
-            KEY_DERIVATION_EMBEDDED,
-            str(version or EMBEDDED_KEY_VERSION_DEFAULT).strip(),
-            str(hint or "").strip(),
-            "".join(_EMBEDDED_SECRET_PARTS),
-        ]
-    ).encode("utf-8")
-    d1 = __import__("hashlib").sha256(seed).hexdigest()
-    d2 = (
-        __import__("hashlib")
-        .sha256((d1 + "|" + str(hint or "").strip()).encode("utf-8"))
-        .hexdigest()
-    )
-    return f"{d1[:24]}{d2[8:40]}"
+    return _source_sync_crypto.build_embedded_passphrase(hint=hint, version=version)
 
 
 def _local_key_cache_fingerprint(normalized: dict[str, str]) -> str:
-    material = "|".join(
-        [
-            str(normalized.get("appId") or "").strip(),
-            str(normalized.get("installationId") or "").strip(),
-            str(normalized.get("repo") or "").strip().lower(),
-            str(normalized.get("branch") or "").strip(),
-            str(normalized.get("path") or "").strip(),
-            str(normalized.get("keyDerivation") or "").strip().lower(),
-            str(normalized.get("keySalt") or "").strip(),
-            str(normalized.get("privateKeyPemEnc") or "").strip(),
-            str(normalized.get("embeddedKeyHint") or "").strip(),
-            str(normalized.get("embeddedKeyVersion") or "").strip(),
-        ]
-    ).encode("utf-8")
-    return __import__("hashlib").sha256(material).hexdigest()
+    return _source_sync_crypto.local_key_cache_fingerprint(normalized)
 
 
 def _dpapi_protect(raw: bytes) -> str:
@@ -443,224 +423,27 @@ def _allowlist_error(
 
 
 def _normalize_packaged_payload(payload: dict[str, Any]) -> dict[str, str]:
-    data = payload if isinstance(payload, dict) else {}
-    return {
-        "appId": str(data.get("appId") or "").strip(),
-        "installationId": str(data.get("installationId") or "").strip(),
-        "repo": str(data.get("repo") or "").strip(),
-        "branch": str(data.get("branch") or DEFAULT_BRANCH).strip() or DEFAULT_BRANCH,
-        "path": str(data.get("path") or DEFAULT_PATH).strip() or DEFAULT_PATH,
-        "privateKeyPemEnc": str(data.get("privateKeyPemEnc") or "").strip(),
-        "privateKeyPem": str(data.get("privateKeyPem") or "").strip(),
-        "keySalt": str(data.get("keySalt") or "").strip(),
-        "keyDerivation": str(data.get("keyDerivation") or KEY_DERIVATION_MACHINE).strip().lower()
-        or KEY_DERIVATION_MACHINE,
-        "embeddedKeyHint": str(data.get("embeddedKeyHint") or "").strip(),
-        "embeddedKeyVersion": str(
-            data.get("embeddedKeyVersion") or EMBEDDED_KEY_VERSION_DEFAULT
-        ).strip()
-        or EMBEDDED_KEY_VERSION_DEFAULT,
-        "allowedRepo": str(data.get("allowedRepo") or "").strip(),
-        "allowedBranch": str(data.get("allowedBranch") or "").strip(),
-        "allowedPathPrefix": str(data.get("allowedPathPrefix") or "").strip(),
-    }
+    return _source_sync_config.normalize_packaged_payload(_self_module(), payload)
 
 
 def load_packaged_sync_config(
     *, env: dict[str, str] | None = None
 ) -> PackagedGitHubAppConfig | None:
-    env_map = env if isinstance(env, dict) else os.environ
-    path_raw = str(
-        env_map.get(PACKAGED_SYNC_CONFIG_ENV) or DEFAULT_PACKAGED_SYNC_CONFIG_PATH
-    ).strip()
-    config_path = Path(path_raw).expanduser().resolve()
-    if not config_path.exists():
-        return None
-    try:
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    normalized = _normalize_packaged_payload(payload if isinstance(payload, dict) else {})
-    private_key_pem = normalized["privateKeyPem"]
-    key_derivation = normalized["keyDerivation"]
-    decryption_error = ""
-    policy_error = _allowlist_error(
-        repo=normalized["repo"],
-        branch=normalized["branch"],
-        path=normalized["path"],
-        normalized=normalized,
-        env_map=env_map,
-    )
-    fingerprint = _local_key_cache_fingerprint(normalized)
-    if not private_key_pem:
-        private_key_pem = _read_local_wrapped_key(config_path, fingerprint)
-    if not private_key_pem and normalized["privateKeyPemEnc"] and normalized["keySalt"]:
-        try:
-            if key_derivation == KEY_DERIVATION_PASSPHRASE:
-                passphrase = str(env_map.get(PACKAGED_SYNC_PASSPHRASE_ENV) or "").strip()
-                if not passphrase:
-                    raise RuntimeError(
-                        f"Missing {PACKAGED_SYNC_PASSPHRASE_ENV} for passphrase-encrypted sync key."
-                    )
-                private_key_pem = decrypt_private_key_pem_with_passphrase(
-                    normalized["privateKeyPemEnc"],
-                    salt_b64=normalized["keySalt"],
-                    app_id=normalized["appId"],
-                    installation_id=normalized["installationId"],
-                    passphrase=passphrase,
-                )
-            elif key_derivation == KEY_DERIVATION_EMBEDDED:
-                passphrase = str(env_map.get(PACKAGED_SYNC_PASSPHRASE_ENV) or "").strip()
-                if not passphrase:
-                    passphrase = build_embedded_passphrase(
-                        hint=normalized["embeddedKeyHint"],
-                        version=normalized["embeddedKeyVersion"],
-                    )
-                private_key_pem = decrypt_private_key_pem_with_passphrase(
-                    normalized["privateKeyPemEnc"],
-                    salt_b64=normalized["keySalt"],
-                    app_id=normalized["appId"],
-                    installation_id=normalized["installationId"],
-                    passphrase=passphrase,
-                )
-            elif key_derivation in {"", KEY_DERIVATION_MACHINE}:
-                key_derivation = KEY_DERIVATION_MACHINE
-                private_key_pem = decrypt_private_key_pem(
-                    normalized["privateKeyPemEnc"],
-                    salt_b64=normalized["keySalt"],
-                    app_id=normalized["appId"],
-                    installation_id=normalized["installationId"],
-                )
-            elif key_derivation == KEY_DERIVATION_PLAINTEXT:
-                private_key_pem = normalized["privateKeyPem"]
-            else:
-                raise RuntimeError(f"Unsupported keyDerivation mode: {key_derivation}")
-        except Exception as exc:  # noqa: BLE001
-            decryption_error = str(exc)
-    if private_key_pem:
-        try:
-            _write_local_wrapped_key(config_path, fingerprint, private_key_pem)
-        except Exception:
-            pass
-    return PackagedGitHubAppConfig(
-        app_id=normalized["appId"],
-        installation_id=normalized["installationId"],
-        repo=normalized["repo"],
-        branch=normalized["branch"],
-        path=normalized["path"],
-        private_key_pem=private_key_pem,
-        config_path=str(config_path),
-        key_derivation=key_derivation,
-        decryption_error=decryption_error,
-        policy_error=policy_error,
-        allowed_repo=str(normalized.get("allowedRepo") or ""),
-        allowed_branch=str(normalized.get("allowedBranch") or ""),
-        allowed_path_prefix=str(normalized.get("allowedPathPrefix") or ""),
-    )
+    return _source_sync_config.load_packaged_sync_config(_self_module(), env=env)
 
 
 def resolve_sync_config(
     *, settings: dict[str, Any] | None = None, env: dict[str, str] | None = None
 ) -> SyncConfig:
-    settings_map = settings if isinstance(settings, dict) else {}
-    env_map = env if isinstance(env, dict) else os.environ
-    default_enabled = bool(
-        _SECURITY_DEFAULTS["github_app_enabled_default"] and _SYNC_DEFAULTS["local_enabled_default"]
-    )
-    enabled_raw = settings_map.get("enabled")
-    enabled = default_enabled if enabled_raw is None else bool(enabled_raw)
-    disabled_reason = ""
-    if _truthy(env_map.get(SYNC_DISABLE_ENV)):
-        enabled = False
-        disabled_reason = f"Sync disabled by {SYNC_DISABLE_ENV}."
-    packaged_config = load_packaged_sync_config(env=env_map)
-    repo = packaged_config.repo if packaged_config else str(_SYNC_DEFAULTS["default_repo"])
-    branch = packaged_config.branch if packaged_config else DEFAULT_BRANCH
-    path = packaged_config.path if packaged_config else DEFAULT_PATH
-    return SyncConfig(
-        enabled=enabled,
-        repo=repo,
-        branch=branch,
-        path=path,
-        auth_mode="github_app",
-        packaged_config=packaged_config,
-        timeout_s=DEFAULT_TIMEOUT_S,
-        disabled_reason=disabled_reason,
-    )
+    return _source_sync_config.resolve_sync_config(_self_module(), settings=settings, env=env)
 
 
 def config_status(config: SyncConfig) -> dict[str, Any]:
-    missing: list[str] = []
-    message = str(config.disabled_reason or "")
-    if not config.packaged_config:
-        missing.append("packaged_github_app_config")
-    else:
-        if config.packaged_config.policy_error:
-            missing.append("allowlist")
-            message = str(config.packaged_config.policy_error)
-        if config.packaged_config.decryption_error:
-            missing.append("privateKeyPemEnc")
-            message = f"Could not decrypt packaged GitHub App key: {config.packaged_config.decryption_error}"
-        if not config.packaged_config.app_id:
-            missing.append("appId")
-        if not config.packaged_config.installation_id:
-            missing.append("installationId")
-        if not config.packaged_config.repo:
-            missing.append("repo")
-        if not config.packaged_config.private_key_pem:
-            missing.append("privateKeyPemEnc")
-    ready = bool(config.enabled and not missing)
-    state = "ready" if ready else ("disabled" if not config.enabled else "misconfigured")
-    if config.enabled and not ready and not message:
-        if "packaged_github_app_config" in missing:
-            message = (
-                "Missing packaged GitHub App config. "
-                f"Expected {PACKAGED_SYNC_CONFIG_ENV} or {DEFAULT_PACKAGED_SYNC_CONFIG_PATH.name}."
-            )
-        else:
-            message = "Packaged GitHub App config is incomplete."
-    runtime_state = _runtime_state_payload()
-    runtime_code = str(runtime_state.get("code") or "").strip().lower()
-    if ready and runtime_code in {RUNTIME_STATE_RATE_LIMITED, RUNTIME_STATE_REMOTE_CONFLICT}:
-        ready = False
-        state = runtime_code
-        if not message:
-            message = str(runtime_state.get("message") or "")
-    else:
-        state = "ready" if ready else ("disabled" if not config.enabled else "misconfigured")
-    return {
-        "enabled": bool(config.enabled),
-        "state": state,
-        "ready": ready,
-        "repo": config.repo,
-        "branch": config.branch,
-        "path": config.path,
-        "missing": missing,
-        "message": message,
-        "authMode": str(config.auth_mode or "github_app"),
-        "credentialsPackaged": bool(config.packaged_config),
-        "configPath": str(config.packaged_config.config_path if config.packaged_config else ""),
-        "runtimeState": runtime_state,
-        "keyDerivation": str(
-            config.packaged_config.key_derivation if config.packaged_config else ""
-        ),
-        "allowlist": {
-            "repo": str(config.packaged_config.allowed_repo if config.packaged_config else ""),
-            "branch": str(config.packaged_config.allowed_branch if config.packaged_config else ""),
-            "pathPrefix": str(
-                config.packaged_config.allowed_path_prefix if config.packaged_config else ""
-            ),
-        },
-    }
+    return _source_sync_config.config_status(_self_module(), config)
 
 
 def validate_sync_config(config: SyncConfig) -> None:
-    status = config_status(config)
-    if not status["ready"]:
-        raise SyncOperationError(
-            str(status.get("state") or "misconfigured"),
-            str(status["message"] or "Sync is not configured"),
-        )
+    _source_sync_config.validate_sync_config(_self_module(), config)
 
 
 def _content_api_url(config: SyncConfig, *, with_ref: bool = False) -> str:
@@ -684,25 +467,7 @@ def _github_json_headers(authorization: str) -> dict[str, str]:
 
 
 def _build_sync_ssl_context() -> ssl.SSLContext:
-    context = ssl.create_default_context()
-    context.load_default_certs()
-    ca_bundle_path = str(os.environ.get(SYNC_CA_BUNDLE_ENV) or "").strip()
-    if ca_bundle_path:
-        resolved_bundle = Path(ca_bundle_path).expanduser()
-        if not resolved_bundle.is_file():
-            raise RuntimeError(
-                f"Sync request failed: CA bundle not found at {resolved_bundle} "
-                f"(set {SYNC_CA_BUNDLE_ENV} to a valid PEM bundle)."
-            )
-        context.load_verify_locations(cafile=str(resolved_bundle))
-    certifi_path = ""
-    try:
-        certifi_path = str(certifi.where() if certifi else "").strip()
-    except Exception:
-        certifi_path = ""
-    if certifi_path:
-        context.load_verify_locations(cafile=certifi_path)
-    return context
+    return _source_sync_config.build_sync_ssl_context(_self_module())
 
 
 def _request_raw_json(
@@ -714,56 +479,15 @@ def _request_raw_json(
     payload: dict[str, Any] | None = None,
     opener: Callable[..., Any] | None = None,
 ) -> tuple[int, dict[str, Any], dict[str, str]]:
-    body: bytes | None = None
-    if payload is not None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = Request(url=url, data=body, method=method.upper(), headers=headers)
-    try:
-        active_opener = opener or urlopen
-        if opener is None:
-            response_ctx = active_opener(
-                request,
-                timeout=timeout_s,
-                context=_build_sync_ssl_context(),
-            )
-        else:
-            response_ctx = active_opener(request, timeout=timeout_s)
-        with response_ctx as response:
-            raw = response.read().decode("utf-8")
-            parsed = json.loads(raw) if raw else {}
-            return (
-                int(response.getcode() or 200),
-                parsed if isinstance(parsed, dict) else {},
-                {key.lower(): str(value) for key, value in response.headers.items()},
-            )
-    except HTTPError as exc:
-        raw = exc.read().decode("utf-8") if hasattr(exc, "read") else ""
-        parsed = {}
-        if raw:
-            try:
-                candidate = json.loads(raw)
-                if isinstance(candidate, dict):
-                    parsed = candidate
-            except json.JSONDecodeError:
-                parsed = {}
-        return (
-            int(exc.code or 500),
-            parsed,
-            {key.lower(): str(value) for key, value in (exc.headers or {}).items()},
-        )
-    except ssl.SSLError as exc:
-        raise RuntimeError(
-            "Sync request failed: SSL certificate verification failed while connecting to GitHub. "
-            f"Original error: {exc}"
-        ) from exc
-    except URLError as exc:
-        message = str(exc)
-        if "certificate verify failed" in message.lower():
-            raise RuntimeError(
-                "Sync request failed: SSL certificate verification failed while connecting to GitHub. "
-                f"Original error: {exc}"
-            ) from exc
-        raise RuntimeError(f"Sync request failed: {exc}") from exc
+    return _source_sync_config.request_raw_json(
+        _self_module(),
+        method=method,
+        url=url,
+        headers=headers,
+        timeout_s=timeout_s,
+        payload=payload,
+        opener=opener,
+    )
 
 
 def _parse_iso(value: Any) -> datetime | None:
@@ -971,37 +695,19 @@ def _parse_rsa_private_key_der(der: bytes) -> tuple[int, int]:
 
 
 def _rsa_pkcs1_sign_sha256(message: bytes, private_key_pem: str) -> bytes:
-    n, d = _parse_rsa_private_key_der(_pem_to_der(private_key_pem))
-    digest = __import__("hashlib").sha256(message).digest()
-    digest_info = SHA256_DIGEST_INFO_PREFIX + digest
-    modulus_len = max(1, (n.bit_length() + 7) // 8)
-    padding_len = modulus_len - len(digest_info) - 3
-    if padding_len < 8:
-        raise RuntimeError("RSA key too small for RS256 signing")
-    encoded = b"\x00\x01" + (b"\xff" * padding_len) + b"\x00" + digest_info
-    signature = pow(int.from_bytes(encoded, "big"), d, n)
-    return signature.to_bytes(modulus_len, "big")
+    return _source_sync_crypto.rsa_pkcs1_sign_sha256(message, private_key_pem)
 
 
 def build_app_jwt(app_id: str, private_key_pem: str, *, issued_at: datetime | None = None) -> str:
-    now = issued_at.astimezone(UTC) if issued_at else now_utc()
-    iat = int(now.timestamp()) - 30
-    exp = iat + JWT_TTL_SECONDS
-    header = _base64url_encode(
-        json.dumps({"alg": "RS256", "typ": "JWT"}, separators=(",", ":"), sort_keys=True).encode(
-            "utf-8"
-        )
+    return _source_sync_crypto.build_app_jwt(
+        app_id,
+        private_key_pem,
+        issued_at=issued_at,
+        now_utc_fn=now_utc,
+        base64url_encode_fn=_base64url_encode,
+        sign_sha256_fn=_rsa_pkcs1_sign_sha256,
+        jwt_ttl_seconds=JWT_TTL_SECONDS,
     )
-    payload = _base64url_encode(
-        json.dumps(
-            {"iat": iat, "exp": exp, "iss": str(app_id or "").strip()},
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-    )
-    signing_input = f"{header}.{payload}".encode("ascii")
-    signature = _base64url_encode(_rsa_pkcs1_sign_sha256(signing_input, private_key_pem))
-    return f"{header}.{payload}.{signature}"
 
 
 class GitHubAppAuth:
@@ -1199,79 +905,13 @@ def _request_json(
 
 
 def normalize_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
-    data = payload if isinstance(payload, dict) else {}
-    generated_at = str(data.get("generatedAt") or "")
-    return {
-        "schemaVersion": int(data.get("schemaVersion") or 1),
-        "generatedAt": generated_at,
-        "source": data.get("source") if isinstance(data.get("source"), dict) else {},
-        "active": _canonicalize_snapshot_rows(
-            list(data.get("active") or []), bucket="active", generated_at=generated_at
-        ),
-        "pending": _canonicalize_snapshot_rows(
-            list(data.get("pending") or []), bucket="pending", generated_at=generated_at
-        ),
-        "rejected": _canonicalize_snapshot_rows(
-            list(data.get("rejected") or []), bucket="rejected", generated_at=generated_at
-        ),
-    }
+    return _source_sync_snapshot.normalize_snapshot(_self_module(), payload)
 
 
 def merge_registry_state(
     local_state: dict[str, Any], remote_snapshot: dict[str, Any]
 ) -> dict[str, list[dict[str, Any]]]:
-    remote = normalize_snapshot(remote_snapshot)
-    tombstones = load_tombstones()
-    generated_at = str(remote.get("generatedAt") or "")
-    local = {
-        "active": filter_tombstoned_rows(
-            _canonicalize_snapshot_rows(
-                list(local_state.get("active") or []), bucket="active", generated_at=generated_at
-            ),
-            tombstones,
-        ),
-        "pending": filter_tombstoned_rows(
-            _canonicalize_snapshot_rows(
-                list(local_state.get("pending") or []), bucket="pending", generated_at=generated_at
-            ),
-            tombstones,
-        ),
-        "rejected": filter_tombstoned_rows(
-            _canonicalize_snapshot_rows(
-                list(local_state.get("rejected") or []),
-                bucket="rejected",
-                generated_at=generated_at,
-            ),
-            tombstones,
-        ),
-    }
-    local_rejected_ids = {
-        source_identity(row) for row in local["rejected"] if isinstance(row, dict)
-    }
-    merged: dict[str, list[dict[str, Any]]] = {
-        "active": [],
-        "pending": [],
-        "rejected": sort_sources_by_identity(local["rejected"]),
-    }
-    candidates: dict[str, dict[str, Any]] = {}
-    for bucket in ("active", "pending"):
-        for row in local[bucket]:
-            candidates[source_identity(row)] = dict(row)
-    for bucket in ("active", "pending"):
-        for row in remote[bucket]:
-            row_id = source_identity(row)
-            if row_id in local_rejected_ids:
-                continue
-            candidates[row_id] = dict(_choose_more_recent_row(candidates.get(row_id), row) or row)
-    for row in candidates.values():
-        bucket = str(row.get("registryState") or "").strip().lower()
-        if bucket == "active":
-            merged["active"].append(ensure_source_id(row))
-        elif bucket == "pending":
-            merged["pending"].append(ensure_source_id(row))
-    merged["active"] = sort_sources_by_identity(merged["active"])
-    merged["pending"] = sort_sources_by_identity(merged["pending"])
-    return merged
+    return _source_sync_snapshot.merge_registry_state(_self_module(), local_state, remote_snapshot)
 
 
 def read_remote_snapshot(
@@ -1279,85 +919,15 @@ def read_remote_snapshot(
     *,
     opener: Callable[..., Any] = urlopen,
 ) -> dict[str, Any]:
-    validate_sync_config(config)
-    url = _content_api_url(config, with_ref=True)
-    status, payload, _headers = _request_json(
-        method="GET",
-        url=url,
-        config=config,
-        timeout_s=config.timeout_s,
-        opener=opener,
-    )
-    if status == 404:
-        _clear_runtime_state(RUNTIME_STATE_REMOTE_CONFLICT)
-        return {"exists": False, "sha": "", "snapshot": None}
-    if status >= 400:
-        message = str(payload.get("message") or f"GitHub GET failed with HTTP {status}")
-        raise RuntimeError(message)
-    encoded_content = str(payload.get("content") or "").strip()
-
-    # GitHub Contents API truncates files >1 MB, returning empty content.
-    # Fall back to download_url which returns raw JSON (not base64).
-    if not encoded_content:
-        download_url = str(payload.get("download_url") or "").strip()
-        if download_url:
-            raw_status, raw_body, _raw_headers = _request_raw_json(
-                method="GET",
-                url=download_url,
-                headers=_github_json_headers(
-                    f"Bearer {_get_auth_manager(config).get_installation_token(opener=opener)}"
-                ),
-                timeout_s=config.timeout_s,
-                opener=opener,
-            )
-            if raw_status == 200 and isinstance(raw_body, dict):
-                snapshot = normalize_snapshot(raw_body)
-                _clear_runtime_state(RUNTIME_STATE_REMOTE_CONFLICT)
-                return {"exists": True, "sha": str(payload.get("sha") or ""), "snapshot": snapshot}
-
-    if not encoded_content:
-        return {"exists": False, "sha": str(payload.get("sha") or ""), "snapshot": None}
-    normalized_b64 = encoded_content.replace("\n", "")
-    try:
-        raw_bytes = base64.b64decode(normalized_b64)
-        parsed = json.loads(raw_bytes.decode("utf-8"))
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"Invalid remote sync snapshot payload: {exc}") from exc
-    snapshot = normalize_snapshot(parsed if isinstance(parsed, dict) else {})
-    _clear_runtime_state(RUNTIME_STATE_REMOTE_CONFLICT)
-    return {"exists": True, "sha": str(payload.get("sha") or ""), "snapshot": snapshot}
+    return _source_sync_snapshot.read_remote_snapshot(_self_module(), config, opener=opener)
 
 
 def build_snapshot(
     local_state: dict[str, Any], *, source_label: str = "admin_bridge"
 ) -> dict[str, Any]:
-    generated_at = now_iso()
-    canonical_state = merge_registry_state(
-        local_state,
-        {
-            "schemaVersion": SYNC_SCHEMA_VERSION,
-            "generatedAt": generated_at,
-            "source": {"name": source_label},
-            "active": [],
-            "pending": [],
-            "rejected": [],
-        },
+    return _source_sync_snapshot.build_snapshot(
+        _self_module(), local_state, source_label=source_label
     )
-    canonical_state = {
-        "active": _canonicalize_snapshot_rows(
-            list(canonical_state.get("active") or []), bucket="active", generated_at=generated_at
-        ),
-        "pending": _canonicalize_snapshot_rows(
-            list(canonical_state.get("pending") or []), bucket="pending", generated_at=generated_at
-        ),
-    }
-    return {
-        "schemaVersion": SYNC_SCHEMA_VERSION,
-        "generatedAt": generated_at,
-        "source": {"name": source_label},
-        "active": canonical_state["active"],
-        "pending": canonical_state["pending"],
-    }
 
 
 def write_remote_snapshot(
@@ -1368,34 +938,14 @@ def write_remote_snapshot(
     message: str = "Update Baluffo source sync snapshot",
     opener: Callable[..., Any] = urlopen,
 ) -> dict[str, Any]:
-    validate_sync_config(config)
-    encoded = base64.b64encode(
-        json.dumps(snapshot, ensure_ascii=False, indent=2).encode("utf-8")
-    ).decode("ascii")
-    payload: dict[str, Any] = {
-        "message": str(message or "Update Baluffo source sync snapshot"),
-        "content": encoded,
-        "branch": config.branch,
-    }
-    if sha:
-        payload["sha"] = sha
-    status, body, _headers = _request_json(
-        method="PUT",
-        url=_content_api_url(config, with_ref=False),
-        config=config,
-        timeout_s=config.timeout_s,
-        payload=payload,
+    return _source_sync_snapshot.write_remote_snapshot(
+        _self_module(),
+        config,
+        snapshot,
+        sha=sha,
+        message=message,
         opener=opener,
     )
-    if status >= 400:
-        msg = str(body.get("message") or f"GitHub PUT failed with HTTP {status}")
-        if int(status or 0) == 409:
-            _set_runtime_state(RUNTIME_STATE_REMOTE_CONFLICT, msg)
-            raise SyncOperationError(RUNTIME_STATE_REMOTE_CONFLICT, msg)
-        raise RuntimeError(msg)
-    content = body.get("content") if isinstance(body.get("content"), dict) else {}
-    _clear_runtime_state(RUNTIME_STATE_REMOTE_CONFLICT)
-    return {"ok": True, "sha": str(content.get("sha") or "")}
 
 
 def pull_and_merge_sources(
@@ -1404,49 +954,9 @@ def pull_and_merge_sources(
     *,
     opener: Callable[..., Any] = urlopen,
 ) -> dict[str, Any]:
-    remote = read_remote_snapshot(config, opener=opener)
-    if not remote.get("exists"):
-        canonical_local = merge_registry_state(
-            local_state,
-            {
-                "schemaVersion": SYNC_SCHEMA_VERSION,
-                "generatedAt": "",
-                "source": {},
-                "active": [],
-                "pending": [],
-                "rejected": [],
-            },
-        )
-        return {
-            "changed": False,
-            "remoteFound": False,
-            "mergedState": canonical_local,
-            "remoteSha": "",
-        }
-    snapshot = remote.get("snapshot") if isinstance(remote.get("snapshot"), dict) else {}
-    merged_state = merge_registry_state(local_state, snapshot)
-    changed = json.dumps(merged_state, sort_keys=True, ensure_ascii=False) != json.dumps(
-        merge_registry_state(
-            local_state,
-            {
-                "schemaVersion": SYNC_SCHEMA_VERSION,
-                "generatedAt": "",
-                "source": {},
-                "active": [],
-                "pending": [],
-                "rejected": [],
-            },
-        ),
-        sort_keys=True,
-        ensure_ascii=False,
+    return _source_sync_snapshot.pull_and_merge_sources(
+        _self_module(), config, local_state, opener=opener
     )
-    return {
-        "changed": changed,
-        "remoteFound": True,
-        "remoteSha": str(remote.get("sha") or ""),
-        "mergedState": merged_state,
-        "remoteGeneratedAt": str(snapshot.get("generatedAt") or ""),
-    }
 
 
 def push_sources_snapshot(
@@ -1455,19 +965,6 @@ def push_sources_snapshot(
     *,
     opener: Callable[..., Any] = urlopen,
 ) -> dict[str, Any]:
-    remote = read_remote_snapshot(config, opener=opener)
-    remote_snapshot = remote.get("snapshot") if isinstance(remote.get("snapshot"), dict) else {}
-    merged_state = merge_registry_state(local_state, remote_snapshot or {})
-    snapshot = build_snapshot(merged_state)
-    write_result = write_remote_snapshot(
-        config,
-        snapshot,
-        sha=str(remote.get("sha") or ""),
-        opener=opener,
+    return _source_sync_snapshot.push_sources_snapshot(
+        _self_module(), config, local_state, opener=opener
     )
-    return {
-        "pushed": True,
-        "remotePreviouslyExisted": bool(remote.get("exists")),
-        "remoteSha": str(write_result.get("sha") or ""),
-        "snapshot": snapshot,
-    }

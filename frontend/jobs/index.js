@@ -1,6 +1,6 @@
-import "../../app-local-data-client.js";
-import "../../jobs-state.js";
-import "../../jobs-parsing-utils.js";
+import "../shared/local-data/app-client.js";
+import "./state.js";
+import "./parsing-utils.js";
 import { boot as bootJobsPage } from "./app.js";
 import { emitStartupProbeMetric } from "../../probes/startup-probe.js";
 

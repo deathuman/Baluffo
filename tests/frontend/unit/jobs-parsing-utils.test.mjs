@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseCSVLarge } from "../../../jobs-parsing-utils.js";
+import { parseCSVLarge } from "../../../frontend/jobs/parsing-utils.js";
 
 test("jobs parsing utils prefers alternate employer over untrustworthy label", () => {
   const csv = [

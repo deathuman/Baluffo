@@ -39,6 +39,9 @@ RUNTIME_HIDDEN_IMPORTS = (
     "src.ship.update_manager",
     "src.source_discovery",
     "src.source_registry",
+    "src.source_sync_config",
+    "src.source_sync_crypto",
+    "src.source_sync_snapshot",
     "src.source_sync",
 )
 if str(ROOT) not in sys.path:

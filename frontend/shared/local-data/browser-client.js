@@ -4,16 +4,16 @@ import {
   BACKUP_SCHEMA_VERSION,
   SESSION_KEY,
   APPLICATION_STATUSES
-} from "./frontend/local-data/constants.js";
-import { createLocalDataRuntime } from "./frontend/local-data/runtime-contract.js";
-import { createIndexedDbAdapter } from "./frontend/local-data/indexeddb-adapter.js";
-import { normalizeApplicationStatus, canTransitionPhase } from "./frontend/local-data/phase.js";
+} from "../../local-data/constants.js";
+import { createLocalDataRuntime } from "../../local-data/runtime-contract.js";
+import { createIndexedDbAdapter } from "../../local-data/indexeddb-adapter.js";
+import { normalizeApplicationStatus, canTransitionPhase } from "../../local-data/phase.js";
 import {
   makeUser,
   readProfiles,
   writeProfiles,
   getStoredSessionUser
-} from "./frontend/local-data/profile-session.js";
+} from "../../local-data/profile-session.js";
 import {
   hashFNV1a,
   sanitizeJobUrl,
@@ -22,7 +22,7 @@ import {
   nowIso,
   normalizeSectorValue,
   normalizeCustomSourceLabel
-} from "./frontend/local-data/job-utils.js";
+} from "../../local-data/job-utils.js";
 import {
   normalizeIsoOrNow,
   toPlainObject,
@@ -33,14 +33,18 @@ import {
   stripAttachmentBlob,
   serializeAttachmentWithBlob,
   deserializeAttachmentBlob
-} from "./frontend/local-data/backup-import-export.js";
-import { utf8ByteLength, getAttachmentByteSize, ensureAdminUserRow } from "./frontend/local-data/admin-overview.js";
-import { createAuthDomain } from "./frontend/local-data/auth.js";
-import { createActivityDomain } from "./frontend/local-data/activity.js";
-import { createSavedJobsDomain } from "./frontend/local-data/saved-jobs.js";
-import { createAttachmentsDomain } from "./frontend/local-data/attachments.js";
-import { createBackupDomain } from "./frontend/local-data/backup-service.js";
-import { createAdminDomain } from "./frontend/local-data/admin-service.js";
+} from "../../local-data/backup-import-export.js";
+import {
+  utf8ByteLength,
+  getAttachmentByteSize,
+  ensureAdminUserRow
+} from "../../local-data/admin-overview.js";
+import { createAuthDomain } from "../../local-data/auth.js";
+import { createActivityDomain } from "../../local-data/activity.js";
+import { createSavedJobsDomain } from "../../local-data/saved-jobs.js";
+import { createAttachmentsDomain } from "../../local-data/attachments.js";
+import { createBackupDomain } from "../../local-data/backup-service.js";
+import { createAdminDomain } from "../../local-data/admin-service.js";
 
 let browserApiInitialized = false;
 let browserApi = null;

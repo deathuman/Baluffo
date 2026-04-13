@@ -1013,12 +1013,35 @@ def build_browser_launch_command(browser_path: str, url: str, profile_dir: Path)
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-session-crashed-bubble",
+        "--disable-application-cache",
+        "--disk-cache-size=1",
+        "--media-cache-size=1",
         f"--user-data-dir={profile_dir}",
     ]
 
 
+def clear_browser_profile_caches(profile_dir: Path) -> None:
+    cache_dirs = (
+        profile_dir / "Default" / "Cache",
+        profile_dir / "Default" / "Code Cache",
+        profile_dir / "Default" / "GPUCache",
+        profile_dir / "Default" / "Service Worker" / "CacheStorage",
+        profile_dir / "GrShaderCache",
+        profile_dir / "ShaderCache",
+        profile_dir / "GraphiteDawnCache",
+        profile_dir / "DawnCache",
+    )
+    for cache_dir in cache_dirs:
+        try:
+            if cache_dir.exists():
+                shutil.rmtree(cache_dir, ignore_errors=True)
+        except OSError:
+            continue
+
+
 def launch_chromium_app(url: str, browser_path: str, profile_dir: Path) -> subprocess.Popen[str]:
     profile_dir.mkdir(parents=True, exist_ok=True)
+    clear_browser_profile_caches(profile_dir)
     popen_kwargs: dict[str, object] = {"text": True}
     if os.name == "nt":
         popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))

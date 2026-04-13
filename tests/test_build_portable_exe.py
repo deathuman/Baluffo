@@ -2,6 +2,8 @@ from pathlib import Path
 from unittest import mock
 from zipfile import ZipFile
 
+import pytest
+
 from scripts import build_ship_bundle
 from scripts.build_portable_exe import (
     DEFAULT_BUNDLE_VERSION,
@@ -13,6 +15,8 @@ from scripts.build_portable_exe import (
 )
 from src.app_version import APP_VERSION
 from tests.helpers.temp_paths import workspace_tmpdir
+
+pytestmark = pytest.mark.packaging
 
 
 def test_portable_layout_wraps_ship_bundle_in_ship_folder() -> None:

@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import src.source_discovery as sd
+from src import source_registry as source_registry_module
 from src.contracts import SCHEMA_VERSION
 
 from .reporting import build_discovery_task_progress
@@ -25,7 +25,7 @@ def discovery_report_write_path() -> Path:
     raw = str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
     if raw:
         return Path(raw).expanduser().resolve() / "source-discovery-report.json"
-    return Path(str(sd.DISCOVERY_REPORT_PATH))
+    return Path(str(source_registry_module.DISCOVERY_REPORT_PATH))
 
 
 def prime_bridge_discovery_report(
@@ -75,9 +75,9 @@ def prime_bridge_discovery_report(
             "topFailures": [],
             "outputs": {
                 "report": str(report_path),
-                "candidates": str(sd.DISCOVERY_CANDIDATES_PATH),
-                "pending": str(sd.PENDING_PATH),
-                "urlPatches": str(getattr(sd, "URL_PATCH_MANIFEST_PATH", "")),
+                "candidates": str(source_registry_module.DISCOVERY_CANDIDATES_PATH),
+                "pending": str(source_registry_module.PENDING_PATH),
+                "urlPatches": str(source_registry_module.URL_PATCH_MANIFEST_PATH),
             },
         },
     )

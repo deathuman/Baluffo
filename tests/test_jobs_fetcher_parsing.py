@@ -1,6 +1,14 @@
-# ruff: noqa: F403,F405
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from unittest import mock
+
+import pytest
+
 from src.jobs.adapters.html_parsers import parse_jobposting_location_details
-from tests.jobs_fetcher_helpers import *
+from tests.jobs_fetcher_helpers import _fixture, jf, patch_jobs_fetcher_aliases, scrapy_runner
 
 patch_jobs_fetcher_aliases()
 

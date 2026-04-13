@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DEFAULT_FILTERS } from "../../../jobs-state.js";
+import { DEFAULT_FILTERS } from "../../../frontend/jobs/state.js";
 import {
   createJobsPageState,
   createJobsPipelineUiState,

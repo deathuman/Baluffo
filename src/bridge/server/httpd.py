@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from http.server import ThreadingHTTPServer
-from typing import Any
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from src.bridge.api import BridgeApi
 
 
-def run_http_server(*, api: Any, host: str, port: int, handler_cls: type) -> int:
+def run_http_server(
+    *, api: BridgeApi, host: str, port: int, handler_cls: type[BaseHTTPRequestHandler]
+) -> int:
     try:
         server = ThreadingHTTPServer((host, port), handler_cls)
     except OSError as exc:

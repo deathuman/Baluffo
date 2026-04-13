@@ -26,9 +26,8 @@ EXCLUDED_FILES = {
     "data/jobs-fetch-tasks.json",
 }
 EXCLUDED_ROOT_PREFIXES = (
-    ".codex-tmp-",
     ".pre-commit-home",
-    ".codex-tmp-tests",
+    ".tmp",
     ".pytest",
     ".mypy_cache",
     ".ruff_cache",

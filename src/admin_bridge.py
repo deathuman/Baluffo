@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local admin bridge for source discovery approval workflows."""
+"""Stable thin bridge entrypoint and compatibility wrapper surface."""
 
 from __future__ import annotations
 
@@ -27,8 +27,9 @@ from src import source_sync as source_sync_module
 from src.app_version import get_app_version
 from src.baluffo_config import get_bridge_defaults, get_security_defaults, get_storage_defaults
 
-# Bridge module imports (sync state extracted from admin_bridge.py)
+# Bridge service/runtime imports. Keep new bridge logic under `src.bridge.*`.
 from src.bridge import SYNC_STATE_LOCK, SyncService, SyncState, report_normalizer
+from src.bridge import bootstrap as bridge_bootstrap
 from src.bridge import config as bridge_config
 from src.bridge import html_extractor as _html_extractor
 from src.bridge import ops_api as _ops_api
@@ -49,7 +50,6 @@ from src.bridge.registry_tombstones import (
     is_tombstoned,
     load_tombstones,
 )
-from src.bridge.server import make_handler, run_http_server
 from src.bridge.server import runtime_state as bridge_runtime_state
 from src.bridge.source_helpers import (
     find_existing_source_by_url,
@@ -571,25 +571,25 @@ def startup_banner(config: RuntimeConfig) -> None:
 
 
 def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
-    # BridgeApi is dependency-injected to avoid importing `src.admin_bridge` from bridge modules.
-    return BridgeApi(
-        runtime_config=config,
+    # Keep the admin_bridge surface stable while bridge bootstrap ownership lives under `src.bridge.*`.
+    return bridge_bootstrap.build_bridge_api(
+        config=config,
         registry=_get_registry_service(),
         sync=_get_sync_service(),
         pipeline=_get_pipeline_service(),
         discovery=_get_discovery_service(),
         normalize_fetch_report_contract=normalize_fetch_report_contract,
         normalize_discovery_report_contract=normalize_discovery_report_contract,
-        DISCOVERY_REPORT_PATH=DISCOVERY_REPORT_PATH,
-        JOBS_FETCH_REPORT_PATH=JOBS_FETCH_REPORT_PATH,
-        APPROVAL_STATE_PATH=APPROVAL_STATE_PATH,
-        DISCOVERY_LOG_PATH=DISCOVERY_LOG_PATH,
-        FETCHER_LOG_PATH=FETCHER_LOG_PATH,
-        STARTUP_METRICS_PATH=STARTUP_METRICS_PATH,
-        DESKTOP_SESSION_ACTIVITY_AT=bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
+        discovery_report_path=DISCOVERY_REPORT_PATH,
+        jobs_fetch_report_path=JOBS_FETCH_REPORT_PATH,
+        approval_state_path=APPROVAL_STATE_PATH,
+        discovery_log_path=DISCOVERY_LOG_PATH,
+        fetcher_log_path=FETCHER_LOG_PATH,
+        startup_metrics_path=STARTUP_METRICS_PATH,
+        desktop_session_activity_at=bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
         bridge_log=bridge_log,
         now_iso=now_iso,
-        _mark_desktop_session_activity=mark_desktop_session_activity,
+        mark_desktop_session_activity=mark_desktop_session_activity,
         desktop_local_data_store=desktop_local_data_store,
         append_startup_metric=append_startup_metric,
         read_startup_metrics=read_startup_metrics,
@@ -1224,9 +1224,11 @@ def main() -> int:
     refresh_sync_config()
     ensure_active_registry()
     startup_sync_pull()
-    api = build_bridge_api(config)
-    handler_cls = make_handler(api=api)
-    return run_http_server(api=api, host=config.host, port=config.port, handler_cls=handler_cls)
+    return bridge_bootstrap.run_bridge_server(
+        api=build_bridge_api(config),
+        host=config.host,
+        port=config.port,
+    )
 
 
 if __name__ == "__main__":

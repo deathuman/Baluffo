@@ -111,7 +111,7 @@ jobs:
         id: release_gates
         run: |
           npm run test:frontend:unit
-          npm run test:py
+          npm run test:py:extended
           npm run test:frontend:packaged
           npm run test:frontend:packaged:jobs-pipeline
 
@@ -121,7 +121,7 @@ jobs:
         with:
           name: smoke-test-artifacts-${{ github.run_number }}
           path: |
-            .codex-tmp/packaged-desktop-smoke
+            .tmp/packaged-desktop-smoke
             data/packaged-desktop-smoke-report.json
           retention-days: 7
 

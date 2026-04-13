@@ -1,8 +1,10 @@
+import ast
+import importlib
 from pathlib import Path
 from unittest import mock
 
-from src import jobs_fetcher as jf
 from src.jobs import adapters, canonicalize, dedup, parsers, registry, transport
+from src.jobs import common as jobs_common
 from src.jobs.models import CanonicalJob
 
 
@@ -161,27 +163,44 @@ def test_social_adapter_uses_jobs_fetcher_urlopen_patch_surface() -> None:
         def __exit__(self, exc_type, exc, tb):  # noqa: ANN001, ANN204
             return False
 
-    with mock.patch.object(jf, "urlopen", return_value=_Response()) as patched:
+    with mock.patch.object(adapters.social, "urlopen", return_value=_Response()) as patched:
         payload = adapters.social._request_json_with_headers("https://example.com/api", timeout_s=5)
     assert payload == {"data": []}
     patched.assert_called_once()
 
 
-def test_static_adapter_uses_jobs_fetcher_diagnostics_patch_surface() -> None:
-    previous = list(jf.STUDIO_SOURCE_REGISTRY)
-    jf.STUDIO_SOURCE_REGISTRY = []
-    try:
-        with mock.patch.object(jf, "set_source_diagnostics") as diag:
-            rows = adapters.static.run_scrapy_static_source(
-                fetch_text=lambda _url, _timeout: "",
-                timeout_s=5,
-                retries=0,
-                backoff_s=0.0,
-            )
-        assert rows == []
-        diag.assert_called_once()
-    finally:
-        jf.STUDIO_SOURCE_REGISTRY = previous
+def test_static_scrapy_adapter_uses_direct_registry_and_diagnostics_surface() -> None:
+    with (
+        mock.patch.object(adapters.static_scrapy, "registry_entries", return_value=[]),
+        mock.patch.object(adapters.static_scrapy, "set_source_diagnostics") as diag,
+    ):
+        rows = adapters.static.run_scrapy_static_source(
+            fetch_text=lambda _url, _timeout: "",
+            timeout_s=5,
+            retries=0,
+            backoff_s=0.0,
+        )
+    assert rows == []
+    diag.assert_called_once()
+
+
+def test_jobs_common_root_package_is_minimal_and_leaf_modules_remain_importable() -> None:
+    migration_map = {
+        "registry_entries": ("src.jobs.registry", "registry_entries"),
+        "fetch_with_retries": ("src.jobs.common.fetch", "fetch_with_retries"),
+        "set_source_diagnostics": ("src.jobs.common.diagnostics", "set_source_diagnostics"),
+        "default_fetch_text": ("src.jobs.common.http", "default_fetch_text"),
+        "to_iso": ("src.jobs.common.datetime_utils", "to_iso"),
+        "RawJob": ("src.jobs.models", "RawJob"),
+        "SourceLoader": ("src.jobs.interfaces", "SourceLoader"),
+    }
+
+    assert "retired the root-symbol compatibility facade" in (jobs_common.__doc__ or "")
+    assert not hasattr(jobs_common, "__all__")
+    for root_name, (module_name, attr_name) in migration_map.items():
+        assert not hasattr(jobs_common, root_name), root_name
+        module = importlib.import_module(module_name)
+        assert hasattr(module, attr_name), (module_name, attr_name)
 
 
 def test_pipeline_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
@@ -200,48 +219,101 @@ def test_static_adapter_uses_package_private_helper_boundary(repo_root: Path) ->
 
 
 def test_jobs_modules_avoid_new_broad_common_barrel_imports(repo_root: Path) -> None:
-    targets = {
-        repo_root / "src" / "jobs" / "transport.py": [],
-        repo_root / "src" / "jobs" / "canonicalize.py": [],
-        repo_root / "src" / "jobs" / "parsers.py": [],
-        repo_root / "src" / "jobs" / "reporting.py": [],
-        repo_root / "src" / "jobs" / "state.py": [],
-        repo_root / "src" / "jobs" / "pipeline_stage_source_execution.py": [],
-        repo_root / "src" / "jobs" / "adapters" / "provider_api.py": [],
-        repo_root / "src" / "jobs" / "adapters" / "provider_parsers.py": [],
-        repo_root / "src" / "jobs" / "adapters" / "social_parsers.py": [],
-        repo_root / "src" / "jobs" / "adapters" / "plugins" / "provider_api" / "register.py": [],
-        repo_root / "src" / "jobs" / "adapters" / "plugins" / "social" / "register.py": [],
-        repo_root / "src" / "jobs" / "registry.py": [
-            "from src.jobs.common import REDUNDANT_STATIC_IF_PROVIDER",
-            "from src.jobs.common import DEFAULT_STUDIO_SOURCE_REGISTRY",
-        ],
-        repo_root / "src" / "jobs" / "adapters" / "__init__.py": [
-            "from src.jobs.common import SOCIAL_SOURCE_NAMES, SOURCE_DIAGNOSTICS",
-        ],
-        repo_root / "src" / "jobs" / "adapters" / "social.py": [
-            "from src.jobs.common import SOURCE_DIAGNOSTICS, set_source_diagnostics",
-        ],
-        repo_root / "src" / "jobs" / "adapters" / "static.py": [
-            "from src.jobs.common import registry_entries, set_source_diagnostics",
-        ],
-        repo_root / "src" / "jobs" / "adapters" / "static_scrapy.py": [
-            "from src.jobs.common import registry_entries, set_source_diagnostics",
-            "from src.jobs.common import to_iso",
-        ],
-        repo_root / "src" / "jobs" / "adapters" / "community" / "__init__.py": [
-            "from src.jobs.common import (",
-        ],
-        repo_root / "src" / "jobs" / "common" / "registry.py": [
-            "from src.jobs.common import SCRAPY_BROWSER_QUEUE_PATH",
-        ],
+    allowed_submodules = {
+        "config",
+        "contracts",
+        "datetime_utils",
+        "diagnostics",
+        "fetch",
+        "health",
+        "heuristics",
+        "numbers",
+        "registry",
+        "registry_defaults",
+        "social",
+        "sources",
+        "taxonomy",
+        "url",
     }
-    for target, forbidden_snippets in targets.items():
+    offenders: list[str] = []
+    for root_name in ("src", "tests"):
+        for target in (repo_root / root_name).rglob("*.py"):
+            if target.resolve() == Path(__file__).resolve():
+                continue
+            text = target.read_text(encoding="utf-8")
+            tree = ast.parse(text, filename=str(target))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == "src.jobs.common":
+                            offenders.append(str(target.relative_to(repo_root)))
+                if isinstance(node, ast.ImportFrom):
+                    if node.module == "src.jobs":
+                        if any(alias.name == "common" for alias in node.names):
+                            offenders.append(str(target.relative_to(repo_root)))
+                    if node.module == "src.jobs.common":
+                        for alias in node.names:
+                            if alias.name not in allowed_submodules:
+                                offenders.append(str(target.relative_to(repo_root)))
+    assert not offenders, "Found retired broad src.jobs.common imports:\n- " + "\n- ".join(
+        offenders
+    )
+
+
+def test_legacy_runners_module_is_retired(repo_root: Path) -> None:
+    legacy_module = repo_root / "src" / "jobs" / "common" / "legacy_runners.py"
+    assert not legacy_module.exists()
+
+    offenders: list[str] = []
+    for root_name in ("src", "tests"):
+        for target in (repo_root / root_name).rglob("*.py"):
+            text = target.read_text(encoding="utf-8")
+            tree = ast.parse(text, filename=str(target))
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.ImportFrom)
+                    and node.module == "src.jobs.common.legacy_runners"
+                ):
+                    offenders.append(str(target.relative_to(repo_root)))
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == "src.jobs.common.legacy_runners":
+                            offenders.append(str(target.relative_to(repo_root)))
+    assert not offenders, "Found retired src.jobs.common.legacy_runners imports:\n- " + "\n- ".join(
+        offenders
+    )
+
+
+def test_fetcher_test_helpers_do_not_reintroduce_helper_barrel_patterns(repo_root: Path) -> None:
+    helper_path = repo_root / "tests" / "jobs_fetcher_helpers.py"
+    helper_text = helper_path.read_text(encoding="utf-8")
+    for retired_export in (
+        '"subprocess"',
+        '"sys"',
+        '"threading"',
+        '"time"',
+        '"json"',
+        '"os"',
+        '"mock"',
+        '"pytest"',
+        '"Path"',
+    ):
+        assert retired_export not in helper_text.split("__all__ = [", 1)[1].split("]", 1)[0]
+
+    offenders: list[str] = []
+    for target in (repo_root / "tests").rglob("*.py"):
+        if target.resolve() == Path(__file__).resolve():
+            continue
         text = target.read_text(encoding="utf-8")
-        assert "from src.jobs import common as common" not in text, str(target)
-        assert "import src.jobs.common as common" not in text, str(target)
-        for snippet in forbidden_snippets:
-            assert snippet not in text, str(target)
+        if "from tests.jobs_fetcher_helpers import *" in text:
+            offenders.append(str(target.relative_to(repo_root)))
+    assert not offenders, (
+        "Found retired tests.jobs_fetcher_helpers star imports:\n- " + "\n- ".join(offenders)
+    )
+
+    jobs_static_helper = repo_root / "tests" / "jobs_static" / "_helpers.py"
+    jobs_static_helper_text = jobs_static_helper.read_text(encoding="utf-8")
+    assert "__all__ = [name for name in globals()" not in jobs_static_helper_text
 
 
 def test_jobs_common_migrated_modules_keep_direct_owning_imports(repo_root: Path) -> None:
@@ -252,6 +324,9 @@ def test_jobs_common_migrated_modules_keep_direct_owning_imports(repo_root: Path
     static_adapter = (repo_root / "src" / "jobs" / "adapters" / "static.py").read_text(
         encoding="utf-8"
     )
+    static_scrapy_adapter = (
+        repo_root / "src" / "jobs" / "adapters" / "static_scrapy.py"
+    ).read_text(encoding="utf-8")
     assert (
         "from src.jobs.common.diagnostics import SOURCE_DIAGNOSTICS, set_source_diagnostics"
         in social_adapter
@@ -262,3 +337,4 @@ def test_jobs_common_migrated_modules_keep_direct_owning_imports(repo_root: Path
     )
     assert "registry_entries as common_registry_entries" in registry_module
     assert "from src.jobs.common.diagnostics import set_source_diagnostics" in static_adapter
+    assert "from src.jobs.registry import registry_entries" in static_scrapy_adapter

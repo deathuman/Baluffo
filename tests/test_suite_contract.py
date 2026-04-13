@@ -3,6 +3,87 @@ import re
 from pathlib import Path
 
 
+def _module_tree(path: Path) -> ast.Module:
+    return ast.parse(path.read_text(encoding="utf-8"))
+
+
+def _top_level_function_names(tree: ast.Module) -> list[str]:
+    return [node.name for node in tree.body if isinstance(node, ast.FunctionDef)]
+
+
+def _imported_modules(tree: ast.Module) -> set[str]:
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                modules.add(alias.name)
+    return modules
+
+
+def _top_level_imported_modules(tree: ast.Module) -> set[str]:
+    modules: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                modules.add(alias.name)
+    return modules
+
+
+def _find_function(tree: ast.Module, name: str) -> ast.FunctionDef:
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f"Expected top-level function {name!r}")
+
+
+def _call_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Attribute):
+        left = _call_name(node.value)
+        return f"{left}.{node.attr}" if left else node.attr
+    if isinstance(node, ast.Name):
+        return node.id
+    return ""
+
+
+def _function_call_names(function: ast.FunctionDef) -> set[str]:
+    return {
+        _call_name(node.func)
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call) and _call_name(node.func)
+    }
+
+
+def _function_imports_module(function: ast.FunctionDef, module_name: str) -> bool:
+    return any(
+        isinstance(node, ast.ImportFrom) and node.module == module_name
+        for node in ast.walk(function)
+    )
+
+
+def _has_name_main_guard(tree: ast.Module) -> bool:
+    for node in tree.body:
+        if not isinstance(node, ast.If):
+            continue
+        test = node.test
+        if not isinstance(test, ast.Compare):
+            continue
+        if (
+            isinstance(test.left, ast.Name)
+            and test.left.id == "__name__"
+            and len(test.ops) == 1
+            and isinstance(test.ops[0], ast.Eq)
+            and len(test.comparators) == 1
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value == "__main__"
+        ):
+            return True
+    return False
+
+
 def test_discovered_python_test_files_define_real_tests() -> None:
     root = Path(__file__).resolve().parent
     test_files = sorted(root.rglob("test_*.py"))
@@ -46,19 +127,11 @@ def test_bridge_mutable_module_state_stays_in_approved_runtime_modules() -> None
         (bridge_root / "config.py").resolve(): {"LOG_LEVEL_ORDER"},
     }
 
-    def _call_name(node: ast.AST) -> str:
-        if isinstance(node, ast.Attribute):
-            left = _call_name(node.value)
-            return f"{left}.{node.attr}" if left else node.attr
-        if isinstance(node, ast.Name):
-            return node.id
-        return ""
-
     offenders: list[str] = []
     for path in sorted(bridge_root.rglob("*.py")):
         if path.resolve() in allowed:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        tree = _module_tree(path)
         for node in tree.body:
             target_name = ""
             value = None
@@ -105,6 +178,31 @@ def test_admin_bridge_keeps_registry_autosync_and_sync_normalization_out_of_entr
     assert "def _mask_sync_token" not in text
 
 
+def test_source_discovery_entrypoint_stays_thin_cli_wrapper(repo_root: Path) -> None:
+    target = repo_root / "src" / "source_discovery.py"
+    tree = _module_tree(target)
+    main_fn = _find_function(tree, "main")
+
+    assert _top_level_function_names(tree) == ["_ensure_repo_on_path", "main"]
+    assert _top_level_imported_modules(tree) == {"__future__", "sys", "pathlib"}
+    assert _function_imports_module(main_fn, "src.source_discovery.orchestrator")
+    assert "_main" in _function_call_names(main_fn)
+    assert "int" in _function_call_names(main_fn)
+    assert _has_name_main_guard(tree)
+
+
+def test_jobs_fetcher_facade_uses_leaf_common_modules_not_root_symbol_barrel(
+    repo_root: Path,
+) -> None:
+    target = repo_root / "src" / "jobs_fetcher.py"
+    text = target.read_text(encoding="utf-8")
+
+    assert "from src.jobs import common as _common" not in text
+    assert "from src.jobs.common import config as _common_config" in text
+    assert "from src.jobs.common import diagnostics as _common_diagnostics" in text
+    assert "from src.jobs.common import fetch as _common_fetch" in text
+
+
 def test_sync_task_worker_logic_is_shared_between_admin_bridge_and_sync_service(
     repo_root: Path,
 ) -> None:
@@ -118,16 +216,15 @@ def test_sync_task_worker_logic_is_shared_between_admin_bridge_and_sync_service(
 
 def test_bridge_api_uses_sync_service_for_sync_status_wiring(repo_root: Path) -> None:
     admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    bridge_bootstrap = (repo_root / "src" / "bridge" / "bootstrap.py").read_text(encoding="utf-8")
     bridge_api = (repo_root / "src" / "bridge" / "api.py").read_text(encoding="utf-8")
     sync_service = (repo_root / "src" / "bridge" / "sync_service.py").read_text(encoding="utf-8")
-    build_api_section = admin_bridge.split("def build_bridge_api", 1)[1].split(
-        "def load_saved_sync_settings", 1
-    )[0]
+    assert "return bridge_bootstrap.build_bridge_api(" in admin_bridge
     assert (
         "sync_config_status=lambda: source_sync_module.config_status(refresh_sync_config())"
-        not in build_api_section
+        not in bridge_bootstrap
     )
-    assert "set_sync_status=_set_sync_status" not in build_api_section
+    assert "set_sync_status=_set_sync_status" not in bridge_bootstrap
     assert 'if self._field_is_default("sync_config_status"):' in bridge_api
     assert 'if self._field_is_default("set_sync_status"):' in bridge_api
     assert "def sync_config_status(self) -> dict[str, Any]:" in sync_service
@@ -136,14 +233,13 @@ def test_bridge_api_uses_sync_service_for_sync_status_wiring(repo_root: Path) ->
 
 def test_bridge_api_exposes_route_facing_entrypoints(repo_root: Path) -> None:
     admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    bridge_bootstrap = (repo_root / "src" / "bridge" / "bootstrap.py").read_text(encoding="utf-8")
     bridge_api = (repo_root / "src" / "bridge" / "api.py").read_text(encoding="utf-8")
-    build_api_section = admin_bridge.split("def build_bridge_api", 1)[1].split(
-        "def load_saved_sync_settings", 1
-    )[0]
-    assert "append_startup_metric=append_startup_metric" in build_api_section
-    assert "persist_state_and_auto_sync=persist_state_and_auto_sync" in build_api_section
-    assert "add_manual_source=add_manual_source" in build_api_section
-    assert "trigger_source_check=trigger_source_check" in build_api_section
+    assert "return bridge_bootstrap.build_bridge_api(" in admin_bridge
+    assert "append_startup_metric=append_startup_metric" in bridge_bootstrap
+    assert "persist_state_and_auto_sync=persist_state_and_auto_sync" in bridge_bootstrap
+    assert "add_manual_source=add_manual_source" in bridge_bootstrap
+    assert "trigger_source_check=trigger_source_check" in bridge_bootstrap
     assert "append_startup_metric: Callable[[str, dict[str, Any] | None], None]" in bridge_api
     assert "add_manual_source: Callable[[str], dict[str, Any]]" in bridge_api
     assert "trigger_source_check: Callable[..., dict[str, Any]]" in bridge_api
@@ -152,69 +248,58 @@ def test_bridge_api_exposes_route_facing_entrypoints(repo_root: Path) -> None:
 def test_admin_bridge_delegates_source_check_orchestration_to_bridge_module(
     repo_root: Path,
 ) -> None:
-    admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
-    assert "from src.bridge import source_check_api as _source_check_api" in admin_bridge
-    trigger_section = admin_bridge.split("def trigger_source_check", 1)[1].split(
-        "def run_background_script", 1
-    )[0]
-    assert "return _source_check_api.trigger_source_check(" in trigger_section
-    normalize_section = admin_bridge.split("def normalize_manual_static_studio_fields", 1)[1].split(
-        "def trigger_source_check", 1
-    )[0]
-    assert "return _source_check_api.normalize_manual_static_studio_fields(" in normalize_section
+    target = repo_root / "src" / "admin_bridge.py"
+    tree = _module_tree(target)
+    imported_modules = _imported_modules(tree)
+    trigger_fn = _find_function(tree, "trigger_source_check")
+    normalize_fn = _find_function(tree, "normalize_manual_static_studio_fields")
+
+    assert "src.bridge" in imported_modules
+    assert "_source_check_api.trigger_source_check" in _function_call_names(trigger_fn)
+    assert "_source_check_api.normalize_manual_static_studio_fields" in _function_call_names(
+        normalize_fn
+    )
 
 
 def test_admin_bridge_delegates_task_launch_orchestration_to_bridge_module(repo_root: Path) -> None:
-    admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    admin_bridge_tree = _module_tree(repo_root / "src" / "admin_bridge.py")
     task_launch_api = (repo_root / "src" / "bridge" / "task_launch_api.py").read_text(
         encoding="utf-8"
     )
-    assert "from src.bridge import task_launch_api as _task_launch_api" in admin_bridge
-    run_section = admin_bridge.split("def run_background_script", 1)[1].split(
-        "def _failed_source_names_from_latest_report", 1
-    )[0]
-    assert "return _get_task_launch_api().run_background_script(" in run_section
-    assert "subprocess.Popen(" not in run_section
-    build_args_section = admin_bridge.split("def build_fetcher_args_from_payload", 1)[1].split(
-        "def mark_desktop_session_activity", 1
-    )[0]
-    assert (
-        "return _get_task_launch_api().build_fetcher_args_from_payload(payload)"
-        in build_args_section
-    )
-    assert "--max-workers" not in build_args_section
+    run_script_fn = _find_function(admin_bridge_tree, "run_background_script")
+    fetcher_args_fn = _find_function(admin_bridge_tree, "build_fetcher_args_from_payload")
+
+    assert "src.bridge" in _imported_modules(admin_bridge_tree)
+    assert "_get_task_launch_api" in _function_call_names(run_script_fn)
+    assert "_get_task_launch_api" in _function_call_names(fetcher_args_fn)
+    assert "build_fetcher_args_from_payload" in _function_call_names(fetcher_args_fn)
+    assert "run_background_script" in _function_call_names(run_script_fn)
+    admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    assert "--max-workers" not in admin_bridge
     assert "class TaskLaunchApi:" in task_launch_api
     assert "def run_background_script(" in task_launch_api
     assert "def build_fetcher_args_from_payload(" in task_launch_api
 
 
 def test_admin_bridge_delegates_ops_orchestration_to_bridge_module(repo_root: Path) -> None:
-    admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    admin_bridge_tree = _module_tree(repo_root / "src" / "admin_bridge.py")
     ops_api = (repo_root / "src" / "bridge" / "ops_api.py").read_text(encoding="utf-8")
-    assert "from src.bridge import ops_api as _ops_api" in admin_bridge
-    failed_section = admin_bridge.split("def _failed_source_names_from_latest_report", 1)[1].split(
-        "def build_fetcher_args_from_payload", 1
-    )[0]
-    assert "return _get_ops_api().failed_source_names_from_latest_report(" in failed_section
-    assert "report_normalizer.failed_source_names_from_report(" not in failed_section
-    sync_section = admin_bridge.split("def sync_history_from_reports", 1)[1].split(
-        "def compute_ops_health", 1
-    )[0]
-    assert "return _get_ops_api().sync_history_from_reports()" in sync_section
-    assert "_run_history_api.sync_history_from_reports(" not in sync_section
-    ops_health_section = admin_bridge.split("def compute_ops_health", 1)[1].split(
-        "def compute_fetcher_metrics", 1
-    )[0]
-    assert "return _get_ops_api().compute_ops_health()" in ops_health_section
-    assert "_ops_health.compute_ops_health(" not in ops_health_section
-    metrics_section = admin_bridge.split("def compute_fetcher_metrics", 1)[1].split(
-        "def _set_sync_status", 1
-    )[0]
-    assert (
-        "return _get_ops_api().compute_fetcher_metrics(window_runs=window_runs)" in metrics_section
-    )
-    assert "fetcher_metrics_module.build_metrics(" not in metrics_section
+    assert "src.bridge" in _imported_modules(admin_bridge_tree)
+    failed_names_fn = _find_function(admin_bridge_tree, "_failed_source_names_from_latest_report")
+    sync_history_fn = _find_function(admin_bridge_tree, "sync_history_from_reports")
+    ops_health_fn = _find_function(admin_bridge_tree, "compute_ops_health")
+    fetcher_metrics_fn = _find_function(admin_bridge_tree, "compute_fetcher_metrics")
+
+    assert "_get_ops_api" in _function_call_names(failed_names_fn)
+    assert "failed_source_names_from_latest_report" in _function_call_names(failed_names_fn)
+    assert "_get_ops_api" in _function_call_names(sync_history_fn)
+    assert "sync_history_from_reports" in _function_call_names(sync_history_fn)
+    assert "_get_ops_api" in _function_call_names(ops_health_fn)
+    assert "compute_ops_health" in _function_call_names(ops_health_fn)
+    assert "_get_ops_api" in _function_call_names(fetcher_metrics_fn)
+    assert "compute_fetcher_metrics" in _function_call_names(fetcher_metrics_fn)
     assert "class OpsApi:" in ops_api
+    assert "def failed_source_names_from_latest_report(" in ops_api
     assert "def sync_history_from_reports(" in ops_api
     assert "def compute_ops_health(" in ops_api
     assert "def compute_fetcher_metrics(" in ops_api

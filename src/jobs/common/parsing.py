@@ -32,7 +32,7 @@ def parse_remote_ok_payload(payload: Any, *, looks_like_game_job) -> list[RawJob
     """
     Parse RemoteOK API responses into RawJob rows.
 
-    `looks_like_game_job` is injected to avoid importing the `src.jobs.common` aggregator
+    `looks_like_game_job` is injected to avoid reintroducing a root-package symbol barrel
     (and to prevent adapter cycles).
     """
 

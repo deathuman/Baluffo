@@ -55,7 +55,7 @@ def test_attachment_round_trip_and_admin_overview() -> None:
             "data:text/plain;base64,aGVsbG8=",
         )
         body, content_type, filename = store.get_attachment_blob(uid, job_key, attachment_id)
-        overview = store.get_admin_overview("1234")
+        overview = store.get_admin_overview()
 
         assert body == b"hello"
         assert content_type == "text/plain"

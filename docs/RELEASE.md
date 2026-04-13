@@ -22,7 +22,7 @@ This policy applies to both distribution channels.
 Every release must track these versions explicitly:
 
 - `app_version`: end-user release version, using SemVer (`MAJOR.MINOR.PATCH`)
-- `updater_version`: capability version of `scripts/ship/update_manager.py`
+- `updater_version`: capability version of `src/ship/update_manager.py`
 - `data_schema_version`: version of persisted data expectations and migrations
 - `manifest_schema_version`: version of the update manifest contract
 - The default `app_version` used by local build/package workflows is defined in `src/app_version.py`.
@@ -181,7 +181,7 @@ Before any release:
 
 1. Record `app_version`, `updater_version`, `data_schema_version`, and `manifest_schema_version`.
 2. Run required validation at minimum:
-   - `npm run test:py`
+   - `npm run test:py:extended`
    - `npm run test:frontend:unit`
 3. Validate any declared migrations and rollback behavior.
 4. Rehearse the release on a staging machine before publish.

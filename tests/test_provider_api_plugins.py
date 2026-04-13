@@ -7,8 +7,11 @@ from typing import Any
 
 import pytest
 
-from src.jobs import common
-from src.jobs.adapters import _runtime, provider_api
+from src.jobs.adapters import provider_api
+from src.jobs.adapters.plugins.provider_api import greenhouse_runner, teamtailor_runner
+from src.jobs.adapters.plugins.provider_api import html_board as html_board_runner
+from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_runner
+from src.jobs.common.config import GREENHOUSE_JOBS_URL_TEMPLATE
 from tests.jobs_fetcher_helpers import _fixture
 
 
@@ -96,7 +99,20 @@ class _FakeDeps:
 @pytest.fixture()
 def fake_deps(monkeypatch: pytest.MonkeyPatch) -> _FakeDeps:
     deps = _FakeDeps()
-    monkeypatch.setattr(_runtime, "facade", lambda: deps)
+    for module in (greenhouse_runner, html_board_runner, json_feed_runner, teamtailor_runner):
+        monkeypatch.setattr(module, "registry_entries", deps.registry_entries)
+        monkeypatch.setattr(module, "fetch_with_retries", deps.fetch_with_retries)
+        monkeypatch.setattr(module, "set_source_diagnostics", deps.set_source_diagnostics)
+    monkeypatch.setattr(
+        teamtailor_runner,
+        "parse_teamtailor_listing_links",
+        deps.parse_teamtailor_listing_links,
+    )
+    monkeypatch.setattr(
+        teamtailor_runner,
+        "parse_jobpostings_from_html",
+        deps.parse_jobpostings_from_html,
+    )
     return deps
 
 
@@ -133,7 +149,7 @@ DISPATCH_CASES = [
                     [{"slug": "studio-a", "studio": "Studio A", "name": "Studio A"}],
                 ),
                 deps.set_response(
-                    common.GREENHOUSE_JOBS_URL_TEMPLATE.format(slug="studio-a"),
+                    GREENHOUSE_JOBS_URL_TEMPLATE.format(slug="studio-a"),
                     {
                         "jobs": [
                             {

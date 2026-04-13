@@ -1,9 +1,9 @@
-import { AdminConfig } from "./admin-config.js";
-import { APPLICATION_STATUSES } from "./frontend/local-data/constants.js";
-import { requestProfileName } from "./frontend/local-data/profile-name-dialog.js";
-import { createLocalDataRuntime } from "./frontend/local-data/runtime-contract.js";
-import { buildAttachmentPath, generateJobKey } from "./frontend/local-data/job-utils.js";
-import { canTransitionPhase, normalizeApplicationStatus } from "./frontend/local-data/phase.js";
+import { AdminConfig } from "../config/admin-config.js";
+import { APPLICATION_STATUSES } from "../../local-data/constants.js";
+import { requestProfileName } from "../../local-data/profile-name-dialog.js";
+import { createLocalDataRuntime } from "../../local-data/runtime-contract.js";
+import { buildAttachmentPath, generateJobKey } from "../../local-data/job-utils.js";
+import { canTransitionPhase, normalizeApplicationStatus } from "../../local-data/phase.js";
 
 const BASE_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/desktop-local-data`;
 const AUTH_LISTENERS = new Set();

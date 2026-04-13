@@ -1,9 +1,19 @@
-# ruff: noqa: F403,F405
+import json
 import threading
 import time
+from pathlib import Path
+from unittest import mock
+
+import pytest
 
 from src.jobs.pipeline_runtime import PipelineTaskRuntime, make_task_state_writer
-from tests.jobs_fetcher_helpers import *
+from tests.jobs_fetcher_helpers import (
+    _fixture,
+    _fixture_json,
+    jf,
+    patch_jobs_fetcher_aliases,
+    workspace_tmpdir,
+)
 
 patch_jobs_fetcher_aliases()
 
@@ -435,7 +445,37 @@ def test_pipeline_output_contract_matches_frontend() -> None:
         assert isinstance(row["focusScore"], int)
 
 
-def test_pipeline_default_sources_exclude_wellfound_and_include_guerrilla() -> None:
+def test_pipeline_default_source_loader_contract_excludes_wellfound_and_keeps_core_families() -> (
+    None
+):
+    loader_names = [name for name, _ in jf.default_source_loaders()]
+
+    assert "wellfound" not in loader_names
+    assert "google_sheets" in loader_names
+    assert "google_sheets_1er2oaxo" in loader_names
+    assert "google_sheets_1mvqhxat" in loader_names
+    assert "remote_ok" in loader_names
+    assert "gamesindustry" in loader_names
+    assert "gamejobs" in loader_names
+    assert "workwithindies" in loader_names
+    assert "greenhouse_boards" in loader_names
+    assert "teamtailor_sources" in loader_names
+    assert "lever_sources" in loader_names
+    assert "smartrecruiters_sources" in loader_names
+    assert "workable_sources" in loader_names
+    assert "recruitee_sources" in loader_names
+    assert "pinpoint_sources" in loader_names
+    assert "ashby_sources" in loader_names
+    assert "breezy_sources" in loader_names
+    assert "jazzhr_sources" in loader_names
+    assert "personio_sources" in loader_names
+    assert "scrapy_static_sources" in loader_names
+    assert any(name.startswith("static_source::") for name in loader_names)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_pipeline_default_source_mix_smoke_excludes_wellfound_and_includes_guerrilla() -> None:
     google_csv = _fixture("google_sheets.csv")
     remote_json = _fixture("remoteok.json")
     gamesindustry_html = _fixture("gamesindustry_jobs.html")
@@ -509,7 +549,21 @@ def test_pipeline_default_sources_exclude_wellfound_and_include_guerrilla() -> N
             return littlechicken_detail
         raise RuntimeError(f"Unhandled URL in fake fetch: {url}")
 
-    with workspace_tmpdir("jobs-fetcher") as tmp:
+    class _FakeRedirectResolver:
+        def resolve(self, url: str) -> str:
+            return url
+
+        def seed_cache(self, cache: dict[str, str]) -> None:
+            _ = cache
+
+        def close(self) -> None:
+            return None
+
+    with (
+        workspace_tmpdir("jobs-fetcher") as tmp,
+        mock.patch.object(jf, "build_redirect_resolver", return_value=_FakeRedirectResolver()),
+        mock.patch("src.jobs.adapters.static.run_scrapy_static_source", return_value=[]),
+    ):
         report = jf.run_pipeline(
             output_dir=Path(tmp),
             fetch_text=fake_fetch,
@@ -927,31 +981,30 @@ def test_provider_family_json_sources_refresh_only_stale_boards() -> None:
     calls = []
     captured = {}
 
-    class _Deps:
-        def registry_entries(self, adapter: str):
-            assert adapter == "greenhouse"
-            return [
-                {
-                    "name": "Fresh Board",
-                    "studio": "Fresh Board",
-                    "endpoint": "https://example.com/fresh.json",
-                },
-                {
-                    "name": "Stale Board",
-                    "studio": "Stale Board",
-                    "endpoint": "https://example.com/stale.json",
-                },
-            ]
+    def _registry_entries(adapter: str):
+        assert adapter == "greenhouse"
+        return [
+            {
+                "name": "Fresh Board",
+                "studio": "Fresh Board",
+                "endpoint": "https://example.com/fresh.json",
+            },
+            {
+                "name": "Stale Board",
+                "studio": "Stale Board",
+                "endpoint": "https://example.com/stale.json",
+            },
+        ]
 
-        def fetch_with_retries(
-            self, url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
-        ) -> str:
-            calls.append(url)
-            return json.dumps({"jobs": [{"id": url}]})
+    def _fetch_with_retries(
+        url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
+    ) -> str:
+        calls.append(url)
+        return json.dumps({"jobs": [{"id": url}]})
 
-        def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
-            captured["source_name"] = source_name
-            captured["kwargs"] = kwargs
+    def _set_source_diagnostics(source_name: str, **kwargs) -> None:
+        captured["source_name"] = source_name
+        captured["kwargs"] = kwargs
 
     now = jf.datetime.now(jf.timezone.utc)
     state_rows = {
@@ -973,7 +1026,15 @@ def test_provider_family_json_sources_refresh_only_stale_boards() -> None:
         },
     }
 
-    with mock.patch.object(json_feed_module.runtime_deps, "facade", return_value=_Deps()):
+    with (
+        mock.patch.object(json_feed_module, "registry_entries", side_effect=_registry_entries),
+        mock.patch.object(json_feed_module, "fetch_with_retries", side_effect=_fetch_with_retries),
+        mock.patch.object(
+            json_feed_module,
+            "set_source_diagnostics",
+            side_effect=_set_source_diagnostics,
+        ),
+    ):
         rows = json_feed_module._run_json_feed_sources(
             adapter_name="greenhouse",
             registry_adapter="greenhouse",
@@ -1018,25 +1079,24 @@ def test_provider_family_revalidate_only_board_skips_fetch_on_not_modified() -> 
     calls = []
     captured = {}
 
-    class _Deps:
-        def registry_entries(self, adapter: str):
-            assert adapter == "lever"
-            return [
-                {
-                    "name": "Revalidate Board",
-                    "studio": "Revalidate Board",
-                    "endpoint": "https://example.com/revalidate.json",
-                }
-            ]
+    def _registry_entries(adapter: str):
+        assert adapter == "lever"
+        return [
+            {
+                "name": "Revalidate Board",
+                "studio": "Revalidate Board",
+                "endpoint": "https://example.com/revalidate.json",
+            }
+        ]
 
-        def fetch_with_retries(
-            self, url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
-        ) -> str:
-            calls.append(url)
-            return "[]"
+    def _fetch_with_retries(
+        url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
+    ) -> str:
+        calls.append(url)
+        return "[]"
 
-        def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
-            captured["kwargs"] = kwargs
+    def _set_source_diagnostics(source_name: str, **kwargs) -> None:
+        captured["kwargs"] = kwargs
 
     now = jf.datetime.now(jf.timezone.utc)
     state_rows = {
@@ -1051,7 +1111,13 @@ def test_provider_family_revalidate_only_board_skips_fetch_on_not_modified() -> 
     }
 
     with (
-        mock.patch.object(json_feed_module.runtime_deps, "facade", return_value=_Deps()),
+        mock.patch.object(json_feed_module, "registry_entries", side_effect=_registry_entries),
+        mock.patch.object(json_feed_module, "fetch_with_retries", side_effect=_fetch_with_retries),
+        mock.patch.object(
+            json_feed_module,
+            "set_source_diagnostics",
+            side_effect=_set_source_diagnostics,
+        ),
         mock.patch.object(
             json_feed_module,
             "conditional_revalidate_url",
@@ -1094,27 +1160,26 @@ def test_teamtailor_sources_skip_fresh_listing_without_fetching() -> None:
     calls = []
     captured = {}
 
-    class _Deps:
-        def registry_entries(self, adapter: str):
-            assert adapter == "teamtailor"
-            return [
-                {
-                    "name": "Paradox Teamtailor",
-                    "studio": "Paradox Interactive",
-                    "listing_url": "https://career.paradoxplaza.com/jobs",
-                    "base_url": "https://career.paradoxplaza.com",
-                    "company": "Paradox Interactive",
-                }
-            ]
+    def _registry_entries(adapter: str):
+        assert adapter == "teamtailor"
+        return [
+            {
+                "name": "Paradox Teamtailor",
+                "studio": "Paradox Interactive",
+                "listing_url": "https://career.paradoxplaza.com/jobs",
+                "base_url": "https://career.paradoxplaza.com",
+                "company": "Paradox Interactive",
+            }
+        ]
 
-        def fetch_with_retries(
-            self, url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
-        ) -> str:
-            calls.append(url)
-            return ""
+    def _fetch_with_retries(
+        url: str, fetch_text, timeout_s: int, retries: int, backoff_s: float
+    ) -> str:
+        calls.append(url)
+        return ""
 
-        def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
-            captured["kwargs"] = kwargs
+    def _set_source_diagnostics(source_name: str, **kwargs) -> None:
+        captured["kwargs"] = kwargs
 
     now = jf.datetime.now(jf.timezone.utc)
     state_rows = {
@@ -1129,7 +1194,15 @@ def test_teamtailor_sources_skip_fresh_listing_without_fetching() -> None:
         }
     }
 
-    with mock.patch.object(teamtailor_module.runtime_deps, "facade", return_value=_Deps()):
+    with (
+        mock.patch.object(teamtailor_module, "registry_entries", side_effect=_registry_entries),
+        mock.patch.object(teamtailor_module, "fetch_with_retries", side_effect=_fetch_with_retries),
+        mock.patch.object(
+            teamtailor_module,
+            "set_source_diagnostics",
+            side_effect=_set_source_diagnostics,
+        ),
+    ):
         rows = teamtailor_module._run_teamtailor_sources(
             fetch_text=lambda url, timeout: "",
             timeout_s=5,

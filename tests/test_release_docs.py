@@ -32,6 +32,7 @@ def test_release_docs_cover_the_public_0_1_0_line(repo_root: Path) -> None:
     assert "v<app_version>" in release_text
     assert "single release-note source of truth" in release_text
     assert "npm run test:frontend:packaged:jobs-pipeline" in release_text
+    assert "npm run test:py:extended" in release_text
     assert "python scripts/extract_release_notes.py" in release_text
     assert f"## [{app_version}]" in changelog_text
     assert "Shared dead-listing gate for static and generic careers extraction" in top_release
@@ -103,6 +104,35 @@ def test_ai_bootstrap_sequence_is_single_path(repo_root: Path) -> None:
     assert "AGENTS.md" in read_order
 
 
+def test_ai_docs_classify_compatibility_surfaces(repo_root: Path) -> None:
+    index_text = (repo_root / "docs" / "INDEX.md").read_text(encoding="utf-8")
+    guide_text = (repo_root / "docs" / "AI_ASSISTANT_GUIDE.md").read_text(encoding="utf-8")
+    map_text = (repo_root / "docs" / "architecture-ai-map.md").read_text(encoding="utf-8")
+    inventory_text = (repo_root / "docs" / "adapter-plugin-inventory.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "## Compatibility Surfaces" in index_text
+    assert "stable thin entrypoint for bridge startup and compatibility wrappers" in index_text
+    assert "stable thin CLI entrypoint delegating to `src/source_discovery/*`" in index_text
+    assert "stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`" in index_text
+    assert "permanent thin sync integration surface" in index_text
+    assert "`src/jobs/common/__init__.py` is a package marker only" in guide_text
+    assert "_runtime.facade()` is retired" in guide_text
+    assert "stable thin CLI entrypoint" in map_text
+    assert "stable thin CLI facade" in map_text
+    assert "package marker only" in map_text
+    assert "transitional local-data boundary" in map_text
+    assert (
+        "export the parser through `src/jobs/parsers.py` and `src/jobs_fetcher.py`"
+        not in inventory_text
+    )
+    assert (
+        "only touch `src/jobs_fetcher.py` if a legacy CLI compatibility re-export must stay available"
+        in inventory_text
+    )
+
+
 def test_ai_docs_use_exact_frontend_syntax_example(repo_root: Path) -> None:
     ai_text = (repo_root / "docs" / "AI_ASSISTANT_GUIDE.md").read_text(encoding="utf-8")
     map_text = (repo_root / "docs" / "architecture-ai-map.md").read_text(encoding="utf-8")
@@ -155,6 +185,8 @@ def test_testing_doc_owns_verification_matrix(repo_root: Path) -> None:
     testing_text = (repo_root / "docs" / "testing.md").read_text(encoding="utf-8")
 
     for command in (
+        "npm run test:py",
+        "npm run test:py:extended",
         "npm run build:ship-bundle",
         "npm run build:portable-exe",
         "python scripts/build_ship_bundle.py --bundle-version <version>",
@@ -165,4 +197,43 @@ def test_testing_doc_owns_verification_matrix(repo_root: Path) -> None:
         assert command in testing_text
 
     assert "This document owns the verification matrix for Baluffo." in testing_text
+    assert "Real shard files must own real tests." in testing_text
+    assert "delete or merge any older test that already protects the same invariant" in testing_text
     assert "For the AI bootstrap and task-routing summary" in testing_text
+    assert "admin_bridge_entrypoint_root" in testing_text
+    assert "admin_bridge_ops_root" not in testing_text
+    assert "tests/source_discovery/" in testing_text
+
+
+def test_active_docs_avoid_stale_runtime_and_test_guidance(repo_root: Path) -> None:
+    local_setup_text = (repo_root / "docs" / "LOCAL_SETUP.md").read_text(encoding="utf-8")
+    admin_api_text = (repo_root / "docs" / "admin-bridge-api.md").read_text(encoding="utf-8")
+    game_sheet_text = (repo_root / "docs" / "game-studios-sheet.md").read_text(encoding="utf-8")
+    release_text = (repo_root / "docs" / "RELEASE.md").read_text(encoding="utf-8")
+    testing_text = (repo_root / "docs" / "testing.md").read_text(encoding="utf-8")
+    index_text = (repo_root / "docs" / "INDEX.md").read_text(encoding="utf-8")
+    follow_up_text = (repo_root / "docs" / "quality-follow-up.md").read_text(encoding="utf-8")
+
+    assert "configured local admin PIN" not in local_setup_text
+    assert "1234" not in local_setup_text
+    assert "Admin overview (requires PIN)" not in admin_api_text
+    assert "Wipe account (requires PIN)" not in admin_api_text
+
+    for text in (local_setup_text, admin_api_text):
+        assert "requires PIN" not in text
+
+    for text in (local_setup_text, game_sheet_text, testing_text, follow_up_text, index_text):
+        assert "tests/test_source_discovery.py" not in text
+
+    assert "scripts/ship/update_manager.py" not in release_text
+    assert "src/ship/update_manager.py" in release_text
+    assert "`npm run test:py` (developer lane)" in local_setup_text
+    assert "Full suite / release lane" in testing_text
+
+
+def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
+    index_text = (repo_root / "docs" / "INDEX.md").read_text(encoding="utf-8")
+
+    assert "historical-debt-roadmap.md" not in index_text
+    assert "quality-improvement-roadmap.md" not in index_text
+    assert "quality-follow-up.md" in index_text

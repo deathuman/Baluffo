@@ -69,7 +69,7 @@ test("assertLocalDataRuntime rejects missing required methods", () => {
 
 test("browser local-data client conforms to shared runtime contract", async () => {
   setupBrowserGlobals();
-  const { initBrowserLocalDataClient } = await importFresh("../../../local-data-client.js");
+  const { initBrowserLocalDataClient } = await importFresh("../../../frontend/shared/local-data/browser-client.js");
   const api = initBrowserLocalDataClient();
 
   assert.equal(assertLocalDataRuntime(api, "browser runtime"), api);
@@ -85,7 +85,7 @@ test("browser local-data client conforms to shared runtime contract", async () =
 
 test("desktop local-data client conforms to shared runtime contract", async () => {
   setupDesktopGlobals();
-  const { initDesktopLocalDataClient } = await importFresh("../../../desktop-local-data-client.js");
+  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
   const api = initDesktopLocalDataClient();
 
   assert.equal(assertLocalDataRuntime(api, "desktop runtime"), api);

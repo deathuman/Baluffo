@@ -1,9 +1,18 @@
-# ruff: noqa: F403,F405
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from unittest import mock
 
-from tests.jobs_fetcher_helpers import *
+import pytest
+
+from tests.jobs_fetcher_helpers import (
+    AdapterValidationError,
+    _fixture,
+    jf,
+    jobs_registry,
+    patch_jobs_fetcher_aliases,
+)
 
 patch_jobs_fetcher_aliases()
 
@@ -760,7 +769,12 @@ def test_run_ashby_sources_source_falls_back_to_careers_page_when_board_is_stale
         def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
             return None
 
-    with mock.patch.object(html_board_module.runtime_deps, "facade", return_value=_Deps()):
+    deps = _Deps()
+    with (
+        mock.patch.object(html_board_module, "registry_entries", deps.registry_entries),
+        mock.patch.object(html_board_module, "fetch_with_retries", deps.fetch_with_retries),
+        mock.patch.object(html_board_module, "set_source_diagnostics", deps.set_source_diagnostics),
+    ):
 
         def fake_fetch(url: str, _: int) -> str:
             if url == "https://jobs.ashbyhq.com/thatgamecompany/jobs":
@@ -808,7 +822,12 @@ def test_run_ashby_sources_source_normalizes_stale_jobs_url_to_board_root() -> N
         def set_source_diagnostics(self, source_name: str, **kwargs) -> None:
             return None
 
-    with mock.patch.object(html_board_module.runtime_deps, "facade", return_value=_Deps()):
+    deps = _Deps()
+    with (
+        mock.patch.object(html_board_module, "registry_entries", deps.registry_entries),
+        mock.patch.object(html_board_module, "fetch_with_retries", deps.fetch_with_retries),
+        mock.patch.object(html_board_module, "set_source_diagnostics", deps.set_source_diagnostics),
+    ):
 
         def fake_fetch(url: str, _: int) -> str:
             # The code tries multiple candidate URLs - first the original, then normalized
@@ -1146,17 +1165,20 @@ def test_run_greenhouse_boards_source_with_fixture() -> None:
     ]
 
     try:
+        with mock.patch.object(
+            jobs_registry, "STUDIO_SOURCE_REGISTRY", list(jf.STUDIO_SOURCE_REGISTRY)
+        ):
 
-        def fake_fetch(url: str, _: int) -> str:
-            assert "boards-api.greenhouse.io" in url
-            assert "guerrilla-games" in url
-            return payload
+            def fake_fetch(url: str, _: int) -> str:
+                assert "boards-api.greenhouse.io" in url
+                assert "guerrilla-games" in url
+                return payload
 
-        rows = jf.run_greenhouse_boards_source(
-            fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0
-        )
-        assert len(rows) == 2
-        assert any("guerrilla-games/jobs/" in row["jobLink"] for row in rows)
+            rows = jf.run_greenhouse_boards_source(
+                fetch_text=fake_fetch, timeout_s=5, retries=0, backoff_s=0
+            )
+            assert len(rows) == 2
+            assert any("guerrilla-games/jobs/" in row["jobLink"] for row in rows)
     finally:
         jf.STUDIO_SOURCE_REGISTRY = previous
 

@@ -14,8 +14,8 @@ done
 if [ "$need_gate" -eq 1 ]; then
     root="$(git rev-parse --show-toplevel)"
     cd "$root"
-    echo "Running CI-parity pre-commit gate before pushing to main..."
+    echo "Running release-parity gates before pushing to main..."
     npm run lint:precommit:ci
-    npm run test:py
+    npm run test:py:extended
     npm run test:smoke
 fi

@@ -12,7 +12,7 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
 
     for expected_command in (
         "npm run test:frontend:unit",
-        "npm run test:py",
+        "npm run test:py:extended",
         "npm run test:frontend:packaged",
         "npm run test:frontend:packaged:jobs-pipeline",
         "python scripts/build_ship_bundle.py",
@@ -36,20 +36,7 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
         )
 
 
-def test_lint_workflow_uses_full_precommit_entrypoint() -> None:
-    root = Path(__file__).resolve().parents[1]
-    workflow_path = root / ".github" / "workflows" / "lint.yml"
-    workflow_text = workflow_path.read_text(encoding="utf-8")
-
-    assert "npm run lint:precommit:ci" in workflow_text, (
-        f"{workflow_path.name} should use the CI pre-commit npm entrypoint."
-    )
-    assert "pre-commit run --all-files" not in workflow_text, (
-        f"{workflow_path.name} should not embed the raw full-repo pre-commit command."
-    )
-
-
-def test_lint_workflow_uses_split_precommit_entrypoints() -> None:
+def test_lint_workflow_uses_canonical_precommit_entrypoints() -> None:
     root = Path(__file__).resolve().parents[1]
     workflow_path = root / ".github" / "workflows" / "lint.yml"
     workflow_text = workflow_path.read_text(encoding="utf-8")
@@ -58,6 +45,9 @@ def test_lint_workflow_uses_split_precommit_entrypoints() -> None:
 
     assert "lint:precommit:ci" in workflow_text, (
         f"{workflow_path.name} should run the CI pre-commit entrypoint."
+    )
+    assert "pre-commit run --all-files" not in workflow_text, (
+        f"{workflow_path.name} should not embed the raw full-repo pre-commit command."
     )
     assert "--exclude-root data" in package_text, (
         f"{package_path.name} should route the CI pre-commit entrypoint through the data exclusion."
@@ -69,7 +59,11 @@ def test_pre_push_hook_runs_python_and_smoke_gates() -> None:
     hook_path = root / ".githooks" / "pre-push"
     hook_text = hook_path.read_text(encoding="utf-8")
 
-    for expected_command in ("npm run lint:precommit:ci", "npm run test:py", "npm run test:smoke"):
+    for expected_command in (
+        "npm run lint:precommit:ci",
+        "npm run test:py:extended",
+        "npm run test:smoke",
+    ):
         assert expected_command in hook_text, (
             f"{hook_path.name} should invoke `{expected_command}` before pushing to main."
         )

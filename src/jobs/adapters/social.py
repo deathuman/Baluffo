@@ -7,10 +7,9 @@ import os
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote, urlparse
-from urllib.request import Request
+from urllib.request import Request, urlopen
 
 from src.exceptions import AdapterValidationError
-from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.adapters import social_parsers as _social_parsers
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.social.register import ensure_registered as ensure_social_plugins
@@ -27,9 +26,8 @@ from ..common import config as common_config
 def _request_json_with_headers(
     url: str, *, timeout_s: int, headers: dict[str, str] | None = None
 ) -> dict[str, Any]:
-    deps = runtime_deps.facade()
     req = Request(url=url, headers=headers or {})
-    with deps.urlopen(req, timeout=timeout_s) as resp:
+    with urlopen(req, timeout=timeout_s) as resp:
         raw = resp.read().decode(resp.headers.get_content_charset() or "utf-8", errors="replace")
         parsed = json.loads(raw) if raw else {}
         return parsed if isinstance(parsed, dict) else {}

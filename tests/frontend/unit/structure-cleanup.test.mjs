@@ -28,6 +28,21 @@ function countLines(relPath) {
   return fs.readFileSync(repoPath(relPath), "utf8").split(/\r?\n/).length;
 }
 
+function listJsFiles(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const absolute = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...listJsFiles(absolute));
+      continue;
+    }
+    if (entry.isFile() && entry.name.endsWith(".js")) {
+      out.push(absolute);
+    }
+  }
+  return out;
+}
+
 test("cleanup structure: page indexes boot direct from sibling app modules", () => {
   const checks = [
     path.join("frontend", "jobs", "index.js"),
@@ -111,7 +126,7 @@ test("cleanup structure: app modules import only canonical local layers", () => 
 });
 
 test("cleanup structure: app runtime modules import only canonical layers and local app helpers", () => {
-  const runtimeLocalPattern = /^(\.\.\/(actions|domain|data-source|render|services|state-sync\/index)\.js|\.\/[A-Za-z0-9-]+\.js|\.\/runtime\/[A-Za-z0-9-]+\.js)$/;
+  const runtimeLocalPattern = /^(\.\.\/(actions|domain|data-source|render|services|state|parsing-utils|state-sync\/index)\.js|\.\/[A-Za-z0-9-]+\.js|\.\/runtime\/[A-Za-z0-9-]+\.js)$/;
   const sharedPattern = /^(\.\.\/shared\/|(\.\.\/){2,3}|\/)/;
   const slices = ["jobs", "saved", "admin"];
 
@@ -205,6 +220,37 @@ test("cleanup structure: non-app modules never import slice app entry", () => {
         "./app.js",
         `Disallowed dependency drift: ${rel} must not import app.js`
       );
+    }
+  }
+});
+
+test("cleanup structure: page slices reach local-data only through slice services", () => {
+  const slices = ["jobs", "saved", "admin"];
+  const allowedImport = "../local-data/services.js";
+
+  for (const slice of slices) {
+    const serviceRel = path.join("frontend", slice, "services.js");
+    const serviceImports = readImports(serviceRel);
+    assert.equal(
+      serviceImports.includes(allowedImport),
+      true,
+      `Expected frontend/${slice}/services.js to own the local-data boundary`
+    );
+
+    const sliceRoot = repoPath("frontend", slice);
+    for (const absolute of listJsFiles(sliceRoot)) {
+      const rel = path.relative(ROOT, absolute);
+      if (rel === serviceRel) {
+        continue;
+      }
+      const imports = readImports(rel);
+      for (const specifier of imports) {
+        assert.equal(
+          specifier.includes("local-data/services.js"),
+          false,
+          `Only slice services.js may import local-data/services.js: ${rel} -> ${specifier}`
+        );
+      }
     }
   }
 });

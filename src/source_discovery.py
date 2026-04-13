@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""CLI entrypoint for source discovery.
+"""Stable thin CLI entrypoint for source discovery.
 
-All implementation lives in the `src.source_discovery` package.
+All discovery implementation lives in `src.source_discovery.*`.
 """
 
 from __future__ import annotations

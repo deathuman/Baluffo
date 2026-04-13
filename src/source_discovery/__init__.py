@@ -37,12 +37,8 @@ from .config import (  # noqa: F401
 
 
 def load_discovery_config():
-    """Load discovery config; uses this module's DISCOVERY_CONFIG_PATH so tests can override it."""
-    import sys
-
-    pkg = sys.modules[__name__]
-    path = getattr(pkg, "DISCOVERY_CONFIG_PATH", _config.DISCOVERY_CONFIG_PATH)
-    return _config.load_discovery_config(path)
+    """Load discovery config through the owning config module."""
+    return _config.load_discovery_config(_config.DISCOVERY_CONFIG_PATH)
 
 
 from .provider_patterns import build_pattern_candidates as _build_pattern_candidates
@@ -54,9 +50,9 @@ from .sheet_directory import (  # noqa: F401
 
 
 def build_pattern_candidates(studio_seeds=None):
-    """Build pattern candidates; uses STUDIO_SEEDS when studio_seeds is not provided."""
+    """Build pattern candidates using the owning config module defaults."""
     if studio_seeds is None:
-        studio_seeds = STUDIO_SEEDS
+        studio_seeds = _config.STUDIO_SEEDS
     return _build_pattern_candidates(studio_seeds)
 
 
@@ -146,7 +142,7 @@ from .web_search import (  # noqa: F401
 
 
 def discover_seed_careers_page_candidates(timeout_s: int, *, fetcher=None):
-    """Discover candidates from seed careers pages; uses STUDIO_SEEDS when called from this module."""
+    """Discover candidates from seed careers pages using config-owned seed defaults."""
     from .web_search import discover_seed_careers_page_candidates as _discover
 
-    return _discover(timeout_s, studio_seeds=STUDIO_SEEDS, fetcher=fetcher or fetch_text)
+    return _discover(timeout_s, studio_seeds=_config.STUDIO_SEEDS, fetcher=fetcher or fetch_text)

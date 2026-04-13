@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.common.datetime_utils import to_iso
+from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.taxonomy import (
     ClassificationContext,
     assess_zero_extract,
@@ -19,6 +19,7 @@ from src.jobs.common.taxonomy import (
     map_error_to_failure_bucket,
 )
 from src.jobs.models import RawJob
+from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.shared.utils import coerce_int, env_flag
 
@@ -199,14 +200,13 @@ def run_scrapy_static_source(
 ) -> list[RawJob]:
     del fetch_text
 
-    deps = runtime_deps.facade()
     results_list: list[RawJob] = []
     errors_list: list[str] = []
     details: list[dict[str, Any]] = []
 
-    sources = deps.registry_entries("scrapy_static")
+    sources = registry_entries("scrapy_static")
     if not sources:
-        deps.set_source_diagnostics(
+        set_source_diagnostics(
             "scrapy_static_sources",
             adapter="scrapy_static",
             studio="multiple",
@@ -218,7 +218,7 @@ def run_scrapy_static_source(
     runner_path = Path(__file__).resolve().parents[2] / "scrapers" / "runner.py"
     if not runner_path.exists():
         msg = f"scrapy_static runner missing: {runner_path}"
-        deps.set_source_diagnostics(
+        set_source_diagnostics(
             "scrapy_static_sources",
             adapter="scrapy_static",
             studio="multiple",
@@ -424,7 +424,7 @@ def run_scrapy_static_source(
             errors_list.append(f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}")
             details.append(source_detail)
 
-    deps.set_source_diagnostics(
+    set_source_diagnostics(
         "scrapy_static_sources",
         adapter="scrapy_static",
         studio="multiple",

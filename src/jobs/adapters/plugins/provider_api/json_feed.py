@@ -6,10 +6,12 @@ import json
 from collections.abc import Callable
 
 from src.exceptions import AdapterValidationError
-from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
+from src.jobs.common.diagnostics import set_source_diagnostics
+from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
+from src.jobs.registry import registry_entries
 from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 from src.jobs.transport import conditional_revalidate_url
@@ -30,12 +32,11 @@ def _run_json_feed_sources(
     source_state_rows: dict[str, dict[str, object]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
-    deps = runtime_deps.facade()
     jobs: list[RawJob] = []
     errors: list[str] = []
     details: list[dict[str, object]] = []
     provider_url = ""
-    for source in deps.registry_entries(registry_adapter):
+    for source in registry_entries(registry_adapter):
         source_name = clean_text(source.get("name")) or f"{registry_adapter}_source"
         studio = clean_text(source.get("studio")) or source_name
         endpoint = build_url(source)
@@ -94,7 +95,7 @@ def _run_json_feed_sources(
                 details.append(entry_report)
                 continue
         try:
-            text = deps.fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
+            text = fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)
             parsed = parse_payload(source, payload, studio)
             entry_report["fetchedCount"] = payload_count(payload, parsed)
@@ -111,7 +112,7 @@ def _run_json_feed_sources(
             errors.append(f"{registry_adapter}:{source_name}: {exc}")
         details.append(entry_report)
 
-    deps.set_source_diagnostics(
+    set_source_diagnostics(
         f"{registry_adapter}_sources",
         adapter=adapter_name,
         studio="multiple",

@@ -32,6 +32,7 @@
     "test:frontend:headed": "playwright test --headed",
     "test:frontend:ci": "playwright test --reporter=line",
     "test:py": "scripts\\run_py_tests.cmd",
+    "test:py:extended": "scripts\\run_py_tests_extended.cmd",
     "test:py:timing": "npm run check:python-version && python -m pytest tests -q --durations=25 --durations-min=0.2 --color=no",
     "test:py:cov": "npm run check:python-version && python -m pytest tests -q -m \"not slow\" --cov=src --cov-report=term-missing --color=no",
     "lint:py": "ruff check .",

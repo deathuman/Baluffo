@@ -30,7 +30,7 @@ Saved job record fields:
 
 ## Administration
 - `Admin` page (`admin.html`) shows local profiles and storage usage totals.
-- Access is protected by the configured local admin PIN: `1234` by default in `baluffo.config.json`.
+- Admin overview and wipe actions are local bridge actions; there is no separate Admin PIN flow.
 - Wiping an account removes profile, saved jobs, notes, and attachments for that user.
 
 ## Root config
@@ -48,7 +48,7 @@ Saved job record fields:
 - Run `npm run setup:hooks` once per clone to point Git at the tracked repo hook directory in `.githooks/`, which enforces the local pre-commit lint gate and the pre-push release gate.
 
 ## Future migration note
-`local-data-client.js` intentionally keeps a stable abstraction boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
+`frontend/shared/local-data/browser-client.js` intentionally keeps a stable abstraction boundary (`window.JobAppLocalData`) so this local implementation can later be swapped to another backend without rewriting page-level UI logic.
 
 ## Commands reference
 
@@ -60,7 +60,7 @@ Saved job record fields:
 | Portable EXE | `npm run build:portable-exe -- --bundle-version <version>` |
 | Packaged smoke (direct dist artifact) | `npm run test:frontend:packaged`, `npm run test:frontend:packaged:jobs-pipeline` |
 | Full verification | `npm run verify` |
-| Run tests | `npm run test:py`, `npm run test:unit`, `npm run test:smoke` |
+| Run tests | `npm run test:py` (developer lane), `npm run test:py:extended` (full Python lane), `npm run test:unit`, `npm run test:smoke` |
 | Pre-commit lint | `npm run lint:precommit:changed` |
 
 See [`testing.md`](testing.md) for verification commands and [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) for edit routing.
@@ -140,9 +140,9 @@ See [`testing.md`](testing.md) for verification commands and [`AI_ASSISTANT_GUID
   - Add new HTML/provider parsing in `web_search.py`, `static_candidates.py`, or `gamesmap.py`.
   - Keep the public surface (`run_discovery`, `discover_gamesmap_candidates`, `probe_candidate`, etc.) stable; tests rely on it.
 - Python tests that define the discovery contract:
-  - `tests/test_source_discovery.py::test_discovery_report_snapshot_contract`
-  - `tests/test_source_discovery.py::test_run_discovery_*`
-  - `tests/test_source_discovery.py::test_parse_gamesmap_*` and related helpers.
+  - `tests/source_discovery/test_run_discovery_flow.py`
+  - `tests/source_discovery/test_directory_sources.py`
+  - `tests/source_discovery/test_candidate_generation.py` and related helpers
 
 ### GitHub source sync (multi-PC)
 - Source sync is now packaged GitHub App based.

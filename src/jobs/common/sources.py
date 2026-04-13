@@ -9,7 +9,8 @@ from typing import Any
 
 from src.jobs.common.config import SOURCE_REGISTRY_ACTIVE_PATH
 
-# NOTE: The registry lists are large; they remain defined in `src.jobs.common` for now
+# NOTE: The registry lists remain defined in their owning leaf modules; do not
+# recreate root-package exports in `src.jobs.common`.
 # and are imported here at runtime to avoid circularity during migration.
 
 

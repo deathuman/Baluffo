@@ -8,6 +8,8 @@ from scripts.build_ship_bundle import STARTUP_PREVIEW_LIMIT, build_bundle
 from src.app_version import APP_VERSION
 from tests.helpers.temp_paths import workspace_tmpdir
 
+pytestmark = pytest.mark.packaging
+
 
 def _build_with_temp_packaged_config(
     tmp: str,
@@ -67,10 +69,15 @@ def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
         assert (version_root / "src" / "core" / "contracts.py").exists()
         assert (version_root / "src" / "core" / "schemas.py").exists()
         assert (version_root / "src" / "discovery_seed_catalog.json").exists()
-        assert (version_root / "app-local-data-client.js").exists()
         assert (version_root / "baluffo.config.json").exists()
         assert (version_root / "frontend-runtime-config.js").exists()
-        assert (version_root / "desktop-local-data-client.js").exists()
+        assert (version_root / "frontend" / "shared" / "local-data" / "app-client.js").exists()
+        assert (version_root / "frontend" / "shared" / "local-data" / "desktop-client.js").exists()
+        assert (version_root / "frontend" / "shared" / "local-data" / "browser-client.js").exists()
+        assert (version_root / "frontend" / "shared" / "config" / "admin-config.js").exists()
+        assert (version_root / "frontend" / "jobs" / "state.js").exists()
+        assert (version_root / "frontend" / "jobs" / "parsing-utils.js").exists()
+        assert (version_root / "frontend" / "saved" / "zip-utils.js").exists()
         assert (version_root / "desktop-probe-css.html").exists()
         assert (version_root / "desktop-probe.html").exists()
         assert (version_root / "desktop-probe-head.html").exists()

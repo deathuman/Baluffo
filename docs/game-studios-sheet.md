@@ -23,4 +23,4 @@ If you rename columns or change the header structure, update:
 
 1. [parse_game_studio_sheet_csv](../src/source_discovery/sheet_directory.py) (header detection and column indices).
 2. This doc.
-3. Tests in [tests/test_source_discovery.py](../tests/test_source_discovery.py) that assert on parsed keys (e.g. `test_parse_game_studio_sheet_csv_returns_expected_keys`, `test_parse_game_studio_sheet_csv_handles_metadata_rows_and_openings_flag`).
+3. Tests in [tests/source_discovery/test_directory_sources.py](../tests/source_discovery/test_directory_sources.py) that assert on parsed keys (e.g. `test_parse_game_studio_sheet_csv_returns_expected_keys`, `test_parse_game_studio_sheet_csv_handles_metadata_rows_and_openings_flag`).

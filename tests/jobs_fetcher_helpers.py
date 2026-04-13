@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from src import jobs_fetcher as jf
 from src import jobs_fetcher_registry as jfr
 from src.exceptions import AdapterValidationError
 from src.jobs import canonicalize as jobs_canonicalize
-from src.jobs import common as jobs_common
 from src.jobs import dedup as jobs_dedup
+from src.jobs import registry as jobs_registry
 from src.jobs import reporting as jobs_reporting
-from src.jobs.adapters import _runtime as runtime_resolver
 from src.jobs.adapters import static_helpers, static_scrapy
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
@@ -43,37 +41,19 @@ __all__ = [
     "_fixture",
     "_fixture_json",
     "jobs_canonicalize",
-    "jobs_common",
+    "jobs_registry",
     "jobs_dedup",
     "jobs_reporting",
     "jfr",
     "jf",
-    "json",
-    "os",
-    "mock",
     "patch_jobs_fetcher_aliases",
-    "pytest",
-    "runtime_resolver",
     "scrapy_runner",
     "source_detail_limit_for",
     "source_detail_retries_for",
     "static_helpers",
     "static_scrapy",
-    "subprocess",
-    "sys",
-    "threading",
-    "time",
     "workspace_tmpdir",
-    "Path",
 ]
-
-import subprocess
-import sys
-import threading
-import time
-from unittest import mock
-
-import pytest
 
 
 def _fixture(name: str) -> str:

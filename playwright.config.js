@@ -16,6 +16,7 @@ export default defineConfig({
   testDir: "./tests/frontend",
   testMatch: ["**/smoke.spec.js"],
   testIgnore: ["**/unit/**"],
+  outputDir: ".tmp/playwright/test-results",
   timeout: 30_000,
   expect: {
     timeout: 7_500

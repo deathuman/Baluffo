@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import locale
 from pathlib import Path
 from unittest import mock
 
@@ -114,3 +115,39 @@ def test_verify_manifest_marks_failed_test_lanes() -> None:
         assert artifacts["precommit_ok"] is True
         assert artifacts["py_tests_ok"] is False
         assert artifacts["node_tests_ok"] is True
+
+
+def test_run_proc_uses_replace_decode_for_streamed_output() -> None:
+    class _FakeStdout:
+        def __init__(self) -> None:
+            self._chunks = iter(["o", "k", ""])
+            self.finished = False
+
+        def read(self, _size: int) -> str:
+            chunk = next(self._chunks, "")
+            if chunk == "":
+                self.finished = True
+            return chunk
+
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.stdout = _FakeStdout()
+            self.returncode = 0
+
+        def poll(self) -> int | None:
+            return 0 if self.stdout.finished else None
+
+        def wait(self) -> int:
+            return self.returncode
+
+    with mock.patch.object(
+        orchestrator.subprocess, "Popen", return_value=_FakeProcess()
+    ) as popen_mock:
+        ok, output = orchestrator.run_proc(["npm", "run", "lint:precommit"], "PreCommit")
+
+    assert ok is True
+    assert output == "ok"
+    _, kwargs = popen_mock.call_args
+    assert kwargs["text"] is True
+    assert kwargs["errors"] == "replace"
+    assert kwargs["encoding"] == (locale.getpreferredencoding(False) or "utf-8")

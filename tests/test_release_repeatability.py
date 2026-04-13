@@ -1,6 +1,10 @@
 from pathlib import Path
 
+import pytest
+
 from src import release_repeatability as rr
+
+pytestmark = pytest.mark.release
 
 
 def _write_report(

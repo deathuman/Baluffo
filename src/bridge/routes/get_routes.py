@@ -10,16 +10,16 @@ from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 
+from src.bridge.api import BridgeApi
 from src.core.schemas import SavedJobSchema
 
 logger = logging.getLogger(__name__)
 
 
-def handle_get(handler: Any, *, api: Any, path: str, query: dict[str, list[str]]) -> bool:
+def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list[str]]) -> bool:
     """Handle GET routes for the admin bridge.
 
-    Important: `api` must be the currently running admin bridge module (which may
-    be `__main__` when launched via `runpy`), not a fresh `import src.admin_bridge`.
+    Important: `api` must be the currently running BridgeApi instance.
     """
 
     if path == "/discovery/report":

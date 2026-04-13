@@ -3,8 +3,7 @@ import js from "@eslint/js";
 export default [
   {
     ignores: [
-      ".codex-tmp/**",
-      ".codex-tmp-*/**",
+      ".tmp/**",
       "_out/**",
       ".pre-commit-home*/**",
       "node_modules/**",
@@ -14,7 +13,6 @@ export default [
       "playwright-report/**",
       "pytest-cache-files-*/**",
       "tmp*/**",
-      "test-results/**",
     ],
   },
 
@@ -119,16 +117,9 @@ export default [
   // Root-level ES module files
   {
     files: [
-      "admin-config.js",
-      "app-local-data-client.js",
-      "desktop-local-data-client.js",
       "eslint.config.js",
       "frontend-runtime-config.js",
-      "jobs-parsing-utils.js",
-      "jobs-state.js",
-      "local-data-client.js",
       "playwright.config.js",
-      "saved-zip-utils.js",
     ],
     languageOptions: {
       ecmaVersion: "latest",

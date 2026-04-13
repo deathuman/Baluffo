@@ -5,11 +5,12 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
-from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.adapters import provider_parsers as _provider_parsers
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html, strip_html_text
 from src.jobs.adapters.parsers.location import parse_generic_location_fields
+from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
+from src.jobs.registry import registry_entries
 from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text, normalize_url
 
@@ -111,11 +112,10 @@ def _run_structured_listing_sources(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[dict[str, Any]]:
-    deps = runtime_deps.facade()
     jobs: list[dict[str, Any]] = []
     errors: list[str] = []
     details: list[dict[str, Any]] = []
-    for source in deps.registry_entries(registry_adapter):
+    for source in registry_entries(registry_adapter):
         source_name = clean_text(source.get("name")) or f"{registry_adapter}_source"
         studio = clean_text(source.get("studio")) or source_name
         listing_url = build_url(source)
@@ -252,7 +252,7 @@ def _run_structured_listing_sources(
         jobs.extend(emitted_rows_for_source)
         details.append(entry_report)
 
-    deps.set_source_diagnostics(
+    set_source_diagnostics(
         f"{registry_adapter}_sources",
         adapter=adapter_name,
         studio="multiple",

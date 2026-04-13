@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from pydantic import ValidationError as PydanticValidationError
 
+from src.bridge.api import BridgeApi
 from src.bridge.registry_tombstones import (
     add_tombstone,
     load_tombstones,
@@ -30,7 +31,7 @@ from src.source_registry import (
 
 
 def _transition_registry_row(
-    api: Any,
+    api: BridgeApi,
     row: dict[str, Any],
     *,
     candidate_state: str,
@@ -62,11 +63,10 @@ def _transition_registry_row(
     return dict(row)
 
 
-def handle_post(handler: Any, *, api: Any, path: str, payload: Any) -> bool:
+def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> bool:
     """Handle POST routes for the admin bridge.
 
-    Important: `api` must be the currently running admin bridge module (which may
-    be `__main__` when launched via `runpy`), not a fresh `import src.admin_bridge`.
+    Important: `api` must be the currently running BridgeApi instance.
     """
 
     if path == "/desktop-local-data/sign-in":

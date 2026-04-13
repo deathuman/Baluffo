@@ -19,7 +19,7 @@ test("AdminConfig loads generated frontend-safe defaults without XHR", async () 
     sessionStorage: buildSessionStorage()
   };
 
-  const { AdminConfig } = await import("../../../admin-config.js");
+  const { AdminConfig } = await import("../../../frontend/shared/config/admin-config.js");
   assert.equal(AdminConfig.ADMIN_BRIDGE_BASE, "http://127.0.0.1:8877");
   assert.equal(AdminConfig.GITHUB_APP_ENABLED_DEFAULT, true);
 });

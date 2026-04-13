@@ -2,7 +2,7 @@
 
 > **Navigation guide for Baluffo project documentation.** Use this page to find the smallest authoritative document set for your task.
 >
-> For AI coding tasks, start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) and only add [`architecture-ai-map.md`](architecture-ai-map.md) when you need routing or ownership details.
+> For AI coding tasks, start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) and only add [`architecture-ai-map.md`](architecture-ai-map.md) when you need routing, ownership details, or compatibility-surface classification.
 
 ---
 
@@ -14,6 +14,19 @@
 | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | **AI entrypoint** | You are an AI coder and need read order, guardrails, common misconceptions, and edit-routing guidance |
 | [`architecture-ai-map.md`](architecture-ai-map.md) | **Architecture map** | You need system boundaries, task-to-file routing, runtime guardrails, and verification hints |
 | [`../AGENTS.md`](../AGENTS.md) | Workflow guardrails | You need repo-specific editing discipline, validation habits, and operational rules while changing code |
+
+---
+
+## Compatibility Surfaces
+
+Use these as entrypoints or shims only; route new logic to the owning modules they point at.
+
+- `src/admin_bridge.py` — stable thin entrypoint for bridge startup and compatibility wrappers
+- `src/source_discovery.py` — stable thin CLI entrypoint delegating to `src/source_discovery/*`
+- `src/jobs_fetcher.py` — stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`
+- `src/source_sync.py` — permanent thin sync integration surface delegating to `src/source_sync_*`
+- `src/jobs/common/__init__.py` — package marker only; import `src.jobs.common.<leaf>` or package-submodule helpers
+- `frontend/local-data/services.js` — transitional local-data boundary; page code should go through slice-local `services.js`
 
 ---
 
@@ -53,7 +66,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Debugging help | You are investigating a known issue or checking common failure modes |
 | [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
 | [`refactor-charter-template.md`](refactor-charter-template.md) | Planning template | You are drafting a structured refactor proposal |
-| [`quality-improvement-roadmap.md`](quality-improvement-roadmap.md) | Q2 2026 roadmap | You are working on pipeline health, provider fixes, discovery, or coverage expansion |
+| [`quality-follow-up.md`](quality-follow-up.md) | Quality follow-up tracker | You are working on current provider parity, static-source triage, or social experiment follow-up |
 
 ---
 
@@ -75,6 +88,8 @@ Useful as context, but **not authoritative** for current implementation unless e
 | Understand product and top-level layout | [`README.md`](../README.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
 | Change frontend behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then task-specific source files |
 | Change bridge/API behavior | [`architecture-ai-map.md`](architecture-ai-map.md) | [`admin-bridge-api.md`](admin-bridge-api.md) |
+| Change discovery behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/source_discovery/*` |
+| Change jobs pipeline / fetcher behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/jobs/*` leaf modules |
 | Change payload/schema shape | [`DATA_CONTRACT.md`](DATA_CONTRACT.md) | `src/core/*`, related tests, task-specific runtime docs |
 | Work on scraping/adapters | [`scraping-pipeline.md`](scraping-pipeline.md) | [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) |
 | Run the right tests | [`testing.md`](testing.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
@@ -125,4 +140,4 @@ When adding or modifying documentation:
 
 ---
 
-*Last updated: 2026-04-12*
+*Last updated: 2026-04-13*

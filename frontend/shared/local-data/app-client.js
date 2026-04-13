@@ -1,10 +1,14 @@
 window.__baluffoModuleLoading = true;
-console.log("[baluffo] app-local-data-client.js: module script loading...");
+console.log("[baluffo] frontend/shared/local-data/app-client.js: module script loading...");
 
-import { initBrowserLocalDataClient } from "./local-data-client.js";
-import { initDesktopLocalDataClient } from "./desktop-local-data-client.js";
-import { AdminConfig } from "./admin-config.js";
-import { bindStartupProbeErrorHandlers, emitStartupProbeMetric, resolveStartupProbePage } from "./probes/startup-probe.js";
+import { initBrowserLocalDataClient } from "./browser-client.js";
+import { initDesktopLocalDataClient } from "./desktop-client.js";
+import { AdminConfig } from "../config/admin-config.js";
+import {
+  bindStartupProbeErrorHandlers,
+  emitStartupProbeMetric,
+  resolveStartupProbePage
+} from "../../../probes/startup-probe.js";
 
 const RUNTIME_MODE_KEY = "baluffo_runtime_mode";
 const HEARTBEAT_INTERVAL_MS = 10000;
@@ -29,7 +33,7 @@ try {
   bindStartupProbeErrorHandlers();
   window.__baluffoDesktopMode = resolveDesktopMode();
 } catch (err) {
-  console.error("[baluffo] Error in app-local-data-client.js:", err);
+  console.error("[baluffo] Error in frontend/shared/local-data/app-client.js:", err);
 }
 
 function startDesktopHeartbeat() {

@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""CLI entrypoint for the refactored jobs pipeline package."""
+"""Stable thin CLI facade for the refactored jobs pipeline package."""
 
 from __future__ import annotations
 
+import re
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.request import urlopen
 
 try:
-    from src.jobs import common as _common
+    from src.contracts import SCHEMA_VERSION
     from src.jobs import parsers as _parsers
     from src.jobs import pipeline as _pipeline
     from src.jobs import registry as _registry
@@ -18,6 +21,14 @@ try:
     from src.jobs.adapters import provider_api as _provider_api
     from src.jobs.adapters import social as _social
     from src.jobs.adapters import static as _static
+    from src.jobs.common import config as _common_config
+    from src.jobs.common import datetime_utils as _common_datetime_utils
+    from src.jobs.common import diagnostics as _common_diagnostics
+    from src.jobs.common import fetch as _common_fetch
+    from src.jobs.common import url as _common_url
+    from src.jobs.text_utils import clean_text, norm_text, normalize_url
+    from src.jobs_fetcher_registry import SOURCE_REPORT_META
+    from src.shared.utils import env_flag, now_iso
 except ModuleNotFoundError:
     # When executed via `python src/jobs_fetcher.py` from a directory that does
     # not have the repository root on sys.path, fall back to resolving the root
@@ -25,7 +36,7 @@ except ModuleNotFoundError:
     root = Path(__file__).resolve().parent.parent
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
-    from src.jobs import common as _common
+    from src.contracts import SCHEMA_VERSION
     from src.jobs import parsers as _parsers
     from src.jobs import pipeline as _pipeline
     from src.jobs import registry as _registry
@@ -36,6 +47,14 @@ except ModuleNotFoundError:
     from src.jobs.adapters import provider_api as _provider_api
     from src.jobs.adapters import social as _social
     from src.jobs.adapters import static as _static
+    from src.jobs.common import config as _common_config
+    from src.jobs.common import datetime_utils as _common_datetime_utils
+    from src.jobs.common import diagnostics as _common_diagnostics
+    from src.jobs.common import fetch as _common_fetch
+    from src.jobs.common import url as _common_url
+    from src.jobs.text_utils import clean_text, norm_text, normalize_url
+    from src.jobs_fetcher_registry import SOURCE_REPORT_META
+    from src.shared.utils import env_flag, now_iso
 from src.jobs.canonicalize import (
     LIGHTWEIGHT_OUTPUT_FIELDS,
     OPTIONAL_FIELDS,
@@ -78,7 +97,7 @@ resolve_fetch_text_impl = _transport.resolve_fetch_text_impl
 PooledRedirectResolver = _transport.PooledRedirectResolver
 AsyncHttpTextFetcher = _transport.AsyncHttpTextFetcher
 DEFAULT_REDIRECT_HEADERS = _transport.DEFAULT_REDIRECT_HEADERS
-fetch_with_retries = _common.fetch_with_retries
+fetch_with_retries = _common_fetch.fetch_with_retries
 
 parse_google_sheets_csv = _parsers.parse_google_sheets_csv
 parse_gamejobs_html = _parsers.parse_gamejobs_html
@@ -148,42 +167,29 @@ run_static_studio_pages_j_r_source = _static.run_static_studio_pages_j_r_source
 run_static_studio_pages_s_z_source = _static.run_static_studio_pages_s_z_source
 run_scrapy_static_source = _static.run_scrapy_static_source
 
-SCHEMA_VERSION = _common.SCHEMA_VERSION
-SOURCE_DIAGNOSTICS = _common.SOURCE_DIAGNOSTICS
-SOURCE_REPORT_META = _common.SOURCE_REPORT_META
-STUDIO_SOURCE_REGISTRY = _common.STUDIO_SOURCE_REGISTRY
-REMOTE_OK_URLS = _common.REMOTE_OK_URLS
-GAMES_INDUSTRY_URLS = _common.GAMES_INDUSTRY_URLS
-EPIC_CAREERS_API_URL = _common.EPIC_CAREERS_API_URL
-GREENHOUSE_JOBS_URL_TEMPLATE = _common.GREENHOUSE_JOBS_URL_TEMPLATE
+SOURCE_DIAGNOSTICS = _common_diagnostics.SOURCE_DIAGNOSTICS
+STUDIO_SOURCE_REGISTRY = _registry.STUDIO_SOURCE_REGISTRY
+REMOTE_OK_URLS = _common_config.REMOTE_OK_URLS
+GAMES_INDUSTRY_URLS = _common_config.GAMES_INDUSTRY_URLS
+EPIC_CAREERS_API_URL = _common_config.EPIC_CAREERS_API_URL
+GREENHOUSE_JOBS_URL_TEMPLATE = _common_config.GREENHOUSE_JOBS_URL_TEMPLATE
 DEFAULT_GOOGLE_SHEET_ID = _community.DEFAULT_GOOGLE_SHEET_ID
 DEFAULT_GOOGLE_SHEET_GID = _community.DEFAULT_GOOGLE_SHEET_GID
-DEFAULT_TIMEOUT_S = _common.DEFAULT_TIMEOUT_S
-DEFAULT_RETRIES = _common.DEFAULT_RETRIES
-DEFAULT_BACKOFF_S = _common.DEFAULT_BACKOFF_S
-DEFAULT_FETCH_STRATEGY = _common.DEFAULT_FETCH_STRATEGY
-DEFAULT_ADAPTER_HTTP_CONCURRENCY = _common.DEFAULT_ADAPTER_HTTP_CONCURRENCY
+DEFAULT_TIMEOUT_S = _common_config.DEFAULT_TIMEOUT_S
+DEFAULT_RETRIES = _common_config.DEFAULT_RETRIES
+DEFAULT_BACKOFF_S = _common_config.DEFAULT_BACKOFF_S
+DEFAULT_FETCH_STRATEGY = _common_config.DEFAULT_FETCH_STRATEGY
+DEFAULT_ADAPTER_HTTP_CONCURRENCY = _common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = _community.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
-DEFAULT_STATIC_DETAIL_CONCURRENCY = _common.DEFAULT_STATIC_DETAIL_CONCURRENCY
-DEFAULT_HOT_SOURCE_CADENCE_MINUTES = _common.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
-DEFAULT_COLD_SOURCE_CADENCE_MINUTES = _common.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
-DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE = _common.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
-DEFAULT_SCRAPY_VALIDATION_STRICT = _common.DEFAULT_SCRAPY_VALIDATION_STRICT
+DEFAULT_STATIC_DETAIL_CONCURRENCY = _common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY
+DEFAULT_HOT_SOURCE_CADENCE_MINUTES = _common_config.DEFAULT_HOT_SOURCE_CADENCE_MINUTES
+DEFAULT_COLD_SOURCE_CADENCE_MINUTES = _common_config.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
+DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE = _common_config.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
+DEFAULT_SCRAPY_VALIDATION_STRICT = _common_config.DEFAULT_SCRAPY_VALIDATION_STRICT
 
-set_source_diagnostics = _common.set_source_diagnostics
-clean_text = _common.clean_text
-norm_text = _common.norm_text
-normalize_url = _common.normalize_url
-fingerprint_url = _common.fingerprint_url
-to_iso = _common.to_iso
-now_iso = _common.now_iso
-env_flag = _common.env_flag
-
-datetime = _common.datetime
-timedelta = _common.timedelta
-timezone = _common.timezone
-re = _common.re
-urlopen = _common.urlopen
+set_source_diagnostics = _common_diagnostics.set_source_diagnostics
+fingerprint_url = _common_url.fingerprint_url
+to_iso = _common_datetime_utils.to_iso
 httpx = _transport.httpx
 
 

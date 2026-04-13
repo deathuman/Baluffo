@@ -6,12 +6,14 @@ from collections.abc import Callable
 from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
-from src.jobs.adapters import _runtime as runtime_deps
 from src.jobs.adapters.html_parsers import (
     parse_jobpostings_from_html,
     parse_teamtailor_listing_links,
 )
+from src.jobs.common.diagnostics import set_source_diagnostics
+from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
+from src.jobs.registry import registry_entries
 from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 from src.jobs.transport import conditional_revalidate_url
@@ -30,14 +32,7 @@ def _run_teamtailor_sources(
     errors: list[str] = []
     seen_links = set()
     details: list[dict[str, object]] = []
-    deps = runtime_deps.facade()
-    parse_listing_links = getattr(
-        deps, "parse_teamtailor_listing_links", parse_teamtailor_listing_links
-    )
-    parse_jobpostings_from_html_impl = getattr(
-        deps, "parse_jobpostings_from_html", parse_jobpostings_from_html
-    )
-    for source in deps.registry_entries("teamtailor"):
+    for source in registry_entries("teamtailor"):
         source_name = clean_text(source.get("name")) or "teamtailor_source"
         listing_url = clean_text(source.get("listing_url"))
         base_url = clean_text(source.get("base_url")) or listing_url
@@ -98,10 +93,10 @@ def _run_teamtailor_sources(
                 continue
 
         try:
-            listing_html = deps.fetch_with_retries(
+            listing_html = fetch_with_retries(
                 listing_url, fetch_text, timeout_s, retries, backoff_s
             )
-            job_links = parse_listing_links(listing_html, base_url=base_url)
+            job_links = parse_teamtailor_listing_links(listing_html, base_url=base_url)
             entry_report["fetchedCount"] = len(job_links)
             kept_before = len(jobs)
             for idx, job_link in enumerate(job_links, start=1):
@@ -109,10 +104,10 @@ def _run_teamtailor_sources(
                     continue
                 seen_links.add(job_link)
                 try:
-                    detail_html = deps.fetch_with_retries(
+                    detail_html = fetch_with_retries(
                         job_link, fetch_text, timeout_s, retries, backoff_s
                     )
-                    parsed = parse_jobpostings_from_html_impl(
+                    parsed = parse_jobpostings_from_html(
                         detail_html,
                         base_url=job_link,
                         fallback_company=fallback_company,
@@ -156,7 +151,7 @@ def _run_teamtailor_sources(
             errors.append(f"teamtailor:{source_name}:{listing_url}: {exc}")
         details.append(entry_report)
 
-    deps.set_source_diagnostics(
+    set_source_diagnostics(
         "teamtailor_sources",
         adapter="teamtailor",
         studio="multiple",

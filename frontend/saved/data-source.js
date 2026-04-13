@@ -7,7 +7,7 @@ import {
   getCrc32,
   buildZipStoreOnly,
   parseZipStoreOnly
-} from "../../saved-zip-utils.js";
+} from "./zip-utils.js";
 
 // Saved data-source owns backup file parsing/packing and keeps zip details out of app.js.
 export async function parseBackupInputFile(file) {

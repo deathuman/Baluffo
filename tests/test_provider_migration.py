@@ -6,9 +6,9 @@ from unittest import mock
 
 import pytest
 
-from src.jobs import common as jobs_common
-from src.jobs.adapters import _runtime as runtime_resolver
+from src.jobs import registry as jobs_registry
 from src.jobs.adapters import provider_api
+from src.jobs.adapters import provider_structured_listing as provider_structured_listing_runner
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
@@ -137,6 +137,17 @@ DISPATCH_CASES = [
 ]
 
 
+def _bind_fake_deps(monkeypatch: pytest.MonkeyPatch, deps: _FakeDeps) -> None:
+    monkeypatch.setattr(
+        provider_structured_listing_runner, "registry_entries", deps.registry_entries
+    )
+    monkeypatch.setattr(
+        provider_structured_listing_runner,
+        "set_source_diagnostics",
+        deps.set_source_diagnostics,
+    )
+
+
 def _fixture_for_bamboohr(url: str, _timeout: int) -> str:
     if url.endswith("/jobs/"):
         return _fixture("bamboohr_jobs.html")
@@ -168,12 +179,13 @@ def assert_workday_details(deps: _FakeDeps) -> None:
 
 
 @pytest.mark.parametrize("case", DISPATCH_CASES, ids=lambda case: case.name)
-def test_provider_api_dispatch_extracts_registry_backed_jobs(case: _DispatchCase) -> None:
+def test_provider_api_dispatch_extracts_registry_backed_jobs(
+    case: _DispatchCase, monkeypatch: pytest.MonkeyPatch
+) -> None:
     deps = _FakeDeps({})
     case.setup(deps)
-
-    with mock.patch.object(runtime_resolver, "facade", lambda: deps):
-        rows = case.run()
+    _bind_fake_deps(monkeypatch, deps)
+    rows = case.run()
 
     assert len(rows) == case.expected_len
     assert all(row["adapter"] == case.expected_adapter for row in rows)
@@ -213,9 +225,9 @@ def test_registry_entries_bamboohr_derives_from_static_and_suppresses_redundant_
         "enabledByDefault": True,
     }
 
-    with mock.patch.object(jobs_common, "STUDIO_SOURCE_REGISTRY", [static_row, provider_row]):
-        bamboohr_entries = jobs_common.registry_entries("bamboohr")
-        static_entries = jobs_common.registry_entries("static")
+    with mock.patch.object(jobs_registry, "STUDIO_SOURCE_REGISTRY", [static_row, provider_row]):
+        bamboohr_entries = jobs_registry.registry_entries("bamboohr")
+        static_entries = jobs_registry.registry_entries("static")
 
     assert any(
         row.get("name") == "Wolcen Studios (Manual Website)"

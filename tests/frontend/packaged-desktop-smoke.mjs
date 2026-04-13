@@ -13,11 +13,11 @@ const ATTACHMENT_FIXTURE_PATH = path.resolve(__dirname, "fixtures", "attachment-
 const REPORT_PATH =
   process.env.PACKAGED_SMOKE_REPORT_PATH ||
   process.env.PACKAGED_SMOKE_PLAYWRIGHT_REPORT ||
-  path.resolve(".codex-tmp/packaged-desktop-smoke/smoke-report.json");
+  path.resolve(".tmp/packaged-desktop-smoke/smoke-report.json");
 const OUTPUT_DIR =
   process.env.PACKAGED_SMOKE_OUTPUT_DIR ||
   process.env.PACKAGED_SMOKE_ARTIFACTS_DIR ||
-  path.resolve(".codex-tmp/packaged-desktop-smoke/smoke-output");
+  path.resolve(".tmp/packaged-desktop-smoke/smoke-output");
 const HEADED = process.env.PACKAGED_SMOKE_HEADED === "1";
 const PAUSE_ON_FAILURE = process.env.PACKAGED_SMOKE_PAUSE_ON_FAILURE === "1";
 const bridgeUrl = new URL(BRIDGE_BASE);

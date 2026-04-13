@@ -33,7 +33,7 @@ from src.ship.startup_profile import (
 
 DEFAULT_EXE_PATH = ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
 DEFAULT_REPORT_PATH = ROOT / "data" / "packaged-desktop-smoke-report.json"
-DEFAULT_ARTIFACT_ROOT = ROOT / ".codex-tmp" / "packaged-desktop-smoke"
+DEFAULT_ARTIFACT_ROOT = ROOT / ".tmp" / "packaged-desktop-smoke"
 DEFAULT_RUNTIME_TIMEOUT_S = 35.0
 DEFAULT_SMOKE_RUNNER_TIMEOUT_S = 180.0
 DEFAULT_NODE_SMOKE_SCRIPT = ROOT / "tests" / "frontend" / "packaged-desktop-smoke.mjs"
@@ -49,6 +49,18 @@ _PORTABLE_EXE_FRESHNESS_MARKERS = (
     ROOT / "src" / "ship" / "update_manager.py",
     ROOT / "src" / "ship" / "desktop_app" / "__init__.py",
     ROOT / "src" / "admin_bridge.py",
+    ROOT / "index.html",
+    ROOT / "jobs.html",
+    ROOT / "saved.html",
+    ROOT / "admin.html",
+    ROOT / "styles.css",
+    ROOT / "theme.js",
+    ROOT / "frontend-runtime-config.js",
+    ROOT / "baluffo.config.json",
+)
+_PORTABLE_EXE_FRESHNESS_DIRS = (
+    ROOT / "frontend",
+    ROOT / "probes",
 )
 STARTUP_REQUIRED_EVENTS = (
     "desktop_launch_start",
@@ -167,7 +179,7 @@ def _default_portable_exe_stale(exe_path: Path) -> bool:
         exe_mtime = resolved.stat().st_mtime
     except OSError:
         return True
-    for marker in _PORTABLE_EXE_FRESHNESS_MARKERS:
+    for marker in _iter_portable_exe_freshness_markers():
         try:
             if marker.is_file() and marker.stat().st_mtime > exe_mtime:
                 return True
@@ -190,13 +202,22 @@ def _portable_exe_marker_staleness(exe_path: Path) -> str:
         exe_mtime = resolved.stat().st_mtime
     except OSError:
         return "unusable"
-    for marker in _PORTABLE_EXE_FRESHNESS_MARKERS:
+    for marker in _iter_portable_exe_freshness_markers():
         try:
             if marker.is_file() and marker.stat().st_mtime > exe_mtime:
                 return "stale"
         except OSError:
             continue
     return "fresh"
+
+
+def _iter_portable_exe_freshness_markers() -> list[Path]:
+    markers = [path for path in _PORTABLE_EXE_FRESHNESS_MARKERS if path.exists()]
+    for root in _PORTABLE_EXE_FRESHNESS_DIRS:
+        if not root.is_dir():
+            continue
+        markers.extend(path for path in root.rglob("*") if path.is_file())
+    return markers
 
 
 def run_portable_build(output_dir: Path | None = None) -> Path:

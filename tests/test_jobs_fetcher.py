@@ -1,45 +1,35 @@
-# ruff: noqa: F403,F405
-from tests.jobs_fetcher_helpers import *
+# ruff: noqa: F401
+import sys
+from pathlib import Path
+from unittest import mock
+
+from tests.jobs_fetcher_helpers import (
+    AdapterPluginContext,
+    default_registry,
+    ensure_provider_plugins,
+    jf,
+    jfr,
+    jobs_registry,
+    patch_jobs_fetcher_aliases,
+    source_detail_limit_for,
+    source_detail_retries_for,
+)
 
 patch_jobs_fetcher_aliases()
 
 
-def test_runtime_facade_falls_back_to_main_module_for_jobs_fetcher_runs() -> None:
-    prev_jf = runtime_resolver.sys.modules.get("src.jobs_fetcher")
-    prev_main = runtime_resolver.sys.modules.get("__main__")
-    try:
-        runtime_resolver.sys.modules.pop("src.jobs_fetcher", None)
-        # When run as `python -m src.jobs_fetcher`, __main__ is the jobs_fetcher module.
-        # Simulate that so facade() returns a module that has the parser attributes.
-        runtime_resolver.sys.modules["__main__"] = jf
-        main_mod = runtime_resolver.sys.modules.get("__main__")
-
-        class _Spec:
-            name = "src.jobs_fetcher"
-
-        if main_mod is None:
-            raise RuntimeError("__main__ module missing")
-        prev_spec = getattr(main_mod, "__spec__", None)
-        main_mod.__spec__ = _Spec()  # type: ignore[attr-defined]
-        resolved = runtime_resolver.facade()
-        assert resolved is main_mod
-        assert callable(getattr(resolved, "parse_ashby_jobs_from_html", None))
-        assert callable(getattr(resolved, "parse_breezy_jobs_html", None))
-        assert callable(getattr(resolved, "parse_bamboohr_jobs_html", None))
-        assert callable(getattr(resolved, "parse_jazzhr_jobs_html", None))
-        assert callable(getattr(resolved, "parse_recruitee_jobs_payload", None))
-        assert callable(getattr(resolved, "parse_pinpoint_jobs_payload", None))
-        assert callable(getattr(resolved, "parse_8bitplay_html", None))
-        assert callable(getattr(resolved, "parse_gracklehq_html", None))
-        assert callable(getattr(resolved, "parse_personio_feed_xml", None))
-        assert callable(getattr(resolved, "parse_epic_games_jobs_payload", None))
-        assert callable(getattr(resolved, "parse_workday_jobs_html", None))
-        main_mod.__spec__ = prev_spec  # type: ignore[attr-defined]
-    finally:
-        if prev_main is not None:
-            runtime_resolver.sys.modules["__main__"] = prev_main
-        if prev_jf is not None:
-            runtime_resolver.sys.modules["src.jobs_fetcher"] = prev_jf
+def test_jobs_fetcher_keeps_parser_compatibility_exports() -> None:
+    assert callable(getattr(jf, "parse_ashby_jobs_from_html", None))
+    assert callable(getattr(jf, "parse_breezy_jobs_html", None))
+    assert callable(getattr(jf, "parse_bamboohr_jobs_html", None))
+    assert callable(getattr(jf, "parse_jazzhr_jobs_html", None))
+    assert callable(getattr(jf, "parse_recruitee_jobs_payload", None))
+    assert callable(getattr(jf, "parse_pinpoint_jobs_payload", None))
+    assert callable(getattr(jf, "parse_8bitplay_html", None))
+    assert callable(getattr(jf, "parse_gracklehq_html", None))
+    assert callable(getattr(jf, "parse_personio_feed_xml", None))
+    assert callable(getattr(jf, "parse_epic_games_jobs_payload", None))
+    assert callable(getattr(jf, "parse_workday_jobs_html", None))
 
 
 def test_static_plugin_registry_selects_supercell_plugin() -> None:
@@ -83,8 +73,8 @@ def test_registry_entries_static_filters_redundant_when_provider_present() -> No
         "enabledByDefault": True,
     }
     patched_registry = [provider_entry, static_cdprojekt, static_other]
-    with mock.patch.object(jobs_common, "STUDIO_SOURCE_REGISTRY", patched_registry):
-        static_entries = jobs_common.registry_entries("static")
+    with mock.patch.object(jobs_registry, "STUDIO_SOURCE_REGISTRY", patched_registry):
+        static_entries = jobs_registry.registry_entries("static")
     # Redundant static (cdprojektred) must be filtered out; other static must remain.
     names = [e.get("name") for e in static_entries]
     assert "Other Studio (Manual Website)" in names
@@ -109,10 +99,10 @@ def test_registry_entries_bamboohr_derives_static_rows_and_suppresses_static_whe
         "enabledByDefault": True,
     }
     with mock.patch.object(
-        jobs_common, "STUDIO_SOURCE_REGISTRY", [static_bamboohr, bamboohr_provider]
+        jobs_registry, "STUDIO_SOURCE_REGISTRY", [static_bamboohr, bamboohr_provider]
     ):
-        bamboohr_entries = jobs_common.registry_entries("bamboohr")
-        static_entries = jobs_common.registry_entries("static")
+        bamboohr_entries = jobs_registry.registry_entries("bamboohr")
+        static_entries = jobs_registry.registry_entries("static")
 
     assert any(
         row.get("name") == "Wolcen Studios (Manual Website)"
@@ -142,9 +132,9 @@ def test_registry_entries_suppresses_nextlevelgames_static_when_jazzhr_provider_
         "enabledByDefault": True,
     }
     with mock.patch.object(
-        jobs_common, "STUDIO_SOURCE_REGISTRY", [static_nextlevel, jazzhr_provider]
+        jobs_registry, "STUDIO_SOURCE_REGISTRY", [static_nextlevel, jazzhr_provider]
     ):
-        static_entries = jobs_common.registry_entries("static")
+        static_entries = jobs_registry.registry_entries("static")
 
     assert all(row.get("name") != "Next Level Games (Manual Website)" for row in static_entries)
 

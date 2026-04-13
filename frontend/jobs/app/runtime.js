@@ -1,5 +1,5 @@
-import { JobsStateModule as jobsStateModule } from "../../../jobs-state.js";
-import { AdminConfig as adminConfig } from "../../../admin-config.js";
+import { JobsStateModule as jobsStateModule } from "../state.js";
+import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
 import { resolveStartupProbeEnabled } from "../../../probes/startup-probe.js";
 import {
   escapeHtml,
@@ -10,7 +10,10 @@ import {
   bindHandlersMap
 } from "../../shared/ui/index.js";
 import { emitStartupMetric, logError, logInfo, markFirstInteractive } from "../../shared/app-boot.js";
-import { BaluffoJobsParsing as jobsParsing, parseUnifiedJobsPayload } from "../../../jobs-parsing-utils.js";
+import {
+  BaluffoJobsParsing as jobsParsing,
+  parseUnifiedJobsPayload
+} from "../parsing-utils.js";
 import {
   detectWorkType,
   normalizeSector,

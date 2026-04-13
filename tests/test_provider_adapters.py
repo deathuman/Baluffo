@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from unittest import mock
 
 import pytest
 
-from src.jobs.adapters import _runtime as runtime_resolver
 from src.jobs.adapters import provider_api
+from src.jobs.adapters import provider_personio as provider_personio_runner
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
+from src.jobs.adapters.plugins.provider_api import html_board as html_board_runner
+from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_runner
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from tests.jobs_fetcher_helpers import _fixture
 
@@ -206,13 +207,26 @@ FIXTURE_CASES = [
 ]
 
 
+def _bind_fake_deps(monkeypatch: pytest.MonkeyPatch, deps: _FakeDeps) -> None:
+    for module in (html_board_runner, json_feed_runner):
+        monkeypatch.setattr(module, "registry_entries", deps.registry_entries)
+        monkeypatch.setattr(module, "fetch_with_retries", deps.fetch_with_retries)
+        monkeypatch.setattr(module, "set_source_diagnostics", deps.set_source_diagnostics)
+    monkeypatch.setattr(provider_personio_runner, "jobs_registry_entries", deps.registry_entries)
+    monkeypatch.setattr(provider_personio_runner, "fetch_with_retries", deps.fetch_with_retries)
+    monkeypatch.setattr(
+        provider_personio_runner, "set_source_diagnostics", deps.set_source_diagnostics
+    )
+
+
 @pytest.mark.parametrize("case", FIXTURE_CASES, ids=lambda case: case.name)
-def test_provider_fixture_parsers_extract_jobs(case: _FixtureCase) -> None:
+def test_provider_fixture_parsers_extract_jobs(
+    case: _FixtureCase, monkeypatch: pytest.MonkeyPatch
+) -> None:
     deps = _FakeDeps({})
     case.setup(deps)
-
-    with mock.patch.object(runtime_resolver, "facade", lambda: deps):
-        rows = case.run()
+    _bind_fake_deps(monkeypatch, deps)
+    rows = case.run()
 
     assert len(rows) >= 1
     assert all(row["adapter"] == case.expected_adapter for row in rows)
@@ -220,7 +234,9 @@ def test_provider_fixture_parsers_extract_jobs(case: _FixtureCase) -> None:
     case.extra_check(rows)
 
 
-def test_personio_plugin_dispatch_uses_shared_helper_and_fixture() -> None:
+def test_personio_plugin_dispatch_uses_shared_helper_and_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     ensure_provider_plugins()
     deps = _FakeDeps(
         {
@@ -240,16 +256,16 @@ def test_personio_plugin_dispatch_uses_shared_helper_and_fixture() -> None:
         assert url == "https://innogames.jobs.personio.de/xml"
         return _fixture("personio_feed.xml")
 
-    with mock.patch.object(runtime_resolver, "facade", lambda: deps):
-        plugin, selection = default_registry.select(
-            AdapterPluginContext(family="provider_api", adapter_key="personio_sources")
-        )
-        rows = plugin.run(
-            fetch_text=fetch_text,
-            timeout_s=5,
-            retries=0,
-            backoff_s=0,
-        )
+    _bind_fake_deps(monkeypatch, deps)
+    plugin, selection = default_registry.select(
+        AdapterPluginContext(family="provider_api", adapter_key="personio_sources")
+    )
+    rows = plugin.run(
+        fetch_text=fetch_text,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+    )
 
     assert selection.plugin_name == "personio_sources"
     assert len(rows) >= 1

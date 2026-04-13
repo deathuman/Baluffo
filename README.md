@@ -79,11 +79,12 @@ npm run dev:pipeline
 .
 |- *.html                    # Page entry points (jobs.html, saved.html, admin.html)
 |- frontend/                  # ES module frontend code
-|  |- shared/                 # Shared UI components, API client, state hub
-|  |- jobs/                   # Jobs browser page
-|  |- saved/                  # Saved jobs page
+|  |- shared/                 # Shared UI components, local-data clients, config, state hub
+|  |- jobs/                   # Jobs browser page + page-owned helpers (state.js, parsing-utils.js)
+|  |- saved/                  # Saved jobs page + backup helpers (zip-utils.js)
 |  |- admin/                  # Admin console page
 |  |- local-data/             # Browser IndexedDB adapter
+|- .tmp/                      # Repo-owned temp roots (pytest, Playwright, packaged smoke probes)
 |- src/
 |  |- jobs_fetcher.py         # Build unified jobs feed
 |  |- source_discovery.py     # CLI entrypoint for source discovery

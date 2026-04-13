@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
 from src.shared.utils import utc_now_iso
 
 DEFAULT_EXE_PATH = ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
-DEFAULT_ARTIFACT_DIR = ROOT / ".codex-tmp" / "double-launch-probe"
+DEFAULT_ARTIFACT_DIR = ROOT / ".tmp" / "probes" / "double-launch"
 DEFAULT_TIMEOUT_S = 20.0
 
 

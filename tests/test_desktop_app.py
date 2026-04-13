@@ -195,7 +195,35 @@ def test_build_browser_launch_command_uses_app_mode_profile_and_new_window() -> 
     assert "--app=http://127.0.0.1:8080/jobs.html?desktop=1" in command
     assert "--no-first-run" in command
     assert "--disable-session-crashed-bubble" in command
+    assert "--disable-application-cache" in command
+    assert "--disk-cache-size=1" in command
+    assert "--media-cache-size=1" in command
     assert any(part.startswith("--user-data-dir=") for part in command)
+
+
+def test_launch_chromium_app_clears_cache_dirs_before_launch(tmp_path: Path) -> None:
+    profile_dir = tmp_path / "desktop-browser-profile"
+    cache_dir = profile_dir / "Default" / "Cache"
+    code_cache_dir = profile_dir / "Default" / "Code Cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    code_cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "data.bin").write_text("cached", encoding="utf-8")
+    (code_cache_dir / "js.bin").write_text("cached", encoding="utf-8")
+
+    fake_process = mock.Mock(spec=subprocess.Popen)
+    with mock.patch.object(
+        desktop_app.subprocess, "Popen", return_value=fake_process
+    ) as popen_mock:
+        result = desktop_app.launch_chromium_app(
+            "http://127.0.0.1:8080/jobs.html?desktop=1",
+            "C:/Edge/msedge.exe",
+            profile_dir,
+        )
+
+    assert result is fake_process
+    assert not cache_dir.exists()
+    assert not code_cache_dir.exists()
+    popen_mock.assert_called_once()
 
 
 def test_latest_browser_heartbeat_ts_parses_iso_timestamps() -> None:
