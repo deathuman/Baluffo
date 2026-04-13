@@ -626,9 +626,14 @@ SOURCE_CHECK_BROWSER_CASES = [
         _SourceCheckCase(
             name="browser-on-challenge-page",
             source_url="https://jobs.zenimax.com/jobs",
-            fetch_handler=lambda _url: (
-                '<html><head><script src="/cdn-cgi/challenge-platform/h/g/scripts/jsd/main.js"></script></head>'
-                "<body>Just a moment...</body></html>"
+            fetch_handler=_fetch_routes(
+                (
+                    _equals("https://jobs.zenimax.com/jobs"),
+                    (
+                        '<html><head><script src="/cdn-cgi/challenge-platform/h/g/scripts/jsd/main.js"></script></head>'
+                        "<body>Just a moment...</body></html>"
+                    ),
+                )
             ),
             browser_result=(
                 '<a href="/requisitions/view/3472">Associate DevOps Programmer</a>'
