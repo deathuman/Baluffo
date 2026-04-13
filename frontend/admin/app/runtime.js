@@ -7,7 +7,7 @@ import {
   bindAsyncClick
 } from "../../shared/ui/index.js";
 import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
-import { adminService, adminPageService } from "../services.js";
+import { adminService } from "../services.js";
 import { createAdminDispatcher, ADMIN_ACTIONS } from "../actions.js";
 import {
   renderTotalsHtml,

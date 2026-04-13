@@ -1,16 +1,4 @@
-import { escapeHtml, showToast, setText } from "../shared/ui/index.js";
-
-export function adminEscapeHtml(value) {
-  return escapeHtml(value);
-}
-
-export function setAdminStatus(el, text) {
-  setText(el, text);
-}
-
-export function showAdminToast(message, type = "info", options = {}) {
-  showToast(message, type, options);
-}
+import { escapeHtml } from "../shared/ui/index.js";
 
 export function renderTotalsHtml(totals, formatBytes) {
   if (!totals) return "";
@@ -42,7 +30,7 @@ export function renderTotalsHtml(totals, formatBytes) {
   `;
 }
 
-export function renderUserRowHtml(user, formatBytes) {
+function renderUserRowHtml(user, formatBytes) {
   const uid = escapeHtml(user.uid || "");
   const name = escapeHtml(user.name || user.uid || "Unknown");
   const email = escapeHtml(user.email || "");

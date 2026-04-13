@@ -16,7 +16,7 @@ function resetBarPresentation(barEl) {
 /**
  * Helper function to ensure progress elements are visible and properly initialized
  */
-export function ensureProgressElementVisible(rootEl) {
+function ensureProgressElementVisible(rootEl) {
   if (!rootEl) return false;
 
   // Check if element is hidden and make it visible
@@ -30,46 +30,6 @@ export function ensureProgressElementVisible(rootEl) {
   rootEl.setAttribute('aria-valuemax', '100');
 
   return true;
-}
-
-/**
- * Test function to verify progress bar functionality (development only)
- */
-export function testProgressBars() {
-  const fetcherProgress = document.querySelector('[data-ui="admin-fetcher-progress"]');
-  const fetcherBar = document.querySelector('[data-ui="admin-fetcher-progress-bar"]');
-  const fetcherLabel = document.querySelector('[data-ui="admin-fetcher-progress-label"]');
-
-  if (fetcherProgress && fetcherBar && fetcherLabel) {
-    // Test indeterminate progress
-    applyAdminTaskProgress(fetcherProgress, fetcherBar, fetcherLabel, {
-      active: true,
-      determinate: false,
-      label: "Test: Indeterminate progress..."
-    });
-
-    setTimeout(() => {
-      // Test determinate progress
-      applyAdminTaskProgress(fetcherProgress, fetcherBar, fetcherLabel, {
-        active: true,
-        determinate: true,
-        ratio: 0.65,
-        label: "Test: 65% complete"
-      });
-
-      setTimeout(() => {
-        // Reset to hidden
-        applyAdminTaskProgress(fetcherProgress, fetcherBar, fetcherLabel, {
-          active: false
-        });
-      }, 2000);
-    }, 2000);
-
-    return true;
-  }
-
-  console.error("[Admin Progress] Test failed: progress elements not found");
-  return false;
 }
 
 export function applyAdminTaskProgress(rootEl, barEl, labelEl, view = {}) {

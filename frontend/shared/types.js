@@ -59,5 +59,5 @@
  * @property {number} attachments - Count of local files.
  */
 
-// Export dummy to make it a module if needed, though JSDoc works anyway.
-export default {};
+// Keep this file as a module for JSDoc import() consumers without exporting a dead symbol.
+export {};

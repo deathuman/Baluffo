@@ -48,4 +48,4 @@ async function loadCityNoiseContract() {
 
 export const CITY_NOISE_CONTRACT = await loadCityNoiseContract();
 
-export { loadCityNoiseContract, normalizeCityNoiseText };
+export { normalizeCityNoiseText };

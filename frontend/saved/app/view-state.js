@@ -26,7 +26,7 @@ export function isValidSavedSort(value) {
   return value === SORT_UPDATED || value === SORT_SAVED || value === SORT_REMINDER || value === SORT_PERSONAL;
 }
 
-export function getReminderWeight(reminderAt, { parseIsoDate, now = Date.now }) {
+function getReminderWeight(reminderAt, { parseIsoDate, now = Date.now }) {
   const parsed = parseIsoDate(reminderAt);
   if (!parsed) return 3;
   const diff = parsed.getTime() - now();

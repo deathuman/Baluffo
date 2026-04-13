@@ -30,6 +30,21 @@ BRIDGE_DEFAULTS = get_bridge_defaults()
 DESKTOP_DEFAULTS = get_desktop_defaults()
 
 
+def _is_expected_client_disconnect(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    while current is not None:
+        if isinstance(current, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return True
+        winerror = getattr(current, "winerror", None)
+        if isinstance(winerror, int) and winerror in {10053, 10054}:
+            return True
+        errno = getattr(current, "errno", None)
+        if isinstance(errno, int) and errno in {32, 104}:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 @dataclass(frozen=True)
 class RuntimeLayout:
     root: Path
@@ -41,6 +56,15 @@ class RuntimeLayout:
 class QuietSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:  # noqa: A003
         return
+
+    def handle_one_request(self) -> None:
+        try:
+            return super().handle_one_request()
+        except Exception as exc:  # noqa: BLE001
+            if _is_expected_client_disconnect(exc):
+                self.close_connection = True
+                return
+            raise
 
 
 def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:

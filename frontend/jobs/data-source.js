@@ -1,4 +1,4 @@
-export async function fetchWithTimeout(url, timeoutMs, init = {}) {
+async function fetchWithTimeout(url, timeoutMs, init = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -44,7 +44,7 @@ function resolveSheetsFallbackSources(options = {}) {
   return [];
 }
 
-export async function fetchFromGoogleSheets(options = {}) {
+async function fetchFromGoogleSheets(options = {}) {
   const {
     setSourceStatus,
     parseCSV,

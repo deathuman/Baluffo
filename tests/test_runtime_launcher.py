@@ -4,6 +4,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -48,6 +49,14 @@ class _ReadyHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):  # noqa: A003
         return
+
+
+class _DisconnectingWriter:
+    def write(self, _body: bytes) -> int:
+        raise ConnectionResetError(
+            10054,
+            "An existing connection was forcibly closed by the remote host",
+        )
 
 
 def test_resolve_runtime_layout_uses_current_pointer() -> None:
@@ -120,6 +129,33 @@ def test_build_site_request_handler_traces_probe_requests() -> None:
         ]
         assert "desktop_site_request_start" in events
         assert "desktop_site_request_complete" in events
+
+
+def test_quiet_site_handler_swallows_expected_client_disconnects() -> None:
+    handler_cls = rl.build_site_request_handler(Path.cwd())
+    handler = handler_cls.__new__(handler_cls)
+    handler.close_connection = False
+    handler.requestline = "GET /jobs.html HTTP/1.1"
+    handler.request_version = "HTTP/1.1"
+    handler.command = "GET"
+    handler.path = "/jobs.html"
+    handler.request = SimpleNamespace(makefile=lambda *args, **kwargs: None)
+    handler.client_address = ("127.0.0.1", 4173)
+    handler.server = SimpleNamespace()
+    handler.wfile = _DisconnectingWriter()
+    handler.rfile = None
+
+    with mock.patch.object(
+        rl.SimpleHTTPRequestHandler,
+        "handle_one_request",
+        side_effect=ConnectionResetError(
+            10054,
+            "An existing connection was forcibly closed by the remote host",
+        ),
+    ):
+        handler.handle_one_request()
+
+    assert handler.close_connection is True
 
 
 def test_run_site_server_reports_app_version() -> None:

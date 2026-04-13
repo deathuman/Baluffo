@@ -111,7 +111,7 @@ export function getPipelineRunningLabel(payload, nowMs = Date.now()) {
   return elapsed ? `${stage} running... ${elapsed}` : `${stage} running...`;
 }
 
-export function getPipelineProgressLabel(payload) {
+function getPipelineProgressLabel(payload) {
   const progress = payload?.progress;
   if (progress && typeof progress === "object") {
     const label = String(progress.label || "").trim();

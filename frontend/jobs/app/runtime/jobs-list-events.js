@@ -1,6 +1,5 @@
 export function setupJobsListDelegation({
   jobsList,
-  ui,
   jobRowSelector,
   saveJobBtnSelector,
   sanitizeUrl,

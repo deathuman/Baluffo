@@ -27,10 +27,6 @@ export const LOCAL_DATA_RUNTIME_METHODS = Object.freeze([
   "wipeAccountAdmin"
 ]);
 
-export const LOCAL_DATA_RUNTIME_VALUE_KEYS = Object.freeze([
-  "APPLICATION_STATUSES"
-]);
-
 export function assertLocalDataRuntime(api, label = "local data runtime") {
   if (!api || typeof api !== "object") {
     throw new Error(`Invalid ${label}: expected an object runtime API.`);

@@ -10,6 +10,21 @@ from urllib.parse import parse_qs, urlparse
 from src.bridge.request_utils import read_json_from_request
 
 
+def _is_expected_client_disconnect(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    while current is not None:
+        if isinstance(current, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return True
+        winerror = getattr(current, "winerror", None)
+        if isinstance(winerror, int) and winerror in {10053, 10054}:
+            return True
+        errno = getattr(current, "errno", None)
+        if isinstance(errno, int) and errno in {32, 104}:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 def make_handler(*, api: Any):
     """Create a request handler bound to an API module/object.
 
@@ -18,6 +33,24 @@ def make_handler(*, api: Any):
     """
 
     class Handler(BaseHTTPRequestHandler):
+        def _handle_response_write_exception(self, exc: BaseException, *, status: int) -> bool:
+            if _is_expected_client_disconnect(exc):
+                self.close_connection = True
+                return True
+            route_path = ""
+            with suppress(Exception):
+                route_path = self._route_path()
+            with suppress(Exception):
+                api.bridge_log(
+                    "error",
+                    "http_response_write_failed",
+                    method=getattr(self, "command", ""),
+                    path=route_path or getattr(self, "path", ""),
+                    status=int(status),
+                    error=str(exc),
+                )
+            return False
+
         def _route_path(self) -> str:
             # Defensive normalization: some clients/environments can introduce
             # whitespace/control characters that otherwise cause routes to miss.
@@ -44,18 +77,8 @@ def make_handler(*, api: Any):
                 self.end_headers()
                 self.wfile.write(body)
             except Exception as exc:  # noqa: BLE001
-                route_path = ""
-                with suppress(Exception):
-                    route_path = self._route_path()
-                with suppress(Exception):
-                    api.bridge_log(
-                        "error",
-                        "http_response_write_failed",
-                        method=getattr(self, "command", ""),
-                        path=route_path or getattr(self, "path", ""),
-                        status=int(status),
-                        error=str(exc),
-                    )
+                if self._handle_response_write_exception(exc, status=status):
+                    return
                 raise
 
         def _send_bytes(
@@ -84,18 +107,8 @@ def make_handler(*, api: Any):
                 self.end_headers()
                 self.wfile.write(body)
             except Exception as exc:  # noqa: BLE001
-                route_path = ""
-                with suppress(Exception):
-                    route_path = self._route_path()
-                with suppress(Exception):
-                    api.bridge_log(
-                        "error",
-                        "http_response_write_failed",
-                        method=getattr(self, "command", ""),
-                        path=route_path or getattr(self, "path", ""),
-                        status=int(status),
-                        error=str(exc),
-                    )
+                if self._handle_response_write_exception(exc, status=status):
+                    return
                 raise
 
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A003

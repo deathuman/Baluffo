@@ -59,7 +59,7 @@ export async function buildBackupZipBlob(payload, options = {}) {
   return buildZipStoreOnlyFn(entries);
 }
 
-export async function readBackupPayloadFromZip(file, options = {}) {
+async function readBackupPayloadFromZip(file, options = {}) {
   const parseZipStoreOnlyFn = options.parseZipStoreOnly || parseZipStoreOnly;
   const utf8DecodeFn = options.utf8Decode || utf8Decode;
   const toDataUrlFn = options.toDataUrl || toDataUrl;

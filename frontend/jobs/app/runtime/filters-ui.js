@@ -28,7 +28,6 @@ export function createJobsFiltersController({
   buildFilterOptions,
   getJobLocationCities,
   getJobLocationCountries,
-  isInternshipJob,
   isValidCountry,
   isSemanticallyValidLocationValue,
   readQuickFilterPreferences,

@@ -151,7 +151,7 @@ export function shouldApplyTimestampGate(report, {
   return timestampMs >= (Number(launchAtMs) - Number(skewMs));
 }
 
-export function isLiveTaskReportActive(report) {
+function isLiveTaskReportActive(report) {
   return Boolean(
     report
     && !String(report.finishedAt || "").trim()

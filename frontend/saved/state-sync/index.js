@@ -5,7 +5,7 @@ import {
 } from "../../local-data/storage-gateway.js";
 
 // Saved page state-sync helpers: local/session persistence only.
-export function buildSavedTimelinePrefsKey(prefix, uid) {
+function buildSavedTimelinePrefsKey(prefix, uid) {
   return `${String(prefix || "")}:${String(uid || "")}`;
 }
 

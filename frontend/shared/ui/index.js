@@ -47,10 +47,6 @@ export function setText(el, text) {
   el.textContent = String(text || "");
 }
 
-/** Set status line text via the given setText helper. Shared across jobs, saved, admin. */
-export function setStatusText(setText, element, text) {
-  if (setText && element) setText(element, text);
-}
 
 export function bindUi(el, eventName, handler) {
   if (!el) return;

@@ -64,13 +64,10 @@ export const COUNTRY_ACCEPTANCE = await loadCountryAcceptanceContract();
 export function resolveCountryAcceptanceValue(value) {
   const token = normalizeCountryAcceptanceToken(value);
   if (!token) return "";
+  const raw = String(value || "").trim();
   return COUNTRY_ACCEPTANCE.aliasToCanonical.get(token)
     || COUNTRY_ACCEPTANCE.exactLabelMap.get(token)
+    || COUNTRY_ACCEPTANCE.countryNameByCode[raw]
+    || COUNTRY_ACCEPTANCE.countryNameByCode[raw.toUpperCase()]
     || "";
 }
-
-export function isAcceptedCountryValue(value) {
-  return Boolean(resolveCountryAcceptanceValue(value));
-}
-
-export { normalizeCountryAcceptanceToken, loadCountryAcceptanceContract };

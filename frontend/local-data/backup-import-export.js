@@ -117,7 +117,7 @@ export async function serializeAttachmentWithBlob(row, stripAttachmentPk) {
   return { ...base, blobDataUrl: dataUrl };
 }
 
-export function blobToDataUrl(blob) {
+function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
@@ -131,7 +131,7 @@ export function deserializeAttachmentBlob(row) {
   return dataUrlToBlob(row.blobDataUrl);
 }
 
-export function dataUrlToBlob(dataUrl) {
+function dataUrlToBlob(dataUrl) {
   const parts = String(dataUrl).split(",");
   if (parts.length !== 2) return null;
   const header = parts[0];

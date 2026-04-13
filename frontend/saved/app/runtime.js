@@ -57,8 +57,6 @@ import { runExportBackup as runExportBackupFromModule, runImportBackup as runImp
 import {
   buildTimelinePrefsKey as buildTimelinePrefsKeyFromActivity,
   normalizeTimelineScope,
-  timelineTypeForEntry,
-  filterActivityEntriesForScope,
   countRecentActivityEntries,
   setActivityPanelOpen as setActivityPanelOpenFromModule,
   setTimelineScope as setTimelineScopeFromModule,
@@ -72,7 +70,6 @@ import {
 } from "./activity.js";
 import {
   isEditingNotesField,
-  isEditingNotesFieldFromElement,
   shouldDeferSavedJobsRerender,
   queueNotesSave as queueNotesSaveFromModule,
   flushNotesSave as flushNotesSaveFromModule,
@@ -1819,7 +1816,7 @@ async function signInUser() {
 
   if (!apiReady || !pageServiceAvailable) {
     setAuthControlsReady(false);
-    scheduleSavedAuthReadyPoll();
+    savedAuthReadyPoller.schedulePoll();
     showToast("Local auth provider is starting. Try again in a moment.", "info");
     return;
   }
@@ -1849,7 +1846,7 @@ async function signInUser() {
 async function signOutUser() {
   if (!isSavedApiReady() || !savedPageService.isAvailable()) {
     setAuthControlsReady(false);
-    scheduleSavedAuthReadyPoll();
+    savedAuthReadyPoller.schedulePoll();
     return;
   }
   if (!savedAuthListenerBound) {
@@ -1886,13 +1883,5 @@ export {
   needsInterviewTimestamp,
   toPromptLocalDateTime,
   parseScheduledTimestampInput,
-  isEditingNotesField,
-  isEditingNotesFieldFromElement,
-  shouldDeferSavedJobsRerender,
-  computeAnchorScrollDelta,
-  normalizeTimelineScope,
-  timelineTypeForEntry,
-  filterActivityEntriesForScope,
-  countRecentActivityEntries,
   buildTimelinePrefsKey
 };

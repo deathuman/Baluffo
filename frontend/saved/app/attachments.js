@@ -1,6 +1,6 @@
-export const ALLOWED_ATTACHMENT_EXTENSIONS = new Set(["pdf", "doc", "docx", "txt", "png", "jpg", "jpeg"]);
+const ALLOWED_ATTACHMENT_EXTENSIONS = new Set(["pdf", "doc", "docx", "txt", "png", "jpg", "jpeg"]);
 
-export function getFileExtension(name) {
+function getFileExtension(name) {
   const idx = String(name || "").lastIndexOf(".");
   if (idx === -1) return "";
   return String(name).slice(idx + 1).toLowerCase();
@@ -13,7 +13,7 @@ export function formatFileSize(bytes) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function isImageAttachment(attachment) {
+function isImageAttachment(attachment) {
   const type = String(attachment?.type || "").toLowerCase();
   if (type === "image/png" || type === "image/jpeg") return true;
   const ext = getFileExtension(attachment?.name || "");

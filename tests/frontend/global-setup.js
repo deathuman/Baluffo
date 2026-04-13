@@ -1,6 +1,4 @@
 import { spawn } from "child_process";
-import { existsSync } from "fs";
-import { resolve } from "path";
 
 function resolvePlaywrightPythonCommand() {
   if (process.env.PLAYWRIGHT_PYTHON) {
@@ -19,7 +17,7 @@ let bridgeProcess = null;
 async function startBridge() {
   console.log("[bridge] Starting admin bridge...");
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const args = [
       "src/admin_bridge.py",
       "--port", "8877",
@@ -65,7 +63,7 @@ function stopBridge() {
   if (bridgeProcess) {
     try {
       bridgeProcess.kill();
-    } catch (e) {
+    } catch {
       // ignore
     }
     bridgeProcess = null;

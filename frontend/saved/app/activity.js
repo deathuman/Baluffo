@@ -1,10 +1,10 @@
 import { normalizeToken } from "../../shared/text-utils.js";
 
-export const TIMELINE_SCOPE_ALL = "all";
-export const TIMELINE_SCOPE_SELECTED = "selected";
-export const TIMELINE_SCOPE_PHASE = "phase";
-export const TIMELINE_SCOPE_NOTES = "notes";
-export const TIMELINE_SCOPE_ATTACHMENTS = "attachments";
+const TIMELINE_SCOPE_ALL = "all";
+const TIMELINE_SCOPE_SELECTED = "selected";
+const TIMELINE_SCOPE_PHASE = "phase";
+const TIMELINE_SCOPE_NOTES = "notes";
+const TIMELINE_SCOPE_ATTACHMENTS = "attachments";
 
 export function normalizeTimelineScope(value) {
   const raw = normalizeToken(value);

@@ -1,4 +1,4 @@
-export function createAdminBusyState() {
+function createAdminBusyState() {
   return {
     fetcherRun: false,
     fetcherWatch: false,

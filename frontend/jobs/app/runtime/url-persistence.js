@@ -6,7 +6,6 @@ export function createJobsUrlPersistence({
   rememberJobsUrl,
   emitMetric,
   getDesktopUrlStateReady,
-  setDesktopUrlStateReady,
   getDesktopPendingRememberJobsUrl,
   setDesktopPendingRememberJobsUrl,
   getDesktopPendingJobsUrl,

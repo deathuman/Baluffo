@@ -1,4 +1,4 @@
-export function stripPk(row) {
+function stripPk(row) {
   if (!row) return row;
   const copy = { ...row };
   delete copy.pk;

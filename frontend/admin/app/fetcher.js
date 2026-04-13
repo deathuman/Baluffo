@@ -14,7 +14,7 @@ import {
 } from "./live-task.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
 
-export const FETCHER_FALLBACK_MESSAGES = {
+const FETCHER_FALLBACK_MESSAGES = {
   bridgeUnavailable: "Bridge is offline; using VS Code task fallback for this run.",
   presetNeedsBridge: "VS Code task fallback supports default fetcher runs only. Start admin bridge and retry.",
   launchPrimary: taskLabel => `Triggered VS Code task URI (primary): ${taskLabel}`,

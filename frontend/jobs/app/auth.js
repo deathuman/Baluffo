@@ -1,4 +1,4 @@
-import { setAuthControlsReady, setAuthStatusViewModel, toAuthViewModel } from "../../shared/auth-ui.js";
+import { setAuthControlsReady, setAuthStatusViewModel } from "../../shared/auth-ui.js";
 
 export function toggleJobsAuthButtons(refs, isSignedIn) {
   if (refs.authSignInBtn) refs.authSignInBtn.classList.toggle("hidden", isSignedIn);
@@ -9,8 +9,6 @@ export function toggleJobsAuthButtons(refs, isSignedIn) {
 export function setJobsAuthControlsReady(refs, ready) {
   setAuthControlsReady([refs.authSignInBtn, refs.authSignOutBtn], ready);
 }
-
-export { toAuthViewModel as toJobsAuthViewModel };
 
 export function setJobsAuthStatus(refs, text) {
   setAuthStatusViewModel(refs.authStatus, refs.authStatusHint, refs.authAvatar, text);

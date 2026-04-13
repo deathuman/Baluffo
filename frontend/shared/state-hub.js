@@ -15,14 +15,6 @@ const listeners = {};
 
 /**
  * @param {string} key
- * @returns {unknown}
- */
-export function get(key) {
-  return state[key];
-}
-
-/**
- * @param {string} key
  * @param {unknown} value
  */
 export function set(key, value) {
@@ -48,38 +40,4 @@ export function set(key, value) {
       }
     });
   }
-}
-
-/**
- * @param {string} key - State key, or "*" for all keys
- * @param {(value: unknown) => void | ((key: string, value: unknown) => void)} callback
- * @returns {() => void} Unsubscribe function
- */
-export function subscribe(key, callback) {
-  if (!listeners[key]) listeners[key] = [];
-  listeners[key].push(callback);
-  const current = key === "*" ? undefined : get(key);
-  if (current !== undefined) {
-    try {
-      if (key === "*") callback(key, current);
-      else callback(current);
-    } catch (_ignored) {
-      // ignore listener errors
-    }
-  }
-  return () => {
-    const list = listeners[key];
-    if (!list) return;
-    const i = list.indexOf(callback);
-    if (i !== -1) list.splice(i, 1);
-  };
-}
-
-/**
- * Subscribe to any state change. Callback receives (key, value).
- * @param {(key: string, value: unknown) => void} callback
- * @returns {() => void} Unsubscribe function
- */
-export function subscribeAll(callback) {
-  return subscribe("*", callback);
 }

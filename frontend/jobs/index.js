@@ -2,7 +2,7 @@ import "../../app-local-data-client.js";
 import "../../jobs-state.js";
 import "../../jobs-parsing-utils.js";
 import { boot as bootJobsPage } from "./app.js";
-import { emitStartupProbeMetric } from "../../../probes/startup-probe.js";
+import { emitStartupProbeMetric } from "../../probes/startup-probe.js";
 
 emitStartupProbeMetric("jobs_page_boot_start");
 emitStartupProbeMetric("jobs_module_boot_start");

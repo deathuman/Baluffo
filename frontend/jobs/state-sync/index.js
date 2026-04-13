@@ -23,10 +23,6 @@ export function writeAutoRefreshAppliedId(storageKey, value) {
   return safeWriteLocal(storageKey, String(value || ""));
 }
 
-export function writeAutoRefreshSignal(storageKey, signal) {
-  return safeWriteJsonLocal(storageKey, signal);
-}
-
 export function readAutoRefreshSignal(storageKey) {
   return safeReadLocal(storageKey, "");
 }

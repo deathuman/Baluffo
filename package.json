@@ -36,11 +36,13 @@
     "test:py:cov": "npm run check:python-version && python -m pytest tests -q -m \"not slow\" --cov=src --cov-report=term-missing --color=no",
     "lint:py": "ruff check .",
     "format:py": "ruff format .",
-    "lint:js": "eslint ."
+    "lint:js": "eslint .",
+    "lint:deadcode:js": "knip"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.52.0",
-    "eslint": "^9.39.1"
+    "eslint": "^9.39.1",
+    "knip": "^5.63.1"
   }
 }

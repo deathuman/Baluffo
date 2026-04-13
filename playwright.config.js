@@ -30,7 +30,7 @@ export default defineConfig({
     headless: true
   },
   webServer: {
-    command: `${playwrightPython} -m http.server 4173 --directory .`,
+    command: `${playwrightPython} scripts/serve_static_site.py --port 4173 --directory .`,
     url: "http://127.0.0.1:4173/jobs.html",
     timeout: 20_000,
     reuseExistingServer: !process.env.CI

@@ -219,7 +219,7 @@ export function isValidCountry(country) {
   return Boolean(sanitizeCountryField(country));
 }
 
-export function normalizeTimestamp(value) {
+function normalizeTimestamp(value) {
   if (!value) return "";
   let dt = null;
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -271,7 +271,7 @@ const LOCATION_POSTAL_CODE_RE = /\b\d{2,6}(?:-\d{2,4})?\b/;
 const LOCATION_SCRIPT_NOISE_RE = /(?:document\.|addEventListener|DOMContentLoaded|querySelector|innerHTML|setTimeout|console\.|function\s*\(|\{\{|\}\})/i;
 const LOCATION_ROLE_BLOB_RE = /\b(administratif|administration|assistant|assistante|gestion|human resources|hr|office|operations?|coordination|support)\b/i;
 
-export function invalidLocationReason(value, field = "city") {
+function invalidLocationReason(value, field = "city") {
   const text = sanitizePublicText(value);
   if (!text) return "";
   const lowered = text.toLowerCase();
@@ -348,7 +348,7 @@ function isUnknownLocationToken(value) {
   return lowered === "unknown";
 }
 
-export function normalizeJobLocations(value, fallbackCity = "", fallbackCountry = "") {
+function normalizeJobLocations(value, fallbackCity = "", fallbackCountry = "") {
   const entries = Array.isArray(value) ? value : [];
   const normalized = [];
   const seen = new Set();
@@ -405,7 +405,7 @@ export function getJobLocationCountries(job) {
   return countries;
 }
 
-export function buildJobLocationSummary(job) {
+function buildJobLocationSummary(job) {
   const locations = Array.isArray(job?.locations) ? job.locations : [];
   const locationLabels = locations
     .map(location => {
@@ -535,7 +535,7 @@ export function normalizeJobs(rows, options = {}) {
   });
 }
 
-export function simpleHash(input) {
+function simpleHash(input) {
   let hash = 0;
   const value = String(input || "");
   for (let i = 0; i < value.length; i++) {

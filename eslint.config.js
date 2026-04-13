@@ -3,10 +3,13 @@ import js from "@eslint/js";
 export default [
   {
     ignores: [
+      ".codex-tmp/**",
       ".codex-tmp-*/**",
+      "_out/**",
       ".pre-commit-home*/**",
       "node_modules/**",
       "data/**",
+      "dist/**",
       "docs/**",
       "playwright-report/**",
       "pytest-cache-files-*/**",
@@ -84,6 +87,7 @@ export default [
         afterEach: "readonly",
         global: "readonly",
         Blob: "readonly",
+        setImmediate: "readonly",
       },
     },
     rules: {

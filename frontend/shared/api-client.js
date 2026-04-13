@@ -12,7 +12,7 @@ const DEFAULT_TIMEOUT_MS = 18000;
  * @param {string} baseUrl - Bridge base URL (e.g. from adminConfig.ADMIN_BRIDGE_BASE)
  * @returns {string} baseUrl normalized (no trailing slash)
  */
-export function normalizeBaseUrl(baseUrl) {
+function normalizeBaseUrl(baseUrl) {
   const s = String(baseUrl || "").trim();
   return s.endsWith("/") ? s.slice(0, -1) : s || "http://127.0.0.1:8877";
 }
@@ -22,7 +22,7 @@ export function normalizeBaseUrl(baseUrl) {
  * @param {number} status
  * @returns {string}
  */
-export function getBridgeErrorMessage(status) {
+function getBridgeErrorMessage(status) {
   if (status === 401) return "Unauthorized";
   if (status === 403) return "Forbidden";
   if (status >= 500) return "Bridge error";
@@ -83,18 +83,6 @@ export async function fetchBridge(baseUrl, path, options = {}) {
 export async function fetchJson(baseUrl, path, options = {}) {
   const response = await fetchBridge(baseUrl, path, { ...options, method: "GET" });
   return response.json();
-}
-
-/**
- * GET path and return text.
- * @param {string} baseUrl
- * @param {string} path
- * @param {{ timeoutMs?: number }} [options]
- * @returns {Promise<string>}
- */
-export async function fetchText(baseUrl, path, options = {}) {
-  const response = await fetchBridge(baseUrl, path, { ...options, method: "GET" });
-  return response.text();
 }
 
 /**

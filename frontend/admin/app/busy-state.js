@@ -1,12 +1,12 @@
-export function isAdminBusy(busyState, keys) {
+function isAdminBusy(busyState, keys) {
   return keys.some(key => Boolean(busyState?.[key]));
 }
 
-export function isFetcherBusy(busyState) {
+function isFetcherBusy(busyState) {
   return isAdminBusy(busyState, ["fetcherRun", "fetcherWatch", "fetcherReportLoad", "liveFetchRunning"]);
 }
 
-export function isDiscoveryBusy(busyState) {
+function isDiscoveryBusy(busyState) {
   return isAdminBusy(busyState, [
     "discoveryRun",
     "discoveryWatch",
@@ -18,7 +18,7 @@ export function isDiscoveryBusy(busyState) {
   ]);
 }
 
-export function isOpsBusy(busyState) {
+function isOpsBusy(busyState) {
   return Boolean(busyState?.opsLoad);
 }
 
@@ -26,11 +26,11 @@ export function isSyncBusy(busyState) {
   return isAdminBusy(busyState, ["syncRun", "liveSyncRunning"]);
 }
 
-export function isPipelineBusy(busyState) {
+function isPipelineBusy(busyState) {
   return Boolean(busyState?.livePipelineRunning);
 }
 
-export function setBusyBadge(el, state, text) {
+function setBusyBadge(el, state, text) {
   if (!el) return;
   const normalized = String(state || "idle").toLowerCase();
   el.classList.remove("idle", "running");
@@ -38,7 +38,7 @@ export function setBusyBadge(el, state, text) {
   el.textContent = String(text || "");
 }
 
-export function setButtonBusy(el, busy, busyText) {
+function setButtonBusy(el, busy, busyText) {
   if (!el) return;
   if (!el.dataset.idleLabel) {
     el.dataset.idleLabel = String(el.textContent || "");

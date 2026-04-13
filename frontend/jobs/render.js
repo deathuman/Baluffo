@@ -1,19 +1,7 @@
-import { escapeHtml, showToast, setText } from "../shared/ui/index.js";
+import { escapeHtml } from "../shared/ui/index.js";
 import { renderJobRow as renderJobRowFromComponent } from "../shared/components/JobRow.js";
 import { renderLoadingState } from "../shared/components/LoadingState.js";
 import { renderErrorState } from "../shared/components/ErrorState.js";
-
-export function jobsEscapeHtml(value) {
-  return escapeHtml(value);
-}
-
-export function setJobsStatus(el, text) {
-  setText(el, text);
-}
-
-export function showJobsToast(message, type = "info", options = {}) {
-  showToast(message, type, options);
-}
 
 export function renderJobRowHtml(job, options = {}) {
   return renderJobRowFromComponent(job, options);

@@ -13,7 +13,6 @@ import { emitStartupMetric, logError, logInfo, markFirstInteractive } from "../.
 import { BaluffoJobsParsing as jobsParsing, parseUnifiedJobsPayload } from "../../../jobs-parsing-utils.js";
 import {
   detectWorkType,
-  detectContractType,
   normalizeSector,
   classifyCompanyType,
   mapProfession,
@@ -56,14 +55,6 @@ import {
 } from "./cache.js";
 import {
   normalizeLifecycleStatus,
-  optionExists,
-  normalizeSelectedCountries,
-  getCountrySelectionBadgeText,
-  getDefaultQuickFilterKeys,
-  sanitizeQuickFilterKeys,
-  renderQuickFiltersHtml,
-  renderQuickFilterOptionsHtml,
-  getNextQuickFilterKeys,
 } from "./filters.js";
 import {
   isDesktopRuntimeMode as isDesktopRuntimeModeFromStartup,
@@ -104,8 +95,6 @@ import { createJobsPipelineController } from "./runtime/pipeline-controller.js";
 import { createJobsFiltersController } from "./runtime/filters-ui.js";
 import {
   fullCountryName as fullCountryNameForJobs,
-  getAvailableRegionOptions as getAvailableRegionOptionsForJobs,
-  getCountryFilterOptionLabel as getCountryFilterOptionLabelForJobs,
   matchesCountrySelection as matchesCountrySelectionForJobs
 } from "./countries.js";
 import {
@@ -211,7 +200,6 @@ const filtersController = createJobsFiltersController({
   buildFilterOptions,
   getJobLocationCities,
   getJobLocationCountries,
-  isInternshipJob,
   isValidCountry,
   isSemanticallyValidLocationValue,
   readQuickFilterPreferences,
@@ -280,9 +268,6 @@ const jobsUrlPersistence = createJobsUrlPersistence({
   rememberJobsUrl,
   emitMetric: (event, payload = {}) => emitDesktopStartupMetric(event, payload),
   getDesktopUrlStateReady: () => runtimeState.desktopUrlStateReady,
-  setDesktopUrlStateReady: value => {
-    runtimeState.desktopUrlStateReady = Boolean(value);
-  },
   getDesktopPendingRememberJobsUrl: () => runtimeState.desktopPendingRememberJobsUrl,
   setDesktopPendingRememberJobsUrl: value => {
     runtimeState.desktopPendingRememberJobsUrl = Boolean(value);
@@ -635,26 +620,6 @@ async function init() {
   });
 }
 
-function updateJobsPipelineUi(options = {}) {
-  return pipelineController.updateJobsPipelineUi(options);
-}
-
-function _clearJobsPipelinePolling() {
-  return pipelineController.clearJobsPipelinePolling();
-}
-
-function scheduleJobsPipelineStatusPoll(delayMs) {
-  return pipelineController.scheduleJobsPipelineStatusPoll(delayMs);
-}
-
-function handlePipelineCompletionStatus(payload) {
-  return pipelineController.handlePipelineCompletionStatus(payload);
-}
-
-async function pollJobsPipelineStatus() {
-  return pipelineController.pollJobsPipelineStatus();
-}
-
 function ensureJobsPipelineStatusWatch() {
   return pipelineController.ensureJobsPipelineStatusWatch();
 }
@@ -737,10 +702,6 @@ function readStateFromUrl() {
 
 function writeStateToUrl() {
   jobsUrlPersistence.writeStateToUrl(state);
-}
-
-function persistDesktopJobsUrlState(url) {
-  jobsUrlPersistence.persistDesktopJobsUrlState(url);
 }
 
 function rememberCurrentJobsUrl() {

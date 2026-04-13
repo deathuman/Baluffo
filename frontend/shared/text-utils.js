@@ -19,6 +19,3 @@ export function normalizeToken(value) {
  * @param {*} value - Value to normalize
  * @returns {string}
  */
-export function normalizeOptionalText(value) {
-  return String(value || "").trim();
-}

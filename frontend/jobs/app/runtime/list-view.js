@@ -18,7 +18,7 @@ export function updateResultsSummary(resultsSummary, total, from, to, loadedTota
     : filteredText;
 }
 
-export function renderJobRow(job, {
+function renderJobRow(job, {
   currentUser,
   seenJobKeys,
   savedJobKeys,
@@ -42,7 +42,7 @@ export function renderJobRow(job, {
   });
 }
 
-export function renderPagination(totalPages, {
+function renderPagination(totalPages, {
   pagination,
   state,
   goToPage
@@ -179,17 +179,4 @@ export function displayJobs(jobs, {
       pageJobs: pageJobs.length
     });
   });
-}
-
-export function _showLoading(jobsList, text, { showJobsLoading } = {}) {
-  if (typeof showJobsLoading === "function") {
-    showJobsLoading(jobsList, text);
-  }
-}
-
-export function showError(jobsList, pagination, resultsSummary, allJobsLength, message, onRetry = null, { showJobsError } = {}) {
-  if (typeof showJobsError === "function") {
-    showJobsError(jobsList, pagination, message, onRetry);
-  }
-  updateResultsSummary(resultsSummary, 0, 0, 0, allJobsLength);
 }

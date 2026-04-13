@@ -1,16 +1,4 @@
-import { escapeHtml, showToast, setText } from "../shared/ui/index.js";
-
-export function savedEscapeHtml(value) {
-  return escapeHtml(value);
-}
-
-export function setSavedStatus(el, text) {
-  setText(el, text);
-}
-
-export function showSavedToast(message, type = "info", options = {}) {
-  showToast(message, type, options);
-}
+import { escapeHtml } from "../shared/ui/index.js";
 
 export function renderSavedJobBlockHtml(job, options = {}) {
   const {

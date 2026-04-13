@@ -1,4 +1,4 @@
-export const NOTES_RERENDER_SETTLE_MS = 1200;
+const NOTES_RERENDER_SETTLE_MS = 1200;
 
 export function isEditingNotesField(doc = document) {
   if (typeof doc === "undefined") return false;

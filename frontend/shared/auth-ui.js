@@ -1,7 +1,5 @@
 import { toAuthViewModel } from "./auth-view-model.js";
 
-export { toAuthViewModel };
-
 export function setAuthStatusViewModel(statusEl, hintEl, avatarEl, text) {
   const { label, hint } = toAuthViewModel(text);
   if (statusEl) statusEl.textContent = label;

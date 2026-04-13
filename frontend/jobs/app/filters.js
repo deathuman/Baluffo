@@ -12,7 +12,7 @@ export function optionExists(select, value) {
   return Array.from(select?.options || []).some(option => option.value === value);
 }
 
-export function isRegionSelection(value) {
+function isRegionSelection(value) {
   return String(value || "").startsWith("region:");
 }
 
@@ -175,7 +175,7 @@ export function getDefaultQuickFilterKeys(quickFilters) {
   return quickFilters.filter(item => item.defaultVisible).map(item => item.key);
 }
 
-export function orderQuickFilterKeys(keys, quickFilters) {
+function orderQuickFilterKeys(keys, quickFilters) {
   const set = new Set(keys);
   return quickFilters.filter(item => set.has(item.key)).map(item => item.key);
 }

@@ -9,6 +9,7 @@ from src.bridge.api import BridgeApi
 from src.bridge.registry_service import RegistryPaths, RegistryService
 from src.bridge.routes.get_routes import handle_get
 from src.bridge.routes.post_routes import handle_post
+from src.bridge.server.handler import make_handler
 
 
 @dataclass
@@ -36,6 +37,14 @@ class _FakeDesktopLocalDataStore:
     def sign_in(self, name: str) -> dict[str, Any]:
         self.sign_in_calls.append(str(name))
         return {"uid": "u1", "name": str(name)}
+
+
+class _DisconnectingWriter:
+    def write(self, _body: bytes) -> int:
+        raise ConnectionAbortedError(
+            10053,
+            "An established connection was aborted by the software in your host machine",
+        )
 
 
 def _make_api(tmp_path: Path) -> BridgeApi:
@@ -69,6 +78,19 @@ def _make_api(tmp_path: Path) -> BridgeApi:
     api.summarize_state = summarize_state  # type: ignore[assignment]
     api.compute_ops_health = lambda: {"ok": True, "detail": "unit-test"}  # type: ignore[assignment]
     return api
+
+
+def _make_disconnecting_get_handler(api: BridgeApi, path: str):
+    handler_cls = make_handler(api=api)
+    handler = handler_cls.__new__(handler_cls)
+    handler.path = path
+    handler.command = "GET"
+    handler.close_connection = False
+    handler.wfile = _DisconnectingWriter()
+    handler.send_response = lambda *_args, **_kwargs: None
+    handler.send_header = lambda *_args, **_kwargs: None
+    handler.end_headers = lambda: None
+    return handler
 
 
 def test_get_routes_smoke_ops_health_and_registry_summary(tmp_path: Path) -> None:
@@ -132,6 +154,63 @@ def test_get_routes_discovery_report_never_drops_connection_on_error(tmp_path: P
     assert handle_get(handler, api=api, path="/discovery/report", query={}) is True
     assert handler.sent[-1]["status"] == 500
     assert handler.sent[-1]["payload"]["error"] == "failed_to_load_discovery_report"
+
+
+def test_handler_swallows_client_disconnect_for_json_get_response(tmp_path: Path) -> None:
+    api = _make_api(tmp_path)
+    log_calls: list[tuple[str, dict[str, Any]]] = []
+
+    def bridge_log(level: str, message: str, **fields: Any) -> None:
+        log_calls.append((message, {"level": level, **fields}))
+
+    api.bridge_log = bridge_log  # type: ignore[assignment]
+    handler = _make_disconnecting_get_handler(api, "/registry/summary")
+
+    handler.do_GET()
+
+    assert handler.close_connection is True
+    assert not any(message == "http_response_write_failed" for message, _fields in log_calls)
+    assert not any(message == "http_get_handler_failed" for message, _fields in log_calls)
+
+
+def test_handler_swallows_client_disconnect_for_bytes_get_response(tmp_path: Path) -> None:
+    api = _make_api(tmp_path)
+    log_calls: list[tuple[str, dict[str, Any]]] = []
+
+    def bridge_log(level: str, message: str, **fields: Any) -> None:
+        log_calls.append((message, {"level": level, **fields}))
+
+    api.bridge_log = bridge_log  # type: ignore[assignment]
+    (api.DISCOVERY_REPORT_PATH).write_text(
+        json.dumps(
+            {
+                "schemaVersion": "1.0",
+                "mode": "dynamic",
+                "startedAt": "2026-01-01T00:00:00Z",
+                "finishedAt": "2026-01-01T00:10:00Z",
+                "summary": {
+                    "queuedCandidateCount": 0,
+                    "foundEndpointCount": 0,
+                    "probedCandidateCount": 0,
+                    "failedProbeCount": 0,
+                },
+                "candidates": [],
+                "failures": [],
+                "topFailures": [],
+                "outputs": {},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    handler = _make_disconnecting_get_handler(api, "/discovery/report")
+
+    handler.do_GET()
+
+    assert handler.close_connection is True
+    assert not any(message == "http_response_write_failed" for message, _fields in log_calls)
+    assert not any(message == "http_get_handler_failed" for message, _fields in log_calls)
+    assert not any(message == "discovery_report_route_failed" for message, _fields in log_calls)
 
 
 def test_post_routes_smoke_desktop_sign_in(tmp_path: Path) -> None:

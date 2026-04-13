@@ -1,0 +1,25 @@
+{
+  "entry": [
+    "frontend/jobs/index.js",
+    "frontend/saved/index.js",
+    "frontend/admin/index.js",
+    "theme.js",
+    "frontend-runtime-config.js"
+  ],
+  "ignoreBinaries": [
+    "python",
+    "ruff"
+  ],
+  "project": [
+    "frontend/**/*.js",
+    "admin-config.js",
+    "app-local-data-client.js",
+    "desktop-local-data-client.js",
+    "jobs-parsing-utils.js",
+    "jobs-state.js",
+    "local-data-client.js",
+    "saved-zip-utils.js",
+    "probes/startup-probe.js",
+    "tests/frontend/unit/**/*.mjs"
+  ]
+}

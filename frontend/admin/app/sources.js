@@ -1,4 +1,4 @@
-export function isValidSourceFilter(value) {
+function isValidSourceFilter(value) {
   return ["all", "error", "excluded", "zero", "healthy"].includes(String(value || "").trim().toLowerCase());
 }
 
