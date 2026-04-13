@@ -9,7 +9,6 @@ Responsibilities:
 """
 
 import json
-import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -17,46 +16,14 @@ from urllib.parse import urlparse
 
 from src.source_registry import unique_sources
 
+from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
+from .page_analysis import analyze_fetched_page
 from .scoring import unique_string_list
-from .web_search import (
-    extract_links_from_html,
-    fetch_text,
-    infer_provider_candidates_from_html,
-)
+from .static_candidates import build_known_careers_url_candidate
+from .web_search import fetch_text
 
 GAMEPROG_TEAMS_URL = "https://gameprog.it/teams.json"
 GAMEPROG_BASE_URL = "https://gameprog.it/"
-
-
-CAREERS_KEYWORDS = [
-    "careers",
-    "career",
-    "jobs",
-    "job",
-    "hiring",
-    "work-with-us",
-    "join-us",
-    "join-team",
-    "open-positions",
-    "open-roles",
-    "vacancies",
-    "job-openings",
-    "job-opportunities",
-    "we-are-hiring",
-    "hiring-now",
-    "careers-page",
-    "job-page",
-    "lavora",
-    "lavoro",
-    "posizioni",
-    "lavora-con-noi",
-    "lavora con noi",
-    "posizioni-aperte",
-    "cerchiamo",
-    "collabora",
-    "offerta di lavoro",
-    "annunci di lavoro",
-]
 
 
 COMMON_CAREERS_PATTERNS = [
@@ -70,13 +37,6 @@ COMMON_CAREERS_PATTERNS = [
     "/about-us/careers",
     "/we-are-hiring",
 ]
-
-
-def _strip_html_tags(html: str) -> str:
-    text = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", str(html or ""))
-    text = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", text)
-    text = re.sub(r"(?s)<[^>]+>", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
 
 
 def _gameprog_config_value(config: dict[str, Any] | None, key: str, default: Any) -> Any:
@@ -231,41 +191,86 @@ def build_gameprog_static_candidate(
     weak_signal: bool = False,
 ) -> dict[str, Any]:
     evidence_types = ["gameprog_directory"]
-    evidence_score = 24
     if website_only:
+        evidence_score = 24
         evidence_types.append("gameprog_website")
         evidence_types.append("gameprog_website_only")
         if manual_only:
             evidence_types.append("gameprog_manual_website_only")
-    else:
-        evidence_types.append("gameprog_careers_url")
-        evidence_score = 40
+        if location:
+            evidence_types.append("gameprog_location")
+        if weak_signal:
+            evidence_types.append("gameprog_no_current_openings")
+        return {
+            "name": f"{studio} (Gameprog)",
+            "studio": studio,
+            "company": studio,
+            "adapter": "static",
+            "pages": [target_url],
+            "listing_url": target_url,
+            "nlPriority": nl_priority,
+            "enabledByDefault": False,
+            "discoveryMethod": "gameprog",
+            "discoveryStage": "generic_static",
+            "careersUrl": "",
+            "evidenceSource": "gameprog",
+            "evidenceTypes": evidence_types,
+            "evidenceScore": evidence_score,
+            "weakSignal": True,
+            "sourceDirectory": "gameprog",
+            "sourceDirectoryUrl": GAMEPROG_BASE_URL,
+            "sourceDirectoryEntryUrl": detail_url,
+            "sourceDirectoryLocation": str(location or "").strip(),
+            "manualOnly": bool(manual_only),
+        }
+    evidence_types.append("gameprog_careers_url")
     if location:
         evidence_types.append("gameprog_location")
     if weak_signal:
         evidence_types.append("gameprog_no_current_openings")
-    return {
-        "name": f"{studio} (Gameprog)",
-        "studio": studio,
-        "company": studio,
-        "adapter": "static",
-        "pages": [target_url],
-        "listing_url": target_url,
-        "nlPriority": nl_priority,
-        "enabledByDefault": False,
-        "discoveryMethod": "gameprog",
-        "discoveryStage": "generic_static",
-        "careersUrl": "" if website_only else target_url,
-        "evidenceSource": "gameprog",
-        "evidenceTypes": evidence_types,
-        "evidenceScore": evidence_score,
-        "weakSignal": bool(website_only),
-        "sourceDirectory": "gameprog",
-        "sourceDirectoryUrl": GAMEPROG_BASE_URL,
-        "sourceDirectoryEntryUrl": detail_url,
-        "sourceDirectoryLocation": str(location or "").strip(),
-        "manualOnly": bool(manual_only),
-    }
+    return build_known_careers_url_candidate(
+        target_url,
+        studio=studio,
+        name_suffix="Gameprog",
+        nl_priority=nl_priority,
+        discovery_method="gameprog",
+        evidence_source="gameprog",
+        evidence_types=evidence_types,
+        evidence_score=40,
+        enabled_by_default=False,
+        extra_fields={
+            "sourceDirectory": "gameprog",
+            "sourceDirectoryUrl": GAMEPROG_BASE_URL,
+            "sourceDirectoryEntryUrl": detail_url,
+            "sourceDirectoryLocation": str(location or "").strip(),
+            "manualOnly": bool(manual_only),
+        },
+    )
+
+
+def _apply_gameprog_static_page_provenance(
+    candidate: dict[str, Any],
+    *,
+    website_url: str,
+    location: str,
+) -> dict[str, Any]:
+    enriched = dict(candidate)
+    evidence_types = [
+        *(enriched.get("evidenceTypes") or []),
+        "gameprog_directory",
+        "gameprog_website_fetch",
+    ]
+    if location:
+        evidence_types.append("gameprog_location")
+    enriched["name"] = f"{str(enriched.get('studio') or '').strip()} (Gameprog)"
+    enriched["evidenceSource"] = "gameprog"
+    enriched["evidenceTypes"] = unique_string_list(evidence_types)
+    enriched["sourceDirectory"] = "gameprog"
+    enriched["sourceDirectoryUrl"] = GAMEPROG_BASE_URL
+    enriched["sourceDirectoryEntryUrl"] = website_url
+    enriched["sourceDirectoryLocation"] = str(location or "").strip()
+    enriched["careersUrl"] = str(enriched.get("careersUrl") or website_url).strip() or website_url
+    return enriched
 
 
 def discover_gameprog_candidates(
@@ -287,6 +292,7 @@ def discover_gameprog_candidates(
     teams_url = str(cfg.get("teamsUrl") or GAMEPROG_TEAMS_URL).strip()
     website_only_fallback = bool(cfg.get("websiteOnlyFallback", True))
     max_studios = max(0, int(cfg.get("maxStudios") or 0))
+    fetch_concurrency, per_host_concurrency = resolve_directory_fetch_limits(cfg)
 
     provider_candidates: list[dict[str, Any]] = []
     static_candidates: list[dict[str, Any]] = []
@@ -323,26 +329,37 @@ def discover_gameprog_candidates(
 
     emit_log(f"Gameprog directory entries: {len(entries)}")
 
-    for idx, entry in enumerate(entries):
+    website_fetch_results = fetch_directory_pages(
+        timeout_s,
+        [
+            {
+                "url": str(entry.get("url") or "").strip(),
+                "payload": entry,
+                "name": str(entry.get("url") or "").strip(),
+                "adapter": "gameprog",
+                "failureStage": "website_fetch",
+            }
+            for entry in entries
+            if str(entry.get("studio") or "").strip() and str(entry.get("url") or "").strip()
+        ],
+        fetcher=fetcher,
+        total_concurrency=fetch_concurrency,
+        per_host_concurrency=per_host_concurrency,
+        progress_label="Gameprog website fetch",
+    )
+
+    for result in website_fetch_results:
+        entry = dict(result.get("payload") or {})
         studio = str(entry.get("studio") or "").strip()
-        website_url = str(entry.get("url") or "").strip()
+        website_url = str(result.get("url") or entry.get("url") or "").strip()
         location = str(entry.get("place") or "").strip()
-        if not studio or not website_url:
-            continue
 
         nl_priority = False
 
-        try:
-            website_html = fetcher(website_url, timeout_s)
-        except Exception as exc:
-            failures.append(
-                {
-                    "name": website_url,
-                    "adapter": "gameprog",
-                    "error": str(exc),
-                    "stage": "website_fetch",
-                }
-            )
+        if not bool(result.get("ok")):
+            failure = result.get("failure")
+            if isinstance(failure, dict):
+                failures.append(failure)
             if website_only_fallback:
                 static_candidates.append(
                     build_gameprog_static_candidate(
@@ -356,16 +373,15 @@ def discover_gameprog_candidates(
                     )
                 )
             continue
-
-        providers = infer_provider_candidates_from_html(
+        website_html = str(result.get("text") or "")
+        analyzed = analyze_fetched_page(
             page_url=website_url,
             html=website_html,
             studio=studio,
             nl_priority=nl_priority,
             discovery_method="gameprog",
         )
-
-        careers_url = ""
+        providers = list(analyzed.get("provider_candidates") or [])
         if providers:
             for inferred in providers:
                 inferred["evidenceSource"] = "gameprog"
@@ -382,51 +398,64 @@ def discover_gameprog_candidates(
                 inferred["sourceDirectoryEntryUrl"] = website_url
                 inferred["sourceDirectoryLocation"] = location
             provider_candidates.extend(providers)
-        else:
-            homepage_links = extract_links_from_html(website_html)
-            homepage_careers = [
-                link
-                for link in homepage_links
-                if any(kw in link.lower() for kw in CAREERS_KEYWORDS)
-            ]
-
-            careers_url = ""
-            if homepage_careers:
-                careers_url = homepage_careers[0]
-            elif fetcher:
-                parsed = urlparse(website_url)
-                base = f"{parsed.scheme}://{parsed.netloc}"
-                for pattern in COMMON_CAREERS_PATTERNS[:3]:
-                    careers_url = base + pattern
-                    break
-
-            if careers_url:
-                is_homepage_link = bool(homepage_careers)
-                static_candidates.append(
-                    build_gameprog_static_candidate(
-                        studio=studio,
-                        target_url=careers_url,
-                        nl_priority=nl_priority,
-                        website_only=False,
-                        detail_url=website_url,
-                        location=location,
-                        manual_only=False,
-                        weak_signal=not is_homepage_link,
-                    )
+            continue
+        explicit_careers_url = str(analyzed.get("explicit_careers_url") or "").strip()
+        if explicit_careers_url:
+            static_candidates.append(
+                build_gameprog_static_candidate(
+                    studio=studio,
+                    target_url=explicit_careers_url,
+                    nl_priority=nl_priority,
+                    website_only=False,
+                    detail_url=website_url,
+                    location=location,
+                    manual_only=False,
+                    weak_signal=False,
                 )
-            elif website_only_fallback:
-                static_candidates.append(
-                    build_gameprog_static_candidate(
-                        studio=studio,
-                        target_url=website_url,
-                        nl_priority=nl_priority,
-                        website_only=True,
-                        detail_url=website_url,
-                        location=location,
-                        manual_only=False,
-                        weak_signal=True,
-                    )
+            )
+            continue
+        generic_static_candidate = analyzed.get("generic_static_candidate")
+        if generic_static_candidate:
+            static_candidates.append(
+                _apply_gameprog_static_page_provenance(
+                    generic_static_candidate,
+                    website_url=website_url,
+                    location=location,
                 )
+            )
+            continue
+        careers_url = ""
+        parsed = urlparse(website_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        for pattern in COMMON_CAREERS_PATTERNS[:3]:
+            careers_url = base + pattern
+            break
+        if careers_url:
+            static_candidates.append(
+                build_gameprog_static_candidate(
+                    studio=studio,
+                    target_url=careers_url,
+                    nl_priority=nl_priority,
+                    website_only=False,
+                    detail_url=website_url,
+                    location=location,
+                    manual_only=False,
+                    weak_signal=True,
+                )
+            )
+        elif website_only_fallback:
+            static_candidates.append(
+                build_gameprog_static_candidate(
+                    studio=studio,
+                    target_url=website_url,
+                    nl_priority=nl_priority,
+                    website_only=True,
+                    detail_url=website_url,
+                    location=location,
+                    manual_only=False,
+                    weak_signal=True,
+                )
+            )
 
     provider_candidates = unique_sources(provider_candidates)
     static_candidates = unique_sources(static_candidates)

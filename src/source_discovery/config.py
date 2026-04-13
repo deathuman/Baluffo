@@ -31,8 +31,10 @@ DISCOVERY_STAGES: tuple[str, ...] = (
 # Evidence types vocabulary (canonical source of truth for evidenceTypes values).
 # - Note: "sheet_directory" is intentionally both a stage name and an evidence type.
 # - Evidence type families:
+#   - gamedevmap_*: gamedevmap_directory, gamedevmap_category, gamedevmap_ai_reviewed,
+#     gamedevmap_homepage_fetch, gamedevmap_direct_url, gamedevmap_careers_url
 #   - gamesmap_*: gamesmap_directory, gamesmap_category_match, gamesmap_website, gamesmap_website_only,
-#     gamesmap_manual_website_only, gamesmap_careers_url, gamesmap_location
+#     gamesmap_manual_website_only, gamesmap_careers_url, gamesmap_location, gamesmap_website_fetch
 #   - sheet_*: sheet_directory, sheet_row, sheet_roles_open_yes/no/speculative/unknown
 #   - seed_*: seed_catalog, seed_provider_hint, seed_provider_reinforced, seed_curated
 #   - web_*: web_provider_url
@@ -47,6 +49,13 @@ EVIDENCE_TYPES: tuple[str, ...] = (
     "gameprog_careers_url",
     "gameprog_location",
     "gameprog_website_fetch",
+    # GameDevMap evidence
+    "gamedevmap_directory",
+    "gamedevmap_category",
+    "gamedevmap_ai_reviewed",
+    "gamedevmap_homepage_fetch",
+    "gamedevmap_direct_url",
+    "gamedevmap_careers_url",
     # Gamesmap evidence
     "gamesmap_directory",
     "gamesmap_category_match",
@@ -55,6 +64,7 @@ EVIDENCE_TYPES: tuple[str, ...] = (
     "gamesmap_manual_website_only",
     "gamesmap_careers_url",
     "gamesmap_location",
+    "gamesmap_website_fetch",
     # Sheet directory evidence
     "sheet_directory",
     "sheet_row",
@@ -217,6 +227,8 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "teamsUrl": "https://gameprog.it/teams.json",
         "websiteOnlyFallback": True,
         "maxStudios": 200,
+        "fetchConcurrency": 24,
+        "perHostConcurrency": 3,
     },
     "gamesmap": {
         "enabled": False,
@@ -248,6 +260,37 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
             "government",
             "service provider",
         ],
+        "fetchConcurrency": 24,
+        "perHostConcurrency": 3,
+    },
+    "gamedevmap": {
+        "enabled": False,
+        "csvUrl": "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv",
+        "indexUrl": "https://www.gamedevmap.com/index.php",
+        "cachePath": "data/gamedevmap-discovery-cache.json",
+        "cacheTtlMinutes": 360,
+        "maxRows": 0,
+        "maxHomepageFetches": 60,
+        "allowedCategories": [
+            "Developer",
+            "Developer and Publisher",
+            "Publisher",
+            "Mobile",
+            "Online",
+            "Microstudio",
+            "Extended Reality (XR)",
+            "Serious Games",
+            "Social",
+        ],
+        "blockedCategories": [
+            "Organization",
+            "Investment",
+            "Incubator/Accelerator",
+            "Health",
+        ],
+        "requireAiReviewed": False,
+        "fetchConcurrency": 24,
+        "perHostConcurrency": 3,
     },
     "thresholds": dict(DEFAULT_DISCOVERY_THRESHOLDS),
 }
@@ -347,23 +390,26 @@ def load_studio_seeds() -> list[dict[str, Any]]:
 
 def load_discovery_config(config_path: Path | str | None = None) -> dict[str, Any]:
     path = Path(config_path) if config_path is not None else Path(DISCOVERY_CONFIG_PATH)
-    payload = dict(DEFAULT_DISCOVERY_CONFIG)
+    payload = {
+        key: (dict(value) if isinstance(value, dict) else value)
+        for key, value in DEFAULT_DISCOVERY_CONFIG.items()
+    }
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         raw = {}
     if not isinstance(raw, dict):
         return payload
-    gamesmap = raw.get("gamesmap")
-    if isinstance(gamesmap, dict):
-        merged = dict(payload.get("gamesmap") or {})
-        merged.update(gamesmap)
-        payload["gamesmap"] = merged
-    thresholds = raw.get("thresholds")
-    if isinstance(thresholds, dict):
-        merged_thresholds = dict(payload.get("thresholds") or DEFAULT_DISCOVERY_THRESHOLDS)
-        merged_thresholds.update(thresholds)
-        payload["thresholds"] = merged_thresholds
+    for key, value in raw.items():
+        if not isinstance(value, dict):
+            continue
+        base = payload.get(key)
+        if isinstance(base, dict):
+            merged = dict(base)
+            merged.update(value)
+            payload[key] = merged
+            continue
+        payload[key] = dict(value)
     return payload
 
 

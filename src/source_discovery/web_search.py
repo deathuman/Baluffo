@@ -29,6 +29,7 @@ from .config import (
     RETRYABLE_HTTP_CODES,
     WEB_SEARCH_QUERY_SUFFIX,
 )
+from .page_analysis import analyze_fetched_page
 from .scoring import careers_keyword_count, clean_token, studio_domain_match, unique_string_list
 
 
@@ -570,48 +571,91 @@ def discover_seed_careers_page_candidates(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     from src.source_registry import unique_sources
 
+    from .directory_fetch import directory_fetch_concurrency_defaults, fetch_directory_pages
     from .io_runtime import collapse_competing_candidates
-    from .static_candidates import build_static_candidate_from_page
+    from .static_candidates import build_known_careers_url_candidate
 
     fetcher = fetcher or fetch_text
     provider_candidates: list[dict[str, Any]] = []
     static_candidates: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    fetch_defaults = directory_fetch_concurrency_defaults()
+    page_jobs: list[dict[str, Any]] = []
     for seed in studio_seeds:
         careers_url = str(seed.get("careersUrl") or "").strip()
         studio = str(seed.get("studio") or "").strip()
         if not careers_url or not studio:
             continue
         nl_priority = bool(seed.get("nlPriority"))
-        try:
-            page_html = fetcher(careers_url, timeout_s)
-        except Exception as exc:  # noqa: BLE001
-            failures.append(
-                {
-                    "name": careers_url,
-                    "adapter": "seed_careers_page",
-                    "error": str(exc),
-                    "stage": "page_fetch",
-                }
+        inferred = infer_web_candidate(
+            careers_url,
+            studio,
+            nl_priority=nl_priority,
+            discovery_method="seed_careers_page",
+        )
+        if inferred:
+            inferred["careersUrl"] = careers_url
+            provider_candidates.append(inferred)
+            continue
+        page_jobs.append(
+            {
+                "url": careers_url,
+                "payload": {
+                    "studio": studio,
+                    "nlPriority": nl_priority,
+                },
+                "name": careers_url,
+                "adapter": "seed_careers_page",
+                "failureStage": "page_fetch",
+            }
+        )
+    page_fetch_results = fetch_directory_pages(
+        timeout_s,
+        page_jobs,
+        fetcher=fetcher,
+        total_concurrency=int(fetch_defaults["total"]),
+        per_host_concurrency=int(fetch_defaults["perHost"]),
+        progress_label="Seed careers page fetch",
+    )
+    for result in page_fetch_results:
+        payload = dict(result.get("payload") or {})
+        careers_url = str(result.get("url") or "").strip()
+        studio = str(payload.get("studio") or "").strip()
+        nl_priority = bool(payload.get("nlPriority"))
+        if not bool(result.get("ok")):
+            failure = result.get("failure")
+            if isinstance(failure, dict):
+                failures.append(failure)
+            continue
+        page_html = str(result.get("text") or "")
+        analyzed = analyze_fetched_page(
+            careers_url,
+            page_html,
+            studio=studio,
+            nl_priority=nl_priority,
+            discovery_method="seed_careers_page",
+        )
+        page_provider_candidates = list(analyzed.get("provider_candidates") or [])
+        if page_provider_candidates:
+            provider_candidates.extend(page_provider_candidates)
+            continue
+        explicit_careers_url = str(analyzed.get("explicit_careers_url") or "").strip()
+        if explicit_careers_url:
+            static_candidates.append(
+                build_known_careers_url_candidate(
+                    explicit_careers_url,
+                    studio=studio,
+                    name_suffix="Manual Website",
+                    nl_priority=nl_priority,
+                    discovery_method="seed_careers_page",
+                    evidence_source="careers_page",
+                    evidence_types=["careers_keyword"],
+                    evidence_score=40,
+                    enabled_by_default=False,
+                )
             )
             continue
-        page_provider_candidates = infer_provider_candidates_from_html(
-            careers_url,
-            page_html,
-            studio=studio,
-            nl_priority=nl_priority,
-            discovery_method="seed_careers_page",
-        )
-        provider_candidates.extend(page_provider_candidates)
-        if page_provider_candidates:
-            continue
-        static_candidate = build_static_candidate_from_page(
-            careers_url,
-            page_html,
-            studio=studio,
-            nl_priority=nl_priority,
-            discovery_method="seed_careers_page",
-        )
+        static_candidate = analyzed.get("generic_static_candidate")
         if static_candidate:
             static_candidates.append(static_candidate)
     return (
@@ -630,13 +674,16 @@ def discover_web_search_candidates(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     from src.source_registry import unique_sources
 
+    from .directory_fetch import directory_fetch_concurrency_defaults, fetch_directory_pages
     from .io_runtime import collapse_competing_candidates
-    from .static_candidates import build_static_candidate_from_page
+    from .static_candidates import build_known_careers_url_candidate
 
     fetcher = fetcher or fetch_text
     provider_candidates: list[dict[str, Any]] = []
     static_candidates: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    fetch_defaults = directory_fetch_concurrency_defaults()
+    page_jobs: list[dict[str, Any]] = []
     for query, seed in build_web_search_queries(studio_seeds, max_queries=max_queries):
         url = DUCKDUCKGO_HTML_SEARCH.format(query=quote_plus(query))
         try:
@@ -658,36 +705,67 @@ def discover_web_search_candidates(
                 continue
             if not careers_keyword_count(link):
                 continue
-            try:
-                page_html = fetcher(link, timeout_s)
-            except Exception as exc:  # noqa: BLE001
-                failures.append(
-                    {
-                        "name": link,
-                        "adapter": "web_search",
-                        "error": str(exc),
-                        "stage": "page_fetch",
-                    }
-                )
-                continue
-            provider_candidates.extend(
-                infer_provider_candidates_from_html(
-                    link,
-                    page_html,
+            page_jobs.append(
+                {
+                    "url": link,
+                    "payload": {
+                        "studio": studio,
+                        "nlPriority": nl_priority,
+                    },
+                    "name": link,
+                    "adapter": "web_search",
+                    "failureStage": "page_fetch",
+                }
+            )
+    page_fetch_results = fetch_directory_pages(
+        timeout_s,
+        page_jobs,
+        fetcher=fetcher,
+        total_concurrency=int(fetch_defaults["total"]),
+        per_host_concurrency=int(fetch_defaults["perHost"]),
+        progress_label="Web search page fetch",
+    )
+    for result in page_fetch_results:
+        payload = dict(result.get("payload") or {})
+        link = str(result.get("url") or "").strip()
+        studio = str(payload.get("studio") or "").strip()
+        nl_priority = bool(payload.get("nlPriority"))
+        if not bool(result.get("ok")):
+            failure = result.get("failure")
+            if isinstance(failure, dict):
+                failures.append(failure)
+            continue
+        page_html = str(result.get("text") or "")
+        analyzed = analyze_fetched_page(
+            link,
+            page_html,
+            studio=studio,
+            nl_priority=nl_priority,
+            discovery_method="web_search",
+        )
+        page_provider_candidates = list(analyzed.get("provider_candidates") or [])
+        if page_provider_candidates:
+            provider_candidates.extend(page_provider_candidates)
+            continue
+        explicit_careers_url = str(analyzed.get("explicit_careers_url") or "").strip()
+        if explicit_careers_url:
+            static_candidates.append(
+                build_known_careers_url_candidate(
+                    explicit_careers_url,
                     studio=studio,
+                    name_suffix="Manual Website",
                     nl_priority=nl_priority,
                     discovery_method="web_search",
+                    evidence_source="careers_page",
+                    evidence_types=["careers_keyword"],
+                    evidence_score=40,
+                    enabled_by_default=False,
                 )
             )
-            static_candidate = build_static_candidate_from_page(
-                link,
-                page_html,
-                studio=studio,
-                nl_priority=nl_priority,
-                discovery_method="web_search",
-            )
-            if static_candidate:
-                static_candidates.append(static_candidate)
+            continue
+        static_candidate = analyzed.get("generic_static_candidate")
+        if static_candidate:
+            static_candidates.append(static_candidate)
     return (
         collapse_competing_candidates(provider_candidates),
         unique_sources(static_candidates),

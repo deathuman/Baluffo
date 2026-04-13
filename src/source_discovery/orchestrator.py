@@ -55,6 +55,7 @@ from .core import (
     probe_concurrency_defaults,
     should_queue_candidate,
 )
+from .gamedevmap import discover_gamedevmap_candidates
 from .gameprog import discover_gameprog_candidates
 from .gamesmap import discover_gamesmap_candidates
 from .probe import async_probe_candidate, validate_candidate_for_probe
@@ -106,6 +107,7 @@ DISCOVERY_TIMING_STAGE_KEYS = [
     "seedCareersScan",
     "gamesmap",
     "gameprog",
+    "gamedevmap",
     "webSearch",
     "dedupeFilter",
     "probe",
@@ -308,6 +310,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Optional Gamesmap crawl cap override for this run; 0 = config default.",
     )
     parser.add_argument(
+        "--gamedevmap-enabled",
+        action="store_true",
+        help="Enable GameDevMap directory scanning.",
+    )
+    parser.add_argument(
+        "--gamedevmap-max-rows",
+        type=int,
+        default=0,
+        help="Optional GameDevMap representative row cap override for this run; 0 = config default.",
+    )
+    parser.add_argument(
+        "--gamedevmap-max-homepage-fetches",
+        type=int,
+        default=0,
+        help="Optional GameDevMap homepage fetch cap override for this run; 0 = config default.",
+    )
+    parser.add_argument(
+        "--only-gamedevmap",
+        action="store_true",
+        help="Run only the GameDevMap discovery stage and skip other candidate-generation stages.",
+    )
+    parser.add_argument(
         "--gameprog-enabled",
         action="store_true",
         help="Enable Gameprog directory scanning.",
@@ -329,7 +353,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def _apply_discovery_cli_args_to_config(
     discovery_config: dict[str, Any], args: argparse.Namespace
 ) -> dict[str, Any]:
-    """Apply CLI flags to a discovery config dict (gamesmap/gameprog overrides)."""
+    """Apply CLI flags to a discovery config dict (directory adapter overrides)."""
     cfg = dict(discovery_config)
     if bool(getattr(args, "gamesmap_website_only_fallback", False)):
         gamesmap_cfg = dict(cfg.get("gamesmap") or {})
@@ -340,6 +364,32 @@ def _apply_discovery_cli_args_to_config(
         gamesmap_cfg = dict(cfg.get("gamesmap") or {})
         gamesmap_cfg["maxDetailPages"] = int(args.gamesmap_max_detail_pages)
         cfg["gamesmap"] = gamesmap_cfg
+    if bool(getattr(args, "gamedevmap_enabled", False)):
+        gamedevmap_cfg = dict(cfg.get("gamedevmap") or {})
+        gamedevmap_cfg["enabled"] = True
+        cfg["gamedevmap"] = gamedevmap_cfg
+    if int(getattr(args, "gamedevmap_max_rows", 0) or 0) > 0:
+        gamedevmap_cfg = dict(cfg.get("gamedevmap") or {})
+        gamedevmap_cfg["maxRows"] = int(args.gamedevmap_max_rows)
+        cfg["gamedevmap"] = gamedevmap_cfg
+    if int(getattr(args, "gamedevmap_max_homepage_fetches", 0) or 0) > 0:
+        gamedevmap_cfg = dict(cfg.get("gamedevmap") or {})
+        gamedevmap_cfg["maxHomepageFetches"] = int(args.gamedevmap_max_homepage_fetches)
+        cfg["gamedevmap"] = gamedevmap_cfg
+    if bool(getattr(args, "only_gamedevmap", False)):
+        cfg["stageToggles"] = {
+            "curatedSeed": False,
+            "sheetDirectory": False,
+            "providerPatterns": False,
+            "seedCareersScan": False,
+            "gamesmap": False,
+            "gameprog": False,
+            "gamedevmap": True,
+            "webSearch": False,
+        }
+        gamedevmap_cfg = dict(cfg.get("gamedevmap") or {})
+        gamedevmap_cfg["enabled"] = True
+        cfg["gamedevmap"] = gamedevmap_cfg
     if bool(getattr(args, "gameprog_enabled", False)):
         gameprog_cfg = dict(cfg.get("gameprog") or {})
         gameprog_cfg["enabled"] = True
@@ -353,6 +403,19 @@ def _apply_discovery_cli_args_to_config(
         gameprog_cfg["websiteOnlyFallback"] = True
         cfg["gameprog"] = gameprog_cfg
     return cfg
+
+
+def _discovery_stage_enabled(
+    discovery_config: dict[str, Any] | None, stage_key: str, *, default: bool = True
+) -> bool:
+    config = discovery_config if isinstance(discovery_config, dict) else {}
+    stage_toggles = config.get("stageToggles")
+    if not isinstance(stage_toggles, dict):
+        return default
+    value = stage_toggles.get(stage_key)
+    if value is None:
+        return default
+    return bool(value)
 
 
 def run_discovery(
@@ -384,6 +447,16 @@ def run_discovery(
     if cli_args is not None:
         effective_config = _apply_discovery_cli_args_to_config(effective_config, cli_args)
     thresholds = resolve_discovery_thresholds(effective_config)
+    stage_enabled = {
+        "curatedSeed": _discovery_stage_enabled(effective_config, "curatedSeed"),
+        "sheetDirectory": _discovery_stage_enabled(effective_config, "sheetDirectory"),
+        "providerPatterns": _discovery_stage_enabled(effective_config, "providerPatterns"),
+        "seedCareersScan": _discovery_stage_enabled(effective_config, "seedCareersScan"),
+        "gamesmap": _discovery_stage_enabled(effective_config, "gamesmap"),
+        "gameprog": _discovery_stage_enabled(effective_config, "gameprog"),
+        "gamedevmap": _discovery_stage_enabled(effective_config, "gamedevmap"),
+        "webSearch": _discovery_stage_enabled(effective_config, "webSearch"),
+    }
     stage_timings_ms: dict[str, int] = {key: 0 for key in DISCOVERY_TIMING_STAGE_KEYS}
     adapter_runtime: dict[str, dict[str, int | str]] = {}
 
@@ -554,176 +627,236 @@ def run_discovery(
             reprobed=0,
         )
 
-    sd.emit_log("Generating curated seed candidates from static discovery inputs.")
-    stage_started = time.perf_counter()
-    curated_seed_candidates = stage_curated_seed_candidates()
-    stage_duration_ms = _record_stage_timing(stage_timings_ms, "curatedSeed", stage_started)
-    _distribute_duration_by_adapter(
-        adapter_runtime, duration_ms=stage_duration_ms, rows=curated_seed_candidates
-    )
-    for row in curated_seed_candidates:
-        _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
-    sd.emit_log(f"Curated seed generation complete: {len(curated_seed_candidates)} candidate(s).")
-    streams.append(("curated_seed", curated_seed_candidates))
-
-    write_progress_report(
-        [], phase="scanning_sources", phase_label="Scanning game studios sheet directory"
-    )
-    sd.emit_log("Scanning game studios sheet directory for candidate sources.")
-    stage_started = time.perf_counter()
-    provider_sheet_candidates, static_sheet_candidates, sheet_failures = (
-        discover_game_studio_sheet_candidates(
-            timeout_s,
-            sheet_id=str(getattr(sd, "GAME_STUDIOS_SHEET_ID", "")) or None,
-            gid=str(getattr(sd, "GAME_STUDIOS_SHEET_GID", "")) or None,
-            fetcher=fetcher,
+    if stage_enabled["curatedSeed"]:
+        sd.emit_log("Generating curated seed candidates from static discovery inputs.")
+        stage_started = time.perf_counter()
+        curated_seed_candidates = stage_curated_seed_candidates()
+        stage_duration_ms = _record_stage_timing(stage_timings_ms, "curatedSeed", stage_started)
+        _distribute_duration_by_adapter(
+            adapter_runtime, duration_ms=stage_duration_ms, rows=curated_seed_candidates
         )
-    )
-    sheet_stage_rows = [*provider_sheet_candidates, *static_sheet_candidates]
-    stage_duration_ms = _record_stage_timing(stage_timings_ms, "sheetDirectory", stage_started)
-    _distribute_duration_by_adapter(
-        adapter_runtime,
-        duration_ms=stage_duration_ms,
-        rows=sheet_stage_rows,
-        failure_rows=sheet_failures,
-    )
-    for row in sheet_stage_rows:
-        _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
-    for row in sheet_failures:
-        if isinstance(row, dict):
-            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
-    sd.emit_log(
-        "Game studios sheet scan complete: "
-        f"provider={len(provider_sheet_candidates)}, static={len(static_sheet_candidates)}, failures={len(sheet_failures)}."
-    )
-    # In unit tests we often supply a fetcher that only knows about the URLs
-    # relevant to that test. Treat an empty sheet result as a soft failure in
-    # that case so tests don't have to stub out the sheet directory URLs.
-    if sheet_failures:
-        if fetcher is fetch_text or (provider_sheet_candidates or static_sheet_candidates):
-            web_failures.extend(sheet_failures)
-    streams.append(("sheet_directory", provider_sheet_candidates))
-    streams.append(("sheet_directory", static_sheet_candidates))
+        for row in curated_seed_candidates:
+            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+        sd.emit_log(
+            f"Curated seed generation complete: {len(curated_seed_candidates)} candidate(s)."
+        )
+        streams.append(("curated_seed", curated_seed_candidates))
+    else:
+        sd.emit_log("Curated seed stage disabled, skipping.")
+
+    if stage_enabled["sheetDirectory"]:
+        write_progress_report(
+            [], phase="scanning_sources", phase_label="Scanning game studios sheet directory"
+        )
+        sd.emit_log("Scanning game studios sheet directory for candidate sources.")
+        stage_started = time.perf_counter()
+        provider_sheet_candidates, static_sheet_candidates, sheet_failures = (
+            discover_game_studio_sheet_candidates(
+                timeout_s,
+                sheet_id=str(getattr(sd, "GAME_STUDIOS_SHEET_ID", "")) or None,
+                gid=str(getattr(sd, "GAME_STUDIOS_SHEET_GID", "")) or None,
+                fetcher=fetcher,
+            )
+        )
+        sheet_stage_rows = [*provider_sheet_candidates, *static_sheet_candidates]
+        stage_duration_ms = _record_stage_timing(stage_timings_ms, "sheetDirectory", stage_started)
+        _distribute_duration_by_adapter(
+            adapter_runtime,
+            duration_ms=stage_duration_ms,
+            rows=sheet_stage_rows,
+            failure_rows=sheet_failures,
+        )
+        for row in sheet_stage_rows:
+            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+        for row in sheet_failures:
+            if isinstance(row, dict):
+                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
+        sd.emit_log(
+            "Game studios sheet scan complete: "
+            f"provider={len(provider_sheet_candidates)}, static={len(static_sheet_candidates)}, failures={len(sheet_failures)}."
+        )
+        # In unit tests we often supply a fetcher that only knows about the URLs
+        # relevant to that test. Treat an empty sheet result as a soft failure in
+        # that case so tests don't have to stub out the sheet directory URLs.
+        if sheet_failures:
+            if fetcher is fetch_text or (provider_sheet_candidates or static_sheet_candidates):
+                web_failures.extend(sheet_failures)
+        streams.append(("sheet_directory", provider_sheet_candidates))
+        streams.append(("sheet_directory", static_sheet_candidates))
+    else:
+        sd.emit_log("Game studios sheet stage disabled, skipping.")
 
     if mode == "dynamic":
-        write_progress_report(
-            [], phase="generating_candidates", phase_label="Generating provider-pattern candidates"
-        )
-        sd.emit_log("Generating provider-pattern candidates from the studio seed catalog.")
-        stage_started = time.perf_counter()
-        provider_pattern_candidates = sd.build_pattern_candidates()
-        stage_duration_ms = _record_stage_timing(
-            stage_timings_ms, "providerPatterns", stage_started
-        )
-        _distribute_duration_by_adapter(
-            adapter_runtime, duration_ms=stage_duration_ms, rows=provider_pattern_candidates
-        )
-        for row in provider_pattern_candidates:
-            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
-        sd.emit_log(
-            f"Provider-pattern generation complete: {len(provider_pattern_candidates)} candidate(s)."
-        )
-        streams.append(("provider_pattern", provider_pattern_candidates))
-
-        write_progress_report(
-            [], phase="scanning_sources", phase_label="Scanning known careers pages"
-        )
-        sd.emit_log("Scanning known careers pages from the seed catalog.")
-        stage_started = time.perf_counter()
-        provider_web_candidates, static_web_candidates, seed_failures = (
-            sd.discover_seed_careers_page_candidates(timeout_s, fetcher=fetcher)
-        )
-        seed_stage_rows = [*provider_web_candidates, *static_web_candidates]
-        stage_duration_ms = _record_stage_timing(stage_timings_ms, "seedCareersScan", stage_started)
-        _distribute_duration_by_adapter(
-            adapter_runtime,
-            duration_ms=stage_duration_ms,
-            rows=seed_stage_rows,
-            failure_rows=seed_failures,
-        )
-        for row in seed_stage_rows:
-            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
-        for row in seed_failures:
-            if isinstance(row, dict):
-                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
-        sd.emit_log(
-            "Seed careers scan complete: "
-            f"provider={len(provider_web_candidates)}, static={len(static_web_candidates)}, failures={len(seed_failures)}."
-        )
-        web_failures.extend(seed_failures)
-        streams.append(("web_provider", provider_web_candidates))
-        streams.append(("generic_static", static_web_candidates))
-
-        write_progress_report(
-            [], phase="scanning_sources", phase_label="Scanning Gamesmap directory"
-        )
-        sd.emit_log("Scanning Gamesmap directory for discoverable studios.")
-        stage_started = time.perf_counter()
-        provider_gamesmap_candidates, static_gamesmap_candidates, gamesmap_failures = (
-            discover_gamesmap_candidates(
-                timeout_s,
-                config=effective_config,
-                fetcher=fetcher,
+        if stage_enabled["providerPatterns"]:
+            write_progress_report(
+                [],
+                phase="generating_candidates",
+                phase_label="Generating provider-pattern candidates",
             )
-        )
-        gamesmap_stage_rows = [*provider_gamesmap_candidates, *static_gamesmap_candidates]
-        stage_duration_ms = _record_stage_timing(stage_timings_ms, "gamesmap", stage_started)
-        _distribute_duration_by_adapter(
-            adapter_runtime,
-            duration_ms=stage_duration_ms,
-            rows=gamesmap_stage_rows,
-            failure_rows=gamesmap_failures,
-        )
-        for row in gamesmap_stage_rows:
-            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
-        for row in gamesmap_failures:
-            if isinstance(row, dict):
-                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
-        sd.emit_log(
-            "Gamesmap scan complete: "
-            f"provider={len(provider_gamesmap_candidates)}, static={len(static_gamesmap_candidates)}, failures={len(gamesmap_failures)}."
-        )
-        web_failures.extend(gamesmap_failures)
-        streams.append(("web_provider", provider_gamesmap_candidates))
-        streams.append(("generic_static", static_gamesmap_candidates))
-
-        write_progress_report(
-            [], phase="scanning_sources", phase_label="Scanning Gameprog directory"
-        )
-        sd.emit_log("Scanning Gameprog directory for discoverable studios.")
-        stage_started = time.perf_counter()
-        gameprog_config = dict(effective_config.get("gameprog") or {})
-        config_with_gameprog = dict(effective_config)
-        config_with_gameprog["gameprog"] = gameprog_config
-        provider_gameprog_candidates, static_gameprog_candidates, gameprog_failures = (
-            discover_gameprog_candidates(
-                timeout_s,
-                config=config_with_gameprog,
-                fetcher=fetcher,
+            sd.emit_log("Generating provider-pattern candidates from the studio seed catalog.")
+            stage_started = time.perf_counter()
+            provider_pattern_candidates = sd.build_pattern_candidates()
+            stage_duration_ms = _record_stage_timing(
+                stage_timings_ms, "providerPatterns", stage_started
             )
-        )
-        gameprog_stage_rows = [*provider_gameprog_candidates, *static_gameprog_candidates]
-        stage_duration_ms = _record_stage_timing(stage_timings_ms, "gameprog", stage_started)
-        _distribute_duration_by_adapter(
-            adapter_runtime,
-            duration_ms=stage_duration_ms,
-            rows=gameprog_stage_rows,
-            failure_rows=gameprog_failures,
-        )
-        for row in gameprog_stage_rows:
-            _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
-        for row in gameprog_failures:
-            if isinstance(row, dict):
-                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
-        sd.emit_log(
-            "Gameprog scan complete: "
-            f"provider={len(provider_gameprog_candidates)}, static={len(static_gameprog_candidates)}, failures={len(gameprog_failures)}."
-        )
-        web_failures.extend(gameprog_failures)
-        streams.append(("web_provider", provider_gameprog_candidates))
-        streams.append(("generic_static", static_gameprog_candidates))
+            _distribute_duration_by_adapter(
+                adapter_runtime, duration_ms=stage_duration_ms, rows=provider_pattern_candidates
+            )
+            for row in provider_pattern_candidates:
+                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+            sd.emit_log(
+                f"Provider-pattern generation complete: {len(provider_pattern_candidates)} candidate(s)."
+            )
+            streams.append(("provider_pattern", provider_pattern_candidates))
+        else:
+            sd.emit_log("Provider-pattern stage disabled, skipping.")
 
-        if include_web_search:
+        if stage_enabled["seedCareersScan"]:
+            write_progress_report(
+                [], phase="scanning_sources", phase_label="Scanning known careers pages"
+            )
+            sd.emit_log("Scanning known careers pages from the seed catalog.")
+            stage_started = time.perf_counter()
+            provider_web_candidates, static_web_candidates, seed_failures = (
+                sd.discover_seed_careers_page_candidates(timeout_s, fetcher=fetcher)
+            )
+            seed_stage_rows = [*provider_web_candidates, *static_web_candidates]
+            stage_duration_ms = _record_stage_timing(
+                stage_timings_ms, "seedCareersScan", stage_started
+            )
+            _distribute_duration_by_adapter(
+                adapter_runtime,
+                duration_ms=stage_duration_ms,
+                rows=seed_stage_rows,
+                failure_rows=seed_failures,
+            )
+            for row in seed_stage_rows:
+                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+            for row in seed_failures:
+                if isinstance(row, dict):
+                    _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
+            sd.emit_log(
+                "Seed careers scan complete: "
+                f"provider={len(provider_web_candidates)}, static={len(static_web_candidates)}, failures={len(seed_failures)}."
+            )
+            web_failures.extend(seed_failures)
+            streams.append(("web_provider", provider_web_candidates))
+            streams.append(("generic_static", static_web_candidates))
+        else:
+            sd.emit_log("Seed careers stage disabled, skipping.")
+
+        if stage_enabled["gamesmap"]:
+            write_progress_report(
+                [], phase="scanning_sources", phase_label="Scanning Gamesmap directory"
+            )
+            sd.emit_log("Scanning Gamesmap directory for discoverable studios.")
+            stage_started = time.perf_counter()
+            provider_gamesmap_candidates, static_gamesmap_candidates, gamesmap_failures = (
+                discover_gamesmap_candidates(
+                    timeout_s,
+                    config=effective_config,
+                    fetcher=fetcher,
+                )
+            )
+            gamesmap_stage_rows = [*provider_gamesmap_candidates, *static_gamesmap_candidates]
+            stage_duration_ms = _record_stage_timing(stage_timings_ms, "gamesmap", stage_started)
+            _distribute_duration_by_adapter(
+                adapter_runtime,
+                duration_ms=stage_duration_ms,
+                rows=gamesmap_stage_rows,
+                failure_rows=gamesmap_failures,
+            )
+            for row in gamesmap_stage_rows:
+                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+            for row in gamesmap_failures:
+                if isinstance(row, dict):
+                    _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
+            sd.emit_log(
+                "Gamesmap scan complete: "
+                f"provider={len(provider_gamesmap_candidates)}, static={len(static_gamesmap_candidates)}, failures={len(gamesmap_failures)}."
+            )
+            web_failures.extend(gamesmap_failures)
+            streams.append(("web_provider", provider_gamesmap_candidates))
+            streams.append(("generic_static", static_gamesmap_candidates))
+        else:
+            sd.emit_log("Gamesmap stage disabled, skipping.")
+
+        if stage_enabled["gameprog"]:
+            write_progress_report(
+                [], phase="scanning_sources", phase_label="Scanning Gameprog directory"
+            )
+            sd.emit_log("Scanning Gameprog directory for discoverable studios.")
+            stage_started = time.perf_counter()
+            gameprog_config = dict(effective_config.get("gameprog") or {})
+            config_with_gameprog = dict(effective_config)
+            config_with_gameprog["gameprog"] = gameprog_config
+            provider_gameprog_candidates, static_gameprog_candidates, gameprog_failures = (
+                discover_gameprog_candidates(
+                    timeout_s,
+                    config=config_with_gameprog,
+                    fetcher=fetcher,
+                )
+            )
+            gameprog_stage_rows = [*provider_gameprog_candidates, *static_gameprog_candidates]
+            stage_duration_ms = _record_stage_timing(stage_timings_ms, "gameprog", stage_started)
+            _distribute_duration_by_adapter(
+                adapter_runtime,
+                duration_ms=stage_duration_ms,
+                rows=gameprog_stage_rows,
+                failure_rows=gameprog_failures,
+            )
+            for row in gameprog_stage_rows:
+                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+            for row in gameprog_failures:
+                if isinstance(row, dict):
+                    _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
+            sd.emit_log(
+                "Gameprog scan complete: "
+                f"provider={len(provider_gameprog_candidates)}, static={len(static_gameprog_candidates)}, failures={len(gameprog_failures)}."
+            )
+            web_failures.extend(gameprog_failures)
+            streams.append(("web_provider", provider_gameprog_candidates))
+            streams.append(("generic_static", static_gameprog_candidates))
+        else:
+            sd.emit_log("Gameprog stage disabled, skipping.")
+
+        if stage_enabled["gamedevmap"]:
+            write_progress_report(
+                [], phase="scanning_sources", phase_label="Scanning GameDevMap directory"
+            )
+            sd.emit_log("Scanning GameDevMap directory for discoverable studios.")
+            stage_started = time.perf_counter()
+            provider_gamedevmap_candidates, static_gamedevmap_candidates, gamedevmap_failures = (
+                discover_gamedevmap_candidates(
+                    timeout_s,
+                    config=effective_config,
+                    fetcher=fetcher,
+                )
+            )
+            gamedevmap_stage_rows = [*provider_gamedevmap_candidates, *static_gamedevmap_candidates]
+            stage_duration_ms = _record_stage_timing(stage_timings_ms, "gamedevmap", stage_started)
+            _distribute_duration_by_adapter(
+                adapter_runtime,
+                duration_ms=stage_duration_ms,
+                rows=gamedevmap_stage_rows,
+                failure_rows=gamedevmap_failures,
+            )
+            for row in gamedevmap_stage_rows:
+                _increment_adapter_runtime(adapter_runtime, row.get("adapter"), generated=1)
+            for row in gamedevmap_failures:
+                if isinstance(row, dict):
+                    _increment_adapter_runtime(adapter_runtime, row.get("adapter"), failures=1)
+            sd.emit_log(
+                "GameDevMap scan complete: "
+                f"provider={len(provider_gamedevmap_candidates)}, static={len(static_gamedevmap_candidates)}, failures={len(gamedevmap_failures)}."
+            )
+            web_failures.extend(gamedevmap_failures)
+            streams.append(("web_provider", provider_gamedevmap_candidates))
+            streams.append(("generic_static", static_gamedevmap_candidates))
+        else:
+            sd.emit_log("GameDevMap stage disabled, skipping.")
+
+        if include_web_search and stage_enabled["webSearch"]:
             write_progress_report(
                 [],
                 phase="generating_candidates",
@@ -758,6 +891,8 @@ def run_discovery(
             web_failures.extend(search_failures)
             streams.append(("web_provider", provider_search_candidates))
             streams.append(("generic_static", static_search_candidates))
+        elif include_web_search:
+            sd.emit_log("Web-search stage disabled, skipping.")
 
     stage_started = time.perf_counter()
     discovered = merge_candidate_streams(streams)

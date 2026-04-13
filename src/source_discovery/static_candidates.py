@@ -5,8 +5,46 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .scoring import careers_keyword_count, studio_domain_match
+from .scoring import careers_keyword_count, studio_domain_match, unique_string_list
 from .web_search import extract_jobish_links, is_blocked_generic_static_url
+
+
+def build_known_careers_url_candidate(
+    target_url: str,
+    *,
+    studio: str,
+    name_suffix: str,
+    nl_priority: bool,
+    discovery_method: str,
+    evidence_source: str,
+    evidence_types: list[str],
+    evidence_score: int,
+    discovery_stage: str = "generic_static",
+    enabled_by_default: bool | None = False,
+    weak_signal: bool = False,
+    extra_fields: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "name": f"{studio} ({name_suffix})" if name_suffix else studio,
+        "studio": studio,
+        "company": studio,
+        "adapter": "static",
+        "pages": [target_url],
+        "listing_url": target_url,
+        "nlPriority": nl_priority,
+        "discoveryMethod": discovery_method,
+        "discoveryStage": discovery_stage,
+        "careersUrl": target_url,
+        "evidenceSource": evidence_source,
+        "evidenceTypes": unique_string_list(evidence_types),
+        "evidenceScore": int(evidence_score),
+        "weakSignal": bool(weak_signal),
+    }
+    if enabled_by_default is not None:
+        row["enabledByDefault"] = bool(enabled_by_default)
+    if isinstance(extra_fields, dict):
+        row.update(extra_fields)
+    return row
 
 
 def build_static_candidate_from_page(

@@ -15,6 +15,7 @@ from .config import (
 )
 from .io_runtime import collapse_competing_candidates
 from .scoring import unique_string_list
+from .static_candidates import build_known_careers_url_candidate
 from .web_search import infer_web_candidate
 
 
@@ -242,25 +243,24 @@ def discover_game_studio_sheet_candidates(
             provider_candidates.append(inferred)
             continue
         static_candidates.append(
-            {
-                "name": f"{studio} (Sheet)",
-                "studio": studio,
-                "company": studio,
-                "adapter": "static",
-                "pages": [careers_url],
-                "listing_url": careers_url,
-                "nlPriority": False,
-                "discoveryMethod": "sheet_directory",
-                "discoveryStage": "sheet_directory",
-                "careersUrl": careers_url,
-                "evidenceSource": "game_studios_sheet",
-                "evidenceTypes": unique_string_list(evidence_types),
-                "evidenceScore": int(evidence_score),
-                "weakSignal": bool(weak_signal),
-                "sourceDirectory": "game_studios_sheet",
-                "sourceDirectoryUrl": GAME_STUDIOS_SHEET_URL,
-                "sourceDirectoryEntryUrl": careers_url,
-            }
+            build_known_careers_url_candidate(
+                careers_url,
+                studio=studio,
+                name_suffix="Sheet",
+                nl_priority=False,
+                discovery_method="sheet_directory",
+                discovery_stage="sheet_directory",
+                evidence_source="game_studios_sheet",
+                evidence_types=evidence_types,
+                evidence_score=int(evidence_score),
+                enabled_by_default=None,
+                weak_signal=bool(weak_signal),
+                extra_fields={
+                    "sourceDirectory": "game_studios_sheet",
+                    "sourceDirectoryUrl": GAME_STUDIOS_SHEET_URL,
+                    "sourceDirectoryEntryUrl": careers_url,
+                },
+            )
         )
 
     emit_log(

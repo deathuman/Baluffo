@@ -3,11 +3,14 @@ import importlib
 import json
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 from unittest import mock
 
 from src import source_discovery as sd
 from src import source_registry as sr
+from src.source_discovery import gamesmap as gamesmap_adapter
 from src.source_discovery import orchestrator as discovery_orchestrator
 from src.source_discovery import url_patches as discovery_url_patches
 from src.source_discovery.core import classify_probe_failure_stage
@@ -24,6 +27,126 @@ def _fixture_json(name: str):
 
 def _fixture_text(name: str) -> str:
     return (FIXTURES_DIR / name).read_text(encoding="utf-8")
+
+
+def _gamesmap_next_payload_html(companies: list[dict[str, object]]) -> str:
+    payload = f'payload-start "companies":{json.dumps(companies, ensure_ascii=False)},"regions":[] payload-end'
+    return (
+        '<!DOCTYPE html><html lang="en"><body><script>'
+        f"self.__next_f.push([1,{json.dumps(payload, ensure_ascii=False)}]);"
+        "</script></body></html>"
+    )
+
+
+def test_resolve_directory_fetch_limits_uses_env_defaults_and_adapter_overrides() -> None:
+    with mock.patch.dict(
+        os.environ,
+        {
+            "BALUFFO_DISCOVERY_DIRECTORY_FETCH_CONCURRENCY_TOTAL": "9",
+            "BALUFFO_DISCOVERY_DIRECTORY_FETCH_CONCURRENCY_PER_HOST": "3",
+        },
+        clear=False,
+    ):
+        assert sd.directory_fetch_concurrency_defaults() == {"total": 9, "perHost": 3}
+        assert sd.resolve_directory_fetch_limits({}) == (9, 3)
+        assert sd.resolve_directory_fetch_limits(
+            {"fetchConcurrency": 4, "perHostConcurrency": 1}
+        ) == (4, 1)
+        assert sd.resolve_directory_fetch_limits(
+            {"fetchConcurrency": 0, "perHostConcurrency": 0}
+        ) == (9, 3)
+
+
+def test_default_directory_fetch_profiles_use_24x3_for_live_adapters() -> None:
+    for adapter in ("gameprog", "gamesmap", "gamedevmap"):
+        cfg = sd.DEFAULT_DISCOVERY_CONFIG[adapter]
+        assert int(cfg.get("fetchConcurrency") or 0) == 24
+        assert int(cfg.get("perHostConcurrency") or 0) == 3
+
+
+def test_fetch_directory_pages_preserves_order_and_respects_concurrency_limits() -> None:
+    jobs = [
+        {
+            "url": "https://a.example/slow",
+            "payload": {"id": "a-slow"},
+            "name": "a-slow",
+            "adapter": "gamedevmap",
+            "failureStage": "homepage_fetch",
+        },
+        {
+            "url": "https://a.example/fast",
+            "payload": {"id": "a-fast"},
+            "name": "a-fast",
+            "adapter": "gamedevmap",
+            "failureStage": "homepage_fetch",
+        },
+        {
+            "url": "https://b.example/fast",
+            "payload": {"id": "b-fast"},
+            "name": "b-fast",
+            "adapter": "gamedevmap",
+            "failureStage": "homepage_fetch",
+        },
+        {
+            "url": "https://c.example/fail",
+            "payload": {"id": "c-fail"},
+            "name": "c-fail",
+            "adapter": "gamedevmap",
+            "failureStage": "homepage_fetch",
+        },
+    ]
+    delays = {
+        "https://a.example/slow": 0.08,
+        "https://a.example/fast": 0.01,
+        "https://b.example/fast": 0.02,
+        "https://c.example/fail": 0.02,
+    }
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+    host_active: dict[str, int] = {}
+    host_max: dict[str, int] = {}
+
+    def fake_fetch(url: str, _: int) -> str:
+        nonlocal active, max_active
+        host = url.split("/")[2]
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+            host_active[host] = host_active.get(host, 0) + 1
+            host_max[host] = max(host_max.get(host, 0), host_active[host])
+        try:
+            time.sleep(delays[url])
+            if url.endswith("/fail"):
+                raise RuntimeError("boom")
+            return f"<html>{url}</html>"
+        finally:
+            with lock:
+                active -= 1
+                host_active[host] = max(0, host_active.get(host, 1) - 1)
+
+    results = sd.fetch_directory_pages(
+        5,
+        jobs,
+        fetcher=fake_fetch,
+        total_concurrency=3,
+        per_host_concurrency=1,
+        progress_label="Test directory fetch",
+        progress_every=2,
+    )
+
+    assert [str((row.get("payload") or {}).get("id") or "") for row in results] == [
+        "a-slow",
+        "a-fast",
+        "b-fast",
+        "c-fail",
+    ]
+    assert [bool(row.get("ok")) for row in results] == [True, True, True, False]
+    assert str(results[0].get("text") or "").startswith("<html>")
+    assert "boom" in str(results[3].get("error") or "")
+    assert str(((results[3].get("failure") or {}).get("stage")) or "") == "homepage_fetch"
+    assert max_active <= 3
+    assert all(count <= 1 for count in host_max.values())
 
 
 def test_build_pattern_candidates_respects_likely_providers() -> None:
@@ -924,9 +1047,13 @@ def test_discover_seed_careers_page_candidates_prefers_personio_provider_over_st
         }
     ]
     try:
+
+        def should_not_fetch(*_: object) -> str:
+            raise AssertionError("direct provider seed URLs should not be fetched")
+
         providers, static_rows, failures = sd.discover_seed_careers_page_candidates(
             5,
-            fetcher=lambda *_: '<a href="/position/artist">Artist</a>',
+            fetcher=should_not_fetch,
         )
     finally:
         sd.STUDIO_SEEDS = previous
@@ -935,6 +1062,36 @@ def test_discover_seed_careers_page_candidates_prefers_personio_provider_over_st
     assert len(providers) == 1
     assert len(static_rows) == 0
     assert str(providers[0].get("adapter") or "") == "personio"
+
+
+def test_discover_seed_careers_page_candidates_prefers_explicit_careers_links() -> None:
+    previous = list(sd.STUDIO_SEEDS)
+    sd.STUDIO_SEEDS = [
+        {
+            "studio": "Example Studio",
+            "aliases": ["example-studio"],
+            "nlPriority": False,
+            "careersUrl": "https://example.com/",
+        }
+    ]
+    try:
+        providers, static_rows, failures = sd.discover_seed_careers_page_candidates(
+            5,
+            fetcher=lambda *_: (
+                """
+            <a href="/careers">Careers</a>
+            <a href="/jobs/rendering-engineer">Rendering Engineer</a>
+            """
+            ),
+        )
+    finally:
+        sd.STUDIO_SEEDS = previous
+
+    assert len(failures) == 0
+    assert providers == []
+    assert len(static_rows) == 1
+    assert str(static_rows[0].get("careersUrl") or "") == "https://example.com/careers"
+    assert str(static_rows[0].get("name") or "") == "Example Studio (Manual Website)"
 
 
 def test_discover_seed_careers_page_candidates_builds_static_candidate_without_web_search() -> None:
@@ -967,6 +1124,38 @@ def test_discover_seed_careers_page_candidates_builds_static_candidate_without_w
     assert str(static_rows[0].get("discoveryMethod") or "") == "seed_careers_page"
 
 
+def test_discover_web_search_candidates_prefers_explicit_careers_links_from_result_pages() -> None:
+    studio_seeds = [
+        {
+            "studio": "Example Studio",
+            "aliases": ["example-studio"],
+            "nlPriority": False,
+        }
+    ]
+
+    def fake_fetch(url: str, _: int) -> str:
+        if "duckduckgo.com" in url:
+            return '<a href="https://example.com/jobs">Example Studio</a>'
+        if url == "https://example.com/jobs":
+            return """
+            <a href="/careers">Careers</a>
+            <a href="/jobs/rendering-engineer">Rendering Engineer</a>
+            """
+        raise RuntimeError(f"unexpected URL: {url}")
+
+    providers, static_rows, failures = sd.discover_web_search_candidates(
+        5,
+        studio_seeds=studio_seeds,
+        fetcher=fake_fetch,
+        max_queries=1,
+    )
+    assert failures == []
+    assert providers == []
+    assert len(static_rows) == 1
+    assert str(static_rows[0].get("careersUrl") or "") == "https://example.com/careers"
+    assert str(static_rows[0].get("discoveryMethod") or "") == "web_search"
+
+
 def test_build_static_candidate_from_page_records_evidence() -> None:
     html = """
     <a href="/jobs/rendering-engineer">Rendering Engineer</a>
@@ -994,6 +1183,277 @@ def test_build_static_candidate_from_page_blocks_linkedin_like_domains() -> None
         discovery_method="web_search",
     )
     assert row is None
+
+
+def test_build_known_careers_url_candidate_preserves_requested_fields() -> None:
+    row = sd.build_known_careers_url_candidate(
+        "https://example.com/careers",
+        studio="Example Studio",
+        name_suffix="Gameprog",
+        nl_priority=False,
+        discovery_method="gameprog",
+        evidence_source="gameprog",
+        evidence_types=["gameprog_directory", "gameprog_careers_url"],
+        evidence_score=40,
+        enabled_by_default=False,
+        extra_fields={
+            "sourceDirectory": "gameprog",
+            "sourceDirectoryEntryUrl": "https://example.com/",
+            "manualOnly": False,
+        },
+    )
+    assert str(row.get("name") or "") == "Example Studio (Gameprog)"
+    assert str(row.get("careersUrl") or "") == "https://example.com/careers"
+    assert int(row.get("evidenceScore") or 0) == 40
+    assert str(row.get("sourceDirectory") or "") == "gameprog"
+    assert "gameprog_careers_url" in (row.get("evidenceTypes") or [])
+
+
+def test_extract_explicit_careers_url_from_page_skips_provider_and_offsite_links() -> None:
+    html = """
+    <a href="https://boards.greenhouse.io/example-studio">Greenhouse</a>
+    <a href="https://external.example.net/careers">External Careers</a>
+    <a href="/careers">Careers</a>
+    """
+    careers_url = sd.extract_explicit_careers_url_from_page(
+        "https://studio.example.com/",
+        html,
+        studio="Example Studio",
+        nl_priority=False,
+        discovery_method="gamesmap",
+    )
+    assert careers_url == "https://studio.example.com/careers"
+
+
+def test_extract_explicit_careers_url_from_page_prefers_landing_page_over_job_detail_links() -> (
+    None
+):
+    html = """
+    <a href="/jobs/rendering-engineer">Rendering Engineer</a>
+    <a href="/careers">Careers</a>
+    """
+    careers_url = sd.extract_explicit_careers_url_from_page(
+        "https://studio.example.com/",
+        html,
+        studio="Example Studio",
+        nl_priority=False,
+        discovery_method="gamesmap",
+    )
+    assert careers_url == "https://studio.example.com/careers"
+
+
+def test_analyze_fetched_page_prefers_provider_candidates_over_other_outcomes() -> None:
+    html = """
+    <a href="/careers">Careers</a>
+    <a href="https://boards.greenhouse.io/example-studio/jobs/123">Rendering Engineer</a>
+    <script type="application/ld+json">{"@type":"JobPosting","title":"Gameplay Engineer"}</script>
+    """
+    analyzed = sd.analyze_fetched_page(
+        "https://studio.example.com/",
+        html,
+        studio="Example Studio",
+        nl_priority=False,
+        discovery_method="gamedevmap",
+    )
+    assert len(analyzed["provider_candidates"]) == 1
+    assert str(analyzed.get("explicit_careers_url") or "") == ""
+    assert analyzed["generic_static_candidate"] is None
+
+
+def test_analyze_fetched_page_falls_back_to_generic_static_without_explicit_links() -> None:
+    html = """
+    <script type="application/ld+json">{"@type":"JobPosting","title":"Gameplay Engineer"}</script>
+    """
+    analyzed = sd.analyze_fetched_page(
+        "https://studio.example.com/careers",
+        html,
+        studio="Example Studio",
+        nl_priority=False,
+        discovery_method="web_search",
+    )
+    assert analyzed["provider_candidates"] == []
+    assert str(analyzed.get("explicit_careers_url") or "") == ""
+    assert analyzed["generic_static_candidate"] is not None
+
+
+def test_parse_gamedevmap_csv_returns_normalized_rows() -> None:
+    rows = sd.parse_gamedevmap_csv(_fixture_text("gamedevmap_data.csv"))
+    assert len(rows) == 6
+    assert rows[0]["studio"] == "Provider Feed Studio"
+    assert rows[0]["url"] == "https://boards.greenhouse.io/provider-feed-studio"
+    assert rows[0]["country"] == "Sweden"
+
+
+def test_select_gamedevmap_representative_rows_filters_and_dedupes() -> None:
+    rows = sd.parse_gamedevmap_csv(_fixture_text("gamedevmap_data.csv"))
+    selected = sd.select_gamedevmap_representative_rows(
+        rows,
+        allowed_categories=[
+            "Developer",
+            "Developer and Publisher",
+            "Publisher",
+            "Mobile",
+        ],
+        blocked_categories=["Organization"],
+        index_url="https://www.gamedevmap.com/index.php",
+    )
+    assert len(selected) == 4
+    duplicate = next(
+        row for row in selected if str(row.get("url") or "") == "https://duplicate.example.com"
+    )
+    assert str(duplicate.get("studio") or "") == "Duplicate Direct A"
+    assert int(duplicate.get("duplicateCount") or 0) == 2
+    assert duplicate.get("categories") == ["Developer", "Mobile"]
+    assert "query=Duplicate+Direct+A" in str(duplicate.get("sourceDirectoryEntryUrl") or "")
+    assert "exact=1" in str(duplicate.get("sourceDirectoryEntryUrl") or "")
+    assert "type=Developer" in str(duplicate.get("sourceDirectoryEntryUrl") or "")
+
+
+def test_discover_gamedevmap_candidates_emits_direct_provider_homepage_provider_and_static() -> (
+    None
+):
+    config = {
+        "gamedevmap": {
+            "enabled": True,
+            "csvUrl": "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv",
+            "indexUrl": "https://www.gamedevmap.com/index.php",
+            "allowedCategories": [
+                "Developer",
+                "Developer and Publisher",
+                "Publisher",
+                "Mobile",
+            ],
+            "blockedCategories": ["Organization"],
+            "maxHomepageFetches": 2,
+        }
+    }
+    payloads = {
+        "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv": _fixture_text(
+            "gamedevmap_data.csv"
+        ),
+        "https://homepage-provider.example.com": _fixture_text("gamedevmap_homepage_provider.html"),
+        "https://homepage-static.example.com": _fixture_text("gamedevmap_homepage_static.html"),
+    }
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url not in payloads:
+            raise RuntimeError(f"unexpected URL: {url}")
+        return payloads[url]
+
+    provider_rows, static_rows, failures = sd.discover_gamedevmap_candidates(
+        5, config=config, fetcher=fake_fetch
+    )
+    assert len(failures) == 0
+    assert len(provider_rows) == 2
+    assert len(static_rows) == 1
+    direct_provider = next(
+        row
+        for row in provider_rows
+        if str(row.get("careersUrl") or "") == "https://boards.greenhouse.io/provider-feed-studio"
+    )
+    homepage_provider = next(
+        row
+        for row in provider_rows
+        if str(row.get("careersUrl") or "") == "https://homepage-provider.example.com"
+    )
+    assert "gamedevmap_direct_url" in (direct_provider.get("evidenceTypes") or [])
+    assert "gamedevmap_homepage_fetch" in (homepage_provider.get("evidenceTypes") or [])
+    assert str(homepage_provider.get("sourceDirectory") or "") == "gamedevmap"
+    assert int(homepage_provider.get("evidenceScore") or 0) >= 44
+    assert str(static_rows[0].get("adapter") or "") == "static"
+    assert str(static_rows[0].get("sourceDirectory") or "") == "gamedevmap"
+    assert "gamedevmap_homepage_fetch" in (static_rows[0].get("evidenceTypes") or [])
+    assert "gamedevmap_careers_url" not in (static_rows[0].get("evidenceTypes") or [])
+    assert str(static_rows[0].get("careersUrl") or "") == "https://homepage-static.example.com"
+    assert not bool(static_rows[0].get("weakSignal"))
+
+
+def test_discover_gamedevmap_candidates_skips_homepages_without_job_evidence() -> None:
+    csv_text = """Organization,URL,City,State/Province,Country/Region,Map Def,Category,Comments,Updated By,Bluesky,AI Response
+No Jobs Studio,https://homepage-no-jobs.example.com,Rome,Lazio,Italy,Rome,Developer,Verified gaming studio.,,,Correct (Gaming)
+"""
+    config = {
+        "gamedevmap": {
+            "enabled": True,
+            "csvUrl": "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv",
+            "indexUrl": "https://www.gamedevmap.com/index.php",
+            "allowedCategories": ["Developer"],
+            "blockedCategories": [],
+            "maxHomepageFetches": 1,
+        }
+    }
+    payloads = {
+        "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv": csv_text,
+        "https://homepage-no-jobs.example.com": _fixture_text("gamedevmap_homepage_no_jobs.html"),
+    }
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url not in payloads:
+            raise RuntimeError(f"unexpected URL: {url}")
+        return payloads[url]
+
+    provider_rows, static_rows, failures = sd.discover_gamedevmap_candidates(
+        5, config=config, fetcher=fake_fetch
+    )
+    assert len(failures) == 0
+    assert provider_rows == []
+    assert static_rows == []
+
+
+def test_discover_gamedevmap_candidates_reuses_fresh_cache() -> None:
+    with workspace_tmpdir("gamedevmap-cache") as root:
+        cache_path = root / "gamedevmap-cache.json"
+        config = {
+            "gamedevmap": {
+                "enabled": True,
+                "csvUrl": "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv",
+                "indexUrl": "https://www.gamedevmap.com/index.php",
+                "allowedCategories": [
+                    "Developer",
+                    "Developer and Publisher",
+                    "Publisher",
+                    "Mobile",
+                ],
+                "blockedCategories": ["Organization"],
+                "maxHomepageFetches": 2,
+                "cachePath": str(cache_path),
+                "cacheTtlMinutes": 60,
+            }
+        }
+        payloads = {
+            "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv": _fixture_text(
+                "gamedevmap_data.csv"
+            ),
+            "https://homepage-provider.example.com": _fixture_text(
+                "gamedevmap_homepage_provider.html"
+            ),
+            "https://homepage-static.example.com": _fixture_text("gamedevmap_homepage_static.html"),
+        }
+        calls: list[str] = []
+
+        def fake_fetch(url: str, _: int) -> str:
+            calls.append(url)
+            if url not in payloads:
+                raise RuntimeError(f"unexpected URL: {url}")
+            return payloads[url]
+
+        provider_rows_1, static_rows_1, failures_1 = sd.discover_gamedevmap_candidates(
+            5, config=config, fetcher=fake_fetch
+        )
+        assert len(calls) > 0
+        first_call_count = len(calls)
+
+        with mock.patch(
+            "src.source_discovery.gamedevmap.fetch_directory_pages",
+            side_effect=AssertionError("directory fetch helper should be bypassed on cache hit"),
+        ):
+            provider_rows_2, static_rows_2, failures_2 = sd.discover_gamedevmap_candidates(
+                5, config=config, fetcher=fake_fetch
+            )
+        assert len(calls) == first_call_count
+        assert provider_rows_1 == provider_rows_2
+        assert static_rows_1 == static_rows_2
+        assert failures_1 == failures_2
 
 
 def test_parse_gamesmap_detail_page_extracts_careers_and_provenance() -> None:
@@ -1041,19 +1501,90 @@ def test_parse_gamesmap_detail_page_ignores_directory_and_social_links_for_websi
     assert str(row.get("careersUrl") or "") == ""
 
 
-def test_parse_gamesmap_index_entries_extracts_industry_rows_from_js_payload() -> None:
+def test_parse_gamesmap_index_entries_extracts_company_rows_from_next_payload() -> None:
     rows = sd.parse_gamesmap_index_entries(
-        _fixture_text("gamesmap_index.html"),
+        _fixture_text("gamesmap_index_next_payload.html"),
         "https://www.gamesmap.de",
         prefer_english=True,
     )
-    assert len(rows) == 3
-    assert (
-        str(rows[0].get("detailUrl") or "")
-        == "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh"
+    assert len(rows) == 5
+    direct_provider = next(
+        row for row in rows if str(row.get("studio") or "") == "Provider Direct Studio"
     )
-    assert str(rows[0].get("studio") or "") == "Example Studio GmbH"
-    assert str(rows[0].get("location") or "") == "Hamburg"
+    assert (
+        str(direct_provider.get("detailUrl") or "")
+        == "https://www.gamesmap.de/en/company/provider-direct-studio"
+    )
+    assert (
+        str(direct_provider.get("websiteUrl") or "") == "https://boards.greenhouse.io/examplestudio"
+    )
+    assert direct_provider.get("categories") == ["Developer"]
+    assert str(direct_provider.get("location") or "") == "Hamburg"
+    homepage_provider = next(
+        row for row in rows if str(row.get("studio") or "") == "Homepage Provider Studio"
+    )
+    assert homepage_provider.get("categories") == ["Console / PC", "Developer"]
+    missing_website = next(
+        row for row in rows if str(row.get("studio") or "") == "Missing Website Studio"
+    )
+    assert str(missing_website.get("websiteUrl") or "") == ""
+    assert missing_website.get("categories") == ["Developer", "Publisher"]
+
+
+def test_parse_gamesmap_index_entries_resolves_category_references_and_drops_bad_ones() -> None:
+    category_ref = "$1b:props:children:props:children:props:children:props:companies:{company}:categories:{category}"
+    companies = [
+        {
+            "id": "1",
+            "name": "Anchor Developer",
+            "slug": "anchor-developer",
+            "categories": [{"name": "Developer"}],
+            "address": {"city": "Berlin", "state": "Berlin", "country": "DE"},
+            "websites": ["https://anchor.example.com"],
+        },
+        {
+            "id": "2",
+            "name": "Recursive Reference",
+            "slug": "recursive-reference",
+            "categories": [category_ref.format(company=0, category=0)],
+            "address": {"city": "Berlin", "state": "Berlin", "country": "DE"},
+            "websites": ["https://recursive.example.com"],
+        },
+        {
+            "id": "3",
+            "name": "Bad Reference",
+            "slug": "bad-reference",
+            "categories": [
+                category_ref.format(company=99, category=0),
+                {"name": "Publisher"},
+            ],
+            "address": {"city": "Berlin", "state": "Berlin", "country": "DE"},
+            "websites": ["https://bad.example.com"],
+        },
+        {
+            "id": "4",
+            "name": "Cyclic Reference",
+            "slug": "cyclic-reference",
+            "categories": [category_ref.format(company=3, category=0)],
+            "address": {"city": "Berlin", "state": "Berlin", "country": "DE"},
+            "websites": ["https://cycle.example.com"],
+        },
+    ]
+
+    rows, diagnostics = gamesmap_adapter._parse_gamesmap_index_entries_with_diagnostics(
+        _gamesmap_next_payload_html(companies),
+        "https://www.gamesmap.de",
+        prefer_english=True,
+    )
+
+    by_studio = {str(row.get("studio") or ""): row for row in rows}
+    assert by_studio["Recursive Reference"]["categories"] == ["Developer"]
+    assert by_studio["Bad Reference"]["categories"] == ["Publisher"]
+    assert by_studio["Cyclic Reference"]["categories"] == []
+    assert int(diagnostics.get("unresolvedReferenceCount") or 0) == 2
+    assert all(
+        "$1b:" not in category for row in rows for category in list(row.get("categories") or [])
+    )
 
 
 def test_gamesmap_category_filter_rejects_blocked_entries() -> None:
@@ -1075,7 +1606,111 @@ def test_gamesmap_category_filter_rejects_blocked_entries() -> None:
     )
 
 
-def test_discover_gamesmap_candidates_emits_provider_and_static_rows() -> None:
+def test_gamesmap_matches_category_uses_token_aware_rules() -> None:
+    allowed = [
+        "developer",
+        "developer and publisher",
+        "publisher",
+        "console",
+        "pc",
+        "mobile",
+        "browser",
+        "online",
+        "vr",
+        "ar",
+        "serious games",
+    ]
+    blocked = ["public institution", "service provider"]
+
+    assert sd.gamesmap_matches_category(["Developer"], allowed, blocked)
+    assert sd.gamesmap_matches_category(
+        ["Developer", "Publisher"], ["developer and publisher"], blocked
+    )
+    assert sd.gamesmap_matches_category(["Console / PC"], allowed, blocked)
+    assert sd.gamesmap_matches_category(["VR / AR"], allowed, blocked)
+    assert sd.gamesmap_matches_category(["Serious games"], allowed, blocked)
+    assert not sd.gamesmap_matches_category(["Research"], ["ar"], [])
+    assert not sd.gamesmap_matches_category(["Market research"], ["ar"], [])
+    assert not sd.gamesmap_matches_category(["PR/marketing agency"], ["ar"], [])
+    assert not sd.gamesmap_matches_category(["Public institutions"], allowed, blocked)
+    assert not sd.gamesmap_matches_category(["Service provider"], allowed, blocked)
+
+
+def test_parse_gamesmap_live_style_reference_payload_preserves_many_eligible_rows() -> None:
+    category_ref = "$1b:props:children:props:children:props:children:props:companies:{company}:categories:{category}"
+    companies = [
+        {
+            "id": "1",
+            "name": "Direct Developer",
+            "slug": "direct-developer",
+            "categories": [{"name": "Developer"}],
+            "address": {"city": "Berlin", "state": "Berlin", "country": "DE"},
+            "websites": ["https://direct.example.com"],
+        },
+        {
+            "id": "2",
+            "name": "Resolved Developer",
+            "slug": "resolved-developer",
+            "categories": [category_ref.format(company=0, category=0)],
+            "address": {"city": "Berlin", "state": "Berlin", "country": "DE"},
+            "websites": ["https://resolved.example.com"],
+        },
+        {
+            "id": "3",
+            "name": "Recursive Developer",
+            "slug": "recursive-developer",
+            "categories": [category_ref.format(company=1, category=0)],
+            "address": {"city": "Berlin", "state": "Berlin", "country": "DE"},
+            "websites": ["https://recursive.example.com"],
+        },
+        {
+            "id": "4",
+            "name": "Developer Publisher",
+            "slug": "developer-publisher",
+            "categories": [
+                category_ref.format(company=0, category=0),
+                {"name": "Publisher"},
+            ],
+            "address": {"city": "Berlin", "state": "Berlin", "country": "DE"},
+            "websites": ["https://publisher.example.com"],
+        },
+        {
+            "id": "5",
+            "name": "Research Agency",
+            "slug": "research-agency",
+            "categories": [{"name": "Market research"}],
+            "address": {"city": "Berlin", "state": "Berlin", "country": "DE"},
+            "websites": ["https://research.example.com"],
+        },
+    ]
+
+    rows = sd.parse_gamesmap_index_entries(
+        _gamesmap_next_payload_html(companies),
+        "https://www.gamesmap.de",
+        prefer_english=True,
+    )
+    eligible_rows = [
+        row
+        for row in rows
+        if str(row.get("websiteUrl") or "").strip()
+        and sd.gamesmap_matches_category(
+            list(row.get("categories") or []),
+            ["developer", "publisher", "console", "pc", "mobile", "vr", "ar"],
+            ["association", "education", "service provider"],
+        )
+    ]
+    assert len(eligible_rows) == 4
+    assert {str(row.get("studio") or "") for row in eligible_rows} == {
+        "Direct Developer",
+        "Resolved Developer",
+        "Recursive Developer",
+        "Developer Publisher",
+    }
+
+
+def test_discover_gamesmap_candidates_emits_direct_provider_homepage_provider_and_static_rows() -> (
+    None
+):
     config = {
         "gamesmap": {
             "enabled": True,
@@ -1089,15 +1724,10 @@ def test_discover_gamesmap_candidates_emits_provider_and_static_rows() -> None:
     }
 
     payloads = {
-        "https://www.gamesmap.de/en": _fixture_text("gamesmap_index.html"),
-        "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text(
-            "gamesmap_detail_careers.html"
-        ),
-        "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text(
-            "gamesmap_detail_blocked.html"
-        ),
-        "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text(
-            "gamesmap_detail_website_only.html"
+        "https://www.gamesmap.de/en": _fixture_text("gamesmap_index_next_payload.html"),
+        "https://homepage-provider.example.com": _fixture_text("gamedevmap_homepage_provider.html"),
+        "https://homepage-website-only.example.com": _fixture_text(
+            "gamedevmap_homepage_no_jobs.html"
         ),
     }
 
@@ -1110,18 +1740,82 @@ def test_discover_gamesmap_candidates_emits_provider_and_static_rows() -> None:
         5, config=config, fetcher=fake_fetch
     )
     assert len(failures) == 0
-    assert len(provider_rows) == 1
-    assert str(provider_rows[0].get("adapter") or "") == "greenhouse"
-    assert str(provider_rows[0].get("discoveryMethod") or "") == "gamesmap"
-    assert str(provider_rows[0].get("sourceDirectory") or "") == "gamesmap"
+    assert len(provider_rows) == 2
     assert len(static_rows) == 1
+    direct_provider = next(
+        row
+        for row in provider_rows
+        if str(row.get("careersUrl") or "") == "https://boards.greenhouse.io/examplestudio"
+    )
+    homepage_provider = next(
+        row
+        for row in provider_rows
+        if str(row.get("careersUrl") or "") == "https://homepage-provider.example.com"
+    )
+    assert str(direct_provider.get("adapter") or "") == "greenhouse"
+    assert str(direct_provider.get("sourceDirectory") or "") == "gamesmap"
+    assert "gamesmap_website" in (direct_provider.get("evidenceTypes") or [])
+    assert "gamesmap_website_fetch" in (homepage_provider.get("evidenceTypes") or [])
     assert str(static_rows[0].get("adapter") or "") == "static"
     assert bool(static_rows[0].get("weakSignal"))
     assert (
         str(static_rows[0].get("sourceDirectoryEntryUrl") or "")
-        == "https://www.gamesmap.de/en/detail/industry/example-publisher"
+        == "https://www.gamesmap.de/en/company/website-only-publisher"
     )
     assert not (bool(static_rows[0].get("manualOnly")))
+    assert "gamesmap_website_fetch" in (static_rows[0].get("evidenceTypes") or [])
+
+
+def test_discover_gamesmap_candidates_emits_explicit_careers_links_without_website_only_fallback() -> (
+    None
+):
+    config = {
+        "gamesmap": {
+            "enabled": True,
+            "baseUrl": "https://www.gamesmap.de",
+            "indexUrls": ["https://www.gamesmap.de/en"],
+            "websiteOnlyFallback": False,
+            "maxDetailPages": 10,
+            "allowedCategoryTokens": ["developer", "publisher", "mobile", "pc", "console"],
+            "blockedCategoryTokens": ["association", "education"],
+        }
+    }
+    index_html = """
+    <!DOCTYPE html>
+    <html lang="en">
+      <body>
+        <script>
+          self.__next_f.push([1,"payload-start \\"companies\\":[{\\"id\\":\\"1\\",\\"name\\":\\"Explicit Careers Studio\\",\\"slug\\":\\"explicit-careers-studio\\",\\"categories\\":[{\\"name\\":\\"Developer\\"}],\\"address\\":{\\"city\\":\\"Berlin\\",\\"state\\":\\"Berlin\\",\\"country\\":\\"DE\\"},\\"websites\\":[\\"https://homepage-careers.example.com\\"]}],\\"regions\\":[] payload-end"]);
+        </script>
+      </body>
+    </html>
+    """
+    payloads = {
+        "https://www.gamesmap.de/en": index_html,
+        "https://homepage-careers.example.com": """
+        <!doctype html>
+        <html><body><a href="/careers">Careers</a></body></html>
+        """,
+    }
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url not in payloads:
+            raise RuntimeError(f"unexpected URL: {url}")
+        return payloads[url]
+
+    provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(
+        5, config=config, fetcher=fake_fetch
+    )
+    assert failures == []
+    assert provider_rows == []
+    assert len(static_rows) == 1
+    assert (
+        str(static_rows[0].get("careersUrl") or "")
+        == "https://homepage-careers.example.com/careers"
+    )
+    assert "gamesmap_careers_url" in (static_rows[0].get("evidenceTypes") or [])
+    assert "gamesmap_website_fetch" in (static_rows[0].get("evidenceTypes") or [])
+    assert not bool(static_rows[0].get("weakSignal"))
 
 
 def test_discover_gamesmap_candidates_marks_manual_website_only_rows() -> None:
@@ -1138,15 +1832,9 @@ def test_discover_gamesmap_candidates_marks_manual_website_only_rows() -> None:
         }
     }
     payloads = {
-        "https://www.gamesmap.de/en": _fixture_text("gamesmap_index.html"),
-        "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text(
-            "gamesmap_detail_careers.html"
-        ),
-        "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text(
-            "gamesmap_detail_blocked.html"
-        ),
-        "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text(
-            "gamesmap_detail_website_only.html"
+        "https://www.gamesmap.de/en": _fixture_text("gamesmap_index_next_payload.html"),
+        "https://homepage-website-only.example.com": _fixture_text(
+            "gamedevmap_homepage_no_jobs.html"
         ),
     }
 
@@ -1163,19 +1851,16 @@ def test_discover_gamesmap_candidates_marks_manual_website_only_rows() -> None:
     assert bool(static_rows[0].get("weakSignal"))
     assert bool(static_rows[0].get("manualOnly"))
     assert "gamesmap_manual_website_only" in (static_rows[0].get("evidenceTypes") or [])
+    assert "gamesmap_website_fetch" in (static_rows[0].get("evidenceTypes") or [])
 
 
-def test_discover_gamesmap_candidates_dedupes_repeated_directory_entries() -> None:
-    html = """
-    <a href="/en/detail/industry/example-studio-gmbh">Example Studio</a>
-    <a href="/detail/industry/example-studio-gmbh">Example Studio duplicate</a>
-    """
+def test_discover_gamesmap_candidates_reports_parse_failure_when_index_shape_is_unknown() -> None:
     config = {
         "gamesmap": {
             "enabled": True,
             "baseUrl": "https://www.gamesmap.de",
             "indexUrls": ["https://www.gamesmap.de/en"],
-            "websiteOnlyFallback": False,
+            "websiteOnlyFallback": True,
             "maxDetailPages": 10,
             "allowedCategoryTokens": ["developer"],
             "blockedCategoryTokens": [],
@@ -1183,15 +1868,17 @@ def test_discover_gamesmap_candidates_dedupes_repeated_directory_entries() -> No
     }
 
     def fake_fetch(url: str, _: int) -> str:
-        if url == "https://www.gamesmap.de/en":
-            return html
-        return _fixture_text("gamesmap_detail_careers.html")
+        if url != "https://www.gamesmap.de/en":
+            raise RuntimeError(f"unexpected URL: {url}")
+        return "<html><body><h1>No embedded company payload</h1></body></html>"
 
-    provider_rows, static_rows, _failures = sd.discover_gamesmap_candidates(
+    provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(
         5, config=config, fetcher=fake_fetch
     )
-    assert len(provider_rows) == 1
+    assert len(provider_rows) == 0
     assert len(static_rows) == 0
+    assert len(failures) == 1
+    assert str(failures[0].get("stage") or "") == "directory_index_parse"
 
 
 def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
@@ -1211,15 +1898,12 @@ def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
             }
         }
         payloads = {
-            "https://www.gamesmap.de/en": _fixture_text("gamesmap_index.html"),
-            "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text(
-                "gamesmap_detail_careers.html"
+            "https://www.gamesmap.de/en": _fixture_text("gamesmap_index_next_payload.html"),
+            "https://homepage-provider.example.com": _fixture_text(
+                "gamedevmap_homepage_provider.html"
             ),
-            "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text(
-                "gamesmap_detail_blocked.html"
-            ),
-            "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text(
-                "gamesmap_detail_website_only.html"
+            "https://homepage-website-only.example.com": _fixture_text(
+                "gamedevmap_homepage_no_jobs.html"
             ),
         }
         calls: list[str] = []
@@ -1236,9 +1920,13 @@ def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
         assert len(calls) > 0
         first_call_count = len(calls)
 
-        provider_rows_2, static_rows_2, failures_2 = sd.discover_gamesmap_candidates(
-            5, config=config, fetcher=fake_fetch
-        )
+        with mock.patch(
+            "src.source_discovery.gamesmap.fetch_directory_pages",
+            side_effect=AssertionError("directory fetch helper should be bypassed on cache hit"),
+        ):
+            provider_rows_2, static_rows_2, failures_2 = sd.discover_gamesmap_candidates(
+                5, config=config, fetcher=fake_fetch
+            )
         assert len(calls) == first_call_count
         assert provider_rows_1 == provider_rows_2
         assert static_rows_1 == static_rows_2
@@ -1282,16 +1970,7 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
                 },
             }
             payloads = {
-                "https://www.gamesmap.de/en": _fixture_text("gamesmap_index.html"),
-                "https://www.gamesmap.de/en/detail/industry/example-studio-gmbh": _fixture_text(
-                    "gamesmap_detail_careers.html"
-                ),
-                "https://www.gamesmap.de/en/detail/industry/tooling-association": _fixture_text(
-                    "gamesmap_detail_blocked.html"
-                ),
-                "https://www.gamesmap.de/en/detail/industry/example-publisher": _fixture_text(
-                    "gamesmap_detail_website_only.html"
-                ),
+                "https://www.gamesmap.de/en": _fixture_text("gamesmap_index_next_payload.html"),
                 "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true": json.dumps(
                     {"jobs": [{}, {}]}
                 ),
@@ -1319,6 +1998,85 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
             assert len(queued) == 1
             assert str(queued[0].get("discoveryMethod") or "") == "gamesmap"
             assert str(queued[0].get("sourceDirectory") or "") == "gamesmap"
+        finally:
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
+            ) = prev_paths
+            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+            sd.STUDIO_SEEDS = prev_seeds
+
+
+def test_run_discovery_gamedevmap_candidates_flow_into_report_and_queue() -> None:
+    with workspace_tmpdir("source-discovery-gamedevmap") as root:
+        prev_paths = (
+            sd.ACTIVE_PATH,
+            sd.PENDING_PATH,
+            sd.REJECTED_PATH,
+            sd.DISCOVERY_CANDIDATES_PATH,
+            sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
+        )
+        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+        prev_seeds = list(sd.STUDIO_SEEDS)
+        try:
+            sd.ACTIVE_PATH = root / "active.json"
+            sd.PENDING_PATH = root / "pending.json"
+            sd.REJECTED_PATH = root / "rejected.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+            sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+            sd.STUDIO_SEEDS = []
+            sd.STATIC_DISCOVERY_CANDIDATES = []
+
+            config = {
+                "gamesmap": {"enabled": False},
+                "gameprog": {"enabled": False},
+                "gamedevmap": {
+                    "enabled": True,
+                    "csvUrl": "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv",
+                    "indexUrl": "https://www.gamedevmap.com/index.php",
+                    "allowedCategories": ["Developer"],
+                    "blockedCategories": ["Organization"],
+                    "maxRows": 0,
+                    "maxHomepageFetches": 0,
+                },
+            }
+            payloads = {
+                "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv": _fixture_text(
+                    "gamedevmap_data.csv"
+                ),
+                "https://boards-api.greenhouse.io/v1/boards/providerfeedstudio/jobs?content=true": json.dumps(
+                    {"jobs": [{}, {}]}
+                ),
+            }
+
+            def fake_fetch(url: str, _: int) -> str:
+                if url not in payloads:
+                    raise RuntimeError(f"unexpected URL: {url}")
+                return payloads[url]
+
+            report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=False,
+                discovery_config=config,
+                fetcher=fake_fetch,
+            )
+            assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
+            assert (
+                int((report["summary"].get("generatedCountByStage") or {}).get("web_provider") or 0)
+                == 1
+            )
+            queued = json.loads(sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8"))
+            assert len(queued) == 1
+            assert str(queued[0].get("discoveryMethod") or "") == "gamedevmap"
+            assert str(queued[0].get("sourceDirectory") or "") == "gamedevmap"
         finally:
             (
                 sd.ACTIVE_PATH,
@@ -2046,6 +2804,35 @@ def test_parse_args_supports_manual_gamesmap_mode() -> None:
         sys.argv = prev_argv
     assert bool(args.gamesmap_website_only_fallback)
     assert int(args.gamesmap_max_detail_pages or 0) == 25
+
+
+def test_parse_args_supports_gamedevmap_mode() -> None:
+    prev_argv = list(sys.argv)
+    try:
+        sys.argv = [
+            "source_discovery.py",
+            "--gamedevmap-enabled",
+            "--gamedevmap-max-rows",
+            "40",
+            "--gamedevmap-max-homepage-fetches",
+            "12",
+        ]
+        args = sd.parse_args()
+    finally:
+        sys.argv = prev_argv
+    assert bool(args.gamedevmap_enabled)
+    assert int(args.gamedevmap_max_rows or 0) == 40
+    assert int(args.gamedevmap_max_homepage_fetches or 0) == 12
+
+
+def test_parse_args_supports_only_gamedevmap_mode() -> None:
+    prev_argv = list(sys.argv)
+    try:
+        sys.argv = ["source_discovery.py", "--only-gamedevmap"]
+        args = sd.parse_args()
+    finally:
+        sys.argv = prev_argv
+    assert bool(args.only_gamedevmap)
 
 
 def test_run_discovery_leaves_pending_only_rows_unapproved() -> None:
@@ -3080,6 +3867,122 @@ def test_run_discovery_writes_m5_backlog_snapshot() -> None:
             discovery_orchestrator.async_probe_candidate = prev_probe
 
 
+def test_run_discovery_only_gamedevmap_skips_other_generator_stages() -> None:
+    with workspace_tmpdir("source-discovery-only-gamedevmap") as root:
+        prev_paths = (
+            sd.ACTIVE_PATH,
+            sd.PENDING_PATH,
+            sd.REJECTED_PATH,
+            sd.DISCOVERY_CANDIDATES_PATH,
+            sd.DISCOVERY_REPORT_PATH,
+            sd.URL_PATCH_MANIFEST_PATH,
+        )
+        prev_static = list(sd.STATIC_DISCOVERY_CANDIDATES)
+        prev_seeds = list(sd.STUDIO_SEEDS)
+        try:
+            sd.ACTIVE_PATH = root / "active.json"
+            sd.PENDING_PATH = root / "pending.json"
+            sd.REJECTED_PATH = root / "rejected.json"
+            sd.DISCOVERY_CANDIDATES_PATH = root / "candidates.json"
+            sd.DISCOVERY_REPORT_PATH = root / "report.json"
+            sd.URL_PATCH_MANIFEST_PATH = root / "url-patch-manifest.json"
+            sd.STUDIO_SEEDS = []
+            sd.STATIC_DISCOVERY_CANDIDATES = []
+
+            cli_args = discovery_orchestrator.parse_args(["--only-gamedevmap"])
+
+            with (
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "stage_curated_seed_candidates",
+                    side_effect=AssertionError("curated seed stage should be disabled"),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "discover_game_studio_sheet_candidates",
+                    side_effect=AssertionError("sheet directory stage should be disabled"),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator.sd,
+                    "build_pattern_candidates",
+                    side_effect=AssertionError("provider-pattern stage should be disabled"),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator.sd,
+                    "discover_seed_careers_page_candidates",
+                    side_effect=AssertionError("seed careers stage should be disabled"),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "discover_gamesmap_candidates",
+                    side_effect=AssertionError("gamesmap stage should be disabled"),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "discover_gameprog_candidates",
+                    side_effect=AssertionError("gameprog stage should be disabled"),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "discover_web_search_candidates",
+                    side_effect=AssertionError("web search stage should be disabled"),
+                ),
+                mock.patch.object(
+                    discovery_orchestrator,
+                    "discover_gamedevmap_candidates",
+                    return_value=(
+                        [
+                            {
+                                "name": "GameDevMap Greenhouse",
+                                "studio": "GameDevMap Studio",
+                                "adapter": "greenhouse",
+                                "slug": "gamedevmap-studio",
+                                "api_url": "https://boards-api.greenhouse.io/v1/boards/gamedevmap-studio/jobs?content=true",
+                                "discoveryMethod": "gamedevmap",
+                                "discoveryStage": "web_provider",
+                                "evidenceScore": 46,
+                                "evidenceTypes": ["gamedevmap_directory"],
+                                "sourceDirectory": "gamedevmap",
+                            }
+                        ],
+                        [],
+                        [],
+                    ),
+                ) as gamedevmap_mock,
+            ):
+                report = discovery_orchestrator.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=True,
+                    discovery_config={"gamedevmap": {"enabled": False}},
+                    cli_args=cli_args,
+                    fetcher=lambda *args, **kwargs: "",
+                )
+
+            assert gamedevmap_mock.call_count == 1
+            assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
+            assert (
+                int((report["summary"].get("generatedCountByStage") or {}).get("web_provider") or 0)
+                == 1
+            )
+            queued = json.loads(sd.DISCOVERY_CANDIDATES_PATH.read_text(encoding="utf-8"))
+            assert len(queued) == 1
+            assert str(queued[0].get("discoveryMethod") or "") == "gamedevmap"
+            assert str(queued[0].get("sourceDirectory") or "") == "gamedevmap"
+        finally:
+            (
+                sd.ACTIVE_PATH,
+                sd.PENDING_PATH,
+                sd.REJECTED_PATH,
+                sd.DISCOVERY_CANDIDATES_PATH,
+                sd.DISCOVERY_REPORT_PATH,
+                sd.URL_PATCH_MANIFEST_PATH,
+            ) = prev_paths
+            sd.STATIC_DISCOVERY_CANDIDATES = prev_static
+            sd.STUDIO_SEEDS = prev_seeds
+
+
 def test_load_discovery_config_uses_configured_path() -> None:
     with workspace_tmpdir("source-discovery") as root:
         previous_path = sd.DISCOVERY_CONFIG_PATH
@@ -3095,6 +3998,38 @@ def test_load_discovery_config_uses_configured_path() -> None:
             sd.DISCOVERY_CONFIG_PATH = previous_path
         assert bool((cfg.get("gamesmap") or {}).get("enabled"))
         assert int((cfg.get("gamesmap") or {}).get("maxDetailPages") or 0) == 25
+
+
+def test_load_discovery_config_merges_directory_adapter_sections() -> None:
+    with workspace_tmpdir("source-discovery-merge") as root:
+        previous_path = sd.DISCOVERY_CONFIG_PATH
+        try:
+            sd.DISCOVERY_CONFIG_PATH = root / "nested" / "discovery.json"
+            sd.DISCOVERY_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            sd.DISCOVERY_CONFIG_PATH.write_text(
+                json.dumps(
+                    {
+                        "gamesmap": {"enabled": True, "maxDetailPages": 25},
+                        "gameprog": {"enabled": False, "maxStudios": 15},
+                        "gamedevmap": {
+                            "enabled": True,
+                            "maxRows": 30,
+                            "maxHomepageFetches": 8,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            cfg = sd.load_discovery_config()
+        finally:
+            sd.DISCOVERY_CONFIG_PATH = previous_path
+        assert bool((cfg.get("gamesmap") or {}).get("enabled"))
+        assert int((cfg.get("gamesmap") or {}).get("maxDetailPages") or 0) == 25
+        assert not bool((cfg.get("gameprog") or {}).get("enabled"))
+        assert int((cfg.get("gameprog") or {}).get("maxStudios") or 0) == 15
+        assert bool((cfg.get("gamedevmap") or {}).get("enabled"))
+        assert int((cfg.get("gamedevmap") or {}).get("maxRows") or 0) == 30
+        assert int((cfg.get("gamedevmap") or {}).get("maxHomepageFetches") or 0) == 8
 
 
 def test_resolve_discovery_thresholds_overrides_defaults() -> None:
@@ -3158,7 +4093,7 @@ def test_discover_gameprog_candidates_emits_provider_and_static() -> None:
     </body></html>"""
 
     website_html = """<!DOCTYPE html>
-    <html><body><h1>Welcome</h1></body></html>"""
+    <html><body><a href="/careers">Careers</a></body></html>"""
 
     payloads = {
         "https://gameprog.it/teams.json": teams_json,
@@ -3181,7 +4116,42 @@ def test_discover_gameprog_candidates_emits_provider_and_static() -> None:
     assert str(provider_rows[0].get("sourceDirectory") or "") == "gameprog"
     assert len(static_rows) >= 1
     assert str(static_rows[0].get("adapter") or "") == "static"
-    assert str(static_rows[0].get("sourceDirectoryEntryUrl") or "").startswith("https://")
+    assert str(static_rows[0].get("careersUrl") or "") == "https://website-only.it/careers"
+    assert "gameprog_careers_url" in (static_rows[0].get("evidenceTypes") or [])
+
+
+def test_discover_gameprog_candidates_keeps_guessed_careers_path_fallback_after_helper_misses() -> (
+    None
+):
+    config = {
+        "gameprog": {
+            "enabled": True,
+            "teamsUrl": "https://gameprog.it/teams.json",
+            "websiteOnlyFallback": True,
+            "maxStudios": 10,
+        }
+    }
+    teams_json = """[
+        {"name": "Studio Website Only", "url": "https://website-only.it/", "place": "Milan"}
+    ]"""
+    payloads = {
+        "https://gameprog.it/teams.json": teams_json,
+        "https://website-only.it/": "<!DOCTYPE html><html><body><h1>Welcome</h1></body></html>",
+    }
+
+    def fake_fetch(url: str, _: int) -> str:
+        if url not in payloads:
+            raise RuntimeError(f"unexpected URL: {url}")
+        return payloads[url]
+
+    provider_rows, static_rows, failures = sd.discover_gameprog_candidates(
+        5, config=config, fetcher=fake_fetch
+    )
+    assert failures == []
+    assert provider_rows == []
+    assert len(static_rows) == 1
+    assert str(static_rows[0].get("careersUrl") or "") == "https://website-only.it/careers"
+    assert "gameprog_careers_url" in (static_rows[0].get("evidenceTypes") or [])
 
 
 def test_discover_gameprog_candidates_handles_fetch_failure() -> None:
@@ -3213,3 +4183,53 @@ def test_discover_gameprog_candidates_handles_fetch_failure() -> None:
     assert len(failures) >= 1
     assert len(static_rows) >= 1
     assert bool(static_rows[0].get("manualOnly"))
+
+
+def test_discover_gameprog_candidates_reuses_fresh_cache() -> None:
+    with workspace_tmpdir("gameprog-cache") as root:
+        cache_path = root / "gameprog-cache.json"
+        config = {
+            "gameprog": {
+                "enabled": True,
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": True,
+                "maxStudios": 10,
+                "cachePath": str(cache_path),
+                "cacheTtlMinutes": 60,
+            }
+        }
+        teams_json = """[
+            {"name": "Studio With Careers", "url": "https://example-studio.com/", "place": "Rome"},
+            {"name": "Studio Website Only", "url": "https://website-only.it/", "place": "Milan"}
+        ]"""
+        payloads = {
+            "https://gameprog.it/teams.json": teams_json,
+            "https://example-studio.com/": """<!DOCTYPE html><html><body><a href="https://boards.greenhouse.io/example">Jobs</a></body></html>""",
+            "https://website-only.it/": """<!DOCTYPE html><html><body><h1>Welcome</h1></body></html>""",
+        }
+        calls: list[str] = []
+
+        def fake_fetch(url: str, _: int) -> str:
+            calls.append(url)
+            if url not in payloads:
+                raise RuntimeError(f"unexpected URL: {url}")
+            return payloads[url]
+
+        provider_rows_1, static_rows_1, failures_1 = sd.discover_gameprog_candidates(
+            5, config=config, fetcher=fake_fetch
+        )
+        assert len(calls) > 0
+        first_call_count = len(calls)
+
+        with mock.patch(
+            "src.source_discovery.gameprog.fetch_directory_pages",
+            side_effect=AssertionError("directory fetch helper should be bypassed on cache hit"),
+        ):
+            provider_rows_2, static_rows_2, failures_2 = sd.discover_gameprog_candidates(
+                5, config=config, fetcher=fake_fetch
+            )
+
+        assert len(calls) == first_call_count
+        assert provider_rows_1 == provider_rows_2
+        assert static_rows_1 == static_rows_2
+        assert failures_1 == failures_2

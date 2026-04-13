@@ -84,6 +84,17 @@ from .core import (  # noqa: F401
     queue_family_key,
     sheet_directory_static_probe_cap,
 )
+from .directory_fetch import (  # noqa: F401
+    directory_fetch_concurrency_defaults,
+    fetch_directory_pages,
+    resolve_directory_fetch_limits,
+)
+from .gamedevmap import (  # noqa: F401
+    build_gamedevmap_search_url,
+    discover_gamedevmap_candidates,
+    parse_gamedevmap_csv,
+    select_gamedevmap_representative_rows,
+)
 from .gameprog import (  # noqa: F401
     discover_gameprog_candidates,
     parse_gameprog_teams_json,
@@ -98,6 +109,10 @@ from .gamesmap import (  # noqa: F401
 )
 from .io_runtime import endpoint_url  # noqa: F401
 from .orchestrator import main, parse_args, run_discovery  # noqa: F401
+from .page_analysis import (  # noqa: F401
+    analyze_fetched_page,
+    extract_explicit_careers_url_from_page,
+)
 from .probe import (  # noqa: F401
     async_probe_candidate,
     probe_candidate,
@@ -110,7 +125,10 @@ from .reporting import (  # noqa: F401
     stage_curated_seed_candidates,
 )
 from .scoring import resolve_discovery_thresholds, unique_string_list  # noqa: F401
-from .static_candidates import build_static_candidate_from_page  # noqa: F401
+from .static_candidates import (  # noqa: F401
+    build_known_careers_url_candidate,
+    build_static_candidate_from_page,
+)
 from .url_patches import (  # noqa: F401
     apply_url_patches_to_candidate,
     load_url_patch_manifest,

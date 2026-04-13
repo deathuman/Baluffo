@@ -1,0 +1,7 @@
+Organization,URL,City,State/Province,Country/Region,Map Def,Category,Comments,Updated By,Bluesky,AI Response
+Provider Feed Studio,https://boards.greenhouse.io/provider-feed-studio,Stockholm,Stockholm,Sweden,Stockholm,Developer,Verified gaming studio.,,,Correct (Gaming)
+Homepage Provider Studio,https://homepage-provider.example.com,Malmo,Skane,Sweden,Malmo,Developer and Publisher,Manual review passed.,,,Correct (Manual Review)
+Homepage Static Studio,https://homepage-static.example.com,Lyon,Auvergne-Rhone-Alpes,France,Lyon,Publisher,Verified gaming studio.,,,Correct (Gaming)
+Noise Organization,https://noise-org.example.com,Rome,Lazio,Italy,Rome,Organization,Not for employer crawl.,,,
+Duplicate Direct A,https://duplicate.example.com,London,England,England,London,Developer,Primary reviewed entry.,,,Correct (Gaming)
+Duplicate Direct B,https://duplicate.example.com,Manchester,England,England,Manchester,Mobile,Duplicate lower priority.,,,
