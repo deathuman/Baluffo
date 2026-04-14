@@ -21,8 +21,10 @@ from urllib.request import Request, urlopen
 from src.app_version import get_app_version
 
 try:
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey,
+        Ed25519PublicKey,
+    )
 except Exception:  # noqa: BLE001
     Ed25519PrivateKey = None  # type: ignore[assignment]
     Ed25519PublicKey = None  # type: ignore[assignment]
@@ -191,12 +193,19 @@ def desktop_update_public_key_candidate_paths(ship_root: Path) -> tuple[Path, ..
         current_version = str(current_path.read_text(encoding="utf-8").strip())
         if current_version:
             candidates.append(
-                resolved_ship / "app" / "versions" / current_version / "packaging" / PUBLIC_KEYS_FILE
+                resolved_ship
+                / "app"
+                / "versions"
+                / current_version
+                / "packaging"
+                / PUBLIC_KEYS_FILE
             )
     return tuple(candidates)
 
 
-def load_desktop_update_public_keys(*, candidate_paths: list[Path] | tuple[Path, ...] | None = None) -> dict[str, bytes]:
+def load_desktop_update_public_keys(
+    *, candidate_paths: list[Path] | tuple[Path, ...] | None = None
+) -> dict[str, bytes]:
     raw = str(os.environ.get("BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON") or "").strip()
     if not raw:
         if candidate_paths:
@@ -281,7 +290,9 @@ def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
     if env_repo:
         return env_repo
     current_path = ship_root / "app" / "current.txt"
-    current_version = str(current_path.read_text(encoding="utf-8").strip()) if current_path.exists() else ""
+    current_version = (
+        str(current_path.read_text(encoding="utf-8").strip()) if current_path.exists() else ""
+    )
     if current_version:
         packaged_sync = (
             ship_root
@@ -304,7 +315,8 @@ def resolve_desktop_session_root(env: dict[str, str] | None = None) -> Path:
     local_app_data = str(env_map.get("LOCALAPPDATA") or "").strip()
     if local_app_data:
         candidates.append(Path(local_app_data).expanduser().resolve() / "Baluffo")
-    candidates.append((Path.home() / "AppData" / "Local" / "Baluffo").resolve())
+    else:
+        candidates.append((Path.home() / "AppData" / "Local" / "Baluffo").resolve())
     username = str(env_map.get("USERNAME") or env_map.get("USER") or "user").strip() or "user"
     candidates.append((Path(tempfile.gettempdir()) / f"Baluffo-{username}").resolve())
     for candidate in candidates:
@@ -403,7 +415,7 @@ class DesktopUpdatePaths:
     helper_diagnostics_log_path: Path
 
     @staticmethod
-    def from_data_dir(data_dir: Path) -> "DesktopUpdatePaths":
+    def from_data_dir(data_dir: Path) -> DesktopUpdatePaths:
         resolved_data = Path(data_dir).expanduser().resolve()
         ship_root = resolved_data.parent
         install_root = ship_root.parent if ship_root.name.lower() == "ship" else ship_root
@@ -458,7 +470,9 @@ def default_status_payload(*, current_version: str | None = None) -> dict[str, A
 def load_status(paths: DesktopUpdatePaths, *, current_version: str | None = None) -> dict[str, Any]:
     status = default_status_payload(current_version=current_version)
     status.update(read_json(paths.install_state_path, {}))
-    status["currentVersion"] = str(current_version or status.get("currentVersion") or get_app_version())
+    status["currentVersion"] = str(
+        current_version or status.get("currentVersion") or get_app_version()
+    )
     status["installStage"] = normalize_install_stage(
         status.get("installState"),
         status.get("installStage"),
@@ -483,8 +497,6 @@ def updater_install_requested(data_dir: Path) -> bool:
     return str(state.get("installState") or "").strip().lower() in {
         "handoff_requested",
         "waiting_for_exit",
-        "installing",
-        "verifying",
     }
 
 
@@ -547,7 +559,11 @@ def read_cached_manifest(paths: DesktopUpdatePaths) -> dict[str, Any]:
 
 
 def _portable_artifact_name(manifest: dict[str, Any]) -> str:
-    artifact = manifest.get("portable_artifact") if isinstance(manifest.get("portable_artifact"), dict) else {}
+    artifact = (
+        manifest.get("portable_artifact")
+        if isinstance(manifest.get("portable_artifact"), dict)
+        else {}
+    )
     url = str(artifact.get("url") or "").strip()
     token = url.rsplit("/", 1)[-1]
     return token or f"baluffo-portable-{str(manifest.get('version') or '').strip()}.zip"
@@ -682,7 +698,11 @@ class DesktopUpdateService:
                     age = (datetime.now(UTC) - last_checked).total_seconds()
                     if age < DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS:
                         cached = read_cached_manifest(self.paths)
-                        manifest = cached.get("manifest") if isinstance(cached.get("manifest"), dict) else {}
+                        manifest = (
+                            cached.get("manifest")
+                            if isinstance(cached.get("manifest"), dict)
+                            else {}
+                        )
                         if manifest:
                             return save_status(
                                 self.paths,
@@ -713,7 +733,12 @@ class DesktopUpdateService:
             artifact_path = self.paths.downloads_dir / _portable_artifact_name(manifest)
             if artifact_path.is_file():
                 expected_hash = str(
-                    ((manifest.get("portable_artifact") or {}) if isinstance(manifest.get("portable_artifact"), dict) else {}).get("sha256") or ""
+                    (
+                        (manifest.get("portable_artifact") or {})
+                        if isinstance(manifest.get("portable_artifact"), dict)
+                        else {}
+                    ).get("sha256")
+                    or ""
                 ).strip()
                 if expected_hash and compute_sha256(artifact_path).lower() == expected_hash.lower():
                     next_status["downloadState"] = "downloaded"
@@ -733,7 +758,11 @@ class DesktopUpdateService:
             )
 
     def _run_download_worker(self, manifest: dict[str, Any]) -> None:
-        artifact = manifest.get("portable_artifact") if isinstance(manifest.get("portable_artifact"), dict) else {}
+        artifact = (
+            manifest.get("portable_artifact")
+            if isinstance(manifest.get("portable_artifact"), dict)
+            else {}
+        )
         target = self.paths.downloads_dir / _portable_artifact_name(manifest)
 
         def on_progress(downloaded: int, total: int) -> None:
@@ -805,14 +834,23 @@ class DesktopUpdateService:
             cached = read_cached_manifest(self.paths)
             manifest = cached.get("manifest") if isinstance(cached.get("manifest"), dict) else {}
             if not manifest:
-                return {"started": False, "status": status, "error": "No verified manifest is cached."}
+                return {
+                    "started": False,
+                    "status": status,
+                    "error": "No verified manifest is cached.",
+                }
             self.paths.downloads_dir.mkdir(parents=True, exist_ok=True)
             state = {
                 **status,
                 "downloadState": "downloading",
                 "downloadedBytes": 0,
                 "totalBytes": int(
-                    ((manifest.get("portable_artifact") or {}) if isinstance(manifest.get("portable_artifact"), dict) else {}).get("size_bytes") or 0
+                    (
+                        (manifest.get("portable_artifact") or {})
+                        if isinstance(manifest.get("portable_artifact"), dict)
+                        else {}
+                    ).get("size_bytes")
+                    or 0
                 ),
                 "downloadPercent": 0,
                 "lastError": "",
@@ -838,17 +876,27 @@ class DesktopUpdateService:
         usage = shutil.disk_usage(self.paths.updater_dir)
         required_free = max(int(zip_path.stat().st_size) * 3, 128 * 1024 * 1024)
         if int(usage.free) < required_free:
-            raise RuntimeError("Not enough free disk space for desktop update staging and rollback.")
+            raise RuntimeError(
+                "Not enough free disk space for desktop update staging and rollback."
+            )
 
     def request_install(self) -> dict[str, Any]:
         with self._lock:
             status = load_status(self.paths, current_version=self.current_version())
             if str(status.get("downloadState") or "").strip().lower() != "downloaded":
-                return {"started": False, "status": status, "error": "Update ZIP is not ready to install."}
+                return {
+                    "started": False,
+                    "status": status,
+                    "error": "Update ZIP is not ready to install.",
+                }
             cached = read_cached_manifest(self.paths)
             manifest = cached.get("manifest") if isinstance(cached.get("manifest"), dict) else {}
             if not manifest:
-                return {"started": False, "status": status, "error": "No verified manifest is cached."}
+                return {
+                    "started": False,
+                    "status": status,
+                    "error": "No verified manifest is cached.",
+                }
             zip_path = Path(str(status.get("downloadedZipPath") or "")).expanduser().resolve()
             self._ensure_install_preflight(zip_path)
             session_root = resolve_desktop_session_root()
@@ -862,7 +910,9 @@ class DesktopUpdateService:
                     "error": "The desktop launcher session is unavailable for updater handoff.",
                 }
             helper_source = self.paths.install_root / DESKTOP_UPDATE_HELPER_NAME
-            temp_helper = Path(tempfile.gettempdir()).resolve() / f"BaluffoUpdater-{uuid.uuid4().hex}.exe"
+            temp_helper = (
+                Path(tempfile.gettempdir()).resolve() / f"BaluffoUpdater-{uuid.uuid4().hex}.exe"
+            )
             shutil.copy2(helper_source, temp_helper)
             rollback_path = self.paths.rollback_root / (
                 f"{str(manifest.get('version') or '').strip()}-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
@@ -876,7 +926,12 @@ class DesktopUpdateService:
                 "manifestPath": str(self.paths.manifest_cache_path),
                 "downloadedZipPath": str(zip_path),
                 "expectedZipSha256": str(
-                    ((manifest.get("portable_artifact") or {}) if isinstance(manifest.get("portable_artifact"), dict) else {}).get("sha256") or ""
+                    (
+                        (manifest.get("portable_artifact") or {})
+                        if isinstance(manifest.get("portable_artifact"), dict)
+                        else {}
+                    ).get("sha256")
+                    or ""
                 ).strip(),
                 "manifestKeyId": str(manifest.get("key_id") or "").strip(),
                 "rollbackPath": str(rollback_path),

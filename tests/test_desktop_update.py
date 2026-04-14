@@ -73,7 +73,9 @@ def test_desktop_update_paths_resolve_install_root() -> None:
 
     assert paths.install_root == Path("C:/Portable/Baluffo")
     assert paths.ship_root == Path("C:/Portable/Baluffo/ship")
-    assert paths.install_state_path == Path("C:/Portable/Baluffo/ship/data/updater/install-state.json")
+    assert paths.install_state_path == Path(
+        "C:/Portable/Baluffo/ship/data/updater/install-state.json"
+    )
 
 
 def test_updater_install_requested_reads_persisted_state() -> None:
@@ -89,6 +91,22 @@ def test_updater_install_requested_reads_persisted_state() -> None:
         )
 
         assert du.updater_install_requested(data_dir) is True
+
+
+def test_updater_install_requested_ignores_installing_without_handoff_marker() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "installState": "installing",
+                "installStage": "verifying",
+            },
+        )
+
+        assert du.updater_install_requested(data_dir) is False
 
 
 def test_updater_install_requested_reads_handoff_marker() -> None:
@@ -155,11 +173,19 @@ def test_resolve_desktop_session_root_falls_back_to_temp_when_primary_is_not_wri
         temp_root = Path(tmp) / "temp-root"
         original_write_text = Path.write_text
 
-        def flaky_write_text(self: Path, data: str, encoding: str | None = None, errors: str | None = None, newline: str | None = None) -> int:
+        def flaky_write_text(
+            self: Path,
+            data: str,
+            encoding: str | None = None,
+            errors: str | None = None,
+            newline: str | None = None,
+        ) -> int:
             path_text = str(self)
             if ".baluffo-write-probe" in path_text and "local-app-data" in path_text:
                 raise OSError("read-only")
-            return original_write_text(self, data, encoding=encoding, errors=errors, newline=newline)
+            return original_write_text(
+                self, data, encoding=encoding, errors=errors, newline=newline
+            )
 
         with (
             mock.patch.dict(

@@ -31,10 +31,12 @@ if os.name == "nt":
 
 from src.app_version import get_app_version
 from src.baluffo_config import get_desktop_defaults
-from src.ship.desktop_update import DesktopUpdatePaths
-from src.ship.desktop_update import launch_staged_update_helper
-from src.ship.desktop_update import updater_install_requested
-from src.ship.desktop_update import write_success_marker
+from src.ship.desktop_update import (
+    DesktopUpdatePaths,
+    launch_staged_update_helper,
+    updater_install_requested,
+    write_success_marker,
+)
 from src.ship.runtime_launcher import wait_for_url
 from src.ship.startup_profile import summarize_startup_metrics, write_startup_summary
 
@@ -387,7 +389,8 @@ def resolve_browser_session_root(env: dict[str, str] | None = None) -> Path:
     base = str(env_map.get("LOCALAPPDATA") or "").strip()
     if base:
         candidates.append(Path(base).expanduser().resolve() / "Baluffo")
-    candidates.append((Path.home() / "AppData" / "Local" / "Baluffo").resolve())
+    else:
+        candidates.append((Path.home() / "AppData" / "Local" / "Baluffo").resolve())
     username = str(env_map.get("USERNAME") or env_map.get("USER") or "user").strip() or "user"
     candidates.append((Path(tempfile.gettempdir()) / f"Baluffo-{username}").resolve())
     for candidate in candidates:
@@ -1460,7 +1463,9 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         else:
             launch_result = launch_browser_for_url(
                 open_url,
-                preferred_browser_path=str(os.environ.get(PREFERRED_BROWSER_PATH_ENV) or "").strip(),
+                preferred_browser_path=str(
+                    os.environ.get(PREFERRED_BROWSER_PATH_ENV) or ""
+                ).strip(),
             )
         launch_mode = str(launch_result.get("mode") or "default-browser")
         browser_process = (
