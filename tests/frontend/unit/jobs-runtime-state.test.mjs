@@ -29,6 +29,7 @@ test("jobs runtime state builder groups mutable runtime state and clones filter 
   assert.deepEqual(runtime.runtimeState.filteredJobs, []);
   assert.equal(runtime.runtimeState.desktopUrlStateReady, false);
   assert.equal(runtime.runtimeState.nonCriticalStartupScheduled, false);
+  assert.equal(runtime.runtimeState.desktopUpdateController, null);
   assert.ok(runtime.userState.savedJobKeys instanceof Set);
   assert.ok(runtime.userState.seenJobKeys instanceof Set);
   assert.equal(runtime.pipelineUiState.bridgeOnline, false);

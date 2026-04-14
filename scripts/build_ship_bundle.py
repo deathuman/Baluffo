@@ -74,6 +74,10 @@ APP_RUNTIME_SCRIPT_DIRS = (
     "shared",
     "source_discovery",
 )
+APP_RUNTIME_SHIP_FILES = (
+    "__init__.py",
+    "desktop_update.py",
+)
 APP_RUNTIME_ASSET_DIRS = ("probes",)
 PACKAGING_FILES = (
     "README.md",
@@ -99,6 +103,9 @@ PACKAGED_SYNC_CONFIG_PATH = Path(SYNC_DEFAULTS["packaged_config_path"])
 PACKAGED_SYNC_CONFIG_TEMPLATE_PATH = ROOT / "packaging" / "github-app-sync-config.template.json"
 PACKAGED_SYNC_LOCAL_CONFIG_ENV = "BALUFFO_SYNC_BUILD_CONFIG_PATH"
 PACKAGED_SYNC_LOCAL_CANDIDATE_PATHS = (ROOT / "packaging" / "github-app-sync-config.localkey.json",)
+DESKTOP_UPDATE_PUBLIC_KEYS_PATH = ROOT / "packaging" / "desktop-update-public-keys.json"
+DESKTOP_UPDATE_PUBLIC_KEYS_ENV = "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON"
+DESKTOP_UPDATE_PUBLIC_KEYS_PATH_ENV = "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_PATH"
 PACKAGED_SYNC_BUILD_ENV = {
     "app_id": "BALUFFO_SYNC_BUILD_APP_ID",
     "installation_id": "BALUFFO_SYNC_BUILD_INSTALLATION_ID",
@@ -142,6 +149,39 @@ def _resolve_runtime_asset_source(rel: str) -> Path:
     if probe_fallback.exists():
         return probe_fallback
     return direct
+
+
+def _resolve_desktop_update_public_keys_payload() -> dict[str, str]:
+    raw = str(os.environ.get(DESKTOP_UPDATE_PUBLIC_KEYS_ENV) or "").strip()
+    if raw:
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Invalid {DESKTOP_UPDATE_PUBLIC_KEYS_ENV} payload: {exc}."
+            ) from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"{DESKTOP_UPDATE_PUBLIC_KEYS_ENV} must be a JSON object.")
+        return {
+            str(key): str(value)
+            for key, value in payload.items()
+            if str(key).strip() and str(value).strip()
+        }
+    path_token = str(os.environ.get(DESKTOP_UPDATE_PUBLIC_KEYS_PATH_ENV) or "").strip()
+    candidate_path = Path(path_token).expanduser().resolve() if path_token else DESKTOP_UPDATE_PUBLIC_KEYS_PATH
+    if not candidate_path.is_file():
+        return {}
+    try:
+        payload = json.loads(candidate_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Invalid desktop update public keys file {candidate_path}: {exc}.") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Desktop update public keys file {candidate_path} must contain a JSON object.")
+    return {
+        str(key): str(value)
+        for key, value in payload.items()
+        if str(key).strip() and str(value).strip()
+    }
 
 
 def _iso_now() -> str:
@@ -424,7 +464,8 @@ def _copy_app_version(version_dir: Path) -> None:
         _copy_file(ROOT / "src" / rel, version_dir / "src" / rel)
     for rel in APP_RUNTIME_SCRIPT_DIRS:
         _copy_tree(ROOT / "src" / rel, version_dir / "src" / rel)
-    _copy_file(ROOT / "src" / "ship" / "__init__.py", version_dir / "src" / "ship" / "__init__.py")
+    for rel in APP_RUNTIME_SHIP_FILES:
+        _copy_file(ROOT / "src" / "ship" / rel, version_dir / "src" / "ship" / rel)
     for rel in PACKAGING_FILES:
         _copy_file(ROOT / "packaging" / rel, version_dir / "packaging" / rel)
     if packaged_sync_config is not None:
@@ -480,6 +521,8 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     _copy_file(ROOT / "src" / "ship" / "update_manager.py", tooling_dir / "update_manager.py")
     _copy_file(ROOT / "src" / "ship" / "migrations.py", tooling_dir / "migrations.py")
     _copy_file(ROOT / "src" / "ship" / "runtime_launcher.py", tooling_dir / "runtime_launcher.py")
+    _copy_file(ROOT / "src" / "ship" / "desktop_update.py", tooling_dir / "desktop_update.py")
+    _copy_file(ROOT / "src" / "ship" / "desktop_updater.py", tooling_dir / "desktop_updater.py")
 
     # Launcher scripts + ship runbook.
     _copy_file(ROOT / "src" / "ship" / "run-bridge.ps1", output_dir / "run-bridge.ps1")
@@ -495,6 +538,18 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     _copy_file(
         ROOT / "docs" / "update-manifest.schema.json", output_dir / "UPDATE_MANIFEST_SCHEMA.json"
     )
+    _copy_file(
+        ROOT / "docs" / "desktop-update-manifest.schema.json",
+        output_dir / "DESKTOP_UPDATE_MANIFEST_SCHEMA.json",
+    )
+    desktop_update_public_keys = _resolve_desktop_update_public_keys_payload()
+    if desktop_update_public_keys:
+        public_keys_payload = json.dumps(desktop_update_public_keys, indent=2, ensure_ascii=False)
+        _write_text(app_dir / "desktop-update-public-keys.json", public_keys_payload)
+        _write_text(
+            version_dir / "packaging" / "desktop-update-public-keys.json",
+            public_keys_payload,
+        )
 
     data_dir = output_dir / "data"
     _seed_runtime_data(data_dir)

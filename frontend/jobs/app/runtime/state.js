@@ -53,6 +53,7 @@ export function createJobsRuntimeState(defaultFilters = {}, { lastHandledAutoRef
       secondaryEventsBound: false,
       adminBridgeButtonState: "checking",
       adminBridgeWatcher: null,
+      desktopUpdateController: null,
       lastFilterOptionsSignature: ""
     }
   };

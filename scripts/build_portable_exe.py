@@ -34,6 +34,8 @@ RUNTIME_HIDDEN_IMPORTS = (
     "src.shared.regex",
     "src.shared.utils",
     "src.ship.migrations",
+    "src.ship.desktop_update",
+    "src.ship.desktop_updater",
     "src.ship.runtime_launcher",
     "src.ship.startup_profile",
     "src.ship.update_manager",
@@ -417,6 +419,45 @@ def run_pyinstaller(
     return exe_path
 
 
+def run_helper_pyinstaller(output_dir: Path, *, icon_path: Path) -> Path:
+    helper_dist = output_dir.parent / ".pyinstaller-helper-dist"
+    helper_work = output_dir.parent / ".pyinstaller-helper-work"
+    helper_spec = output_dir.parent / ".pyinstaller-helper-spec"
+    for path in (helper_dist, helper_work, helper_spec):
+        if path.exists():
+            shutil.rmtree(path)
+        path.mkdir(parents=True, exist_ok=True)
+    command = [
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        "--noconfirm",
+        "--clean",
+        "--onefile",
+        "--windowed",
+        "--name",
+        "BaluffoUpdater",
+        "--icon",
+        str(icon_path),
+        "--distpath",
+        str(helper_dist),
+        "--workpath",
+        str(helper_work),
+        "--specpath",
+        str(helper_spec),
+    ]
+    for module_name in RUNTIME_HIDDEN_IMPORTS:
+        command.extend(["--hidden-import", module_name])
+    command.append(str(ROOT / "src" / "ship" / "desktop_updater.py"))
+    subprocess.run(command, check=True, cwd=str(ROOT))
+    helper_exe = helper_dist / "BaluffoUpdater.exe"
+    if not helper_exe.exists():
+        raise RuntimeError(f"Updater helper executable not found: {helper_exe}")
+    target = output_dir / "BaluffoUpdater.exe"
+    shutil.copy2(helper_exe, target)
+    return target
+
+
 def create_zip(output_dir: Path, *, version: str) -> Path:
     archive_base = output_dir.parent / f"{output_dir.name}-{version}"
     archive_path = archive_base.with_suffix(".zip")
@@ -447,7 +488,9 @@ def main() -> int:
     exe_path = run_pyinstaller(
         portable_root, exe_name=exe_name, icon_path=icon_path, bundle_version=version
     )
+    helper_path = run_helper_pyinstaller(portable_root, icon_path=icon_path)
     print(f"Portable executable ready: {exe_path}")
+    print(f"Updater helper ready: {helper_path}")
     print(f"Ship bundle root: {portable_root / 'ship'}")
     print(f"Executable icon: {icon_path}")
     if not args.skip_zip:

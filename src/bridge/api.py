@@ -72,6 +72,7 @@ class BridgeApi:
     DISCOVERY_LOG_PATH: Path
     FETCHER_LOG_PATH: Path
     STARTUP_METRICS_PATH: Path
+    DESKTOP_UPDATE_STATE_PATH: Path | None = None
 
     # Grouped services (optional during migration).
     registry: RegistryService | None = None
@@ -96,6 +97,30 @@ class BridgeApi:
         lambda _event, _payload=None: None
     )  # type: ignore[assignment]
     read_startup_metrics: Callable[[int], list[dict[str, Any]]] = lambda _limit=200: []  # type: ignore[assignment]
+    get_update_status_payload: Callable[[], dict[str, Any]] = lambda: {  # type: ignore[assignment]
+        "schemaVersion": 1,
+        "currentVersion": "",
+        "latestVersion": "",
+        "updateAvailable": False,
+        "availability": "unknown",
+        "downloadState": "idle",
+        "installState": "idle",
+        "releaseNotesUrl": "",
+        "lastCheckedAt": "",
+        "lastError": "",
+    }
+    check_for_update: Callable[..., dict[str, Any]] = lambda **_kw: {  # type: ignore[assignment]
+        "started": False,
+        "error": "not_implemented",
+    }
+    download_update: Callable[[], dict[str, Any]] = lambda: {  # type: ignore[assignment]
+        "started": False,
+        "error": "not_implemented",
+    }
+    install_update: Callable[[], dict[str, Any]] = lambda: {  # type: ignore[assignment]
+        "started": False,
+        "error": "not_implemented",
+    }
 
     load_state: LoadStateFunc = lambda: {"active": [], "pending": [], "rejected": []}  # type: ignore[assignment]
     summarize_state: SummarizeStateFunc = lambda _state: {

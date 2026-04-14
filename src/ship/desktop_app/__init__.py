@@ -31,6 +31,9 @@ if os.name == "nt":
 
 from src.app_version import get_app_version
 from src.baluffo_config import get_desktop_defaults
+from src.ship.desktop_update import DesktopUpdatePaths
+from src.ship.desktop_update import updater_install_requested
+from src.ship.desktop_update import write_success_marker
 from src.ship.runtime_launcher import wait_for_url
 from src.ship.startup_profile import summarize_startup_metrics, write_startup_summary
 
@@ -880,6 +883,26 @@ def wait_for_baluffo_bridge(
     raise RuntimeError("Baluffo bridge did not report a healthy desktop session.")
 
 
+def wait_for_desktop_startup_ready(
+    bridge_port: int,
+    *,
+    app_version: str,
+    timeout_s: float = READY_TIMEOUT_S,
+) -> dict[str, object]:
+    deadline = time.monotonic() + max(1.0, float(timeout_s))
+    while time.monotonic() < deadline:
+        payload = get_baluffo_bridge_health(bridge_port, timeout_s=1.5)
+        if (
+            payload
+            and bool(payload.get("desktopMode"))
+            and bool(payload.get("startupReady"))
+            and str(payload.get("appVersion") or "").strip() == str(app_version or "").strip()
+        ):
+            return payload
+        time.sleep(0.25)
+    raise RuntimeError("Baluffo bridge did not reach desktop startup readiness.")
+
+
 def validate_session_state(
     state: dict[str, object],
     *,
@@ -1168,6 +1191,8 @@ def watch_browser_session(
     def _watch_heartbeat_loop() -> str:
         if not wait_for_browser_heartbeat(data_dir):
             while True:
+                if updater_install_requested(data_dir):
+                    return "update_install_requested"
                 bridge_last_activity = bridge_last_activity_ts(bridge_port)
                 if bridge_last_activity <= 0.0:
                     return "heartbeat_missing"
@@ -1176,6 +1201,8 @@ def watch_browser_session(
                     return "bridge_activity_timeout"
                 time.sleep(1.0)
         while True:
+            if updater_install_requested(data_dir):
+                return "update_install_requested"
             last_heartbeat = max(
                 latest_browser_heartbeat_ts(data_dir), bridge_last_activity_ts(bridge_port)
             )
@@ -1194,6 +1221,8 @@ def watch_browser_session(
             mode="process",
         )
         while browser_process.poll() is None:
+            if updater_install_requested(data_dir):
+                return "update_install_requested"
             if latest_browser_heartbeat_ts(data_dir) > 0.0:
                 _append_startup_trace(
                     data_dir,
@@ -1230,6 +1259,8 @@ def watch_browser_session(
         mode="detached",
     )
     while True:
+        if updater_install_requested(data_dir):
+            return "update_install_requested"
         if not _is_baluffo_browser_window_open():
             _append_startup_trace(
                 data_dir,
@@ -1438,6 +1469,18 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         )
         update_instance_lock_state(instance_lock, "running")
         session_state_written = True
+        with contextlib.suppress(RuntimeError):
+            ready_payload = wait_for_desktop_startup_ready(
+                config.bridge_port,
+                app_version=get_app_version(),
+                timeout_s=5.0,
+            )
+            write_success_marker(
+                DesktopUpdatePaths.from_data_dir(config.data_dir),
+                app_version=str(ready_payload.get("appVersion") or get_app_version()),
+                bridge_port=int(config.bridge_port),
+                launcher_token=str(instance_lock.launcher_token or launcher_token),
+            )
         _append_startup_trace(
             config.data_dir,
             "desktop_window_created",

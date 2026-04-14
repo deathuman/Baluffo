@@ -265,6 +265,49 @@ def test_run_discovery(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["started"] is True
 
 
+def test_check_for_update(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    api.check_for_update = lambda **kw: {
+        "currentVersion": "0.1.0",
+        "latestVersion": "0.2.0",
+        "updateAvailable": True,
+        "availability": "available",
+    }
+
+    handler = _FakeHandler()
+    result = handle_post(handler, api=api, path="/app/check-for-update", payload={"force": True})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["updateAvailable"] is True
+
+
+def test_download_update(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    api.download_update = lambda: {"started": True, "status": {"downloadState": "downloading"}}
+
+    handler = _FakeHandler()
+    result = handle_post(handler, api=api, path="/app/download-update", payload={})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["started"] is True
+
+
+def test_install_update_conflict(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    api.install_update = lambda: {"started": False, "error": "Update ZIP is not ready to install."}
+
+    handler = _FakeHandler()
+    result = handle_post(handler, api=api, path="/app/install-update", payload={})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 409
+
+
 def test_run_discovery_response_write_failure_is_logged_and_returns_error_json(
     tmp_path: Path,
 ) -> None:

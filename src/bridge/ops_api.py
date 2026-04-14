@@ -53,6 +53,8 @@ class OpsDeps:
     get_desktop_last_activity_at: Callable[[], str]
     get_owner_state: Callable[[], dict[str, Any]]
     ops_schema_version: int
+    get_updater_status_payload: Callable[[], dict[str, Any]]
+    app_version: str
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,9 @@ class OpsHealthDeps:
     parse_schedule_metadata_fn: Callable[[], dict[str, Any]]
     parse_iso: Callable[[Any], Any]
     now_utc: Callable[[], Any]
+    get_updater_status_payload: Callable[[], dict[str, Any]]
+    app_version: str
+    startup_ready: bool
 
 
 class OpsApi:
@@ -195,6 +200,9 @@ class OpsApi:
             parse_schedule_metadata_fn=self.parse_schedule_metadata,
             parse_iso=self._deps.parse_iso,
             now_utc=self._deps.now_utc,
+            get_updater_status_payload=self._deps.get_updater_status_payload,
+            app_version=str(self._deps.app_version or ""),
+            startup_ready=True if not bool(self._deps.desktop_mode) else bool(self._deps.get_owner_state().get("startedAt")),
         )
 
     def compute_ops_health(self) -> dict[str, Any]:

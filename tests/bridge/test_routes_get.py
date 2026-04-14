@@ -53,6 +53,26 @@ def test_saved_jobs_endpoint_exists(tmp_path: Path) -> None:
     assert result is True
 
 
+def test_app_update_status(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    api.get_update_status_payload = lambda: {
+        "currentVersion": "0.1.0",
+        "latestVersion": "0.2.0",
+        "updateAvailable": True,
+        "availability": "available",
+        "downloadState": "idle",
+        "installState": "idle",
+    }
+
+    handler = _FakeHandler()
+    result = handle_get(handler, api=api, path="/app/update-status", query={})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["latestVersion"] == "0.2.0"
+
+
 @pytest.mark.parametrize(
     "path,expected_key",
     [

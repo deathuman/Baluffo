@@ -151,6 +151,7 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
         DISCOVERY_LOG_PATH=tmp_path / "discovery.log",
         FETCHER_LOG_PATH=tmp_path / "fetcher.log",
         STARTUP_METRICS_PATH=tmp_path / "startup-metrics.jsonl",
+        DESKTOP_UPDATE_STATE_PATH=tmp_path / "updater" / "install-state.json",
     )
 
     api.desktop_local_data_store = lambda: store
@@ -194,6 +195,24 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
     api.set_sync_status = lambda **kw: None
     api.add_manual_source = lambda url: {"id": "new-src", "url": url}
     api.update_pending_source = lambda src_id, updates: None
+    api.get_update_status_payload = lambda: {
+        "schemaVersion": 1,
+        "currentVersion": "0.1.0",
+        "latestVersion": "",
+        "updateAvailable": False,
+        "availability": "unknown",
+        "downloadState": "idle",
+        "downloadedBytes": 0,
+        "totalBytes": 0,
+        "downloadPercent": 0,
+        "installState": "idle",
+        "releaseNotesUrl": "",
+        "lastCheckedAt": "",
+        "lastError": "",
+    }
+    api.check_for_update = lambda **kw: {"started": True, "status": api.get_update_status_payload()}
+    api.download_update = lambda: {"started": True, "status": api.get_update_status_payload()}
+    api.install_update = lambda: {"started": True, "status": api.get_update_status_payload()}
 
     return api
 
@@ -219,6 +238,7 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         discovery_log_path=admin_bridge.DISCOVERY_LOG_PATH,
         fetcher_log_path=admin_bridge.FETCHER_LOG_PATH,
         startup_metrics_path=admin_bridge.STARTUP_METRICS_PATH,
+        desktop_update_state_path=admin_bridge.DESKTOP_UPDATE_STATE_PATH,
         desktop_session_activity_at=admin_bridge.bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
         bridge_log=admin_bridge.bridge_log,
         now_iso=admin_bridge.now_iso,
@@ -226,6 +246,10 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         desktop_local_data_store=admin_bridge.desktop_local_data_store,
         append_startup_metric=admin_bridge.append_startup_metric,
         read_startup_metrics=admin_bridge.read_startup_metrics,
+        get_update_status_payload=lambda: admin_bridge._get_desktop_update_service().get_status_payload(),
+        check_for_update=lambda **kw: admin_bridge._get_desktop_update_service().check_for_update(**kw),
+        download_update=lambda: admin_bridge._get_desktop_update_service().download_update(),
+        install_update=lambda: admin_bridge._get_desktop_update_service().request_install(),
         persist_state_and_auto_sync=admin_bridge.persist_state_and_auto_sync,
         add_manual_source=admin_bridge.add_manual_source,
         trigger_source_check=admin_bridge.trigger_source_check,

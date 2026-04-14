@@ -304,12 +304,16 @@ def test_compute_ops_health_reports_alerts(admin_bridge_entrypoint_root):
     )
     health = admin_bridge.compute_ops_health()
     assert health["service"] == "baluffo-bridge"
+    assert health["appVersion"] == admin_bridge.get_app_version()
+    assert health["startupReady"] is True
     assert "desktopMode" in health
     assert bool(health["desktopMode"]) == bool(admin_bridge.RUNTIME_CONFIG.desktop_mode)
     assert "owner" in health
     assert str(health["owner"]["mode"] or "") == str(admin_bridge.RUNTIME_CONFIG.owner_mode or "")
     assert "kpis" in health
     assert "alerts" in health
+    assert "updater" in health
+    assert str((health["updater"] or {}).get("currentVersion") or "") == admin_bridge.get_app_version()
     assert len(health["alerts"]) >= 1
     assert any(alert["id"] == "degraded_reliability" for alert in health["alerts"])
 

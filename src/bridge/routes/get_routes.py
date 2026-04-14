@@ -223,6 +223,13 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True
 
+    if path == "/app/update-status":
+        try:
+            handler._send_json(api.get_update_status_payload())  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc)}, status=500)  # noqa: SLF001
+        return True
+
     if path == "/registry/active":
         state = api.load_state()
         handler._send_json({"sources": state["active"], "summary": api.summarize_state(state)})  # noqa: SLF001

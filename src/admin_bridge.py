@@ -63,6 +63,7 @@ from src.jobs.pipeline import default_source_loaders
 from src.jobs.registry import DEFAULT_STUDIO_SOURCE_REGISTRY
 from src.jobs.transport import normalize_url as normalize_job_url
 from src.local_data_store import LocalDataPaths, LocalDataStore
+from src.ship.desktop_update import DesktopUpdateService, DesktopUpdatePaths
 from src.source_registry import (
     ACTIVE_PATH,
     APPROVAL_STATE_PATH,
@@ -101,6 +102,7 @@ DISCOVERY_CONFIG_PATH = ROOT / "data" / "source-discovery-config.json"
 SYNC_RUNTIME_PATH = SYNC_RUNTIME_PATH_DEFAULT
 STARTUP_METRICS_PATH = ROOT / "data" / "desktop-startup-metrics.jsonl"
 TOMBSTONES_PATH = ROOT / "data" / "source-registry-tombstones.json"
+DESKTOP_UPDATE_STATE_PATH = ROOT / "data" / "updater" / "install-state.json"
 
 MAX_HISTORY_ROWS = 240
 OPS_SCHEMA_VERSION = 1
@@ -132,6 +134,9 @@ _DISCOVERY_SERVICE_PATHS: tuple[Path, Path, Path, Path] | None = None
 _DISCOVERY_SERVICE_LOCK = threading.RLock()
 _PIPELINE_SERVICE: PipelineService | None = None
 _PIPELINE_SERVICE_LOCK = threading.RLock()
+_DESKTOP_UPDATE_SERVICE: DesktopUpdateService | None = None
+_DESKTOP_UPDATE_SERVICE_DATA_DIR: Path | None = None
+_DESKTOP_UPDATE_SERVICE_LOCK = threading.RLock()
 
 
 def _get_sync_service() -> SyncService:
@@ -285,6 +290,8 @@ def _get_ops_api() -> _ops_api.OpsApi:
             get_desktop_last_activity_at=lambda: bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
             get_owner_state=bridge_runtime_state.get_owner_state,
             ops_schema_version=OPS_SCHEMA_VERSION,
+            get_updater_status_payload=lambda: _get_desktop_update_service().get_status_payload(),
+            app_version=get_app_version(),
         ),
     )
 
@@ -412,6 +419,20 @@ def _get_pipeline_service() -> PipelineService:
         return _PIPELINE_SERVICE
 
 
+def _get_desktop_update_service() -> DesktopUpdateService:
+    global _DESKTOP_UPDATE_SERVICE, _DESKTOP_UPDATE_SERVICE_DATA_DIR
+    data_dir = Path(RUNTIME_CONFIG.data_dir).resolve()
+    with _DESKTOP_UPDATE_SERVICE_LOCK:
+        if _DESKTOP_UPDATE_SERVICE is not None and _DESKTOP_UPDATE_SERVICE_DATA_DIR == data_dir:
+            return _DESKTOP_UPDATE_SERVICE
+        _DESKTOP_UPDATE_SERVICE_DATA_DIR = data_dir
+        _DESKTOP_UPDATE_SERVICE = DesktopUpdateService(
+            data_dir=data_dir,
+            current_version_getter=get_app_version,
+        )
+        return _DESKTOP_UPDATE_SERVICE
+
+
 RuntimeConfig = bridge_config.RuntimeConfig
 
 
@@ -509,10 +530,12 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
         SYNC_CONFIG_PATH, \
         DISCOVERY_CONFIG_PATH, \
         SYNC_RUNTIME_PATH, \
-        STARTUP_METRICS_PATH
+        STARTUP_METRICS_PATH, \
+        DESKTOP_UPDATE_STATE_PATH
     global _REGISTRY_SERVICE, _REGISTRY_SERVICE_PATHS
     global _DISCOVERY_SERVICE, _DISCOVERY_SERVICE_PATHS
     global _PIPELINE_SERVICE
+    global _DESKTOP_UPDATE_SERVICE, _DESKTOP_UPDATE_SERVICE_DATA_DIR
 
     RUNTIME_CONFIG = config
     data_dir = Path(config.data_dir).resolve()
@@ -529,6 +552,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     DISCOVERY_CONFIG_PATH = data_dir / "source-discovery-config.json"
     SYNC_RUNTIME_PATH = data_dir / SYNC_RUNTIME_PATH_DEFAULT.name
     STARTUP_METRICS_PATH = data_dir / "desktop-startup-metrics.jsonl"
+    DESKTOP_UPDATE_STATE_PATH = data_dir / "updater" / "install-state.json"
     ACTIVE_PATH = data_dir / "source-registry-active.json"
     PENDING_PATH = data_dir / "source-registry-pending.json"
     REJECTED_PATH = data_dir / "source-registry-rejected.json"
@@ -564,6 +588,9 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
         _DISCOVERY_SERVICE_PATHS = None
     with _PIPELINE_SERVICE_LOCK:
         _PIPELINE_SERVICE = None
+    with _DESKTOP_UPDATE_SERVICE_LOCK:
+        _DESKTOP_UPDATE_SERVICE = None
+        _DESKTOP_UPDATE_SERVICE_DATA_DIR = None
 
 
 def startup_banner(config: RuntimeConfig) -> None:
@@ -586,6 +613,7 @@ def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
         discovery_log_path=DISCOVERY_LOG_PATH,
         fetcher_log_path=FETCHER_LOG_PATH,
         startup_metrics_path=STARTUP_METRICS_PATH,
+        desktop_update_state_path=DESKTOP_UPDATE_STATE_PATH,
         desktop_session_activity_at=bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
         bridge_log=bridge_log,
         now_iso=now_iso,
@@ -593,6 +621,10 @@ def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
         desktop_local_data_store=desktop_local_data_store,
         append_startup_metric=append_startup_metric,
         read_startup_metrics=read_startup_metrics,
+        get_update_status_payload=lambda: _get_desktop_update_service().get_status_payload(),
+        check_for_update=lambda **kw: _get_desktop_update_service().check_for_update(**kw),
+        download_update=lambda: _get_desktop_update_service().download_update(),
+        install_update=lambda: _get_desktop_update_service().request_install(),
         persist_state_and_auto_sync=persist_state_and_auto_sync,
         add_manual_source=add_manual_source,
         trigger_source_check=trigger_source_check,

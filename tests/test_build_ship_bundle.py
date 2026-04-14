@@ -56,6 +56,7 @@ def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
         assert (output / "run-bridge.ps1").exists()
         assert (output / "RELEASE_GUIDE.md").exists()
         assert (output / "app" / "update-manifest.json").exists()
+        assert (output / "DESKTOP_UPDATE_MANIFEST_SCHEMA.json").exists()
         assert (version_root / "frontend" / "admin" / "app.js").exists()
         assert (version_root / "src" / "admin_bridge.py").exists()
         assert (version_root / "src" / "app_version.py").exists()
@@ -63,6 +64,7 @@ def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
         assert (version_root / "src" / "exceptions.py").exists()
         assert (version_root / "src" / "local_data_store.py").exists()
         assert (version_root / "src" / "source_sync.py").exists()
+        assert (version_root / "src" / "ship" / "desktop_update.py").exists()
         # Required by admin_bridge → jobs.common and bridge routes (packaged desktop must resolve src.shared, src.core).
         assert (version_root / "src" / "shared" / "regex.py").exists()
         assert (version_root / "src" / "shared" / "utils.py").exists()
@@ -195,6 +197,49 @@ def test_bundle_generates_packaged_sync_config_from_build_env() -> None:
         assert packaged_config["allowedBranch"] == "main"
         assert packaged_config["allowedPathPrefix"] == "baluffo/source-sync.json"
         assert packaged_config["keyDerivation"] == "embedded"
+
+
+def test_bundle_embeds_desktop_update_public_keys_from_build_env() -> None:
+    with workspace_tmpdir("build-ship-bundle") as tmp:
+        config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "appId": "123456",
+                    "installationId": "999999",
+                    "repo": "owner/repo",
+                    "branch": "main",
+                    "path": "baluffo/source-sync.json",
+                    "privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----",
+                }
+            ),
+            encoding="utf-8",
+        )
+        output = _build_with_temp_packaged_config(
+            tmp,
+            env={
+                "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON": json.dumps(
+                    {"desktop-ed25519-2026-01": "cHVibGljLWtleS1iYXNlNjQ="}
+                )
+            },
+        )
+        bundled_payload = json.loads(
+            (output / "app" / "desktop-update-public-keys.json").read_text(encoding="utf-8")
+        )
+        assert bundled_payload == {"desktop-ed25519-2026-01": "cHVibGljLWtleS1iYXNlNjQ="}
+        version_payload = json.loads(
+            (
+                output
+                / "app"
+                / "versions"
+                / "1.2.3"
+                / "packaging"
+                / "desktop-update-public-keys.json"
+            ).read_text(encoding="utf-8")
+        )
+        assert version_payload == bundled_payload
 
 
 def test_bundle_rejects_invalid_private_key_from_build_env() -> None:

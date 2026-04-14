@@ -17,6 +17,7 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
         "npm run test:frontend:packaged:jobs-pipeline",
         "python scripts/build_ship_bundle.py",
         "python scripts/extract_release_notes.py",
+        "python scripts/build_desktop_update_release.py",
     ):
         assert expected_command in workflow_text, (
             f"{workflow_path.name} should invoke `{expected_command}`."

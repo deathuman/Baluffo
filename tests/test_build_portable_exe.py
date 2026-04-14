@@ -30,6 +30,7 @@ def test_portable_layout_wraps_ship_bundle_in_ship_folder() -> None:
         assert (output / "ship" / "app" / "current.txt").exists()
         assert (output / "ship" / "run-site.ps1").exists()
         assert (output / "ship" / "src" / "ship" / "runtime_launcher.py").exists()
+        assert (output / "ship" / "src" / "ship" / "desktop_update.py").exists()
 
 
 def test_create_zip_packages_portable_folder() -> None:
@@ -37,11 +38,13 @@ def test_create_zip_packages_portable_folder() -> None:
         output = Path(tmp) / "dist" / "baluffo-portable"
         (output / "ship").mkdir(parents=True, exist_ok=True)
         (output / "Baluffo.exe").write_text("exe", encoding="utf-8")
+        (output / "BaluffoUpdater.exe").write_text("helper", encoding="utf-8")
         archive = create_zip(output, version="1.0.0-test")
         assert archive.exists()
         with ZipFile(archive, "r") as handle:
             names = set(handle.namelist())
         assert "Baluffo.exe" in names
+        assert "BaluffoUpdater.exe" in names
         assert "ship/" in names
 
 

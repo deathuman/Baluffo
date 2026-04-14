@@ -221,6 +221,17 @@ async function main() {
       await assertFacadeStartupOrdering(apiRequest);
     }, scenarios);
 
+    await runScenario("Desktop update UI is visible on jobs page", async () => {
+      const updateToggle = page.locator("#desktop-update-toggle-btn");
+      await updateToggle.waitFor({ state: "visible", timeout: 15_000 });
+      assert.equal(await updateToggle.isEnabled(), true, "desktop update toggle should be enabled");
+      await updateToggle.click();
+      const updatePanel = page.locator("#desktop-update-panel");
+      await updatePanel.waitFor({ state: "visible", timeout: 15_000 });
+      const titleText = await page.locator("#desktop-update-title").textContent();
+      assert.match(String(titleText || ""), /Desktop updates|Baluffo is up to date|available|Could not check/i);
+    }, scenarios);
+
     await runScenario("Jobs sign-in succeeds", async () => {
       const signInBtn = page.locator("#auth-sign-in-btn");
       await signInBtn.waitFor({ state: "visible", timeout: 10_000 });

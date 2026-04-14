@@ -490,10 +490,23 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
         else {}
     )
     owner_state = deps.owner_state if isinstance(getattr(deps, "owner_state", {}), dict) else {}
+    updater_status = (
+        deps.get_updater_status_payload()
+        if callable(getattr(deps, "get_updater_status_payload", None))
+        else {}
+    )
+    startup_ready = (
+        bool(getattr(deps, "startup_ready", True))
+        if hasattr(deps, "startup_ready")
+        else (True if not bool(deps.desktop_mode) else bool(owner_state.get("startedAt")))
+    )
+    app_version = str(getattr(deps, "app_version", "") or "")
 
     return {
         "service": "baluffo-bridge",
         "desktopMode": bool(deps.desktop_mode),
+        "appVersion": app_version,
+        "startupReady": bool(startup_ready),
         "generatedAt": deps.now_iso(),
         "desktopLastActivityAt": str(deps.desktop_last_activity_at or ""),
         "owner": {
@@ -563,4 +576,13 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
         "alerts": alerts_meta["alerts"],
         "suppressedAlertsCount": int(alerts_meta["suppressedCount"]),
         "historyCount": len(history),
+        "updater": {
+            "currentVersion": str(updater_status.get("currentVersion") or app_version),
+            "latestVersion": str(updater_status.get("latestVersion") or ""),
+            "availability": str(updater_status.get("availability") or "unknown"),
+            "downloadState": str(updater_status.get("downloadState") or "idle"),
+            "installState": str(updater_status.get("installState") or "idle"),
+            "lastCheckedAt": str(updater_status.get("lastCheckedAt") or ""),
+            "lastError": str(updater_status.get("lastError") or ""),
+        },
     }

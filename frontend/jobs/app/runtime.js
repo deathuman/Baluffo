@@ -40,12 +40,14 @@ import {
   writeQuickFilterPreferences,
   rememberJobsUrl
 } from "../state-sync/index.js";
+import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { fetchJson, postJson } from "../../shared/api-client.js";
 import { createAdminBridgeButtonWatcher } from "../../shared/admin-bridge-button.js";
 import { createAuthReadyPoller } from "../../shared/auth-ready-poll.js";
 import { normalizeToken } from "../../shared/text-utils.js";
 import { cacheJobsDom } from "./dom.js";
+import { createJobsDesktopUpdateController } from "./desktop-update.js";
 import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js";
 import {
   buildSeenRowKey,
@@ -376,7 +378,21 @@ function bootJobsPage() {
     fetchJson,
     applyState: applyJobsAdminBridgeState
   });
+  runtimeState.desktopUpdateController = createJobsDesktopUpdateController({
+    refs: dom,
+    baseUrl: ADMIN_BRIDGE_BASE,
+    fetchJson,
+    postJson,
+    bindAsyncClick,
+    showToast,
+    requestConfirmationDialog,
+    isDesktopRuntimeMode,
+    openExternalUrl: url => openJobLinkInDefaultBrowser(url),
+  });
   runtimeState.adminBridgeWatcher.setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
+  runtimeState.desktopUpdateController.mount().catch(err => {
+    logJobsError("Failed to initialize desktop update UI", err);
+  });
   setupJobsListDelegation();
   setJobsStartupState("loading", "booting");
   bindCoreEvents();
@@ -399,6 +415,9 @@ function scheduleNonCriticalStartupWork() {
     renderDataSources().catch(() => {});
     ensureJobsPipelineStatusWatch();
     startAdminBridgeButtonWatch();
+    runtimeState.desktopUpdateController?.startAutoCheck().catch(err => {
+      logJobsError("Failed to auto-check desktop updates", err);
+    });
   });
 }
 

@@ -12,6 +12,17 @@
     <div class="jobs-header">
       <h1>Game Development Jobs</h1>
       <div class="header-actions">
+        <button
+          id="desktop-update-toggle-btn"
+          data-ui="desktop-update-toggle-btn"
+          class="btn back-btn desktop-update-toggle hidden"
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          title="Check for desktop updates"
+        >
+          Check updates
+        </button>
       </div>
       <div class="auth-profile-shell" aria-live="polite">
         <div class="auth-profile-pill">
@@ -31,6 +42,51 @@
 
     <div id="fetch-progress" data-ui="fetch-progress" class="fetch-progress hidden"></div>
     <p id="source-status" data-ui="source-status" class="source-status" aria-live="polite"></p>
+    <section
+      id="desktop-update-panel"
+      data-ui="desktop-update-panel"
+      class="desktop-update-panel hidden"
+      role="dialog"
+      aria-live="polite"
+      aria-label="Desktop update status"
+    >
+      <div class="desktop-update-panel-head">
+        <div class="desktop-update-copy">
+          <p id="desktop-update-title" data-ui="desktop-update-title" class="desktop-update-title">Desktop updates</p>
+          <p id="desktop-update-body" data-ui="desktop-update-body" class="desktop-update-body">Check GitHub Releases for a newer Baluffo portable build.</p>
+          <p id="desktop-update-meta" data-ui="desktop-update-meta" class="desktop-update-meta hidden"></p>
+          <p id="desktop-update-progress" data-ui="desktop-update-progress" class="desktop-update-progress hidden"></p>
+        </div>
+        <a
+          id="desktop-update-release-notes"
+          data-ui="desktop-update-release-notes"
+          class="desktop-update-release-notes hidden"
+          href="#"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Release notes
+        </a>
+      </div>
+      <div class="desktop-update-actions">
+        <button
+          id="desktop-update-primary-btn"
+          data-ui="desktop-update-primary-btn"
+          class="btn back-btn desktop-update-primary-btn"
+          type="button"
+        >
+          Check for updates
+        </button>
+        <button
+          id="desktop-update-secondary-btn"
+          data-ui="desktop-update-secondary-btn"
+          class="btn back-btn desktop-update-secondary-btn hidden"
+          type="button"
+        >
+          Close
+        </button>
+      </div>
+    </section>
 
     <div class="filters" aria-label="Job filters">
       <div class="filter-group">

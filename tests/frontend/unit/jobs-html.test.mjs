@@ -16,3 +16,11 @@ test("jobs html pipeline button includes tooltip about long-running pipeline", (
     /title="Runs discovery, fetch, and sync pipeline\. Can take more than 5 minutes\."/
   );
 });
+
+test("jobs html exposes desktop update controls in the header shell", () => {
+  const html = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
+  assert.match(html, /id="desktop-update-toggle-btn"/);
+  assert.match(html, /id="desktop-update-panel"/);
+  assert.match(html, /id="desktop-update-primary-btn"/);
+  assert.match(html, /id="desktop-update-release-notes"/);
+});
