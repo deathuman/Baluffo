@@ -7,10 +7,12 @@ import argparse
 import contextlib
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -27,6 +29,7 @@ from src.ship.desktop_update import (
     compute_sha256,
     desktop_update_public_key_candidate_paths,
     fetch_json,
+    install_stage_label,
     iso_now,
     load_desktop_update_public_keys,
     load_status,
@@ -37,6 +40,130 @@ from src.ship.desktop_update import (
     validate_install_plan,
     verify_manifest_signature,
 )
+
+MUTATING_INSTALL_STAGES = frozenset(
+    {
+        "replacing",
+        "migrating",
+        "relaunching",
+        "verifying",
+        "rolling_back",
+    }
+)
+SUCCESS_RECOVERY_STAGES = frozenset({"relaunching", "verifying"})
+
+
+class HelperProgressWindow:
+    """Best-effort native progress window for the one-shot updater helper."""
+
+    def __init__(self) -> None:
+        self._thread: threading.Thread | None = None
+        self._queue: queue.SimpleQueue[tuple[str, str]] = queue.SimpleQueue()
+        self._started = threading.Event()
+
+    def start(self, message: str) -> None:
+        if os.name != "nt":
+            return
+        self._thread = threading.Thread(
+            target=self._run,
+            args=(str(message or "").strip() or "Preparing update",),
+            daemon=True,
+            name="baluffo-updater-progress-ui",
+        )
+        self._thread.start()
+        self._started.wait(timeout=2.0)
+
+    def update(self, message: str) -> None:
+        self._queue.put(("message", str(message or "").strip()))
+
+    def close(self) -> None:
+        self._queue.put(("close", ""))
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+
+    def _run(self, message: str) -> None:
+        try:
+            import tkinter as tk
+            from tkinter import ttk
+        except Exception:  # noqa: BLE001
+            self._started.set()
+            return
+
+        root = tk.Tk()
+        root.title("Baluffo Update")
+        root.resizable(False, False)
+        root.attributes("-topmost", True)
+        root.protocol("WM_DELETE_WINDOW", lambda: None)
+        frame = ttk.Frame(root, padding=18)
+        frame.pack(fill="both", expand=True)
+        title = ttk.Label(frame, text="Installing update", font=("", 11, "bold"))
+        title.pack(anchor="w")
+        message_var = tk.StringVar(value=message)
+        detail = ttk.Label(frame, textvariable=message_var, padding=(0, 10, 0, 0))
+        detail.pack(anchor="w")
+        bar = ttk.Progressbar(frame, mode="indeterminate", length=260)
+        bar.pack(fill="x", expand=True, pady=(14, 0))
+        bar.start(12)
+        root.update_idletasks()
+        width = root.winfo_width() or 320
+        height = root.winfo_height() or 110
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        offset_x = max(0, int((screen_width - width) / 2))
+        offset_y = max(0, int((screen_height - height) / 3))
+        root.geometry(f"{width}x{height}+{offset_x}+{offset_y}")
+        self._started.set()
+
+        def drain() -> None:
+            while True:
+                try:
+                    kind, payload = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                if kind == "close":
+                    with contextlib.suppress(Exception):
+                        bar.stop()
+                    root.destroy()
+                    return
+                if kind == "message" and payload:
+                    message_var.set(payload)
+            root.after(120, drain)
+
+        root.after(120, drain)
+        with contextlib.suppress(Exception):
+            root.mainloop()
+
+
+def _launch_executable(executable_path: Path) -> None:
+    if not executable_path.is_file():
+        raise RuntimeError(f"Desktop executable not found: {executable_path}")
+    creationflags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
+    subprocess.Popen(  # noqa: S603
+        [str(executable_path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=creationflags,
+    )
+
+
+def _status_for_stage(
+    paths: DesktopUpdatePaths,
+    *,
+    install_state: str,
+    install_stage: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    status = load_status(paths)
+    status.update(
+        {
+            "installState": str(install_state or "").strip().lower() or "idle",
+            "installStage": str(install_stage or "").strip().lower() or "idle",
+            "installStageLabel": install_stage_label(install_state, install_stage),
+            "helperUpdatedAt": iso_now(),
+        }
+    )
+    status.update(extra)
+    return save_status(paths, status)
 
 
 def _show_message(title: str, message: str) -> None:
@@ -164,6 +291,82 @@ def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> 
     raise RuntimeError("Updated desktop app did not report startup readiness in time.")
 
 
+def _restore_data_backup_if_needed(ship_root: Path, status: dict[str, Any]) -> None:
+    backup_ref_text = str(status.get("migrationBackupPath") or "").strip()
+    if not backup_ref_text:
+        return
+    backup_ref = Path(backup_ref_text).expanduser().resolve()
+    if not backup_ref.exists():
+        return
+    update_manager.restore_data_backup(
+        update_manager.ShipPaths.from_root(ship_root),
+        backup_ref,
+    )
+
+
+def _finalize_success(paths: DesktopUpdatePaths, plan: dict[str, Any], rollback_root: Path) -> dict[str, Any]:
+    with contextlib.suppress(OSError):
+        shutil.rmtree(rollback_root)
+    clear_success_marker(paths)
+    return _status_for_stage(
+        paths,
+        install_state="installed",
+        install_stage="installed",
+        downloadState="idle",
+        downloadedBytes=0,
+        totalBytes=0,
+        downloadPercent=0,
+        lastError="",
+        lastCheckedAt=iso_now(),
+        migrationBackupPath="",
+        rollbackPath="",
+        targetVersion=str(plan.get("targetVersion") or ""),
+    )
+
+
+def _recover_interrupted_install(
+    plan: dict[str, Any],
+    *,
+    install_root: Path,
+    ship_root: Path,
+    paths: DesktopUpdatePaths,
+    rollback_root: Path,
+) -> bool:
+    status = load_status(paths)
+    stage = str(status.get("installStage") or "").strip().lower()
+    if not stage or stage in {"idle", "preparing", "waiting_for_exit", "extracting", "snapshotting", "backup"}:
+        return False
+    if stage in SUCCESS_RECOVERY_STAGES:
+        try:
+            _verify_target_startup(plan, timeout_s=5.0)
+        except Exception:  # noqa: BLE001
+            pass
+        else:
+            _finalize_success(paths, plan, rollback_root)
+            return True
+    if stage not in MUTATING_INSTALL_STAGES:
+        return False
+    _status_for_stage(
+        paths,
+        install_state="installing",
+        install_stage="recovering",
+        lastError="",
+    )
+    _restore_data_backup_if_needed(ship_root, status)
+    _restore_install_snapshot(install_root, rollback_root)
+    with contextlib.suppress(OSError):
+        shutil.rmtree(rollback_root)
+    _status_for_stage(
+        paths,
+        install_state="idle",
+        install_stage="idle",
+        lastError="",
+        migrationBackupPath="",
+        rollbackPath="",
+    )
+    return False
+
+
 def run_install(plan_path: Path) -> dict[str, Any]:
     plan = validate_install_plan(json.loads(plan_path.read_text(encoding="utf-8")))
     install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()
@@ -186,73 +389,145 @@ def run_install(plan_path: Path) -> dict[str, Any]:
     expected_hash = str(plan.get("expectedZipSha256") or "").strip().lower()
     if expected_hash and compute_sha256(zip_path).lower() != expected_hash:
         raise RuntimeError("Downloaded desktop ZIP failed re-verification.")
-
-    save_status(paths, {**load_status(paths), "installState": "waiting_for_exit", "lastError": ""})
-    _wait_for_launcher_exit(plan)
-
+    existing_status = load_status(paths)
+    progress = HelperProgressWindow()
+    progress.start(
+        str(existing_status.get("installStageLabel") or "").strip()
+        or install_stage_label("handoff_requested", "preparing")
+    )
     temp_extract = Path(tempfile.mkdtemp(prefix="baluffo-desktop-update-"))
     backup_ref: Path | None = None
     try:
-        save_status(paths, {**load_status(paths), "installState": "installing"})
+        recovered_as_complete = _recover_interrupted_install(
+            plan,
+            install_root=install_root,
+            ship_root=ship_root,
+            paths=paths,
+            rollback_root=rollback_root,
+        )
+        if recovered_as_complete:
+            return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
+        _status_for_stage(
+            paths,
+            install_state="handoff_requested",
+            install_stage="preparing",
+            lastError="",
+            rollbackPath=str(rollback_root),
+        )
+        progress.update(install_stage_label("waiting_for_exit", "waiting_for_exit"))
+        _status_for_stage(
+            paths,
+            install_state="waiting_for_exit",
+            install_stage="waiting_for_exit",
+            lastError="",
+            rollbackPath=str(rollback_root),
+        )
+        _wait_for_launcher_exit(plan)
+
+        progress.update(install_stage_label("installing", "extracting"))
+        _status_for_stage(
+            paths,
+            install_state="installing",
+            install_stage="extracting",
+            rollbackPath=str(rollback_root),
+        )
         with zipfile.ZipFile(zip_path, "r") as archive:
             archive.extractall(temp_extract)
         clear_success_marker(paths)
         rollback_root.mkdir(parents=True, exist_ok=True)
+        _status_for_stage(
+            paths,
+            install_state="installing",
+            install_stage="snapshotting",
+            rollbackPath=str(rollback_root),
+        )
         _copy_install_snapshot(install_root, rollback_root)
         if list(manifest.get("migration_plan") or []):
+            _status_for_stage(
+                paths,
+                install_state="installing",
+                install_stage="backup",
+                rollbackPath=str(rollback_root),
+            )
             backup_ref = update_manager.create_data_backup(update_manager.ShipPaths.from_root(ship_root))
+            _status_for_stage(
+                paths,
+                install_state="installing",
+                install_stage="backup",
+                rollbackPath=str(rollback_root),
+                migrationBackupPath=str(backup_ref),
+            )
+        _status_for_stage(
+            paths,
+            install_state="installing",
+            install_stage="replacing",
+            rollbackPath=str(rollback_root),
+            migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
+        )
         _sync_extract_to_install(install_root, temp_extract)
         if list(manifest.get("migration_plan") or []):
+            _status_for_stage(
+                paths,
+                install_state="installing",
+                install_stage="migrating",
+                rollbackPath=str(rollback_root),
+                migrationBackupPath=str(backup_ref),
+            )
             update_manager.run_migrations(
                 update_manager.ShipPaths.from_root(ship_root),
                 manifest.get("migration_plan") or [],
                 backup_ref,
             )
-        save_status(paths, {**load_status(paths), "installState": "verifying"})
-        creationflags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
-        subprocess.Popen(  # noqa: S603
-            [str(install_root / "Baluffo.exe")],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=creationflags,
+        progress.update(install_stage_label("verifying", "relaunching"))
+        _status_for_stage(
+            paths,
+            install_state="verifying",
+            install_stage="relaunching",
+            rollbackPath=str(rollback_root),
+            migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
+        )
+        _launch_executable(install_root / "Baluffo.exe")
+        _status_for_stage(
+            paths,
+            install_state="verifying",
+            install_stage="verifying",
+            rollbackPath=str(rollback_root),
+            migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
         _verify_target_startup(plan)
-        with contextlib.suppress(OSError):
-            shutil.rmtree(rollback_root)
-        clear_success_marker(paths)
-        save_status(
-            paths,
-            {
-                **load_status(paths),
-                "installState": "installed",
-                "downloadState": "idle",
-                "downloadedBytes": 0,
-                "totalBytes": 0,
-                "downloadPercent": 0,
-                "lastError": "",
-                "lastCheckedAt": iso_now(),
-            },
-        )
+        _finalize_success(paths, plan, rollback_root)
         return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
     except Exception:
+        progress.update(install_stage_label("installing", "rolling_back"))
         if backup_ref is not None:
             with contextlib.suppress(Exception):
                 update_manager.restore_data_backup(
                     update_manager.ShipPaths.from_root(ship_root),
                     backup_ref,
                 )
+        current_status = _status_for_stage(
+            paths,
+            install_state="failed",
+            install_stage="rolling_back",
+            lastError="desktop_install_failed",
+            rollbackPath=str(rollback_root),
+            migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
+        )
         with contextlib.suppress(Exception):
             _restore_install_snapshot(install_root, rollback_root)
-        save_status(
+        with contextlib.suppress(Exception):
+            _launch_executable(install_root / "Baluffo.exe")
+        _status_for_stage(
             paths,
-            {
-                **load_status(paths),
-                "installState": "failed",
-                "lastError": "desktop_install_failed",
-            },
+            install_state="failed",
+            install_stage="failed",
+            lastError=str(current_status.get("lastError") or "desktop_install_failed"),
+            rollbackPath=str(rollback_root),
+            migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
         raise
     finally:
+        progress.close()
         with contextlib.suppress(OSError):
             shutil.rmtree(temp_extract)
 

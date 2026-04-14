@@ -120,6 +120,24 @@ test("shouldPollDesktopUpdateStatus tracks checking, downloading, and install ha
   assert.equal(shouldPollDesktopUpdateStatus({ availability: "up_to_date" }), false);
 });
 
+test("deriveDesktopUpdateView surfaces staged helper progress and failure retry state", () => {
+  const installing = deriveDesktopUpdateView({
+    installState: "installing",
+    installStage: "replacing",
+    installStageLabel: "Installing update"
+  }, { panelOpen: true });
+  assert.equal(installing.progress, "Installing update");
+
+  const failed = deriveDesktopUpdateView({
+    installState: "failed",
+    downloadState: "downloaded",
+    lastError: "desktop_install_failed"
+  }, { panelOpen: true });
+  assert.equal(failed.buttonLabel, "Update failed");
+  assert.equal(failed.primaryAction, "install");
+  assert.equal(failed.primaryLabel, "Try install again");
+});
+
 test("desktop update controller mounts, auto-checks, and starts a download from jobs UI", async () => {
   const refs = buildRefs();
   const fetchCalls = [];

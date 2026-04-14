@@ -7,6 +7,7 @@ import pytest
 from scripts import build_ship_bundle
 from scripts.build_portable_exe import (
     DEFAULT_BUNDLE_VERSION,
+    RUNTIME_HIDDEN_IMPORTS,
     build_portable_layout,
     create_zip,
     generate_icon_file,
@@ -69,3 +70,8 @@ def test_resolve_icon_path_generates_default_icon() -> None:
         icon_path = resolve_icon_path(output, exe_name="Baluffo")
         assert icon_path.exists()
         assert icon_path.suffix.lower() == ".ico"
+
+
+def test_helper_hidden_imports_include_tkinter_progress_ui_modules() -> None:
+    assert "tkinter" in RUNTIME_HIDDEN_IMPORTS
+    assert "tkinter.ttk" in RUNTIME_HIDDEN_IMPORTS

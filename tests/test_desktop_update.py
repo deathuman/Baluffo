@@ -90,6 +90,24 @@ def test_updater_install_requested_reads_persisted_state() -> None:
         assert du.updater_install_requested(data_dir) is True
 
 
+def test_load_status_derives_install_stage_label_from_install_state() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "installState": "waiting_for_exit",
+            },
+        )
+
+        status = du.load_status(paths, current_version="0.1.0")
+
+        assert status["installStage"] == "waiting_for_exit"
+        assert status["installStageLabel"] == "Closing Baluffo"
+
+
 def test_load_desktop_update_public_keys_reads_packaged_fallback() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         ship_root = Path(tmp) / "portable" / "ship"
@@ -176,4 +194,7 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
         assert plan["launcherPid"] == 1234
         assert plan["launcherToken"] == "token-1"
         assert plan["targetVersion"] == "1.4.0"
+        assert result["status"]["installStage"] == "preparing"
+        assert result["status"]["installStageLabel"] == "Preparing update"
+        assert result["status"]["rollbackPath"]
         popen_mock.assert_called_once()

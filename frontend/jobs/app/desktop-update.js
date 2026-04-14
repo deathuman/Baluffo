@@ -48,6 +48,8 @@ export function normalizeDesktopUpdateStatus(status = {}) {
     totalBytes: Math.max(0, Number(payload.totalBytes) || 0),
     downloadPercent: normalizePercent(payload.downloadPercent),
     installState: String(payload.installState || "idle").toLowerCase(),
+    installStage: String(payload.installStage || "").toLowerCase(),
+    installStageLabel: String(payload.installStageLabel || ""),
     releaseNotesUrl: String(payload.releaseNotesUrl || ""),
     lastCheckedAt: String(payload.lastCheckedAt || ""),
     lastError: String(payload.lastError || ""),
@@ -93,6 +95,7 @@ function inFlightInstallState(installState) {
 
 export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
   const normalized = normalizeDesktopUpdateStatus(status);
+  const installProgress = normalized.installStageLabel || "Waiting for the updater helper to finish install and startup verification.";
   const stateToken = inFlightInstallState(normalized.installState)
     ? normalized.installState
     : normalized.downloadState === "downloading"
@@ -154,6 +157,31 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
     return view;
   }
 
+  if (inFlightInstallState(normalized.installState)) {
+    view.buttonLabel = "Installing...";
+    view.title = "Installing desktop update";
+    view.body = "Baluffo is handing off to the updater helper and will reopen automatically.";
+    view.progress = installProgress;
+    view.primaryVisible = false;
+    view.secondaryVisible = false;
+    return view;
+  }
+
+  if (normalized.installState === "failed") {
+    view.buttonLabel = "Update failed";
+    view.title = "Desktop update failed";
+    view.body = normalized.lastError || "Baluffo restored the previous runtime after the update failed.";
+    view.progress = normalized.installStageLabel || "";
+    view.primaryAction = normalized.downloadState === "downloaded" ? "install" : "check";
+    view.primaryLabel = normalized.downloadState === "downloaded" ? "Try install again" : "Check again";
+    view.primaryVisible = false;
+    view.primaryVisible = true;
+    view.secondaryAction = "close";
+    view.secondaryLabel = "Close";
+    view.secondaryVisible = true;
+    return view;
+  }
+
   if (normalized.downloadState === "downloaded" || normalized.installState === "ready") {
     view.buttonLabel = normalized.targetVersion
       ? `Install ${normalized.targetVersion}`
@@ -167,16 +195,6 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
     view.secondaryAction = "later";
     view.secondaryLabel = "Later";
     view.secondaryVisible = true;
-    return view;
-  }
-
-  if (inFlightInstallState(normalized.installState)) {
-    view.buttonLabel = "Installing...";
-    view.title = "Installing desktop update";
-    view.body = "Baluffo is handing off to the updater helper and will reopen automatically.";
-    view.progress = "Waiting for the updater helper to finish install and startup verification.";
-    view.primaryVisible = false;
-    view.secondaryVisible = false;
     return view;
   }
 

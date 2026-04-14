@@ -29,6 +29,8 @@ V2 adds a separate desktop update flow for end users without redefining the exis
   - top-level `startupReady`
   - top-level `updater`
 - Desktop updater state is persisted under `ship\data\updater\`
+- The helper now persists explicit install stages, recovers interrupted installs, and relaunches the previous runtime on rollback when possible
+- The helper now shows the minimal staged progress UI for prepare, close, install, and restart phases
 - Portable packaging now builds and includes `BaluffoUpdater.exe`
 - A dedicated desktop manifest schema exists at `docs/desktop-update-manifest.schema.json`
 - Targeted backend, bridge, packaging, and desktop-runtime tests were added and are passing
@@ -36,13 +38,11 @@ V2 adds a separate desktop update flow for end users without redefining the exis
 ### Partially implemented
 
 - Manifest verification now supports a packaged embedded public-key fallback and release-time signing flow, but key rotation and long-term operator workflow hardening still rely on disciplined release configuration rather than a broader key-management system
-- The helper performs install, rollback snapshotting, relaunch, and startup verification, but resumability and stage-marked recovery are not yet complete to the level described below
 - The desktop launcher writes the post-install success marker when the bridge reaches startup readiness, but the install-success handshake has not yet been rehearsed through a true packaged `N -> N+1` helper-driven upgrade on disk
 
 ### Not yet complete
 
 - Optional routes such as cancel or dismiss are not implemented
-- The helper does not yet show the final minimal staged progress UI described in the target flow
 - A real packaged upgrade rehearsal that installs one built version over another through the shipped helper path is still outstanding
 
 ## Summary
@@ -61,8 +61,6 @@ The repo currently has the full user-visible app path and release-manifest path 
 
 What is still missing for the summary above to be fully closed against the full target design:
 
-- helper resume/stage recovery hardening
-- final helper progress UI
 - packaged true-upgrade rehearsal coverage
 
 ## Product Decisions
@@ -461,7 +459,7 @@ If any preflight check fails:
 
 ### Phase D - Helper gate
 
-Status: partially implemented.
+Status: implemented.
 
 The helper must not require a generic "scan every child process" rule.
 
@@ -482,7 +480,7 @@ The target design still requires the helper to be idempotent and resumable:
 
 ### Phase E - Replacement
 
-Status: implemented in helper form, with some recovery/resume gaps still remaining.
+Status: implemented.
 
 The helper:
 
@@ -536,7 +534,7 @@ Only then may the helper:
 
 ### Phase G - Recovery
 
-Status: partially implemented.
+Status: implemented in helper form.
 
 If any install or first-launch step fails, the helper must:
 
@@ -638,7 +636,7 @@ Current repo state:
 
 ### Unit tests
 
-Status: substantially implemented, with a few deeper recovery/rehearsal gaps still open.
+Status: substantially implemented, with packaged-rehearsal coverage still open.
 
 Add tests for:
 
@@ -653,7 +651,7 @@ Add tests for:
 
 ### Integration tests
 
-Status: partially implemented.
+Status: substantially implemented, with packaged-helper rehearsal still open.
 
 Add tests for:
 
@@ -714,7 +712,8 @@ Current assessment:
 - backend and helper implementation are in place
 - bridge, ops, and user-facing jobs-page update UI are in place
 - packaging and release-manifest generation/signing are in place
-- the feature is close to the target acceptance bar, with remaining work concentrated in helper resume/progress polish and a true packaged upgrade rehearsal
+- helper resume/stage recovery and the minimal staged helper progress UI are now in place
+- the remaining work is concentrated in a true packaged upgrade rehearsal
 
 V2 is complete when:
 

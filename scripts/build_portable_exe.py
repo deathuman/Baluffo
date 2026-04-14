@@ -45,6 +45,8 @@ RUNTIME_HIDDEN_IMPORTS = (
     "src.source_sync_crypto",
     "src.source_sync_snapshot",
     "src.source_sync",
+    "tkinter",
+    "tkinter.ttk",
 )
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))

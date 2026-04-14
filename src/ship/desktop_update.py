@@ -42,10 +42,53 @@ MANIFEST_CACHE_FILE = "manifest-cache.json"
 SUCCESS_MARKER_FILE = "post-install-success.json"
 PUBLIC_KEYS_FILE = "desktop-update-public-keys.json"
 USER_AGENT = f"BaluffoDesktopUpdater/{DESKTOP_UPDATER_VERSION}"
+INSTALL_STATE_STAGE_DEFAULTS = {
+    "handoff_requested": "preparing",
+    "waiting_for_exit": "waiting_for_exit",
+    "installing": "installing",
+    "verifying": "verifying",
+    "installed": "installed",
+    "failed": "failed",
+}
+INSTALL_STAGE_LABELS = {
+    "idle": "",
+    "preparing": "Preparing update",
+    "waiting_for_exit": "Closing Baluffo",
+    "extracting": "Installing update",
+    "snapshotting": "Installing update",
+    "backup": "Installing update",
+    "replacing": "Installing update",
+    "migrating": "Installing update",
+    "relaunching": "Restarting Baluffo",
+    "verifying": "Restarting Baluffo",
+    "recovering": "Installing update",
+    "rolling_back": "Installing update",
+    "installed": "",
+    "failed": "",
+}
 
 
 def iso_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def normalize_install_stage(
+    install_state: str | None,
+    install_stage: str | None = None,
+) -> str:
+    stage = str(install_stage or "").strip().lower()
+    state = str(install_state or "").strip().lower()
+    if stage and not (stage == "idle" and state and state != "idle"):
+        return stage
+    return str(INSTALL_STATE_STAGE_DEFAULTS.get(state) or "idle")
+
+
+def install_stage_label(
+    install_state: str | None,
+    install_stage: str | None = None,
+) -> str:
+    stage = normalize_install_stage(install_state, install_stage)
+    return str(INSTALL_STAGE_LABELS.get(stage) or "")
 
 
 def _write_atomic(path: Path, payload: str) -> None:
@@ -382,6 +425,11 @@ def default_status_payload(*, current_version: str | None = None) -> dict[str, A
         "manifestPath": "",
         "downloadedZipPath": "",
         "helperVersion": DESKTOP_UPDATER_VERSION,
+        "installStage": "idle",
+        "installStageLabel": "",
+        "helperUpdatedAt": "",
+        "rollbackPath": "",
+        "migrationBackupPath": "",
     }
 
 
@@ -389,6 +437,14 @@ def load_status(paths: DesktopUpdatePaths, *, current_version: str | None = None
     status = default_status_payload(current_version=current_version)
     status.update(read_json(paths.install_state_path, {}))
     status["currentVersion"] = str(current_version or status.get("currentVersion") or get_app_version())
+    status["installStage"] = normalize_install_stage(
+        status.get("installState"),
+        status.get("installStage"),
+    )
+    status["installStageLabel"] = install_stage_label(
+        status.get("installState"),
+        status.get("installStage"),
+    )
     return status
 
 
@@ -779,9 +835,13 @@ class DesktopUpdateService:
                 {
                     **status,
                     "installState": "handoff_requested",
+                    "installStage": "preparing",
+                    "installStageLabel": install_stage_label("handoff_requested", "preparing"),
+                    "helperUpdatedAt": iso_now(),
                     "lastError": "",
                     "manifestPath": str(self.paths.manifest_cache_path),
                     "downloadedZipPath": str(zip_path),
+                    "rollbackPath": str(rollback_path),
                 },
             )
             creationflags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
@@ -837,9 +897,11 @@ __all__ = [
     "default_status_payload",
     "download_file",
     "fetch_json",
+    "install_stage_label",
     "iso_now",
     "load_desktop_update_public_keys",
     "load_status",
+    "normalize_install_stage",
     "read_cached_manifest",
     "read_desktop_session_state",
     "resolve_desktop_session_root",
