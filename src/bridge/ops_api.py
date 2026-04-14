@@ -7,7 +7,7 @@ startup metrics, and operational status endpoints.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -71,9 +71,11 @@ class OpsHealthDeps:
     parse_schedule_metadata_fn: Callable[[], dict[str, Any]]
     parse_iso: Callable[[Any], Any]
     now_utc: Callable[[], Any]
-    get_updater_status_payload: Callable[[], dict[str, Any]]
-    app_version: str
-    startup_ready: bool
+    get_updater_status_payload: Callable[[], dict[str, Any]] = field(
+        default_factory=lambda: (lambda: {})
+    )
+    app_version: str = ""
+    startup_ready: bool = False
 
 
 class OpsApi:

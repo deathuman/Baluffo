@@ -84,7 +84,7 @@ def test_collect_changed_files_excludes_generated_fetch_reports(tmp_path, monkey
     assert precommit_gate.collect_changed_files() == ["docs/readme.md", "src/app.py"]
 
 
-def test_run_all_executes_single_precommit_command(monkeypatch) -> None:
+def test_run_all_executes_precommit_and_vulture_commands(monkeypatch) -> None:
     commands: list[list[str]] = []
 
     def fake_run(command: list[str]) -> int:
@@ -103,6 +103,18 @@ def test_run_all_executes_single_precommit_command(monkeypatch) -> None:
             "--show-diff-on-failure",
             "--color=always",
             "--all-files",
+        ],
+        [
+            precommit_gate.PYTHON,
+            "-m",
+            "pre_commit",
+            "run",
+            "--show-diff-on-failure",
+            "--color=always",
+            "vulture",
+            "--all-files",
+            "--hook-stage",
+            "pre-push",
         ],
     ]
 
@@ -156,6 +168,18 @@ def test_run_all_with_exclusions_uses_filtered_repo_files(monkeypatch) -> None:
             "--files",
             "docs/readme.md",
             "src/app.py",
+        ],
+        [
+            precommit_gate.PYTHON,
+            "-m",
+            "pre_commit",
+            "run",
+            "--show-diff-on-failure",
+            "--color=always",
+            "vulture",
+            "--all-files",
+            "--hook-stage",
+            "pre-push",
         ],
     ]
 
