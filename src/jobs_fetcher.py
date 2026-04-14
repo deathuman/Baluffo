@@ -21,6 +21,7 @@ try:
     from src.jobs.adapters import provider_api as _provider_api
     from src.jobs.adapters import social as _social
     from src.jobs.adapters import static as _static
+    from src.jobs.adapters import static_scrapy as _static_scrapy
     from src.jobs.common import config as _common_config
     from src.jobs.common import datetime_utils as _common_datetime_utils
     from src.jobs.common import diagnostics as _common_diagnostics
@@ -47,6 +48,7 @@ except ModuleNotFoundError:
     from src.jobs.adapters import provider_api as _provider_api
     from src.jobs.adapters import social as _social
     from src.jobs.adapters import static as _static
+    from src.jobs.adapters import static_scrapy as _static_scrapy
     from src.jobs.common import config as _common_config
     from src.jobs.common import datetime_utils as _common_datetime_utils
     from src.jobs.common import diagnostics as _common_diagnostics
@@ -165,7 +167,17 @@ run_static_source_entry_source = _static.run_static_source_entry_source
 run_static_studio_pages_a_i_source = _static.run_static_studio_pages_a_i_source
 run_static_studio_pages_j_r_source = _static.run_static_studio_pages_j_r_source
 run_static_studio_pages_s_z_source = _static.run_static_studio_pages_s_z_source
-run_scrapy_static_source = _static.run_scrapy_static_source
+
+
+def run_scrapy_static_source(*args, **kwargs):
+    """Run scrapy static source with jobs_fetcher registry overrides."""
+    previous = getattr(_static_scrapy, "registry_entries", None)
+    try:
+        _static_scrapy.registry_entries = registry_entries  # type: ignore[assignment]
+        return _static.run_scrapy_static_source(*args, **kwargs)
+    finally:
+        if previous is not None:
+            _static_scrapy.registry_entries = previous  # type: ignore[assignment]
 
 SOURCE_DIAGNOSTICS = _common_diagnostics.SOURCE_DIAGNOSTICS
 STUDIO_SOURCE_REGISTRY = _registry.STUDIO_SOURCE_REGISTRY

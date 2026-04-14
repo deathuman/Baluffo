@@ -48,6 +48,3 @@ jobs:
 
       - name: Run pre-commit guardrails
         run: npm run lint:precommit:ci
-
-      - name: Dead code detection (vulture)
-        run: python -m pre_commit run vulture --all-files --hook-stage pre-push

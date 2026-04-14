@@ -250,13 +250,8 @@ def encrypt_private_key_pem(
     key = _derive_private_key_binding_key(
         salt_b64=salt_b64, app_id=app_id, installation_id=installation_id
     )
-    return _source_sync_crypto.encrypt_private_key_pem(
-        private_key_pem,
-        salt_b64=salt_b64,
-        app_id=app_id,
-        installation_id=installation_id,
-        key=key,
-    )
+    encrypted = _stream_encrypt(str(private_key_pem or "").encode("utf-8"), key)
+    return _base64url_encode(encrypted)
 
 
 def decrypt_private_key_pem(
@@ -265,7 +260,8 @@ def decrypt_private_key_pem(
     key = _derive_private_key_binding_key(
         salt_b64=salt_b64, app_id=app_id, installation_id=installation_id
     )
-    return _source_sync_crypto.decrypt_private_key_pem(private_key_pem_enc, key=key)
+    decrypted = _stream_encrypt(_base64url_decode(private_key_pem_enc), key)
+    return decrypted.decode("utf-8")
 
 
 def _derive_passphrase_key(
@@ -293,13 +289,8 @@ def encrypt_private_key_pem_with_passphrase(
         installation_id=installation_id,
         passphrase=passphrase,
     )
-    return _source_sync_crypto.encrypt_private_key_pem(
-        private_key_pem,
-        salt_b64=salt_b64,
-        app_id=app_id,
-        installation_id=installation_id,
-        key=key,
-    )
+    encrypted = _stream_encrypt(str(private_key_pem or "").encode("utf-8"), key)
+    return _base64url_encode(encrypted)
 
 
 def decrypt_private_key_pem_with_passphrase(
@@ -316,7 +307,8 @@ def decrypt_private_key_pem_with_passphrase(
         installation_id=installation_id,
         passphrase=passphrase,
     )
-    return _source_sync_crypto.decrypt_private_key_pem(private_key_pem_enc, key=key)
+    decrypted = _stream_encrypt(_base64url_decode(private_key_pem_enc), key)
+    return decrypted.decode("utf-8")
 
 
 def build_embedded_passphrase(*, hint: str, version: str = EMBEDDED_KEY_VERSION_DEFAULT) -> str:

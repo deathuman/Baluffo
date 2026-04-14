@@ -6,6 +6,7 @@
     "dev:bridge": "npm run check:python-version && python src/dev_admin_supervisor.py",
     "dev:pipeline": "npm run check:python-version && python -m src.jobs.pipeline --force-refresh-all",
     "build": "npm run check:python-version && python scripts/orchestrator.py build",
+    "prepare": "python scripts/install_git_hooks.py",
     "setup:hooks": "python scripts/install_git_hooks.py",
     "test": "npm run test:unit && npm run test:smoke",
     "verify": "npm run check:python-version && python scripts/orchestrator.py verify",
